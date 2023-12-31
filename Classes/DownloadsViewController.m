@@ -106,6 +106,7 @@
     
     UIBarButtonItem* pauseItem = [[UIBarButtonItem alloc] initWithTitle:@"Pause".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(toggleLoading:)];
+    pauseItem.width = 200;
     
     UIBarButtonItem* cancelItem = [[UIBarButtonItem alloc] initWithTitle:@"Cancel All".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(cancelAllDownloads:)];

@@ -335,6 +335,10 @@
     }
     
     [self reloadData];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void) reloadData
@@ -348,6 +352,20 @@
     self.headerToolbar.frame = CGRectMake(0, 94, CGRectGetWidth(self.tableHeaderView.frame), 44);
 }
 
+- (void) updateAppearance
+{
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    self.tableView.backgroundColor = ICBackgroundColor;
+    [self.tableView reloadData];
+    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^() {
+        [ICBackgroundColor set];
+        UIRectFill(CGRectMake(0, 0, 1, 1));
+    })
+                        forToolbarPosition:UIToolbarPositionAny
+                                barMetrics:UIBarMetricsDefault];
+    self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
+}
+
 - (void) toolbarCloseButtonAction:(id)sender
 {
     self.navigationItem.rightBarButtonItem = nil;
@@ -359,6 +377,17 @@
 - (void) playerCloseButtonAction:(id)sender
 {
     [self dismissViewControllerAnimated:YES completion:NULL];
+}
+
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 #pragma mark -

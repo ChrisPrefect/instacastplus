@@ -74,9 +74,9 @@
 - (void) setupWebView {
     WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
     config.preferences.minimumFontSize = 25;
-    self.sharedWebView = [[WKWebView alloc] initWithFrame:CGRectMake(0, 0, 320, 480) configuration:config];
+    self.sharedWebView = [[WKWebView alloc] initWithFrame:CGRectMake(10, 0, 300, 480) configuration:config];
     self.sharedWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    //sharedWebView.contentMode = UIViewContentModeScaleAspectFit;
+    self.sharedWebView.contentMode = UIViewContentModeScaleAspectFit;
     NSString* templatePath = [[NSBundle mainBundle] pathForResource:@"ShowNotesTemplateIPhone" ofType:@"html"];
     NSString* infoHTMLTemplate = [NSString stringWithContentsOfFile:templatePath encoding:NSUTF8StringEncoding error:nil];
     [self.sharedWebView loadHTMLString:infoHTMLTemplate baseURL:nil];
@@ -424,15 +424,8 @@
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    [self updateAppearance];
     
-    self.view.backgroundColor = ICBackgroundColor;
-    self.headerView.backgroundColor = ICTransparentBackdropColor;
-    
-    self.titleLabel.textColor = ICTextColor;
-    self.feedTitleLabel.textColor = ICMutedTextColor;
-    self.timeLabel.textColor = ICMutedTextColor;
-    self.sharedWebView.backgroundColor = ICBackgroundColor;
-    self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
     
     UINavigationBar* navBar = self.navigationController.navigationBar;
     CGRect b = self.view.bounds;
@@ -445,6 +438,18 @@
     self.longPressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
     self.longPressRecognizer.delegate = self;
     [self.view addGestureRecognizer:self.longPressRecognizer];
+}
+
+- (void) updateAppearance {
+    self.view.backgroundColor = ICBackgroundColor;
+    self.headerView.backgroundColor = ICTransparentBackdropColor;
+    
+    self.titleLabel.textColor = ICTextColor;
+    self.feedTitleLabel.textColor = ICMutedTextColor;
+    self.timeLabel.textColor = ICMutedTextColor;
+    self.sharedWebView.backgroundColor = ICBackgroundColor;
+    self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
+    [self _loadWebContent];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -769,6 +774,11 @@
         [App addTaskObserver:self forKeyPath:@"networkAccessTechnology" task:^(id obj, NSDictionary *change) {
             [self _updateTimeDisplay];
         }];
+        
+        [nc addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
         
     }
     else if (!observing && _observing)

@@ -74,6 +74,11 @@
             ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
         }];
         
+        [nc addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
+        
         [DMANAGER addTaskObserver:self forKeyPath:@"ftsIndexing" task:^(id obj, NSDictionary *change) {
             self.searchBar.showsActivity = DMANAGER.ftsIndexing;
         }];
@@ -165,8 +170,16 @@
                                                                           cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
+    
+    
 }
 
+- (void) updateAppearance
+{
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    self.tableView.backgroundColor = ICBackgroundColor;
+    [self.searchBar appearanceDidChange];
+}
 
 - (void) _updateToolbarLabels
 {

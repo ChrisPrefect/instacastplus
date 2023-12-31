@@ -94,6 +94,11 @@
             ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
         }];
         
+        [nc addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
+        
 
         _observing = YES;
     }
@@ -158,11 +163,7 @@
 {
     [super viewWillAppear:animated];
     
-    self.tableView.separatorColor = ICTableSeparatorColor;
-    self.tableView.backgroundColor = ICBackgroundColor;
-	
-    
-	[self.tableView reloadData];
+    [self updateAppearance];
     
     [self _updateToolbarItemsAnimated:YES];
     [self _updateToolbarLabels];
@@ -196,6 +197,14 @@
     _defaultPushed = 1;
     
     [self _setObserving:YES];
+}
+
+- (void) updateAppearance {
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    self.tableView.backgroundColor = ICBackgroundColor;
+    
+    
+    [self.tableView reloadData];
 }
 
 

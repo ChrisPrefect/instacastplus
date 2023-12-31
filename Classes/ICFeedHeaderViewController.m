@@ -68,15 +68,34 @@
 {
     [super viewWillAppear:animated];
     
+    [self setAppearance];
+    
+    self.triangleImageView.hidden = (self.action == nil);
+    
+    [self layoutContent];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(setAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+- (void) setAppearance {
     self.view.backgroundColor = ICTransparentBackdropColor;
     self.titleLabel.textColor = ICTextColor;
     self.subtitleLabel.textColor = ICMutedTextColor;
     self.triangleImageView.tintColor = ICMutedTextColor;
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
+}
+
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
     
-    self.triangleImageView.hidden = (self.action == nil);
-    
-    [self layoutContent];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void) layoutContent
