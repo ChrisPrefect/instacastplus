@@ -270,7 +270,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             self.webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
             self.webView.scrollView.contentOffset = CGPointMake(0, -self.webView.scrollView.contentInset.top);
             
-            UIView* webShadowView = [[UIView alloc] initWithFrame:CGRectMake(0, barHeight+44, contentWidth, 72+15)];
+            UIView* webShadowView = [[UIView alloc] initWithFrame:CGRectMake(0, barHeight+56, contentWidth, 72+15)];
             webShadowView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
             [self.view addSubview:webShadowView];
             self.webShadowView = webShadowView;

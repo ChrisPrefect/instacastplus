@@ -64,6 +64,11 @@
             }
         }];
         
+        [nc addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
+        
         _observing = YES;
     }
     else if (!observing && _observing) {
@@ -73,6 +78,7 @@
         [pman removeTaskObserver:self forKeyPath:@"paused"];
         [nc removeObserver:self name:UIApplicationDidEnterBackgroundNotification object:nil];
         [nc removeObserver:self name:UIApplicationWillEnterForegroundNotification object:nil];
+        [nc removeObserver:self name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
         _observing = NO;
     }
 }
@@ -110,11 +116,15 @@
 {
     [super viewWillAppear:animated];
     
+    [self updateAppearance];
+    
+    [self _updateNowPlayingAnimated:NO];
+}
+
+- (void) updateAppearance {
     self.nowPlayingControl.backgroundColor = ICDarkBackgroundColor;
     self.nowPlayingControl.progressView.progressTintColor = ICTintColor;
     self.nowPlayingControl.progressView.trackTintColor = [UIColor clearColor];
-    
-    [self _updateNowPlayingAnimated:NO];
 }
 
 - (void) viewDidAppear:(BOOL)animated

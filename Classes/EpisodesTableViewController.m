@@ -64,6 +64,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
+        [nc addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
         
         _observing = YES;
     }
@@ -175,12 +179,17 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     [super viewWillAppear:animated];
 
-    self.tableView.backgroundColor = ICBackgroundColor;
-    self.tableView.separatorColor = ICTableSeparatorColor;
+    [self updateAppearance];
     
     [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:animated];
 
     [self restoreShowNotes];
+}
+
+- (void) updateAppearance {
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    [self.tableView reloadData];
 }
 
 - (void)viewDidAppear:(BOOL)animated {

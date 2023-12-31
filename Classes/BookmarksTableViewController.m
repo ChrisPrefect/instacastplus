@@ -75,11 +75,15 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
                 [self _updateToolbarLabels];
             }
         }];
-        
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
         _observing = YES;
     }
     else if (!observing && _observing)
     {
+        [[NSNotificationCenter defaultCenter] removeObserver:self];
         [DMANAGER removeTaskObserver:self forKeyPath:@"bookmarks"];
         _observing = NO;
     }
@@ -243,17 +247,22 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 {
     [super viewWillAppear:animated];
     
-    self.tableView.separatorColor = ICTableSeparatorColor;
-    self.tableView.backgroundColor = ICBackgroundColor;
+    
     
     [self _reloadBookmarks];
-
-    [self.tableView reloadData];
+    [self updateAppearance];
+    
     
     [self _updateToolbarAnimated:YES];
     [self _updateToolbarLabels];
     
     [self _setObserving:YES];
+}
+
+- (void) updateAppearance {
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    self.tableView.backgroundColor = ICBackgroundColor;
+    [self.tableView reloadData];
 }
 
 - (void) viewDidAppear:(BOOL)animated

@@ -69,10 +69,10 @@
     self.view.tintColor = ICTintColor;
     
     // xxx: workaround for status bar issues
-    if (!_appeared) {
-        self.navigationBar.transform = CGAffineTransformMakeTranslation(0, 20);
-        _appeared = YES;
-    }
+//    if (!_appeared) {
+//        self.navigationBar.transform = CGAffineTransformMakeTranslation(0, 20);
+//        _appeared = YES;
+//    }
 }
 
 - (void) viewDidAppear:(BOOL)animated
@@ -80,7 +80,7 @@
     [super viewDidAppear:animated];
     
     // xxx: workaround for status bar issues
-    self.navigationBar.transform = CGAffineTransformIdentity;
+    //self.navigationBar.transform = CGAffineTransformIdentity;
 }
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations

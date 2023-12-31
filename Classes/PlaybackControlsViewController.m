@@ -45,8 +45,7 @@
     MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(60, 103, CGRectGetWidth(b)-120, 29)];
     volumeView.backgroundColor = [UIColor clearColor];
     volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-    volumeView.showsRouteButton = NO;
-    volumeView.showsVolumeSlider = YES;
+    //volumeView.showsVolumeSlider = YES;
     [volumeView setVolumeThumbImage:[UIImage imageNamed:@"Video Slider Thumb"] forState:UIControlStateNormal];
     
     [self.view addSubview:volumeView];
@@ -72,7 +71,7 @@
     
     self.shown = YES;
     self.tintColor = ICTintColor;
-    
+    [self createVolumeViews];
     self.timeSlider.accessibilityLabel = @"Time Value".ls;
     
     self.timeSlider.enabled = NO;
@@ -96,7 +95,7 @@
     [self.volumeMaxButton setImage:[[UIImage imageNamed:@"Player Volume Max"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                           forState:UIControlStateNormal];
     
-    [self createVolumeViews];
+   
     
 
 }
