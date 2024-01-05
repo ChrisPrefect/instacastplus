@@ -447,8 +447,8 @@
     self.titleLabel.textColor = ICTextColor;
     self.feedTitleLabel.textColor = ICMutedTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
-    self.sharedWebView.backgroundColor = ICBackgroundColor;
-    self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
+    self.sharedWebView.backgroundColor = ICTransparentBackdropColor;
+    self.sharedWebView.scrollView.backgroundColor = ICTransparentBackdropColor;
     [self _loadWebContent];
 }
 

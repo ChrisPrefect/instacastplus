@@ -67,6 +67,27 @@ static NSString* SettingCellIdentifier = @"SettingCell";
     [[CacheManager sharedCacheManager] autoClearAndMakeRoomForBytes:0 automatic:YES];
     [self _reloadContent];
     [self.tableView reloadData];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void) updateAppearance {
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+    [self.tableView reloadData];
 }
 
 - (void)didReceiveMemoryWarning

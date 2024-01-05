@@ -69,7 +69,27 @@ enum {
 {
     [super viewWillAppear:animated];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
+    [self updateAppearance];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+   
+}
+
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
     
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+
+- (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     
@@ -162,7 +182,7 @@ enum {
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
     if (section == kNumberOfSections-1) {
-        return [NSString stringWithFormat:@"\nVersion %@ (%@)\nPublisher: Chris Thomann, \nDeveloper: Tasia Mosahid. \nOriginally developed by Martin Hering. \nThank you Martin!", [NSBundle appVersion], [NSBundle buildVersion]];
+        return [NSString stringWithFormat:@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nDeveloper: Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion], [NSBundle buildVersion]];
     }
     return nil;
 }

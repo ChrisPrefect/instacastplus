@@ -270,13 +270,13 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             self.webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
             self.webView.scrollView.contentOffset = CGPointMake(0, -self.webView.scrollView.contentInset.top);
             
-            UIView* webShadowView = [[UIView alloc] initWithFrame:CGRectMake(0, barHeight+56, contentWidth, 72+15)];
+            UIView* webShadowView = [[UIView alloc] initWithFrame:CGRectMake(0,  safeAreaInsets.top, contentWidth, 72+15)];
             webShadowView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
             [self.view addSubview:webShadowView];
             self.webShadowView = webShadowView;
 
             
-            self.feedImageView = [[UIImageView alloc] initWithFrame:CGRectMake(15, 0, 74, 74)];
+            self.feedImageView = [[UIImageView alloc] initWithFrame:CGRectMake(15, 7, 74, 74)];
             [webShadowView addSubview:self.feedImageView];
             
             self.feedImageView.image = [UIImage imageNamed:@"Podcast Placeholder 72"];
@@ -373,8 +373,9 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     [super viewWillAppear:animated];
     
     self.view.backgroundColor = ICBackgroundColor;
-    self.webView.backgroundColor = ICBackgroundColor;
-    self.webView.scrollView.backgroundColor = ICBackgroundColor;
+    self.webView.backgroundColor = ICTransparentBackdropColor;
+    self.webView.scrollView.bounces = NO;
+    self.webView.scrollView.backgroundColor = ICTransparentBackdropColor;
     self.webShadowView.backgroundColor = ICTransparentBackdropColor;
     self.titleLabel.textColor = ICTextColor;
     self.authorLabel.textColor = ICMutedTextColor;

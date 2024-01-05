@@ -548,7 +548,7 @@
 {
     DirectorySearchViewController* controller = [DirectorySearchViewController directorySearchViewController];
     PortraitNavigationController* navigationController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
-    
+    navigationController.modalPresentationStyle = UIModalPresentationFullScreen;
     [self presentViewController:navigationController animated:YES completion:NULL];
 }
 
