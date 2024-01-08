@@ -74,6 +74,7 @@ NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 NSString* kDefaultPlayerControls = @"PlayerControls";
 NSString* kDefaultSwitchNightModeAutomatically = @"SwitchNightModeAutomatically";
 NSString* kDefaultNightMode = @"NightMode";
+NSString* kDeviceNightMode = @"DeviceNightMode";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 
 #if TARGET_OS_IPHONE==1

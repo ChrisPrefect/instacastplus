@@ -7,16 +7,16 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "6B9D460E-0070-4A17-A479-1B9629A70F30"
+            uuid = "E5966F9F-291C-4526-A192-092AF0003E6D"
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "Classes/FeedViewController.m"
+            filePath = "Classes/EpisodeViewController.m"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "179"
-            endingLineNumber = "179"
-            landmarkName = "-viewDidLoad"
+            startingLineNumber = "452"
+            endingLineNumber = "452"
+            landmarkName = "-updateAppearance"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

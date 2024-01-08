@@ -250,9 +250,9 @@
     [[ICAppearanceManager sharedManager] switchNightModeAutomaticallyNow];
     if (@available(iOS 13.0, *)) {
         if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
-            [[ICAppearanceManager sharedManager] setNightMode:YES];
+            [[ICAppearanceManager sharedManager] setDeviceNightMode:YES];
         } else {
-            [[ICAppearanceManager sharedManager] setNightMode:NO];
+            [[ICAppearanceManager sharedManager] setDeviceNightMode:NO];
         }
     }
 }

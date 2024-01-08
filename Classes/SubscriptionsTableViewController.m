@@ -179,6 +179,7 @@
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
     [self.searchBar appearanceDidChange];
+    [self.tableView reloadData];
 }
 
 - (void) _updateToolbarLabels

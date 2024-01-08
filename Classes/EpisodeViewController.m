@@ -74,7 +74,9 @@
 - (void) setupWebView {
     WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
     config.preferences.minimumFontSize = 25;
-    self.sharedWebView = [[WKWebView alloc] initWithFrame:CGRectMake(10, 0, 300, 480) configuration:config];
+    CGRect b = self.view.bounds;
+    b.origin.y = 93 + 64;
+    self.sharedWebView = [[WKWebView alloc] initWithFrame:b configuration:config];
     self.sharedWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.sharedWebView.contentMode = UIViewContentModeScaleAspectFit;
     NSString* templatePath = [[NSBundle mainBundle] pathForResource:@"ShowNotesTemplateIPhone" ofType:@"html"];
@@ -254,14 +256,14 @@
                 ErrLog(@"javascript error");
             }
             dispatch_async(dispatch_get_main_queue(), ^{
-                CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
-                if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
-                    topOffset = CGRectGetHeight(self.headerView.frame);
-                }
-                _dontSaveScrollOffset = NO;
-                webView.scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-                webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-                webView.scrollView.contentOffset = CGPointMake(0, -webView.scrollView.contentInset.top);
+//                CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
+//                if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
+//                    topOffset = CGRectGetHeight(self.headerView.frame);
+//                }
+//                _dontSaveScrollOffset = NO;
+//                webView.scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, 44, 0);
+//                webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
+//                webView.scrollView.contentOffset = CGPointMake(0, -webView.scrollView.contentInset.top);
                 //_dontSaveScrollOffset = NO;
             });
             self.appearance = [ICAppearanceManager sharedManager].appearance;
@@ -395,16 +397,16 @@
         
         BOOL toolbarShown = (!self.navigationController.toolbarHidden || UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
         
-        _dontSaveScrollOffset = YES;
-        CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
-        if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
-            topOffset = CGRectGetHeight(self.headerView.frame);
-            toolbarShown = NO;
-        }
-        scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
-        scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
-        scrollView.contentOffset = CGPointMake(0, -scrollView.contentInset.top);
-        _dontSaveScrollOffset = NO;
+//        _dontSaveScrollOffset = YES;
+//        CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
+//        if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
+//            topOffset = CGRectGetHeight(self.headerView.frame);
+//            toolbarShown = NO;
+//        }
+//        scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
+//        scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
+//        scrollView.contentOffset = CGPointMake(0, -scrollView.contentInset.top);
+//        _dontSaveScrollOffset = NO;
         
         [self _loadWebContent];
     }
@@ -430,6 +432,8 @@
     UINavigationBar* navBar = self.navigationController.navigationBar;
     CGRect b = self.view.bounds;
     self.headerView.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), CGRectGetWidth(b), MAX(10+72+15, CGRectGetMaxY(self.timeLabel.frame)+12));
+    b.origin.y = self.headerView.frame.origin.y + self.headerView.frame.size.height;
+    self.sharedWebView.frame = b;
     [self _updateTimeDisplay];
     [self _updateToolbarAnimated:NO];
     
@@ -628,7 +632,9 @@
     
     UINavigationBar* navBar = self.navigationController.navigationBar;
     self.headerView.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), masterWidth, MAX(10+72+15, CGRectGetMaxY(self.timeLabel.frame)+12));
-    
+    CGRect b = self.view.bounds;
+    b.origin.y = self.headerView.frame.origin.y + self.headerView.frame.size.height;
+    self.sharedWebView.frame = b;
     BOOL toolbarShown = (!self.navigationController.toolbarHidden || UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad);
     CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
     if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
@@ -636,9 +642,9 @@
         toolbarShown = NO;
     }
     
-    UIScrollView* webScrollView = self.sharedWebView.scrollView;
-    webScrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
-    webScrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
+//    UIScrollView* webScrollView = self.sharedWebView.scrollView;
+//    webScrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
+//    webScrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, (toolbarShown)?44:0, 0);
 }
 
 - (void) _updateTimeDisplay

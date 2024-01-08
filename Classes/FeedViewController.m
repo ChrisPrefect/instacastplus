@@ -163,6 +163,7 @@
 	if (self.feed)
 	{
         CGRect b = self.view.bounds;
+        b.origin.y = 93 + 64;
         WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
         config.preferences.minimumFontSize = 25;
         WKWebView* webView = [[WKWebView alloc] initWithFrame:b configuration:config];
@@ -171,15 +172,15 @@
 		[self.view addSubview:webView];
         self.webView = webView;
         
-        UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-        if (@available(iOS 11.0, *)) {
-            safeAreaInsets = self.view.safeAreaInsets;
-        }
-        
-        CGFloat topOffset = 93;
-        self.webView.scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-        self.webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-        self.webView.scrollView.contentOffset = CGPointMake(0, -self.webView.scrollView.contentInset.top);
+//        UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
+//        if (@available(iOS 11.0, *)) {
+//            safeAreaInsets = self.view.safeAreaInsets;
+//        }
+//        
+//        CGFloat topOffset = 93;
+//        self.webView.scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, 44, 0);
+//        self.webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
+//        self.webView.scrollView.contentOffset = CGPointMake(0, -self.webView.scrollView.contentInset.top);
 
         self.headerViewController = [ICFeedHeaderViewController viewController];
         self.headerViewController.view.frame = CGRectMake(0, 64, CGRectGetWidth(b), 93);
@@ -207,13 +208,34 @@
     [super viewWillAppear:animated];
     [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(93, 0, 0, 0) byAdjustingForStandardBars:YES];
     
-    self.view.backgroundColor = ICBackgroundColor;
-    self.webView.backgroundColor = ICBackgroundColor;
+    [self updateAppearance];
     
-    [self _loadContent];
+    
     
     [self _updateToolbarAnimated:YES];
     [self.navigationController setToolbarHidden:NO animated:YES];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+-(void) updateAppearance {
+    self.view.backgroundColor = ICBackgroundColor;
+    self.webView.backgroundColor = ICBackgroundColor;
+    self.webView.scrollView.backgroundColor = ICBackgroundColor;
+    [self _loadContent];
+}
+
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 

@@ -40,6 +40,8 @@ extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 
 @property (nonatomic) BOOL switchesNightModeAutomatically;
 @property (nonatomic) BOOL nightMode;
+@property (nonatomic) BOOL nightSettingMode;
+- (void) setDeviceNightMode:(BOOL)nightMode;
 
 - (BOOL) switchNightModeAutomaticallyNow;
 - (void) updateAppearance;

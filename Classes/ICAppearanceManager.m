@@ -133,9 +133,19 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     [USER_DEFAULTS setBool:switchesNightModeAutomatically forKey:kDefaultSwitchNightModeAutomatically];
 }
 
-- (BOOL) nightMode {
+- (BOOL) nightSettingMode {
     return [USER_DEFAULTS boolForKey:kDefaultNightMode];
 }
+
+- (BOOL) nightMode {
+    return [USER_DEFAULTS boolForKey:kDeviceNightMode] || [USER_DEFAULTS boolForKey:kDefaultNightMode];
+}
+
+- (void) setDeviceNightMode:(BOOL)nightMode {
+    [USER_DEFAULTS setBool:nightMode forKey:kDeviceNightMode];
+    [self updateAppearance];
+}
+
 
 - (void) setNightMode:(BOOL)nightMode {
     [USER_DEFAULTS setBool:nightMode forKey:kDefaultNightMode];

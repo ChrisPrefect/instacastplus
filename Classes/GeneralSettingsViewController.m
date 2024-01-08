@@ -264,7 +264,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 
                 cell.textLabel.text = @"Enable".ls;
                 
-                control.on = [ICAppearanceManager sharedManager].nightMode;
+                control.on = [ICAppearanceManager sharedManager].nightSettingMode;
                 [control addTarget:self action:@selector(toggleNightModeSettings:) forControlEvents:UIControlEventValueChanged];
                 
                 

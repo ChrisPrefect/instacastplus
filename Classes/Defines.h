@@ -89,6 +89,7 @@ extern NSString* kDefaultDontDeleteUpNextWhenChangingEpisode;
 
 extern NSString* kDefaultSwitchNightModeAutomatically;
 extern NSString* kDefaultNightMode;
+extern NSString* kDeviceNightMode;
 
 #if TARGET_OS_IPHONE==1
 #else

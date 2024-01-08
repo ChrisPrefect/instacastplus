@@ -78,15 +78,26 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
             sidebarItem.title = self.unplayedPlaylist.name;
         }];
         
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(updateAppearance)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
+        
         _observing = YES;
     }
     else if (!observing && _observing)
     {
         [self.activityViewController removeTaskObserver:self forKeyPath:@"visible"];
         [self.unplayedPlaylist removeTaskObserver:self forKeyPath:@"name"];
+        
+        [[NSNotificationCenter defaultCenter] removeObserver:self];
                 
         _observing = NO;
     }
+}
+
+- (void) updateAppearance {
+    self.view.backgroundColor = ICDarkBackgroundColor;
 }
 
 - (void)viewDidLoad
