@@ -162,8 +162,9 @@
 
 	if (self.feed)
 	{
+        UINavigationBar* navBar = self.navigationController.navigationBar;
         CGRect b = self.view.bounds;
-        b.origin.y = 93 + 64;
+        b.origin.y = 93 + CGRectGetMaxY(navBar.frame) ;
         WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
         config.preferences.minimumFontSize = 25;
         WKWebView* webView = [[WKWebView alloc] initWithFrame:b configuration:config];
@@ -172,18 +173,8 @@
 		[self.view addSubview:webView];
         self.webView = webView;
         
-//        UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-//        if (@available(iOS 11.0, *)) {
-//            safeAreaInsets = self.view.safeAreaInsets;
-//        }
-//        
-//        CGFloat topOffset = 93;
-//        self.webView.scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-//        self.webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-//        self.webView.scrollView.contentOffset = CGPointMake(0, -self.webView.scrollView.contentInset.top);
-
         self.headerViewController = [ICFeedHeaderViewController viewController];
-        self.headerViewController.view.frame = CGRectMake(0, 64, CGRectGetWidth(b), 93);
+        self.headerViewController.view.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), CGRectGetWidth(b), 93);
         self.headerViewController.titleLabel.text = self.feed.title;
         self.headerViewController.subtitleLabel.text = self.feed.author;
         
