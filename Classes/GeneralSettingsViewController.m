@@ -107,7 +107,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case kPlaybackSection:
             return 6;
         case kAppearanceThemeSection:
-            return 2;
+            return 4;
         case kAppSection:
             return 2;
         case kDebuggingSection:
@@ -281,7 +281,24 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 [control addTarget:self action:@selector(toggleNightModeSettings:) forControlEvents:UIControlEventValueChanged];
                 return cell;
             }
-            
+            case 2:
+            {
+                UITableViewCell* cell = [self switchCell];
+                UISwitch* control = (UISwitch*)cell.accessoryView;
+                control.tag = indexPath.row;
+                
+                cell.textLabel.text = @"Interface Color As Per Podcast".ls;
+                control.on = switchAutomatically;
+                [control addTarget:self action:@selector(toggleNightModeSettings:) forControlEvents:UIControlEventValueChanged];
+                return cell;
+            }
+            case 3:
+            {
+                UITableViewCell* cell = [self detailCell];
+                cell.textLabel.text = @"Choose Theme Color".ls;
+                cell.detailTextLabel.text = nil;
+                return cell;
+            }
             default:
                 break;
         }
@@ -381,6 +398,11 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     return nil;
 }
 
+- (void)colorPickerViewController:(UIColorPickerViewController *)viewController didSelectColor:(UIColor *)color continuously:(BOOL)continuously {
+    NSLog(@"%@", color);
+    [viewController dismissViewControllerAnimated:YES completion:nil];
+}
+
 #pragma mark - Table view delegate
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
@@ -466,6 +488,14 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             }
             default:
                 break;
+        }
+    }
+    
+    else if (indexPath.section == kAppearanceThemeSection) {
+        if (indexPath.row == 3) {
+            UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            picker.delegate = self;
+            [self presentViewController:picker animated:YES completion:nil];
         }
     }
     
