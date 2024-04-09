@@ -508,6 +508,12 @@
 "Reload" = "Reload";
 "Reloading" = "Reloading";
 "Settings" = "Settings";
+"Filter" = "Filter";
+"Filter by" = "Filter by";
+"All" = "All";
+"Unlistened" = "Unlistened";
+"Favorites" = "Favorites";
+
 
 /* DataMigrationView */
 "Updating Database" = "Updating Database";
@@ -518,3 +524,4 @@
 
 /* OpenInSafariActivity.m */
 "Open in Safari" = "Open in Safari";
+

@@ -508,6 +508,11 @@
 "Reload" = "Neuladen";
 "Reloading" = "Neuladen";
 "Settings" = "Einstellungen";
+"Filter" = "Filter";
+"Filter by" = "Filtern nach";
+"All" = "Alle";
+"Unlistened" = "Nicht zugehört";
+"Favorites" = "Favoriten";
 
 /* DataMigrationView */
 "Updating Database" = "Datenbank aktualisieren";

@@ -39,6 +39,7 @@
 @property (nonatomic, weak) UIBarButtonItem* shareItem;
 @property (nonatomic, strong) VDModalInfo* modalInfo;
 @property (nonatomic, strong) UIView* tableHeaderView;
+@property (nonatomic, strong) UIBarButtonItem *filterItem;
 @end
 
 @implementation FeedEpisodesTableViewController {
@@ -266,20 +267,25 @@
 
 - (void) _updateHeaderToolbar
 {
-    UIBarButtonItem* reloadItem = [[UIBarButtonItem alloc] initWithTitle:@"Reload".ls
+    UIBarButtonItem* reloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.clockwise.circle"]
                                                                    style:UIBarButtonItemStylePlain
                                                                   target:self
                                                                   action:@selector(reload:)];
     
-    UIBarButtonItem* shareItem = [[UIBarButtonItem alloc] initWithTitle:@"Share".ls
+    UIBarButtonItem* shareItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"square.and.arrow.up.circle"]
                                                                   style:UIBarButtonItemStylePlain
                                                                  target:self
                                                                  action:@selector(share:)];
     
-    UIBarButtonItem* settingsItem = [[UIBarButtonItem alloc] initWithTitle:@"Settings".ls
+    UIBarButtonItem* settingsItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape.circle"]
                                                                      style:UIBarButtonItemStylePlain
                                                                     target:self
                                                                     action:@selector(settings:)];
+    
+    _filterItem = [[UIBarButtonItem alloc] initWithTitle: @"All"
+                                                                   style:UIBarButtonItemStylePlain
+                                                                  target:self
+                                                                  action:@selector(filterAction:)];
     
     UIBarButtonItem* fixItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
     fixItem.width = -1;
@@ -287,7 +293,7 @@
     UIBarButtonItem* flexItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     
     
-    [self.headerToolbar setItems:@[fixItem, reloadItem, flexItem, shareItem, flexItem, settingsItem, fixItem]];
+    [self.headerToolbar setItems:@[fixItem, reloadItem, flexItem, shareItem, flexItem, settingsItem, fixItem, flexItem, _filterItem]];
     self.shareItem = shareItem;
 }
 
@@ -489,5 +495,141 @@
     }
     [self presentViewController:shareController animated:YES completion:NULL];
 }
+
+
+- (void) filterAction:(UIBarButtonItem*)item
+{
+    WEAK_SELF
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Filter by".ls
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    
+    UIAlertAction* allAction = [UIAlertAction actionWithTitle:@"All".ls style:UIAlertActionStyleDefault
+                                                          handler:^(UIAlertAction * action) {
+                                                              STRONG_SELF
+                                                              [self perform:^(id sender) {
+                                                                  [self _filterAllEpisode];
+                                                                  self.filterItem.title = @"All";
+                                                              } afterDelay:0.3];
+                                                              self.alertController = nil;
+                                                          }];
+    [alert addAction:allAction];
+    
+    
+    UIAlertAction* unlistenedAction = [UIAlertAction actionWithTitle:@"Unlistened".ls style:UIAlertActionStyleDefault
+                                                        handler:^(UIAlertAction * action) {
+                                                            STRONG_SELF
+                                                            [self perform:^(id sender) {
+                                                                [self _filterUnlistenedEpisode];
+                                                                self.filterItem.title = @"Unlistened";
+                                                            } afterDelay:0.3];
+                                                            self.alertController = nil;
+                                                            
+                                                        }];
+    [alert addAction:unlistenedAction];
+    
+    UIAlertAction* favoritesAction = [UIAlertAction actionWithTitle:@"Favorites".ls style:UIAlertActionStyleDefault
+                                                        handler:^(UIAlertAction * action) {
+                                                            STRONG_SELF
+                                                            [self perform:^(id sender) {
+                                                                [self _filterFavoriteEpisode];
+                                                                self.filterItem.title = @"Favorites";
+                                                            } afterDelay:0.3];
+        
+                                                            self.alertController = nil;
+                                                        }];
+    [alert addAction:favoritesAction];
+    
+    UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel
+                                                          handler:^(UIAlertAction * action) {
+                                                              STRONG_SELF
+                                                              self.alertController = nil;
+                                                          }];
+    [alert addAction:defaultAction];
+    
+    
+    self.alertController = alert;
+    [self presentAlertControllerAnimated:YES completion:NULL];
+}
+
+#pragma mark - Filter By Favorite
+- (void) _filterFavoriteEpisode
+{
+    BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && starred == %d", self.feed, 1];
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+    fetchRequest.predicate = predicate;
+    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_favorite_%@", self.feed.title];
+    fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
+ 
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
+                                                          managedObjectContext:DMANAGER.objectContext
+                                                            sectionNameKeyPath:nil
+                                                                     cacheName:cacheName];
+    self.fetchController.delegate = self;
+    [self.fetchController performFetch:nil];
+    [self updateEpisodes];
+    [self.tableView reloadData];
+    [self _updateToolbarItemsAnimated:NO];
+    [self _updateToolbarLabels];
+}
+
+#pragma mark - Filter By Unlistened
+- (void) _filterUnlistenedEpisode
+{
+    BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && consumed == %d", self.feed,0];
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+    fetchRequest.predicate = predicate;
+    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_unlistened_%@", self.feed.title];
+    fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
+ 
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
+                                                          managedObjectContext:DMANAGER.objectContext
+                                                            sectionNameKeyPath:nil
+                                                                     cacheName:cacheName];
+    self.fetchController.delegate = self;
+    [self.fetchController performFetch:nil];
+    [self updateEpisodes];
+    [self.tableView reloadData];
+    [self _updateToolbarItemsAnimated:NO];
+    [self _updateToolbarLabels];
+}
+
+#pragma mark - Filter By All
+- (void) _filterAllEpisode
+{
+    BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    if ([self.searchTerm length] > 0)
+    {
+        NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.searchTerm];
+        
+        NSString* t = [NSString stringWithFormat:@"*%@*", self.searchTerm];
+        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && (guid IN %@ || feed.title like[cd] %@ || feed.author like[cd] %@ || feed.summary like[cd] %@)", self.feed, @NO, episodeGuids, t, t, t];
+        
+    } else {
+        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@", self.feed, @NO];
+    }
+    
+    fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
+    
+    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_all_%@", self.feed.title];
+    [NSFetchedResultsController deleteCacheWithName:cacheName];
+    self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest
+                                                               managedObjectContext:DMANAGER.objectContext
+                                                                 sectionNameKeyPath:nil
+                                                                          cacheName:cacheName];
+    self.fetchController.delegate = self;
+    [self.fetchController performFetch:nil];
+    [self updateEpisodes];
+    [self.tableView reloadData];
+    [self _updateToolbarItemsAnimated:NO];
+    [self _updateToolbarLabels];
+}
+
 @end
 

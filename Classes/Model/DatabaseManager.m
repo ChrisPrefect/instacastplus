@@ -1040,7 +1040,6 @@ NS_INLINE NSString* _DataStoreFile() {
     [self save];
 }
 
-
 #pragma mark -
 #pragma mark Lists
 
