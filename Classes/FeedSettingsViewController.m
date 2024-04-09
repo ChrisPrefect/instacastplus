@@ -121,7 +121,7 @@ enum {
 {
     switch (section) {
         case kEpisodesSection:
-            return 1;
+            return 2;
         case kNewsModeSection:
             return 1;
         case kAggregateUnavailableEpisodesSection:
@@ -156,6 +156,12 @@ enum {
                 
                 NSString* feedSortOrder = [self.feed stringForKey:FeedSortOrder];
                 cell.detailTextLabel.text = ([feedSortOrder isEqualToString:@"NewerFirst"]) ? @"Newest First".ls : @"Oldest First".ls;
+                break;
+            }
+            case 1:
+            {cell = [self detailCell];
+                cell.textLabel.text = @"Restore Episodes".ls;
+                cell.detailTextLabel.text = nil;
                 break;
             }
             default:
@@ -377,6 +383,8 @@ enum {
             controller.titles = [NSArray arrayWithObjects:@"Newest First".ls, @"Oldest First".ls, nil];
             
             [self.navigationController pushViewController:controller animated:YES];
+        } else if (indexPath.row == 1) {
+            NSLog(@"Restore Episode");
         }
     }
 

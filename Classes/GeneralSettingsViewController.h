@@ -8,7 +8,9 @@
 
 #import <UIKit/UIKit.h>
 
-@interface GeneralSettingsViewController : UITableViewController
+@interface GeneralSettingsViewController : UITableViewController<UIColorPickerViewControllerDelegate> {
+    
+}
 
 + (GeneralSettingsViewController*) viewController;
 

@@ -45,6 +45,9 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 @property (nonatomic, strong) UIView* webShadowView;
 @property (nonatomic, strong) UILabel* titleLabel;
 @property (nonatomic, strong) UILabel* authorLabel;
+
+@property (nonatomic) CGPoint lastContentOffset;
+
 @end
 
 
@@ -358,14 +361,21 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     }
 }
 
-
 - (void)viewDidLoad {
     [super viewDidLoad];
+    
+//    NSLog(@"Hello I am viewDidLoad");
+    
+    [self.webView scrollView].delegate = self;
     
     if (self.canBeCanceled) {
         UIBarButtonItem* subscribeBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancelAction:)];
         self.navigationItem.leftBarButtonItem = subscribeBarButtonItem;
     }
+}
+
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView {
+    self.lastContentOffset = [scrollView contentOffset];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -386,6 +396,8 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void) viewWillDisappear:(BOOL)animated
 {
 	[super viewWillDisappear:animated];
+    
+    self.lastContentOffset = [[self.webView scrollView] contentOffset];
 	
 	if (self.scraper) {
 		[App releaseNetworkActivity];
@@ -747,13 +759,16 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     self.loaded = YES;
     
-    if (self.initialScrollPosition != 0) {
-        [webView evaluateJavaScript:[NSString stringWithFormat: @"window.scrollTo(0, %ld);", (long)self.initialScrollPosition] completionHandler:^(id result, NSError * _Nullable error) {
-            self.initialScrollPosition = 0;
-        }];
-        
-        
-    }
+//    if (self.initialScrollPosition != 0) {
+//        [webView evaluateJavaScript:[NSString stringWithFormat: @"window.scrollTo(0, %ld);", (long)[[self.webView scrollView] contentOffset].y] completionHandler:^(id result, NSError * _Nullable error) {
+//            self.initialScrollPosition = 0;
+//        }];
+//    }
+    
+    [webView evaluateJavaScript:[NSString stringWithFormat: @"window.scrollTo(0, %ld);", (long)self.lastContentOffset.y] completionHandler:^(id result, NSError * _Nullable error) {}];
+    
+//    [self.webView.scrollView setContentOffset:self.lastContentOffset animated:NO];
+
     
     [self perform:^(id sender) {
         for(UIView* subview in self.view.subviews) {

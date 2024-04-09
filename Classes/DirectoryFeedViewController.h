@@ -9,7 +9,7 @@
 #import <UIKit/UIKit.h>
 #import "WebKit/WebKit.h"
 
-@interface DirectoryFeedViewController : UIViewController <WKNavigationDelegate> {
+@interface DirectoryFeedViewController : UIViewController <WKNavigationDelegate, UIScrollViewDelegate> {
 
 }
 
