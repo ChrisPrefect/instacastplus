@@ -27,26 +27,26 @@
 {
     if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
         return UIInterfaceOrientationMaskAll;
+        }
+        
+        return UIInterfaceOrientationMaskPortrait;
     }
-    
-    return UIInterfaceOrientationMaskPortrait;
-}
 
-- (UIViewController*) _fullscreenVideoControllerWithCurrentViewController:(UIViewController*)viewController
-{
-    if ([viewController isKindOfClass:NSClassFromString(@"PlayerFullscreenVideoViewController")]) {
-        return viewController;
+    - (UIViewController*) _fullscreenVideoControllerWithCurrentViewController:(UIViewController*)viewController
+    {
+        if ([viewController isKindOfClass:NSClassFromString(@"PlayerFullscreenVideoViewController")]) {
+            return viewController;
+        }
+        
+        if ([viewController isKindOfClass:[UINavigationController class]]) {
+            return [self _fullscreenVideoControllerWithCurrentViewController:((UINavigationController*)viewController).topViewController];
+        }
+        if (viewController.presentedViewController) {
+            return [self _fullscreenVideoControllerWithCurrentViewController:viewController.presentedViewController];
+        }
+        
+        return nil;
     }
-    
-    if ([viewController isKindOfClass:[UINavigationController class]]) {
-        return [self _fullscreenVideoControllerWithCurrentViewController:((UINavigationController*)viewController).topViewController];
-    }
-    if (viewController.presentedViewController) {
-        return [self _fullscreenVideoControllerWithCurrentViewController:viewController.presentedViewController];
-    }
-    
-    return nil;
-}
 
 - (UIStatusBarStyle)preferredStatusBarStyle
 {

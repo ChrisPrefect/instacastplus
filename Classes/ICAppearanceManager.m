@@ -308,7 +308,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 -(UIColor*) backgroundColor {
     if (@available(iOS 13.0, *)) {
-        return [UIColor systemBackgroundColor];
+        return [UIColor colorWithWhite:244/255.f alpha:1.f];
     } else {
         return [UIColor colorWithWhite:244/255.f alpha:1.f];
     }
@@ -360,7 +360,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 - (UIActivityIndicatorViewStyle) activityIndicatorStyle {
-    return UIActivityIndicatorViewStyleGray;
+    return UIActivityIndicatorViewStyleMedium;
 }
 
 @end
@@ -434,7 +434,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 - (UIActivityIndicatorViewStyle) activityIndicatorStyle {
-    return UIActivityIndicatorViewStyleWhite;
+    return UIActivityIndicatorViewStyleMedium;
 }
 
 @end

@@ -3,11 +3,13 @@
 <style type="text/css">
 
 body {
-	margin: 20px;
-	padding: 20px;
+    margin: 0px;
+    padding: 0px;
     padding-top:10px;
-	font-size: 25px;
-	font-family: "Helvetica Neue", sans-serif;
+    color: #7f7f7f;
+    background-color: #f4f4f4;
+    font-size: 13px;
+    font-family: "Helvetica Neue", sans-serif;
     -webkit-touch-callout: none;
 }
     
@@ -18,10 +20,10 @@ pre {
 }
 
 #description {
-	padding-left: 15px;
-	padding-bottom: 0px;
-	padding-right: 15px;
-	padding-top: 0px;
+    padding-left: 15px;
+    padding-bottom: 0px;
+    padding-right: 15px;
+    padding-top: 0px;
 }
 
 p {
@@ -33,125 +35,125 @@ margin: 0px;
 }
 
 h1,h2,h3,h4,h5 {
-	font-size: 25px;
-	font-weight: bold;
+    font-size: 13px;
+    font-weight: bold;
 }
 
 iframe {
-	visibility: hidden;
-	border-style: none;
-	border-width: 0px;
-	display: none;
-	max-width: 320px;
+    visibility: hidden;
+    border-style: none;
+    border-width: 0px;
+    display: none;
+    max-width: 320px;
 }
 
 .label {
-	color: black;
-	text-align: right;
+    color: black;
+    text-align: right;
 }
 
 table {
-	margin-top: 15px;
+    margin-top: 15px;
 }
 
 td {
-	font-size: 25px;
+    font-size: 11px;
 }
 
 .category_arrow {
-	line-height: 8px;
-	display: inline;
-	color: #333;
-	font-weight: bold;
-	font-family: "Lucida Grande", Verdana, Arial, sans-serif;
+    line-height: 8px;
+    display: inline;
+    color: #333;
+    font-weight: bold;
+    font-family: "Lucida Grande", Verdana, Arial, sans-serif;
 }
 
 img {
-	padding-left: 0px;
-	padding-bottom: 15px;
-	padding-right: 0px;
-	padding-top: 15px;
-	margin: 0px;
-	border-style: solid;
-	border-width: 0px;
-	max-width: 290px;
+    padding-left: 0px;
+    padding-bottom: 15px;
+    padding-right: 0px;
+    padding-top: 15px;
+    margin: 0px;
+    border-style: solid;
+    border-width: 0px;
+    max-width: 290px;
     height: auto;
 }
 
 object {
-	display: none;
+    display: none;
 }
 
 a {
-	font-weight: bold;
-	text-decoration: none;
-	color: #333;
+    font-weight: bold;
+    text-decoration: none;
+    color: #333;
 }
 
 hr {
-	border: 0px;
+    border: 0px;
 }
 
 .button_box {
-	padding-top: 13px;
-	text-align: center;
-	display: block;
-	height: 31px;
+    padding-top: 13px;
+    text-align: center;
+    display: block;
+    height: 31px;
 
-	border-color: #c0c6cd;
-	border-style: solid;
-	border-width: 1px;
-	-webkit-border-radius: 10px;
-	font-size: 13px;
-	color: #333;
-	font-weight: bold;
-	
-	background-image: -webkit-gradient(
+    border-color: #c0c6cd;
+    border-style: solid;
+    border-width: 1px;
+    -webkit-border-radius: 10px;
+    font-size: 13px;
+    color: #333;
+    font-weight: bold;
+    
+    background-image: -webkit-gradient(
     linear,
     left bottom,
     left top,
     color-stop(0.04, rgb(234,237,240)),
     color-stop(0.52, rgb(255,255,255))
-	);
-	-webkit-user-select: none;
+    );
+    -webkit-user-select: none;
 }
 
 
 .button_selected {
-	background-image: -webkit-gradient(
+    background-image: -webkit-gradient(
     linear,
     left bottom,
     left top,
     color-stop(0.28, rgb(1,93,230)),
     color-stop(0.64, rgb(5,141,245))
-	);
-	
-	color: white;
+    );
+    
+    color: white;
 }
 
 .button_not_selected
 {
-	text-shadow: 0px 1px white;
+    text-shadow: 0px 1px white;
 }
 
 #preview_button {
-	float: left;
-	width: 280px;
-	margin-right: 9px;
-	margin-left: 9px;
-	margin-bottom: 20px;
-	margin-top: 20px;
+    float: left;
+    width: 280px;
+    margin-right: 9px;
+    margin-left: 9px;
+    margin-bottom: 20px;
+    margin-top: 20px;
 }
 
 #episodes_list {
-	margin-top: 20px;
+    margin-top: 20px;
 }
 
 #episodes_list .label {
-	font-size: 25px;
-	text-align: left;
-	margin-left: 15px;
-	margin-right: 15px;
+    font-size: 13px;
+    text-align: left;
+    margin-left: 15px;
+    margin-right: 15px;
 }
     
 #episodes {
@@ -170,10 +172,10 @@ hr {
     -webkit-tap-highlight-color: transparent; /* "turn off" link highlight */
 }
 #episodes .row {
-	padding-top: 5px;
-	padding-right: 15px;
-	padding-left: 15px;
-	padding-bottom: 5px;
+    padding-top: 5px;
+    padding-right: 15px;
+    padding-left: 15px;
+    padding-bottom: 5px;
     
     background-image:url(###IMPORT_EPISODE_IMAGE_URL###);
     background-repeat:no-repeat;
@@ -181,10 +183,10 @@ hr {
     background-size: 17px 22px;
 }
 #episodes .row_even {
-	background-color: #eee;
+    background-color: #eee;
 }
 #episodes .even {
-	background-color: #eee;
+    background-color: #eee;
 }
 #episodes .title_audio {
     display: inline-block;
@@ -208,15 +210,15 @@ hr {
 
     
 #episodes .date {
-	color: #7f7f7f;
-	font-style: normal;
-	font-weight: normal;
+    color: #7f7f7f;
+    font-style: normal;
+    font-weight: normal;
 }
 
 #episodes .date_video {
-	color: #7f7f7f;
-	font-style: normal;
-	font-weight: normal;
+    color: #7f7f7f;
+    font-style: normal;
+    font-weight: normal;
     padding-left: 15px;
 }
 
@@ -233,19 +235,19 @@ hr {
 }
 
 #episodes .selected {
-	background-color: #ccc;
+    background-color: #ccc;
 
 }
 ul {
-	margin-left: 18px;
-	margin-bottom: 10px;
-	margin-right: 0px;
-	margin-top: 0px;
-	padding: 0px;
+    margin-left: 18px;
+    margin-bottom: 10px;
+    margin-right: 0px;
+    margin-top: 0px;
+    padding: 0px;
 }
 li {
-	padding-bottom: 5px;
-	padding-top: 5px;
+    padding-bottom: 5px;
+    padding-top: 5px;
 }
     
 dt {
@@ -258,41 +260,41 @@ dd {
 }
 
 #other_podcasts {
-	margin-top: 5px;
+    margin-top: 5px;
     margin-left: 5px;
-	width: 310px;
-	height: 92px;
-    overflow:scroll;
-    -webkit-overflow-scrolling: touch;
+    width: 310px;
+    height: 92px;
+     overflow:scroll;
+     -webkit-overflow-scrolling: touch;
 }
     
 .other_podcast {
-	margin-left: 0px;
-	margin-bottom: 0px;
-	margin-right: 10px;
-	margin-top: 0px
-	padding: 0px;
-	display: inline-block;
-	height: 72px;
-	width: 72px;
-	box-shadow: 0px 1px 3px 0px #ccc;
+    margin-left: 0px;
+    margin-bottom: 0px;
+    margin-right: 10px;
+    margin-top: 0px
+    padding: 0px;
+    display: inline-block;
+    height: 72px;
+    width: 72px;
+    box-shadow: 0px 1px 3px 0px #ccc;
 }
 
 .other_podcast img {
-	padding: 0px;
-	margin: 0px;
-	height: 72px;
-	width: 72px;
+    padding: 0px;
+    margin: 0px;
+    height: 72px;
+    width: 72px;
 }
 
 #other_podcasts_container {
-	margin-top: 20px;
+    margin-top: 20px;
 }
 #other_podcasts_container .label {
-	font-size: 25px;
-	text-align: left;
-	margin-left: 15px;
-	margin-right: 15px;
+    font-size: 13px;
+    text-align: left;
+    margin-left: 15px;
+    margin-right: 15px;
 }
 
     
@@ -331,7 +333,7 @@ function onTouchStartButton(event) {
   
   var target = event.target;
   if (target.nodeType == 3) {
-  	target = target.parentNode;
+      target = target.parentNode;
   }
   
   target.className = 'button_box button_selected';
@@ -361,25 +363,25 @@ function onTouchMoveButton(event) {
 }
 
 function onTouchCancelButton(event) {
- 	event.stopPropagation();
+     event.stopPropagation();
   event.preventDefault();
   
   var target = event.target;
   if (target.nodeType == 3) {
-  	target = target.parentNode;
+      target = target.parentNode;
   }
   
- 	target.className = 'button_box button_not_selected';
+     target.className = 'button_box button_not_selected';
 }
 
 function onTouchEndButton(event) {
- 	
- 	var target = event.target;
+     
+     var target = event.target;
   if (target.nodeType == 3) {
-  	target = target.parentNode;
+      target = target.parentNode;
   }
   
- 	if (target.className == 'button_box button_selected') {
+     if (target.className == 'button_box button_selected') {
     document.location.href = target.getAttribute('href');
   }
   
@@ -391,7 +393,7 @@ function onTouchEndButton(event) {
 function _getTableEventTarget(event)
 {
     var target = event.target;
-	
+    
     if (target.nodeType == 3 || target.className.indexOf("row") == -1) {
         target = target.parentNode;
     }
@@ -422,11 +424,11 @@ function onTouchStartTable(event) {
 function onTouchMoveTable(event) {
 
     clearTimeout(touchTimer);
-	onTouchCancelTable(event);
+    onTouchCancelTable(event);
 }
 
 function onTouchCancelTable(event) {
- 	event.stopPropagation();
+     event.stopPropagation();
     //event.preventDefault();
   
     selectionCanceled = true;
@@ -443,12 +445,12 @@ function onTouchCancelTable(event) {
 
 function onTouchEndTable(event) {
 
-	var target = _getTableEventTarget(event);
-	if (!selectionCanceled && target.className.indexOf("selected") == -1) {
+    var target = _getTableEventTarget(event);
+    if (!selectionCanceled && target.className.indexOf("selected") == -1) {
         target.className = target.className + " selected";
-	}
-	
- 	window.setTimeout(function() {
+    }
+    
+     window.setTimeout(function() {
                       onTouchCancelTable(event);
                       }, 500);
 }

@@ -1,34 +1,34 @@
 body {
-	color: #808080;
+    color: #808080;
     background-color: #212121;
 }
 
 a {
-	color: #e0e0e0;
+    color: #e0e0e0;
 }
 
 .label {
-	color: e0e0e0;
-	text-align: right;
+    color: e0e0e0;
+    text-align: right;
 }
 
 #episodes .row_even {
-	background-color: #181818;
+    background-color: #181818;
 }
 #episodes .even {
-	background-color: #181818;
+    background-color: #181818;
 }
 
 #episodes .date {
-	color: #808080;
+    color: #808080;
 }
 
 #episodes .date_video {
-	color: #808080;
+    color: #808080;
 }
 
 #episodes .selected {
-	background-color: #333;
+    background-color: #333;
 
 }
 

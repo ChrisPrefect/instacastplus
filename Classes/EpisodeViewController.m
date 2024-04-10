@@ -73,7 +73,7 @@
 
 - (void) setupWebView {
     WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
-    config.preferences.minimumFontSize = 25;
+   // config.preferences.minimumFontSize = 25;
     CGRect b = self.view.bounds;
     b.origin.y = 93 + 64;
     self.sharedWebView = [[WKWebView alloc] initWithFrame:b configuration:config];
@@ -114,6 +114,7 @@
     NSString* description = [self.episode cleanedShowNotes];
     
     NSMutableString* content = [NSMutableString string];
+    [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
     [content appendString:@"<style type=\"text/css\" scoped>"];
     NSString* appearanceCssPath = [[NSBundle mainBundle] pathForResource:[ICAppearanceManager sharedManager].appearance.cssFile ofType:@"css"];
     NSString* appearanceCss = [NSString stringWithContentsOfFile:appearanceCssPath encoding:NSUTF8StringEncoding error:nil];
@@ -171,12 +172,12 @@
             [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Published".ls, pubdate];
         }
         
-        if ([feed.language length] > 0) {
-            [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Language".ls, [locale displayNameForKey:NSLocaleLanguageCode value:feed.language]];
-        }
-        if ([feed.country length] > 0) {
-            [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Country".ls, [locale displayNameForKey:NSLocaleCountryCode value:feed.country]];
-        }
+            if ([feed.language length] > 0) {
+                [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Language".ls, [locale displayNameForKey:NSLocaleLanguageCode value:feed.language]];
+            }
+            if ([feed.country length] > 0) {
+                [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Country".ls, [locale displayNameForKey:NSLocaleCountryCode value:feed.country]];
+            }
         if ([feed.copyright length] > 0) {
             [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Copyright".ls, feed.copyright];
         }

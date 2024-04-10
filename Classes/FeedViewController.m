@@ -48,6 +48,7 @@
     NSString* description = ([self.feed.summary length] > [self.feed.fulltext length]) ? self.feed.summary : self.feed.fulltext;
     
     NSMutableString* content = [NSMutableString string];
+    [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
     [content appendString:@"<style type=\"text/css\" scoped>"];
     NSString* appearanceCssPath = [[NSBundle mainBundle] pathForResource:[ICAppearanceManager sharedManager].appearance.cssFile ofType:@"css"];
     NSString* appearanceCss = [NSString stringWithContentsOfFile:appearanceCssPath encoding:NSUTF8StringEncoding error:nil];
@@ -166,7 +167,7 @@
         CGRect b = self.view.bounds;
         b.origin.y = 93 + CGRectGetMaxY(navBar.frame) ;
         WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
-        config.preferences.minimumFontSize = 25;
+        //config.preferences.minimumFontSize = 25;
         WKWebView* webView = [[WKWebView alloc] initWithFrame:b configuration:config];
         webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 		webView.navigationDelegate = self;
