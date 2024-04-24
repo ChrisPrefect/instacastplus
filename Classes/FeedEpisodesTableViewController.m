@@ -517,12 +517,12 @@
     [alert addAction:allAction];
     
     
-    UIAlertAction* unlistenedAction = [UIAlertAction actionWithTitle:@"Unlistened".ls style:UIAlertActionStyleDefault
+    UIAlertAction* unlistenedAction = [UIAlertAction actionWithTitle:@"Unplayed".ls style:UIAlertActionStyleDefault
                                                         handler:^(UIAlertAction * action) {
                                                             STRONG_SELF
                                                             [self perform:^(id sender) {
                                                                 [self _filterUnlistenedEpisode];
-                                                                self.filterItem.title = @"Unlistened";
+                                                                self.filterItem.title = @"Unplayed";
                                                             } afterDelay:0.3];
                                                             self.alertController = nil;
                                                             

@@ -512,6 +512,7 @@
 "Filter by" = "Filtern nach";
 "All" = "Alle";
 "Unlistened" = "Nicht zugehört";
+"Unplayed" = "ungespielte";
 "Favorites" = "Favoriten";
 
 /* DataMigrationView */

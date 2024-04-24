@@ -6,6 +6,6 @@
 //  Copyright 2011 Vemedio. All rights reserved.
 //
 
-BUNDLE_VERSION = 2.3
+BUNDLE_VERSION = 2.5
 GCC_PREPROCESSOR_DEFINITIONS=
 

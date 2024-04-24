@@ -1647,8 +1647,7 @@
 				TargetAttributes = {
 					1D6058900D05DD3D006BFB54 = {
 						CreatedOnToolsVersion = 7.2.1;
-						DevelopmentTeam = L95F4M2LHG;
-						ProvisioningStyle = Automatic;
+						ProvisioningStyle = Manual;
 						SystemCapabilities = {
 							com.apple.ApplicationGroups.iOS = {
 								enabled = 0;
@@ -2034,9 +2033,9 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = L95F4M2LHG;
+				DEVELOPMENT_TEAM = "";
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -2047,7 +2046,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = InstacastPlus;
 				IPHONEOS_DEPLOYMENT_TARGET = 13;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus;
 				PRODUCT_NAME = InstacastPlus;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -2083,10 +2082,10 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = L95F4M2LHG;
+				DEVELOPMENT_TEAM = "";
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
@@ -2099,7 +2098,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = InstacastPlus;
 				IPHONEOS_DEPLOYMENT_TARGET = 13;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 2.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus;
 				PRODUCT_NAME = InstacastPlus;
 				PROVISIONING_PROFILE_SPECIFIER = "";
