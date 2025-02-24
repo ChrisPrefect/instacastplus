@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.XIB" version="3.0" toolsVersion="32700.99.1234" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="22685"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <objects>
+        <placeholder placeholderIdentifier="IBFilesOwner" id="-1" userLabel="File's Owner" customClass="OnboardScreenVC">
+            <connections>
+                <outlet property="arrowImage" destination="aOk-cs-7pW" id="gh4-jA-JIt"/>
+                <outlet property="descLabel" destination="ngh-EV-y1d" id="bMA-PX-BPj"/>
+                <outlet property="plusBtn" destination="GNz-mD-3Ws" id="p2t-7s-0RC"/>
+                <outlet property="shadowView" destination="n7k-bA-d84" id="Rq1-MQ-tZC"/>
+                <outlet property="view" destination="i5M-Pr-FkT" id="sfx-zR-JGt"/>
+            </connections>
+        </placeholder>
+        <placeholder placeholderIdentifier="IBFirstResponder" id="-2" customClass="UIResponder"/>
+        <view clearsContextBeforeDrawing="NO" contentMode="scaleToFill" id="i5M-Pr-FkT">
+            <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+            <subviews>
+                <view alpha="0.5" contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="n7k-bA-d84">
+                    <rect key="frame" x="0.0" y="0.0" width="393" height="871"/>
+                    <color key="backgroundColor" systemColor="labelColor"/>
+                </view>
+                <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="onboard_arrow_wh" translatesAutoresizingMaskIntoConstraints="NO" id="aOk-cs-7pW">
+                    <rect key="frame" x="14" y="688" width="50" height="60"/>
+                    <constraints>
+                        <constraint firstAttribute="width" constant="50" id="gXA-KG-Tob"/>
+                        <constraint firstAttribute="height" constant="60" id="xeJ-Ir-Rx6"/>
+                    </constraints>
+                </imageView>
+                <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="to add podcasts, search the podcast directory" lineBreakMode="tailTruncation" numberOfLines="0" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ngh-EV-y1d">
+                    <rect key="frame" x="74" y="678" width="289" height="43"/>
+                    <fontDescription key="fontDescription" type="system" weight="medium" pointSize="18"/>
+                    <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                    <nil key="highlightedColor"/>
+                </label>
+                <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="GNz-mD-3Ws">
+                    <rect key="frame" x="0.0" y="702" width="120" height="150"/>
+                    <constraints>
+                        <constraint firstAttribute="height" constant="150" id="0Q9-zR-9NH"/>
+                        <constraint firstAttribute="width" constant="120" id="9Pe-1m-3FB"/>
+                    </constraints>
+                    <inset key="imageEdgeInsets" minX="0.0" minY="0.0" maxX="2.2250738585072014e-308" maxY="0.0"/>
+                    <connections>
+                        <action selector="plusButtonPressed:" destination="-1" eventType="touchUpInside" id="SzV-NK-26Y"/>
+                    </connections>
+                </button>
+            </subviews>
+            <viewLayoutGuide key="safeArea" id="Q5M-cg-NOt"/>
+            <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+            <constraints>
+                <constraint firstItem="ngh-EV-y1d" firstAttribute="top" secondItem="aOk-cs-7pW" secondAttribute="top" constant="-10" id="Aie-TJ-Ix0"/>
+                <constraint firstItem="n7k-bA-d84" firstAttribute="top" secondItem="i5M-Pr-FkT" secondAttribute="top" id="BfC-QT-3rw"/>
+                <constraint firstItem="Q5M-cg-NOt" firstAttribute="bottom" secondItem="aOk-cs-7pW" secondAttribute="bottom" constant="70" id="Bgo-cQ-yvO"/>
+                <constraint firstItem="ngh-EV-y1d" firstAttribute="leading" secondItem="aOk-cs-7pW" secondAttribute="trailing" constant="10" id="Gf8-gb-zPT"/>
+                <constraint firstAttribute="trailing" secondItem="ngh-EV-y1d" secondAttribute="trailing" constant="30" id="J3y-8A-GA8"/>
+                <constraint firstItem="GNz-mD-3Ws" firstAttribute="leading" secondItem="Q5M-cg-NOt" secondAttribute="leading" id="LR5-cK-hgq"/>
+                <constraint firstAttribute="bottom" secondItem="GNz-mD-3Ws" secondAttribute="bottom" id="QRe-f4-uOE"/>
+                <constraint firstItem="n7k-bA-d84" firstAttribute="leading" secondItem="Q5M-cg-NOt" secondAttribute="leading" id="j5a-TR-De1"/>
+                <constraint firstAttribute="bottom" secondItem="n7k-bA-d84" secondAttribute="bottom" constant="-19" id="lGt-G7-UvY"/>
+                <constraint firstItem="aOk-cs-7pW" firstAttribute="leading" secondItem="Q5M-cg-NOt" secondAttribute="leading" constant="14" id="ud4-cS-Dj1"/>
+                <constraint firstItem="n7k-bA-d84" firstAttribute="trailing" secondItem="Q5M-cg-NOt" secondAttribute="trailing" id="vrO-Rz-bI5"/>
+            </constraints>
+            <point key="canvasLocation" x="136.64122137404578" y="20.422535211267608"/>
+        </view>
+    </objects>
+    <resources>
+        <image name="onboard_arrow_wh" width="128" height="128"/>
+        <systemColor name="labelColor">
+            <color white="0.0" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+        </systemColor>
+    </resources>
+</document>

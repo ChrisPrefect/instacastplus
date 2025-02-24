@@ -1,0 +1,383 @@
+//
+//  Application.m
+//  Instacast
+//
+//  Created by Martin Hering on 03.01.11.
+//  Copyright 2011 Vemedio. All rights reserved.
+//
+
+#include <asl.h>
+#include <sys/sysctl.h>
+
+#import <CoreTelephony/CTTelephonyNetworkInfo.h>
+#import "VDModalInfo.h"
+#import "Reachability.h"
+#import "ICErrorSheet.h"
+#import <MediaPlayer/MPVolumeView.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMotion/CoreMotion.h>
+
+
+NSString* UniqueDeviceId = @"UniqueDeviceId";
+NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouchNotification";
+
+@interface Application ()
+@property (nonatomic, readwrite, strong) UIAlertController* errorAlertController;
+@property (nonatomic, readwrite, strong) NSOperationQueue* mainQueue;
+@property (nonatomic, readwrite, strong) CTTelephonyNetworkInfo* telephonyInfo;
+@property (nonatomic, strong) Reachability* reachability;
+@property (nonatomic, strong) ICErrorSheet* backgroundErrorSheet;
+@property (nonatomic, readwrite, strong) GTMLogger* applicationLogger;
+@property (nonatomic, strong) CMMotionManager *motionManager;
+@end
+
+@implementation Application {
+@protected
+	NSInteger	_networkActivityRetainCount;
+	BOOL		_errorShown;
+    BOOL        _sendTouchNotifications;
+    double     motionXaxis;
+    UIInterfaceOrientation orientationLast;
+}
+
+- (id) init
+{
+	if ((self = [super init]))
+	{
+		_mainQueue = [[NSOperationQueue alloc] init];
+        
+        _telephonyInfo = [CTTelephonyNetworkInfo new];
+        _reachability = [Reachability reachabilityForInternetConnection]; //reachabilityWithHostName:@"apple.com"];
+        [_reachability startNotifier];
+        
+        [self updateNetworkAccessTechnology];
+        
+        [NSNotificationCenter.defaultCenter addObserverForName:CTRadioAccessTechnologyDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){
+            [self updateNetworkAccessTechnology];
+        }];
+        
+        [NSNotificationCenter.defaultCenter addObserverForName:kReachabilityChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+            [self updateNetworkAccessTechnology];
+        }];
+        [self deviceMotionDetection];
+        [self volumeChangeNotification];
+	}
+	return self;
+}
+
+
+- (GTMLogger*) _initializeLoggerAtPath:(NSString*)path
+{
+    
+#ifdef DEBUG
+    
+    @try {
+        GTMLogBasicFormatter *formatter = [[GTMLogBasicFormatter alloc] init];
+        
+        GTMLogger *stdoutLogger =
+        [GTMLogger loggerWithWriter:[NSFileHandle fileHandleWithStandardOutput]
+                     formatter:formatter
+                        filter:[[GTMLogMaximumLevelFilter alloc] initWithMaximumLevel:kGTMLoggerLevelInfo]];
+        
+        GTMLogger *stderrLogger =
+        [GTMLogger loggerWithWriter:[NSFileHandle fileHandleWithStandardError]
+                     formatter:formatter
+                        filter:[[GTMLogMininumLevelFilter alloc] initWithMinimumLevel:kGTMLoggerLevelError]];
+        
+        
+        GTMLogger* fileLogger = [GTMLogger standardLoggerWithPath:path];
+        [fileLogger setFilter:[[GTMLogNoFilter alloc] init]];
+        
+        NSURL* url = [NSURL fileURLWithPath:path];
+        NSError *error = nil;
+        [url setResourceValue:@(YES) forKey: NSURLIsExcludedFromBackupKey error:&error];
+        
+        GTMLogger *compositeWriter =
+        [GTMLogger loggerWithWriter:@[stdoutLogger, stderrLogger, fileLogger]
+                          formatter:formatter
+                             filter:[[GTMLogNoFilter alloc] init]];
+        
+        GTMLogger *outerLogger = [GTMLogger standardLogger];
+        [outerLogger setWriter:compositeWriter];
+        return outerLogger;
+    }
+    @catch (id e) {
+        // Ignored
+    }
+    
+    
+    GTMLogger* logger = [GTMLogger standardLoggerWithStdoutAndStderr];
+    return logger;
+#else
+    GTMLogger* logger = [GTMLogger standardLoggerWithPath:path];
+    [logger setFilter:[[GTMLogLevelFilter alloc] init]];
+    
+    NSURL* url = [NSURL fileURLWithPath:path];
+    
+    NSError *error = nil;
+    [url setResourceValue:@(YES) forKey: NSURLIsExcludedFromBackupKey error:&error];
+    
+    return logger;
+#endif
+}
+
+- (void) initializeLoggers
+{
+    NSString* appLogsPath = [[NSBundle pathToLogsDirectory] stringByAppendingPathComponent:@"Application.Log"];
+    _applicationLogger = [self _initializeLoggerAtPath:appLogsPath];
+}
+
+#pragma mark - Network Info
+
+- (void) updateNetworkAccessTechnology
+{
+    if (self.reachability.currentReachabilityStatus == ReachableViaWiFi) {
+        self.networkAccessTechnology = kICNetworkAccessTechnlogyWIFI;
+    }
+    else if (self.reachability.currentReachabilityStatus == NotReachable) {
+        self.networkAccessTechnology = kICNetworkAccessTechnlogyNone;
+    }
+    else
+    {
+        NSString* currentRadioAccessTechnology = self.telephonyInfo.currentRadioAccessTechnology;
+        if (currentRadioAccessTechnology == CTRadioAccessTechnologyGPRS) {
+            self.networkAccessTechnology = kICNetworkAccessTechnlogyGPRS;
+        }
+        else if (currentRadioAccessTechnology == CTRadioAccessTechnologyEdge) {
+            self.networkAccessTechnology = kICNetworkAccessTechnlogyEDGE;
+        }
+        else if (currentRadioAccessTechnology == CTRadioAccessTechnologyLTE) {
+            self.networkAccessTechnology = kICNetworkAccessTechnlogyLTE;
+        }
+        else {
+            self.networkAccessTechnology = kICNetworkAccessTechnlogy3G;
+        }
+    }
+    
+    DebugLog(@"network changed: %ld", (long)self.networkAccessTechnology);
+    
+}
+
+- (void) retainNetworkActivity
+{
+	dispatch_async(dispatch_get_main_queue(), ^{
+        if (_networkActivityRetainCount == 0) {
+            self.networkActivityIndicatorVisible = YES;
+        }
+        _networkActivityRetainCount++;
+    });
+}
+
+- (void) releaseNetworkActivity
+{
+	dispatch_async(dispatch_get_main_queue(), ^{
+        _networkActivityRetainCount = MAX(_networkActivityRetainCount-1,0);
+        
+        if (_networkActivityRetainCount == 0) {
+            self.networkActivityIndicatorVisible = NO;
+        }
+    });
+}
+
+#pragma mark - Global Error Handling
+
+- (void) handleNoInternetConnection
+{
+    [self showBackgroundErrorWithTitle:@"No internet connection.".ls message:@"Please make sure you are connected to a cellular or WiFi network.".ls];
+}
+
+- (void) showBackgroundErrorWithTitle:(NSString*)title message:(NSString*)message
+{
+    [self showBackgroundErrorWithTitle:title message:message duration:4.0f];
+}
+
+- (void) showBackgroundErrorWithTitle:(NSString*)title message:(NSString*)message duration:(NSTimeInterval)duration
+{
+    PlaySoundFile(@"Tink", NO);
+    
+    if (self.backgroundErrorSheet) {
+        self.backgroundErrorSheet.title = title;
+        self.backgroundErrorSheet.message = message;
+        [self.backgroundErrorSheet extendDismissingAfterDelay:duration];
+        return;
+    }
+    
+    self.backgroundErrorSheet = [ICErrorSheet sheet];
+    self.backgroundErrorSheet.title = title;
+    self.backgroundErrorSheet.message = message;
+    
+    __weak Application* weakSelf = self;
+    [self.backgroundErrorSheet showAnimated:YES dismissAfterDelay:duration completion:^{
+        weakSelf.backgroundErrorSheet = nil;
+    }];
+}
+
+
+#pragma mark -
+
+
+- (NSString*) errorLog
+{
+    NSString* logsPath = [[NSBundle pathToLogsDirectory] stringByAppendingPathComponent:@"Application.Log"];
+    return [[NSString alloc] initWithContentsOfFile:logsPath encoding:NSUTF8StringEncoding error:nil];
+}
+
+-(void)sendEvent:(UIEvent *)event
+{
+    [super sendEvent:event];
+    
+    if (!myidleTimer)
+    {
+        [self resetIdleTimer];
+    }
+    
+    NSSet *allTouches = [event allTouches];
+    if ([allTouches count] > 0)
+    {
+        UITouchPhase phase = ((UITouch *)[allTouches anyObject]).phase;
+        if (phase == UITouchPhaseBegan || phase == UITouchPhaseMoved)
+        {
+            [self resetIdleTimer];
+        }
+        
+    }
+}
+//as labeled...reset the timer
+-(void)resetIdleTimer
+{
+    BOOL isTouchActive = [USER_DEFAULTS boolForKey:ScreenTouchIntelligentSleep];
+    BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
+    if (isIntelligentTimerActive){
+        if (isTouchActive){
+            if (myidleTimer)
+            {
+                [myidleTimer invalidate];
+            }
+            //convert the wait period into minutes rather than seconds
+            NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+            [USER_DEFAULTS synchronize];
+            NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+            if ([PlaybackManager playbackManager].isPodcastPlaying)
+            {
+                if (sleepTimer > 0)
+                {
+                    [AudioSession sharedAudioSession].timerValue = sleepTimer;
+                    int timeout = (int)sleepTimer * 60;
+                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                }
+                else if (lastSleepTimer > 0)
+                {
+                    [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
+                    int timeout = (int)lastSleepTimer * 60;
+                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                }
+            }
+        }
+    }
+}
+
+-(void)idleTimerExceeded
+{
+    [[NSNotificationCenter defaultCenter] postNotificationName:kApplicationDidTimeoutNotification object:nil];
+}
+
+-(void)deviceMotionDetection
+{
+    self.motionManager = [[CMMotionManager alloc] init];
+    self.motionManager.accelerometerUpdateInterval = 1;
+    
+    if ([self.motionManager isAccelerometerAvailable])
+    {
+        NSOperationQueue *queue = [[NSOperationQueue alloc] init];
+        [self.motionManager startAccelerometerUpdatesToQueue:queue withHandler:^(CMAccelerometerData *accelerometerData, NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                double motionLastXaxis = round(accelerometerData.acceleration.x*100)/100;
+                if (motionLastXaxis != motionXaxis)
+                {
+                    motionXaxis = motionLastXaxis;
+                    BOOL isMotionActive = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
+                    BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
+
+                    if (isIntelligentTimerActive){
+                        if (isMotionActive){
+                            if ([PlaybackManager playbackManager].isPodcastPlaying)
+                            {
+                                if (myidleTimer)
+                                {
+                                    [myidleTimer invalidate];
+                                }
+                                NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+                                [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+                                [USER_DEFAULTS synchronize];
+                                NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+                                
+                                if (sleepTimer > 0)
+                                {
+                                    [AudioSession sharedAudioSession].timerValue = sleepTimer;
+                                    int timeout = (int)sleepTimer * 60;
+                                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                                }
+                                else if (lastSleepTimer > 0)
+                                {
+                                    [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
+                                    int timeout = (int)lastSleepTimer * 60;
+                                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }];
+    }
+}
+
+
+-(void)volumeChangeNotification
+{
+    AVAudioSession* audioSession = [AVAudioSession sharedInstance];
+    //[audioSession setActive:YES error:nil];
+    [audioSession addObserver:self forKeyPath:@"outputVolume" options:0 context:nil];
+    //[[AudioSession sharedAudioSession] addObserver:self forKeyPath:@"outputVolume" options:0 context:nil];
+}
+
+-(void) observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    
+    if ([keyPath isEqual:@"outputVolume"]) {
+        BOOL isVolumeActive = [USER_DEFAULTS boolForKey:VolumeChangeIntelligentSleep];
+        BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
+        if (isIntelligentTimerActive){
+            if (isVolumeActive){
+                if ([PlaybackManager playbackManager].isPodcastPlaying)
+                {
+                    if (myidleTimer)
+                    {
+                        [myidleTimer invalidate];
+                    }
+                    //convert the wait period into minutes rather than seconds
+                    NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+                    [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+                    [USER_DEFAULTS synchronize];
+                    NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+                    if (sleepTimer > 0)
+                    {
+                        [AudioSession sharedAudioSession].timerValue = sleepTimer;
+                        int timeout = (int)sleepTimer * 60;
+                        myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                    }
+                    else if (lastSleepTimer > 0)
+                    {
+                        [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
+                        int timeout = (int)lastSleepTimer * 60;
+                        myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+@end
+
