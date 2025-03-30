@@ -77,9 +77,9 @@
     ICAppearanceManager* aman = [ICAppearanceManager sharedManager];
     [aman updateAppearance];
     if (aman.switchesNightModeAutomatically) {
-        if (![aman updateLocation]) {
+       /* if (![aman updateLocation]) {
             aman.switchesNightModeAutomatically = NO;
-        }
+        }*/
     }
     
     [NSValueTransformer setValueTransformer:[[ICDurationValueTransformer alloc] init] forName:kICDurationValueTransformer];

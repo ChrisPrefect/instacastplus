@@ -23,8 +23,10 @@ extern NSString* DeviceMovementIntelligentSleep;
 
 extern NSString* PlayerColorPerPodcastActive;
 extern NSString* PlayerThemeColorCode;
+extern NSString* PlayerThemeColorHexCode;
 extern NSString* InterfaceThemeDefaultActive;
 extern NSString* InterfaceThemeColorCode;
+extern NSString* InterfaceThemeColorHexCode;
 
 extern NSString* ShowApplicationBadgeForUnseen;
 extern NSString* LastRefreshSubscriptionDate;

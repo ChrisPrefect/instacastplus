@@ -45,6 +45,7 @@
         _progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
         _progressView.hidden = YES;
         _progressView.trackTintColor = [UIColor clearColor];
+        _progressView.translatesAutoresizingMaskIntoConstraints = NO;
         [self.contentView addSubview:_progressView];
 
         _linkButton = [[UIButton alloc] initWithFrame:CGRectZero];
@@ -53,6 +54,14 @@
         _linkButton.imageEdgeInsets = UIEdgeInsetsMake(-1, 0, 1, 0);
         _linkButton.hidden = YES;
         [self.contentView addSubview:_linkButton];
+        
+        // ✅ Add Auto Layout Constraints for ProgressView
+        [NSLayoutConstraint activateConstraints:@[
+            [_progressView.leadingAnchor constraintEqualToAnchor:self.contentView.leadingAnchor constant:-1],
+            [_progressView.trailingAnchor constraintEqualToAnchor:self.contentView.trailingAnchor constant:-1],
+            [_progressView.bottomAnchor constraintEqualToAnchor:self.contentView.bottomAnchor constant:0],
+            [_progressView.heightAnchor constraintEqualToConstant:2] // Ensures 1pt height
+        ]];
     }
     return self;
 }
@@ -116,11 +125,11 @@
 	
     self.linkButton.frame = CGRectMake(CGRectGetWidth(b)-85, 0, 44, 44);
     
-    if (self.window.screen.scale == 1) {
-        self.progressView.frame = CGRectMake(-1, CGRectGetHeight(b)-5, CGRectGetWidth(b)+2, 2);//-3
-    } else {
-        self.progressView.frame = CGRectMake(-1, CGRectGetHeight(b)-4.5, CGRectGetWidth(b)+2, 2);//2.5
-    }
+
+//    CGFloat progressY = CGRectGetHeight(b) - 2; // Ensures 1pt height
+//    self.progressView.frame = CGRectMake(-1, progressY, CGRectGetWidth(b) + 2, 2);
+//    self.progressView.layer.masksToBounds = YES;
+
 }
 
 + (CGFloat) proposedHeightWithTitle:(NSString*)title tableBounds:(CGRect)tableBounds

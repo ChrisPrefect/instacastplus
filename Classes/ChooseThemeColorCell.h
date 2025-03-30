@@ -12,4 +12,6 @@
 
 @property (nonatomic, strong, readonly) UIView* colorView;
 @property (nonatomic, strong, readonly) UIImageView* disclosureView;
+@property (nonatomic, strong, readonly) UITextField* textField;
+@property (nonatomic, strong, readonly) UIView* tfView;
 @end

@@ -533,18 +533,18 @@
     
 -(void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-        EpisodesTableViewCell *customCell = (EpisodesTableViewCell *)cell;
-        [customCell startProgressUpdate];
-    }
+//    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+//        EpisodesTableViewCell *customCell = (EpisodesTableViewCell *)cell;
+//        [customCell startProgressUpdate];
+//    }
 }
 
 - (void)tableView:(UITableView *)tableView didEndDisplayingCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-        EpisodesTableViewCell *customCell = (EpisodesTableViewCell *)cell;
-        [customCell stopProgressUpdate];
-    }
+//    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+//        EpisodesTableViewCell *customCell = (EpisodesTableViewCell *)cell;
+//        [customCell stopProgressUpdate];
+//    }
 }
 
 #pragma mark - Actions
@@ -588,7 +588,7 @@
 {
     FeedSettingsViewController* viewController = [FeedSettingsViewController feedSettingsViewControllerWithFeed:self.feed];
     PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:viewController];
-    navController.modalPresentationStyle = UIModalPresentationFormSheet;
+    navController.modalPresentationStyle = UIModalPresentationFullScreen;
     [self presentViewController:navController animated:YES completion:^{
         
     }];

@@ -30,8 +30,8 @@
             filePath = "Classes/SettingInputChapterController.m"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "79"
-            endingLineNumber = "79"
+            startingLineNumber = "210"
+            endingLineNumber = "210"
             landmarkName = "-stepperValueChanged:"
             landmarkType = "7">
          </BreakpointContent>

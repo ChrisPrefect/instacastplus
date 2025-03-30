@@ -949,7 +949,7 @@ enum {
         {
             if (chapter == self.chapters.count - 1) {
                 
-                if ([chapterObj.title containsString:chapNameDev]) {
+                if ([chapterObj.title.lowercaseString containsString:chapNameDev.lowercaseString]) {
                     DebugLog(@"match chapter :%ld", self.currentChapter);
                     AVPlayerItem* item = self.player.currentItem;
                     CMTime duration = item.asset.duration;
@@ -969,7 +969,7 @@ enum {
             
             if (chapter < self.chapters.count - 1 && self.shouldNextChapter == NO) {
                 ICMetadataChapter *nextChapterObj = self.chapters[chapter + 1];
-                if ([nextChapterObj.title containsString:chapNameDev]) {
+                if ([nextChapterObj.title.lowercaseString containsString:chapNameDev.lowercaseString]) {
                     self.shouldNextChapter = YES;
                 }
             }

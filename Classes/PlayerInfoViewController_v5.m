@@ -581,6 +581,10 @@ enum {
         cell.progressView.tintColor = self.view.tintColor;
         cell.progressView.progress = (pman.time - chapter.timecode) / chapter.duration;
         
+//        CGFloat progressY = CGRectGetHeight(cell.bounds) - 2; // Ensures 1pt height
+//        cell.progressView.frame = CGRectMake(-1, progressY, CGRectGetWidth(cell.bounds) + 2, 2);
+//        cell.progressView.layer.masksToBounds = YES;
+        
         NSArray* actions = [cell.linkButton actionsForTarget:self forControlEvent:UIControlEventValueChanged];
         for(NSString* action in actions) {
             [cell.linkButton removeTarget:self action:NSSelectorFromString(action) forControlEvents:UIControlEventTouchUpInside];

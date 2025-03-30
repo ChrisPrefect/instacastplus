@@ -97,6 +97,25 @@
     return cell;
 }
 
+- (UITableViewCell*) detailStepperCell
+{
+    static NSString *DetailCellIdentifier = @"detailStepperCell";
+    
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:DetailCellIdentifier];
+    if (cell == nil) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:DetailCellIdentifier];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectedBackgroundView = [[UIView alloc] init];
+    }
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.backgroundColor = ICGroupCellBackgroundColor;
+    cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+    cell.textLabel.textColor = ICTextColor;
+    cell.detailTextLabel.textColor = ICMutedTextColor;
+    
+    return cell;
+}
+
 - (UITableViewCell*) resetCell
 {
     static NSString *ResetCellIdentifier = @"ResetCell";

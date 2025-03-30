@@ -25,6 +25,7 @@ typedef NSInteger SettingValueType;
 
 @property (nonatomic, strong) CDFeed* feed;
 @property (nonatomic, strong) NSString* key;
+@property (nonatomic, strong) NSString* titleStr;
 @property (nonatomic, assign) SettingValueType valueType;
 @property (nonatomic, strong) NSArray* titles;
 @property (nonatomic, strong) NSArray* values;

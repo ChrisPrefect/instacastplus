@@ -377,7 +377,7 @@
 "Interface Sounds" = "Interface Sounds";
 "Location Services denied" = "Location Services denied";
 "Miscellaneous" = "Miscellaneous";
-"Night Mode" = "Night Mode";
+"Dark mode" = "Dark mode";
 "Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background." = "Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background.";
 "Replay after Pause" = "Replay after Pause";
 "Seeking" = "Seeking";
@@ -454,7 +454,7 @@
 /* OptionsViewController.m */
 "Could not find show on iTunes." = "Could not find show on iTunes.";
 "Export Data" = "Export Data";
-"Donate to Developer ❤️" = "Donate to Developer ❤️";
+"Donate for further development ❤️" = "Donate for further development ❤️";
 "Follow @InstacastPlus on Twitter" = "Follow @InstacastPlus on Twitter";
 "Instacast Bookmarks from %@" = "Instacast Bookmarks from %@";
 "Instacast Subscriptions from %@" = "Instacast Subscriptions from %@";
@@ -581,6 +581,7 @@
 "Interface Color" = "Interface Color";
 "Player Color" = "Player Color";
 "Automatic As Per Podcast" = "Automatic As Per Podcast";
+"Choose Custom (Hex)" = "Choose Custom (Hex)";
 "Choose Custom" = "Choose Custom";
 "Use Default" = "Use Default";
 
@@ -592,15 +593,17 @@
 "Download episodes and listen offline and Pick up where you left off." = "Download episodes and listen offline and Pick up where you left off.";
 "to add podcasts, search the podcast directory" = "to add podcasts, search the podcast directory";
 "Color Controls" = "Color Controls";
-"Donate to Developer" = "Donate to Developer";
+"Donate for further development" = "Donate for further development";
 
 "Auto Skip" = "Auto Skip";
-"Skipping Chapter Name" = "Skipping Chapter Name";
+"Auto Skip Chapter" = "Auto Skip Chapter";
 "Skipping Start" = "Skipping Start";
 "Skipping End" = "Skipping End";
 "Skipping Chapter" = "Skipping Chapter";
 "Add Chapter Name" = "Add Chapter Name";
-"Skip Start" = "Skip Start";
-"Skip End" = "Skip End";
+"Skip intro" = "Skip intro";
+"Skip outro" = "Skip outro";
 "Seconds" = "Seconds";
 "We Value Your Feedback" = "We Value Your Feedback";
+"Use system setting" = "Use system setting";
+"E-Mail Feedback" = "E-Mail Feedback";

@@ -14,6 +14,7 @@
 - (UITableViewCell*) switchCell;
 - (UITableViewCell*) textInputCell;
 - (UITableViewCell*) detailCell;
+- (UITableViewCell*) detailStepperCell;
 - (UITableViewCell*) resetCell;
 - (UITableViewCell*) buttonCell;
 

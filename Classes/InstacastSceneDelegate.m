@@ -11,6 +11,14 @@
 #import "InstacastAppDelegate.h"
 #import <CarPlay/CarPlay.h>
 
+#import <StoreKit/StoreKit.h>
+#import "SubscriptionManager.h"
+
+#define kDonate1ProductID @"donate_to_developer_1"
+#define kDonate5ProductID @"donate_to_developer_5"
+#define kDonate15ProductID @"donate_to_developer_15"
+#define kDonate20ProductID @"donate_to_developer_20"
+
 @implementation InstacastSceneDelegate
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
@@ -37,6 +45,7 @@
             [((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window makeKeyAndVisible];
         }
     }
+    [self fetchAvailableProducts];
 //    if ([scene isKindOfClass:[CPTemplateApplicationScene class]]) {
 //        CPTemplateApplicationScene *carPlayScene = (CPTemplateApplicationScene *)scene;
 //        carPlayScene.delegate = self;
@@ -60,6 +69,7 @@
 - (void)sceneDidBecomeActive:(UIScene *)scene {
     // Called when the scene has moved from an inactive state to an active state.
     // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+    [self showDonatePopupAfterDelay:300];
 }
 
 
@@ -99,5 +109,203 @@
 - (void)templateApplicationScene:(CPTemplateApplicationScene *)templateApplicationScene didDisconnectInterfaceController:(CPInterfaceController *)interfaceController {
     self.interfaceController = nil;
 }
+
+- (void)showDonatePopupAfterDelay:(NSTimeInterval)delay {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL hasShownPopup = [defaults boolForKey:@"hasShownDonatePopup"];
+    
+    if (!hasShownPopup) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self showPopup];
+        });
+    }
+}
+
+- (void)showPopup {
+    UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+    UIViewController *rootVC = keyWindow.rootViewController;
+    
+    WEAK_SELF
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Donate for further development".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    UIAlertAction* firstAction = [UIAlertAction actionWithTitle:@"$1".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+        STRONG_SELF
+        [self perform:^(id sender) {
+            if([validProducts valueForKey:@"product_first"] != nil)
+            {
+                [self purchaseMyProduct:[validProducts valueForKey:@"product_first"]];
+            }
+        } afterDelay:0.01];
+    }];
+    [alert addAction:firstAction];
+    
+    UIAlertAction* secondAction = [UIAlertAction actionWithTitle:@"$5".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+        STRONG_SELF
+        [self perform:^(id sender) {
+            if([validProducts valueForKey:@"product_second"] != nil)
+            {
+                [self purchaseMyProduct:[validProducts valueForKey:@"product_second"]];
+            }
+        } afterDelay:0.01];
+    }];
+    [alert addAction:secondAction];
+    
+    UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:@"$15".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+        STRONG_SELF
+        [self perform:^(id sender) {
+            if([validProducts valueForKey:@"product_third"] != nil)
+            {
+                [self purchaseMyProduct:[validProducts valueForKey:@"product_third"]];
+            }
+        } afterDelay:0.01];
+    }];
+    [alert addAction:thirdAction];
+    
+    UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:@"$20".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+        STRONG_SELF
+        [self perform:^(id sender) {
+            if([validProducts valueForKey:@"product_fourth"] != nil)
+            {
+                [self purchaseMyProduct:[validProducts valueForKey:@"product_fourth"]];
+            }
+        } afterDelay:0.01];
+    }];
+    [alert addAction:fourthAction];
+    
+    UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
+        STRONG_SELF
+    }];
+    [alert addAction:defaultAction];
+    
+    [alert setModalPresentationStyle:UIModalPresentationPopover];
+    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
+    popPresenter.sourceView = [rootViewController view];
+    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    if ([ICAppearanceManager sharedManager].nightSettingMode)
+    {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    else
+    {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    }
+    [rootVC presentViewController:alert animated:YES completion:nil];
+    
+    // Mark popup as shown
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+-(void)fetchAvailableProducts {
+    NSSet *productIdentifiers = [NSSet setWithObjects:kDonate1ProductID,kDonate5ProductID,kDonate15ProductID,kDonate20ProductID,nil];
+    productsRequest = [[SKProductsRequest alloc] initWithProductIdentifiers:productIdentifiers];
+    productsRequest.delegate = self;
+    [productsRequest start];
+}
+
+- (BOOL)canMakePurchases {
+    return [SKPaymentQueue canMakePayments];
+}
+
+- (void)purchaseMyProduct:(SKProduct*)product {
+    if ([self canMakePurchases]) {
+        SKPayment *payment = [SKPayment paymentWithProduct:product];
+        [[SKPaymentQueue defaultQueue] addTransactionObserver:self];
+        [[SKPaymentQueue defaultQueue] addPayment:payment];
+    } else {
+        [self showPurchaseAlertController:@"In app purchase are disabled in your device"];
+    }
+}
+
+- (void)showPurchaseAlertController:(NSString*)titleStr
+{
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:titleStr.ls message:nil preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Okay".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {}];
+    [alert addAction:defaultAction];
+    
+    [alert setModalPresentationStyle:UIModalPresentationPopover];
+    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
+    popPresenter.sourceView = [rootViewController view];
+    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    if ([ICAppearanceManager sharedManager].nightSettingMode)
+    {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    else
+    {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    }
+    
+    UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+    UIViewController *rootVC = keyWindow.rootViewController;
+    [rootVC presentViewController:alert animated:YES completion:nil];
+}
+
+#pragma mark StoreKit Delegate
+
+-(void)paymentQueue:(SKPaymentQueue *)queue updatedTransactions:(NSArray *)transactions {
+    for (SKPaymentTransaction *transaction in transactions) {
+        switch (transaction.transactionState) {
+            case SKPaymentTransactionStatePurchasing:
+                NSLog(@"Purchasing===%@",transaction.payment.productIdentifier);
+                break;
+            case SKPaymentTransactionStatePurchased:
+                NSLog(@"Purchased ");
+                if ([transaction.payment.productIdentifier isEqualToString:kDonate1ProductID]) {
+                    [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
+                }
+                else if ([transaction.payment.productIdentifier isEqualToString:kDonate5ProductID]) {
+                    [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
+                }
+                else if ([transaction.payment.productIdentifier isEqualToString:kDonate15ProductID]) {
+                    [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
+                }
+                else if ([transaction.payment.productIdentifier isEqualToString:kDonate20ProductID]) {
+                    [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
+                }
+                [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
+                break;
+            case SKPaymentTransactionStateRestored:
+                NSLog(@"Restored ");
+                [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
+                break;
+            case SKPaymentTransactionStateFailed:
+                NSLog(@"Purchase failed ");
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+-(void)productsRequest:(SKProductsRequest *)request didReceiveResponse:(SKProductsResponse *)response {
+    int count = (int)[response.products count];
+    if (count>0) {
+        NSArray* products = response.products;
+        validProducts = [[NSMutableDictionary alloc] init];
+        for (SKProduct* product in products)
+        {
+            if ([product.productIdentifier  isEqual: kDonate1ProductID])
+            {
+                [validProducts setObject:product forKey:@"product_first"];
+            }
+            else if ([product.productIdentifier  isEqual: kDonate5ProductID])
+            {
+                [validProducts setObject:product forKey:@"product_second"];
+            }
+            else if ([product.productIdentifier  isEqual: kDonate15ProductID])
+            {
+                [validProducts setObject:product forKey:@"product_third"];
+            }
+            else if ([product.productIdentifier  isEqual: kDonate20ProductID])
+            {
+                [validProducts setObject:product forKey:@"product_fourth"];
+            }
+        }
+    }
+}
+
 
 @end

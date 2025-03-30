@@ -38,7 +38,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     kUseCellularData,
 };
 
-@interface GeneralSettingsViewController ()<UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, MFMailComposeViewControllerDelegate>
+@interface GeneralSettingsViewController ()<UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, MFMailComposeViewControllerDelegate, UITextFieldDelegate>
 @end
 
 @implementation GeneralSettingsViewController
@@ -460,20 +460,41 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             case 1:
             {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
-                cell.textLabel.text = @"Choose Custom".ls;
                 cell.textLabel.numberOfLines = 0;
-                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                [cell.colorView setHidden:YES];
-                if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
-                {
-                    [cell.colorView setHidden:NO];
-                    cell.colorView.clipsToBounds = true;
-                    cell.colorView.layer.cornerRadius = 5;
-                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
-                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                    cell.colorView.backgroundColor = themeColor;
-                }
                 
+                if (@available(iOS 14.0, *)) {
+                    cell.textLabel.text = @"Choose Custom".ls;
+                    [cell.disclosureView setHidden:FALSE];
+                    [cell.colorView setHidden:FALSE];
+                    [cell.textField setHidden:TRUE];
+                    [cell.tfView setHidden:TRUE];
+                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                    [cell.colorView setHidden:YES];
+                    if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
+                    {
+                        [cell.colorView setHidden:NO];
+                        cell.colorView.clipsToBounds = true;
+                        cell.colorView.layer.cornerRadius = 5;
+                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
+                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                        cell.colorView.backgroundColor = themeColor;
+                    }
+                }
+                else
+                {
+                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
+                    [cell.disclosureView setHidden:TRUE];
+                    [cell.colorView setHidden:TRUE];
+                    [cell.textField setHidden:FALSE];
+                    [cell.tfView setHidden:FALSE];
+                    cell.textField.tag = 555;
+                    cell.textField.delegate = self;
+                    cell.textField.text = @"";
+                    if ([USER_DEFAULTS objectForKey:PlayerThemeColorHexCode])
+                    {
+                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:PlayerThemeColorHexCode]];
+                    }
+                }
                 return cell;
             }
             default:
@@ -500,18 +521,40 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             case 1:
             {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
-                cell.textLabel.text = @"Choose Custom".ls;
                 cell.textLabel.numberOfLines = 0;
-                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                [cell.colorView setHidden:YES];
-                if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
+                                
+                if (@available(iOS 14.0, *)) {
+                    cell.textLabel.text = @"Choose Custom".ls;
+                    [cell.disclosureView setHidden:FALSE];
+                    [cell.colorView setHidden:FALSE];
+                    [cell.textField setHidden:TRUE];
+                    [cell.tfView setHidden:TRUE];
+                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                    [cell.colorView setHidden:YES];
+                    if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
+                    {
+                        [cell.colorView setHidden:NO];
+                        cell.colorView.clipsToBounds = true;
+                        cell.colorView.layer.cornerRadius = 5;
+                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
+                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                        cell.colorView.backgroundColor = themeColor;
+                    }
+                }
+                else
                 {
-                    [cell.colorView setHidden:NO];
-                    cell.colorView.clipsToBounds = true;
-                    cell.colorView.layer.cornerRadius = 5;
-                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                    cell.colorView.backgroundColor = themeColor;
+                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
+                    [cell.disclosureView setHidden:TRUE];
+                    [cell.colorView setHidden:TRUE];
+                    [cell.textField setHidden:FALSE];
+                    [cell.tfView setHidden:FALSE];
+                    cell.textField.tag = 777;
+                    cell.textField.delegate = self;
+                    cell.textField.text = @"";
+                    if ([USER_DEFAULTS objectForKey:InterfaceThemeColorHexCode])
+                    {
+                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:InterfaceThemeColorHexCode]];
+                    }
                 }
                 
                 return cell;
@@ -565,9 +608,9 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         cell.detailTextLabel.text = nil;
         cell.textLabel.text = @"Suggest App Icon".ls;
         if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            cell.backgroundColor = [UIColor colorWithRed:100/255.0 green:100/255.0 blue:100/255.0 alpha:1.0];
+            cell.backgroundColor = [UIColor colorWithRed:17/255.0 green:17/255.0 blue:17/255.0 alpha:1.0];
         } else {
-            cell.backgroundColor = [UIColor colorWithRed:200/255.0 green:200/255.0 blue:200/255.0 alpha:1.0];
+            cell.backgroundColor = [UIColor colorWithRed:226/255.0 green:226/255.0 blue:226/255.0 alpha:1.0];
         }
         return cell;
     }
@@ -618,6 +661,68 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     return nil;
 }
 
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    if (textField.tag == 555)
+    {
+        NSLog(@"Player Color: %@", textField.text);
+        [textField resignFirstResponder];
+        if (textField.text.length == 6 || textField.text.length == 7)
+        {
+            UIColor *customColor = [UIColor colorWithHexString:textField.text];
+            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:customColor requiringSecureCoding:NO error:nil];
+            [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
+            [USER_DEFAULTS setObject:textField.text forKey:PlayerThemeColorHexCode];
+            [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
+            [USER_DEFAULTS synchronize];
+            
+            [self.tableView reloadData];
+            [self viewDidLoad];
+            [self viewWillAppear:YES];
+        }
+    }
+    else if (textField.tag == 777)
+    {
+        NSLog(@"Interface Color: %@", textField.text);
+        [textField resignFirstResponder];
+        if (textField.text.length == 6 || textField.text.length == 7)
+        {
+            UIColor *customColor = [UIColor colorWithHexString:textField.text];
+            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:customColor requiringSecureCoding:NO error:nil];
+            [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
+            [USER_DEFAULTS setObject:textField.text forKey:InterfaceThemeColorHexCode];
+            [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
+            [USER_DEFAULTS synchronize];
+            
+            [[ICAppearanceManager sharedManager] updateThemeTintColor];
+            [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
+            [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+            
+            [self.tableView reloadData];
+            [self viewDidLoad];
+            [self viewWillAppear:YES];
+        }
+    }
+    return YES;
+}
+
++ (UIColor *)colorWithHexString:(NSString *)hexString {
+    // Remove # if it exists
+    NSString *cleanString = [hexString stringByReplacingOccurrencesOfString:@"#" withString:@""];
+    
+    if ([cleanString length] == 6) { // Ensure it's a valid hex code
+        unsigned int rgbValue = 0;
+        NSScanner *scanner = [NSScanner scannerWithString:cleanString];
+        [scanner scanHexInt:&rgbValue];
+        
+        CGFloat red   = ((rgbValue >> 16) & 0xFF) / 255.0;
+        CGFloat green = ((rgbValue >> 8) & 0xFF) / 255.0;
+        CGFloat blue  = (rgbValue & 0xFF) / 255.0;
+        
+        return [UIColor colorWithRed:red green:green blue:blue alpha:1.0];
+    }
+    return [UIColor orangeColor]; // Return black if invalid hex
+}
+
 - (NSString*) tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
     switch (section) {
@@ -632,9 +737,9 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case kAutomaticTimer:
             return @"";
         case kIntelligentSleep:
-            return @"Reset intelligent sleep timer on".ls;
+            return @"Reset intelligent sleep timer on:".ls;
         case kAppearanceThemeSection:
-            return @"Night Mode".ls;
+            return @"Dark mode:".ls;
         case kPlayerColor:
             return @"Player Color".ls;
         case kPInterfaceColor:
@@ -677,13 +782,13 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case kDebuggingSection:
         {
             NSString* footerText = @"Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data.".ls;
-            footerText = [footerText stringByAppendingFormat:@"\n\nCloud ID: %@", [NSBundle deviceId]];
+            //footerText = [footerText stringByAppendingFormat:@"\n\nCloud ID: %@", [NSBundle deviceId]];
             return footerText;
         }
-        case kAppearanceThemeSection:
+        /*case kAppearanceThemeSection:
         {
-            return @"Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background.".ls;
-        }
+            return @"Use system setting".ls;//@"Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background.".ls;
+        }*/
         case kAutomaticTimer:
         {
             if ([USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
@@ -1055,7 +1160,7 @@ API_AVAILABLE(ios(14.0)){
         {
             [ICAppearanceManager sharedManager].switchesNightModeAutomatically = sender.on;
             
-            [self perform:^(id sender) {
+            /*[self perform:^(id sender) {
                 if (![[ICAppearanceManager sharedManager] switchNightModeAutomaticallyNow])
                 {
                     [self presentAlertControllerWithTitle:@"Location Services denied".ls
@@ -1069,6 +1174,23 @@ API_AVAILABLE(ios(14.0)){
                     theSwitch.on = [ICAppearanceManager sharedManager].switchesNightModeAutomatically;
                 }
                 
+            } afterDelay:0.3];*/
+            [self perform:^(id sender) {
+                if ([ICAppearanceManager sharedManager].switchesNightModeAutomatically) {
+                    // Get system appearance mode
+                    UIUserInterfaceStyle style = self.traitCollection.userInterfaceStyle;
+                    
+                    if (style == UIUserInterfaceStyleDark) {
+                        [ICAppearanceManager sharedManager].nightMode = YES;
+                    } else {
+                        [ICAppearanceManager sharedManager].nightMode = NO;
+                    }
+                }
+                
+                // Ensure the switch reflects the correct state
+                if ([ICAppearanceManager sharedManager].switchesNightModeAutomatically != theSwitch.on) {
+                    theSwitch.on = [ICAppearanceManager sharedManager].switchesNightModeAutomatically;
+                }
             } afterDelay:0.3];
         }
             break;

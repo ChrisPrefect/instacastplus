@@ -7,6 +7,7 @@
 //
 
 #import "OnboardScreenVC.h"
+#import "ChangeLogViewController.h"
 
 @interface OnboardScreenVC ()
 @end
@@ -26,6 +27,13 @@
     [self.shadowView addGestureRecognizer:tapGesture1];
     self.shadowView.backgroundColor = [UIColor blackColor];
     self.shadowView.alpha = 0.5;
+    
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        ChangeLogViewController *changelogVC = [[ChangeLogViewController alloc] init];
+        UINavigationController *navVC = [[UINavigationController alloc] initWithRootViewController:changelogVC];
+        navVC.modalPresentationStyle = UIModalPresentationFullScreen;
+        [self presentViewController:navVC animated:YES completion:nil];
+    });
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -41,7 +49,7 @@
         self.arrowImage.image = [UIImage imageNamed:@"onboard_arrow_bl"];
         self.descLabel.textColor = [UIColor blackColor];
     }
-    UIToolbar *toolbar = [[UIToolbar alloc] init]; //initWithFrame:CGRectMake(0, self.view.bounds.size.height - 44, self.view.bounds.size.width, 44)];
+   /* UIToolbar *toolbar = [[UIToolbar alloc] init]; //initWithFrame:CGRectMake(0, self.view.bounds.size.height - 44, self.view.bounds.size.width, 44)];
     toolbar.barStyle = UIBarStyleDefault;
     toolbar.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -95,8 +103,72 @@
         [toolbar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [toolbar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
         [toolbar.heightAnchor constraintEqualToConstant:44]
-    ]];
+    ]];*/
     // (0 793; 414 49);
+    [self customizeToolbar];
+}
+
+-(void) customizeToolbar
+{
+    UIToolbar *toolbar = [[UIToolbar alloc] init];
+    toolbar.barStyle = UIBarStyleDefault;
+    toolbar.translatesAutoresizingMaskIntoConstraints = NO;
+    [toolbar setBackgroundImage:[UIImage new] forToolbarPosition:UIBarPositionAny barMetrics:UIBarMetricsDefault];
+    toolbar.tintColor = ICTintColor;
+    
+    // Create the button
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
+    
+    // Load image and set rendering mode to template
+    UIImage *addImage = [[UIImage imageNamed:@"Toolbar Add"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    [button setImage:addImage forState:UIControlStateNormal];
+    
+    // Set tint color
+    button.tintColor = ICTintColor;
+    button.imageView.contentMode = UIViewContentModeScaleAspectFit;
+    
+    // Adjust button size
+    button.frame = CGRectMake(0, 0, 30, 30);
+    button.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
+    
+    // Add target action
+    [button addTarget:self action:@selector(addAction:) forControlEvents:UIControlEventTouchUpInside];
+    
+    // Remove shadow
+    button.layer.shadowOpacity = 0; // No shadow
+    
+    // Add a bright circular background behind the button
+    UIView *circleView = [[UIView alloc] initWithFrame:CGRectMake(-10, -10, 50, 50)]; // Positioned behind button
+    circleView.backgroundColor = [UIColor whiteColor]; // Bright yellow glow
+    circleView.layer.cornerRadius = 25; // Makes it circular
+    circleView.layer.masksToBounds = NO;
+    circleView.alpha = 1; // Adjust brightness
+    
+    // Wrap button and background in a container view to keep original position
+    UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 30, 30)];
+    [containerView addSubview:circleView]; // Add background first
+    [containerView addSubview:button];     // Add button on top
+    
+    // Ensure button remains in the original position
+    button.center = CGPointMake(containerView.bounds.size.width / 2, containerView.bounds.size.height / 2);
+    circleView.center = button.center;
+    
+    // Create UIBarButtonItem with the custom view
+    UIBarButtonItem *addItem = [[UIBarButtonItem alloc] initWithCustomView:containerView];
+    
+    // Flexible space to align button properly
+    UIBarButtonItem *flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    
+    [toolbar setItems:@[addItem, flexSpace] animated:YES];
+    [self.view addSubview:toolbar];
+    
+    // Use Auto Layout to position the toolbar at the bottom with safe area insets
+    [NSLayoutConstraint activateConstraints:@[
+        [toolbar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [toolbar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [toolbar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
+        [toolbar.heightAnchor constraintEqualToConstant:44]
+    ]];
 
 }
 

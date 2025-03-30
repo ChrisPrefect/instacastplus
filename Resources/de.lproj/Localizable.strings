@@ -378,14 +378,14 @@
 "Interface Sounds" = "Interfacetöne";
 "Location Services denied" = "Ortungsdienste verweigert";
 "Miscellaneous" = "Verschiedenes";
-"Night Mode" = "Nacht-Modus";
+"Dark mode" = "Dunkler Modus";
 "Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background." = "Nacht-Modus kann bei Sonnenaufgang und Sonnenuntergang automatisch umgeschaltet werden. Um die Zeiten dafür zu berechnen, fragt Instacast Ihren aktuellen Standort ab. Standortdaten werden nur gesammelt, sofern sich Instacast im Vordergrund befindet, niemals im Hintergrund.";
 "Replay after Pause" = "Replay nach Pause";
 "Seeking" = "Spulen";
 "Seeking and Skipping Chapters" = "Spulen und Kapitel springen";
 "Send Reports" = "Reports senden";
 "Skipping" = "Spingen";
-"Switch Automatically" = "Automatisch umschalten";
+"Switch Automatically" = "Systemeinstellung übernehmen";
 "System Controls" = "System Controls";
 "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up." = "Sie können die Verwendung mobiler Daten entweder ganz abschalten, nur das Herunterladen von Mediadaten über das mobile Netzwerk verbieten oder die Nutzung mobiler Daten ganz erlauben. Das Verbieten mobiler Daten verhindert ebenfalls das Aufpoppen der Systemwarnung.";
 
@@ -455,7 +455,7 @@
 /* OptionsViewController.m */
 "Could not find show on iTunes." = "Konnte die Sendung nicht auf iTunes finden.";
 "Export Data" = "Daten exportieren";
-"Donate to Developer ❤️" = "Spende an den Entwickler ❤️";
+"Donate for further development ❤️" = "Spende für die Weiterentwicklung ❤️";
 "Follow @InstacastPlus on Twitter" = "@InstacastPlus auf Twitter folgen";
 "Instacast Bookmarks from %@" = "Instacast Lesezeichen von %@";
 "Instacast Subscriptions from %@" = "Instacast-Abonnements von %@";
@@ -581,6 +581,7 @@
 "Interface Color" = "Farbe der Bedienelemente";
 "Player Color" = "Farbe des Players";
 "Automatic As Per Podcast" = "Automatisch gemäß Podcast";
+"Choose Custom (Hex)" = "Wählen Sie Benutzerdefiniert (Hex)";
 "Choose Custom" = "Wählen Sie Benutzerdefiniert";
 "Use Default" = "Standard verwenden";
 
@@ -592,15 +593,17 @@
 "Download episodes and listen offline and Pick up where you left off." = "Laden Sie Episoden herunter, hören Sie sie offline und machen Sie dort weiter, wo Sie aufgehört haben.";
 "to add podcasts, search the podcast directory" = "um Podcasts hinzuzufügen, im Podcast-Verzeichnis suchen";
 "Color Controls" = "Farbkontrollen";
-"Donate to Developer" = "Spende an den Entwickler";
+"Donate for further development" = "Spende für die Weiterentwicklung";
 
 "Auto Skip" = "Automatisches Überspringen";
-"Skipping Chapter Name" = "Überspringen Kapitelname";
+"Auto Skip Chapter" = "Kapitelname überspringen";
 "Skipping Start" = "Start überspringen";
 "Skipping End" = "Ende überspringen";
 "Skipping Chapter" = "Kapitel überspringen";
 "Add Chapter Name" = "Kapitelnamen hinzufügen";
-"Skip Start" = "Start überspringen";
-"Skip End" = "Ende überspringen";
+"Skip intro" = "Intro überspringen";
+"Skip outro" = "Outro überspringen";
 "Seconds" = "Sekunden";
 "We Value Your Feedback" = "Wir schätzen Ihr Feedback";
+"Use system setting" = "Systemeinstellung übernehmen";
+"E-Mail Feedback" = "E-Mail Feedback";

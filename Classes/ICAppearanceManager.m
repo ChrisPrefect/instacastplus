@@ -156,10 +156,19 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (BOOL) switchNightModeAutomaticallyNow
 {
-    if (self.switchesNightModeAutomatically && ![self updateLocation]) {
+    /*if (self.switchesNightModeAutomatically && ![self updateLocation]) {
         ErrLog(@"night mode could not be switched");
         self.switchesNightModeAutomatically = NO;
         return NO;
+    }*/
+    
+    if (self.switchesNightModeAutomatically) {
+        UIUserInterfaceStyle style = [UIScreen mainScreen].traitCollection.userInterfaceStyle;
+        if (style == UIUserInterfaceStyleDark) {
+            self.nightMode = YES;
+        } else {
+            self.nightMode = NO;
+        }
     }
     return YES;
 }
@@ -213,7 +222,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 #pragma mark -
 
-
+/*
 - (BOOL) updateLocation
 {
     if (![CLLocationManager locationServicesEnabled]) {
@@ -324,7 +333,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     //isNight = YES;
     return isNight;
 }
-
+ */
 @end
 
 

@@ -23,8 +23,10 @@ NSString* DeviceMovementIntelligentSleep = @"DeviceMovementIntelligentSleep";
 
 NSString* PlayerColorPerPodcastActive = @"PlayerColorPerPodcastActive";
 NSString* PlayerThemeColorCode = @"PlayerThemeColorCode";
+NSString* PlayerThemeColorHexCode = @"PlayerThemeColorHexCode";
 NSString* InterfaceThemeDefaultActive = @"InterfaceThemeDefaultActive";
 NSString* InterfaceThemeColorCode = @"InterfaceThemeColorCode";
+NSString* InterfaceThemeColorHexCode = @"InterfaceThemeColorHexCode";
 
 
 NSString* ShowApplicationBadgeForUnseen = @"ShowApplicationBadgeForUnseen";

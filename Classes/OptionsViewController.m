@@ -22,6 +22,7 @@
 #import "GeneralSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
+#include <sys/sysctl.h>
 
 
 #define kDonate1ProductID @"donate_to_developer_1"
@@ -37,6 +38,7 @@
 enum {
     kOptionsSectionSettings,
     kOptionsSectionIO,
+    kEmailFeedback,
     kDonateToDeveloper,
     kNumberOfSections
 };
@@ -115,7 +117,9 @@ enum {
         case kOptionsSectionSettings:
             return 4;
         case kOptionsSectionIO:
-            return 3;
+            return 2;
+        case kEmailFeedback:
+            return 1;
         case kDonateToDeveloper:
             return 1;
         default:
@@ -171,11 +175,20 @@ enum {
                         cell.selectionStyle = UITableViewCellSelectionStyleNone;
                     }
                     break;
-                case 2:
-                    cell.textLabel.text = @"We Value Your Feedback".ls;
-                    break;
                 default:
                     break;
+            }
+            return cell;
+        }
+        case kEmailFeedback:
+        {
+            UITableViewCell* cell = [self buttonCell];
+            cell.detailTextLabel.text = nil;
+            cell.textLabel.text = @"E-Mail Feedback".ls;
+            if ([ICAppearanceManager sharedManager].nightSettingMode) {
+                cell.backgroundColor = [UIColor colorWithRed:17/255.0 green:17/255.0 blue:17/255.0 alpha:1.0];
+            } else {
+                cell.backgroundColor = [UIColor colorWithRed:226/255.0 green:226/255.0 blue:226/255.0 alpha:1.0];
             }
             return cell;
         }
@@ -183,11 +196,11 @@ enum {
         {
             UITableViewCell* cell = [self buttonCell];
             cell.detailTextLabel.text = nil;
-            cell.textLabel.text = @"Donate to Developer ❤️".ls;
+            cell.textLabel.text = @"Donate for further development ❤️".ls;
             if ([ICAppearanceManager sharedManager].nightSettingMode) {
-                cell.backgroundColor = [UIColor colorWithRed:100/255.0 green:100/255.0 blue:100/255.0 alpha:1.0];
+                cell.backgroundColor = [UIColor colorWithRed:17/255.0 green:17/255.0 blue:17/255.0 alpha:1.0];
             } else {
-                cell.backgroundColor = [UIColor colorWithRed:200/255.0 green:200/255.0 blue:200/255.0 alpha:1.0];
+                cell.backgroundColor = [UIColor colorWithRed:226/255.0 green:226/255.0 blue:226/255.0 alpha:1.0];
             }
             return cell;
         }
@@ -299,7 +312,7 @@ enum {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-   
+    
     switch (indexPath.section)
     {
         case kOptionsSectionSettings:
@@ -333,14 +346,13 @@ enum {
                 case 1:
                     [self sendEmailAction:nil];
                     break;
-                case 2:
-                    [self openContactFormInSafari];
-                    break;
                 default:
                     break;
             }
             break;
-            
+        case kEmailFeedback:
+            [self emailFeedbackCLicked];
+            break;
         case kDonateToDeveloper:
             [self donateToDeveloper:nil];
             break;
@@ -348,6 +360,43 @@ enum {
         default:
             break;
     }
+}
+
+- (void)emailFeedbackCLicked {
+    if ([MFMailComposeViewController canSendMail]) {
+        MFMailComposeViewController *mailComposer = [[MFMailComposeViewController alloc] init];
+        mailComposer.mailComposeDelegate = self;
+        
+        NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+        NSString *buildNumber = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
+        NSString *iOSVersion = [[UIDevice currentDevice] systemVersion];
+        //NSString *deviceName = [[UIDevice currentDevice] name];  // "John's iPhone"
+        //NSString *deviceModel = [[UIDevice currentDevice] model]; // Generic (e.g., "iPhone")
+        NSString *deviceIdentifier = [self deviceModelName];  // Precise model (e.g., "iPhone15,2")
+
+        NSString* feedbackSubject = [NSString stringWithFormat:@"Feedback for InstacastPlus Version %@ (%@) on ios %@ on %@", appVersion, buildNumber, iOSVersion, deviceIdentifier];
+        // Configure the email
+        [mailComposer setSubject:feedbackSubject];
+        [mailComposer setToRecipients:@[@"info@instacast.ch"]];
+        [mailComposer setMessageBody:@"" isHTML:NO];
+        
+        // Present the mail compose view controller
+        [self presentViewController:mailComposer animated:YES completion:nil];
+    } else {
+        // Show an alert if email is not set up on the device
+        [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
+    }
+}
+
+- (NSString *)deviceModelName {
+    size_t size;
+    sysctlbyname("hw.machine", NULL, &size, NULL, 0);
+    char *model = malloc(size);
+    sysctlbyname("hw.machine", model, &size, NULL, 0);
+    NSString *deviceIdentifier = [NSString stringWithCString:model encoding:NSUTF8StringEncoding];
+    free(model);
+    
+    return deviceIdentifier;
 }
 
 - (void)openContactFormInSafari {
@@ -542,7 +591,7 @@ enum {
 - (void) donateToDeveloper:(id)sender
 {
     WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Donate to Developer".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Donate for further development".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     
     UIAlertAction* firstAction = [UIAlertAction actionWithTitle:@"$1".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF

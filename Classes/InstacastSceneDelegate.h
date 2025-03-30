@@ -8,14 +8,22 @@
 
 #import <UIKit/UIKit.h>
 #import <CarPlay/CarPlay.h>
+#import <StoreKit/StoreKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface InstacastSceneDelegate : UIResponder <UIWindowSceneDelegate, CPTemplateApplicationSceneDelegate>
+@interface InstacastSceneDelegate : UIResponder <UIWindowSceneDelegate, CPTemplateApplicationSceneDelegate, SKProductsRequestDelegate,SKPaymentTransactionObserver>
+{
+    SKProductsRequest *productsRequest;
+    NSMutableDictionary *validProducts;
+    UIActivityIndicatorView *activityIndicatorView;
+}
 
 @property (strong, nonatomic) UIWindow *window;
 @property (nonatomic, strong) CPInterfaceController *interfaceController;
-
+- (void)fetchAvailableProducts;
+- (BOOL)canMakePurchases;
+- (void)purchaseMyProduct:(SKProduct*)product;
 
 @end
 

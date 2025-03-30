@@ -153,7 +153,7 @@
     }
     return self;
 }
-
+/*
 - (void)startProgressUpdate {
     [self stopProgressUpdate]; // Ensure no duplicate timers
     self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateProgress) userInfo:nil repeats:YES];
@@ -195,7 +195,7 @@
             [progressView setProgress:progressPercentage];
         }
     });
-}
+}*/
 
 - (void) dealloc
 {
@@ -226,7 +226,7 @@
         
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
     
-    [self stopProgressUpdate]; // Ensure timer is stopped when reusing
+    //[self stopProgressUpdate]; // Ensure timer is stopped when reusing
     [progressView setProgress:0.0];//DevD to do
 }
 
@@ -400,8 +400,8 @@
     double progressPercentage = (episode.duration > 0) ? devideTemp : 0;
     progressView.hidden = self.consumeIndicator2.hidden;
     [progressView setProgress:progressPercentage];//DevD to do
-    
-    /*dispatch_async(dispatch_get_main_queue(), ^{
+   
+    dispatch_async(dispatch_get_main_queue(), ^{
         //DevD to do
         PlaybackManager* pman = [PlaybackManager playbackManager];
         AudioSession* session = [AudioSession sharedAudioSession];
@@ -420,11 +420,15 @@
         }
         else
         {
-            CDEpisode* episode = (CDEpisode*)self.objectValue;
-            double progressPercentage = (episode.duration > 0) ? (double)episode.position / (double)episode.duration : 0;
+            double devideTemp = 0.0;
+            if (episode.position < episode.duration)
+            {
+                devideTemp = (double)episode.position / (double)episode.duration;
+            }
+            double progressPercentage = (episode.duration > 0) ? devideTemp : 0;
             [progressView setProgress:progressPercentage];
         }
-    });*/
+    });
 }
 
 - (UIScrollView*) _cellScrollView

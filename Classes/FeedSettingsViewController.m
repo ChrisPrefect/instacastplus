@@ -160,6 +160,7 @@ enum {
         switch (indexPath.row) {
             case 0:
             {
+                cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Sort Order".ls;
                 
@@ -168,7 +169,9 @@ enum {
                 break;
             }
             case 1:
-            {cell = [self detailCell];
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
                 cell.textLabel.text = @"Restore Deleted Episodes".ls;
                 cell.detailTextLabel.text = nil;
                 break;
@@ -182,6 +185,7 @@ enum {
     
     else if (indexPath.section == kNewsModeSection)
     {
+        cell.accessoryView = nil;
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
         
@@ -202,6 +206,7 @@ enum {
     
     else if (indexPath.section == kAggregateUnavailableEpisodesSection)
     {
+        cell.accessoryView = nil;
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
         
@@ -221,6 +226,7 @@ enum {
     
     else if (indexPath.section == kAutoDownloadSettingsSection)
     {
+        cell.accessoryView = nil;
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
         
@@ -247,6 +253,7 @@ enum {
     {
         if (indexPath.row == 2)
         {
+            cell.accessoryView = nil;
             NSDictionary* vTemp = @{ @0 : @"Off", @1 : @"1 Day", @2 : @"2 Days", @3 : @"3 Days", @4 : @"5 Days", @5 : @"7 Days", @6 : @"10 Days", @7 : @"20 Days", @8 : @"30 Days"};
             cell = [self detailCell];
             cell.textLabel.text = @"If not played after".ls;
@@ -257,6 +264,7 @@ enum {
         }
         else
         {
+            cell.accessoryView = nil;
             UITableViewCell* cell = [self switchCell];
             UISwitch* control = (UISwitch*)cell.accessoryView;
             switch (indexPath.row) {
@@ -284,6 +292,7 @@ enum {
         switch (indexPath.row) {
             case 0:
             {
+                cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Skipping Back".ls;
                 
@@ -295,6 +304,7 @@ enum {
             }
             case 1:
             {
+                cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Skipping Forward".ls;
                 
@@ -305,6 +315,7 @@ enum {
                 break;
             }
             case 2:
+                cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Speed".ls;
                 
@@ -346,7 +357,7 @@ enum {
     }
     else if (indexPath.section == kAutoSkipSection) 
     {
-        cell = [self detailCell];
+        cell = [self detailStepperCell];
         //NSDictionary* v = @{ @0 : @"0 Seconds",@5 : @"5 Seconds", @10 : @"10 Seconds", @20 : @"20 Seconds", @30 : @"30 Seconds", @60 : @"1 Minute", @120 : @"2 Minutes", @300 : @"5 Minutes", @600 : @"10 Minutes" };
         switch (indexPath.row) {
             case 0:
@@ -355,24 +366,88 @@ enum {
                 cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
                 NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", self.feed.uid];
                 NSString *chaptersName = [self.feed stringForKey:key];
-                cell.textLabel.text = @"Skipping Chapter Name".ls;
+                cell.textLabel.text = @"Auto Skip Chapter".ls;
                 cell.detailTextLabel.text = chaptersName;
                 break;
             }
             case 1:
             {
-                cell.textLabel.text = @"Skipping Start".ls;
+                cell.textLabel.text = @"Skip intro".ls;
                 NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]];
 //                NSString* localizedKey = v[@(period)];
-                cell.detailTextLabel.text =  [NSString stringWithFormat:@"%li %@", (long)period, @"Seconds".ls];
+                NSString*timeTest =  [NSString stringWithFormat:@"%li %@", (long)period, @"Seconds".ls];
+                for (UIView *subview in cell.contentView.subviews) {
+                    if ([subview isKindOfClass:[UIStackView class]]) {
+                        [subview removeFromSuperview];
+                    }
+                }
+                if ([self isSmallDevice]) {
+                    UILabel *detailLabel = [[UILabel alloc] init];
+                    detailLabel.text = timeTest;
+                    detailLabel.textColor = [UIColor grayColor];
+                    detailLabel.textAlignment = NSTextAlignmentLeft;
+                    detailLabel.numberOfLines = 0;
+                    
+                    UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[cell.textLabel, detailLabel]];
+                    stackView.axis = UILayoutConstraintAxisVertical;
+                    stackView.spacing = 5;
+                    stackView.alignment = UIStackViewAlignmentLeading;
+                    
+                    stackView.translatesAutoresizingMaskIntoConstraints = NO;
+                    [cell.contentView addSubview:stackView];
+                    
+                    // Add Constraints
+                    [NSLayoutConstraint activateConstraints:@[
+                        [stackView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:15],
+                        [stackView.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-15],
+                        [stackView.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:10],
+                        [stackView.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10]
+                    ]];
+                }
+                else
+                {
+                    cell.detailTextLabel.text = timeTest;
+                }
                 [self addStepperToCell:cell forStart:YES];
                 break;
             }
             case 2:
             {
-                cell.textLabel.text =  @"Skipping End".ls;
+                cell.textLabel.text =  @"Skip outro".ls;
                 NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
-                cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+                NSString*timeTest = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+                for (UIView *subview in cell.contentView.subviews) {
+                    if ([subview isKindOfClass:[UIStackView class]]) {
+                        [subview removeFromSuperview];
+                    }
+                }
+                if ([self isSmallDevice]) {
+                    UILabel *detailLabel = [[UILabel alloc] init];
+                    detailLabel.text = timeTest;
+                    detailLabel.textColor = [UIColor grayColor];
+                    detailLabel.textAlignment = NSTextAlignmentLeft;
+                    detailLabel.numberOfLines = 0;
+                    
+                    UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[cell.textLabel, detailLabel]];
+                    stackView.axis = UILayoutConstraintAxisVertical;
+                    stackView.spacing = 5;
+                    stackView.alignment = UIStackViewAlignmentLeading;
+                    
+                    stackView.translatesAutoresizingMaskIntoConstraints = NO;
+                    [cell.contentView addSubview:stackView];
+                    
+                    // Add Constraints
+                    [NSLayoutConstraint activateConstraints:@[
+                        [stackView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:15],
+                        [stackView.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-15],
+                        [stackView.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:10],
+                        [stackView.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10]
+                    ]];
+                }
+                else
+                {
+                    cell.detailTextLabel.text = timeTest;
+                }
                 [self addStepperToCell:cell forStart:NO];
                 break;
             }
@@ -382,6 +457,7 @@ enum {
     }
     else if (indexPath.section == kResetSection)
     {
+        cell.accessoryView = nil;
         cell = [self resetCell];
         cell.textLabel.text = @"Reset to Defaults".ls;
         
@@ -399,7 +475,9 @@ enum {
     
     return cell;
 }
-
+- (BOOL)isSmallDevice {
+    return ([UIScreen mainScreen].bounds.size.width < 375); // iPhone SE and similar
+}
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
     switch (section) {
@@ -545,8 +623,9 @@ enum {
     else if (indexPath.section == kAutoSkipSection) {
         if (indexPath.row == 0) {
             SettingInputViewController* controller = [SettingInputViewController inputSampleViewController];
-            controller.title = @"Skipping Chapter".ls;
+            //controller.title = @"Skipping Chapter".ls;
             controller.feed = self.feed;
+            controller.titleStr = @"Skipping Chapter".ls;
             NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", self.feed.uid];
             controller.key = key;
             NSString *chaptersName = [self.feed stringForKey:key];
@@ -708,6 +787,10 @@ enum {
 #pragma mark - Stepper Handlers
 
 - (void)addStepperToCell:(UITableViewCell *)cell forStart:(BOOL)isStart {
+    cell.accessoryView = nil;
+    if ([cell.accessoryView isKindOfClass:[UIStepper class]]) {
+        [(UIStepper *)cell.accessoryView removeFromSuperview];
+    }
     UIStepper *stepper = [[UIStepper alloc] init];
     stepper.stepValue = 1;
     NSInteger period = isStart ?  [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]] : [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
@@ -716,6 +799,23 @@ enum {
     
     stepper.minimumValue = 0;
     stepper.value = MAX(period, 0);
+    
+    UIColor*colorTemp;
+    if ([ICAppearanceManager sharedManager].nightSettingMode)
+    {
+        colorTemp = [UIColor whiteColor];
+        
+    }
+    else
+    {
+        colorTemp = [UIColor blackColor];
+    }
+    UIImage *plusImage = [[UIImage systemImageNamed:@"plus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
+    
+    UIImage *minusImage = [[UIImage systemImageNamed:@"minus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
+    [stepper setIncrementImage:plusImage forState:UIControlStateNormal];
+    [stepper setDecrementImage:minusImage forState:UIControlStateNormal];
+
     
     stepper.maximumValue = 5*60;
     [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];

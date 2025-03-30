@@ -283,6 +283,7 @@
 		CDD17C322C6DFEED001870FB /* OnboardScreenVC.m in Sources */ = {isa = PBXBuildFile; fileRef = CDD17C302C6DFEED001870FB /* OnboardScreenVC.m */; };
 		CDD17C332C6DFEED001870FB /* OnboardScreenVC.xib in Resources */ = {isa = PBXBuildFile; fileRef = CDD17C312C6DFEED001870FB /* OnboardScreenVC.xib */; };
 		CDD17C3B2C6EB203001870FB /* ChooseThemeColorCell.m in Sources */ = {isa = PBXBuildFile; fileRef = CDD17C3A2C6EB203001870FB /* ChooseThemeColorCell.m */; };
+		CDDE0EB12D96D8A300826379 /* ChangeLogViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CDDE0EB02D96D8A300826379 /* ChangeLogViewController.m */; };
 		CE3EA6912AA7A952001900EB /* Info-OSX.plist in Resources */ = {isa = PBXBuildFile; fileRef = CE3EA6792AA7A952001900EB /* Info-OSX.plist */; };
 		CE3EA6922AA7A952001900EB /* Info-iOS.plist in Resources */ = {isa = PBXBuildFile; fileRef = CE3EA67A2AA7A952001900EB /* Info-iOS.plist */; };
 		CE3EA6932AA7A952001900EB /* FCModelCachedObject.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA67C2AA7A952001900EB /* FCModelCachedObject.m */; };
@@ -778,6 +779,8 @@
 		CDD17C312C6DFEED001870FB /* OnboardScreenVC.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = OnboardScreenVC.xib; sourceTree = "<group>"; };
 		CDD17C392C6EB203001870FB /* ChooseThemeColorCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ChooseThemeColorCell.h; sourceTree = "<group>"; };
 		CDD17C3A2C6EB203001870FB /* ChooseThemeColorCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ChooseThemeColorCell.m; sourceTree = "<group>"; };
+		CDDE0EAF2D96D8A300826379 /* ChangeLogViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ChangeLogViewController.h; sourceTree = "<group>"; };
+		CDDE0EB02D96D8A300826379 /* ChangeLogViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChangeLogViewController.m; sourceTree = "<group>"; };
 		CE3EA6792AA7A952001900EB /* Info-OSX.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "Info-OSX.plist"; sourceTree = "<group>"; };
 		CE3EA67A2AA7A952001900EB /* Info-iOS.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "Info-iOS.plist"; sourceTree = "<group>"; };
 		CE3EA67C2AA7A952001900EB /* FCModelCachedObject.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FCModelCachedObject.m; sourceTree = "<group>"; };
@@ -852,6 +855,8 @@
 				CDD17C2F2C6DFEED001870FB /* OnboardScreenVC.h */,
 				CDD17C302C6DFEED001870FB /* OnboardScreenVC.m */,
 				CDD17C312C6DFEED001870FB /* OnboardScreenVC.xib */,
+				CDDE0EAF2D96D8A300826379 /* ChangeLogViewController.h */,
+				CDDE0EB02D96D8A300826379 /* ChangeLogViewController.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -1943,6 +1948,7 @@
 				CE3EA6982AA7A952001900EB /* FMDatabase.m in Sources */,
 				1B3461E91343303A003A16A9 /* OPML.m in Sources */,
 				1B32E4F321A6EE24004E225A /* NSDictionary+VMFoundation.m in Sources */,
+				CDDE0EB12D96D8A300826379 /* ChangeLogViewController.m in Sources */,
 				1BE00AA6134B68030087FCCE /* TwitterHelper.m in Sources */,
 				1B32E4F521A6EE24004E225A /* NSURL+VMFoundation.m in Sources */,
 				1BB21625137C30B7000A1B0A /* VDModalInfo.m in Sources */,
@@ -2145,10 +2151,12 @@
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = L95F4M2LHG;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = L95F4M2LHG;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -2165,13 +2173,14 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.6;
+				MARKETING_VERSION = 2.7;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.iteconomy.instacastplus.mac;
 				PRODUCT_NAME = InstacastPlus;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = InstacastPlus_prov_sistribution;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = instacastplus_mac_distribution;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -2212,11 +2221,13 @@
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = L95F4M2LHG;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = L95F4M2LHG;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
@@ -2235,13 +2246,14 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.6;
+				MARKETING_VERSION = 2.7;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.iteconomy.instacastplus.mac;
 				PRODUCT_NAME = InstacastPlus;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = InstacastPlus_prov_sistribution;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = instacastplus_mac_distribution;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
