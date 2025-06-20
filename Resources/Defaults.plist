@@ -31,7 +31,7 @@
 	<key>LinkDropBox</key>
 	<false/>
 	<key>AutoCacheStorageLimit</key>
-	<integer>1024</integer>
+	<integer>0</integer>
 	<key>LinkFlattr</key>
 	<false/>
 	<key>DisableAutoLock</key>

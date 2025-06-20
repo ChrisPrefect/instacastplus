@@ -14,12 +14,52 @@
 #import <StoreKit/StoreKit.h>
 #import "SubscriptionManager.h"
 
+#import <Accounts/Accounts.h>
+
+
+#import "Test.h"
+#import "UIManager.h"
+#import "CDEpisode+ShowNotes.h"
+
+#import "DirectoryFeedViewController.h"
+
+#import "VDModalInfo.h"
+#import "ICFeedParser.h"
+#import "JCommand.h"
+#import "UtilityFunctions.h"
+#import "FeedEpisodeExtraction.h"
+#import "XPFF.h"
+#import "BookmarksTableViewController.h"
+#import "CDModel.h"
+
+#import "SubscriptionsTableViewController.h"
+#import "PlaybackViewController.h"
+#import "PlayerController.h"
+#import "PortraitNavigationController.h"
+#import "ICDurationValueTransformer.h"
+#import "ICPubdateValueTransformer.h"
+#import "Application.h"
+#import <MediaPlayer/MPVolumeView.h>
+#import <AVFoundation/AVFoundation.h>
+#import <MediaPlayer/MediaPlayer.h>
+
 #define kDonate1ProductID @"donate_to_developer_1"
 #define kDonate5ProductID @"donate_to_developer_5"
 #define kDonate15ProductID @"donate_to_developer_15"
 #define kDonate20ProductID @"donate_to_developer_20"
 
-@implementation InstacastSceneDelegate
+@interface InstacastSceneDelegate ()
+@property (strong) VDModalInfo* mInfo;
+@property (strong) VDModalInfo* loadingInfo;
+@property (nonatomic, strong) DirectoryFeedViewController* feedView;
+
+@end
+
+@implementation InstacastSceneDelegate{
+    struct {
+        unsigned int apnRegisterSuccess:1;
+    } _flags;
+}
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
     // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
@@ -58,6 +98,224 @@
 //    }
 }
 
+- (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
+    for (UIOpenURLContext *context in URLContexts) {
+        NSURL *url = context.URL;
+        NSLog(@"SceneDelegate opened file: %@", url);
+        NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
+        
+        if ([subscribeSchemes containsObject:[url scheme]]) {
+            [self _handlePcastURL:url];
+        }
+        else if ([url isFileURL] && [[[url path] pathExtension] compare:@"opml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
+        {
+            self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
+            [self.mInfo show];
+            
+            /*NSData* opmlData = [NSData dataWithContentsOfURL:url];
+            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
+                [self.mInfo close];
+                self.mInfo = nil;
+            }];*/ //OLD to New
+            
+            /*BOOL access = [url startAccessingSecurityScopedResource];
+            if (access) {
+                NSData* opmlData = [NSData dataWithContentsOfURL:url];
+                if (opmlData) {
+                    [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
+                        [self.mInfo close];
+                        self.mInfo = nil;
+                    }];
+                } else {
+                    NSLog(@"Failed to read OPML data from URL: %@", url);
+                    [self.mInfo close];
+                    self.mInfo = nil;
+                }
+                [url stopAccessingSecurityScopedResource];
+            } else {
+                NSLog(@"Failed to access security-scoped resource for URL: %@", url);
+                [self.mInfo close];
+                self.mInfo = nil;
+            }*/
+            
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                BOOL accessGranted = [url startAccessingSecurityScopedResource];
+                if (!accessGranted) {
+                    NSLog(@"Failed to access secure file");
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self.mInfo close];
+                        self.mInfo = nil;
+                    });
+                    return;
+                }
+                
+                NSData *opmlData = [NSData dataWithContentsOfURL:url];
+                [url stopAccessingSecurityScopedResource];
+                
+                if (!opmlData || opmlData.length == 0) {
+                    NSLog(@"Invalid OPML data");
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self.mInfo close];
+                        self.mInfo = nil;
+                    });
+                    return;
+                }
+                
+                [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self.mInfo close];
+                        self.mInfo = nil;
+                    });
+                }];
+            });
+            //New End
+        }
+        
+        /*else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
+        {
+            NSString* filename = [[url path] lastPathComponent];
+            
+            WEAK_SELF
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Import Bookmarks".ls message:[NSString stringWithFormat:@"Do you want to import bookmarks from '%@'?".ls, filename] preferredStyle:UIAlertControllerStyleAlert];
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+                STRONG_SELF
+                [self perform:^(id sender) {
+                    
+                    NSData* xpffData = [NSData dataWithContentsOfURL:url];
+                    
+                    XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
+                        
+                        for(CDBookmark* bookmark in bookmarks) {
+                            [DMANAGER addBookmark:bookmark];
+                        }
+                        
+                        [DMANAGER save];
+                        
+                        BookmarksTableViewController* bookmarksController = (BookmarksTableViewController*)((MainViewController_4*)self.mainViewController).contentViewController;
+                        if ([bookmarksController isKindOfClass:[BookmarksTableViewController class]]) {
+                            [bookmarksController reload];
+                        }
+                    });
+                    
+                } afterDelay:0.3];
+                self.mainViewController.alertController = nil;
+            }]];
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
+                STRONG_SELF
+                self.mainViewController.alertController = nil;
+            }]];
+            
+            [alert setModalPresentationStyle:UIModalPresentationPopover];
+            UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+            UIViewController* rootViewController = [self getRootViewControllerDev];
+            popPresenter.sourceView = [rootViewController view];
+            popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+            if ([ICAppearanceManager sharedManager].nightSettingMode)
+            {
+                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            }
+            else
+            {
+                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+            }
+            self.mainViewController.alertController = alert;
+            [self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
+        }*/ //Old to New
+        else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
+        {
+            NSString* filename = [[url path] lastPathComponent];
+            
+            WEAK_SELF
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Import Bookmarks".ls message:[NSString stringWithFormat:@"Do you want to import bookmarks from '%@'?".ls, filename] preferredStyle:UIAlertControllerStyleAlert];
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+                STRONG_SELF
+                [self perform:^(id sender) {
+                    
+                    BOOL accessGranted = [url startAccessingSecurityScopedResource];
+                    if (!accessGranted) {
+                        NSLog(@"Failed to access security-scoped URL: %@", url);
+                        return;
+                    }
+                    
+                    NSData* xpffData = [NSData dataWithContentsOfURL:url];
+                    [url stopAccessingSecurityScopedResource];
+                    
+                    if (!xpffData || xpffData.length == 0) {
+                        NSLog(@"XPFF file appears to be empty or unreadable: %@", url);
+                        return;
+                    }
+                    
+                    XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
+                        if (error) {
+                            NSLog(@"Failed to import XPFF: %@", error.localizedDescription);
+                            return;
+                        }
+                        
+                        for (CDBookmark* bookmark in bookmarks) {
+                            [DMANAGER addBookmark:bookmark];
+                        }
+                        
+                        [DMANAGER save];
+                        
+                        BookmarksTableViewController* bookmarksController = (BookmarksTableViewController*)((MainViewController_4*)self.mainViewController).contentViewController;
+                        if ([bookmarksController isKindOfClass:[BookmarksTableViewController class]]) {
+                            [bookmarksController reload];
+                        }
+                    });
+                    
+                } afterDelay:0.3];
+                
+                self.mainViewController.alertController = nil;
+            }]];
+            
+            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
+                STRONG_SELF
+                self.mainViewController.alertController = nil;
+            }]];
+            
+            [alert setModalPresentationStyle:UIModalPresentationPopover];
+            UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+            UIViewController* rootViewController = [self getRootViewControllerDev];
+            popPresenter.sourceView = [rootViewController view];
+            popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+            
+            if ([ICAppearanceManager sharedManager].nightSettingMode) {
+                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            } else {
+                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+            }
+            
+            //self.mainViewController.alertController = alert;
+            //[self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
+            UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+            UIViewController *rootVC = keyWindow.rootViewController;
+            [rootVC presentViewController:alert animated:YES completion:nil];
+        }
+
+    }
+}
+
+- (UIViewController*)getRootViewControllerDev
+{
+    UIViewController* rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
+    if([rootViewController isKindOfClass:[UINavigationController class]])
+    {
+        rootViewController = ((UINavigationController *)rootViewController).viewControllers.firstObject;
+    }
+    else if([rootViewController isKindOfClass:[UITabBarController class]])
+    {
+        rootViewController = ((UITabBarController *)rootViewController).selectedViewController;
+    }
+    else if([rootViewController isKindOfClass:[MainViewController_4 class]])
+    {
+        rootViewController = ((MainViewController_4 *)rootViewController);
+    }
+    return rootViewController;
+}
+
 - (void)sceneDidDisconnect:(UIScene *)scene {
     // Called as the scene is being released by the system.
     // This occurs shortly after the scene enters the background, or when its session is discarded.
@@ -82,8 +340,36 @@
 - (void)sceneWillEnterForeground:(UIScene *)scene {
     // Called as the scene transitions from the background to the foreground.
     // Use this method to undo the changes made on entering the background.
+    [self _updateAppContentAfterBecomingActive];
+    App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
 }
 
+- (void) _updateAppContentAfterBecomingActive
+{
+    //DebugLog(@"applicationDidBecomeActive, state: %d", App.applicationState);
+    App.idleTimerDisabled = [USER_DEFAULTS boolForKey:DisableAutoLock];
+    
+    if (_flags.apnRegisterSuccess == 0)
+    {
+        // iOS 8 remote notifications always work!
+        if ([App respondsToSelector:@selector(registerForRemoteNotifications)]) {
+            [App registerForRemoteNotifications];
+        }
+        
+        if (![App isRegisteredForRemoteNotifications]) {
+            _flags.apnRegisterSuccess = 0;
+        }
+    }
+    
+    [[ICAppearanceManager sharedManager] switchNightModeAutomaticallyNow];
+    if (@available(iOS 13.0, *)) {
+        if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
+            [[ICAppearanceManager sharedManager] setDeviceNightMode:YES];
+        } else {
+            [[ICAppearanceManager sharedManager] setDeviceNightMode:NO];
+        }
+    }
+}
 
 - (void)sceneDidEnterBackground:(UIScene *)scene {
     // Called as the scene transitions from the foreground to the background.
@@ -91,6 +377,12 @@
     // to restore the scene back to its current state.
     
     // Save changes in the application's managed object context when the application transitions to the background.
+    App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+    if (!self.mainViewController.presentedViewController) {
+        [[CacheManager sharedCacheManager] tidyUp];
+    }
+    
+    [DMANAGER saveAndSync:NO];
 }
 
 - (void)templateApplicationScene:(CPTemplateApplicationScene *)templateApplicationScene  didConnectInterfaceController:(CPInterfaceController *)interfaceController {
@@ -173,7 +465,7 @@
     [alert addAction:fourthAction];
     
     UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
-        STRONG_SELF
+        //STRONG_SELF
     }];
     [alert addAction:defaultAction];
     
@@ -306,6 +598,64 @@
         }
     }
 }
+
+#pragma mark -
+#pragma mark URL Handling
+
+- (void) _handlePcastURL:(NSURL*)url
+{
+    NSString* urlString = [[url absoluteString] substringFromIndex:[[url scheme] length]];
+    if ([urlString hasPrefix:@":http://"] || [urlString hasPrefix:@":https://"]) {
+        NSString* newURLString = [urlString substringFromIndex:1];
+        url = [NSURL URLWithString:newURLString];
+    }
+    
+    // convert to http url
+    if (![[url scheme] isEqualToString:@"http"] && ![[url scheme] isEqualToString:@"https"]) {
+        NSString* scheme = [url scheme];
+        NSString* urlString = [url absoluteString];
+        urlString = [urlString stringByReplacingCharactersInRange:NSMakeRange(0, [scheme length]) withString:@"http"];
+        url = [NSURL URLWithString:urlString];
+    }
+    
+    __weak InstacastSceneDelegate* weakSelf = self;
+    self.feedView = [DirectoryFeedViewController directoryFeedViewController];
+    self.feedView.feedURL = url;
+    self.feedView.canBeCanceled = YES;
+    self.feedView.didLoadFeed = ^(BOOL success, NSError* error) {
+        STRONG_SELF
+        if (!success)
+        {
+            [weakSelf perform:^(id sender) {
+                
+                if (error) {
+                    [self.feedView presentError:error];
+                }
+                
+                [self.mainViewController dismissViewControllerAnimated:YES completion:^{
+                    self.feedView = nil;
+                }];
+            } afterDelay:0.5];
+            return;
+        }
+        
+        else {
+            weakSelf.feedView = nil;
+        }
+    };
+    
+    PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:weakSelf.feedView];
+    navController.modalPresentationStyle = UIModalPresentationFormSheet;
+    
+    if (self.mainViewController.presentedViewController) {
+        [self.mainViewController.presentedViewController presentViewController:navController animated:YES completion:NULL];
+    } else {
+        [self.mainViewController presentViewController:navController animated:YES completion:NULL];
+    }
+    
+    [self.feedView startLoading];
+}
+
 
 
 @end

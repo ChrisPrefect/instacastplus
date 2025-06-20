@@ -979,7 +979,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 }
 
 
-- (void) importOPMLData:(NSData*)data completion:(void (^)())completion
+/*- (void) importOPMLData:(NSData*)data completion:(void (^)())completion
 {
 	OPMLParser* opmlParser = [OPMLParser opmlParserWithData:data];
     [opmlParser parseWithCompletionHandler:^(NSArray *feeds) {
@@ -1045,7 +1045,112 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
             completion();
         }
     }];
+}*/
+
+- (void) importOPMLData:(NSData*)data completion:(void (^)())completion
+{
+    OPMLParser* opmlParser = [OPMLParser opmlParserWithData:data];
+    
+    [opmlParser parseWithCompletionHandler:^(NSArray *feeds) {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            self.importing = YES;
+            [App retainNetworkActivity];
+            
+            NSMutableDictionary* feedIndex = [NSMutableDictionary dictionary];
+            for (CDFeed* feed in DMANAGER.feeds) {
+                feedIndex[feed.sourceURL] = @"1";
+            }
+            
+            NSMutableArray<NSURL *> *urlsToImport = [NSMutableArray array];
+            for (NSDictionary* feedDict in feeds) {
+                NSString* xmlURL = feedDict[OPMLFeedXmlUrl];
+                if (!xmlURL) continue;
+                
+                NSURL* feedURL = [NSURL URLWithString:xmlURL];
+                if (!feedURL) {
+                    ErrLog(@"Cannot make feed URL from: %@", xmlURL);
+                    continue;
+                }
+                
+                if (!feedIndex[feedURL]) {
+                    [urlsToImport addObject:feedURL];
+                }
+            }
+            
+            if (urlsToImport.count == 0) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (completion) completion();
+                });
+                return;
+            }
+            
+            // New import logic
+            dispatch_group_t group = dispatch_group_create();
+            NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+            config.timeoutIntervalForRequest = 10;
+            config.timeoutIntervalForResource = 20;
+            NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
+            
+            [DMANAGER beginInterruptSaving];
+            
+            for (NSURL *url in urlsToImport) {
+                dispatch_group_enter(group);
+                
+                NSURLSessionDataTask *task = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+                    if (error || !data) {
+                        NSLog(@"❌ Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
+                        dispatch_group_leave(group);
+                        return;
+                    }
+                    
+                    NSInteger statusCode = 200;
+                    if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                        statusCode = [(NSHTTPURLResponse *)response statusCode];
+                    }
+                    
+                    if (statusCode < 200 || statusCode >= 300) {
+                        NSLog(@"⚠️ Skipping %@ (HTTP %ld)", url.absoluteString, (long)statusCode);
+                        dispatch_group_leave(group);
+                        return;
+                    }
+                    
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self subscribeFeedWithURL:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
+                            if (feed && feed.episodes.count > 0) {
+                                NSLog(@"✅ Imported: %@", feed.title);
+                            } else {
+                                NSLog(@"🚫 Skipped %@: %@", url.absoluteString, error.localizedDescription ?: @"no episodes");
+                            }
+                            dispatch_group_leave(group);
+                        }];
+                    });
+                }];
+                
+                [task resume];
+            }
+            
+            dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+                [App releaseNetworkActivity];
+                self.importing = NO;
+                [DMANAGER endInterruptSaving];
+                [DMANAGER save];
+                
+                [self autoDownloadAllFeedsAsynchronously];
+                
+                if (completion) {
+                    completion();
+                }
+            });
+        });
+        
+    } errorHandler:^(NSError *error) {
+        ErrLog(@"opml didEndWithError: %@", error.localizedDescription);
+        if (completion) {
+            completion();
+        }
+    }];
 }
+
 
 #pragma mark -
 

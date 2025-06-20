@@ -8,7 +8,7 @@
 
 
 #import <Accounts/Accounts.h>
-
+#import <UserNotifications/UserNotifications.h>
 
 #import "Test.h"
 #import "InstacastAppDelegate.h"
@@ -41,7 +41,7 @@
 #import <CarPlay/CarPlay.h>
 
 
-@interface InstacastAppDelegate ()
+@interface InstacastAppDelegate () <UNUserNotificationCenterDelegate>
 @property BOOL resettingContext;
 @property (strong) VDModalInfo* mInfo;
 @property (strong) VDModalInfo* loadingInfo;
@@ -134,8 +134,7 @@
         [self _startUpApplicationWithLaunchOptions:launchOptions];
     }
     
-    UIUserNotificationSettings* settings = [UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeBadge | UIUserNotificationTypeSound | UIUserNotificationTypeAlert
-                                                                             categories:nil];
+    UIUserNotificationSettings* settings = [UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeBadge | UIUserNotificationTypeSound | UIUserNotificationTypeAlert categories:nil];
     [application registerUserNotificationSettings:settings];
     
     DebugLog(@"launchOptions %@", launchOptions);

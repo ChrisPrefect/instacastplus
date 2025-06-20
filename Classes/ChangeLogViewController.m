@@ -85,15 +85,15 @@
 
 // MARK: - Custom Header View
 - (UIView *)createHeaderView {
-    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 120)];
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 165)];
     
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, self.view.frame.size.width - 32, 50)];
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, self.view.frame.size.width - 32, 80)];
     titleLabel.text = @"InstacastPlus Changelog – Fresh Features for Your Listening Pleasure! 🎉🎧";
     titleLabel.font = [UIFont boldSystemFontOfSize:18];
     titleLabel.numberOfLines = 0;
     titleLabel.textAlignment = NSTextAlignmentCenter;
     
-    UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 50, self.view.frame.size.width - 32, 60)];
+    UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, self.view.frame.size.width - 32, 75)];
     subtitleLabel.text = @"We’ve been busy making InstacastPlus even smarter, and more powerful. Check out what’s new and get ready to experience podcasts like never before!";
     subtitleLabel.font = [UIFont systemFontOfSize:14];
     subtitleLabel.numberOfLines = 0;
@@ -147,7 +147,7 @@
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    return 30;
+    return 40;
 }
 
 @end

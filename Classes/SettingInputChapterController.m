@@ -175,9 +175,10 @@
     UIStepper *stepper = [[UIStepper alloc] init];
     stepper.tag = isStart ? 0 : 1;
     NSInteger period = isStart ?  [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]] : [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
-    stepper.value = MAX(period, 0);
-    stepper.minimumValue = 0;
-    stepper.maximumValue = 60;
+   
+    stepper.minimumValue = -5*60;//0;
+    stepper.value = period;//stepper.value = MAX(period, 0);
+    stepper.maximumValue = 5*60;
     [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];
     
     UIColor*colorTemp;

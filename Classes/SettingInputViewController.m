@@ -226,9 +226,10 @@
     if (@available(iOS 14.0, *)) {
         gearImage = [UIImage systemImageNamed:@"gearshape"];//gearshape
     } else {
-        gearImage = [UIImage imageNamed:@"gear"]; // Use a custom image
+        gearImage = [[UIImage imageNamed:@"setting_chapter"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]; // Use a custom image
     }
     UIImageView *settingsIconImageView = [[UIImageView alloc] initWithImage:gearImage];
+    settingsIconImageView.tintColor = ICTintColor;
     settingsIconImageView.translatesAutoresizingMaskIntoConstraints = NO;
     settingsIconImageView.contentMode = UIViewContentModeScaleAspectFit;
     settingsIconImageView.clipsToBounds = YES;

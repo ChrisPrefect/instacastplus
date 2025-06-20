@@ -257,6 +257,7 @@ enum {
             NSDictionary* vTemp = @{ @0 : @"Off", @1 : @"1 Day", @2 : @"2 Days", @3 : @"3 Days", @4 : @"5 Days", @5 : @"7 Days", @6 : @"10 Days", @7 : @"20 Days", @8 : @"30 Days"};
             cell = [self detailCell];
             cell.textLabel.text = @"If not played after".ls;
+            cell.textLabel.numberOfLines = 0;
             NSString*daysKey = [NSString stringWithFormat:@"%@_old_episode_delete_days", self.feed.uid];
             NSNumber* getDeletedDays = [NSNumber numberWithInteger:[self.feed integerForKey:daysKey]];
             NSString* localizedKeyD = vTemp[@([getDeletedDays integerValue])];
@@ -797,8 +798,9 @@ enum {
     stepper.tag = isStart ? 1 : 2;
     //stepper.value = period;
     
-    stepper.minimumValue = 0;
-    stepper.value = MAX(period, 0);
+    stepper.minimumValue = -5*60;//0;
+    stepper.value = period;
+    //stepper.value = MAX(period, 0);
     
     UIColor*colorTemp;
     if ([ICAppearanceManager sharedManager].nightSettingMode)

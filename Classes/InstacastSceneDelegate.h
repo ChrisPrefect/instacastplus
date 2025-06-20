@@ -11,6 +11,7 @@
 #import <StoreKit/StoreKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+@class MainViewController_4;
 
 @interface InstacastSceneDelegate : UIResponder <UIWindowSceneDelegate, CPTemplateApplicationSceneDelegate, SKProductsRequestDelegate,SKPaymentTransactionObserver>
 {
@@ -21,6 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (strong, nonatomic) UIWindow *window;
 @property (nonatomic, strong) CPInterfaceController *interfaceController;
+@property (nonatomic, strong) MainViewController_4* mainViewController;
 - (void)fetchAvailableProducts;
 - (BOOL)canMakePurchases;
 - (void)purchaseMyProduct:(SKProduct*)product;
