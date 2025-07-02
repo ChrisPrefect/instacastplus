@@ -374,9 +374,9 @@ enum {
             case 1:
             {
                 cell.textLabel.text = @"Skip intro".ls;
-                NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]];
-//                NSString* localizedKey = v[@(period)];
-                NSString*timeTest =  [NSString stringWithFormat:@"%li %@", (long)period, @"Seconds".ls];
+                double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]];
+                NSString *timeTest = [NSString stringWithFormat:@"%.1f %@", period, @"Seconds".ls];
+
                 for (UIView *subview in cell.contentView.subviews) {
                     if ([subview isKindOfClass:[UIStackView class]]) {
                         [subview removeFromSuperview];
@@ -415,8 +415,10 @@ enum {
             case 2:
             {
                 cell.textLabel.text =  @"Skip outro".ls;
-                NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
-                NSString*timeTest = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+               
+                double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
+                NSString *timeTest = [NSString stringWithFormat:@"%.1f %@", period, @"Seconds".ls];
+                
                 for (UIView *subview in cell.contentView.subviews) {
                     if ([subview isKindOfClass:[UIStackView class]]) {
                         [subview removeFromSuperview];
@@ -786,58 +788,51 @@ enum {
 
 
 #pragma mark - Stepper Handlers
-
 - (void)addStepperToCell:(UITableViewCell *)cell forStart:(BOOL)isStart {
     cell.accessoryView = nil;
     if ([cell.accessoryView isKindOfClass:[UIStepper class]]) {
         [(UIStepper *)cell.accessoryView removeFromSuperview];
     }
+
     UIStepper *stepper = [[UIStepper alloc] init];
-    stepper.stepValue = 1;
-    NSInteger period = isStart ?  [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]] : [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
+    stepper.stepValue = 0.1; // ⬅️ Step value for 0.1 second
     stepper.tag = isStart ? 1 : 2;
-    //stepper.value = period;
-    
-    stepper.minimumValue = -5*60;//0;
+
+    double period = isStart ?
+        [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]] :
+        [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
+
+    stepper.minimumValue = -300.0; // -5 minutes
+    stepper.maximumValue = 300.0;  // +5 minutes
     stepper.value = period;
-    //stepper.value = MAX(period, 0);
-    
-    UIColor*colorTemp;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        colorTemp = [UIColor whiteColor];
-        
-    }
-    else
-    {
-        colorTemp = [UIColor blackColor];
-    }
+
+    UIColor *colorTemp = [ICAppearanceManager sharedManager].nightSettingMode ? [UIColor whiteColor] : [UIColor blackColor];
     UIImage *plusImage = [[UIImage systemImageNamed:@"plus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
-    
     UIImage *minusImage = [[UIImage systemImageNamed:@"minus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
+
     [stepper setIncrementImage:plusImage forState:UIControlStateNormal];
     [stepper setDecrementImage:minusImage forState:UIControlStateNormal];
 
-    
-    stepper.maximumValue = 5*60;
     [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];
     cell.accessoryView = stepper;
 }
 
 
+
 - (void)stepperValueChanged:(UIStepper *)sender {
     NSString *key = (sender.tag == 1) ?
-    [NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid] :
-    [NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid];
-    
-    NSInteger newValue = sender.value;
-    
+        [NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid] :
+        [NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid];
+
+    double newValue = sender.value;
+
     if (self.feed) {
-        [[self source] setInteger:newValue forKey:key];
+        [[self source] setDouble:newValue forKey:key];
     }
-    
+
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:sender.tag inSection:kAutoSkipSection]] withRowAnimation:UITableViewRowAnimationNone];
 }
+
 
 
 - (id) source

@@ -69,7 +69,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 		_refreshingFeedURLs = [[NSMutableArray alloc] init];
         
         _parserQueue = [[NSOperationQueue alloc] init];
-        [_parserQueue setMaxConcurrentOperationCount:2];
+        [_parserQueue setMaxConcurrentOperationCount:1];
         
 #if TARGET_OS_IPHONE==0
         _checkTimer = [NSTimer scheduledTimerWithTimeInterval:5*60 block:^(NSTimeInterval time) {
@@ -213,9 +213,43 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
     parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
         
-        CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed
-                                              autodownload:YES
-                                                   options:options];
+        CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed autodownload:YES options:options];
+        
+        [DMANAGER saveAndSync:YES];
+        
+        if (completion) {
+            completion(persistentFeed, nil);
+        }
+        
+        [App releaseNetworkActivity];
+
+    };
+    parser.didEndWithError = ^(NSError* error) {
+        if (completion) {
+            completion(nil, error);
+        }
+        [App releaseNetworkActivity];
+    };
+    
+    [_parserQueue addOperation:parser];
+}
+
+- (void) subscribeFeedWithOpmlURL:(NSURL*)url options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion
+{
+    if (!url) {
+        return;
+    }
+    
+    [App retainNetworkActivity];
+
+    DebugLog(@"subscribing with URL: %@", url);
+    
+    ICFeedParser* parser = [[ICFeedParser alloc] init];
+    parser.url = url;
+    parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
+    parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
+        
+        CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
         
         [DMANAGER saveAndSync:YES];
         
@@ -1047,73 +1081,75 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     }];
 }*/
 
-- (void) importOPMLData:(NSData*)data completion:(void (^)())completion
+/*- (void)importOPMLData:(NSData *)data completion:(void (^)())completion progress:(void (^)(float progress))progress
 {
-    OPMLParser* opmlParser = [OPMLParser opmlParserWithData:data];
-    
+    OPMLParser *opmlParser = [OPMLParser opmlParserWithData:data];
+
     [opmlParser parseWithCompletionHandler:^(NSArray *feeds) {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             self.importing = YES;
             [App retainNetworkActivity];
-            
-            NSMutableDictionary* feedIndex = [NSMutableDictionary dictionary];
-            for (CDFeed* feed in DMANAGER.feeds) {
-                feedIndex[feed.sourceURL] = @"1";
+
+            NSMutableDictionary *feedIndex = [NSMutableDictionary dictionary];
+            for (CDFeed *feed in DMANAGER.feeds) {
+                feedIndex[feed.sourceURL.absoluteString] = @"1"; // use absoluteString for safety
             }
-            
+
             NSMutableArray<NSURL *> *urlsToImport = [NSMutableArray array];
-            for (NSDictionary* feedDict in feeds) {
-                NSString* xmlURL = feedDict[OPMLFeedXmlUrl];
+            for (NSDictionary *feedDict in feeds) {
+                NSString *xmlURL = feedDict[OPMLFeedXmlUrl];
                 if (!xmlURL) continue;
-                
-                NSURL* feedURL = [NSURL URLWithString:xmlURL];
+
+                NSURL *feedURL = [NSURL URLWithString:xmlURL];
                 if (!feedURL) {
                     ErrLog(@"Cannot make feed URL from: %@", xmlURL);
                     continue;
                 }
-                
-                if (!feedIndex[feedURL]) {
+
+                if (!feedIndex[feedURL.absoluteString]) {
                     [urlsToImport addObject:feedURL];
                 }
             }
-            
+
             if (urlsToImport.count == 0) {
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    if (progress) progress(1.0);
                     if (completion) completion();
                 });
                 return;
             }
-            
-            // New import logic
+
             dispatch_group_t group = dispatch_group_create();
             NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
             config.timeoutIntervalForRequest = 10;
             config.timeoutIntervalForResource = 20;
             NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
-            
+
             [DMANAGER beginInterruptSaving];
-            
+
+            NSInteger totalCount = urlsToImport.count;
+            __block NSInteger completedCount = 0;
+
             for (NSURL *url in urlsToImport) {
                 dispatch_group_enter(group);
-                
+
                 NSURLSessionDataTask *task = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-                    if (error || !data) {
-                        NSLog(@"❌ Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
-                        dispatch_group_leave(group);
-                        return;
-                    }
-                    
                     NSInteger statusCode = 200;
                     if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
                         statusCode = [(NSHTTPURLResponse *)response statusCode];
                     }
-                    
-                    if (statusCode < 200 || statusCode >= 300) {
-                        NSLog(@"⚠️ Skipping %@ (HTTP %ld)", url.absoluteString, (long)statusCode);
-                        dispatch_group_leave(group);
+
+                    BOOL shouldSkip = error || !data || statusCode < 200 || statusCode >= 300;
+                    if (shouldSkip) {
+                        NSLog(@"❌ Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            completedCount++;
+                            if (progress) progress((float)completedCount / (float)totalCount);
+                            dispatch_group_leave(group);
+                        });
                         return;
                     }
-                    
+
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [self subscribeFeedWithURL:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
                             if (feed && feed.episodes.count > 0) {
@@ -1121,36 +1157,138 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
                             } else {
                                 NSLog(@"🚫 Skipped %@: %@", url.absoluteString, error.localizedDescription ?: @"no episodes");
                             }
+
+                            completedCount++;
+                            if (progress) progress((float)completedCount / (float)totalCount);
                             dispatch_group_leave(group);
                         }];
                     });
                 }];
-                
                 [task resume];
             }
-            
+
             dispatch_group_notify(group, dispatch_get_main_queue(), ^{
                 [App releaseNetworkActivity];
                 self.importing = NO;
                 [DMANAGER endInterruptSaving];
                 [DMANAGER save];
-                
+
                 [self autoDownloadAllFeedsAsynchronously];
-                
-                if (completion) {
-                    completion();
-                }
+
+                if (progress) progress(1.0);
+                if (completion) completion();
             });
         });
-        
+
     } errorHandler:^(NSError *error) {
         ErrLog(@"opml didEndWithError: %@", error.localizedDescription);
-        if (completion) {
-            completion();
-        }
+        if (progress) progress(1.0);
+        if (completion) completion();
+    }];
+}*/
+
+- (void)importOPMLData:(NSData *)data completion:(void (^)())completion progress:(void (^)(float))progress {
+    OPMLParser *opmlParser = [OPMLParser opmlParserWithData:data];
+    
+    [opmlParser parseWithCompletionHandler:^(NSArray<NSDictionary *> *feeds) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+            self.importing = YES;
+            [App retainNetworkActivity];
+            
+            // Use Set for O(1) lookup
+            NSSet<NSString *> *existingFeedURLs = [NSSet setWithArray:[DMANAGER.feeds valueForKeyPath:@"sourceURL.absoluteString"]];
+            
+            NSMutableArray<NSURL *> *urlsToImport = [NSMutableArray arrayWithCapacity:feeds.count];
+            for (NSDictionary *feedDict in feeds) {
+                NSString *xmlURL = feedDict[OPMLFeedXmlUrl];
+                if (!xmlURL) continue;
+                
+                NSURL *feedURL = [NSURL URLWithString:xmlURL];
+                if (!feedURL || [existingFeedURLs containsObject:feedURL.absoluteString]) {
+                    ErrLog(@"Invalid or duplicate feed URL: %@", xmlURL);
+                    continue;
+                }
+                
+                [urlsToImport addObject:feedURL];
+            }
+            
+            if (urlsToImport.count == 0) {
+                [self finalizeImportWithCompletion:completion progress:progress];
+                return;
+            }
+            
+            [self importURLs:urlsToImport completion:completion progress:progress];
+        });
+    } errorHandler:^(NSError *error) {
+        ErrLog(@"OPML parsing error: %@", error.localizedDescription);
+        [self finalizeImportWithCompletion:completion progress:progress];
     }];
 }
 
+- (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(void))completion progress:(void (^)(float))progress {
+    dispatch_group_t group = dispatch_group_create();
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.timeoutIntervalForRequest = 8.0;
+    //config.timeoutIntervalForResource = 20.0;
+    config.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData; // Avoid caching
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:nil delegateQueue:nil];
+    
+    [DMANAGER beginInterruptSaving];
+    
+    NSUInteger totalCount = urls.count;
+    __block NSUInteger completedCount = 0;
+    
+    for (NSURL *url in urls) {
+        dispatch_group_enter(group);
+        
+        NSURLSessionDataTask *task = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            NSHTTPURLResponse *httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
+            BOOL shouldSkip = error || !data || (httpResponse && (httpResponse.statusCode < 200 || httpResponse.statusCode >= 300));
+            
+            if (shouldSkip) {
+                NSLog(@"❌ Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription ?: @"Invalid response");
+                [self updateProgress:&completedCount total:totalCount progress:progress group:group];
+                return;
+            }
+            
+            [self subscribeFeedWithOpmlURL:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
+                if (feed && feed.episodes.count > 0) {
+                    NSLog(@"✅ Imported: %@", feed.title);
+                } else {
+                    NSLog(@"🚫 Skipped %@: %@", url.absoluteString, error.localizedDescription ?: @"No episodes");
+                }
+                [self updateProgress:&completedCount total:totalCount progress:progress group:group];
+            }];
+        }];
+        [task resume];
+    }
+    
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+        [self finalizeImportWithCompletion:completion progress:progress];
+        [session finishTasksAndInvalidate];
+    });
+}
+
+- (void)updateProgress:(NSUInteger *)completedCount total:(NSUInteger)totalCount progress:(void (^)(float))progress group:(dispatch_group_t)group {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        (*completedCount)++;
+        if (progress) progress((float)*completedCount / totalCount);
+        dispatch_group_leave(group);
+    });
+}
+
+- (void)finalizeImportWithCompletion:(void (^)(void))completion progress:(void (^)(float))progress {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [App releaseNetworkActivity];
+        self.importing = NO;
+        [DMANAGER endInterruptSaving];
+        [DMANAGER save];
+        //[self autoDownloadAllFeedsAsynchronously];
+        
+        if (progress) progress(1.0);
+        if (completion) completion();
+    });
+}
 
 #pragma mark -
 

@@ -424,7 +424,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         
         [episode.feed addTaskObserver:self forKeyPath:@"subscribed" task:^(id obj, NSDictionary *change) {
             if (!weakSelf.episode.feed.subscribed) {
-                [weakSelf stop];
+               // [weakSelf stop];
             }
         }];
     }

@@ -56,8 +56,8 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 
 /* Importing */
 
-- (void) importURL:(NSURL*)url completion:(void (^)())completion;
-- (void) importOPMLData:(NSData*)data completion:(void (^)())completion;
+- (void) importURL:(NSURL*)url completion:(void (^)())completion ;
+- (void) importOPMLData:(NSData*)data completion:(void (^)())completion progress:(void (^)(float progress))progress;
 
 - (NSData*) opmlData;
 

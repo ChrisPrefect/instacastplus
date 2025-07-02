@@ -23,15 +23,16 @@
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #include <sys/sysctl.h>
-
+#import "VDModalInfo.h"
 
 #define kDonate1ProductID @"donate_to_developer_1"
 #define kDonate5ProductID @"donate_to_developer_5"
 #define kDonate15ProductID @"donate_to_developer_15"
 #define kDonate20ProductID @"donate_to_developer_20"
 
-@interface OptionsViewController () <MFMailComposeViewControllerDelegate, UIDocumentInteractionControllerDelegate>
+@interface OptionsViewController () <MFMailComposeViewControllerDelegate, UIDocumentInteractionControllerDelegate, UIDocumentPickerDelegate>
 @property (nonatomic, strong) UIDocumentInteractionController* interactionController;
+@property (strong) VDModalInfo* mInfo;
 @end
 
 
@@ -117,7 +118,7 @@ enum {
         case kOptionsSectionSettings:
             return 4;
         case kOptionsSectionIO:
-            return 2;
+            return 3;
         case kEmailFeedback:
             return 1;
         case kDonateToDeveloper:
@@ -174,6 +175,9 @@ enum {
                         cell.textLabel.textColor = [UIColor colorWithWhite:0.7f alpha:1.f];
                         cell.selectionStyle = UITableViewCellSelectionStyleNone;
                     }
+                    break;
+                case 2:
+                    cell.textLabel.text = @"Import Data".ls;
                     break;
                 default:
                     break;
@@ -345,6 +349,9 @@ enum {
                     break;
                 case 1:
                     [self sendEmailAction:nil];
+                    break;
+                case 2:
+                    [self importDataFromFilesMailAction:nil];
                     break;
                 default:
                     break;
@@ -587,6 +594,95 @@ enum {
     self.alertController = alert;
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
+
+- (void) importDataFromFilesMailAction:(id)sender
+{
+    WEAK_SELF
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Open an opml file from mail or the files app in InstacastPlus to import podcasts.".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+    
+    [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction * action) {
+                                                STRONG_SELF
+                                                [self perform:^(id sender) {
+                                                //mail import feature
+                                                    UIDocumentPickerViewController *picker =
+                                                        [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.xml"] inMode:UIDocumentPickerModeImport];
+                                                    picker.delegate = self;
+                                                    picker.allowsMultipleSelection = NO;
+                                                    picker.shouldShowFileExtensions = YES;
+                                                    picker.modalPresentationStyle = UIModalPresentationFormSheet;
+                                                    [self presentViewController:picker animated:YES completion:nil];
+
+                                                } afterDelay:0.3];
+                                                self.alertController = nil;
+                                            }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
+                                              style:UIAlertActionStyleCancel
+                                            handler:^(UIAlertAction * action) {
+                                                STRONG_SELF
+                                                self.alertController = nil;
+                                            }]];
+    
+    [alert setModalPresentationStyle:UIModalPresentationPopover];
+    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
+    popPresenter.sourceView = [rootViewController view];
+    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    if ([ICAppearanceManager sharedManager].nightSettingMode)
+    {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    else
+    {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    }
+    self.alertController = alert;
+    [self presentAlertControllerAnimated:YES completion:NULL];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    NSURL *url = urls.firstObject;
+    if (url && [[url.pathExtension lowercaseString] isEqualToString:@"opml"]) {
+        self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
+        [self.mInfo show];
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            BOOL needsSecurity = [url startAccessingSecurityScopedResource];
+            NSLog(@"Security access granted? %@", needsSecurity ? @"YES" : @"NO");
+
+            NSData *opmlData = [NSData dataWithContentsOfURL:url];
+
+            if (needsSecurity) {
+                [url stopAccessingSecurityScopedResource];
+            }
+
+            if (!opmlData || opmlData.length == 0) {
+                NSLog(@"Invalid OPML data or empty");
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self.mInfo close];
+                    self.mInfo = nil;
+                });
+                return;
+            }
+
+            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self.mInfo close];
+                    self.mInfo = nil;
+                });
+            } progress:^(float progress) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    NSLog(@"Progress: %.0f%%", progress * 100);
+                    if (progress > 0.03) {
+                        [self.mInfo setProgress:progress];
+                    }
+                });
+            }];
+        });
+    }
+}
+
 
 - (void) donateToDeveloper:(id)sender
 {

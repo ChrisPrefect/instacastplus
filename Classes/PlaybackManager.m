@@ -594,10 +594,13 @@ enum {
         // also handle special case, where we don't have a duration
         self.initialPlaybackTime = (self.playingEpisode.position < self.playingEpisode.duration - 5 || self.playingEpisode.duration < 1) ? self.playingEpisode.position : 0;
         CDFeed* feed =  self.playingEpisode.feed;
-        NSInteger periodFeedStart = [feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", feed.uid]];
+        /*NSInteger periodFeedStart = [feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", feed.uid]];
         NSInteger periodGeneralStart =  [USER_DEFAULTS integerForKey:PlayerAutoSkipStartPeriod];
-        NSInteger period = periodFeedStart != 0 ? periodFeedStart : periodGeneralStart;
-        if (period != 0) {
+        NSInteger period = periodFeedStart != 0 ? periodFeedStart : periodGeneralStart;*/
+        double periodFeedStart = [feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", feed.uid]];
+        double periodGeneralStart = [USER_DEFAULTS doubleForKey:PlayerAutoSkipStartPeriod];
+        double period = (periodFeedStart != 0.0) ? periodFeedStart : periodGeneralStart;
+        if (period != 0.0) {
             self.initialPlaybackTime = period;
         }
         
@@ -791,7 +794,7 @@ enum {
             [DMANAGER saveAndSync:NO];
         }
         // handle auto skip end
-        NSInteger periodFeedEnd = [episode.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
+        /*NSInteger periodFeedEnd = [episode.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
         NSInteger periodGeneralEnd =  [USER_DEFAULTS integerForKey:PlayerAutoSkipEndPeriod];
         NSInteger period = periodFeedEnd != 0 ? periodFeedEnd : periodGeneralEnd;
         if (period > 0) {
@@ -811,7 +814,32 @@ enum {
                 _changingPosition = NO;
                 [DMANAGER saveAndSync:YES];
             }
+        }*/
+        
+        double periodFeedEnd = [episode.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
+        double periodGeneralEnd = [USER_DEFAULTS doubleForKey:PlayerAutoSkipEndPeriod];
+        double period = (periodFeedEnd != 0.0) ? periodFeedEnd : periodGeneralEnd;
+
+        if (period > 0.0) {
+            AVPlayerItem *item = weakSelf.player.currentItem;
+            CMTime duration = item.asset.duration;
+            double dur = (duration.timescale != 0) ? (double)duration.value / duration.timescale : 0.0;
+            double currentTime = CMTimeGetSeconds(time);
+
+            if (currentTime >= dur - period) {
+                [weakSelf.player pause];
+                [weakSelf close];
+
+                _changingPosition = YES;
+                episode.consumed = YES;
+                episode.position = 0;
+
+                [DMANAGER setEpisode:episode position:dur];
+                _changingPosition = NO;
+                [DMANAGER saveAndSync:YES];
+            }
         }
+
         
         if (weakSelf.player.rate > 0)
         {

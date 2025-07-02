@@ -36,6 +36,8 @@
 @property (nonatomic, strong) UIBarButtonItem* labelsItems;
 @property (nonatomic, strong) ICSearchBar* searchBar;
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
+@property (nonatomic, assign) BOOL isLoadingFromCloud;
+//@property (nonatomic, strong) UILabel *iCloudLoadingLabel;
 @end
 
 @implementation SubscriptionsTableViewController {
@@ -141,9 +143,9 @@
     
     //Search bar modification
     //end
-     
     self.tableView.tableHeaderView = searchBar;
     self.searchBar = searchBar;
+
     self.searchBar.showsActivity = DMANAGER.ftsIndexing;
 
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsMake(0, 0, 0, 0) byAdjustingForStandardBars:YES];
@@ -172,8 +174,58 @@
                                                                           cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
+    self.tableView.estimatedSectionHeaderHeight = 0;
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(cloudKitDidSync:) name:NSPersistentStoreRemoteChangeNotification object:nil];
+    self.isLoadingFromCloud = YES;
+    [self checkForiCloudData];
     
-    
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    if (self.isLoadingFromCloud) {
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 30)];
+        label.text = [@"Loading data from iCloud".ls stringByAppendingString:@"..."];
+        label.textAlignment = NSTextAlignmentCenter;
+        label.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+        label.textColor = [UIColor grayColor];
+        return label;
+    }
+    return nil;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    if (self.isLoadingFromCloud) {
+        return 30.0;
+    }
+    return CGFLOAT_MIN; // 💥 NOT 0.0 — use CGFLOAT_MIN!
+}
+
+
+
+- (void)checkForiCloudData {
+    if ([[self.fetchController fetchedObjects] count] > 0 && self.isLoadingFromCloud) {
+        self.isLoadingFromCloud = NO;
+        //self.iCloudLoadingLabel.hidden = YES;
+        [self.tableView reloadData];
+    } else if (self.isLoadingFromCloud) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            //NSLog(@"⏳ Waiting for data… current feed count: %lu", (unsigned long)[[self.fetchController fetchedObjects] count]);
+            [self checkForiCloudData];
+        });
+    }
+}
+
+- (void)cloudKitDidSync:(NSNotification *)notification {
+    if (!self.isLoadingFromCloud) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([[self.fetchController fetchedObjects] count] > 0 && self.isLoadingFromCloud) {
+            self.isLoadingFromCloud = NO;
+            //self.iCloudLoadingLabel.hidden = YES;
+            [self.tableView reloadData];
+        } else {
+            //NSLog(@"⏳ Waiting for data… current feed count: %lu", (unsigned long)[[self.fetchController fetchedObjects] count]);
+        }
+    });
 }
 
 -(void)searchBarColorUpdates
@@ -367,12 +419,20 @@
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     // Return the number of sections.
+    if (self.isLoadingFromCloud)
+    {
+        return 1; // Just show the loading label in header
+    }
     return [[self.fetchController sections] count];
 }
 
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
+    if (self.isLoadingFromCloud)
+    {
+        return 0;
+    }
     if ([[self.fetchController sections] count] > 0) {
         id <NSFetchedResultsSectionInfo> sectionInfo = [[self.fetchController sections] objectAtIndex:section];
         return [sectionInfo numberOfObjects];

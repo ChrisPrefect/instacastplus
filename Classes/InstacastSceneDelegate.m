@@ -166,6 +166,16 @@
                         [self.mInfo close];
                         self.mInfo = nil;
                     });
+                } progress:^(float progress) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        // Update UI here (e.g., progress bar or label)
+                        NSLog(@"Import progress: %.2f%%", progress * 100);
+                        if ((progress * 100) > 3)
+                        {
+                            [self.mInfo setProgress:progress];
+                        }
+                        //self.mInfo.textLabel.text  = [NSString stringWithFormat:@"Importing..\n%.0f%%", progress * 100];; // Example
+                    });
                 }];
             });
             //New End
@@ -422,6 +432,10 @@
     
     UIAlertAction* firstAction = [UIAlertAction actionWithTitle:@"$1".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        // Mark popup as shown
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_first"] != nil)
             {
@@ -433,6 +447,10 @@
     
     UIAlertAction* secondAction = [UIAlertAction actionWithTitle:@"$5".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        // Mark popup as shown
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_second"] != nil)
             {
@@ -444,7 +462,12 @@
     
     UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:@"$15".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        // Mark popup as shown
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+
         [self perform:^(id sender) {
+          
             if([validProducts valueForKey:@"product_third"] != nil)
             {
                 [self purchaseMyProduct:[validProducts valueForKey:@"product_third"]];
@@ -455,6 +478,10 @@
     
     UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:@"$20".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        // Mark popup as shown
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_fourth"] != nil)
             {
@@ -466,6 +493,10 @@
     
     UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
         //STRONG_SELF
+        // Mark popup as shown
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+
     }];
     [alert addAction:defaultAction];
     
@@ -484,9 +515,6 @@
     }
     [rootVC presentViewController:alert animated:YES completion:nil];
     
-    // Mark popup as shown
-    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 -(void)fetchAvailableProducts {

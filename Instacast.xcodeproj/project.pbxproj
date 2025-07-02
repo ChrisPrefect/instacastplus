@@ -2150,9 +2150,13 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1.1;
-				DEVELOPMENT_TEAM = L95F4M2LHG;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1.6;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = L95F4M2LHG;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = L95F4M2LHG;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -2175,6 +2179,8 @@
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.iteconomy.instacastplus.mac;
 				PRODUCT_NAME = InstacastPlus;
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = InstacastPlus_prov_sistribution;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = instacastplus_mac_distribution;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -2214,10 +2220,14 @@
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1.1;
-				DEVELOPMENT_TEAM = L95F4M2LHG;
+				CURRENT_PROJECT_VERSION = 1.6;
+				DEVELOPMENT_TEAM = "";
+				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = L95F4M2LHG;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = L95F4M2LHG;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
@@ -2242,6 +2252,8 @@
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.iteconomy.instacastplus.mac;
 				PRODUCT_NAME = InstacastPlus;
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = InstacastPlus_prov_sistribution;
+				"PROVISIONING_PROFILE_SPECIFIER[sdk=macosx*]" = instacastplus_mac_distribution;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;

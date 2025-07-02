@@ -82,11 +82,13 @@
         cell.textLabel.textColor = [UIColor blackColor];
     }
     if (indexPath.row == 0) {
-        NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]];
+        //NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]];
         //NSString*strDV = @"Skip intro".ls;
         cell.textLabel.text = @"Skip intro".ls;//[NSString stringWithFormat:@"%@: %ld %@", strDV, (long)period, @"Seconds".ls];
         //
-        NSString*timeTest = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+        //NSString*timeTest = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+        double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]];
+        NSString *timeTest = [NSString stringWithFormat:@"%.1f %@", period, @"Seconds".ls];
         for (UIView *subview in cell.contentView.subviews) {
             if ([subview isKindOfClass:[UIStackView class]]) {
                 [subview removeFromSuperview];
@@ -122,11 +124,13 @@
         //
         [self addStepperToCell:cell forStart:YES];
     } else if (indexPath.row == 1) {
-        NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
+        //NSInteger period = [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
         //NSString*endDV = @"Skip outro".ls;
         cell.textLabel.text = @"Skip outro".ls;//[NSString stringWithFormat:@"%@: %ld %@", endDV, (long)period, @"Seconds".ls];
         //
-        NSString*timeTest = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+        //NSString*timeTest = [NSString stringWithFormat:@"%ld %@", (long)period, @"Seconds".ls];
+        double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
+        NSString *timeTest = [NSString stringWithFormat:@"%.1f %@", period, @"Seconds".ls];
         for (UIView *subview in cell.contentView.subviews) {
             if ([subview isKindOfClass:[UIStackView class]]) {
                 [subview removeFromSuperview];
@@ -171,46 +175,89 @@
 
 #pragma mark - Stepper and Switch Handlers
 
+//- (void)addStepperToCell:(UITableViewCell *)cell forStart:(BOOL)isStart {
+//    UIStepper *stepper = [[UIStepper alloc] init];
+//    stepper.tag = isStart ? 0 : 1;
+//    NSInteger period = isStart ?  [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]] : [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
+//   
+//    stepper.minimumValue = -5*60;//0;
+//    stepper.value = period;//stepper.value = MAX(period, 0);
+//    stepper.maximumValue = 5*60;
+//    [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];
+//    
+//    UIColor*colorTemp;
+//    if ([ICAppearanceManager sharedManager].nightSettingMode)
+//    {
+//        colorTemp = [UIColor whiteColor];
+//        
+//    }
+//    else
+//    {
+//        colorTemp = [UIColor blackColor];
+//    }
+//    UIImage *plusImage = [[UIImage systemImageNamed:@"plus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
+//    
+//    UIImage *minusImage = [[UIImage systemImageNamed:@"minus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
+//    [stepper setIncrementImage:plusImage forState:UIControlStateNormal];
+//    [stepper setDecrementImage:minusImage forState:UIControlStateNormal];
+//
+//    
+//    cell.accessoryView = stepper;
+//}
+
 - (void)addStepperToCell:(UITableViewCell *)cell forStart:(BOOL)isStart {
+    cell.accessoryView = nil;
+    if ([cell.accessoryView isKindOfClass:[UIStepper class]]) {
+        [(UIStepper *)cell.accessoryView removeFromSuperview];
+    }
+
     UIStepper *stepper = [[UIStepper alloc] init];
+    stepper.stepValue = 0.1; // ⬅️ Step value for 0.1 second
     stepper.tag = isStart ? 0 : 1;
-    NSInteger period = isStart ?  [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]] : [self.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
-   
-    stepper.minimumValue = -5*60;//0;
-    stepper.value = period;//stepper.value = MAX(period, 0);
-    stepper.maximumValue = 5*60;
-    [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];
-    
-    UIColor*colorTemp;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        colorTemp = [UIColor whiteColor];
-        
-    }
-    else
-    {
-        colorTemp = [UIColor blackColor];
-    }
+
+    double period = isStart ?
+    [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey]] :
+    [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey]];
+
+    stepper.minimumValue = -300.0; // -5 minutes
+    stepper.maximumValue = 300.0;  // +5 minutes
+    stepper.value = period;
+
+    UIColor *colorTemp = [ICAppearanceManager sharedManager].nightSettingMode ? [UIColor whiteColor] : [UIColor blackColor];
     UIImage *plusImage = [[UIImage systemImageNamed:@"plus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
-    
     UIImage *minusImage = [[UIImage systemImageNamed:@"minus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
+
     [stepper setIncrementImage:plusImage forState:UIControlStateNormal];
     [stepper setDecrementImage:minusImage forState:UIControlStateNormal];
 
-    
+    [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];
     cell.accessoryView = stepper;
 }
+
+//- (void)stepperValueChanged:(UIStepper *)sender {
+//    NSString *key = (sender.tag == 0) ?
+//    [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey] :
+//    [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey];
+//    
+//    NSInteger newValue = sender.value;
+//    
+//    if (self.feed) {
+//        [[self source] setInteger:newValue forKey:key];
+//    }    
+//    [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:sender.tag inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
+//}
 
 - (void)stepperValueChanged:(UIStepper *)sender {
     NSString *key = (sender.tag == 0) ?
     [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", self.feed.uid, self.chapterKey] :
     [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey];
-    
-    NSInteger newValue = sender.value;
-    
+
+    double newValue = sender.value;
+
     if (self.feed) {
-        [[self source] setInteger:newValue forKey:key];
-    }    
+        [[self source] setDouble:newValue forKey:key];
+    }
+
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:sender.tag inSection:0]] withRowAnimation:UITableViewRowAnimationNone];
 }
 

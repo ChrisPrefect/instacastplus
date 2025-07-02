@@ -607,3 +607,8 @@
 "We Value Your Feedback" = "Wir schätzen Ihr Feedback";
 "Use system setting" = "Systemeinstellung übernehmen";
 "E-Mail Feedback" = "E-Mail Feedback";
+"Import Data" = "Daten importieren";
+"Open an opml file from mail or the files app in InstacastPlus to import podcasts." = "zum importieren von Podcasts die opml-Datei aus Mail oder der Dateien-App in InstacastPlus öffnen.";
+"Mail" = "Mail";
+"Files" = "Dateien-App";
+"Loading data from iCloud" = "Laden von Daten aus iCloud";

@@ -333,6 +333,37 @@ NS_INLINE NSString* _DataStoreFile() {
 	return self;
 }
 
+- (void)triggerInitialCloudKitPull {
+    NSLog(@"🔄 Triggering iCloud pull...");
+
+    NSPersistentCloudKitContainer *container = self.persistentContainer;
+    NSPersistentStoreDescription *description = container.persistentStoreDescriptions.firstObject;
+
+    if (!description.cloudKitContainerOptions) {
+        NSLog(@"❌ No CloudKit options configured — cannot trigger pull.");
+        return;
+    }
+
+    CKContainer *ckContainer = [CKContainer containerWithIdentifier:description.cloudKitContainerOptions.containerIdentifier];
+    CKDatabase *privateDatabase = [ckContainer privateCloudDatabase];
+
+    // ✅ Explicitly fetch the _defaultZone
+    CKRecordZoneID *defaultZoneID = [[CKRecordZoneID alloc] initWithZoneName:@"_defaultZone"
+                                                                   ownerName:CKCurrentUserDefaultName];
+
+    CKFetchRecordZonesOperation *operation = [[CKFetchRecordZonesOperation alloc] initWithRecordZoneIDs:@[defaultZoneID]];
+
+    operation.fetchRecordZonesCompletionBlock = ^(NSDictionary<CKRecordZoneID *,CKRecordZone *> * _Nullable recordZonesByID, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"⚠️ CK Fetch failed: %@", error.localizedDescription);
+        } else {
+            NSLog(@"✅ CK Fetch triggered — iCloud sync should start shortly.");
+        }
+    };
+
+    [privateDatabase addOperation:operation];
+}
+
 - (void) _createDatabase
 {
     CDEpisodeList* unplayed = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
@@ -594,6 +625,7 @@ NS_INLINE NSString* _DataStoreFile() {
             NSLog(@"Error saving context after deletion: %@", error.localizedDescription);
         }
         else {
+            [self.persistentContainer.viewContext processPendingChanges];
             NSLog(@"Objects deleted and changes saved.");
         }
         //DevD to do crashes
@@ -1387,7 +1419,11 @@ NS_INLINE NSString* _DataStoreFile() {
             if (error) {
                 NSLog(@"Unresolved error %@, %@", error, error.userInfo);
                 abort();
-            } 
+            }
+            else {
+                    NSLog(@"✅ Persistent store loaded");
+                    [self triggerInitialCloudKitPull]; // 👈 Add this line
+                }
         }];
     
         [[NSNotificationCenter defaultCenter] addObserver:self
@@ -1398,7 +1434,7 @@ NS_INLINE NSString* _DataStoreFile() {
         return _persistentContainer;
 }
 
-- (void)handleCloudKitChanges:(NSNotification *)notification {
+/*- (void)handleCloudKitChanges:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.debounceTimer invalidate];
         self.debounceTimer = [NSTimer scheduledTimerWithTimeInterval:2
@@ -1412,6 +1448,33 @@ NS_INLINE NSString* _DataStoreFile() {
 
 - (void)handleDebouncedEvent {
     [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
+}*/
+
+- (void)handleCloudKitChanges:(NSNotification *)notification {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.debounceTimer invalidate];
+        self.debounceTimer = [NSTimer scheduledTimerWithTimeInterval:2
+                                                              target:self
+                                                            selector:@selector(handleDebouncedEvent)
+                                                            userInfo:notification.userInfo
+                                                             repeats:NO];
+        [[NSRunLoop mainRunLoop] addTimer:self.debounceTimer forMode:NSRunLoopCommonModes];
+    });
+}
+
+- (void)handleDebouncedEvent {
+    NSManagedObjectContext *context = self.objectContext;
+    [context performBlock:^{
+        NSError *error = nil;
+        if ([context save:&error]) {
+            [context refreshAllObjects];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:self userInfo:@{@"source": @"CloudKit"}];
+            });
+        } else {
+            NSLog(@"Failed to save context after CloudKit changes: %@", error.localizedDescription);
+        }
+    }];
 }
          
 - (void)refreshAllObjects {
