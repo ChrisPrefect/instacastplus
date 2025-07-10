@@ -189,7 +189,6 @@
     [USER_DEFAULTS synchronize];
     
     [self setupCarPlayNowPlaying];
-
     return YES;
 }
 

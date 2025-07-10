@@ -7,6 +7,7 @@
 //
 
 #import "UITableViewController+Settings.h"
+#import "SkipTimeCell.h"
 
 @implementation UITableViewController (Settings)
 
@@ -113,6 +114,13 @@
     cell.textLabel.textColor = ICTextColor;
     cell.detailTextLabel.textColor = ICMutedTextColor;
     
+    return cell;
+}
+
+- (SkipTimeCell*) skipTimeCellByDev
+{
+    static NSString *DetailCellIdentifier = @"SkipTimeCell";
+    SkipTimeCell *cell = [self.tableView dequeueReusableCellWithIdentifier:DetailCellIdentifier];
     return cell;
 }
 

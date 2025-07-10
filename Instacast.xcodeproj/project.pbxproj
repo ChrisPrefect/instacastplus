@@ -21,6 +21,8 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		188B3C742E175728004D14A5 /* SkipTimeCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C722E175728004D14A5 /* SkipTimeCell.m */; };
+		188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = 188B3C732E175728004D14A5 /* SkipTimeCell.xib */; };
 		1B012D5116B14C170072ED34 /* ICChapter.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B012D5016B14C170072ED34 /* ICChapter.m */; };
 		1B012D9F16B19C6D0072ED34 /* UIImage+Utils.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B012D9E16B19C6D0072ED34 /* UIImage+Utils.m */; };
 		1B02D65319ACCB0C0073151E /* ICNowPlayingActivityViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B02D65219ACCB0C0073151E /* ICNowPlayingActivityViewController.m */; };
@@ -311,6 +313,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		188B3C712E175728004D14A5 /* SkipTimeCell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SkipTimeCell.h; sourceTree = "<group>"; };
+		188B3C722E175728004D14A5 /* SkipTimeCell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SkipTimeCell.m; sourceTree = "<group>"; };
+		188B3C732E175728004D14A5 /* SkipTimeCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = SkipTimeCell.xib; sourceTree = "<group>"; };
 		1B012D4F16B14C170072ED34 /* ICChapter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICChapter.h; sourceTree = "<group>"; };
 		1B012D5016B14C170072ED34 /* ICChapter.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICChapter.m; sourceTree = "<group>"; };
 		1B012D9D16B19C6D0072ED34 /* UIImage+Utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIImage+Utils.h"; sourceTree = "<group>"; };
@@ -857,6 +862,9 @@
 				CDD17C312C6DFEED001870FB /* OnboardScreenVC.xib */,
 				CDDE0EAF2D96D8A300826379 /* ChangeLogViewController.h */,
 				CDDE0EB02D96D8A300826379 /* ChangeLogViewController.m */,
+				188B3C712E175728004D14A5 /* SkipTimeCell.h */,
+				188B3C722E175728004D14A5 /* SkipTimeCell.m */,
+				188B3C732E175728004D14A5 /* SkipTimeCell.xib */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -1842,6 +1850,7 @@
 				1B919E6317BF99B100A30BDE /* tv.png in Resources */,
 				1B2A468F1925089B0042C3E5 /* Tink.caf in Resources */,
 				92A647092CE5A201002268B7 /* Instacast-Info.plist in Resources */,
+				188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */,
 				CDA3FD942C5FF43700314B5A /* ChapterImageCell.xib in Resources */,
 				CD7A884F2C60C27F0033C023 /* dark_dd_ic.png in Resources */,
 			);
@@ -1912,6 +1921,7 @@
 				1B89FD5512CB4428005A65DF /* SubscriptionTableViewCell.m in Sources */,
 				1BFD124117B69EEA00E50C35 /* ICPlaylistsTableViewCell.m in Sources */,
 				1B89FD5A12CB447D005A65DF /* NumberAccessoryView.m in Sources */,
+				188B3C742E175728004D14A5 /* SkipTimeCell.m in Sources */,
 				1B8F6A7B19D55E6D0098399D /* FXKeychain.m in Sources */,
 				1B1BA26A1990B7F400BCB40C /* ICEpisodeConsumeIndicator.m in Sources */,
 				1B89FD5F12CB44B9005A65DF /* ViewFunctions.m in Sources */,
@@ -2153,7 +2163,7 @@
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 1.6;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = L95F4M2LHG;
 				"DEVELOPMENT_TEAM[sdk=macosx*]" = L95F4M2LHG;
@@ -2173,7 +2183,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.iteconomy.instacastplus.mac;
@@ -2224,7 +2234,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1.6;
+				CURRENT_PROJECT_VERSION = 1.1;
 				DEVELOPMENT_TEAM = "";
 				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = L95F4M2LHG;
 				"DEVELOPMENT_TEAM[sdk=macosx*]" = L95F4M2LHG;
@@ -2246,7 +2256,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus;
 				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.iteconomy.instacastplus.mac;

@@ -83,6 +83,9 @@ enum {
             PlaybackManager* pman = [PlaybackManager playbackManager];
             weakSelf.chapters = [pman.playingEpisode sortedChapters];
             weakSelf.duration = pman.duration;
+            //PlaybackManager* pman = [PlaybackManager playbackManager];
+            self->chapterImagesArray = pman.artworks;
+            [self.chapterImagesCollection reloadData];
         }];
         
         [pman addTaskObserver:self forKeyPath:@"time" task:^(id obj, NSDictionary *change) {

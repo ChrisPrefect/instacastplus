@@ -270,6 +270,61 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     [_parserQueue addOperation:parser];
 }
 
+- (void) subscribeFeedWithOpmlURLNew:(NSURL*)url options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion
+{
+    if (!url) {
+        return;
+    }
+    
+    [App retainNetworkActivity];
+
+    DebugLog(@"subscribing with URL: %@", url);
+    
+    ICFeedParser* parser = [[ICFeedParser alloc] init];
+    parser.url = url;
+    parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
+    parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
+        if (!url) {
+            if (completion) completion(nil, [NSError errorWithDomain:@"OPML" code:0 userInfo:@{NSLocalizedDescriptionKey: @"Invalid feed URL"}]);
+            [App releaseNetworkActivity];
+            return;
+        }
+
+        // 🧠 Check if already subscribed
+        NSFetchRequest *fetchRequest = [CDFeed fetchRequest];
+        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", url.absoluteString];
+        fetchRequest.fetchLimit = 1;
+        NSError *fetchError = nil;
+        NSArray *existingFeeds = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:&fetchError];
+
+        CDFeed *persistentFeed = nil;
+
+        if (existingFeeds.count > 0) {
+            persistentFeed = existingFeeds.firstObject;
+            DebugLog(@"Already subscribed to feed: %@", url);
+        } else {
+            //persistentFeed = [self subscribeParserFeedMetadataOnly:parserFeed];
+            persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
+            [DMANAGER saveAndSync:YES];
+            DebugLog(@"New feed subscribed: %@", url);
+        }
+
+        if (completion) {
+            completion(persistentFeed, fetchError);
+        }
+
+        [App releaseNetworkActivity];
+    };
+    parser.didEndWithError = ^(NSError* error) {
+        if (completion) {
+            completion(nil, error);
+        }
+        [App releaseNetworkActivity];
+    };
+    
+    [_parserQueue addOperation:parser];
+}
+
 #pragma mark -
 #pragma mark Refreshing Feeds
 
@@ -1187,6 +1242,18 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     }];
 }*/
 
+- (CDFeed *)subscribeParserFeedMetadataOnly:(ICFeed *)parserFeed {
+    if (parserFeed.changedSourceURL) {
+        parserFeed.sourceURL = parserFeed.changedSourceURL;
+    }
+
+    CDFeed *subscribedFeed = [DMANAGER subscribeFeedMetadataOnly:parserFeed];
+    subscribedFeed.parked = NO;
+    subscribedFeed.subscribed = YES;
+    return subscribedFeed;
+}
+
+
 - (void)importOPMLData:(NSData *)data completion:(void (^)())completion progress:(void (^)(float))progress {
     OPMLParser *opmlParser = [OPMLParser opmlParserWithData:data];
     
@@ -1194,9 +1261,15 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
             self.importing = YES;
             [App retainNetworkActivity];
-            
-            // Use Set for O(1) lookup
-            NSSet<NSString *> *existingFeedURLs = [NSSet setWithArray:[DMANAGER.feeds valueForKeyPath:@"sourceURL.absoluteString"]];
+
+            // Normalize and collect existing feed URLs
+            NSMutableSet<NSString *> *existingFeedURLs = [NSMutableSet set];
+            for (CDFeed *feed in DMANAGER.feeds) {
+                NSString *normalized = [self normalizedURLString:feed.sourceURL];
+                if (normalized) {
+                    [existingFeedURLs addObject:normalized];
+                }
+            }
             
             NSMutableArray<NSURL *> *urlsToImport = [NSMutableArray arrayWithCapacity:feeds.count];
             for (NSDictionary *feedDict in feeds) {
@@ -1204,12 +1277,15 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
                 if (!xmlURL) continue;
                 
                 NSURL *feedURL = [NSURL URLWithString:xmlURL];
-                if (!feedURL || [existingFeedURLs containsObject:feedURL.absoluteString]) {
-                    ErrLog(@"Invalid or duplicate feed URL: %@", xmlURL);
+                NSString *normalized = [self normalizedURLString:feedURL];
+                
+                if (!feedURL || !normalized || [existingFeedURLs containsObject:normalized]) {
+                    ErrLog(@"⛔️ Skipped duplicate or invalid feed: %@", xmlURL);
                     continue;
                 }
-                
+
                 [urlsToImport addObject:feedURL];
+                NSLog(@"✅ Queued for import: %@", normalized);
             }
             
             if (urlsToImport.count == 0) {
@@ -1220,10 +1296,11 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
             [self importURLs:urlsToImport completion:completion progress:progress];
         });
     } errorHandler:^(NSError *error) {
-        ErrLog(@"OPML parsing error: %@", error.localizedDescription);
+        ErrLog(@"❌ OPML parsing error: %@", error.localizedDescription);
         [self finalizeImportWithCompletion:completion progress:progress];
     }];
 }
+
 
 - (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(void))completion progress:(void (^)(float))progress {
     dispatch_group_t group = dispatch_group_create();
@@ -1251,7 +1328,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
                 return;
             }
             
-            [self subscribeFeedWithOpmlURL:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
+            [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
                 if (feed && feed.episodes.count > 0) {
                     NSLog(@"✅ Imported: %@", feed.title);
                 } else {
@@ -1284,8 +1361,9 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         [DMANAGER endInterruptSaving];
         [DMANAGER save];
         //[self autoDownloadAllFeedsAsynchronously];
-        
         if (progress) progress(1.0);
+        // ✅ 🔔 Post notification so table view can refresh FRC
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
         if (completion) completion();
     });
 }
@@ -1311,6 +1389,26 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 	NSString* title = [NSString stringWithFormat:@"Instacast Subscriptions from %@".ls, [NSBundle deviceName]];
 	OPMLWriter* opmlWriter = [OPMLWriter opmlWriterWithFeeds:feedDicts];
 	return [opmlWriter dataWithTitle:title];
+}
+
+- (NSString *)normalizedURLString:(NSURL *)url {
+    if (!url) return nil;
+
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    components.scheme = components.scheme.lowercaseString;
+    components.host = components.host.lowercaseString;
+
+    // Normalize path
+    if (components.path.length == 0) {
+        components.path = @"/";
+    }
+
+    // Remove trailing slash
+    if ([components.path hasSuffix:@"/"] && components.path.length > 1) {
+        components.path = [components.path substringToIndex:components.path.length - 1];
+    }
+
+    return components.URL.absoluteString;
 }
 
 @end

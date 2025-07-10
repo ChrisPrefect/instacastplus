@@ -114,15 +114,15 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>1.6</string>
+	<string>1.2</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
-    <key>UIFileSharingEnabled</key>
-    <true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -171,7 +171,6 @@
 		<string>audio</string>
 		<string>fetch</string>
 		<string>remote-notification</string>
-		<string>external-accessory</string>
 	</array>
 	<key>UIInterfaceOrientation</key>
 	<string>UIInterfaceOrientationPortrait</string>

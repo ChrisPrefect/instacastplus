@@ -541,6 +541,17 @@ NS_INLINE NSString* _DataStoreFile() {
     }
 }
 
+- (NSString *)normalizedURLString:(NSURL *)url {
+    if (!url) return nil;
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    components.scheme = components.scheme.lowercaseString;
+    components.host = components.host.lowercaseString;
+    if (components.path.length == 0) components.path = @"/";
+    if ([components.path hasSuffix:@"/"] && components.path.length > 1) {
+        components.path = [components.path substringToIndex:components.path.length - 1];
+    }
+    return components.URL.absoluteString;
+}
 
 - (void) _migrateFTS
 {
@@ -886,7 +897,11 @@ NS_INLINE NSString* _DataStoreFile() {
     // create feed
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", parserFeed.sourceURL];
+    
+    // Normalize feed URL before checking
+    NSURL *normalizedURL = [self normalizedURL:parserFeed.sourceURL];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", normalizedURL];
+    //fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", parserFeed.sourceURL];
     NSArray* feeds = [self.objectContext executeFetchRequest:fetchRequest error:nil];
     CDFeed* persistentFeed = [feeds lastObject];
     
@@ -932,105 +947,112 @@ NS_INLINE NSString* _DataStoreFile() {
     return persistentEpisode;
 }
 
+- (CDFeed *)subscribeFeedMetadataOnly:(ICFeed *)parserFeed {
+    CDFeed *feed = [self feedWithSourceURL:parserFeed.sourceURL];
+    if (!feed) {
+        feed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:self.objectContext];
+    }
 
-- (CDFeed*) subscribeFeed:(ICFeed*)parserFeed withOptions:(ICSubscribeOptions)options
+    feed.sourceURL = parserFeed.sourceURL;
+    feed.title = parserFeed.title;
+    feed.linkURL = parserFeed.linkURL;
+    feed.imageURL = parserFeed.imageURL;
+    feed.paymentURL = parserFeed.paymentURL;
+    feed.etag = parserFeed.etag;
+
+    return feed;
+}
+
+- (NSURL *)normalizedURL:(NSURL *)url {
+    NSString *urlStr = url.absoluteString;
+    
+    // Remove trailing slash
+    if ([urlStr hasSuffix:@"/"]) {
+        urlStr = [urlStr substringToIndex:urlStr.length - 1];
+    }
+
+    // Remove any whitespace or newline characters
+    urlStr = [urlStr stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    return [NSURL URLWithString:urlStr];
+}
+
+
+- (CDFeed*)subscribeFeed:(ICFeed*)parserFeed withOptions:(ICSubscribeOptions)options
 {
-	if (!parserFeed) {
-		return nil;
-	}
+    if (!parserFeed || !parserFeed.sourceURL) {
+        return nil;
+    }
 
-    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    // 🔍 Check if feed already exists by URL (use normalized NSURL)
+    NSURL *normalizedURL = [self normalizedURL:parserFeed.sourceURL];
+
+    NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", parserFeed.sourceURL];
-    NSArray* objects = [self.objectContext executeFetchRequest:fetchRequest error:nil];
-    CDFeed* persistentFeed = [objects lastObject];
-    
-    
-    if (persistentFeed && persistentFeed.episodesCount > 0)
-    {
-        NSSortDescriptor* pubDateDescriptor = [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO];
-        NSArray* parserEpisodes = [parserFeed.episodes sortedArrayUsingDescriptors:@[ pubDateDescriptor ]];
-        NSArray* persistentEpisodes = [persistentFeed.episodes sortedArrayUsingDescriptors:@[ pubDateDescriptor ]];
-        [self _mergeExistingEpisodes:persistentEpisodes withNewEpisodes:parserEpisodes andResetPlaybackStatesOfFeed:persistentFeed];
-        
-        [[SubscriptionManager sharedSubscriptionManager] updateLocalFeedInfo:persistentFeed withRemoteFeed:parserFeed force:YES];
-        
-        // delete cached chapters
-        for(CDEpisode* episode in persistentFeed.episodes) {
-            NSSet* chapters = [episode.chapters copy];
-            for(NSManagedObject* chapter in chapters) {
-                [self.objectContext deleteObject:chapter];
-            }
-            
-            // recover all deleted episodes
-            episode.archived = NO;
-        }
-        [self save];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", normalizedURL];
+    fetchRequest.fetchLimit = 1;
+
+    NSError *fetchError = nil;
+    NSArray *matches = [self.objectContext executeFetchRequest:fetchRequest error:&fetchError];
+    if (matches.count > 0) {
+        return matches.firstObject; // ✅ Already exists
     }
-    else
-    {
-        if (!persistentFeed) {
-            persistentFeed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:self.objectContext];
-        }
-    
-        [self _copyFeedValuesFrom:parserFeed to:persistentFeed];
-        
-        ICEpisode* firstEpisode = [parserFeed.episodes firstObject];
-        
-        if (firstEpisode)
-        {
-            NSDateComponents* firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth |  NSCalendarUnitDay)
-                                                                           fromDate:firstEpisode.pubDate];
-        
-            for(ICEpisode* parserEpisode in parserFeed.episodes)
-            {
-                BOOL wasNew;
-                CDEpisode* persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:persistentFeed wasNew:&wasNew];
-                
-                if (wasNew && (options & kSubscribeOptionDontManageConsumedFlags) == 0)
-                {
-                    NSDateComponents* comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth |  NSCalendarUnitDay)
-                                                                              fromDate:parserEpisode.pubDate];
-                    
-                    if ([comps day] != [firstComps day] || [comps month] != [firstComps month] || [comps year] != [firstComps year]) {
-                        persistentEpisode.consumed = YES;
-                    }
-                    else {
-                        persistentEpisode.consumed = NO;
-                    }
-                }
+
+    // 🆕 Create new feed
+    CDFeed *persistentFeed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:self.objectContext];
+    persistentFeed.sourceURL = normalizedURL;
+
+    [self _copyFeedValuesFrom:parserFeed to:persistentFeed];
+
+    ICEpisode *firstEpisode = [parserFeed.episodes firstObject];
+    if (firstEpisode) {
+        NSDateComponents *firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+                                                                       fromDate:firstEpisode.pubDate];
+
+        for (ICEpisode *parserEpisode in parserFeed.episodes) {
+            BOOL wasNew;
+            CDEpisode *persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:persistentFeed wasNew:&wasNew];
+
+            if (wasNew && (options & kSubscribeOptionDontManageConsumedFlags) == 0) {
+                NSDateComponents *comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+                                                                          fromDate:parserEpisode.pubDate];
+
+                persistentEpisode.consumed = !([comps day] == [firstComps day] &&
+                                               [comps month] == [firstComps month] &&
+                                               [comps year] == [firstComps year]);
             }
         }
-        
-        NSMutableSet* categories = [[NSMutableSet alloc] init];
-        for(ICCategory* parserCategory in parserFeed.categories) {
-            CDCategory* category = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:self.objectContext];
-            category.title = parserCategory.title;
-            
-            if (parserCategory.parent) {
-                CDCategory* parentCategory = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:self.objectContext];
-                parentCategory.title = parserCategory.parent.title;
-                category.parent = parentCategory;
-            }
-            
-            [categories addObject:category];
-        }
-        persistentFeed.categories = categories;
     }
-    
-    
+
+    NSMutableSet *categories = [[NSMutableSet alloc] init];
+    for (ICCategory *parserCategory in parserFeed.categories) {
+        CDCategory *category = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:self.objectContext];
+        category.title = parserCategory.title;
+
+        if (parserCategory.parent) {
+            CDCategory *parentCategory = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:self.objectContext];
+            parentCategory.title = parserCategory.parent.title;
+            category.parent = parentCategory;
+        }
+
+        [categories addObject:category];
+    }
+
+    persistentFeed.categories = categories;
     persistentFeed.subscribed = YES;
-    
+
     if ((options & kSubscribeOptionDontManageRanking) == 0) {
-        NSMutableArray* feedsCopy = [self.feeds mutableCopy];
+        NSMutableArray *feedsCopy = [self.feeds mutableCopy];
         [feedsCopy insertObject:persistentFeed atIndex:0];
         [self _updateFeedOrderNums:feedsCopy];
     }
-    
+
     [self save];
-    
+
     return persistentFeed;
 }
+
+
 
 - (CDFeed*) subscribeFeed:(ICFeed*)feed
 {
@@ -1058,8 +1080,16 @@ NS_INLINE NSString* _DataStoreFile() {
 
 - (CDFeed*) feedWithSourceURL:(NSURL*)sourceURL
 {
-    for(CDFeed* feed in self.feeds) {
+    /*for(CDFeed* feed in self.feeds) {
         if ([feed.sourceURL isEqual:sourceURL]) {
+            return feed;
+        }
+    }
+    return nil;*/
+    NSString *target = [self normalizedURLString:sourceURL];
+    for (CDFeed* feed in self.feeds) {
+        NSString *existing = [self normalizedURLString:feed.sourceURL];
+        if ([existing isEqualToString:target]) {
             return feed;
         }
     }

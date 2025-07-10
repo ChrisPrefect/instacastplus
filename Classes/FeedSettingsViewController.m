@@ -15,6 +15,7 @@
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #import "SettingInputViewController.h"
+#import "SkipTimeCell.h"
 
 enum {
     kEpisodesSection,
@@ -28,7 +29,7 @@ enum {
     kNumberOfSections
 };
 
-@interface FeedSettingsViewController ()
+@interface FeedSettingsViewController () <UITextFieldDelegate>
 @property (nonatomic, strong) CDFeed* feed;
 
 @end
@@ -52,7 +53,7 @@ enum {
     
     self.clearsSelectionOnViewWillAppear = YES;
 
-    
+    [self.tableView registerNib:[UINib nibWithNibName:@"SkipTimeCell" bundle:nil] forCellReuseIdentifier:@"SkipTimeCell"];
     if ([self.navigationController.viewControllers objectAtIndex:0] == self) {
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, [[UIScreen mainScreen] bounds].size.width, 44)];
         label.backgroundColor = [UIColor clearColor];
@@ -75,7 +76,16 @@ enum {
     } else {
         self.navigationItem.title = self.feed.title;
     }
+    // Add tap gesture to dismiss keyboard
+    UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
+    tapGesture.cancelsTouchesInView = NO; // Allow other interactions (e.g., stepper)
+    [self.tableView addGestureRecognizer:tapGesture];
 }
+
+- (void)handleTap:(UITapGestureRecognizer *)sender {
+    [self.view endEditing:YES]; // Dismiss keyboard
+}
+
 
 
 - (void)viewWillAppear:(BOOL)animated
@@ -358,104 +368,47 @@ enum {
     }
     else if (indexPath.section == kAutoSkipSection) 
     {
-        cell = [self detailStepperCell];
-        //NSDictionary* v = @{ @0 : @"0 Seconds",@5 : @"5 Seconds", @10 : @"10 Seconds", @20 : @"20 Seconds", @30 : @"30 Seconds", @60 : @"1 Minute", @120 : @"2 Minutes", @300 : @"5 Minutes", @600 : @"10 Minutes" };
-        switch (indexPath.row) {
-            case 0:
-            {
-                cell.accessoryView = nil;
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", self.feed.uid];
-                NSString *chaptersName = [self.feed stringForKey:key];
-                cell.textLabel.text = @"Auto Skip Chapter".ls;
-                cell.detailTextLabel.text = chaptersName;
-                break;
+        if (indexPath.row == 0)
+        {
+            cell = [self detailStepperCell];
+            cell.accessoryView = nil;
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", self.feed.uid];
+            NSString *chaptersName = [self.feed stringForKey:key];
+            cell.textLabel.text = @"Auto Skip Chapter".ls;
+            cell.detailTextLabel.text = chaptersName;
+            return cell;
+        }
+        else
+        {
+            SkipTimeCell *cell = [tableView dequeueReusableCellWithIdentifier:@"SkipTimeCell" forIndexPath:indexPath];
+            if (cell == nil) {
+                cell = [[SkipTimeCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"SkipTimeCell"];
+                cell.accessoryType = UITableViewCellAccessoryNone;
+                cell.selectedBackgroundView = [[UIView alloc] init];
             }
-            case 1:
-            {
-                cell.textLabel.text = @"Skip intro".ls;
-                double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]];
-                NSString *timeTest = [NSString stringWithFormat:@"%.1f %@", period, @"Seconds".ls];
-
-                for (UIView *subview in cell.contentView.subviews) {
-                    if ([subview isKindOfClass:[UIStackView class]]) {
-                        [subview removeFromSuperview];
-                    }
-                }
-                if ([self isSmallDevice]) {
-                    UILabel *detailLabel = [[UILabel alloc] init];
-                    detailLabel.text = timeTest;
-                    detailLabel.textColor = [UIColor grayColor];
-                    detailLabel.textAlignment = NSTextAlignmentLeft;
-                    detailLabel.numberOfLines = 0;
-                    
-                    UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[cell.textLabel, detailLabel]];
-                    stackView.axis = UILayoutConstraintAxisVertical;
-                    stackView.spacing = 5;
-                    stackView.alignment = UIStackViewAlignmentLeading;
-                    
-                    stackView.translatesAutoresizingMaskIntoConstraints = NO;
-                    [cell.contentView addSubview:stackView];
-                    
-                    // Add Constraints
-                    [NSLayoutConstraint activateConstraints:@[
-                        [stackView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:15],
-                        [stackView.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-15],
-                        [stackView.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:10],
-                        [stackView.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10]
-                    ]];
-                }
-                else
-                {
-                    cell.detailTextLabel.text = timeTest;
-                }
-                [self addStepperToCell:cell forStart:YES];
-                break;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            cell.contentView.backgroundColor = ICGroupCellBackgroundColor;
+            cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+            
+            BOOL isNightMode = [ICAppearanceManager sharedManager].nightSettingMode;
+            cell.titleLbl.textColor = isNightMode ? [UIColor whiteColor] : [UIColor blackColor];
+            cell.timeTF.textColor = ICMutedTextColor;
+            cell.secondsLbl.textColor = ICMutedTextColor;
+            cell.timeTF.text = @"";
+            double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_%@_period", self.feed.uid, (indexPath.row == 1 ? @"start" : @"end")]];
+            cell.timeTF.text = [NSString stringWithFormat:@"%.1f", period];
+            cell.timeTF.delegate = self;
+            cell.secondsLbl.text = @"Seconds".ls;
+            
+            if (indexPath.row == 1) {
+                cell.titleLbl.text = @"Skip intro".ls;
+                [self configureStepper:cell.stepperView forStart:YES];
+            } else {
+                cell.titleLbl.text = @"Skip outro".ls;
+                [self configureStepper:cell.stepperView forStart:NO];
             }
-            case 2:
-            {
-                cell.textLabel.text =  @"Skip outro".ls;
-               
-                double period = [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
-                NSString *timeTest = [NSString stringWithFormat:@"%.1f %@", period, @"Seconds".ls];
-                
-                for (UIView *subview in cell.contentView.subviews) {
-                    if ([subview isKindOfClass:[UIStackView class]]) {
-                        [subview removeFromSuperview];
-                    }
-                }
-                if ([self isSmallDevice]) {
-                    UILabel *detailLabel = [[UILabel alloc] init];
-                    detailLabel.text = timeTest;
-                    detailLabel.textColor = [UIColor grayColor];
-                    detailLabel.textAlignment = NSTextAlignmentLeft;
-                    detailLabel.numberOfLines = 0;
-                    
-                    UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[cell.textLabel, detailLabel]];
-                    stackView.axis = UILayoutConstraintAxisVertical;
-                    stackView.spacing = 5;
-                    stackView.alignment = UIStackViewAlignmentLeading;
-                    
-                    stackView.translatesAutoresizingMaskIntoConstraints = NO;
-                    [cell.contentView addSubview:stackView];
-                    
-                    // Add Constraints
-                    [NSLayoutConstraint activateConstraints:@[
-                        [stackView.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:15],
-                        [stackView.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-15],
-                        [stackView.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:10],
-                        [stackView.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10]
-                    ]];
-                }
-                else
-                {
-                    cell.detailTextLabel.text = timeTest;
-                }
-                [self addStepperToCell:cell forStart:NO];
-                break;
-            }
-            default:
-                break;
+            return cell;
         }
     }
     else if (indexPath.section == kResetSection)
@@ -478,9 +431,7 @@ enum {
     
     return cell;
 }
-- (BOOL)isSmallDevice {
-    return ([UIScreen mainScreen].bounds.size.width < 375); // iPhone SE and similar
-}
+
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
     switch (section) {
@@ -786,38 +737,29 @@ enum {
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];
 }
 
-
-#pragma mark - Stepper Handlers
-- (void)addStepperToCell:(UITableViewCell *)cell forStart:(BOOL)isStart {
-    cell.accessoryView = nil;
-    if ([cell.accessoryView isKindOfClass:[UIStepper class]]) {
-        [(UIStepper *)cell.accessoryView removeFromSuperview];
-    }
-
-    UIStepper *stepper = [[UIStepper alloc] init];
-    stepper.stepValue = 0.1; // ⬅️ Step value for 0.1 second
+- (void)configureStepper:(UIStepper *)stepper forStart:(BOOL)isStart {
+    stepper.stepValue = 0.1;
     stepper.tag = isStart ? 1 : 2;
-
+    
     double period = isStart ?
         [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid]] :
         [self.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid]];
-
-    stepper.minimumValue = -300.0; // -5 minutes
-    stepper.maximumValue = 300.0;  // +5 minutes
+    
+    stepper.minimumValue = 0.0;
+    stepper.maximumValue = 300.0;
     stepper.value = period;
-
-    UIColor *colorTemp = [ICAppearanceManager sharedManager].nightSettingMode ? [UIColor whiteColor] : [UIColor blackColor];
+    
+    BOOL isNightMode = [ICAppearanceManager sharedManager].nightSettingMode;
+    UIColor *colorTemp = isNightMode ? [UIColor whiteColor] : [UIColor blackColor];
+    stepper.tintColor = colorTemp;
     UIImage *plusImage = [[UIImage systemImageNamed:@"plus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
     UIImage *minusImage = [[UIImage systemImageNamed:@"minus"] imageWithTintColor:colorTemp renderingMode:UIImageRenderingModeAlwaysOriginal];
-
+    
     [stepper setIncrementImage:plusImage forState:UIControlStateNormal];
     [stepper setDecrementImage:minusImage forState:UIControlStateNormal];
-
+    
     [stepper addTarget:self action:@selector(stepperValueChanged:) forControlEvents:UIControlEventValueChanged];
-    cell.accessoryView = stepper;
 }
-
-
 
 - (void)stepperValueChanged:(UIStepper *)sender {
     NSString *key = (sender.tag == 1) ?
@@ -825,12 +767,57 @@ enum {
         [NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid];
 
     double newValue = sender.value;
+    //NSLog(@"Stepper value changed to: %.1f for key: %@", newValue, key);
 
     if (self.feed) {
         [[self source] setDouble:newValue forKey:key];
     }
 
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:sender.tag inSection:kAutoSkipSection]] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (BOOL)textField:(UITextField *)textField shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string {
+    NSString *newText = [textField.text stringByReplacingCharactersInRange:range withString:string];
+    
+    if (newText.length == 0) {
+        return YES;
+    }
+    
+    // Validate decimal format
+    NSString *decimalRegex = @"^-?\\d*\\.?\\d{0,1}$";
+    NSPredicate *predicate = [NSPredicate predicateWithFormat:@"SELF MATCHES %@", decimalRegex];
+    if (![predicate evaluateWithObject:newText]) {
+        return NO;
+    }
+    
+    // Validate range (-300.0 to 300.0)
+    double value = [newText doubleValue];
+    if (value < 0.0 || value > 300.0) {
+        return NO;
+    }
+    
+    return YES;
+}
+
+- (void)textFieldDidEndEditing:(UITextField *)textField {
+    SkipTimeCell *cell = (SkipTimeCell *)textField.superview.superview;
+    NSIndexPath *indexPath = [self.tableView indexPathForCell:cell];
+    if (!indexPath) return;
+    
+    NSString *key = (indexPath.row == 1) ?
+        [NSString stringWithFormat:@"%@_auto_skip_start_period", self.feed.uid] :
+        [NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid];
+    
+    double newValue = [textField.text doubleValue];
+    newValue = MIN(MAX(newValue, 0.0), 300.0);
+    
+    if (self.feed) {
+        [[self source] setDouble:newValue forKey:key];
+    }
+    
+    cell.stepperView.value = newValue;
+    
+    [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 

@@ -37,6 +37,7 @@
 @property (nonatomic, strong) ICSearchBar* searchBar;
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
 @property (nonatomic, assign) BOOL isLoadingFromCloud;
+@property (nonatomic, assign) BOOL tableViewIsUpdating;
 //@property (nonatomic, strong) UILabel *iCloudLoadingLabel;
 @end
 
@@ -53,7 +54,7 @@
 
 + (SubscriptionsTableViewController*) subscriptionsController
 {
-	return [[self alloc] initWithStyle:UITableViewStylePlain];
+    return [[self alloc] initWithStyle:UITableViewStylePlain];
 }
 
 - (void) _setObserving:(BOOL)observing
@@ -86,10 +87,10 @@
     else if (!observing && _flags.observing == 1)
     {
         [nc removeObserver:self];
-
+        
         [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
         [DMANAGER removeTaskObserver:self forKeyPath:@"ftsIndexing"];
-
+        
         _flags.observing = 0;
     }
 }
@@ -110,12 +111,12 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-
+    
     self.title = @"Podcasts".ls;
     self.navigationItem.rightBarButtonItem = self.editButtonItem;
     
-	self.tableView.rowHeight = 57+10;
-	self.tableView.separatorInset = UIEdgeInsetsZero;
+    self.tableView.rowHeight = 57+10;
+    self.tableView.separatorInset = UIEdgeInsetsZero;
     
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_scroll_position"];
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_last_index"];
@@ -127,7 +128,7 @@
     refreshControl.idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
     [refreshControl addTarget:self action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
     self.refreshControl = refreshControl;
-
+    
     
     ICSearchBar* searchBar = [[ICSearchBar alloc] initWithFrame:CGRectZero];
     searchBar.backgroundImage = [[UIImage alloc] init];
@@ -145,9 +146,9 @@
     //end
     self.tableView.tableHeaderView = searchBar;
     self.searchBar = searchBar;
-
+    
     self.searchBar.showsActivity = DMANAGER.ftsIndexing;
-
+    
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsMake(0, 0, 0, 0) byAdjustingForStandardBars:YES];
     
     self.toolbarLabelsViewController = [ToolbarLabelsViewController toolbarLabelsViewController];
@@ -172,13 +173,65 @@
                                                                managedObjectContext:DMANAGER.objectContext
                                                                  sectionNameKeyPath:nil
                                                                           cacheName:nil];
+    
+    self.tableView.sectionHeaderHeight = 0.0;
+    self.tableView.estimatedSectionHeaderHeight = 0.0;
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     self.tableView.estimatedSectionHeaderHeight = 0;
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(cloudKitDidSync:) name:NSPersistentStoreRemoteChangeNotification object:nil];
     self.isLoadingFromCloud = YES;
-    [self checkForiCloudData];
-    
+    if ([USER_DEFAULTS valueForKey: @"icloud_sync_log_view_show"] == nil)
+    {
+        [self checkForiCloudData];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(180 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self hideiCloudLogView];
+        });
+    }
+    else
+    {
+        self.isLoadingFromCloud = NO;
+        [self.tableView reloadData];
+        [self.tableView setNeedsLayout];
+        [self.tableView layoutIfNeeded];
+    }
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:@"OPMLImportDidFinishNotification" object:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleOPMLImportFinish) name:@"OPMLImportDidFinishNotification" object:nil];
+}
+
+- (void)handleOPMLImportFinish {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.fetchController = nil; // ✅ Reset to force fresh instance
+
+        [self setupFetchController];
+        self.fetchController.delegate = self;
+        [self.fetchController performFetch:nil];
+
+        [self.tableView reloadData];
+
+        [self _updateToolbarLabels];
+    });
+}
+
+- (void)setupFetchController {
+    NSFetchRequest *feedsRequest = [CDFeed fetchRequest];
+    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+    feedsRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"title" ascending:YES]];
+
+    self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:feedsRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
+    self.fetchController.delegate = self;
+}
+
+
+- (void)hideiCloudLogView {
+    self.isLoadingFromCloud = NO;
+    //self.iCloudLoadingLabel.hidden = YES;
+    [self.tableView reloadData];
+    [self.tableView setNeedsLayout];
+    [self.tableView layoutIfNeeded];
+    [USER_DEFAULTS setBool:true forKey:@"icloud_sync_log_view_show"];
+    [USER_DEFAULTS synchronize];
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
@@ -188,32 +241,42 @@
         label.textAlignment = NSTextAlignmentCenter;
         label.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
         label.textColor = [UIColor grayColor];
+        //NSLog(@"Returning iCloud loading header view");
         return label;
     }
+    //NSLog(@"Returning nil for header view (isLoadingFromCloud = NO)");
     return nil;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
     if (self.isLoadingFromCloud) {
+        //NSLog(@"Header height: 30.0 (isLoadingFromCloud = YES)");
         return 30.0;
     }
-    return CGFLOAT_MIN; // 💥 NOT 0.0 — use CGFLOAT_MIN!
+    //NSLog(@"Header height: 0.0 (isLoadingFromCloud = NO)");
+    return 0.0;
 }
 
 
 
 - (void)checkForiCloudData {
-    if ([[self.fetchController fetchedObjects] count] > 0 && self.isLoadingFromCloud) {
+    if (self.isLoadingFromCloud && self.fetchController.fetchedObjects.count > 0) {
         self.isLoadingFromCloud = NO;
-        //self.iCloudLoadingLabel.hidden = YES;
-        [self.tableView reloadData];
+
+        NSError *fetchError = nil;
+        [self.fetchController performFetch:&fetchError];
+        if (fetchError) {
+            NSLog(@"❌ Fetch error: %@", fetchError);
+        }
+
+        [self.tableView reloadData]; // ✅ full reload = safe
     } else if (self.isLoadingFromCloud) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            //NSLog(@"⏳ Waiting for data… current feed count: %lu", (unsigned long)[[self.fetchController fetchedObjects] count]);
             [self checkForiCloudData];
         });
     }
 }
+
 
 - (void)cloudKitDidSync:(NSNotification *)notification {
     if (!self.isLoadingFromCloud) return;
@@ -222,6 +285,10 @@
             self.isLoadingFromCloud = NO;
             //self.iCloudLoadingLabel.hidden = YES;
             [self.tableView reloadData];
+            [self.tableView setNeedsLayout];
+            [self.tableView layoutIfNeeded];
+            [USER_DEFAULTS setBool:true forKey:@"icloud_sync_log_view_show"];
+            [USER_DEFAULTS synchronize];
         } else {
             //NSLog(@"⏳ Waiting for data… current feed count: %lu", (unsigned long)[[self.fetchController fetchedObjects] count]);
         }
@@ -393,6 +460,7 @@
 {
     //self.feeds = [DMANAGER.feeds filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"parked == NO"]];
     if (reloadTable) {
+        //self.isLoadingFromCloud = NO;
         [self.tableView reloadData];
 
     }
@@ -401,6 +469,7 @@
 - (void)handleICloudSyncUpdateNotification:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.fetchController performFetch:nil];
+        self.isLoadingFromCloud = NO;
         [self.tableView reloadData];
     });
 }
@@ -429,15 +498,15 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (self.isLoadingFromCloud)
-    {
+    if (self.isLoadingFromCloud &&
+        self.fetchController.fetchedObjects.count == 0) {
         return 0;
     }
+    
     if ([[self.fetchController sections] count] > 0) {
         id <NSFetchedResultsSectionInfo> sectionInfo = [[self.fetchController sections] objectAtIndex:section];
         return [sectionInfo numberOfObjects];
     }
-    
     return 0;
 }
 
@@ -585,8 +654,32 @@
 #pragma mark - FetchedResultsController delegate
 
 - (void)controllerWillChangeContent:(NSFetchedResultsController *)controller {
-    if (_flags.userAction == 0) {
+//    if (_flags.userAction == 0) {
+//        [self.tableView beginUpdates];
+//    }
+    if (self.isLoadingFromCloud || _flags.userAction == 0) return;
+        self.tableViewIsUpdating = YES;
         [self.tableView beginUpdates];
+}
+
+- (void)controller:(NSFetchedResultsController *)controller
+  didChangeSection:(id <NSFetchedResultsSectionInfo>)sectionInfo
+           atIndex:(NSUInteger)sectionIndex
+     forChangeType:(NSFetchedResultsChangeType)type {
+    
+    switch(type) {
+        case NSFetchedResultsChangeInsert:
+            [self.tableView insertSections:[NSIndexSet indexSetWithIndex:sectionIndex]
+                          withRowAnimation:UITableViewRowAnimationFade];
+            break;
+            
+        case NSFetchedResultsChangeDelete:
+            [self.tableView deleteSections:[NSIndexSet indexSetWithIndex:sectionIndex]
+                          withRowAnimation:UITableViewRowAnimationFade];
+            break;
+            
+        default:
+            break;
     }
 }
 
@@ -594,40 +687,59 @@
        atIndexPath:(NSIndexPath *)indexPath forChangeType:(NSFetchedResultsChangeType)type
       newIndexPath:(NSIndexPath *)newIndexPath
 {
-    if (_flags.userAction == 1) {
+    if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+    
+    // If table is not yet visible/valid, bail out
+    if (!self.tableViewIsUpdating || self.tableView.window == nil) {
         return;
     }
     
-    
     UITableView *tableView = self.tableView;
     
-    switch(type) {
-            
+    switch (type) {
         case NSFetchedResultsChangeInsert:
-            [tableView insertRowsAtIndexPaths:@[newIndexPath] withRowAnimation:UITableViewRowAnimationFade];
+            if (newIndexPath.section < [tableView numberOfSections]) {
+                [tableView insertRowsAtIndexPaths:@[newIndexPath] withRowAnimation:UITableViewRowAnimationFade];
+            }
             break;
             
         case NSFetchedResultsChangeDelete:
-            [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+            if (indexPath.section < [tableView numberOfSections] &&
+                indexPath.row < [tableView numberOfRowsInSection:indexPath.section]) {
+                [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+            }
             break;
             
         case NSFetchedResultsChangeUpdate:
-            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+            if (indexPath.section < [tableView numberOfSections] &&
+                indexPath.row < [tableView numberOfRowsInSection:indexPath.section]) {
+                [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+            }
             break;
             
         case NSFetchedResultsChangeMove:
-            [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
-            [tableView insertRowsAtIndexPaths:@[newIndexPath] withRowAnimation:UITableViewRowAnimationFade];
+            if (indexPath && newIndexPath && ![indexPath isEqual:newIndexPath]) {
+                [tableView moveRowAtIndexPath:indexPath toIndexPath:newIndexPath];
+            } else if (indexPath) {
+                [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+            }
             break;
     }
 }
 
 
 - (void)controllerDidChangeContent:(NSFetchedResultsController *)controller {
-    if (_flags.userAction == 0) {
+    NSLog(@"🎯 controllerDidChangeContent triggered, userAction=%d", _flags.userAction);
+    
+    if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+    @try {
         [self.tableView endUpdates];
-        [self _updateToolbarLabels];
+    } @catch (NSException *exception) {
+        NSLog(@"🔥 Fallback to reloadData due to: %@", exception);
+        [self.tableView reloadData];
     }
+    self.tableViewIsUpdating = NO;
+    [self _updateToolbarLabels];
 }
 
 

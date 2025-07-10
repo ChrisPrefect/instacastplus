@@ -7,6 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
+#import "SkipTimeCell.h"
 
 @interface UITableViewController (Settings)
 - (UITableViewCell*) standardCellWithClass:(Class)cellClass;
@@ -17,6 +18,7 @@
 - (UITableViewCell*) detailStepperCell;
 - (UITableViewCell*) resetCell;
 - (UITableViewCell*) buttonCell;
+- (SkipTimeCell*) skipTimeCellByDev;
 
 - (UITableViewCell*) textCell;
 - (CGFloat)heightForTextCellUsingText:(NSString*)text;

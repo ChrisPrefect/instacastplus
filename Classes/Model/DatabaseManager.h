@@ -64,6 +64,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 - (BOOL) feedExists:(CDFeed*)feed;
 - (CDFeed*) subscribeFeed:(ICFeed*)feed;
 - (CDFeed*) subscribeFeed:(ICFeed*)feed withOptions:(ICSubscribeOptions)options;
+- (CDFeed *)subscribeFeedMetadataOnly:(ICFeed *)parserFeed;
 
 - (void) unsubscribeFeed:(CDFeed*)feed;
 - (CDFeed*) feedWithTitle:(NSString*)title;
