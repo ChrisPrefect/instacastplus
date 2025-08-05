@@ -31,7 +31,9 @@ static NSString* kUpNextCell = @"UpNextCell";
     self.tableView.separatorInset = UIEdgeInsetsZero;
     [self.tableView registerClass:[EpisodesTableViewCell class] forCellReuseIdentifier:kUpNextCell];
     
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Player Close"] style:UIBarButtonItemStylePlain target:self action:@selector(playerCloseButtonAction:)];
+    if ([_sourceView  isEqual: @"Not Left Menu"]) {
+        self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Player Close"] style:UIBarButtonItemStylePlain target:self action:@selector(playerCloseButtonAction:)];
+    } 
     
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Remove All".ls style:UIBarButtonItemStylePlain target:self action:@selector(removeAllButtonAction:)];
     

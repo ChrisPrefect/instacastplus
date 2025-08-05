@@ -698,6 +698,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                     [self perform:^(id sender) {
                                                         UpNextTableViewController* upNext = [UpNextTableViewController viewController];
                                                         upNext.episodesToInsert = @[episode];
+                                                        upNext.sourceView = @"Not Left Menu";
                                                         
                                                         PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:upNext];
                                                         navController.modalPresentationStyle = UIModalPresentationFormSheet;

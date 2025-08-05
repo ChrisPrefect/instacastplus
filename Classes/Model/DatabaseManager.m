@@ -60,6 +60,7 @@ static NSString* kBookmarksProperty = @"bookmarks";
 @property (nonatomic, strong, readwrite) ICFTSController* ftsController;
 @property (nonatomic, readwrite) BOOL ftsIndexing;
 @property (nonatomic, strong) NSTimer *debounceTimer;
+@property (nonatomic, assign) BOOL memoryWarningReceived;
 
 @end
 
@@ -198,6 +199,10 @@ NS_INLINE NSString* _DataStoreFile() {
         _imageCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Images" parent:[DatabaseManager pathToDocuments]]];
         _fileCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Episodes" parent:[DatabaseManager pathToDocuments]]];
         
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(handleMemoryWarning)
+                                                     name:UIApplicationDidReceiveMemoryWarningNotification
+                                                   object:nil];
         
         // find old database file and make a copy for new database
         if (![[NSFileManager defaultManager] fileExistsAtPath:[_databaseURL path]])
@@ -331,6 +336,11 @@ NS_INLINE NSString* _DataStoreFile() {
 //    [self checkingSaveCloudKit];
 //    [self checkFetchCloudKit];
 	return self;
+}
+
+- (void)handleMemoryWarning {
+    NSLog(@"⚠️ Memory warning received");
+    self.memoryWarningReceived = YES;
 }
 
 - (void)triggerInitialCloudKitPull {
@@ -861,34 +871,112 @@ NS_INLINE NSString* _DataStoreFile() {
     persitentMedium.mimeType = parserMedium.mimeType;
 }
 
-- (CDEpisode*) addNewParserEpisode:(ICEpisode*)parserEpisode toFeed:(CDFeed*)feed wasNew:(BOOL*)wasNew
+//- (CDEpisode*) addNewParserEpisode:(ICEpisode*)parserEpisode toFeed:(CDFeed*)feed wasNew:(BOOL*)wasNew
+//{
+//    if (wasNew) *wasNew = NO;
+//    
+//    
+//    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+//    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.objectContext];
+//    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash == %@", parserEpisode.objectHash];
+//    CDEpisode* persistentEpisode = [[self.objectContext executeFetchRequest:fetchRequest error:nil] firstObject];
+//    
+//    if (!persistentEpisode) {
+//        persistentEpisode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode" inManagedObjectContext:self.objectContext];
+//        if (wasNew) *wasNew = YES;
+//    }
+//    [self _copyEpisodeValuesFrom:parserEpisode to:persistentEpisode];
+//    
+//    NSMutableSet* media = [[NSMutableSet alloc] init];
+//    for(ICMedia* parserMedia in parserEpisode.media)
+//    {
+//        if (parserMedia.fileURL) {
+//            CDMedium* persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium" inManagedObjectContext:self.objectContext];
+//            [self _copyMediumValuesFrom:parserMedia to:persistentMedium];
+//            [media addObject:persistentMedium];
+//        }
+//    }
+//    persistentEpisode.media = media;
+//    [feed addEpisodesObject:persistentEpisode];
+//    
+//    return persistentEpisode;
+//}
+
+- (CDEpisode*)addNewParserEpisode:(ICEpisode*)parserEpisode
+                           toFeed:(CDFeed*)feed
+                          wasNew:(BOOL*)wasNew
 {
     if (wasNew) *wasNew = NO;
-    
-    
-    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
-    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.objectContext];
+
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash == %@", parserEpisode.objectHash];
+
     CDEpisode* persistentEpisode = [[self.objectContext executeFetchRequest:fetchRequest error:nil] firstObject];
-    
+
     if (!persistentEpisode) {
-        persistentEpisode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode" inManagedObjectContext:self.objectContext];
+        persistentEpisode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode"
+                                                           inManagedObjectContext:self.objectContext];
         if (wasNew) *wasNew = YES;
     }
+
     [self _copyEpisodeValuesFrom:parserEpisode to:persistentEpisode];
-    
-    NSMutableSet* media = [[NSMutableSet alloc] init];
-    for(ICMedia* parserMedia in parserEpisode.media)
-    {
+
+    // Replace media
+    NSMutableSet *media = [NSMutableSet set];
+    for (ICMedia *parserMedia in parserEpisode.media) {
         if (parserMedia.fileURL) {
-            CDMedium* persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium" inManagedObjectContext:self.objectContext];
+            CDMedium *persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
+                                                                      inManagedObjectContext:self.objectContext];
             [self _copyMediumValuesFrom:parserMedia to:persistentMedium];
             [media addObject:persistentMedium];
         }
     }
     persistentEpisode.media = media;
+
     [feed addEpisodesObject:persistentEpisode];
-    
+    return persistentEpisode;
+}
+
+
+- (CDEpisode*)updatedAddNewParserEpisode:(ICEpisode*)parserEpisode
+                                   toFeed:(CDFeed*)feed
+                                  wasNew:(BOOL*)wasNew
+                               skipMedia:(BOOL)skipMedia
+{
+    if (wasNew) *wasNew = NO;
+
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash == %@", parserEpisode.objectHash];
+
+    CDEpisode* persistentEpisode = [[self.objectContext executeFetchRequest:fetchRequest error:nil] firstObject];
+
+    if (!persistentEpisode) {
+        persistentEpisode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode"
+                                                           inManagedObjectContext:self.objectContext];
+        if (wasNew) *wasNew = YES;
+    }
+
+    [self _copyEpisodeValuesFrom:parserEpisode to:persistentEpisode];
+
+    if (!skipMedia) {
+        // Replace existing media
+        NSMutableSet* media = [NSMutableSet set];
+        for (ICMedia* parserMedia in parserEpisode.media) {
+            if (parserMedia.fileURL) {
+                CDMedium* persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
+                                                                          inManagedObjectContext:self.objectContext];
+                [self _copyMediumValuesFrom:parserMedia to:persistentMedium];
+                [media addObject:persistentMedium];
+            }
+        }
+        persistentEpisode.media = media;
+        persistentEpisode.downloadPending = @(NO); // media was downloaded
+    } else {
+        // Only mark that download is pending
+        persistentEpisode.downloadPending = @(YES);
+    }
+
+    [feed addEpisodesObject:persistentEpisode];
     return persistentEpisode;
 }
 
@@ -978,13 +1066,92 @@ NS_INLINE NSString* _DataStoreFile() {
 }
 
 
-- (CDFeed*)subscribeFeed:(ICFeed*)parserFeed withOptions:(ICSubscribeOptions)options
-{
+//- (CDFeed*)subscribeFeed:(ICFeed*)parserFeed withOptions:(ICSubscribeOptions)options
+//{
+//    if (!parserFeed || !parserFeed.sourceURL) {
+//        return nil;
+//    }
+//
+//    // 🔍 Check if feed already exists by URL (use normalized NSURL)
+//    NSURL *normalizedURL = [self normalizedURL:parserFeed.sourceURL];
+//
+//    NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] init];
+//    fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
+//    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", normalizedURL];
+//    fetchRequest.fetchLimit = 1;
+//
+//    NSError *fetchError = nil;
+//    NSArray *matches = [self.objectContext executeFetchRequest:fetchRequest error:&fetchError];
+//    if (matches.count > 0) {
+//        return matches.firstObject; // ✅ Already exists
+//    }
+//
+//    // 🆕 Create new feed
+//    CDFeed *persistentFeed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:self.objectContext];
+//    persistentFeed.sourceURL = normalizedURL;
+//
+//    [self _copyFeedValuesFrom:parserFeed to:persistentFeed];
+//
+//    ICEpisode *firstEpisode = [parserFeed.episodes firstObject];
+//    if (firstEpisode) {
+//        NSDateComponents *firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+//                                                                       fromDate:firstEpisode.pubDate];
+//
+//        for (ICEpisode *parserEpisode in parserFeed.episodes) {
+//            BOOL wasNew;
+//            CDEpisode *persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:persistentFeed wasNew:&wasNew];
+//
+//            if (wasNew && (options & kSubscribeOptionDontManageConsumedFlags) == 0) {
+//                NSDateComponents *comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+//                                                                          fromDate:parserEpisode.pubDate];
+//
+//                persistentEpisode.consumed = !([comps day] == [firstComps day] &&
+//                                               [comps month] == [firstComps month] &&
+//                                               [comps year] == [firstComps year]);
+//            }
+//        }
+//    }
+//
+//    NSMutableSet *categories = [[NSMutableSet alloc] init];
+//    for (ICCategory *parserCategory in parserFeed.categories) {
+//        CDCategory *category = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:self.objectContext];
+//        category.title = parserCategory.title;
+//
+//        if (parserCategory.parent) {
+//            CDCategory *parentCategory = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:self.objectContext];
+//            parentCategory.title = parserCategory.parent.title;
+//            category.parent = parentCategory;
+//        }
+//
+//        [categories addObject:category];
+//    }
+//
+//    persistentFeed.categories = categories;
+//    persistentFeed.subscribed = YES;
+//
+//    if ((options & kSubscribeOptionDontManageRanking) == 0) {
+//        NSMutableArray *feedsCopy = [self.feeds mutableCopy];
+//        [feedsCopy insertObject:persistentFeed atIndex:0];
+//        [self _updateFeedOrderNums:feedsCopy];
+//    }
+//
+//    [self save];
+//
+//    return persistentFeed;
+//}
+
+- (CDFeed*)subscribeFeed:(ICFeed*)parserFeed withOptions:(ICSubscribeOptions)options {
     if (!parserFeed || !parserFeed.sourceURL) {
         return nil;
     }
 
-    // 🔍 Check if feed already exists by URL (use normalized NSURL)
+    self.memoryWarningReceived = NO;
+
+    if (![self hasEnoughFreeDiskSpace:100 * 1024 * 1024]) {
+        NSLog(@"❌ Not enough disk space before starting.");
+        return nil;
+    }
+
     NSURL *normalizedURL = [self normalizedURL:parserFeed.sourceURL];
 
     NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] init];
@@ -995,13 +1162,12 @@ NS_INLINE NSString* _DataStoreFile() {
     NSError *fetchError = nil;
     NSArray *matches = [self.objectContext executeFetchRequest:fetchRequest error:&fetchError];
     if (matches.count > 0) {
-        return matches.firstObject; // ✅ Already exists
+        return matches.firstObject;
     }
 
-    // 🆕 Create new feed
-    CDFeed *persistentFeed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:self.objectContext];
+    CDFeed *persistentFeed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed"
+                                                           inManagedObjectContext:self.objectContext];
     persistentFeed.sourceURL = normalizedURL;
-
     [self _copyFeedValuesFrom:parserFeed to:persistentFeed];
 
     ICEpisode *firstEpisode = [parserFeed.episodes firstObject];
@@ -1010,16 +1176,35 @@ NS_INLINE NSString* _DataStoreFile() {
                                                                        fromDate:firstEpisode.pubDate];
 
         for (ICEpisode *parserEpisode in parserFeed.episodes) {
-            BOOL wasNew;
-            CDEpisode *persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:persistentFeed wasNew:&wasNew];
+            @autoreleasepool {
+                BOOL skipMedia = NO;
 
-            if (wasNew && (options & kSubscribeOptionDontManageConsumedFlags) == 0) {
-                NSDateComponents *comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
-                                                                          fromDate:parserEpisode.pubDate];
+                if (self.memoryWarningReceived) {
+                    NSLog(@"⚠️ Memory warning received — deferring media download for episode: %@", parserEpisode.title);
+                    skipMedia = YES;
+                } else if (![self hasEnoughFreeDiskSpace:20 * 1024 * 1024]) {
+                    NSLog(@"⚠️ Low disk space — skipping media download for episode: %@", parserEpisode.title);
+                    skipMedia = YES;
+                }
 
-                persistentEpisode.consumed = !([comps day] == [firstComps day] &&
-                                               [comps month] == [firstComps month] &&
-                                               [comps year] == [firstComps year]);
+                BOOL wasNew = NO;
+                CDEpisode *persistentEpisode = [self updatedAddNewParserEpisode:parserEpisode
+                                                                         toFeed:persistentFeed
+                                                                        wasNew:&wasNew
+                                                                     skipMedia:skipMedia];
+
+                if (wasNew && (options & kSubscribeOptionDontManageConsumedFlags) == 0) {
+                    NSDateComponents *comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+                                                                              fromDate:parserEpisode.pubDate];
+
+                    persistentEpisode.consumed = !([comps day] == [firstComps day] &&
+                                                   [comps month] == [firstComps month] &&
+                                                   [comps year] == [firstComps year]);
+                }
+
+                if (skipMedia) {
+                    persistentEpisode.downloadPending = YES; // 👈 ensure this attribute exists in Core Data model
+                }
             }
         }
     }
@@ -1052,6 +1237,17 @@ NS_INLINE NSString* _DataStoreFile() {
     return persistentFeed;
 }
 
+- (BOOL)hasEnoughFreeDiskSpace:(NSUInteger)minimumBytes {
+    NSError *error = nil;
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfFileSystemForPath:NSHomeDirectory() error:&error];
+    if (error) {
+        NSLog(@"❗️Disk space check error: %@", error.localizedDescription);
+        return YES; // Fail-safe: assume enough space if we can’t check
+    }
+
+    NSNumber *free = [attrs objectForKey:NSFileSystemFreeSize];
+    return ([free unsignedLongLongValue] > minimumBytes);
+}
 
 
 - (CDFeed*) subscribeFeed:(ICFeed*)feed

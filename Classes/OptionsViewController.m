@@ -24,15 +24,19 @@
 #import "InstacastAppDelegate.h"
 #include <sys/sysctl.h>
 #import "VDModalInfo.h"
+#import <CloudKit/CloudKit.h>
 
 #define kDonate1ProductID @"donate_to_developer_1"
 #define kDonate5ProductID @"donate_to_developer_5"
 #define kDonate15ProductID @"donate_to_developer_15"
 #define kDonate20ProductID @"donate_to_developer_20"
+#define kUserEnableICloudSync @"UserEnableiCloudSync"
 
 @interface OptionsViewController () <MFMailComposeViewControllerDelegate, UIDocumentInteractionControllerDelegate, UIDocumentPickerDelegate>
 @property (nonatomic, strong) UIDocumentInteractionController* interactionController;
 @property (strong) VDModalInfo* mInfo;
+@property (nonatomic, assign) BOOL isICloudSyncAvailable;
+@property (nonatomic, strong) NSString *icloudStatusMessage;
 @end
 
 
@@ -69,6 +73,12 @@ enum {
 {
     [super viewDidLoad];
     
+    self.icloudStatusMessage = @"Checking...";
+    [self checkICloudStatusWithCompletion:^(NSString *statusMessage, BOOL available) {
+        self.isICloudSyncAvailable = available;
+        self.icloudStatusMessage = statusMessage;
+        [self.tableView reloadData];
+    }];
     
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Settings".ls;
@@ -116,7 +126,7 @@ enum {
 {
     switch (section) {
         case kOptionsSectionSettings:
-            return 4;
+            return 5;
         case kOptionsSectionIO:
             return 3;
         case kEmailFeedback:
@@ -130,6 +140,107 @@ enum {
 }
 
 
+- (void)checkICloudStatusWithCompletion:(void (^)(NSString *statusMessage, BOOL available))completion {
+    [[CKContainer defaultContainer] accountStatusWithCompletionHandler:^(CKAccountStatus status, NSError * _Nullable error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                completion([NSString stringWithFormat:@"iCloud check failed: %@", error.localizedDescription], NO);
+                return;
+            }
+            switch (status) {
+                case CKAccountStatusAvailable:
+//                    completion(@"✅ iCloud is available", YES);
+                    completion(@"✅ Available", YES);
+                    break;
+                case CKAccountStatusNoAccount:
+//                    completion(@"❌ No iCloud account signed in", NO);
+                    completion(@"❌ Not Available", NO);
+                    break;
+                case CKAccountStatusRestricted:
+//                    completion(@"❌ iCloud is restricted on this device", NO);
+                    completion(@"❌ Restricted", NO);
+                    break;
+                case CKAccountStatusCouldNotDetermine:
+//                    completion(@"⚠️ Unable to determine iCloud status", NO);
+                    completion(@"❌ Not Available", NO);
+                    break;
+                default:
+//                    completion(@"❌ Unknown iCloud status", NO);
+                    completion(@"❌ Not Available", NO);
+                    break;
+            }
+        });
+    }];
+}
+
+- (BOOL)isICloudSyncEnabled {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:kUserEnableICloudSync];
+}
+
+- (void)setICloudSyncEnabled:(BOOL)enabled {
+    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:kUserEnableICloudSync];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
+- (BOOL)isICloudAvailable {
+    return [[NSFileManager defaultManager] ubiquityIdentityToken] != nil;
+}
+
+- (void)didTapResetICloudSync {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Reset iCloud Sync"
+                                                                   message:@"Are you sure you want to reset iCloud sync data?"
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+
+    UIAlertAction *confirm = [UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [self resetICloudSync];
+    }];
+    UIAlertAction *cancel = [UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil];
+
+    [alert addAction:confirm];
+    [alert addAction:cancel];
+
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)resetICloudSync {
+    CKDatabase *privateDB = [[CKContainer defaultContainer] privateCloudDatabase];
+    NSPredicate *predicate = [NSPredicate predicateWithValue:YES];
+
+    CKQuery *query = [[CKQuery alloc] initWithRecordType:@"YourRecordType" predicate:predicate];
+    [privateDB performQuery:query inZoneWithID:nil completionHandler:^(NSArray<CKRecord *> *results, NSError *error) {
+        if (error) {
+            NSLog(@"Error fetching records: %@", error.localizedDescription);
+            return;
+        }
+
+        NSMutableArray *recordIDs = [NSMutableArray array];
+        for (CKRecord *record in results) {
+            [recordIDs addObject:record.recordID];
+        }
+
+        CKModifyRecordsOperation *deleteOp = [[CKModifyRecordsOperation alloc] initWithRecordsToSave:nil recordIDsToDelete:recordIDs];
+        deleteOp.modifyRecordsCompletionBlock = ^(NSArray *saved, NSArray *deleted, NSError *opError) {
+            if (opError) {
+                NSLog(@"❌ Reset failed: %@", opError.localizedDescription);
+            } else {
+                NSLog(@"✅ iCloud sync data reset successfully");
+            }
+        };
+
+        [privateDB addOperation:deleteOp];
+    }];
+}
+
+//- (BOOL)isICloudSyncEnabled {
+//    return [[NSUserDefaults standardUserDefaults] boolForKey:kUserEnableICloudSync];
+//}
+//
+//- (void)setICloudSyncEnabled:(BOOL)enabled {
+//    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:kUserEnableICloudSync];
+//    [[NSUserDefaults standardUserDefaults] synchronize];
+//    [self.tableView reloadData];
+//}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     switch (indexPath.section)
@@ -137,7 +248,7 @@ enum {
         case kOptionsSectionSettings:
         {
             UITableViewCell* cell = [self detailCell];
-            
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             if (indexPath.row == 0) {
                 cell.textLabel.text = @"General".ls;
                 cell.detailTextLabel.text = nil;
@@ -156,6 +267,44 @@ enum {
             {
                 cell.textLabel.text = @"Offline Storage".ls;
                 cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:[[CacheManager sharedCacheManager] numberOfDownloadedBytes] countStyle:NSByteCountFormatterCountStyleMemory];
+            }
+            else if (indexPath.row == 4)
+            {
+                cell.textLabel.text = @"iCloud Sync Status".ls;
+                cell.accessoryType = nil;
+//                BOOL syncEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"iCloudSyncEnabled"];
+//                if (self.isICloudSyncEnabled) {
+//                    cell.detailTextLabel.text = @"ON".ls;
+//                } else {
+//                    cell.detailTextLabel.text = @"OFF".ls;
+//                }
+                NSString *statusText = self.icloudStatusMessage ?: @"Checking...";
+
+                NSMutableAttributedString *attributedText = [[NSMutableAttributedString alloc] initWithString:statusText];
+
+                // Always style status text
+                [attributedText addAttribute:NSForegroundColorAttributeName
+                                       value:[UIColor labelColor]
+                                       range:NSMakeRange(0, statusText.length)];
+
+                if (self.isICloudSyncAvailable == YES) {
+                    NSString *resetText = @"   Reset";
+                    NSString *fullText = [NSString stringWithFormat:@"%@%@", statusText, resetText];
+
+                    attributedText = [[NSMutableAttributedString alloc] initWithString:fullText];
+
+                    // Style main status
+                    [attributedText addAttribute:NSForegroundColorAttributeName
+                                           value:[UIColor labelColor]
+                                           range:NSMakeRange(0, statusText.length)];
+
+                    // Style Reset in red
+                    [attributedText addAttribute:NSForegroundColorAttributeName
+                                           value:[UIColor systemRedColor]
+                                           range:NSMakeRange(statusText.length, resetText.length)];
+                }
+
+                cell.detailTextLabel.attributedText = attributedText;
             }
             return cell;
         }
@@ -336,6 +485,13 @@ enum {
             else if (indexPath.row == 3) {
                 MediaFilesViewController* controller = [MediaFilesViewController viewController];
                 [self.navigationController pushViewController:controller animated:YES];
+            }
+            else if (indexPath.row == 4) {
+//                BOOL enabled = [self isICloudSyncEnabled];
+//                [self setICloudSyncEnabled:!enabled];
+                if (self.isICloudSyncAvailable == YES) {
+                    [self didTapResetICloudSync];
+                }
             }
             
             break;

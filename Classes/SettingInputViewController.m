@@ -84,7 +84,8 @@
             titleLabel.textColor = [UIColor blackColor]; // Change color of the title
         }
         // Create a vertical stack view to hold both labels
-        UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[promptLabel, titleLabel]];
+//        UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[promptLabel, titleLabel]];
+        UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[ titleLabel, promptLabel]];
         stackView.axis = UILayoutConstraintAxisVertical;
         stackView.alignment = UIStackViewAlignmentCenter;
         stackView.spacing = 2; // Adjust spacing
@@ -149,14 +150,40 @@
         self.keywordTextField.backgroundColor = [UIColor clearColor];
         self.keywordTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Add Chapter Name".ls attributes:@{NSForegroundColorAttributeName: [UIColor darkGrayColor]}];
     }
-
-    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 50)];
     
+    UILabel *infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 0, [UIScreen mainScreen].bounds.size.width - 32, 120)];
+    infoLabel.text = @"Auto Skip Chapter Info".ls; // Your title text
+    infoLabel.font = [UIFont systemFontOfSize:14];
+    infoLabel.textAlignment = NSTextAlignmentLeft;
+    infoLabel.numberOfLines = 0;
+    
+    self.keywordTextField.frame = CGRectMake(0, 110, self.view.frame.size.width, 50);
+    self.keywordTextField.layer.borderWidth = 0.5;
+    self.keywordTextField.layer.borderColor = UIColor.blackColor.CGColor;
+    self.keywordTextField.layer.masksToBounds = TRUE;
+    self.keywordTextField.layer.cornerRadius = 8.0;
+    
+    // Add left padding
+    UIView *leftPaddingView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 5, 40)];
+    self.keywordTextField.leftView = leftPaddingView;
+    self.keywordTextField.leftViewMode = UITextFieldViewModeAlways;
+
+    // Add right padding
+    UIView *rightPaddingView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 5, 40)];
+    self.keywordTextField.rightView = rightPaddingView;
+    self.keywordTextField.rightViewMode = UITextFieldViewModeAlways;
+
+    // Optional styling
+    self.keywordTextField.borderStyle = UITextBorderStyleRoundedRect;
+
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 160)];
+    [headerView addSubview:infoLabel];
     [headerView addSubview:self.keywordTextField];
     [NSLayoutConstraint activateConstraints:@[
-        [self.keywordTextField.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:20],
-        [self.keywordTextField.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-20],
-        [self.keywordTextField.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor constant:0],
+        [self.keywordTextField.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:16],
+        [self.keywordTextField.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-16],
+//        [self.keywordTextField.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor constant:0],
+        [self.keywordTextField.bottomAnchor constraintEqualToAnchor:headerView.bottomAnchor constant:-10],
         [self.keywordTextField.heightAnchor constraintEqualToConstant:40]
     ]];
 
@@ -251,14 +278,14 @@
     [NSLayoutConstraint activateConstraints:@[
         [settingsIconImageView.centerXAnchor constraintEqualToAnchor:settingsButton.centerXAnchor],
         [settingsIconImageView.centerYAnchor constraintEqualToAnchor:settingsButton.centerYAnchor],
-        [settingsIconImageView.widthAnchor constraintEqualToConstant:16],
-        [settingsIconImageView.heightAnchor constraintEqualToConstant:16],
+        [settingsIconImageView.widthAnchor constraintEqualToConstant:20],
+        [settingsIconImageView.heightAnchor constraintEqualToConstant:20],
         
         [deleteIconImageView.centerXAnchor constraintEqualToAnchor:deleteButton.centerXAnchor],
         [deleteIconImageView.centerYAnchor constraintEqualToAnchor:deleteButton.centerYAnchor],
         [deleteIconImageView.topAnchor constraintEqualToAnchor:deleteButton.bottomAnchor constant:5],
-        [deleteIconImageView.widthAnchor constraintEqualToConstant:16],
-        [deleteIconImageView.heightAnchor constraintEqualToConstant:16]
+        [deleteIconImageView.widthAnchor constraintEqualToConstant:20],
+        [deleteIconImageView.heightAnchor constraintEqualToConstant:20]
     ]];
     
     // Add content to cell

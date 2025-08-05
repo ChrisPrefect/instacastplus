@@ -419,6 +419,10 @@
         self.filterItem.title = @"All".ls;
         [self reloadDataWithFilter:YES];
     }
+    
+//    if ([self.episodes count] == 0)  {
+//        [self reload:self];
+//    }
 }
 
 - (void) reloadDataWithFilter:(BOOL)isScrolled

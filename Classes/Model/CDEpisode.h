@@ -46,6 +46,7 @@
 
 @property (nonatomic, readonly) int32_t timeLeft;
 @property (nonatomic) BOOL downloaded;
+@property (nonatomic) BOOL downloadPending;
 
 - (void) reconstructObjectHash;
 @end

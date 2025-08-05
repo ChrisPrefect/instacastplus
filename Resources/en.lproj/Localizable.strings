@@ -612,3 +612,4 @@
 "Mail" = "Mail";
 "Files" = "Files";
 "Loading data from iCloud" = "Loading data from iCloud";
+"Auto Skip Chapter Info" = "Add search terms for chapter names that should be skipped automatically. For each chapter, the start and end points can be fine-tuned (e.g., “-1.0” means the chapter will be skipped one second before it begins).";

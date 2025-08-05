@@ -22,6 +22,7 @@
 #import "MainActivityViewController.h"
 #import "StatusBarFixingViewController.h"
 #import "DirectorySearchViewController.h"
+#import "UpNextTableViewController.h"
 
 #import "VDModalInfo.h"
 #import "OnboardScreenVC.h"
@@ -30,12 +31,13 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemSubscriptions   = 2,
     kMainSidebarItemLists           = 3,
     kMainSidebarItemBookmarks       = 4,
-    kMainSidebarItemSearch          = 5,
-    kMainSidebarItemDownloads       = 6,
-    kMainSidebarItemUpNext          = 7,
-    kMainSidebarItemSettings        = 8,
-    kMainSidebarItemUnplayed        = 9,
-    kMainSidebarItemImported        = 10,
+    kMainSidebarNextItemLists       = 5,
+    kMainSidebarItemSearch          = 6,
+    kMainSidebarItemDownloads       = 7,
+    kMainSidebarItemUpNext          = 8,
+    kMainSidebarItemSettings        = 9,
+    kMainSidebarItemUnplayed        = 10,
+    kMainSidebarItemImported        = 11,
 };
 
 @interface MainViewController_4 () <UINavigationControllerDelegate,OnboardScreenVCDelegate>
@@ -145,6 +147,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                                     tag:kMainSidebarItemBookmarks
                                                                   image:[UIImage imageNamed:@"Menu Bookmarks"]
                                                           selectedImage:[UIImage imageNamed:@"Menu Bookmarks Filled"]],
+                                         
+                                         [MainSidebarItem itemWithTitle:@"Next Episodes".ls
+                                                                    tag:kMainSidebarNextItemLists
+                                                                  image:[UIImage imageNamed:@"Menu Lists"]
+                                                          selectedImage:[UIImage imageNamed:@"Menu Lists"]],
 
                                          ],
                                      @[
@@ -403,6 +410,18 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         case kMainSidebarItemBookmarks:
         {
             BookmarksTableViewController* controller = [BookmarksTableViewController bookmarksController];
+            controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+            
+            PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+            navController.view.tintColor = ICTintColor;
+            navController.toolbarHidden = NO;
+            self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+            return YES;
+        }
+        case kMainSidebarNextItemLists:
+        {
+            UpNextTableViewController* controller = [UpNextTableViewController viewController];
+//            controller.episodesToInsert = @[episode];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
             
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];

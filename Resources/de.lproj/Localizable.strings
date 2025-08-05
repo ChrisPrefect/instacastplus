@@ -612,3 +612,4 @@
 "Mail" = "Mail";
 "Files" = "Dateien-App";
 "Loading data from iCloud" = "Laden von Daten aus iCloud";
+"Auto Skip Chapter Info" = "Suchbegriffe für Kapitelnamen hinzufügen, die automatisch übersprungen werden sollen. Für jedes Kapitel kann der Start- und Endpunkt feinjustiert werden (z.B. “-1.0” bedeutet, das Kapitel wird schon eine Sekunde vor dessen Begin überspungen)";

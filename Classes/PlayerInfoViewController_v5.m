@@ -965,6 +965,12 @@ enum {
 {
     ChapterImageCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"chapter_cell" forIndexPath:indexPath];
     cell.chapterImageView.contentMode = UIViewContentModeScaleAspectFit;
+    
+    CDEpisode* sellectedEpisode = [AudioSession sharedAudioSession].episode;
+    CDFeed* sellectedFeed = sellectedEpisode.feed;
+    NSURL* sellectedImageURL = (sellectedEpisode.imageURL) ? sellectedEpisode.imageURL : sellectedFeed.imageURL;
+    UIImage* sellectedCachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:sellectedImageURL size:320 grayscale:NO];
+    
     if (self->chapterImagesArray.count <= 0)
     {
         CDEpisode* episode = [AudioSession sharedAudioSession].episode;
@@ -987,8 +993,10 @@ enum {
         {
             ICMetadataImage* artwork = self->chapterImagesArray[indexPath.item];
             [artwork loadPlatformImageScaleToWidth:CGRectGetWidth(self.view.bounds)*[ImageCacheManager scalingFactor] completion:^(id platformImage) {
-                cell.chapterImageView.image = platformImage;
-                UIColor *averageColor = [self averageColorFromImage:platformImage];
+//                cell.chapterImageView.image = platformImage;
+//                UIColor *averageColor = [self averageColorFromImage:platformImage];
+                cell.chapterImageView.image = platformImage == nil ? sellectedCachedImage :  platformImage;
+                UIColor *averageColor = [self averageColorFromImage: platformImage == nil ? sellectedCachedImage :  platformImage];
                 cell.contentView.backgroundColor = averageColor;
             }];
         }

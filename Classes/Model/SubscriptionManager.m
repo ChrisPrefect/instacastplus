@@ -125,6 +125,19 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     return subscribedFeed;
 }
 
+- (CDFeed*) subscribeParserFeedNew:(ICFeed*)parserFeed autodownload:(BOOL)autodownload options:(ICSubscribeOptions)options
+{
+    if (parserFeed.changedSourceURL) {
+        parserFeed.sourceURL = parserFeed.changedSourceURL;
+    }
+    
+    CDFeed* subscribedFeed = [DMANAGER subscribeFeed:parserFeed withOptions:options];
+    if (autodownload && !subscribedFeed.parked) {
+        [self autoDownloadEpisodesInFeed:subscribedFeed];
+    }
+    return subscribedFeed;
+}
+
 - (void) unsubscribeFeed:(CDFeed*)feed
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
@@ -304,7 +317,8 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
             DebugLog(@"Already subscribed to feed: %@", url);
         } else {
             //persistentFeed = [self subscribeParserFeedMetadataOnly:parserFeed];
-            persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
+            persistentFeed = [self subscribeParserFeedNew:parserFeed autodownload:NO options:options];
+//            persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
             [DMANAGER saveAndSync:YES];
             DebugLog(@"New feed subscribed: %@", url);
         }
