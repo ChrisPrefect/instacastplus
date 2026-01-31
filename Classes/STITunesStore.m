@@ -42,7 +42,7 @@ typedef enum {
 
 @interface STITunesStore ()
 @property (nonatomic, strong) NSMutableData* connectionData;
-@property (nonatomic, strong) NSURLConnection* connection;
+@property (nonatomic, strong) NSURLSessionDataTask* dataTask;
 @property (nonatomic, strong) id connectionDelegate;
 @end
 
@@ -57,7 +57,7 @@ typedef enum {
 		_media = @"music";
 		_entity = @"musicTrack";
 	}
-	
+
 	return self;
 }
 
@@ -73,7 +73,7 @@ typedef enum {
 	if ([linkshareCountryCodes containsObject:countryCode]) {
 		return LinkshareAffiliatePartnerType;
 	}
-	
+
 	return NoAffiliatePartnerType;
 }
 
@@ -88,7 +88,7 @@ typedef enum {
         link = [link stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
 		return [NSString stringWithFormat:@"http://clk.tradedoubler.com/click?p=23761&a=1644991&url=%@%%26partnerId%%3D2003",link];
 	}
-	
+
 	else if ([self _affiliatePartnerType] == LinkshareAffiliatePartnerType)
 	{
 		NSArray* escapeChars = [NSArray arrayWithObjects:@"!",@"$",@"&",@"'",@"(",@")",@"*",@"+",@",",@"-",@"/",@":",@";",@"=",@"?",@"@",@"_",@"~",nil];
@@ -100,8 +100,8 @@ typedef enum {
 
 		return [NSString stringWithFormat:@"http://click.linksynergy.com/fs-bin/stat?id=P7HkeV4/n2E&offerid=146261&type=3&subid=0&tmpid=1826&RD_PARM1=%@%%2526partnerId%%253D30",link];
 	}
-	
-	
+
+
 	return link;
 }
 
@@ -109,13 +109,13 @@ typedef enum {
 {
     NSString* encodedSearchString = [searchString stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
 
-	
+
 	if ([encodedSearchString length] == 0) {
 		return nil;
 	}
-	
+
 	NSString* countryCode = [self.storeLocale objectForKey:NSLocaleCountryCode];
-	
+
 	NSMutableString* searchURLString = [NSMutableString stringWithFormat:@"http://itunes.apple.com/search?media=%@", self.media];
 	if (self.entity) {
 		[searchURLString appendFormat:@"&entity=%@", self.entity];
@@ -129,9 +129,9 @@ typedef enum {
 	if (encodedSearchString) {
 		[searchURLString appendFormat:@"&term=%@", encodedSearchString];
 	}
-	
+
 	DebugLog(@"%@",searchURLString);
-	
+
 	return [NSURLRequest requestWithURL:[NSURL URLWithString:searchURLString] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20.0f];
 }
 
@@ -144,66 +144,66 @@ typedef enum {
         return nil;
     }
 
-	
+
 	NSMutableArray* items = [NSMutableArray array];
-	
+
 	NSArray* results = [dictionary objectForKey:@"results"];
 	for(NSDictionary* result in results)
 	{
 		NSMutableDictionary* item = [NSMutableDictionary dictionary];
-		
+
 		if ([result objectForKey:@"trackId"]) {
 			[item setObject:[result objectForKey:@"trackId"] forKey:kiTunesStoreTrackId];
 		}
-		
+
 		if ([result objectForKey:@"collectionId"]) {
 			[item setObject:[result objectForKey:@"collectionId"] forKey:kiTunesStoreCollectionId];
 		}
-		
+
         if ([result objectForKey:@"trackName"]) {
             [item setObject:[result objectForKey:@"trackName"] forKey:kiTunesStoreTitle];
         }
-        
+
 		NSString* link = [result objectForKey:@"trackViewUrl"];
 		if (link && ![link isKindOfClass:[NSNull class]]) {
 			[item setObject:link forKey:kiTunesStoreTitleLink];
 			[item setObject:[self affiliateLinkForStoreLink:link] forKey:kiTunesStoreTitleAffiliateLink];
 		}
-		
+
         if ([result objectForKey:@"collectionName"]) {
             [item setObject:[result objectForKey:@"collectionName"] forKey:kiTunesStoreAlbum];
         }
-        
+
 		link = [result objectForKey:@"collectionViewUrl"];
 		if (link && ![link isKindOfClass:[NSNull class]]) {
 			[item setObject:link forKey:kiTunesStoreAlbumLink];
 			[item setObject:[self affiliateLinkForStoreLink:link] forKey:kiTunesStoreAlbumAffiliateLink];
 		}
-		
+
         if ([result objectForKey:@"artistName"]) {
             [item setObject:[result objectForKey:@"artistName"] forKey:kiTunesStoreArtist];
         }
-        
+
 		link = [result objectForKey:@"artistViewUrl"];
 		if (link && ![link isKindOfClass:[NSNull class]]) {
 			[item setObject:link forKey:kiTunesStoreArtistLink];
 			[item setObject:[self affiliateLinkForStoreLink:link] forKey:kiTunesStoreArtistAffiliateLink];
 		}
-		
+
         if ([result objectForKey:@"artworkUrl60"]) {
             [item setObject:[result objectForKey:@"artworkUrl60"] forKey:kiTunesStoreArtwork60];
         }
-        
+
         if ([result objectForKey:@"artworkUrl100"]) {
             [item setObject:[result objectForKey:@"artworkUrl100"] forKey:kiTunesStoreArtwork100];
         }
-		
+
 		NSString* link100 = [result objectForKey:@"artworkUrl100"];
         if (link100) {
             NSString* link170 = [[[link100 stringByDeletingPathExtension] stringByDeletingPathExtension] stringByAppendingPathExtension:@"170x170-75.jpg"];
             [item setObject:link170 forKey:kiTunesStoreArtwork170];
         }
-		
+
 		if ([result objectForKey:@"kind"]) {
             [item setObject:[result objectForKey:@"kind"] forKey:kiTunesStoreKind];
         }
@@ -216,7 +216,7 @@ typedef enum {
         if ([result objectForKey:@"previewUrl"]) {
             [item setObject:[result objectForKey:@"previewUrl"] forKey:kiTunesStorePreviewLink];
         }
-        
+
         if ([result objectForKey:@"feedUrl"]) {
             NSString* feedURLString = [result objectForKey:@"feedUrl"];
             NSURL* feedURL = [NSURL URLWithString:feedURLString];
@@ -224,9 +224,9 @@ typedef enum {
                 [item setObject:feedURL forKey:kiTunesStoreFeedURL];
             }
         }
-		
+
 		//DebugLog(@"%@ %@",[result description], link170);
-		
+
 		[items addObject:item];
 	}
 
@@ -239,16 +239,27 @@ typedef enum {
 	if (!request) {
 		return nil;
 	}
-	
-	NSHTTPURLResponse* response = nil;
-	NSError* error = nil;
-	NSData* resultData = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
-	
+
+	__block NSData* resultData = nil;
+	__block NSHTTPURLResponse* response = nil;
+	__block NSError* error = nil;
+
+	dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+	NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* resp, NSError* err) {
+		resultData = data;
+		response = (NSHTTPURLResponse*)resp;
+		error = err;
+		dispatch_semaphore_signal(semaphore);
+	}];
+	[task resume];
+
+	dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+
 	if (error || [response statusCode] != 200) {
 		return nil;
 	}
-	
-	
+
 	return [self _searchResultsForData: resultData];
 }
 
@@ -256,15 +267,34 @@ typedef enum {
 - (void) startStoreSearchForSearchString:(NSString*)searchString delegate:(id)delegate
 {
     self.searchTerm = searchString;
-    
+
 	NSURLRequest* request = [self _urlRequestForSearchString:searchString];
 	if (request) {
 		self.connectionDelegate = delegate;
-		self.connection = [NSURLConnection connectionWithRequest:request delegate:self];
+		self.connectionData = [[NSMutableData alloc] init];
+
+		__weak typeof(self) weakSelf = self;
+		self.dataTask = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+			dispatch_async(dispatch_get_main_queue(), ^{
+				if (error) {
+					if (weakSelf.connectionDelegate && [weakSelf.connectionDelegate respondsToSelector:@selector(itunesStore:didEndWithError:)]) {
+						[weakSelf.connectionDelegate itunesStore:weakSelf didEndWithError:error];
+					}
+				} else {
+					NSArray* searchResults = [weakSelf _searchResultsForData:data];
+					if (weakSelf.connectionDelegate && [weakSelf.connectionDelegate respondsToSelector:@selector(itunesStore:didFindSearchResults:)]) {
+						[weakSelf.connectionDelegate itunesStore:weakSelf didFindSearchResults:searchResults];
+					}
+				}
+				weakSelf.dataTask = nil;
+				weakSelf.connectionDelegate = nil;
+			});
+		}];
+		[self.dataTask resume];
 	}
 	else {
 		if (delegate && [delegate respondsToSelector:@selector(itunesStore:didEndWithError:)]) {
-            NSError* error = [NSError errorWithDomain:@"ITunesStoreErrorDomain" 
+            NSError* error = [NSError errorWithDomain:@"ITunesStoreErrorDomain"
                                                  code:0
                                              userInfo:[NSDictionary dictionaryWithObject:@"Search term is too short." forKey:NSLocalizedDescriptionKey]];
 			[delegate itunesStore:self didEndWithError:error];
@@ -274,40 +304,8 @@ typedef enum {
 
 - (void) cancelStoreSearch
 {
-	[self.connection cancel];
-	self.connection = nil;
-}
-
-
-- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
-{
-	if (self.connectionDelegate && [self.connectionDelegate respondsToSelector:@selector(itunesStore:didEndWithError:)]) {
-		[self.connectionDelegate itunesStore:self didEndWithError:error];
-	}
-	self.connection = nil;
-	self.connectionDelegate = nil;
-}
-
-- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
-{
-	_connectionData = [[NSMutableData alloc] init];
-}
-
-- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
-{
-	[self.connectionData appendData:data];
-}
-
-- (void)connectionDidFinishLoading:(NSURLConnection *)connection
-{
-	NSArray* searchResults = [self _searchResultsForData:self.connectionData];
-	self.connectionData = nil;
-	
-	if (self.connectionDelegate && [self.connectionDelegate respondsToSelector:@selector(itunesStore:didFindSearchResults:)]) {
-		[self.connectionDelegate itunesStore:self didFindSearchResults:searchResults];
-	}
-	self.connection = nil;
-	self.connectionDelegate = nil;
+	[self.dataTask cancel];
+	self.dataTask = nil;
 }
 
 
@@ -338,28 +336,44 @@ typedef enum {
 - (UIImage*) imageForStoreLink:(NSString*)link
 {
 	NSURLRequest* imageRequest = [NSURLRequest requestWithURL:[NSURL URLWithString:link]];
-	NSHTTPURLResponse* imageResponse = nil;
-	NSError* imageError = nil;
-	NSData* imageData = [NSURLConnection sendSynchronousRequest:imageRequest returningResponse:&imageResponse error:&imageError];
-	
+
+	__block NSData* imageData = nil;
+	dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+	NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:imageRequest completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+		imageData = data;
+		dispatch_semaphore_signal(semaphore);
+	}];
+	[task resume];
+
+	dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+
 	if (!imageData) {
 		return nil;
 	}
-	
+
 	return [[UIImage alloc] initWithData:imageData];
 }
 #else
 - (NSImage*) imageForStoreLink:(NSString*)link
 {
 	NSURLRequest* imageRequest = [NSURLRequest requestWithURL:[NSURL URLWithString:link]];
-	NSHTTPURLResponse* imageResponse = nil;
-	NSError* imageError = nil;
-	NSData* imageData = [NSURLConnection sendSynchronousRequest:imageRequest returningResponse:&imageResponse error:&imageError];
-	
+
+	__block NSData* imageData = nil;
+	dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+	NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:imageRequest completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+		imageData = data;
+		dispatch_semaphore_signal(semaphore);
+	}];
+	[task resume];
+
+	dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+
 	if (!imageData) {
 		return nil;
 	}
-	
+
 	return [[NSImage alloc] initWithData:imageData];
 }
 #endif

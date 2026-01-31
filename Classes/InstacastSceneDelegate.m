@@ -138,33 +138,34 @@
                 self.mInfo = nil;
             }*/
             
+            __weak typeof(self) weakSelf = self;
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 BOOL accessGranted = [url startAccessingSecurityScopedResource];
                 if (!accessGranted) {
                     NSLog(@"Failed to access secure file");
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        [self.mInfo close];
-                        self.mInfo = nil;
+                        [weakSelf.mInfo close];
+                        weakSelf.mInfo = nil;
                     });
                     return;
                 }
-                
+
                 NSData *opmlData = [NSData dataWithContentsOfURL:url];
                 [url stopAccessingSecurityScopedResource];
-                
+
                 if (!opmlData || opmlData.length == 0) {
                     NSLog(@"Invalid OPML data");
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        [self.mInfo close];
-                        self.mInfo = nil;
+                        [weakSelf.mInfo close];
+                        weakSelf.mInfo = nil;
                     });
                     return;
                 }
-                
+
                 [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        [self.mInfo close];
-                        self.mInfo = nil;
+                        [weakSelf.mInfo close];
+                        weakSelf.mInfo = nil;
                     });
                 } progress:^(float progress) {
                     dispatch_async(dispatch_get_main_queue(), ^{
@@ -172,9 +173,8 @@
                         NSLog(@"Import progress: %.2f%%", progress * 100);
                         if ((progress * 100) > 3)
                         {
-                            [self.mInfo setProgress:progress];
+                            [weakSelf.mInfo setProgress:progress];
                         }
-                        //self.mInfo.textLabel.text  = [NSString stringWithFormat:@"Importing..\n%.0f%%", progress * 100];; // Example
                     });
                 }];
             });

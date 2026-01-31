@@ -13,7 +13,7 @@
 
 static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
-@interface CacheOperation ()
+@interface CacheOperation () <NSURLSessionDataDelegate, NSURLSessionTaskDelegate>
 @property (readwrite, copy) NSURL* remoteURL;
 @property (readwrite, copy) NSURL* localURL;
 @property (readwrite, copy) NSURL* tempURL;
@@ -27,7 +27,8 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 @property (strong) NSMutableSet* reflectors;
 @property (strong) id currentReflector;
 
-@property (strong) NSURLConnection* mainConnection;
+@property (strong) NSURLSession* urlSession;
+@property (strong) NSURLSessionDataTask* mainTask;
 @property (strong) HTTPAuthentication* authentication;
 @property (readwrite, strong) NSString* identifier;
 @end
@@ -52,18 +53,18 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
             remoteURLString = [remoteURLString stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
             aRemoteURL = [NSURL URLWithString:remoteURLString];
         }
-        
+
 		_remoteURL = [aRemoteURL copy];
 		_localURL = [aLocalURL copy];
 		_tempURL = [aTempURL copy];
         _identifier = [identifier copy];
         _expectedContentLength = 0;
-        
+
         _temporaryData = [[NSMutableData alloc] initWithCapacity:1024*1024*2];
 
         _reflectors = [[[CacheManager sharedCacheManager] fileReflectors] mutableCopy];
 	}
-	
+
 	return self;
 }
 
@@ -72,14 +73,14 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 + (void) removeCacheForRemoteURL:(NSURL*)remoteURL atLocalURL:(NSURL*)url tempURL:(NSURL*)tempURL
 {
 	NSFileManager* fman = [NSFileManager defaultManager];
-	
+
 	NSString* path = [url path];
     [[NSWorkspace sharedWorkspace] performFileOperation:NSWorkspaceRecycleOperation source:[path stringByDeletingLastPathComponent] destination:@"" files:@[[path lastPathComponent]] tag:NULL];
 	[fman removeItemAtPath:path error:nil];
-	
+
 	NSString* tempPath = [tempURL path];
 	[fman removeItemAtPath:tempPath error:nil];
-    
+
     [self deleteResumeInfoForRemoteURL:remoteURL];
 }
 
@@ -91,7 +92,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
             [self.delegate cacheOperationDidEnd:self];
         }
     }
-    
+
     [super cancel];
 }
 
@@ -108,18 +109,18 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     if (_expectedContentLength - _restartedAtContentLength <= 0) {
         return 0;
     }
-    
+
     double progress = (double)(_loadedContentLength - _restartedAtContentLength) / (double)(_expectedContentLength - _restartedAtContentLength);
     if (progress == 0) {
         return 0;
     }
-    
+
     NSTimeInterval timeLoaded = [[NSDate date] timeIntervalSinceDate:self.startDate];
     if (timeLoaded > 3) {
         NSTimeInterval estimated = (timeLoaded / progress)-timeLoaded;
         return estimated;
     }
-    
+
     return 0;
 }
 
@@ -127,10 +128,10 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 {
     NSFileManager* fman = [NSFileManager defaultManager];
 	NSString* tempPath = [self.tempURL path];
-    
+
     NSDictionary* resumeInfo = [self _resumeInfo];
     _expectedContentLength = [resumeInfo[@"Content-Length"] longLongValue];
-	
+
 	// create file if not already exists from a former canceled download
 	if (![fman fileExistsAtPath:tempPath]) {
 		[fman createFileAtPath:tempPath contents:[NSData data] attributes:nil];
@@ -141,14 +142,14 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 		NSDictionary* fileAttributes = [fman attributesOfItemAtPath:tempPath error:&error];
 		_loadedContentLength = [[fileAttributes objectForKey:NSFileSize] longLongValue];
 	}
-    
+
     // remove the partial file, when there is no resume data
     if (_loadedContentLength > 0 && _expectedContentLength == 0) {
         [fman removeItemAtURL:self.tempURL error:nil];
         [fman createFileAtPath:tempPath contents:[NSData data] attributes:nil];
         _loadedContentLength = 0;
     }
-	
+
 	self.fileHandle = [NSFileHandle fileHandleForWritingAtPath:tempPath];
 	if (!self.fileHandle) {
 		ErrLog(@"error creating file handle");
@@ -156,11 +157,11 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 		return NO;
 	}
 	[self.fileHandle seekToEndOfFile];
-	
-    
+
+
 	self.startDate = [NSDate date];
 
-    
+
     NSURL* requestURL = self.remoteURL;
     if ([self.reflectors count] > 0) {
         id fileReflector = [self.reflectors anyObject];
@@ -168,78 +169,93 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
         self.currentReflector = fileReflector;
     }
 
-    
+
     BOOL enabled3G = (self.overwriteCellularLock || [USER_DEFAULTS boolForKey:EnableCachingOver3G]);
 	NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:requestURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.f];
     [request setAllowsCellularAccess:enabled3G];
     [request setNetworkServiceType:NSURLNetworkServiceTypeVoice];
-    
+
     // make sure to send fake iTunes Header when content is hosted on iTunes
     if ([[requestURL host] rangeOfString:@"apple.com" options:NSCaseInsensitiveSearch].location != NSNotFound) {
         [request addValue:@"143441-1,12" forHTTPHeaderField:@"X-Apple-Store-Front"];
         [request addValue:@"iTunes/10.1.2 (Macintosh; Intel Mac OS X 10.6.6) AppleWebKit/533.19.4" forHTTPHeaderField:@"User-Agent"];
     }
-    
+
     if (_expectedContentLength > 0 && _loadedContentLength > 0) {
         NSString* rangeString = [NSString stringWithFormat:@"bytes=%lld-%lld", _loadedContentLength, _expectedContentLength-1];
         [request addValue:rangeString forHTTPHeaderField:@"Range"];
         [request addValue:@"" forHTTPHeaderField:@"Accept-Encoding"]; // make sure we not accept Gzip to get a valid expectedContentLength
         _restartedAtContentLength = _loadedContentLength;
     }
-    
-	self.mainConnection = [NSURLConnection connectionWithRequest:request delegate:self];
+
+    // Create session configuration
+    NSURLSessionConfiguration* config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.allowsCellularAccess = enabled3G;
+    config.timeoutIntervalForRequest = 30.0;
+
+    // Create session with delegate on main queue for UI updates
+    self.urlSession = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+    self.mainTask = [self.urlSession dataTaskWithRequest:request];
+    [self.mainTask resume];
 
     return YES;
 }
 
 - (void) _runDownload
-{    
+{
     // if the partial download failed, start from the beginning
-    if (self.mainCanceled && self.mainConnection) {
-        self.mainConnection = nil;
+    if (self.mainCanceled && self.mainTask) {
+        [self.mainTask cancel];
+        self.mainTask = nil;
+        [self.urlSession invalidateAndCancel];
+        self.urlSession = nil;
         self.mainCanceled = NO;
-        
+
         [self.fileHandle closeFile];
         self.fileHandle = nil;
         [[NSFileManager defaultManager] removeItemAtURL:self.tempURL error:nil];
         _restartedAtContentLength = 0;
-        
+
         [self _initializeDownload];
     }
-    
-    // we got suspended, but have a connection, kill the connection
-    if (self.suspended && self.mainConnection) {
+
+    // we got suspended, but have a task, kill the task
+    if (self.suspended && self.mainTask) {
         DebugLog(@"kill the connection");
-        [self.mainConnection cancel];
-        self.mainConnection = nil;
-        
+        [self.mainTask cancel];
+        self.mainTask = nil;
+        [self.urlSession invalidateAndCancel];
+        self.urlSession = nil;
+
         if ([_temporaryData length] > 0) {
             [self.fileHandle writeData:_temporaryData];
             [_temporaryData setData:[NSData data]];
         }
-        
+
         [self.fileHandle closeFile];
         self.fileHandle = nil;
         _restartedAtContentLength = 0;
     }
-    
-    // we got resumed, but have no connection yet, start a new one with range parameters
-    else if (!self.suspended && !self.mainConnection) {
+
+    // we got resumed, but have no task yet, start a new one with range parameters
+    else if (!self.suspended && !self.mainTask) {
         [self _initializeDownload];
     }
 }
 
 - (void) _finishDownload
 {
-    if (self.mainConnection)
+    if (self.mainTask)
     {
-        [self.mainConnection cancel];
-        self.mainConnection = nil;
-                
+        [self.mainTask cancel];
+        self.mainTask = nil;
+        [self.urlSession finishTasksAndInvalidate];
+        self.urlSession = nil;
+
         // close the temporary file
         [self.fileHandle closeFile];
         self.fileHandle = nil;
-        
+
         // move the temporary file to its final destination, if everything ended well
         if (![self isCancelled] && !self.failed)
         {
@@ -253,16 +269,12 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
             // remove the temporary file
             [[NSFileManager defaultManager] removeItemAtPath:[self.tempURL path] error:nil];
         }
-//        else if (self.tryAgain) {
-//            // remove the temporary file
-//            [[NSFileManager defaultManager] removeItemAtPath:[self.tempURL path] error:nil];
-//        }
     }
-    
+
     if (self.finishedLoading) {
         [self _deleteResumeInfo];
     }
-    
+
     if (!self.tryAgain && self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
 		[self.delegate cacheOperationDidEnd:self];
 	}
@@ -276,78 +288,79 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
         while (self.suspended && ![self isCancelled]) {
             [NSThread sleepForTimeInterval:0.5];
         }
-        
+
         if ([self isCancelled]) {
             dispatch_sync(dispatch_get_main_queue(), ^{
                 [self _finishDownload];
             });
             return;
         }
-        
+
         do
         {
             self.tryAgain = NO;
             self.failed = NO;
             self.finishedLoading = NO;
-            
-            
+
+
             dispatch_sync(dispatch_get_main_queue(), ^{
                 if (![self _initializeDownload]) {
                     [self _finishDownload];
                     [self cancel];
                 }
             });
-            
-            
+
+
             while (![self isCancelled] && (!self.failed || self.suspended))
             {
                 @autoreleasepool {
                     [NSThread sleepForTimeInterval:0.5];
-                    
+
                     if (self.finishedLoading) {
                         break;
                     }
-                    
+
                     dispatch_sync(dispatch_get_main_queue(), ^{
                         [self _runDownload];
                     });
                 }
             }
-            
+
             dispatch_sync(dispatch_get_main_queue(), ^{
-                
+
                 if ([_temporaryData length] > 0) {
                     [self.fileHandle writeData:_temporaryData];
                     [_temporaryData setData:[NSData data]];
                 }
-                
+
                 [self _finishDownload];
             });
-            
+
         } while (self.tryAgain);
-        
+
     }
 }
 
 #pragma mark -
-#pragma mark Connection Delegate
+#pragma mark NSURLSession Delegate
 
-- (NSCachedURLResponse *)connection:(NSURLConnection *)connection willCacheResponse:(NSCachedURLResponse *)cachedResponse
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask willCacheResponse:(NSCachedURLResponse *)proposedResponse completionHandler:(void (^)(NSCachedURLResponse * _Nullable))completionHandler
 {
-    return nil;
+    completionHandler(nil);
 }
 
 
-- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler
 {
     NSInteger statusCode = [(NSHTTPURLResponse*)response statusCode];
-    
+
 	if (statusCode == 401) {
 		ErrLog(@"authorization required");
 		self.failed = (!self.suspended);
+        completionHandler(NSURLSessionResponseCancel);
 		return;
 	}
-    
+
     if (statusCode < 200 || statusCode > 299 )
     {
         if (self.currentReflector) {
@@ -358,48 +371,61 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
         }
         else {
             ErrLog(@"media download failed. status code: %ld", (long)statusCode);
-            
+
         }
         self.failed = (!self.suspended);
+        completionHandler(NSURLSessionResponseCancel);
 		return;
 	}
-    
+
     NSHTTPURLResponse* httpResponse = (NSHTTPURLResponse*)response;
     DebugLog(@"response: %@, status: %ld", [[httpResponse allHeaderFields] description], (long)[httpResponse statusCode]);
-    
-	if (connection == self.mainConnection)
-	{
-		if (_expectedContentLength == 0LLU && [response expectedContentLength] > 0) {
-			_expectedContentLength = [response expectedContentLength] + _restartedAtContentLength;
-            
+
+    if (dataTask == self.mainTask)
+    {
+        if (_expectedContentLength == 0LLU && [response expectedContentLength] > 0) {
+            _expectedContentLength = [response expectedContentLength] + _restartedAtContentLength;
+
             NSDictionary* allHeaders = [httpResponse allHeaderFields];
             [self _saveResumeInfo:allHeaders];
-		}
-        
+        }
+
         // check etag if resume is still valid
         if (_restartedAtContentLength > 0) {
             NSString* currentEtag = [httpResponse allHeaderFields][@"Etag"];
             NSString* savedEtag = [self _resumeInfo][@"Etag"];
-            
+
             if (currentEtag != savedEtag && ![currentEtag isEqualToString:savedEtag]) {
                 ErrLog(@"can't resume, 'Etag' changed.");
-                [self.mainConnection cancel];
                 self.mainCanceled = YES;
+                completionHandler(NSURLSessionResponseCancel);
+                return;
             }
         }
-	}
+    }
+
+    completionHandler(NSURLSessionResponseAllow);
 }
 
-- (void)connection:(NSURLConnection *)connection didReceiveAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential * _Nullable))completionHandler
 {
+    NSURLProtectionSpace *protectionSpace = challenge.protectionSpace;
+
+    // Handle server trust
+    if ([protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
+        NSURLCredential *credential = [NSURLCredential credentialForTrust:protectionSpace.serverTrust];
+        completionHandler(NSURLSessionAuthChallengeUseCredential, credential);
+        return;
+    }
+
 	// in case we can use the username and password stored in the feed
 	if (self.username && self.password && [challenge previousFailureCount] == 0)
 	{
 		NSURLCredential* credentials = [NSURLCredential credentialWithUser:self.username password:self.password persistence:NSURLCredentialPersistenceNone];
-		[[challenge sender] useCredential:credentials forAuthenticationChallenge:challenge];
+        completionHandler(NSURLSessionAuthChallengeUseCredential, credentials);
 		return;
 	}
-	
+
     self.authentication = [[HTTPAuthentication alloc] init];
     self.authentication.url = self.remoteURL;
     self.authentication.username = (self.username) ? self.username : [[challenge proposedCredential] user];
@@ -407,69 +433,58 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     self.authentication.failedBefore = ([challenge previousFailureCount] > 0);
     [self.authentication showAuthenticationDialogCompletion:^(BOOL success, NSString *username, NSString *password)
     {
-        BOOL authCancel = NO;
         if (!success) {
-            authCancel = YES;
+            completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, nil);
         } else {
             self.username = username;
             self.password = password;
-        }
-        
-        if (authCancel) {
-            [[challenge sender] cancelAuthenticationChallenge:challenge];
-        } else {
             NSURLCredential* credentials = [NSURLCredential credentialWithUser:self.username password:self.password persistence:NSURLCredentialPersistenceNone];
-            [[challenge sender] useCredential:credentials forAuthenticationChallenge:challenge];
+            completionHandler(NSURLSessionAuthChallengeUseCredential, credentials);
         }
     }];
 
 }
 
-- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
 {
     [_temporaryData appendData:data];
-    
+
     if ([_temporaryData length] > 1024*1024) {
         [self.fileHandle writeData:_temporaryData];
         [_temporaryData setData:[NSData data]];
     }
-    
+
 	_loadedContentLength += [data length];
-    
+
     //DebugLog(@"_loadedContentLength %ld", _loadedContentLength);
-    
+
     if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
         [self.delegate cacheOperation:self didLoadNumberOfBytes:[data length]];
     }
-    
+
 }
 
-- (void)connectionDidFinishLoading:(NSURLConnection *)connection
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-	if (_expectedContentLength== 0LL || _loadedContentLength == _expectedContentLength) {
-		self.finishedLoading = YES;
-	}
-}
+    if (error) {
+        DebugLog(@"could not cache episode: %@", error);
 
-- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
-{
-    DebugLog(@"could not cache episode: %@", error);
+        if (self.currentReflector) {
+            [self.reflectors removeObject:self.currentReflector];
+            self.currentReflector = nil;
+            self.tryAgain = YES;
+        }
 
-    if (self.currentReflector) {
-        [self.reflectors removeObject:self.currentReflector];
-        self.currentReflector = nil;
-        self.tryAgain = YES;
+        self.failed = YES;
+
+        if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
+            [self.delegate cacheOperationDidEnd:self];
+        }
+    } else {
+        if (_expectedContentLength== 0LL || _loadedContentLength == _expectedContentLength) {
+            self.finishedLoading = YES;
+        }
     }
-    
-    
-    self.failed = YES;
-    
-    if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
-        [self.delegate cacheOperationDidEnd:self];
-    }
-    
-    
-    
 }
 
 #pragma mark - Handling Resume Information
@@ -485,7 +500,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     if (!resumeInfos) {
         resumeInfos = [[NSMutableDictionary alloc] init];
     }
-    
+
     NSString* resourceHash = [self _resourceHash];
     NSError* archiveError = nil;
     NSData* resumeData = [NSKeyedArchiver archivedDataWithRootObject:resumeInfo requiringSecureCoding:NO error:&archiveError];
@@ -499,9 +514,9 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 + (void) deleteResumeInfoForRemoteURL:(NSURL*)url
 {
     NSString* resourceHash = [[url absoluteString] MD5Hash];
-    
+
     NSMutableDictionary* resumeInfos = [[USER_DEFAULTS objectForKey:kUserDefaultsResumeInfoKey] mutableCopy];
-    
+
     if (resumeInfos[resourceHash]) {
         [resumeInfos removeObjectForKey:resourceHash];
         [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];

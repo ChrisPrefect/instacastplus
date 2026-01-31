@@ -10,6 +10,8 @@
 
 @class GTMLogger;
 
+NS_ASSUME_NONNULL_BEGIN
+
 extern NSString* ApplicationDidRegisterTouchNotification;
 
 // sorted by network speed: important!
@@ -58,6 +60,7 @@ typedef NS_ENUM(NSInteger, ICNetworkAccessTechnlogy) {
 
 @end
 
+NS_ASSUME_NONNULL_END
 
 #pragma mark -
 
@@ -75,7 +78,7 @@ NS_INLINE NSString* DecodedRot9String(NSString* rot9String)
 	return string;
 }
 
-NS_INLINE BOOL HasBeenCracked()
+NS_INLINE BOOL HasBeenCracked(void)
 {
     return NO;
 }

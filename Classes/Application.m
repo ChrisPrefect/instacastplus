@@ -51,14 +51,15 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         [_reachability startNotifier];
         
         [self updateNetworkAccessTechnology];
-        
+
         // Use the non-deprecated notification for iOS 12+
+        __weak typeof(self) weakSelf = self;
         [NSNotificationCenter.defaultCenter addObserverForName:CTServiceRadioAccessTechnologyDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){
-            [self updateNetworkAccessTechnology];
+            [weakSelf updateNetworkAccessTechnology];
         }];
-        
+
         [NSNotificationCenter.defaultCenter addObserverForName:kReachabilityChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
-            [self updateNetworkAccessTechnology];
+            [weakSelf updateNetworkAccessTechnology];
         }];
         [self deviceMotionDetection];
         [self volumeChangeNotification];

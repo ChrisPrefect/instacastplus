@@ -21,10 +21,13 @@
 @synthesize useCount=_useCount;
 @synthesize inUse=_inUse;
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)finalize {
     [self close];
     [super finalize];
 }
+#pragma clang diagnostic pop
 
 - (void)dealloc {
     [self close];

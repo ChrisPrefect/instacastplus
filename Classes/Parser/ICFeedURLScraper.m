@@ -60,10 +60,21 @@
             NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:requestURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:20.0f];
             [request addValue:@"143441-1,12" forHTTPHeaderField:@"X-Apple-Store-Front"];
             [request addValue:@"iTunes/10.1.2 (Macintosh; Intel Mac OS X 10.6.6) AppleWebKit/533.19.4" forHTTPHeaderField:@"User-Agent"];
-            
-            NSURLResponse* response = nil;
-            error = nil;
-            NSData* data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
+
+            __block NSURLResponse* response = nil;
+            __block NSData* data = nil;
+            __block NSError* blockError = nil;
+
+            dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+            NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* responseData, NSURLResponse* resp, NSError* err) {
+                data = responseData;
+                response = resp;
+                blockError = err;
+                dispatch_semaphore_signal(semaphore);
+            }];
+            [task resume];
+            dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+            error = blockError;
             
             if ([self isCancelled]) {
                 return nil;

@@ -66,9 +66,18 @@
     - (void) viewWillAppear:(BOOL)animated
     {
         [super viewWillAppear:animated];
-        
+
         self.view.backgroundColor = ICBackgroundColor;
         self.view.tintColor = ICTintColor;
+
+        // Navigation Bar Appearance für durchgehende Farbe hinter Dynamic Island
+        UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+        [appearance configureWithOpaqueBackground];
+        appearance.backgroundColor = ICBackgroundColor;
+        appearance.shadowColor = nil;
+        self.navigationBar.standardAppearance = appearance;
+        self.navigationBar.scrollEdgeAppearance = appearance;
+        self.navigationBar.compactAppearance = appearance;
         
         // xxx: workaround for status bar issues
     //    if (!_appeared) {

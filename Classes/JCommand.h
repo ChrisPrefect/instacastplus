@@ -17,11 +17,7 @@ extern NSString* API1CategoriesCommand;
 extern NSString* API1AuthorsCommand;
 extern NSString* API1AuthorPodcastsCommand;
 
-@interface JCommand : VMHTTPOperation {
-@protected
-	NSURLConnection*	_connection;
-	NSMutableData*		_data;
-}
+@interface JCommand : VMHTTPOperation
 
 + (NSString*) baseForCommand:(NSString*)command;
 

@@ -14,9 +14,10 @@
 #import <Security/Security.h>
 #endif
 
-@interface VMHTTPOperation ()
+@interface VMHTTPOperation () <NSURLSessionDelegate, NSURLSessionDataDelegate, NSURLSessionTaskDelegate>
 @property (strong) NSMutableData* connectionData;
-@property (strong) NSURLConnection* connection;
+@property (strong) NSURLSession* session;
+@property (strong) NSURLSessionDataTask* dataTask;
 @property (strong) NSURLResponse* connectionResponse;
 @property (strong) NSError* connectionError;
 @end
@@ -40,11 +41,11 @@
 {
     _connectionSemaphore = dispatch_semaphore_create(0);
     _loadedBytes = 0;
-    
+
     NSInteger internalErrors = 0;
     NSData* data = nil;
     NSMutableSet* queriedURLs = [[NSMutableSet alloc] init];
-    
+
     if (self.forceBasicAuth && self.username && self.password)
     {
         NSString* auth = [NSString stringWithFormat:@"%@:%@", self.username, self.password];
@@ -55,7 +56,17 @@
     {
         [request addValue:[NSString stringWithFormat:@"Bearer %@", self.bearerToken] forHTTPHeaderField:@"Authorization"];
     }
-    
+
+    // Create session configuration
+    NSURLSessionConfiguration* config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    if (self.timeout > 0) {
+        config.timeoutIntervalForRequest = self.timeout;
+        config.timeoutIntervalForResource = self.timeout * 2;
+    }
+
+    // Create session with delegate
+    self.session = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:nil];
+
     while (!data)
     {
 #ifndef DEBUG // DEBUG should throw and exception
@@ -63,7 +74,7 @@
             break;
         }
 #endif
-        
+
         if([queriedURLs containsObject:request.URL]) {
             self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
                                                        code:kCFURLErrorHTTPTooManyRedirects
@@ -78,49 +89,45 @@
         } else {
             NSLog(@"Warning: Attempted to add nil (request.URL) object to set.");
         }
-        
+
         self.connectionResponse = nil;
         self.connectionError = nil;
-        
-        //DebugLog(@"%@", request.URL);
-        
-        self.connection = [[NSURLConnection alloc] initWithRequest:request delegate:self startImmediately:NO];
-        [self.connection scheduleInRunLoop:[NSRunLoop mainRunLoop] forMode:NSDefaultRunLoopMode];
-        [self.connection start];
-        
+
+        self.dataTask = [self.session dataTaskWithRequest:request];
+        [self.dataTask resume];
+
         // wait some seconds timeout
-        
+
         dispatch_time_t timeout = (self.timeout > 0) ? dispatch_time(DISPATCH_TIME_NOW, self.timeout*2*1000000000LL) : DISPATCH_TIME_FOREVER;
         if (dispatch_semaphore_wait(_connectionSemaphore, timeout) != 0) {
-            [self.connection cancel];
-            
+            [self.dataTask cancel];
+
             self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
                                                        code:kCFURLErrorTimedOut
                                                    userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
                                                              @"Connection Timeout", NSLocalizedDescriptionKey,
                                                              @"Connection timed out.", NSLocalizedRecoverySuggestionErrorKey, nil]];
             self.connectionData = nil;
-            self.connection = nil;
+            self.dataTask = nil;
             break;
         }
-        
+
         NSHTTPURLResponse* response = (NSHTTPURLResponse*)self.connectionResponse;
         NSInteger statusCode = [response statusCode];
-        
+
         if (statusCode == 0 && !self.connectionError) {
-            //ErrLog(@"internal error: %@ (%@)", self.connectionError, [request URL]);
             self.connectionData = nil;
-            self.connection = nil;
+            self.dataTask = nil;
             [queriedURLs removeObject:request.URL];
             internalErrors++;
-            
+
             if (internalErrors > 5) {
                 self.connectionData = nil;
-                self.connection = nil;
+                self.dataTask = nil;
                 break;
             }
         }
-        
+
         else if (statusCode == 301 || statusCode == 302 || statusCode == 307) {
             NSString* redirectLocation = [[response allHeaderFields] objectForKey:@"Location"];
             NSURL* originalURL = request.URL;
@@ -129,18 +136,17 @@
                 newURL = [NSURL URLWithString:redirectLocation relativeToURL:originalURL];
             }
             request.URL = newURL;
-            //DebugLog(@"redirected from %@ to %@", originalURL, request.URL);
             if (statusCode == 301) {
                 self.permanentRedirectURL = request.URL;
             }
             else if (statusCode == 302 || statusCode == 307) {
                 self.temporaryRedirectURL = request.URL;
             }
-            
+
             self.connectionData = nil;
-            self.connection = nil;
+            self.dataTask = nil;
         }
-        
+
         else if (statusCode == 401) {
             self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
                                                        code:kCFURLErrorUserAuthenticationRequired
@@ -148,17 +154,17 @@
                                                              @"Authentication required", NSLocalizedDescriptionKey,
                                                              @"Please provide username and password.", NSLocalizedRecoverySuggestionErrorKey, nil]];
             self.connectionData = nil;
-            self.connection = nil;
+            self.dataTask = nil;
             break;
         }
-        
+
         else
         {
 #ifdef DEBUG
             if (statusCode == 404) {
                 DebugLog(@"status code >= 300 (%ld): %@", (long)statusCode, [request.URL absoluteString]);
             }
-            
+
             else if (statusCode >= 300) {
                 NSString* content = [[NSString alloc] initWithData:self.connectionData encoding:NSUTF8StringEncoding];
                 DebugLog(@"status code >= 300 (%ld)\n%@:\n%@\n", (long)statusCode, [request.URL absoluteString], content);
@@ -166,129 +172,116 @@
 #endif
             data = self.connectionData;
             self.connectionData = nil;
-            self.connection = nil;
+            self.dataTask = nil;
             break;
         }
     }
-    
-    
+
+
     if (outResponse) {
         *outResponse = (NSHTTPURLResponse*)self.connectionResponse;
     }
-    
+
     if (outError) {
         *outError = self.connectionError;
     }
-    
-    // iOS >= 6.0 and OS X >= 10.8 apparently no longer need explicit dispatch_release calls when using ARC
-#if TARGET_OS_IPHONE
-#if __IPHONE_OS_VERSION_MIN_REQUIRED < 60000 // Compiling for iOS < 6.0
-    dispatch_release(_connectionSemaphore);
-#endif
-#else
-#if MAC_OS_X_VERSION_MIN_REQUIRED < 1080 // Compiling for OS X < 10.8
-    dispatch_release(_connectionSemaphore);
-#endif
-#endif
-    
+
+    [self.session finishTasksAndInvalidate];
+
     return data;
 }
 
-#pragma mark -
+#pragma mark - NSURLSessionDelegate
 
-- (void)connection:(NSURLConnection *)connection willSendRequestForAuthenticationChallenge:(NSURLAuthenticationChallenge *)challenge
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential * _Nullable))completionHandler
 {
-    id <NSURLAuthenticationChallengeSender> sender = challenge.sender;
     NSURLProtectionSpace *protectionSpace = challenge.protectionSpace;
-    if (protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust)
+
+    if ([protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust])
     {
         NSURLCredential *credential = [NSURLCredential credentialForTrust:protectionSpace.serverTrust];
-        [sender useCredential:credential forAuthenticationChallenge:challenge];
+        completionHandler(NSURLSessionAuthChallengeUseCredential, credential);
     }
-    
-    else if (protectionSpace.authenticationMethod == NSURLAuthenticationMethodClientCertificate) {
-        [[challenge sender] continueWithoutCredentialForAuthenticationChallenge:challenge];
+    else if ([protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodClientCertificate]) {
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
     }
-    
-    // in case we can use the username and password stored in the feed
-	else if ([challenge previousFailureCount] == 0 && self.username && self.password)
-	{
-		NSURLCredential* credentials = [NSURLCredential credentialWithUser:self.username
+    else if ([challenge previousFailureCount] == 0 && self.username && self.password)
+    {
+        NSURLCredential* credentials = [NSURLCredential credentialWithUser:self.username
                                                                   password:self.password
                                                                persistence:NSURLCredentialPersistenceNone];
-        
-		[[challenge sender] useCredential:credentials forAuthenticationChallenge:challenge];
-	}
-    
+        completionHandler(NSURLSessionAuthChallengeUseCredential, credentials);
+    }
     else
     {
-        [[challenge sender] continueWithoutCredentialForAuthenticationChallenge:challenge];
+        completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
     }
 }
 
+#pragma mark - NSURLSessionTaskDelegate
 
-- (NSURLRequest *)connection:(NSURLConnection *)connection willSendRequest:(NSURLRequest *)request redirectResponse:(NSURLResponse *)redirectResponse
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler
 {
-    if (redirectResponse) {
-        return nil;
-    }
-    return request;
+    // Return nil to handle redirects manually (like the old NSURLConnection behavior)
+    completionHandler(nil);
 }
 
-- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
+{
+    if (error) {
+        self.connectionError = error;
+    }
+    dispatch_semaphore_signal(_connectionSemaphore);
+}
+
+#pragma mark - NSURLSessionDataDelegate
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler
 {
     self.connectionResponse = response;
     _totalBytes = [response expectedContentLength];
-    
+
     NSNumber* contentLength = [(NSHTTPURLResponse*)response allHeaderFields][@"Content-Length"];
     if (_totalBytes <= 0 && contentLength) {
         _totalBytes = [contentLength longLongValue];
     }
-    
+
     if (self.limitSize > 0 && [response expectedContentLength] != NSURLResponseUnknownLength && [response expectedContentLength] > self.limitSize) {
         ErrLog(@"feed limitation exceeded: %lld", [response expectedContentLength]);
-        [connection cancel];
-        dispatch_semaphore_signal(_connectionSemaphore);
-        
+
         self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
                                                    code:NSURLErrorDataLengthExceedsMaximum
                                                userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
                                                          @"Data length exceeded", NSLocalizedDescriptionKey,
                                                          @"Resource data exceeds the maximum allowed.", NSLocalizedRecoverySuggestionErrorKey, nil]];
+        completionHandler(NSURLSessionResponseCancel);
         return;
     }
-    
+
     self.connectionData = [NSMutableData data];
+    completionHandler(NSURLSessionResponseAllow);
 }
 
-- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
 {
     [self.connectionData appendData:data];
-    
+
     _loadedBytes += [data length];
-    
+
+    long long loadedBytes = _loadedBytes;
+    long long totalBytes = _totalBytes;
+    void (^didLoadBytesBlock)(long long, long long) = self.didLoadBytes;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.didLoadBytes) {
-            self.didLoadBytes(self->_loadedBytes, self->_totalBytes);
+        if (didLoadBytesBlock) {
+            didLoadBytesBlock(loadedBytes, totalBytes);
         }
     });
-}
-
-- (void)connectionDidFinishLoading:(NSURLConnection *)connection
-{
-    dispatch_semaphore_signal(_connectionSemaphore);
-}
-
-- (void) connection:(NSURLConnection *)connection didFailWithError:(NSError *)error
-{
-    self.connectionError = error;
-    dispatch_semaphore_signal(_connectionSemaphore);
 }
 
 - (void) cancel
 {
     [super cancel];
-    [self.connection cancel];
+    [self.dataTask cancel];
     if (_connectionSemaphore) {
     	dispatch_semaphore_signal(_connectionSemaphore);
     }

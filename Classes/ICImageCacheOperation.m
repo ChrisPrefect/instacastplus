@@ -49,9 +49,10 @@
 
 - (void) _sendCompletionBlockImage:(IC_IMAGE*)image error:(NSError*)error
 {
+    __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (![self isCancelled] && self.didEndBlock) {
-            self.didEndBlock(image, error);
+        if (![weakSelf isCancelled] && weakSelf.didEndBlock) {
+            weakSelf.didEndBlock(image, error);
         }
     });
 }
@@ -95,10 +96,18 @@
     {
         NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:self.url cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.f];
         [request setAllowsCellularAccess:[USER_DEFAULTS boolForKey:EnableCachingImagesOver3G]];
-        
-        NSURLResponse* response;
-        NSError* error;
-        NSData* data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
+
+        __block NSData* data = nil;
+        __block NSError* error = nil;
+        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+        NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* responseData, NSURLResponse* resp, NSError* err) {
+            data = responseData;
+            error = err;
+            dispatch_semaphore_signal(semaphore);
+        }];
+        [task resume];
+        dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
         
         IC_IMAGE* image;
         
