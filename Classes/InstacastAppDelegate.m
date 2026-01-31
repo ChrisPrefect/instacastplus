@@ -119,6 +119,12 @@
 #pragma clang diagnostic pop
     
     self.window.backgroundColor = ICBackgroundColor;
+    // Set interface style early to prevent button flashing in dark mode
+    if ([USER_DEFAULTS boolForKey:kDefaultNightMode]) {
+        self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    } else {
+        self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    }
     //self.window.frame = CGRectMake(0, 0, 320, 568);
     
     //DebugLog(@"%@ %@", NSStringFromCGRect(self.window.frame), NSStringFromCGRect([[UIScreen mainScreen] bounds]));

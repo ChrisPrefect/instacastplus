@@ -23,6 +23,7 @@
     NSDate*     _trackingDate;
     NSTimer*    _longTrackingTimer;
     UIAlertAction *noValueBtn;
+    UIAlertAction *value3Btn;
     UIAlertAction *value5Btn;
     UIAlertAction *value10Btn;
     UIAlertAction *value20Btn;
@@ -366,6 +367,18 @@
     }];
     [alert addAction:noValueBtn];
     
+    value3Btn = [UIAlertAction actionWithTitle:@"3 Minutes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+        STRONG_SELF
+        [self perform:^(id sender) {
+            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+            [USER_DEFAULTS setInteger:PlaybackStopTime3min forKey:DefaultIntelligentSleepTimer];
+            [USER_DEFAULTS setInteger:PlaybackStopTime3min forKey:LastSelectedSleepTimer];
+            [USER_DEFAULTS synchronize];
+            [AudioSession sharedAudioSession].timerValue = PlaybackStopTime3min;
+            [self IntelligentSleepTimerUpdate];
+        } afterDelay:0.1];
+    }];
+
     value5Btn = [UIAlertAction actionWithTitle:@"5 Minutes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         [self perform:^(id sender) {
@@ -441,9 +454,10 @@
     [alert addAction:value20Btn];
     [alert addAction:value10Btn];
     [alert addAction:value5Btn];
-    
+    [alert addAction:value3Btn];
+
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
-        
+
     }]];
     
     [self updateTimerAlertButtonsCheckmarks];
@@ -451,9 +465,9 @@
     [alert setModalPresentationStyle:UIModalPresentationPopover];
     UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
     UIViewController* rootViewController = [self getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
+    popPresenter.sourceView = self;
+    popPresenter.sourceRect = self.bounds;
+    popPresenter.permittedArrowDirections = UIPopoverArrowDirectionDown;
     //
     [alert.view addSubview:mainStack];
     alert.view.clipsToBounds = YES;
@@ -492,6 +506,7 @@
     NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
     BOOL isAlwaysTimerActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
     [noValueBtn setValue:@false forKey:@"checked"];
+    [value3Btn setValue:@false forKey:@"checked"];
     [value5Btn setValue:@false forKey:@"checked"];
     [value10Btn setValue:@false forKey:@"checked"];
     [value20Btn setValue:@false forKey:@"checked"];
@@ -501,7 +516,12 @@
     {
         if (isAlwaysTimerActive)
         {
-            if (lastSleepTimer == PlaybackStopTime5min)
+            if (lastSleepTimer == PlaybackStopTime3min)
+            {
+                [value3Btn setValue:[UIColor systemBlueColor] forKey:@"imageTintColor"];
+                [value3Btn setValue:@true forKey:@"checked"];
+            }
+            else if (lastSleepTimer == PlaybackStopTime5min)
             {
                 [value5Btn setValue:[UIColor systemBlueColor] forKey:@"imageTintColor"];
                 [value5Btn setValue:@true forKey:@"checked"];
@@ -537,6 +557,11 @@
             [noValueBtn setValue:[UIColor systemBlueColor] forKey:@"imageTintColor"];
             [noValueBtn setValue:@true forKey:@"checked"];
         }
+    }
+    else if (sleepTimer == PlaybackStopTime3min)
+    {
+        [value3Btn setValue:[UIColor systemBlueColor] forKey:@"imageTintColor"];
+        [value3Btn setValue:@true forKey:@"checked"];
     }
     else if (sleepTimer == PlaybackStopTime5min)
     {

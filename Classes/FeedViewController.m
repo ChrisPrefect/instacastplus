@@ -150,9 +150,9 @@
     self.reloadItem = [[UIBarButtonItem alloc] initWithTitle:@"Reload".ls
                                                        style:UIBarButtonItemStylePlain target:self action:@selector(reloadAction:)];
     
-    // settings item
-    self.actionItem = [[UIBarButtonItem alloc] initWithTitle:@"Share".ls
-                                                       style:UIBarButtonItemStylePlain target:self action:@selector(actionAction:)];
+    // share item
+    self.actionItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
+                                                                    target:self action:@selector(actionAction:)];
 
     
     UIBarButtonItem* settingsItem = [[UIBarButtonItem alloc] initWithTitle:@"Settings".ls

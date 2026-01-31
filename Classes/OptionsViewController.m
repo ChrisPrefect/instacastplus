@@ -10,6 +10,7 @@
 #import <StoreKit/StoreKit.h>
 
 #import "OptionsViewController.h"
+#import "CDPlaylist.h"
 
 #import "SubscriptionManager.h"
 #import "TwitterHelper.h"
@@ -255,7 +256,7 @@ enum {
         
         // Set up the attributed string with links
         //@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nWebsite: https://instacast.ch/contact/ \nDeveloper: Devendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!"
-        NSString *footerText = [NSString stringWithFormat:@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nDeveloper: Devendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion], [NSBundle buildVersion]];
+        NSString *footerText = [NSString stringWithFormat:@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nDeveloper: Claude Code Opus 4.5, Devendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion], [NSBundle buildVersion]];
         /*NSMutableAttributedString *attributedText = [[NSMutableAttributedString alloc] initWithString:footerText];
          NSMutableParagraphStyle *paragraphStyle = [[NSMutableParagraphStyle alloc] init];
          paragraphStyle.lineSpacing = 5.0;
@@ -550,15 +551,15 @@ enum {
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
                                                 [self perform:^(id sender) {
-                                                    
+
                                                     NSData* data = XPFFDataWithBookmarks(DMANAGER.bookmarks);
-                                                    
+
                                                     NSString* fileName = [NSString stringWithFormat:@"%@-%@.xpff", @"Bookmarks".ls, [UIDevice currentDevice].name];
                                                     NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
                                                     NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
-                                                    
+
                                                     [data writeToURL:url atomically:YES];
-                                                    
+
                                                     self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
                                                     self.interactionController.delegate = self;
                                                     self.interactionController.name = fileName;
@@ -567,7 +568,17 @@ enum {
                                                         self.interactionController = nil;
                                                     }
 
-                                                    
+
+                                                } afterDelay:0.3];
+                                                self.alertController = nil;
+                                            }]];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Alles".ls
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction * action) {
+                                                STRONG_SELF
+                                                [self perform:^(id sender) {
+                                                    [self exportEverything];
                                                 } afterDelay:0.3];
                                                 self.alertController = nil;
                                             }]];
@@ -686,6 +697,181 @@ enum {
     }
 }
 
+
+- (NSString*) xmlEscape:(NSString*)string
+{
+    if (!string) return @"";
+    string = [string stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
+    string = [string stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
+    string = [string stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
+    string = [string stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
+    return string;
+}
+
+- (void) exportEverything
+{
+    NSMutableString* xml = [NSMutableString string];
+    NSDateFormatter* dateFormatter = [[NSDateFormatter alloc] init];
+    [dateFormatter setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZ"];
+
+    // XML Header
+    [xml appendString:@"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"];
+    [xml appendFormat:@"<instacast version=\"1\" date=\"%@\">\n", [dateFormatter stringFromDate:[NSDate date]]];
+
+    // Podcasts
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
+    fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+    NSArray* feeds = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:nil];
+
+    [xml appendString:@"  <podcasts>\n"];
+    for (CDFeed* feed in feeds) {
+        [xml appendFormat:@"    <podcast url=\"%@\" rank=\"%d\">\n",
+            [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank];
+
+        // Custom properties
+        if ([feed hasCustomProperties]) {
+            [xml appendString:@"      <settings>\n"];
+            for (NSString* key in [feed propertyKeys]) {
+                NSString* stringVal = [feed stringForKey:key];
+                if (stringVal) {
+                    [xml appendFormat:@"        <%@>%@</%@>\n", key, [self xmlEscape:stringVal], key];
+                } else {
+                    NSInteger intVal = [feed integerForKey:key];
+                    if (intVal != 0) {
+                        [xml appendFormat:@"        <%@>%ld</%@>\n", key, (long)intVal, key];
+                    }
+                }
+            }
+            [xml appendString:@"      </settings>\n"];
+        }
+
+        // Episodes with state
+        BOOL hasEpisodes = NO;
+        for (CDEpisode* episode in feed.episodes) {
+            if (episode.consumed || episode.starred || episode.archived || episode.position > 0 || episode.downloaded) {
+                if (!hasEpisodes) {
+                    [xml appendString:@"      <episodes>\n"];
+                    hasEpisodes = YES;
+                }
+                CDMedium* medium = [episode preferedMedium];
+                [xml appendFormat:@"        <episode media=\"%@\" guid=\"%@\">\n",
+                    [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
+                    [self xmlEscape:episode.guid ?: @""]];
+                if (episode.consumed) [xml appendString:@"          <played>true</played>\n"];
+                if (episode.starred) [xml appendString:@"          <starred>true</starred>\n"];
+                if (episode.archived) [xml appendString:@"          <archived>true</archived>\n"];
+                if (episode.downloaded) [xml appendString:@"          <downloaded>true</downloaded>\n"];
+                if (episode.position > 0) [xml appendFormat:@"          <position>%d</position>\n", episode.position];
+                if (episode.duration > 0) [xml appendFormat:@"          <duration>%d</duration>\n", episode.duration];
+                [xml appendString:@"        </episode>\n"];
+            }
+        }
+        if (hasEpisodes) [xml appendString:@"      </episodes>\n"];
+        [xml appendString:@"    </podcast>\n"];
+    }
+    [xml appendString:@"  </podcasts>\n"];
+
+    // Bookmarks
+    NSArray* bookmarks = DMANAGER.bookmarks;
+    if (bookmarks.count > 0) {
+        [xml appendString:@"  <bookmarks>\n"];
+        for (CDBookmark* bookmark in bookmarks) {
+            [xml appendFormat:@"    <bookmark position=\"%.0f\" title=\"%@\" episodeGuid=\"%@\" feedUrl=\"%@\"/>\n",
+                bookmark.position,
+                [self xmlEscape:bookmark.title ?: @""],
+                [self xmlEscape:bookmark.episodeGuid ?: @""],
+                [self xmlEscape:[bookmark.feedURL absoluteString] ?: @""]];
+        }
+        [xml appendString:@"  </bookmarks>\n"];
+    }
+
+    // Up Next
+    AudioSession* session = [AudioSession sharedAudioSession];
+    NSArray* upNextPlaylist = session.playlist;
+    if (upNextPlaylist.count > 0) {
+        [xml appendString:@"  <upnext>\n"];
+        for (CDEpisode* episode in upNextPlaylist) {
+            CDMedium* medium = [episode preferedMedium];
+            [xml appendFormat:@"    <episode media=\"%@\" guid=\"%@\" feedUrl=\"%@\"/>\n",
+                [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
+                [self xmlEscape:episode.guid ?: @""],
+                [self xmlEscape:[episode.feed.sourceURL absoluteString] ?: @""]];
+        }
+        [xml appendString:@"  </upnext>\n"];
+    }
+
+    // Now Playing
+    CDEpisode* currentEpisode = session.episode;
+    if (currentEpisode) {
+        CDMedium* medium = [currentEpisode preferedMedium];
+        [xml appendFormat:@"  <nowplaying media=\"%@\" guid=\"%@\" feedUrl=\"%@\" position=\"%d\"/>\n",
+            [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
+            [self xmlEscape:currentEpisode.guid ?: @""],
+            [self xmlEscape:[currentEpisode.feed.sourceURL absoluteString] ?: @""],
+            currentEpisode.position];
+    }
+
+    // Playlists
+    NSArray* lists = DMANAGER.lists;
+    BOOL hasPlaylists = NO;
+    for (CDList* list in lists) {
+        if ([list isKindOfClass:[CDPlaylist class]]) {
+            if (!hasPlaylists) {
+                [xml appendString:@"  <playlists>\n"];
+                hasPlaylists = YES;
+            }
+            CDPlaylist* playlist = (CDPlaylist*)list;
+            [xml appendFormat:@"    <playlist name=\"%@\" rank=\"%d\">\n",
+                [self xmlEscape:playlist.name], playlist.rank];
+            for (CDEpisode* episode in playlist.sortedEpisodes) {
+                CDMedium* medium = [episode preferedMedium];
+                [xml appendFormat:@"      <episode media=\"%@\" guid=\"%@\" feedUrl=\"%@\"/>\n",
+                    [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
+                    [self xmlEscape:episode.guid ?: @""],
+                    [self xmlEscape:[episode.feed.sourceURL absoluteString] ?: @""]];
+            }
+            [xml appendString:@"    </playlist>\n"];
+        }
+    }
+    if (hasPlaylists) [xml appendString:@"  </playlists>\n"];
+
+    // Settings
+    NSUserDefaults* defaults = USER_DEFAULTS;
+    [xml appendString:@"  <settings>\n"];
+    if ([defaults objectForKey:DefaultPlaybackSpeed]) [xml appendFormat:@"    <playbackSpeed>%ld</playbackSpeed>\n", (long)[defaults integerForKey:DefaultPlaybackSpeed]];
+    if ([defaults objectForKey:PlayerSkipBackPeriod]) [xml appendFormat:@"    <skipBack>%ld</skipBack>\n", (long)[defaults integerForKey:PlayerSkipBackPeriod]];
+    if ([defaults objectForKey:PlayerSkipForwardPeriod]) [xml appendFormat:@"    <skipForward>%ld</skipForward>\n", (long)[defaults integerForKey:PlayerSkipForwardPeriod]];
+    if ([defaults objectForKey:PlayerAutoSkipStartPeriod]) [xml appendFormat:@"    <autoSkipStart>%ld</autoSkipStart>\n", (long)[defaults integerForKey:PlayerAutoSkipStartPeriod]];
+    if ([defaults objectForKey:PlayerAutoSkipEndPeriod]) [xml appendFormat:@"    <autoSkipEnd>%ld</autoSkipEnd>\n", (long)[defaults integerForKey:PlayerAutoSkipEndPeriod]];
+    if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
+    if ([defaults objectForKey:AutoCacheNewAudioEpisodes]) [xml appendFormat:@"    <autoCacheAudio>%@</autoCacheAudio>\n", [defaults boolForKey:AutoCacheNewAudioEpisodes] ? @"true" : @"false"];
+    if ([defaults objectForKey:AutoCacheNewVideoEpisodes]) [xml appendFormat:@"    <autoCacheVideo>%@</autoCacheVideo>\n", [defaults boolForKey:AutoCacheNewVideoEpisodes] ? @"true" : @"false"];
+    if ([defaults objectForKey:AutoDeleteAfterFinishedPlaying]) [xml appendFormat:@"    <autoDeletePlayed>%@</autoDeletePlayed>\n", [defaults boolForKey:AutoDeleteAfterFinishedPlaying] ? @"true" : @"false"];
+    if ([defaults objectForKey:DisableAutoLock]) [xml appendFormat:@"    <disableAutoLock>%@</disableAutoLock>\n", [defaults boolForKey:DisableAutoLock] ? @"true" : @"false"];
+    if ([defaults objectForKey:kDefaultNightMode]) [xml appendFormat:@"    <nightMode>%@</nightMode>\n", [defaults boolForKey:kDefaultNightMode] ? @"true" : @"false"];
+    if ([defaults objectForKey:ScreenTimerAlwaysActive]) [xml appendFormat:@"    <sleepTimerAlways>%@</sleepTimerAlways>\n", [defaults boolForKey:ScreenTimerAlwaysActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:LastSelectedSleepTimer]) [xml appendFormat:@"    <lastSleepTimer>%ld</lastSleepTimer>\n", (long)[defaults integerForKey:LastSelectedSleepTimer]];
+    [xml appendString:@"  </settings>\n"];
+
+    [xml appendString:@"</instacast>\n"];
+
+    // Write file
+    NSData* data = [xml dataUsingEncoding:NSUTF8StringEncoding];
+    NSString* fileName = [NSString stringWithFormat:@"Instacast-Backup-%@.xml", [UIDevice currentDevice].name];
+    NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
+    NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
+
+    [data writeToURL:url atomically:YES];
+
+    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
+    self.interactionController.delegate = self;
+    self.interactionController.name = fileName;
+    self.interactionController.UTI = @"public.xml";
+    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
+        self.interactionController = nil;
+    }
+}
 
 - (void) donateToDeveloper:(id)sender
 {

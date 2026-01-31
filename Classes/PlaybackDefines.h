@@ -26,6 +26,7 @@ extern NSString* PlaybackManagerDidChangeEpisodeNotification;
 
 enum {
     PlaybackStopTimeNoValue = 0,
+    PlaybackStopTime3min    = 3,
     PlaybackStopTime5min    = 5,
     PlaybackStopTime10min   = 10,
     //PlaybackStopTime15min   = 15,

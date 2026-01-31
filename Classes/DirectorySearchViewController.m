@@ -117,10 +117,16 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 {
 	[super viewWillAppear:animated];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-	
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
-    
+
+    // Clear search field and results when view appears
+    self.searchBar.text = @"";
+    self.searchResults = nil;
+    [USER_DEFAULTS removeObjectForKey:kUIPersistenceDirectorySearchSearchString];
+    [self.tableView reloadData];
+
     [self.searchBar appearanceDidChange];
     
     

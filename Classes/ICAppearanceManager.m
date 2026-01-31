@@ -175,10 +175,13 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (void) updateAppearance
 {
+    UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
     if (self.nightMode) {
         self.appearance = [[ICNightAppearance alloc] init];
+        rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     } else {
         self.appearance = [[ICDaylightAppearance alloc] init];
+        rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
 }
 

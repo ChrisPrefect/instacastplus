@@ -582,12 +582,21 @@
 - (void) updateAppearance {
     self.view.backgroundColor = ICBackgroundColor;
     self.headerView.backgroundColor = ICTransparentBackdropColor;
-    
+
     self.titleLabel.textColor = ICTextColor;
     self.feedTitleLabel.textColor = ICMutedTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
     self.sharedWebView.backgroundColor = ICTransparentBackdropColor;
     self.sharedWebView.scrollView.backgroundColor = ICTransparentBackdropColor;
+
+    // Update navigation bar title color for dark mode
+    UINavigationBarAppearance* navBarAppearance = [[UINavigationBarAppearance alloc] init];
+    [navBarAppearance configureWithOpaqueBackground];
+    navBarAppearance.backgroundColor = ICBackgroundColor;
+    [navBarAppearance setTitleTextAttributes:@{NSForegroundColorAttributeName: ICTextColor}];
+    self.navigationController.navigationBar.standardAppearance = navBarAppearance;
+    self.navigationController.navigationBar.scrollEdgeAppearance = navBarAppearance;
+
     [self _loadWebContent];
 }
 

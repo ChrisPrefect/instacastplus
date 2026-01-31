@@ -1021,7 +1021,7 @@ enum {
     });*/
     [currentImageTimer invalidate];
     currentImageTimer = nil;
-    currentImageTimer = [NSTimer scheduledTimerWithTimeInterval: 10 target: self selector: @selector(afterTimerSetCurrentImg:) userInfo: nil repeats: NO];
+    currentImageTimer = [NSTimer scheduledTimerWithTimeInterval: 30 target: self selector: @selector(afterTimerSetCurrentImg:) userInfo: nil repeats: NO];
 }
 
 -(void)afterTimerSetCurrentImg:(NSTimer *)timer {
