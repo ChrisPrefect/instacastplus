@@ -75,7 +75,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         }];
         
         [self.unplayedPlaylist addTaskObserver:self forKeyPath:@"name" task:^(id obj, NSDictionary *change) {
-            MainSidebarItem* sidebarItem = [weakSelf.sidebarController.items.firstObject firstObject];
+            MainSidebarItem* sidebarItem = [weakSelf.sidebarController.items[1] firstObject];
             sidebarItem.title = self.unplayedPlaylist.name;
         }];
         
@@ -121,34 +121,29 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 
     self.sidebarController = [[MainSidebarController alloc] initWithStyle:UITableViewStylePlain];
     self.sidebarController.items = @[
-                                     @[
-                                         [MainSidebarItem itemWithTitle:self.unplayedPlaylist.name
-                                                                    tag:kMainSidebarItemUnplayed
-                                                                  image:[UIImage imageNamed:@"Menu Unplayed"]
-                                                          selectedImage:[UIImage imageNamed:@"Menu Unplayed Filled"]],
-                                         
-                                      ],
                                       @[
-                                         
                                          [MainSidebarItem itemWithTitle:@"Podcasts".ls
                                                                     tag:kMainSidebarItemSubscriptions
                                                                   image:[UIImage imageNamed:@"Menu Subscriptions"]
                                                           selectedImage:[UIImage imageNamed:@"Menu Subscriptions Filled"]],
 
-                                         
                                          [MainSidebarItem itemWithTitle:@"Episodes".ls
                                                                     tag:kMainSidebarItemLists
                                                                   image:[UIImage imageNamed:@"Menu Lists"]
                                                           selectedImage:[UIImage imageNamed:@"Menu Lists"]],
-                                         
+
                                          [MainSidebarItem itemWithTitle:@"Bookmarks".ls
                                                                     tag:kMainSidebarItemBookmarks
                                                                   image:[UIImage imageNamed:@"Menu Bookmarks"]
                                                           selectedImage:[UIImage imageNamed:@"Menu Bookmarks Filled"]],
-
                                          ],
                                      @[
-
+                                         [MainSidebarItem itemWithTitle:self.unplayedPlaylist.name
+                                                                    tag:kMainSidebarItemUnplayed
+                                                                  image:[UIImage imageNamed:@"Menu Unplayed"]
+                                                          selectedImage:[UIImage imageNamed:@"Menu Unplayed Filled"]],
+                                         ],
+                                     @[
                                          [MainSidebarItem itemWithTitle:@"Downloads".ls
                                                                     tag:kMainSidebarItemDownloads
                                                                   image:[UIImage imageNamed:@"Menu Downloads"]

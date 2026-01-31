@@ -35,12 +35,12 @@
 @interface FeedEpisodesTableViewController() <UIGestureRecognizerDelegate, NSFetchedResultsControllerDelegate, UIScrollViewDelegate>
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
 @property (nonatomic, strong) ICFeedHeaderViewController* headerViewController;
-@property (nonatomic, strong) UIToolbar* headerToolbar;
+@property (nonatomic, strong) UIStackView* headerButtonStack;
 @property (nonatomic, strong) UIView* headerToolbarSeparatorView;
-@property (nonatomic, weak) UIBarButtonItem* shareItem;
+@property (nonatomic, weak) UIButton* shareButton;
+@property (nonatomic, weak) UIButton* filterButton;
 @property (nonatomic, strong) VDModalInfo* modalInfo;
 @property (nonatomic, strong) UIView* tableHeaderView;
-@property (nonatomic, strong) UIBarButtonItem *filterItem;
 @end
 
 @implementation FeedEpisodesTableViewController {
@@ -113,6 +113,7 @@
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -264,7 +265,7 @@
     
     {
         CGFloat w = CGRectGetWidth(self.view.bounds);
-        self.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 93+45)];
+        self.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, 93+55)];
         self.tableHeaderView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
         
         self.headerViewController = [ICFeedHeaderViewController viewController];
@@ -298,35 +299,48 @@
         UIView* headerToolbarSeparatorView = [[UIView alloc] initWithFrame:CGRectMake(0, 93, w, 0.5)];
         [self.tableHeaderView addSubview:headerToolbarSeparatorView];
         self.headerToolbarSeparatorView = headerToolbarSeparatorView;
-        
-        self.headerToolbar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 94, w, 44)];
-        self.headerToolbar.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
-        [self.headerToolbar setShadowImage:[[UIImage alloc] init] forToolbarPosition:UIBarPositionAny];
-        [self.tableHeaderView addSubview:self.headerToolbar];
-        
-        [self _updateHeaderToolbar];
+
+        // Flache Buttons in UIStackView statt UIToolbar
+        UIStackView* buttonStack = [[UIStackView alloc] initWithFrame:CGRectMake(0, 98, w, 40)];
+        buttonStack.axis = UILayoutConstraintAxisHorizontal;
+        buttonStack.distribution = UIStackViewDistributionEqualSpacing;
+        buttonStack.alignment = UIStackViewAlignmentCenter;
+        buttonStack.layoutMargins = UIEdgeInsetsMake(0, 40, 0, 40);
+        buttonStack.layoutMarginsRelativeArrangement = YES;
+        buttonStack.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+
+        UIButton* reloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [reloadButton setImage:[UIImage imageNamed:@"refreshd_ic"] forState:UIControlStateNormal];
+        [reloadButton addTarget:self action:@selector(reload:) forControlEvents:UIControlEventTouchUpInside];
+
+        UIButton* shareButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [shareButton setImage:[UIImage imageNamed:@"sharedd_ic"] forState:UIControlStateNormal];
+        [shareButton addTarget:self action:@selector(share:) forControlEvents:UIControlEventTouchUpInside];
+        self.shareButton = shareButton;
+
+        UIButton* settingsButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [settingsButton setImage:[UIImage imageNamed:@"settingd_ic"] forState:UIControlStateNormal];
+        [settingsButton addTarget:self action:@selector(settings:) forControlEvents:UIControlEventTouchUpInside];
+
+        UIButton* filterButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [filterButton setTitle:@"All".ls forState:UIControlStateNormal];
+        filterButton.titleLabel.font = [UIFont systemFontOfSize:17];
+        [filterButton addTarget:self action:@selector(filterAction:) forControlEvents:UIControlEventTouchUpInside];
+        self.filterButton = filterButton;
+
+        [buttonStack addArrangedSubview:reloadButton];
+        [buttonStack addArrangedSubview:shareButton];
+        [buttonStack addArrangedSubview:settingsButton];
+        [buttonStack addArrangedSubview:filterButton];
+
+        [self.tableHeaderView addSubview:buttonStack];
+        self.headerButtonStack = buttonStack;
     }
     
     //[self updateEpisodes];
     [self _updateToolbarItemsAnimated:NO];
 }
 
-- (void) _updateHeaderToolbar
-{
-    UIBarButtonItem* reloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"refreshd_ic"] style:UIBarButtonItemStylePlain target:self action:@selector(reload:)];
-    UIBarButtonItem* shareItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"sharedd_ic"] style:UIBarButtonItemStylePlain target:self action:@selector(share:)];
-    UIBarButtonItem* settingsItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"settingd_ic"] style:UIBarButtonItemStylePlain target:self action:@selector(settings:)];
-    
-    _filterItem = [[UIBarButtonItem alloc] initWithTitle: @"All".ls style:UIBarButtonItemStylePlain target:self action:@selector(filterAction:)];
-    
-    UIBarButtonItem* fixItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
-    fixItem.width = -1;
-    
-    UIBarButtonItem* flexItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
-    [self.headerToolbar setItems:@[reloadItem, flexItem, shareItem, flexItem, settingsItem, flexItem, _filterItem]];
-    self.shareItem = shareItem;
-}
 
 - (void) _updateToolbarLabels
 {
@@ -350,12 +364,7 @@
     [super viewWillAppear:animated];
     
     CGFloat w = CGRectGetWidth(self.view.bounds);
-    self.headerToolbar.frame = CGRectMake(0, 94, w, 44);
-    
-    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
-        [ICBackgroundColor set];
-        UIRectFill(CGRectMake(0, 0, 1, 1));
-    }) forToolbarPosition:UIToolbarPositionAny barMetrics:UIBarMetricsDefault];
+    self.headerButtonStack.frame = CGRectMake(0, 98, w, 40);
     self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
     
     
@@ -373,42 +382,42 @@
         {
             self->isDownloadedFilter = false;
             [self _filterAllEpisode];
-            self.filterItem.title = @"All".ls;
+            [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
         else if ([filterOptionStr  isEqual: @"Unplayed"])
         {
             self->isDownloadedFilter = false;
             [self _filterUnlistenedEpisode];
-            self.filterItem.title = @"Unplayed".ls;
+            [self.filterButton setTitle:@"Unplayed".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
         else if ([filterOptionStr  isEqual: @"Unfinished"])
         {
             self->isDownloadedFilter = false;
             [self _filterUnfinishedEpisode];
-            self.filterItem.title = @"Unfinished".ls;
+            [self.filterButton setTitle:@"Unfinished".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
         else if ([filterOptionStr  isEqual: @"Downloaded"])
         {
             self->isDownloadedFilter = true;
             [self _filterDownloadedEpisode];
-            self.filterItem.title = @"Downloaded".ls;
+            [self.filterButton setTitle:@"Downloaded".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
         else if ([filterOptionStr  isEqual: @"Favorites"])
         {
             self->isDownloadedFilter = false;
             [self _filterFavoriteEpisode];
-            self.filterItem.title = @"Favorites".ls;
+            [self.filterButton setTitle:@"Favorites".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
         else
         {
             self->isDownloadedFilter = false;
             [self _filterAllEpisode];
-            self.filterItem.title = @"All".ls;
+            [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
     }
@@ -416,7 +425,7 @@
     {
         self->isDownloadedFilter = false;
         [self _filterAllEpisode];
-        self.filterItem.title = @"All".ls;
+        [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         [self reloadDataWithFilter:YES];
     }
 }
@@ -428,7 +437,7 @@
     
     [self reloadDataAndPreserveSelection];
     self.tableView.tableHeaderView = ([self.searchTerm length] == 0) ? self.tableHeaderView : nil;
-    self.headerToolbar.frame = CGRectMake(0, 94, CGRectGetWidth(self.tableHeaderView.frame), 44);
+    self.headerButtonStack.frame = CGRectMake(0, 98, CGRectGetWidth(self.tableHeaderView.frame), 40);
 
     if (isScrolled)
     {
@@ -444,7 +453,7 @@
     
     [self reloadDataAndPreserveSelection];
     self.tableView.tableHeaderView = ([self.searchTerm length] == 0) ? self.tableHeaderView : nil;
-    self.headerToolbar.frame = CGRectMake(0, 94, CGRectGetWidth(self.tableHeaderView.frame), 44);
+    self.headerButtonStack.frame = CGRectMake(0, 98, CGRectGetWidth(self.tableHeaderView.frame), 40);
 
     [self srollToLastScrollingPosition];
 }
@@ -489,12 +498,6 @@
     self.tableView.backgroundColor = ICBackgroundColor;
     [self.tableView reloadData];
     [self.tableView layoutIfNeeded];
-    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
-        [ICBackgroundColor set];
-        UIRectFill(CGRectMake(0, 0, 1, 1));
-    })
-                        forToolbarPosition:UIToolbarPositionAny
-                                barMetrics:UIBarMetricsDefault];
     self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
 }
 
@@ -637,92 +640,74 @@
 {
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Filter by".ls message:nil  preferredStyle:UIAlertControllerStyleActionSheet];
-    
+
     UIAlertAction* allAction = [UIAlertAction actionWithTitle:@"All".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
-        [self perform:^(id sender) {
-            self->isDownloadedFilter = false;
-            [self _filterAllEpisode];
-            self.filterItem.title = @"All".ls;
-            [[NSUserDefaults standardUserDefaults] setValue:@"All" forKey:_feed.uid];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [self reloadDataWithFilter:NO];
-        } afterDelay:0.01];
+        self->isDownloadedFilter = false;
+        [self _filterAllEpisode];
+        [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"All" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
         self.alertController = nil;
     }];
     [alert addAction:allAction];
-    
+
     UIAlertAction* unlistenedAction = [UIAlertAction actionWithTitle:@"Unplayed".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
-        [self perform:^(id sender) {
-            self->isDownloadedFilter = false;
-            [self _filterUnlistenedEpisode];
-            self.filterItem.title = @"Unplayed".ls;
-            [[NSUserDefaults standardUserDefaults] setValue:@"Unplayed" forKey:_feed.uid];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [self reloadDataWithFilter:NO];
-        } afterDelay:0.01];
+        self->isDownloadedFilter = false;
+        [self _filterUnlistenedEpisode];
+        [self.filterButton setTitle:@"Unplayed".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Unplayed" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
         self.alertController = nil;
-        
     }];
     [alert addAction:unlistenedAction];
-    
+
     UIAlertAction* unFinishedAction = [UIAlertAction actionWithTitle:@"Unfinished".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
-        [self perform:^(id sender) {
-            self->isDownloadedFilter = false;
-            [self _filterUnfinishedEpisode];
-            self.filterItem.title = @"Unfinished".ls;
-            [[NSUserDefaults standardUserDefaults] setValue:@"Unfinished" forKey:_feed.uid];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [self reloadDataWithFilter:NO];
-        } afterDelay:0.01];
+        self->isDownloadedFilter = false;
+        [self _filterUnfinishedEpisode];
+        [self.filterButton setTitle:@"Unfinished".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Unfinished" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
         self.alertController = nil;
-        
     }];
     [alert addAction:unFinishedAction];
-    
+
     UIAlertAction* downloadedAction = [UIAlertAction actionWithTitle:@"Downloaded".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
-        [self perform:^(id sender) {
-            self->isDownloadedFilter = true;
-            [self _filterDownloadedEpisode];
-            self.filterItem.title = @"Downloaded".ls;
-            [[NSUserDefaults standardUserDefaults] setValue:@"Downloaded" forKey:_feed.uid];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [self reloadDataWithFilter:NO];
-        } afterDelay:0.01];
+        self->isDownloadedFilter = true;
+        [self _filterDownloadedEpisode];
+        [self.filterButton setTitle:@"Downloaded".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Downloaded" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
         self.alertController = nil;
-        
     }];
     [alert addAction:downloadedAction];
-    
+
     UIAlertAction* favoritesAction = [UIAlertAction actionWithTitle:@"Favorites".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
-        [self perform:^(id sender) {
-            self->isDownloadedFilter = false;
-            [self _filterFavoriteEpisode];
-            self.filterItem.title = @"Favorites".ls;
-            [[NSUserDefaults standardUserDefaults] setValue:@"Favorites" forKey:_feed.uid];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-            [self reloadDataWithFilter:NO];
-        } afterDelay:0.01];
-        
+        self->isDownloadedFilter = false;
+        [self _filterFavoriteEpisode];
+        [self.filterButton setTitle:@"Favorites".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Favorites" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
         self.alertController = nil;
     }];
     [alert addAction:favoritesAction];
-    
+
     UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
         STRONG_SELF
         self.alertController = nil;
     }];
     [alert addAction:defaultAction];
-    
+
     [alert setModalPresentationStyle:UIModalPresentationPopover];
     UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0; // Kein Pfeil
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;

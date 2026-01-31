@@ -18,7 +18,6 @@
 @interface DownloadsViewController ()
 @property (nonatomic, strong) UIView* functionOverlayView;
 @property (nonatomic, strong) UILabel* captionLabel;
-@property (nonatomic, strong) UIButton* pauseButton;
 @end
 
 @implementation DownloadsViewController {
@@ -103,40 +102,44 @@
     self.navigationItem.rightBarButtonItem = self.editButtonItem;
 
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
+
     UIBarButtonItem* pauseItem = [[UIBarButtonItem alloc] initWithTitle:@"Pause".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(toggleLoading:)];
-    pauseItem.width = 200;
-    
+    [pauseItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:14]} forState:UIControlStateNormal];
+
     UIBarButtonItem* cancelItem = [[UIBarButtonItem alloc] initWithTitle:@"Cancel All".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(cancelAllDownloads:)];
-    
-    
-    UILabel* captionLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, 150, 40)];
-    captionLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-    captionLabel.font = [UIFont systemFontOfSize:11];
+    [cancelItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:14]} forState:UIControlStateNormal];
+
+    // Caption Label in der Mitte (schwebendes Label)
+    UILabel* captionLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 150, 44)];
+    captionLabel.tag = 100;
+    captionLabel.font = [UIFont systemFontOfSize:15];
     captionLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.f];
     captionLabel.textAlignment = NSTextAlignmentCenter;
     self.captionLabel = captionLabel;
-    
-    UIView* captionContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 150, 44)];
-    [captionContainer addSubview:captionLabel];
 
-    UIBarButtonItem* captionButtonItem = [[UIBarButtonItem alloc] initWithCustomView:captionContainer];
-    
-    [self setToolbarItems:@[pauseItem, flexSpace, captionButtonItem, flexSpace, cancelItem]];
+    [self setToolbarItems:@[pauseItem, flexSpace, cancelItem]];
 }
 
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-    
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
     self.tableView.separatorColor = ICTableSeparatorColor;
     [self.tableView reloadData];
-    
+
+    // Caption Label direkt zur Toolbar hinzufügen (schwebendes Label, keine Bubble)
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (![toolbar viewWithTag:100]) {
+        self.captionLabel.center = CGPointMake(toolbar.bounds.size.width / 2, toolbar.bounds.size.height / 2);
+        self.captionLabel.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+        [toolbar addSubview:self.captionLabel];
+    }
+
     [self _setObserving:YES];
 }
 
@@ -208,7 +211,7 @@
 - (void) _updateToolbar
 {
     UIBarButtonItem* pauseItem = self.toolbarItems[0];
-    
+
     if ([[CacheManager sharedCacheManager] isCachingSuspended]) {
         pauseItem.title = @"Resume".ls;
     } else {

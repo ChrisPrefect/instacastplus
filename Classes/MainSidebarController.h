@@ -26,4 +26,5 @@
 @property (nonatomic) NSInteger selectedItemTag;
 
 - (void) updateRowSelectionForSelectedItemTag;
+- (void) updateFooterInfo;
 @end

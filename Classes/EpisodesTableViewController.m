@@ -288,7 +288,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         consumeAllItem.enabled = ([self.episodes count] > 0);
         
 
-        [self setToolbarItems:@[consumeAllItem, flexSpace, self.labelsItems, flexSpace, cacheItem] animated:animated];
+        [self setToolbarItems:@[consumeAllItem, flexSpace, cacheItem] animated:animated];
 	}
     
     [self didChangeValueForKey:@"toolbarItems"];
@@ -529,6 +529,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -673,11 +674,21 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     CDEpisode* episode = (CDEpisode*)[lEpisodes objectAtIndex:indexPath.row];
     
     WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:episode.title
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"\n"
                                                                    message:nil
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:(episode.starred) ? @"Unmark Favorite".ls : @"Mark as Favorite".ls
+
+    // Titel fett und mit Abstand oben
+    NSMutableParagraphStyle* paragraphStyle = [[NSMutableParagraphStyle alloc] init];
+    paragraphStyle.alignment = NSTextAlignmentCenter;
+    NSAttributedString* titleAttrString = [[NSAttributedString alloc] initWithString:episode.title
+                                                                          attributes:@{
+                                                                              NSFontAttributeName: [UIFont boldSystemFontOfSize:15],
+                                                                              NSParagraphStyleAttributeName: paragraphStyle
+                                                                          }];
+    [alert setValue:titleAttrString forKey:@"attributedTitle"];
+
+    UIAlertAction* favoriteAction = [UIAlertAction actionWithTitle:(episode.starred) ? @"Unmark Favorite".ls : @"Mark as Favorite".ls
                                               style:UIAlertActionStyleDefault
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
@@ -686,7 +697,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                     [self cancelDelete:nil];
                                                 } afterDelay:0.3];
                                                 self.alertController = nil;
-                                            }]];
+                                            }];
+    UIImage* starImage = [UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"];
+    [favoriteAction setValue:[starImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
+    [alert addAction:favoriteAction];
     
     AudioSession* session = [AudioSession sharedAudioSession];
     
@@ -710,7 +724,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     
     if (![[CacheManager sharedCacheManager] episodeIsCached:episode] && ![[CacheManager sharedCacheManager] isCachingEpisode:episode])
     {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Download".ls
+        UIAlertAction* downloadAction = [UIAlertAction actionWithTitle:@"Download".ls
                                                   style:UIAlertActionStyleDefault
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF
@@ -720,13 +734,16 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                                 [[CacheManager sharedCacheManager] cacheEpisode:episode overwriteCellularLock:YES];
                                                                 EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
                                                                 [cell updatePlayComboButtonState];
-                                                                
+
                                                                 [self cancelDelete:nil];
                                                             }
                                                         }];
                                                     } afterDelay:0.3];
                                                     self.alertController = nil;
-                                                }]];
+                                                }];
+        UIImage* downloadImage = [UIImage systemImageNamed:@"arrow.down.circle"];
+        [downloadAction setValue:[downloadImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
+        [alert addAction:downloadAction];
     }
     
     if ([[CacheManager sharedCacheManager] episodeIsCached:episode])
@@ -746,52 +763,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 }]];
     }
     
-#ifdef DEBUG
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Notify after 10 seconds"
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    // UILocalNotification is deprecated but kept for debug functionality
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                                                    UILocalNotification* notification = [[UILocalNotification alloc] init];
-                                                    NSString* episodeTitle = [NSString stringWithFormat:@"%@ - %@", episode.feed.title, [episode cleanTitleUsingFeedTitle:episode.feed.title]];
-                                                    if ([notification respondsToSelector:@selector(alertTitle)]) {
-                                                        notification.alertTitle = @"New Episode".ls;
-                                                    }
-                                                    if ([notification respondsToSelector:@selector(category)]) {
-                                                        notification.category = @"episode_available";
-                                                    }
-                                                    notification.alertBody = [NSString stringWithFormat:@"'%@' is available to play.".ls, episodeTitle];
-                                                    notification.soundName = @"NewEpisodes";
-                                                    notification.userInfo = @{ @"episode_hash" : [episode objectHash], @"podcast" : episode.feed.title, @"episode" : [episode cleanTitleUsingFeedTitle:episode.feed.title]};
-                                                    notification.fireDate = [NSDate dateWithTimeIntervalSinceNow:10];
-                                                    [App scheduleLocalNotification:notification];
-#pragma clang diagnostic pop
-                                                    [self cancelDelete:nil];
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Perma-Delete"
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    [DMANAGER.objectContext deleteObject:episode];
-                                                    [DMANAGER saveAndSync:NO];
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-#endif
     
     [self addAdditionalButtonsToLongPressActionSheet:alert rowIndexPath:indexPath completionBlock:^{
         STRONG_SELF
         self.alertController = nil;
     }];
-    
+
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
                                               style:UIAlertActionStyleCancel
                                             handler:^(UIAlertAction * action) {
@@ -803,6 +780,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0; // Kein Pfeil
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -948,6 +926,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -998,6 +977,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;

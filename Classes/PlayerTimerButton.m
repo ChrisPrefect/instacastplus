@@ -457,6 +457,7 @@
     UIViewController* rootViewController = [self getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     //
     [alert.view addSubview:mainStack];
     alert.view.clipsToBounds = YES;

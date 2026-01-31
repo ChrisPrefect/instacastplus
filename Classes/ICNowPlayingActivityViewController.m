@@ -10,6 +10,7 @@
 #import "ICNowPlayingActivityControl.h"
 #import "CDEpisode+ShowNotes.h"
 #import "UpNextTableViewController.h"
+#import "ICMetadata.h"
 
 @interface ICNowPlayingActivityViewController ()
 @property (nonatomic, strong, readwrite) ICNowPlayingActivityControl* nowPlayingControl;
@@ -53,6 +54,10 @@
         [pman addTaskObserver:self forKeyPath:@"paused" task:^(id obj, NSDictionary *change) {
             [weakSelf _updatePlayButton];
         }];
+
+        [pman addTaskObserver:self forKeyPath:@"currentChapter" task:^(id obj, NSDictionary *change) {
+            [weakSelf _updateChapter];
+        }];
         
         [nc addObserver:self name:UIApplicationDidEnterBackgroundNotification object:nil handler:^(NSNotification *notification) {
             weakSelf.nowPlayingControl.marqueePaused = YES;
@@ -76,6 +81,7 @@
         [session removeTaskObserver:self forKeyPath:@"playlist"];
         [pman removeTaskObserver:self forKeyPath:@"position"];
         [pman removeTaskObserver:self forKeyPath:@"paused"];
+        [pman removeTaskObserver:self forKeyPath:@"currentChapter"];
         [nc removeObserver:self name:UIApplicationDidEnterBackgroundNotification object:nil];
         [nc removeObserver:self name:UIApplicationWillEnterForegroundNotification object:nil];
         [nc removeObserver:self name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
@@ -100,7 +106,8 @@
     
     [self _updateNowPlayingAnimated:NO];
     [self _updatePlayButton];
-    
+    [self _updateChapter];
+
     [self.view addSubview:self.nowPlayingControl];
     
     [self _updateVisibleAndNotify];
@@ -147,17 +154,12 @@
 {
     AudioSession* session = [AudioSession sharedAudioSession];
     CDEpisode* playingEpisode = session.episode;
-    
+
     if (playingEpisode) {
-        self.nowPlayingControl.label2.text = [NSString stringWithFormat:@"%@ - %@", playingEpisode.feed.title, [playingEpisode cleanTitleUsingFeedTitle:playingEpisode.feed.title]];
+        // Label1: Podcast-Titel, Label2: Episodentitel
+        self.nowPlayingControl.label1.text = playingEpisode.feed.title;
+        self.nowPlayingControl.label2.text = [playingEpisode cleanTitleUsingFeedTitle:playingEpisode.feed.title];
         [self _updatePositionAnimated:animated];
-    }
-    
-    if ([session.playlist count] == 0) {
-        self.nowPlayingControl.label1.text = @"Now Playing".ls;
-    }
-    else {
-        self.nowPlayingControl.label1.text = [NSString stringWithFormat:@"Now Playing - %ld queued".ls, [session.playlist count]];
     }
 }
 
@@ -187,6 +189,17 @@
     else {
         UIImage* image = [[UIImage imageNamed:@"Activity Button Pause"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
         [self.nowPlayingControl.rightButton setImage:image forState:UIControlStateNormal];
+    }
+}
+
+- (void) _updateChapter
+{
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    if (pman.chapters && pman.currentChapter >= 0 && pman.currentChapter < pman.chapters.count) {
+        ICMetadataChapter* chapter = pman.chapters[pman.currentChapter];
+        self.nowPlayingControl.label3.text = chapter.title;
+    } else {
+        self.nowPlayingControl.label3.text = nil;
     }
 }
 

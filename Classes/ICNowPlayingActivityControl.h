@@ -12,6 +12,7 @@
 
 @property (nonatomic, strong, readonly) UILabel* label1;
 @property (nonatomic, strong, readonly) UILabel* label2;
+@property (nonatomic, strong, readonly) UILabel* label3;
 @property (nonatomic, strong, readonly) UIButton* rightButton;
 @property (nonatomic, strong, readonly) UIProgressView* progressView;
 

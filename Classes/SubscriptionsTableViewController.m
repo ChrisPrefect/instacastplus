@@ -384,10 +384,10 @@
 {
     UIBarButtonItem* addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
     UIBarButtonItem* sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Sort"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
-     
+
 	UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
-    [self setToolbarItems:@[addItem, flexSpace, self.labelsItems, flexSpace, sortItem] animated:animated];
+
+    [self setToolbarItems:@[addItem, flexSpace, sortItem] animated:animated];
     
 //    UIToolbar *toolbar = self.navigationController.toolbar;
 //    if (toolbar) {
@@ -846,6 +846,7 @@
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;

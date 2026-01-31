@@ -116,14 +116,13 @@
     
     self.tintColor = (self.highlighted || self.selected) ? self.textLabel.highlightedTextColor : self.textLabel.textColor;
     
-    self.imageView.frame = CGRectMake(10, 0, 38, CGRectGetHeight(b));
-    
+    self.imageView.frame = CGRectMake(30, 0, 38, CGRectGetHeight(b));
+
     CGRect textFrame = self.textLabel.frame;
-    textFrame.origin.x = 55;
+    textFrame.origin.x = 75;
     self.textLabel.frame = textFrame;
-    
-    self.nippleView.frame = CGRectMake(-4, (CGRectGetHeight(b)-9)/2, 9, 9);
-    self.nippleView.hidden = !self.selected;
+
+    self.nippleView.hidden = YES;
     
     
     [self.badgeButton sizeToFit];

@@ -489,6 +489,7 @@ enum {
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -583,6 +584,7 @@ enum {
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -629,6 +631,7 @@ enum {
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -748,6 +751,7 @@ enum {
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -800,6 +804,7 @@ enum {
     UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
     popPresenter.sourceView = [rootViewController view];
     popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+    popPresenter.permittedArrowDirections = 0;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;

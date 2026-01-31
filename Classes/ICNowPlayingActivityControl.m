@@ -13,6 +13,7 @@
 @property (nonatomic, strong) UIImageView* imageView;
 @property (nonatomic, strong, readwrite) UILabel* label1;
 @property (nonatomic, strong, readwrite) UILabel* label2;
+@property (nonatomic, strong, readwrite) UILabel* label3;
 @property (nonatomic, strong, readwrite) UIButton* rightButton;
 @property (nonatomic, strong, readwrite) UIProgressView* progressView;
 @end
@@ -27,13 +28,13 @@
         
         self.clipsToBounds = YES;
         
-        _label1 = [[UILabel alloc] initWithFrame:CGRectMake(15, 0, CGRectGetWidth(frame)-44-30, 15)];
-        _label1.font = [UIFont systemFontOfSize:11.f];
+        // Labels: 32px vom linken Rand
+        _label1 = [[UILabel alloc] initWithFrame:CGRectMake(32, 0, CGRectGetWidth(frame)-32-80, 17)];
+        _label1.font = [UIFont boldSystemFontOfSize:13.f];
         _label1.textColor = [UIColor whiteColor];
-        _label1.text = @"Now Playing".ls;
         [self addSubview:_label1];
-        
-        MarqueeLabel2* label2 = [[MarqueeLabel2 alloc] initWithFrame:CGRectMake(15, 20, CGRectGetWidth(frame)-44-30, 15)];
+
+        MarqueeLabel2* label2 = [[MarqueeLabel2 alloc] initWithFrame:CGRectMake(32, 20, CGRectGetWidth(frame)-32-80, 17)];
         label2.marqueeType = MLContinuous;
         label2.rate = 20.0;
         label2.animationCurve = UIViewAnimationOptionCurveEaseInOut;
@@ -41,16 +42,25 @@
         label2.continuousMarqueeExtraBuffer = 10.0f;
         label2.animationDelay = 5.f;
         _label2 = label2;
-        _label2.font = [UIFont systemFontOfSize:11.f];
+        _label2.font = [UIFont systemFontOfSize:13.f];
         _label2.textColor = [UIColor colorWithWhite:0.57f alpha:1.0f];
-        //_label2.lineBreakMode = NSLineBreakByTruncatingTail;
         [self addSubview:_label2];
+
+        _label3 = [[UILabel alloc] initWithFrame:CGRectMake(32, 40, CGRectGetWidth(frame)-32-80, 17)];
+        _label3.font = [UIFont systemFontOfSize:11.f];
+        _label3.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+        [self addSubview:_label3];
         _marqueePaused = YES;
-        
-        
-        _rightButton = [[UIButton alloc] initWithFrame:CGRectMake(CGRectGetWidth(frame)-44-5, 0, 44, 44)];
+
+
+        // Play-Button: 60x60, 22px vom rechten Rand, 0px vom oberen Rand
+        _rightButton = [[UIButton alloc] initWithFrame:CGRectMake(CGRectGetWidth(frame)-60-22, 0, 60, 60)];
         [_rightButton setImage:[[UIImage imageNamed:@"Activity Button Play"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                       forState:UIControlStateNormal];
+        _rightButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
+        _rightButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentFill;
+        _rightButton.contentVerticalAlignment = UIControlContentVerticalAlignmentFill;
+        _rightButton.imageEdgeInsets = UIEdgeInsetsMake(8, 8, 8, 8);
         _rightButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
         _rightButton.tintColor = [UIColor whiteColor];
         [self addSubview:_rightButton];
@@ -114,10 +124,12 @@
     //self.label2.backgroundColor = [UIColor greenColor];
     
     self.imageView.frame = CGRectMake(5, 0, 44, 44);
-    self.label1.frame = CGRectMake(15, 7, CGRectGetWidth(b)-44-30, 15);
-    self.label2.frame = CGRectMake(15, 22, CGRectGetWidth(b)-44-30, 15);
-    
-    self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-44-5, 0, 44, 44);
+    self.label1.frame = CGRectMake(32, 5, CGRectGetWidth(b)-32-80, 17);
+    self.label2.frame = CGRectMake(32, 24, CGRectGetWidth(b)-32-80, 17);
+    self.label3.frame = CGRectMake(32, 43, CGRectGetWidth(b)-32-80, 17);
+
+    // 60x60 Button, 22px vom rechten Rand, 0px vom oberen Rand
+    self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-60-22, 0, 60, 60);
     self.progressView.frame = CGRectMake(-2, 0, CGRectGetWidth(b)+2, 2);
 }
 @end

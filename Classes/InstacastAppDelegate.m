@@ -381,13 +381,14 @@
         UIViewController* rootViewController = [self getRootViewControllerDev];
         popPresenter.sourceView = [rootViewController view];
         popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-        
+        popPresenter.permittedArrowDirections = 0;
+
         if ([ICAppearanceManager sharedManager].nightSettingMode) {
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         } else {
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
         }
-        
+
         //self.mainViewController.alertController = alert;
         //[self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
         UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
@@ -537,13 +538,14 @@
         UIViewController* rootViewController = [self getRootViewControllerDev];
         popPresenter.sourceView = [rootViewController view];
         popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-        
+        popPresenter.permittedArrowDirections = 0;
+
         if ([ICAppearanceManager sharedManager].nightSettingMode) {
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         } else {
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
         }
-        
+
         //self.mainViewController.alertController = alert;
         //[self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
         UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;

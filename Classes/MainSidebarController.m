@@ -8,6 +8,7 @@
 
 #import "MainSidebarController.h"
 #import "MainSidebarTableCell.h"
+#import "CDModel.h"
 
 #define ROW_HEIGHT 40
 
@@ -29,6 +30,8 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 @end
 
 @interface MainSidebarController ()
+@property (nonatomic, strong) UILabel* footerInfoLabel;
+@property (nonatomic, strong) UIView* footerContainerView;
 @end
 
 @implementation MainSidebarController
@@ -36,11 +39,11 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+
     self.tableView.allowsMultipleSelection = NO;
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     self.tableView.rowHeight = ROW_HEIGHT;
-    
+
     [self.tableView registerClass:[MainSidebarTableCell class] forCellReuseIdentifier:kDataCellIdentifier];
     [self.tableView registerClass:[UITableViewHeaderFooterView class] forHeaderFooterViewReuseIdentifier:kHeaderCellIdentifier];
 }
@@ -48,14 +51,69 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     self.view.backgroundColor = ICDarkBackgroundColor;
     [self.tableView reloadData];
-    
+
     [self updateRowSelectionForSelectedItemTag];
     [self updateTableTopInset:UIInterfaceOrientationPortrait];
+    [self _setupFooterViewIfNeeded];
+    [self updateFooterInfo];
 }
 
+- (void) _setupFooterViewIfNeeded
+{
+    if (self.footerContainerView) {
+        return;
+    }
+
+    CGRect b = self.tableView.bounds;
+
+    UIView* footerContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b), 60)];
+    footerContainer.backgroundColor = [UIColor clearColor];
+    self.footerContainerView = footerContainer;
+
+    UILabel* footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(75, 5, CGRectGetWidth(b) - 90, 50)];
+    footerLabel.font = [UIFont systemFontOfSize:15];
+    footerLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+    footerLabel.textAlignment = NSTextAlignmentLeft;
+    footerLabel.numberOfLines = 2;
+    [footerContainer addSubview:footerLabel];
+    self.footerInfoLabel = footerLabel;
+
+    [self.tableView addSubview:footerContainer];
+}
+
+- (void) _updateFooterPosition
+{
+    if (!self.footerContainerView) {
+        return;
+    }
+
+    CGRect b = self.tableView.bounds;
+    CGFloat bottomInset = 0;
+    if (@available(iOS 11.0, *)) {
+        bottomInset = self.tableView.safeAreaInsets.bottom;
+    }
+
+    // Account for the "now playing" bar height (44) + some padding
+    CGFloat nowPlayingBarHeight = 70;
+    CGFloat footerHeight = 50;
+    CGFloat yPosition = self.tableView.contentOffset.y + CGRectGetHeight(b) - footerHeight - bottomInset - nowPlayingBarHeight;
+    self.footerContainerView.frame = CGRectMake(0, yPosition, CGRectGetWidth(b), footerHeight);
+}
+
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView
+{
+    [self _updateFooterPosition];
+}
+
+
+- (void) viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    [self _updateFooterPosition];
+}
 
 - (BOOL)prefersStatusBarHidden {
     return YES;
@@ -181,5 +239,31 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     }];
 }
 
+- (void) updateFooterInfo
+{
+    NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
+    feedsRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
+    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+    NSUInteger feedCount = [DMANAGER.objectContext countForFetchRequest:feedsRequest error:nil];
+
+    unsigned long long megaBytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
+
+    NSMutableString* infoText = [[NSMutableString alloc] init];
+
+    if (feedCount == 0) {
+        [infoText appendString:@"No subscription".ls];
+    } else if (feedCount == 1) {
+        [infoText appendString:@"1 subscription".ls];
+    } else {
+        [infoText appendFormat:@"%lu %@", (unsigned long)feedCount, @"Subscriptions".ls];
+    }
+
+    if (megaBytes > 0) {
+        NSString* sizeString = [NSByteCountFormatter stringFromByteCount:megaBytes countStyle:NSByteCountFormatterCountStyleMemory];
+        [infoText appendFormat:@"\n%@", sizeString];
+    }
+
+    self.footerInfoLabel.text = infoText;
+}
 
 @end
