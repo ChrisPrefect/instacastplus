@@ -47,7 +47,7 @@ static dispatch_semaphore_t g_instancesReadLock;
 - (BOOL)executeUpdate:(NSString*)sql error:(NSError**)outErr withArgumentsInArray:(NSArray*)arrayArgs orDictionary:(NSDictionary *)dictionaryArgs orVAList:(va_list)args;
 @end
 
-static inline void onMainThreadAsync(void (^block)())
+static inline void onMainThreadAsync(void (^block)(void))
 {
     if ([NSThread isMainThread]) block();
     else dispatch_async(dispatch_get_main_queue(), block);
@@ -497,7 +497,7 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
     NSMutableString *whereClause = [NSMutableString stringWithFormat:@"%@ IN (", g_primaryKeyFieldName[self]];
     NSUInteger whereClauseLength = whereClause.length;
     
-    void (^fetchChunk)() = ^{
+    void (^fetchChunk)(void) = ^{
         if (valuesArray.count == 0) return;
         [whereClause appendString:@")"];
         NSArray *newInstancesThisChunk = [self _instancesWhere:whereClause andArgs:NULL orArgsArray:valuesArray orResultSet:nil onlyFirst:NO keyed:NO];
@@ -722,7 +722,7 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
             } else {
                 if ([key isEqualToString:g_primaryKeyFieldName[self.class]]) {
                     NSAssert(! existsInDB, @"Primary key not provided to initWithFieldValues:existsInDatabaseAlready:YES");
-                    existsInDatabase = NO;
+                    self->existsInDatabase = NO;
                 
                     // No supplied value to primary key for a new record. Generate a unique key value.
                     BOOL conflict = NO;
@@ -785,8 +785,8 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
             resultDictionary = [s.resultDictionary copy];
         } else {
             // This instance no longer exists in database
-            deleted = YES;
-            existsInDatabase = NO;
+            self->deleted = YES;
+            self->existsInDatabase = NO;
         }
         [s close];
     }];
@@ -908,9 +908,9 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
     
         NSDictionary *changes = self.unsavedChanges;
         BOOL dirty = changes.count;
-        if (! dirty && existsInDatabase) { result = FCModelSaveNoChanges; return; }
-        
-        update = existsInDatabase;
+        if (! dirty && self->existsInDatabase) { result = FCModelSaveNoChanges; return; }
+
+        update = self->existsInDatabase;
         NSArray *columnNames;
         NSMutableArray *values;
         
@@ -1003,8 +1003,8 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
             newRowValues[fieldName] = obj ?: NSNull.null;
         }];
         self._rowValuesInDatabase = newRowValues;
-        existsInDatabase = YES;
-        
+        self->existsInDatabase = YES;
+
         if (update) [self didUpdate];
         else [self didInsert];
         
@@ -1034,7 +1034,7 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
     __block FCModelSaveResult result;
     __block NSSet *changedFields;
     [g_databaseQueue writeDatabase:^(FMDatabase *db) {
-        if (deleted) { result = FCModelSaveNoChanges; return; }
+        if (self->deleted) { result = FCModelSaveNoChanges; return; }
         
         if (! [self shouldDelete]) {
             [self saveWasRefused];
@@ -1053,8 +1053,8 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
             return;
         }
         
-        deleted = YES;
-        existsInDatabase = NO;
+        self->deleted = YES;
+        self->existsInDatabase = NO;
         [self didDelete];
         changedFields = [NSSet setWithArray:self.class.databaseFieldNames];
         
@@ -1385,8 +1385,8 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
 
 + (BOOL)isBatchingNotificationsForCurrentThread { return NSThread.currentThread.threadDictionary[FCModelEnqueuedBatchNotificationsKey] != nil; }
 
-+ (void)performWithBatchedNotifications:(void (^)())block { [self performWithBatchedNotifications:block deliverOnCompletion:YES]; }
-+ (void)performWithBatchedNotifications:(void (^)())block deliverOnCompletion:(BOOL)deliverNotifications
++ (void)performWithBatchedNotifications:(void (^)(void))block { [self performWithBatchedNotifications:block deliverOnCompletion:YES]; }
++ (void)performWithBatchedNotifications:(void (^)(void))block deliverOnCompletion:(BOOL)deliverNotifications
 {
     NSThread *thread = NSThread.currentThread;
     [self _beginNotificationBatchForThread:thread];

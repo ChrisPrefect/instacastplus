@@ -14,7 +14,7 @@
 
 + (id) windowController;
 
-@property (nonatomic, copy) void (^windowDidCloseBlock)();
+@property (nonatomic, copy) void (^windowDidCloseBlock)(void);
 
 @property (weak) IBOutlet WebView* licenseView;
 @property (weak) IBOutlet NSProgressIndicator* loadingIndicator;

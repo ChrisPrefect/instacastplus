@@ -277,7 +277,7 @@
 
 #pragma mark - Archiving
 
-- (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)())completionBlock
+- (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)(void))completionBlock
 {
     WEAK_SELF
     [sheet addAction:[UIAlertAction actionWithTitle:@"Delete".ls

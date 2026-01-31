@@ -14,7 +14,7 @@
 @property (nonatomic) NSInteger tag;
 @property (nonatomic) UIImage* image;
 @property (nonatomic) UIImage* selectedImage;
-@property (nonatomic, copy) NSUInteger (^badgeNumber)();
+@property (nonatomic, copy) NSUInteger (^badgeNumber)(void);
 @end
 
 

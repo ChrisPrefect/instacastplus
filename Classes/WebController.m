@@ -211,7 +211,7 @@
     }
     
     if ([error code] == WebKitErrorCannotShowURL && [App canOpenURL:self.url]) {
-        [App openURL:self.url];
+        [App openURL:self.url options:@{} completionHandler:nil];
         self.canceled = YES;
         [self performSelector:@selector(popAfterDelay) withObject:nil afterDelay:0.5];
         self.closed = YES;

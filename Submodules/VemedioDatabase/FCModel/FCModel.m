@@ -1385,8 +1385,8 @@ static inline BOOL checkForOpenDatabaseFatal(BOOL fatal)
 
 + (BOOL)isBatchingNotificationsForCurrentThread { return NSThread.currentThread.threadDictionary[FCModelEnqueuedBatchNotificationsKey] != nil; }
 
-+ (void)performWithBatchedNotifications:(void (^)())block { [self performWithBatchedNotifications:block deliverOnCompletion:YES]; }
-+ (void)performWithBatchedNotifications:(void (^)())block deliverOnCompletion:(BOOL)deliverNotifications
++ (void)performWithBatchedNotifications:(void (^)(void))block { [self performWithBatchedNotifications:block deliverOnCompletion:YES]; }
++ (void)performWithBatchedNotifications:(void (^)(void))block deliverOnCompletion:(BOOL)deliverNotifications
 {
     NSThread *thread = NSThread.currentThread;
     [self _beginNotificationBatchForThread:thread];

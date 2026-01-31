@@ -41,7 +41,7 @@ static inline void hxRunInMainLoop(void(^block)(BOOL *done)) {
     [super tearDown];
 }
 
-- (void) _assetPSCTestDataChapters:(NSArray*)chapters images:(NSArray*)images completion:(void (^)())completion
+- (void) _assetPSCTestDataChapters:(NSArray*)chapters images:(NSArray*)images completion:(void (^)(void))completion
 {
     // test chapters
     XCTAssertTrue([chapters count] == 10, @"psc data does not contain 10 chapters");

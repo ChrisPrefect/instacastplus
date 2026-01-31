@@ -19,7 +19,7 @@
 - (void)presentPopoverFromRect:(CGRect)rect inView:(UIView *)view;
 - (void)dismissPopoverAnimated:(BOOL)animated;
 
-@property (nonatomic, copy) void (^didDismissBlock)();
-@property (nonatomic, copy) void (^valueChangedBlock)();
+@property (nonatomic, copy) void (^didDismissBlock)(void);
+@property (nonatomic, copy) void (^valueChangedBlock)(void);
 
 @end

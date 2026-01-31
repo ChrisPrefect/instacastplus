@@ -69,7 +69,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     if (observing && !_observing)
     {
         [DMANAGER addTaskObserver:self forKeyPath:@"bookmarks" task:^(id obj, NSDictionary *change) {
-            if (!_userAction) {
+            if (!self->_userAction) {
                 [self _reloadBookmarks];
                 [self.tableView reloadData];
                 [self _updateToolbarAnimated:YES];
@@ -453,15 +453,15 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
                                                 NSString* text = self.alertController.textFields.firstObject.text;
                                                 
                                                 [self perform:^(id sender) {
-                                                    
-                                                    _userAction = YES;
+
+                                                    self->_userAction = YES;
                                                     bookmark.title = text;
                                                     [DMANAGER save];
-                                                    
-                                                    [self.tableView reloadRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationFade];
-                                                    _userAction = NO;
 
-                                                    
+                                                    [self.tableView reloadRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationFade];
+                                                    self->_userAction = NO;
+
+
                                                 } afterDelay:0.3];
                                                 self.alertController = nil;
                                             }]];

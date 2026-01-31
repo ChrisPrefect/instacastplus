@@ -60,13 +60,13 @@
         _badgeButton.titleEdgeInsets = UIEdgeInsetsMake(1, 0.5, 0, -0.5);
         _badgeButton.userInteractionEnabled = NO;
         
-        UIImage* badgeBackgroundImage = [ICImageFromByDrawingInContextWithScale(CGSizeMake(21, 21), NO, App.keyWindow.screen.scale, ^() {
-                
+        UIImage* badgeBackgroundImage = [ICImageFromByDrawingInContextWithScale(CGSizeMake(21, 21), NO, App.ic_keyWindow.screen.scale, ^(void) {
+
                 [[UIColor redColor] set];
-                
+
                 UIBezierPath* path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 21, 21) cornerRadius:10];
                 [path fill];
-                
+
             }) resizableImageWithCapInsets:UIEdgeInsetsMake(10, 10, 10, 10)];
         
         [_badgeButton setBackgroundImage:badgeBackgroundImage forState:UIControlStateNormal];

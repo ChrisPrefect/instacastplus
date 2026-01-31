@@ -143,7 +143,11 @@
 
 - (id)initWithFacility:(NSString *)facility {
   if ((self = [super init])) {
+    // asl_* functions are deprecated but GTMLogger still uses them
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     client_ = asl_open(NULL, [facility UTF8String], 0);
+#pragma clang diagnostic pop
     if (client_ == NULL) {
       // COV_NF_START - no real way to test this
       [self release];
@@ -155,7 +159,10 @@
 }
 
 - (void)dealloc {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   if (client_ != NULL) asl_close(client_);
+#pragma clang diagnostic pop
   [super dealloc];
 }
 
@@ -163,7 +170,10 @@
 // logs with test messages.
 // COV_NF_START
 - (void)log:(NSString *)msg level:(int)level {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   asl_log(client_, NULL, level, "%s", [msg UTF8String]);
+#pragma clang diagnostic pop
 }
 // COV_NF_END
 

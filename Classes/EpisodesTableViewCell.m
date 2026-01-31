@@ -684,7 +684,7 @@
     return (filled) ? [UIImage imageNamed:@"Pan Starred Fill"] : [UIImage imageNamed:@"Pan Starred"];
 }
 
-- (void) _animateActivatePanToPoint:(CGFloat)point additionalAnimations:(void (^)())animations completion:(void (^)(BOOL finished))completion
+- (void) _animateActivatePanToPoint:(CGFloat)point additionalAnimations:(void (^)(void))animations completion:(void (^)(BOOL finished))completion
 {
     CGRect b = self.contentView.bounds;
     CGFloat w = CGRectGetWidth(b);

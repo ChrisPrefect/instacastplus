@@ -79,7 +79,7 @@
     if (observing && !_observing)
     {
         [DMANAGER addTaskObserver:self forKeyPath:@"lists" task:^(id obj, NSDictionary *change) {
-            if (!_userAction) {
+            if (!self->_userAction) {
                 [self.tableView reloadData];
                 [self _updateToolbarItemsAnimated:NO];
                 [self _updateToolbarLabels];

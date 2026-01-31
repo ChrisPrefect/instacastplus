@@ -23,8 +23,8 @@ extern "C" {
 															CGPoint translatePoint);
 #if TARGET_OS_IPHONE==1
 	UIImage* CreateGreyscaleImage(UIImage* i);
-    UIImage* ICImageFromByDrawingInContext(CGSize size, void(^drawBlock)());
-    UIImage* ICImageFromByDrawingInContextWithScale(CGSize size, BOOL opaque, CGFloat scale, void(^drawBlock)());
+    UIImage* ICImageFromByDrawingInContext(CGSize size, void(^drawBlock)(void));
+    UIImage* ICImageFromByDrawingInContextWithScale(CGSize size, BOOL opaque, CGFloat scale, void(^drawBlock)(void));
 #else
     NSImage* CreateGreyscaleImage(NSImage* i);
 #endif

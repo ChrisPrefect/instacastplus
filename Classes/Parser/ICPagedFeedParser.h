@@ -26,5 +26,5 @@
 @property (copy) void (^didParsePage)(NSInteger page);
 @property (copy) void (^didParseFeedBlock)(ICFeed* feed);
 @property (copy) void (^didEndWithError)(NSError* error);
-@property (copy) void (^didCancel)();
+@property (copy) void (^didCancel)(void);
 @end

@@ -322,7 +322,7 @@ static NSMutableSet* gModelInfos = nil;
 	BOOL navAndToolbar = (self.navigationAndToolbarEnabled && [[UIDevice currentDevice] userInterfaceIdiom] != UIUserInterfaceIdiomPad);
 	
 	if (!navAndToolbar && !self.tapThrough) {
-		self.parentWindow = [UIApplication sharedApplication].keyWindow;
+		self.parentWindow = App.ic_keyWindow;
 		self.parentWindow.userInteractionEnabled = NO;
 	}
     
@@ -352,7 +352,7 @@ static NSMutableSet* gModelInfos = nil;
 	self.messageView.alpha = 0.0f;
 	self.hidden = NO;
     
-    [[UIApplication sharedApplication].keyWindow addSubview:self];
+    [App.ic_keyWindow addSubview:self];
     
     [UIView animateWithDuration:0.2 animations:^{
         self.messageView.alpha = 1.0f;
@@ -376,7 +376,7 @@ static NSMutableSet* gModelInfos = nil;
 
 
 
-- (void) showAndCloseAfterTimeout:(NSTimeInterval)closeTime completion:(void (^)())completion
+- (void) showAndCloseAfterTimeout:(NSTimeInterval)closeTime completion:(void (^)(void))completion
 {
 	[self show];
     
@@ -386,7 +386,7 @@ static NSMutableSet* gModelInfos = nil;
 
 - (void) closeTimer:(NSTimer*)timer
 {
-    typedef void (^CompletionBlock)();
+    typedef void (^CompletionBlock)(void);
     CompletionBlock completionBlock = [timer userInfo];
     
     self.closeTimer = nil;

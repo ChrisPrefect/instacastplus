@@ -22,7 +22,7 @@
 }
 
 
-- (void) enqueuePresentationOfViewController:(UIViewController*)viewController animated:(BOOL)animated completion:(void (^)())completion
+- (void) enqueuePresentationOfViewController:(UIViewController*)viewController animated:(BOOL)animated completion:(void (^)(void))completion
 {
     NSMutableDictionary* entry = [@{ @"viewController" : viewController, @"animated" : @(animated)} mutableCopy];
     if (completion) {
@@ -46,7 +46,7 @@
     
     UIViewController* viewController = entry[@"viewController"];
     BOOL animated = [entry[@"animated"] boolValue];
-    void (^completion)() = entry[@"completion"];
+    void (^completion)(void) = entry[@"completion"];
     
     [self presentViewController:viewController animated:animated completion:completion];
     

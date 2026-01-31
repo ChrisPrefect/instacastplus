@@ -497,7 +497,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 
 - (void) playerCloseButtonAction2:(id)sender
 {
-    [self.presentedViewController dismissViewControllerAnimated:YES completion:^() {
+    [self.presentedViewController dismissViewControllerAnimated:YES completion:^(void) {
         [self presentNextViewController];
     }];
 }

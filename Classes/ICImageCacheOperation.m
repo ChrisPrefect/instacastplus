@@ -142,7 +142,6 @@
 {
     NSURL* fileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:self.size grayscale:self.grayscale];
     NSString* localPath = [fileURL path];
-    NSString* filename = [localPath lastPathComponent];
     
     
     IC_IMAGE* image = [[IC_IMAGE alloc] initWithContentsOfFile:localPath];
@@ -161,7 +160,7 @@
 
     
     // fetch image from AWS cache
-#warning deactivated image cache
+    // NOTE: AWS image cache is currently deactivated
 //    NSURL* awsURL = [ImageCacheManager cacheURLForImageURL:self.url size:self.size];
 //    
 //    //DebugLog(@"Caching image: %@", awsURLString);

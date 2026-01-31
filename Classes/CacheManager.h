@@ -82,7 +82,7 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 
 - (void) autoClearAndMakeRoomForBytes:(unsigned long long)bytes automatic:(BOOL)automatic;
 
-- (void) handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)())completionHandler;
+- (void) handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completionHandler;
 
 - (void) importFileAtURL:(NSURL*)url forEpisode:(CDEpisode*)episode completion:(void (^)(BOOL success, NSError* error))completion;
 @end

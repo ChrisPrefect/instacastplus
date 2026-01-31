@@ -166,8 +166,12 @@
     
     
     self.airPlayButton = [[[PadMainToolbarVolumeView alloc] initWithFrame:CGRectMake(0, CGRectGetHeight(applicationBounds)-132-22, 44, 44)] autorelease];
+    // showsRouteButton/showsVolumeSlider are deprecated in iOS 13+ but still functional
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     airPlayButton.showsRouteButton = YES;
     airPlayButton.showsVolumeSlider = NO;
+#pragma clang diagnostic pop
 	airPlayButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleTopMargin;
 	[self.mainToolbarView addSubview:airPlayButton];
     

@@ -84,7 +84,7 @@
                              
                              /// xxx: IOS 8 removing toViewController from window after dismissal
                              if (IS_IOS8) {
-                                 [[UIApplication sharedApplication].keyWindow addSubview:toVC.view];
+                                 [App.ic_keyWindow addSubview:toVC.view];
                              }
                          }];
     }

@@ -88,7 +88,9 @@
         NSString* name = set[@"name"];
         NSData* data = set[@"data"];
         
-        ICViewFilterSet* filterSet = [NSKeyedUnarchiver unarchiveObjectWithData:data];
+        NSError* unarchiveError = nil;
+        ICViewFilterSet* filterSet = [NSKeyedUnarchiver unarchivedObjectOfClass:[ICViewFilterSet class] fromData:data error:&unarchiveError];
+        if (!filterSet) continue;
         filterSet.name = name;
         
         [self willChangeValueForKey:@"viewFilterSets"];
@@ -103,7 +105,9 @@
     
     for(ICViewFilterSet* filterSet in self.viewFilterSets)
     {
-        NSData* data = [NSKeyedArchiver archivedDataWithRootObject:filterSet];
+        NSError* archiveError = nil;
+        NSData* data = [NSKeyedArchiver archivedDataWithRootObject:filterSet requiringSecureCoding:NO error:&archiveError];
+        if (!data) continue;
         NSDictionary* dict = @{@"data" : data, @"name" : filterSet.name};
         
         [plist addObject:dict];

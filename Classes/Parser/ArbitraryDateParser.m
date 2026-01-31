@@ -285,19 +285,25 @@ typedef NSInteger TokenType;
         self.postMeridiemTokens = @[ @"pm", @"p.m."];
         
         self.monthTokens = @{
+                             // English short
                              @"jan" : @(1), @"feb" : @(2), @"mar" : @(3), @"apr" : @(4), @"may" : @(5), @"jun" : @(6), @"jul" : @(7), @"aug" : @(8), @"sep" : @(9), @"oct" : @(10), @"nov" : @(11), @"dec" : @(12),
-                             @"january" : @(1), @"february" : @(2), @"march" : @(3), @"april" : @(4), @"may" : @(5), @"june" : @(6), @"july" : @(7), @"august" : @(8), @"september" : @(9), @"october" : @(10), @"november" : @(11), @"december" : @(12),
-                             
+                             // English long (may is same as short, so omitted)
+                             @"january" : @(1), @"february" : @(2), @"march" : @(3), @"april" : @(4), @"june" : @(6), @"july" : @(7), @"august" : @(8), @"september" : @(9), @"october" : @(10), @"november" : @(11), @"december" : @(12),
+
+                             // German
                              @"mär": @(3), @"mrz": @(3), @"sept" : @(9), @"okt" : @(10), @"dez" : @(12),
                              @"januar" : @(1), @"februar" : @(2), @"märz" : @(3), @"mai" : @(5), @"juni" : @(6), @"juli" : @(7), @"oktober" : @(10), @"dezember" : @(12),
-                             
-                             @"fév" : @(2), @"avr" : @(4), @"jui" : @(6), @"juil" : @(7), @"août" : @(8), @"déc" : @(12),
-                             @"janvier" : @(1), @"février" : @(2), @"mars" : @(3), @"avril" : @(4), @"mai" : @(5), @"juin" : @(6), @"juillet" : @(7), @"août" : @(8), @"septembre" : @(92), @"octobre" : @(10), @"novembre" : @(11), @"décembre" : @(12),
-                             
+
+                             // French (mai and août already defined above)
+                             @"fév" : @(2), @"avr" : @(4), @"jui" : @(6), @"juil" : @(7), @"déc" : @(12),
+                             @"janvier" : @(1), @"février" : @(2), @"mars" : @(3), @"avril" : @(4), @"juin" : @(6), @"juillet" : @(7), @"août" : @(8), @"septembre" : @(9), @"octobre" : @(10), @"novembre" : @(11), @"décembre" : @(12),
+
+                             // Spanish
                              @"enero" : @(1), @"marzo" : @(3), @"abr" : @(4), @"mayo" : @(5), @"agosto" : @(8), @"set" : @(9), @"dic" : @(12),
-                             
-                             @"1月" : @(1), @"2月" : @(2), @"3月" : @(3), @"4月" : @(4), @"5月" : @(5), @"6月" : @(6), @"7月" : @(7), @"8月" : @(8), @"9月" : @(92), @"10月" : @(10), @"11月" : @(11), @"12月" : @(12),
-                             
+
+                             // Japanese
+                             @"1月" : @(1), @"2月" : @(2), @"3月" : @(3), @"4月" : @(4), @"5月" : @(5), @"6月" : @(6), @"7月" : @(7), @"8月" : @(8), @"9月" : @(9), @"10月" : @(10), @"11月" : @(11), @"12月" : @(12),
+
                              // found fails
                              @"ju1" : @(7), @"febuary" : @(2), @"mrt" : @(3),
                              };

@@ -57,7 +57,7 @@
 }
 
 
-- (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)())completionBlock
+- (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)(void))completionBlock
 {
     WEAK_SELF
     [sheet addAction:[UIAlertAction actionWithTitle:@"Delete".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction * action) {
@@ -125,7 +125,7 @@
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
 
-- (void) addAdditionalButtonsToMultiSelectEditActionSheet:(UIAlertController*)sheet selectedIndexPathes:(NSArray*)selectedIndexPathes completionBlock:(void (^)())completionBlock
+- (void) addAdditionalButtonsToMultiSelectEditActionSheet:(UIAlertController*)sheet selectedIndexPathes:(NSArray*)selectedIndexPathes completionBlock:(void (^)(void))completionBlock
 {
     WEAK_SELF
     [sheet addAction:[UIAlertAction actionWithTitle:@"Delete".ls
@@ -284,7 +284,7 @@
         [self.tableHeaderView addSubview:self.headerViewController.view];
         [self.headerViewController didMoveToParentViewController:self];
 
-        self.headerViewController.action = ^() {
+        self.headerViewController.action = ^(void) {
             STRONG_SELF
             
             UIBarButtonItem* a = [[UIBarButtonItem alloc] initWithTitle:@"" style:UIBarButtonItemStylePlain target:nil action:nil];
@@ -352,7 +352,7 @@
     CGFloat w = CGRectGetWidth(self.view.bounds);
     self.headerToolbar.frame = CGRectMake(0, 94, w, 44);
     
-    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^() {
+    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
         [ICBackgroundColor set];
         UIRectFill(CGRectMake(0, 0, 1, 1));
     }) forToolbarPosition:UIToolbarPositionAny barMetrics:UIBarMetricsDefault];
@@ -489,7 +489,7 @@
     self.tableView.backgroundColor = ICBackgroundColor;
     [self.tableView reloadData];
     [self.tableView layoutIfNeeded];
-    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^() {
+    [self.headerToolbar setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
         [ICBackgroundColor set];
         UIRectFill(CGRectMake(0, 0, 1, 1));
     })

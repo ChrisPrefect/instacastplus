@@ -38,7 +38,7 @@
     [self addSubview:_progressView];
     
     
-    UIImage* trackImage = ICImageFromByDrawingInContext(CGSizeMake(7, 7), ^() {
+    UIImage* trackImage = ICImageFromByDrawingInContext(CGSizeMake(7, 7), ^(void) {
         [self.tintColor set];
         UIRectFill(CGRectMake(0, 0, 10, 10));
     });
@@ -87,14 +87,14 @@
 
 - (void) _updateAppearance
 {
-    UIImage* backgroundImage = ICImageFromByDrawingInContext(CGSizeMake(7, 7), ^() {
+    UIImage* backgroundImage = ICImageFromByDrawingInContext(CGSizeMake(7, 7), ^(void) {
         [self.progressColor set];
         UIRectFillUsingBlendMode(CGRectMake(0, 0, 10, 10), kCGBlendModeNormal);
     });
-    
+
     _backgroundView.image = backgroundImage;
-    
-    UIImage* progressImage = ICImageFromByDrawingInContext(CGSizeMake(7, 7), ^() {
+
+    UIImage* progressImage = ICImageFromByDrawingInContext(CGSizeMake(7, 7), ^(void) {
         [self.progressColor set];
         UIRectFillUsingBlendMode(CGRectMake(0, 0, 10, 10), kCGBlendModeNormal);
     });

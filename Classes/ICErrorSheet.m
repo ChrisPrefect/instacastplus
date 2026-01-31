@@ -10,7 +10,7 @@
 #import "ICErrorSheetViewController.h"
 
 @interface ICErrorSheet ()
-@property (copy) void (^completionBlock)();
+@property (copy) void (^completionBlock)(void);
 @property (nonatomic, strong) ICErrorSheetViewController* errorSheetViewController;
 @property (nonatomic, strong) id observer;
 @property (nonatomic, strong) UITapGestureRecognizer* tapGestureRecognizer;
@@ -163,7 +163,7 @@
 }
 
 
-- (void) showAnimated:(BOOL)animated dismissAfterDelay:(NSTimeInterval)delay completion:(void (^)())completion
+- (void) showAnimated:(BOOL)animated dismissAfterDelay:(NSTimeInterval)delay completion:(void (^)(void))completion
 {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_hideSheetAfterDelay) object:nil];
     [self performSelector:@selector(_hideSheetAfterDelay) withObject:nil afterDelay:delay];

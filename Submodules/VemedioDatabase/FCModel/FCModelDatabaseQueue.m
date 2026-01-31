@@ -63,7 +63,7 @@
     dispatch_resume(dispatchFileWriteSource);
 }
 
-- (void)execOnSelfSync:(void (^)())block
+- (void)execOnSelfSync:(void (^)(void))block
 {
     if (NSOperationQueue.currentQueue == self) {
         block();
@@ -96,7 +96,7 @@
     self.openDatabase = nil;
 }
 
-- (void (^)())databaseBlockWithBlock:(void (^)(FMDatabase *db))block readOnly:(BOOL)readOnly {
+- (void (^)(void))databaseBlockWithBlock:(void (^)(FMDatabase *db))block readOnly:(BOOL)readOnly {
     FMDatabase *db = self.database;
     return ^{
         BOOL hadOpenResultSetsBefore = db.hasOpenResultSets;

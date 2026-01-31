@@ -45,17 +45,6 @@
 @end
 
 
-
-static NSURL* NoQueryURL(NSURL* url)
-{
-    if ([url query]) {
-        NSString* query = [NSString stringWithFormat:@"?%@",[url query]];
-        NSString* URLString = [[url absoluteString] stringByReplacingOccurrencesOfString:query withString:@""];
-        return [NSURL URLWithString:URLString];
-    }
-    return url;
-}
-
 static ImageCacheManager* gSharedCacheManager = nil;
 
 @interface ImageCacheManager ()

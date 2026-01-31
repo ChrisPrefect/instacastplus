@@ -623,9 +623,12 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
 #if TARGET_OS_IPHONE
         BOOL notificationEnabled = [USER_DEFAULTS boolForKey:EnableManualRefreshFinishedNotification];
-        
+
         if (notificationEnabled && self.backgroundIdentifier != UIBackgroundTaskInvalid && App.applicationState == UIApplicationStateBackground)
         {
+            // UILocalNotification is deprecated but kept for stability
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             UILocalNotification* finishedNotification = [[UILocalNotification alloc] init];
             if (self.numOfNewEpisodesAfterRefresh > 1) {
                 finishedNotification.alertBody = [NSString stringWithFormat:@"Refreshing finished and %d new episodes are available.".ls, self.numOfNewEpisodesAfterRefresh];
@@ -639,6 +642,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
             App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
             [App presentLocalNotificationNow:finishedNotification];
+#pragma clang diagnostic pop
         }
 #endif
 
@@ -1008,7 +1012,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 #pragma mark Importing Stuff
 
 // returns multiple times
-- (void) _importURLs:(NSArray*)array completion:(void (^)())completion
+- (void) _importURLs:(NSArray*)array completion:(void (^)(void))completion
 {
     __block NSInteger parsedFeeds = 0;
     
@@ -1045,24 +1049,24 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     }
 }
 
-- (void) importURL:(NSURL*)url completion:(void (^)())completion
+- (void) importURL:(NSURL*)url completion:(void (^)(void))completion
 {
     for(CDFeed* feed in DMANAGER.feeds) {
 		if ([feed.sourceURL isEqual:url]) {
-			completion(nil);
+			if (completion) completion();
 			return;
 		}
 	}
-    
+
     [App retainNetworkActivity];
 
-    
-    [self _importURLs:[NSArray arrayWithObject:url] completion:^() {
+
+    [self _importURLs:[NSArray arrayWithObject:url] completion:^{
 
         [App releaseNetworkActivity];
-        
+
         if (completion) {
-            completion(nil);
+            completion();
         }
     }];
 }
@@ -1107,8 +1111,8 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         if ([urls count] > 0)
         {
             [DMANAGER beginInterruptSaving];
-            [self _importURLs:urls completion:^() {
-                
+            [self _importURLs:urls completion:^(void) {
+
                 [App releaseNetworkActivity];
 
                 self.importing = NO;
@@ -1254,7 +1258,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 }
 
 
-- (void)importOPMLData:(NSData *)data completion:(void (^)())completion progress:(void (^)(float))progress {
+- (void)importOPMLData:(NSData *)data completion:(void (^)(void))completion progress:(void (^)(float))progress {
     OPMLParser *opmlParser = [OPMLParser opmlParserWithData:data];
     
     [opmlParser parseWithCompletionHandler:^(NSArray<NSDictionary *> *feeds) {

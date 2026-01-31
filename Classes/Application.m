@@ -52,7 +52,8 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         
         [self updateNetworkAccessTechnology];
         
-        [NSNotificationCenter.defaultCenter addObserverForName:CTRadioAccessTechnologyDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){
+        // Use the non-deprecated notification for iOS 12+
+        [NSNotificationCenter.defaultCenter addObserverForName:CTServiceRadioAccessTechnologyDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){
             [self updateNetworkAccessTechnology];
         }];
         
@@ -139,14 +140,16 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
     }
     else
     {
-        NSString* currentRadioAccessTechnology = self.telephonyInfo.currentRadioAccessTechnology;
-        if (currentRadioAccessTechnology == CTRadioAccessTechnologyGPRS) {
+        // Use serviceCurrentRadioAccessTechnology (returns dictionary of service identifier -> technology)
+        NSDictionary<NSString*, NSString*> *radioAccessTechnologies = self.telephonyInfo.serviceCurrentRadioAccessTechnology;
+        NSString* currentRadioAccessTechnology = radioAccessTechnologies.allValues.firstObject;
+        if ([currentRadioAccessTechnology isEqualToString:CTRadioAccessTechnologyGPRS]) {
             self.networkAccessTechnology = kICNetworkAccessTechnlogyGPRS;
         }
-        else if (currentRadioAccessTechnology == CTRadioAccessTechnologyEdge) {
+        else if ([currentRadioAccessTechnology isEqualToString:CTRadioAccessTechnologyEdge]) {
             self.networkAccessTechnology = kICNetworkAccessTechnlogyEDGE;
         }
-        else if (currentRadioAccessTechnology == CTRadioAccessTechnologyLTE) {
+        else if ([currentRadioAccessTechnology isEqualToString:CTRadioAccessTechnologyLTE]) {
             self.networkAccessTechnology = kICNetworkAccessTechnlogyLTE;
         }
         else {
@@ -162,7 +165,11 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 {
 	dispatch_async(dispatch_get_main_queue(), ^{
         if (_networkActivityRetainCount == 0) {
+            // networkActivityIndicatorVisible is deprecated in iOS 13 with no replacement
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             self.networkActivityIndicatorVisible = YES;
+#pragma clang diagnostic pop
         }
         _networkActivityRetainCount++;
     });
@@ -172,9 +179,13 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 {
 	dispatch_async(dispatch_get_main_queue(), ^{
         _networkActivityRetainCount = MAX(_networkActivityRetainCount-1,0);
-        
+
         if (_networkActivityRetainCount == 0) {
+            // networkActivityIndicatorVisible is deprecated in iOS 13 with no replacement
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             self.networkActivityIndicatorVisible = NO;
+#pragma clang diagnostic pop
         }
     });
 }
@@ -378,6 +389,31 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
     }
 }
 
+#pragma mark - Scene-aware Key Window
+
+- (UIWindow *)ic_keyWindow
+{
+    // For iOS 13+ with scene support, we need to get the key window from connected scenes
+    for (UIWindowScene *scene in self.connectedScenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive) {
+            for (UIWindow *window in scene.windows) {
+                if (window.isKeyWindow) {
+                    return window;
+                }
+            }
+        }
+    }
+    // Fallback: return first window from any foreground scene
+    for (UIWindowScene *scene in self.connectedScenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive ||
+            scene.activationState == UISceneActivationStateForegroundInactive) {
+            if (scene.windows.count > 0) {
+                return scene.windows.firstObject;
+            }
+        }
+    }
+    return nil;
+}
 
 @end
 

@@ -208,7 +208,11 @@
         //property list encoding failed. try NSCoding
         if (!data)
         {
+            // Suppress deprecation warning - FXKeychain handles arbitrary objects where class type isn't known
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             data = [NSKeyedArchiver archivedDataWithRootObject:object];
+#pragma clang diagnostic pop
         }
         
 #endif
@@ -224,13 +228,15 @@
         NSMutableDictionary *update = [@{(__bridge NSString *)kSecValueData: data} mutableCopy];
         
 #if TARGET_OS_IPHONE || __MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_10_9
-        
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         update[(__bridge NSString *)kSecAttrAccessible] = @[(__bridge id)kSecAttrAccessibleWhenUnlocked,
                                                             (__bridge id)kSecAttrAccessibleAfterFirstUnlock,
                                                             (__bridge id)kSecAttrAccessibleAlways,
                                                             (__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
                                                             (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
                                                             (__bridge id)kSecAttrAccessibleAlwaysThisDeviceOnly][self.accessibility];
+#pragma clang diagnostic pop
 #endif
         
         //write data
@@ -313,7 +319,11 @@
     #if FXKEYCHAIN_USE_NSCODING
                 
                 //parse as archive
+                // Suppress deprecation warning - FXKeychain handles arbitrary objects where class type isn't known
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 object = [NSKeyedUnarchiver unarchiveObjectWithData:data];
+#pragma clang diagnostic pop
     #else
                 //don't trust it
                 object = nil;

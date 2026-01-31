@@ -256,7 +256,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 	{
         CGRect bounds = CGRectMake(10, self.view.bounds.origin.y + 10, self.view.bounds.size.width-20, self.view.bounds.size.height - 10);//self.view.bounds;
         CGFloat contentWidth = CGRectGetWidth(bounds);
-        CGFloat barHeight = CGRectGetMinY(self.navigationController.navigationBar.frame);
+        (void)contentWidth; // Used in HTML generation below
         
         if (!self.webView)
         {
@@ -621,7 +621,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void) actionAction:(id)sender
 {
 	if (self.feed.linkURL) {
-		[[UIApplication sharedApplication] openURL:self.feed.linkURL];
+		[[UIApplication sharedApplication] openURL:self.feed.linkURL options:@{} completionHandler:nil];
 	}
 }
 

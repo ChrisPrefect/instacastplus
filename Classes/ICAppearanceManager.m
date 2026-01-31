@@ -37,7 +37,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (UIImage*) _navigationBarImageWithSize:(CGSize)size appearance:(id<ICAppearance>)appearance topToBottom:(BOOL)topToBottom
 {
-    return ICImageFromByDrawingInContext(size, ^() {
+    return ICImageFromByDrawingInContext(size, ^(void) {
                 
         CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
         CGContextRef context = UIGraphicsGetCurrentContext();

@@ -426,7 +426,7 @@
         //UIScrollView* scrollView = self.sharedWebView.scrollView;
         self.sharedWebView.scrollView.delegate = self;
         
-        BOOL toolbarShown = (!self.navigationController.toolbarHidden || [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
+        // toolbarShown was used for content inset calculations that are now commented out
         
 //        _dontSaveScrollOffset = YES;
 //        CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
@@ -663,9 +663,8 @@
     }
     else
     {
-        if ([[UIApplication sharedApplication] isIgnoringInteractionEvents]) {
-            [[UIApplication sharedApplication] endIgnoringInteractionEvents];
-        }
+        // Deprecated in iOS 13: isIgnoringInteractionEvents/endIgnoringInteractionEvents
+        // These were used to prevent user interaction during animations, but are no longer needed
     }
 }
 

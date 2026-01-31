@@ -235,8 +235,8 @@ typedef NS_ENUM(NSInteger, FCModelSaveResult) {
 //
 // NOTE: Notification batching is thread-local. Operations performed in other threads will still send notifications normally.
 //
-+ (void)performWithBatchedNotifications:(void (^)())block deliverOnCompletion:(BOOL)deliverNotifications;
-+ (void)performWithBatchedNotifications:(void (^)())block; // equivalent to performWithBatchedNotifications:deliverOnCompletion:YES
++ (void)performWithBatchedNotifications:(void (^)(void))block deliverOnCompletion:(BOOL)deliverNotifications;
++ (void)performWithBatchedNotifications:(void (^)(void))block; // equivalent to performWithBatchedNotifications:deliverOnCompletion:YES
 + (BOOL)isBatchingNotificationsForCurrentThread;
 
 // Field info: You probably won't need this most of the time, but it's nice to have sometimes. FCModel's generating this privately

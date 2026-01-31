@@ -49,13 +49,13 @@
 	NSURL *tweetbotURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetbot:///status/%@", tweetId]];
 	if ([app canOpenURL:tweetbotURL])
 	{
-		[app openURL:tweetbotURL];
+		[app openURL:tweetbotURL options:@{} completionHandler:nil];
 		return;
 	}
-    
+
     // --- Fallback: Mobile Twitter in Safari
 	NSURL *safariURL = [NSURL URLWithString:[NSString stringWithFormat:@"http://%@/%@/statuses/%@", [TwitterHelper _twitterHost], user, tweetId]];
-	[app openURL:safariURL];
+	[app openURL:safariURL options:@{} completionHandler:nil];
 }
 
 + (void) openUserInTwitterApp:(NSString*)username
@@ -68,7 +68,7 @@
 	NSURL *tweetieURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetie://user?screen_name=%@", escapedUsername]];
 	if ([app canOpenURL:tweetieURL])
 	{
-		[app openURL:tweetieURL];
+		[app openURL:tweetieURL options:@{} completionHandler:nil];
 		return;
 	}
     
@@ -76,7 +76,7 @@
 	NSURL *tweetbotURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetbot:///user_profile/%@", escapedUsername]];
 	if ([app canOpenURL:tweetbotURL])
 	{
-		[app openURL:tweetbotURL];
+		[app openURL:tweetbotURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -84,7 +84,7 @@
 	NSURL *birdfeedURL = [NSURL URLWithString:[NSString stringWithFormat:@"x-birdfeed://user?screen_name=%@", escapedUsername]];
 	if ([app canOpenURL:birdfeedURL])
 	{
-		[app openURL:birdfeedURL];
+		[app openURL:birdfeedURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -92,7 +92,7 @@
 	NSURL *twittelatorURL = [NSURL URLWithString:[NSString stringWithFormat:@"twit:///user?screen_name=%@", escapedUsername]];
 	if ([app canOpenURL:twittelatorURL])
 	{
-		[app openURL:twittelatorURL];
+		[app openURL:twittelatorURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -100,7 +100,7 @@
 	NSURL *icebirdURL = [NSURL URLWithString:[NSString stringWithFormat:@"icebird://user?screen_name=%@", escapedUsername]];
 	if ([app canOpenURL:icebirdURL])
 	{
-		[app openURL:icebirdURL];
+		[app openURL:icebirdURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -108,7 +108,7 @@
 	NSURL *fluttrURL = [NSURL URLWithString:[NSString stringWithFormat:@"fluttr://user/%@", escapedUsername]];
 	if ([app canOpenURL:fluttrURL])
 	{
-		[app openURL:fluttrURL];
+		[app openURL:fluttrURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -116,7 +116,7 @@
 	NSURL *simplytweetURL = [NSURL URLWithString:[NSString stringWithFormat:@"simplytweet:?link=http://twitter.com/%@", escapedUsername]];
 	if ([app canOpenURL:simplytweetURL])
 	{
-		[app openURL:simplytweetURL];
+		[app openURL:simplytweetURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -124,7 +124,7 @@
 	NSURL *tweetingsURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetings:///user?screen_name=%@", escapedUsername]];
 	if ([app canOpenURL:tweetingsURL])
 	{
-		[app openURL:tweetingsURL];
+		[app openURL:tweetingsURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -132,13 +132,13 @@
 	NSURL *echofonURL = [NSURL URLWithString:[NSString stringWithFormat:@"echofon:///user_timeline?%@", escapedUsername]];
 	if ([app canOpenURL:echofonURL])
 	{
-		[app openURL:echofonURL];
+		[app openURL:echofonURL options:@{} completionHandler:nil];
 		return;
 	}
 	
 	// --- Fallback: Mobile Twitter in Safari
 	NSURL *safariURL = [NSURL URLWithString:[NSString stringWithFormat:@"http://mobile.twitter.com/%@", escapedUsername]];
-	[app openURL:safariURL];
+	[app openURL:safariURL options:@{} completionHandler:nil];
 	
 }
 
@@ -151,7 +151,7 @@
 	NSURL *tweetieURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetie://post?message=%@", escapedMessage]];
 	if ([app canOpenURL:tweetieURL])
 	{
-		[app openURL:tweetieURL];
+		[app openURL:tweetieURL options:@{} completionHandler:nil];
 		return;
 	}
     
@@ -160,7 +160,7 @@
 	if ([app canOpenURL:tweetbotURL])
 	{
         DebugLog(@"%@", [tweetbotURL description]);
-		[app openURL:tweetbotURL];
+		[app openURL:tweetbotURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -168,7 +168,7 @@
 	NSURL *birdfeedURL = [NSURL URLWithString:[NSString stringWithFormat:@"x-birdfeed://post?text=%@", escapedMessage]];
 	if ([app canOpenURL:birdfeedURL])
 	{
-		[app openURL:birdfeedURL];
+		[app openURL:birdfeedURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -176,7 +176,7 @@
 	NSURL *twittelatorURL = [NSURL URLWithString:[NSString stringWithFormat:@"twit:///post?message=%@", escapedMessage]];
 	if ([app canOpenURL:twittelatorURL])
 	{
-		[app openURL:twittelatorURL];
+		[app openURL:twittelatorURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -184,7 +184,7 @@
 	NSURL *icebirdURL = [NSURL URLWithString:[NSString stringWithFormat:@"icebird://compose?status=%@", escapedMessage]];
 	if ([app canOpenURL:icebirdURL])
 	{
-		[app openURL:icebirdURL];
+		[app openURL:icebirdURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -192,7 +192,7 @@
 	NSURL *simplytweetURL = [NSURL URLWithString:[NSString stringWithFormat:@"simplytweet:?text=%@", escapedMessage]];
 	if ([app canOpenURL:simplytweetURL])
 	{
-		[app openURL:simplytweetURL];
+		[app openURL:simplytweetURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -200,7 +200,7 @@
 	NSURL *tweetingsURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetings:///post?%@", escapedMessage]];
 	if ([app canOpenURL:tweetingsURL])
 	{
-		[app openURL:tweetingsURL];
+		[app openURL:tweetingsURL options:@{} completionHandler:nil];
 		return;
 	}
 	
@@ -208,20 +208,25 @@
 	NSURL *echofonURL = [NSURL URLWithString:[NSString stringWithFormat:@"echofon:///message?%@", escapedMessage]];
 	if ([app canOpenURL:echofonURL])
 	{
-		[app openURL:echofonURL];
+		[app openURL:echofonURL options:@{} completionHandler:nil];
 		return;
 	}
 	
 	// --- Fallback: Mobile Twitter in Safari
 	NSURL *safariURL = [NSURL URLWithString:[NSString stringWithFormat:@"http://%@/?status=%@", [TwitterHelper _twitterHost], escapedMessage]];
-	[app openURL:safariURL];
+	[app openURL:safariURL options:@{} completionHandler:nil];
 }
 
 + (void) tweetMessage:(NSString*)message url:(NSURL*)url hostViewController:(UIViewController*)hostViewController
 {
+    // Note: SLServiceTypeTwitter is deprecated since iOS 11, but there's no replacement
+    // since Twitter removed their Social framework integration
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     if ([SLComposeViewController isAvailableForServiceType:SLServiceTypeTwitter])
-    {    
+    {
         SLComposeViewController* composer = [SLComposeViewController composeViewControllerForServiceType:SLServiceTypeTwitter];
+#pragma clang diagnostic pop
         [composer setInitialText:message];
         
         if (url) {

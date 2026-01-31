@@ -846,6 +846,9 @@ static NSString* gPathToCache = nil;
             [self.cacheHistory setEpisode:episode didAutoDownload:YES];
 #if TARGET_OS_IPHONE
             if ([episode.feed boolForKey:EnableNewEpisodeNotification] && App.applicationState == UIApplicationStateBackground) {
+                // UILocalNotification is deprecated but kept for stability
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 UILocalNotification* notification = [[UILocalNotification alloc] init];
                 NSString* episodeTitle = [NSString stringWithFormat:@"%@ - %@", episode.feed.title, [episode cleanTitleUsingFeedTitle:episode.feed.title]];
                 if ([notification respondsToSelector:@selector(alertTitle)]) {
@@ -858,6 +861,7 @@ static NSString* gPathToCache = nil;
                 notification.soundName = @"NewEpisodes";
                 notification.userInfo = @{ @"episode_hash" : [episode objectHash], @"podcast" : episode.feed.title, @"episode" : [episode cleanTitleUsingFeedTitle:episode.feed.title]};
                 [App presentLocalNotificationNow:notification];
+#pragma clang diagnostic pop
             }
 #endif
         }
@@ -906,9 +910,13 @@ static NSString* gPathToCache = nil;
 
 			if (notificationEnabled) {
 #if TARGET_OS_IPHONE
+                // UILocalNotification is deprecated but kept for stability
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 				UILocalNotification* finishedNotification = [[UILocalNotification alloc] init];
 				finishedNotification.alertBody = @"Downloads Finished".ls;
 				[App presentLocalNotificationNow:finishedNotification];
+#pragma clang diagnostic pop
 #else
                 NSUserNotification* finishedNotification = [[NSUserNotification alloc] init];
                 finishedNotification.title = @"Downloads Finished".ls;
@@ -1398,7 +1406,7 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
 #pragma mark - NSURLSession
 
 
-- (void) handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)())completionHandler
+- (void) handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completionHandler
 {
     DebugLog(@"handleEventsForBackgroundURLSession: %@", identifier);
     

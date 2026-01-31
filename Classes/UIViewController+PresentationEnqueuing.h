@@ -10,7 +10,7 @@
 
 @interface UIViewController (PresentationEnqueuing)
 
-- (void) enqueuePresentationOfViewController:(UIViewController*)viewController animated:(BOOL)animated completion:(void (^)())completion;
+- (void) enqueuePresentationOfViewController:(UIViewController*)viewController animated:(BOOL)animated completion:(void (^)(void))completion;
 - (void) presentNextViewController;
 - (void) clearViewControllerPresentationQueue;
 

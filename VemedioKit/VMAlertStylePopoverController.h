@@ -16,7 +16,7 @@
 @property (nonatomic, strong, readonly) UIView* backdropView;
 
 @property (nonatomic) BOOL enableBackgroundDismiss;
-@property (nonatomic, copy) void (^shouldDismiss)();
+@property (nonatomic, copy) void (^shouldDismiss)(void);
 
 @property CGFloat cornerRadius;
 @end

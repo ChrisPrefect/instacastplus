@@ -53,6 +53,9 @@ typedef NS_ENUM(NSInteger, ICNetworkAccessTechnlogy) {
 
 - (NSString*) errorLog;
 
+// Scene-aware key window accessor (replaces deprecated keyWindow property)
+@property (nonatomic, readonly, nullable) UIWindow *ic_keyWindow;
+
 @end
 
 

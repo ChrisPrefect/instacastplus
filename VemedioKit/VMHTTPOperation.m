@@ -269,7 +269,7 @@
     
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.didLoadBytes) {
-            self.didLoadBytes(_loadedBytes, _totalBytes);
+            self.didLoadBytes(self->_loadedBytes, self->_totalBytes);
         }
     });
 }

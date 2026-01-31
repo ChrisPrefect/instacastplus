@@ -125,11 +125,11 @@ static NSString* kBookmarksProperty = @"bookmarks";
 
 #pragma mark -
 
-NS_INLINE NSString* _ModelFile() {
+NS_INLINE NSString* _ModelFile(void) {
     return [NSString stringWithFormat:@"Model%d", MODEL_VERSION];
 }
 
-NS_INLINE NSString* _DataStoreFile() {
+NS_INLINE NSString* _DataStoreFile(void) {
     return [NSString stringWithFormat:@"DataStore%d.sqlite", MODEL_VERSION];
 }
 

@@ -111,8 +111,12 @@
     }
     [USER_DEFAULTS synchronize];
     
+    // setMinimumBackgroundFetchInterval is deprecated in iOS 13+ but still functional
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [App setMinimumBackgroundFetchInterval:900];
     [App setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalMinimum];
+#pragma clang diagnostic pop
     
     self.window.backgroundColor = ICBackgroundColor;
     //self.window.frame = CGRectMake(0, 0, 320, 568);
@@ -134,8 +138,15 @@
         [self _startUpApplicationWithLaunchOptions:launchOptions];
     }
     
-    UIUserNotificationSettings* settings = [UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeBadge | UIUserNotificationTypeSound | UIUserNotificationTypeAlert categories:nil];
-    [application registerUserNotificationSettings:settings];
+    // Request notification authorization using modern UNUserNotificationCenter API
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    center.delegate = self;
+    [center requestAuthorizationWithOptions:(UNAuthorizationOptionBadge | UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
+                          completionHandler:^(BOOL granted, NSError * _Nullable error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"DidRegisterUserNotificationSettings" object:self];
+        });
+    }];
     
     DebugLog(@"launchOptions %@", launchOptions);
         
@@ -209,8 +220,11 @@
     
     
     if ([launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         UILocalNotification* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
         [self application:App didReceiveLocalNotification:notification];
+#pragma clang diagnostic pop
         DebugLog(@"received local notification at launch");
     }
     
@@ -607,11 +621,15 @@
 #pragma mark -
 #pragma mark Push Notifications
 
+// This delegate method is deprecated but kept for backwards compatibility
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 - (void)application:(UIApplication *)application didRegisterUserNotificationSettings:(UIUserNotificationSettings *)notificationSettings
 {
     DebugLog(@"didRegisterUserNotificationSettings %@", notificationSettings);
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"DidRegisterUserNotificationSettings" object:self];
+    // Notification already posted in the modern requestAuthorizationWithOptions completion handler
 }
+#pragma clang diagnostic pop
 
 - (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken
 {
@@ -704,41 +722,52 @@
         for(CDEpisode* episode in newEpisodes)
         {
             if ([episode.feed boolForKey:EnableNewEpisodeNotification] && App.applicationState == UIApplicationStateBackground) {
+                // UILocalNotification is deprecated but still functional - keeping for stability
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 UILocalNotification* notification = [[UILocalNotification alloc] init];
                 NSString* episodeTitle = [NSString stringWithFormat:@"%@ - %@", episode.feed.title, [episode cleanTitleUsingFeedTitle:episode.feed.title]];
                 notification.alertBody = [NSString stringWithFormat:@"'%@' is available to stream.".ls, episodeTitle];
                 notification.soundName = @"NewEpisodes";
                 notification.userInfo = @{ @"episode_hash" : [episode objectHash]};
                 [App presentLocalNotificationNow:notification];
+#pragma clang diagnostic pop
             }
         }
     }
 }
 
+// UILocalNotification delegate methods are deprecated but kept for backwards compatibility
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 - (void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification
 {
     if (!notification) {
         return;
     }
-    
+
     NSString* episodeHash = notification.userInfo[@"episode_hash"];
-    
+
     CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
     [self.mainViewController showShowNotesOfEpisode:episode animated:NO];
-    
+
     [application cancelLocalNotification:notification];
 }
+#pragma clang diagnostic pop
 
-- (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)localNotification completionHandler:(void (^)())completionHandler
-{    
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+- (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)localNotification completionHandler:(void (^)(void))completionHandler
+{
     if ([identifier isEqualToString:@"play"]) {
         NSString* episodeHash = localNotification.userInfo[@"episode_hash"];
         CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
         [[AudioSession sharedAudioSession] playEpisode:episode];
     }
-    
+
     completionHandler();
 }
+#pragma clang diagnostic pop
 
 #pragma mark - Background Fetch
 

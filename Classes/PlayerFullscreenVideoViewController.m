@@ -209,8 +209,12 @@
     {
         MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(15, 16, 125, 30)];
         volumeView.backgroundColor = [UIColor clearColor];
+        // showsRouteButton/showsVolumeSlider are deprecated in iOS 13+ but still functional
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         volumeView.showsRouteButton = NO;
         volumeView.showsVolumeSlider = YES;
+#pragma clang diagnostic pop
         [volumeView setVolumeThumbImage:[UIImage imageNamed:@"Video Slider Thumb"] forState:UIControlStateNormal];
         [volumeView setMinimumVolumeSliderImage:[[[UIImage imageNamed:@"Video Slider Fill Track"] imageWithColor:[UIColor whiteColor]] resizableImageWithCapInsets:UIEdgeInsetsMake(0, 5, 0, 5)] forState:UIControlStateNormal];
         [volumeView setMaximumVolumeSliderImage:[[[UIImage imageNamed:@"Video Slider Fill Track"] imageWithColor:[UIColor blackColor]] resizableImageWithCapInsets:UIEdgeInsetsMake(0, 5, 0, 5)] forState:UIControlStateNormal];
@@ -223,7 +227,10 @@
                 }
             }
         } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             [volumeView setValue:@(NO) forKey:@"showsRouteButton"];
+#pragma clang diagnostic pop
         }
          
         [self.bottomBar addSubview:volumeView];

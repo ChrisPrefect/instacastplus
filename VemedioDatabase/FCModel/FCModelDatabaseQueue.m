@@ -37,9 +37,9 @@
 - (FMDatabase *)database
 {
     if (! self.openDatabase) [self execOnSelfSync:^{
-        self.openDatabase = [[FMDatabase alloc] initWithPath:_path];
-        if (! [_openDatabase open]) {
-            [[NSException exceptionWithName:NSGenericException reason:[NSString stringWithFormat:@"Cannot open or create database at path: %@", _path] userInfo:nil] raise];
+        self.openDatabase = [[FMDatabase alloc] initWithPath:self->_path];
+        if (! [self->_openDatabase open]) {
+            [[NSException exceptionWithName:NSGenericException reason:[NSString stringWithFormat:@"Cannot open or create database at path: %@", self->_path] userInfo:nil] raise];
         }
     }];
     return self.openDatabase;
@@ -63,7 +63,7 @@
     dispatch_resume(dispatchFileWriteSource);
 }
 
-- (void)execOnSelfSync:(void (^)())block
+- (void)execOnSelfSync:(void (^)(void))block
 {
     if (NSOperationQueue.currentQueue == self) {
         block();
@@ -76,14 +76,14 @@
 - (void)close
 {
     [self execOnSelfSync:^{
-        dispatch_source_cancel(dispatchFileWriteSource);
-        dispatchFileWriteSource = NULL;
+        dispatch_source_cancel(self->dispatchFileWriteSource);
+        self->dispatchFileWriteSource = NULL;
 
-        close(dispatchEventFileDescriptor);
-        dispatchEventFileDescriptor = 0;
+        close(self->dispatchEventFileDescriptor);
+        self->dispatchEventFileDescriptor = 0;
 
-        close(changeCounterReadFileDescriptor);
-        changeCounterReadFileDescriptor = 0;
+        close(self->changeCounterReadFileDescriptor);
+        self->changeCounterReadFileDescriptor = 0;
 
         [self.openDatabase close];
         self.openDatabase = nil;
@@ -96,30 +96,30 @@
     self.openDatabase = nil;
 }
 
-- (void (^)())databaseBlockWithBlock:(void (^)(FMDatabase *db))block readOnly:(BOOL)readOnly {
+- (void (^)(void))databaseBlockWithBlock:(void (^)(FMDatabase *db))block readOnly:(BOOL)readOnly {
     FMDatabase *db = self.database;
     return ^{
         BOOL hadOpenResultSetsBefore = db.hasOpenResultSets;
-        if (! readOnly) _inExpectedWrite = YES;
+        if (! readOnly) self->_inExpectedWrite = YES;
 
         // Read change counter from SQLite file header to detect changes made by other processes during this write
         uint32_t changeCounterBeforeBlock = 0;
-        if (changeCounterReadFileDescriptor > 0) {
-            lseek(changeCounterReadFileDescriptor, kSQLiteFileChangeCounterOffset, SEEK_SET);
-            read(changeCounterReadFileDescriptor, &changeCounterBeforeBlock, sizeof(uint32_t));
+        if (self->changeCounterReadFileDescriptor > 0) {
+            lseek(self->changeCounterReadFileDescriptor, kSQLiteFileChangeCounterOffset, SEEK_SET);
+            read(self->changeCounterReadFileDescriptor, &changeCounterBeforeBlock, sizeof(uint32_t));
             changeCounterBeforeBlock = CFSwapInt32BigToHost(changeCounterBeforeBlock);
         }
-        
+
         block(db);
 
-        dispatch_sync(dispatchFileWriteQueue, ^{
-            _inExpectedWrite = NO;
-            
+        dispatch_sync(self->dispatchFileWriteQueue, ^{
+            self->_inExpectedWrite = NO;
+
             // if more than 1 change during this expected write, either there's 2 queries in it (unexpected) or another process changed it
             uint32_t changeCounterAfterBlock = 0;
-            if (changeCounterReadFileDescriptor > 0) {
-                lseek(changeCounterReadFileDescriptor, kSQLiteFileChangeCounterOffset, SEEK_SET);
-                read(changeCounterReadFileDescriptor, &changeCounterAfterBlock, sizeof(uint32_t));
+            if (self->changeCounterReadFileDescriptor > 0) {
+                lseek(self->changeCounterReadFileDescriptor, kSQLiteFileChangeCounterOffset, SEEK_SET);
+                read(self->changeCounterReadFileDescriptor, &changeCounterAfterBlock, sizeof(uint32_t));
                 changeCounterAfterBlock = CFSwapInt32BigToHost(changeCounterAfterBlock);
             }
 

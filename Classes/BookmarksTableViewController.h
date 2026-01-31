@@ -14,7 +14,7 @@
 @property (nonatomic, strong) NSString* parentHash;
 
 @property (nonatomic, copy) void (^didDeleteRows)(NSArray* rows);
-@property (nonatomic, copy) void (^didDeleteLastRow)();
+@property (nonatomic, copy) void (^didDeleteLastRow)(void);
 
 - (void) reload;
 @end

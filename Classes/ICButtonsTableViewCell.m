@@ -46,12 +46,12 @@
 + (UIButton*) configuredButtonWithTitle:(NSString*)title imageNamed:(NSString*)imageName
 {
     ICTableViewButton* button = [ICTableViewButton buttonWithType:UIButtonTypeCustom];
-    [button setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^() {
+    [button setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
         [ICGroupCellBackgroundColor set];
         UIRectFill(CGRectMake(0, 0, 1, 1));
     }) forState:UIControlStateNormal];
-    
-    UIImage* tintedBackgroundImage = ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^() {
+
+    UIImage* tintedBackgroundImage = ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
         [ICTintColor set];
         UIRectFill(CGRectMake(0, 0, 1, 1));
     });

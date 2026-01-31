@@ -55,7 +55,11 @@ static NSString* HexStringFromBytes(const UInt8* bytes, CFIndex len)
 //if TARGET_OS_IPHONE
     const char *input = [self UTF8String];
 	unsigned char result[CC_MD5_DIGEST_LENGTH];
+    // CC_MD5 is deprecated but we need it for backwards compatibility with existing hashed data
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 	CC_MD5(input, (CC_LONG)strlen(input), result);
+#pragma clang diagnostic pop
 	md5Hash = HexStringFromBytes(result, CC_MD5_DIGEST_LENGTH);
     
 //#else

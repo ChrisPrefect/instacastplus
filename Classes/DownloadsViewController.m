@@ -69,7 +69,7 @@
         }];
         
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
-            if (!_userAction) {
+            if (!self->_userAction) {
                 [weakSelf.tableView reloadData];
             }
         }];

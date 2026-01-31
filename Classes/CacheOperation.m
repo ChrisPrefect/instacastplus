@@ -487,7 +487,8 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     }
     
     NSString* resourceHash = [self _resourceHash];
-    NSData* resumeData = [NSKeyedArchiver archivedDataWithRootObject:resumeInfo];
+    NSError* archiveError = nil;
+    NSData* resumeData = [NSKeyedArchiver archivedDataWithRootObject:resumeInfo requiringSecureCoding:NO error:&archiveError];
     if (resourceHash && resumeData) {
         [resumeInfos setObject:resumeData forKey:resourceHash];
         [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
@@ -518,7 +519,8 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     NSString* resourceHash = [self _resourceHash];
     NSData* resumeData = [USER_DEFAULTS objectForKey:kUserDefaultsResumeInfoKey][resourceHash];
     if (resumeData) {
-        return [NSKeyedUnarchiver unarchiveObjectWithData:resumeData];
+        NSError* unarchiveError = nil;
+        return [NSKeyedUnarchiver unarchivedObjectOfClass:[NSDictionary class] fromData:resumeData error:&unarchiveError];
     }
     return nil;
 }

@@ -16,7 +16,7 @@
 @property (nonatomic, strong, readonly) UILabel* titleLabel;
 @property (nonatomic, strong, readonly) UILabel* subtitleLabel;
 
-@property (nonatomic, copy) void(^action)();
+@property (nonatomic, copy) void(^action)(void);
 
 - (void) deselectAnimated:(BOOL)animated;
 

@@ -32,7 +32,7 @@
     
 	
 	if ([url scheme] && ![[url scheme] hasPrefix:@"http"]) {
-		[[UIApplication sharedApplication] openURL:url];
+		[[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
 		return NO;
 	}
 	
@@ -53,7 +53,7 @@
     for(NSString* host in hostToBeRedirected) {
         if ([url host] && [[url host] rangeOfString:host].location != NSNotFound) {
             DebugLog(@"external link %@", urlString);
-            [[UIApplication sharedApplication] openURL:url];
+            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
             return NO;
         }
     }
@@ -62,7 +62,7 @@
 	NSArray* mediaSuffixes = [NSArray arrayWithObjects:@"mp3",@"m4a",@"mp4",@"mp4",nil];
 	if ([[url path] pathExtension] && [mediaSuffixes containsObject:[[url path] pathExtension]]) {
 		DebugLog(@"media link %@", urlString);
-        [App openURL:url];
+        [App openURL:url options:@{} completionHandler:nil];
 		return NO;
 	}
     

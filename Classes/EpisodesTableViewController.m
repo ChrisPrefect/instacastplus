@@ -108,17 +108,17 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     return YES;
 }
 
-- (void) addAdditionalButtonsToMultiActionSheet:(UIAlertController*)sheet completionBlock:(void (^)())completionBlock
+- (void) addAdditionalButtonsToMultiActionSheet:(UIAlertController*)sheet completionBlock:(void (^)(void))completionBlock
 {
-    
+
 }
 
-- (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)())completionBlock
+- (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)(void))completionBlock
 {
-    
+
 }
 
-- (void) addAdditionalButtonsToMultiSelectEditActionSheet:(UIAlertController*)sheet selectedIndexPathes:(NSArray*)selectedIndexPathes completionBlock:(void (^)())completionBlock
+- (void) addAdditionalButtonsToMultiSelectEditActionSheet:(UIAlertController*)sheet selectedIndexPathes:(NSArray*)selectedIndexPathes completionBlock:(void (^)(void))completionBlock
 {
 
 }
@@ -753,6 +753,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
                                                 [self perform:^(id sender) {
+                                                    // UILocalNotification is deprecated but kept for debug functionality
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                                                     UILocalNotification* notification = [[UILocalNotification alloc] init];
                                                     NSString* episodeTitle = [NSString stringWithFormat:@"%@ - %@", episode.feed.title, [episode cleanTitleUsingFeedTitle:episode.feed.title]];
                                                     if ([notification respondsToSelector:@selector(alertTitle)]) {
@@ -766,7 +769,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                     notification.userInfo = @{ @"episode_hash" : [episode objectHash], @"podcast" : episode.feed.title, @"episode" : [episode cleanTitleUsingFeedTitle:episode.feed.title]};
                                                     notification.fireDate = [NSDate dateWithTimeIntervalSinceNow:10];
                                                     [App scheduleLocalNotification:notification];
-                                                    
+#pragma clang diagnostic pop
                                                     [self cancelDelete:nil];
                                                 } afterDelay:0.3];
                                                 self.alertController = nil;
@@ -857,7 +860,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     NSArray* selectedIndexPathes = [self.tableView indexPathsForSelectedRows];
     
     typedef void(^ForEachEpisodeBlock)(CDEpisode* episode);
-    void (^foreachSelectedEpisode)() = ^(ForEachEpisodeBlock block) {
+    void (^foreachSelectedEpisode)(ForEachEpisodeBlock) = ^(ForEachEpisodeBlock block) {
         
         NSArray* selectedIndexPathes = [self.tableView indexPathsForSelectedRows];
         for(NSIndexPath* indexPath in selectedIndexPathes) {

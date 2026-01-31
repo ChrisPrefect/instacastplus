@@ -15,7 +15,7 @@
 @property (nonatomic, strong) NSString* title;
 @property (nonatomic, strong) NSString* message;
 
-- (void) showAnimated:(BOOL)animated dismissAfterDelay:(NSTimeInterval)delay completion:(void (^)())completion;
+- (void) showAnimated:(BOOL)animated dismissAfterDelay:(NSTimeInterval)delay completion:(void (^)(void))completion;
 - (void) extendDismissingAfterDelay:(NSTimeInterval)delay;
 
 @end

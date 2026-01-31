@@ -477,28 +477,18 @@ enum {
 }
 
 -(UIWindow *)getKeyWindow {
-    if (@available(iOS 13.0, *)) {
-        // For iOS 13 and later, get the key window by iterating through windows
-        for (UIWindow *window in [UIApplication sharedApplication].windows) {
-            if (window.isKeyWindow) {
-                return window;
-            }
-        }
-    } else {
-        // For earlier versions, use the deprecated keyWindow method
-        return [UIApplication sharedApplication].keyWindow;
-    }
-    return nil; // In case no key window is found
+    // Use the scene-aware helper from Application class
+    return App.ic_keyWindow;
 }
+
 - (CGRect)getStatusBarFrame {
-    if (@available(iOS 13.0, *)) {
-        // For iOS 13 and later, get the statusBarFrame using the window scene
-        UIWindowScene *windowScene = (UIWindowScene *)[UIApplication.sharedApplication.connectedScenes anyObject];
-        return windowScene.statusBarManager.statusBarFrame;
-    } else {
-        // For iOS 12 and earlier, use the deprecated statusBarFrame
-        return [UIApplication sharedApplication].statusBarFrame;
+    // Get the statusBarFrame using the window scene (iOS 13+)
+    for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (scene.activationState == UISceneActivationStateForegroundActive) {
+            return scene.statusBarManager.statusBarFrame;
+        }
     }
+    return CGRectZero;
 }
 
 - (void) viewWillAppear:(BOOL)animated

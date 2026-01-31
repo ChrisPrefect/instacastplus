@@ -17,6 +17,6 @@
 
 @property (nonatomic, strong) CDEpisode* episode;
 
-@property (nonatomic, copy) void(^didFinishLoading)();
+@property (nonatomic, copy) void(^didFinishLoading)(void);
 
 @end

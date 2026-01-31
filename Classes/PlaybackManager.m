@@ -236,7 +236,9 @@ enum {
 
                 if (platformImage)
                 {
-                    MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithImage:platformImage];
+                    MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:((UIImage*)platformImage).size requestHandler:^UIImage * _Nonnull(CGSize size) {
+                        return platformImage;
+                    }];
                     self.nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork;
                     self.nowPlayingInfo[kMediaItemInstacastCurrentArtwork] = @(self.currentArtwork);
                 }
@@ -258,7 +260,9 @@ enum {
         
         // set image in case we have an episode based image
         void (^displayImage)(IC_IMAGE*) = ^(IC_IMAGE* image) {
-            MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithImage:image];
+            MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:image.size requestHandler:^UIImage * _Nonnull(CGSize size) {
+                return image;
+            }];
             if (artwork) {
                 [self.nowPlayingInfo setObject:artwork forKey:MPMediaItemPropertyArtwork];
             }
@@ -830,12 +834,12 @@ enum {
                 [weakSelf.player pause];
                 [weakSelf close];
 
-                _changingPosition = YES;
+                self->_changingPosition = YES;
                 episode.consumed = YES;
                 episode.position = 0;
 
                 [DMANAGER setEpisode:episode position:dur];
-                _changingPosition = NO;
+                self->_changingPosition = NO;
                 [DMANAGER saveAndSync:YES];
             }
         }

@@ -57,7 +57,11 @@
             }
         }
     } else {
+        // showsRouteButton is deprecated but still functional
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [volumeView setValue:@(NO) forKey:@"showsRouteButton"];
+#pragma clang diagnostic pop
     }
     
     [self.view addSubview:volumeView];
@@ -68,11 +72,15 @@
     ICVolumeView* routeButton = [[ICVolumeView alloc] initWithFrame:CGRectMake(8, -12, 60, 60)];
     routeButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin;
     routeButton.backgroundColor = [UIColor clearColor];
+    // showsRouteButton/showsVolumeSlider/setRouteButtonImage are deprecated in iOS 13+ but still functional
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     routeButton.showsVolumeSlider = NO;
     //DevD To DO
     routeButton.showsRouteButton = YES;
     [routeButton setRouteButtonImage:[[UIImage imageNamed:@"Player AirPlay"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
     [routeButton setRouteButtonImage:[UIImage imageNamed:@"Player AirPlay Active"] forState:UIControlStateSelected];
+#pragma clang diagnostic pop
     
     [self.toolsView addSubview:routeButton];
     self.routeButton = routeButton;
@@ -128,7 +136,7 @@
     self.volumeMinButton.tintColor = [UIColor colorWithWhite:white alpha:0.2f];
     self.volumeMaxButton.tintColor = [UIColor colorWithWhite:white alpha:0.2f];
     
-    UIImage* maxImage = ICImageFromByDrawingInContextWithScale(CGSizeMake(3, 2), NO, self.view.window.screen.scale, ^() {
+    UIImage* maxImage = ICImageFromByDrawingInContextWithScale(CGSizeMake(3, 2), NO, self.view.window.screen.scale, ^(void) {
         UIBezierPath* rectanglePath = [UIBezierPath bezierPathWithRoundedRect: CGRectMake(0, 0, 3, 2) cornerRadius:1];
         
         CGFloat white;

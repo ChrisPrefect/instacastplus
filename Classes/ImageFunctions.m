@@ -47,7 +47,7 @@ CGImageRef CreateScaledCGImageFromCGImage(CGImageRef image, CGFloat maxSide)
 	// specified here by CGBitmapContextCreate.
 	CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceRGB();
 	context = CGBitmapContextCreate (bitmapData,width,height,8,bitmapBytesPerRow,
-									 colorspace,kCGImageAlphaNoneSkipFirst);
+									 colorspace,(CGBitmapInfo)kCGImageAlphaNoneSkipFirst);
 	CGColorSpaceRelease(colorspace);
 	
 	if (context == NULL) {
@@ -110,7 +110,7 @@ CGImageRef CreateSquaredScaledCGImageFromCGImage(CGImageRef image,
 	// specified here by CGBitmapContextCreate.
 	CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceRGB();
 	context = CGBitmapContextCreate (bitmapData,minSide,minSide,8,bitmapBytesPerRow,
-									 colorspace,kCGImageAlphaNoneSkipFirst);
+									 colorspace,(CGBitmapInfo)kCGImageAlphaNoneSkipFirst);
 	CGColorSpaceRelease(colorspace);
 	
 	if (context == NULL) {
@@ -163,7 +163,7 @@ CGImageRef CreateSquaredScaledCroppedCGImageFromCGImage(CGImageRef image,
 												  8,
 												  bitmapBytesPerRow,
 												  colorspace,
-												  kCGImageAlphaNoneSkipFirst);
+												  (CGBitmapInfo)kCGImageAlphaNoneSkipFirst);
 	CGColorSpaceRelease(colorspace);
 	
 	if (context == NULL) {
@@ -280,7 +280,7 @@ NSImage* CreateGreyscaleImage(NSImage* i)
 }
 
 #if TARGET_OS_IPHONE==1
-UIImage* ICImageFromByDrawingInContext(CGSize size, void(^drawBlock)())
+UIImage* ICImageFromByDrawingInContext(CGSize size, void(^drawBlock)(void))
 {
     UIGraphicsBeginImageContext(size);
     drawBlock();
@@ -289,7 +289,7 @@ UIImage* ICImageFromByDrawingInContext(CGSize size, void(^drawBlock)())
     return image;
 }
 
-UIImage* ICImageFromByDrawingInContextWithScale(CGSize size, BOOL opaque, CGFloat scale, void(^drawBlock)())
+UIImage* ICImageFromByDrawingInContextWithScale(CGSize size, BOOL opaque, CGFloat scale, void(^drawBlock)(void))
 {
     UIGraphicsBeginImageContextWithOptions(size, opaque, scale);
     drawBlock();
