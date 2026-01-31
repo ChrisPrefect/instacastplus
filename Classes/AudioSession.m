@@ -662,6 +662,8 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
                 }
             }
             [[PlaybackManager playbackManager] pause];
+            self.playerWasPlayingBeforeWentToBackground = NO;
+            [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;
             self.stopDate = nil;
         }
     }
