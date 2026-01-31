@@ -53,14 +53,14 @@
         _marqueePaused = YES;
 
 
-        // Play-Button: 60x60, 22px vom rechten Rand, 0px vom oberen Rand
-        _rightButton = [[UIButton alloc] initWithFrame:CGRectMake(CGRectGetWidth(frame)-60-22, 0, 60, 60)];
+        // Play-Button: 60x80 Touch-Area, 22px vom rechten Rand, -10px vom oberen Rand
+        _rightButton = [[UIButton alloc] initWithFrame:CGRectMake(CGRectGetWidth(frame)-60-22, -10, 60, 80)];
         [_rightButton setImage:[[UIImage imageNamed:@"Activity Button Play"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                       forState:UIControlStateNormal];
         _rightButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
         _rightButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentFill;
         _rightButton.contentVerticalAlignment = UIControlContentVerticalAlignmentFill;
-        _rightButton.imageEdgeInsets = UIEdgeInsetsMake(8, 8, 8, 8);
+        _rightButton.imageEdgeInsets = UIEdgeInsetsMake(18, 8, 18, 8);
         _rightButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
         _rightButton.tintColor = [UIColor whiteColor];
         [self addSubview:_rightButton];
@@ -128,8 +128,8 @@
     self.label2.frame = CGRectMake(32, 24, CGRectGetWidth(b)-32-80, 17);
     self.label3.frame = CGRectMake(32, 43, CGRectGetWidth(b)-32-80, 17);
 
-    // 60x60 Button, 22px vom rechten Rand, 0px vom oberen Rand
-    self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-60-22, 0, 60, 60);
+    // 60x80 Touch-Area, 22px vom rechten Rand, -10px vom oberen Rand
+    self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-60-22, -10, 60, 80);
     self.progressView.frame = CGRectMake(-2, 0, CGRectGetWidth(b)+2, 2);
 }
 @end

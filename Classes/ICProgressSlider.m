@@ -50,12 +50,18 @@
 
     
 	_knobButton = [UIButton buttonWithType:UIButtonTypeCustom];
-	_knobButton.frame = CGRectMake(0, 0, 44, 44);
-	[_knobButton setImage:[[UIImage imageNamed:@"Slider Knob"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
+	_knobButton.frame = CGRectMake(0, 0, 44, 25);
+	// Draw a 4px wide indicator bar programmatically
+	UIImage* knobImage = ICImageFromByDrawingInContext(CGSizeMake(4, 19), ^(void) {
+		[self.tintColor set];
+		UIRectFill(CGRectMake(0, 0, 4, 19));
+	});
+	[_knobButton setImage:[knobImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
 	_knobButton.opaque = NO;
 	_knobButton.userInteractionEnabled = NO;
     _knobButton.accessibilityLabel = @"Slider Knob".ls;
     _knobButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+    _knobButton.imageView.contentMode = UIViewContentModeCenter;
 	
 	[self addSubview:_knobButton];
     
@@ -137,21 +143,22 @@
 - (CGRect) _knobRect
 {
 	CGRect bounds = self.bounds;
-    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-15)*0.5f);
-    
-	CGFloat maxKnobTrack = CGRectGetWidth(bounds)-15;
-	CGFloat knobX = floorf(maxKnobTrack*self.value);
-	return CGRectMake(knobX, yOffset, 15, 15);
+    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-25)*0.5f);
+
+	// Touch area is 44px wide, but position based on visual center (4px indicator)
+	CGFloat maxKnobTrack = CGRectGetWidth(bounds)-4;
+	CGFloat knobX = floorf(maxKnobTrack*self.value) - 20; // Center the 44px touch area on the 4px indicator
+	return CGRectMake(knobX, yOffset, 44, 25);
 }
 
 - (CGRect) _trackRect
 {
     CGRect bounds = self.bounds;
-    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-15)*0.5f);
-    CGFloat trackMaxWidth = CGRectGetWidth(bounds)-14;
+    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-25)*0.5f);
+    CGFloat trackMaxWidth = CGRectGetWidth(bounds)-4;
     CGFloat trackWidth = floorf(trackMaxWidth*self.value);
-    
-    return CGRectMake(7, yOffset+4, floorf(trackWidth), 7);
+
+    return CGRectMake(2, yOffset+7, floorf(trackWidth), 10);
 }
 
 // Only override drawRect: if you perform custom drawing.
@@ -159,11 +166,11 @@
 - (CGRect) _progressRect
 {
     CGRect bounds = self.bounds;
-    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-15)*0.5f);
-    CGFloat trackMaxWidth = CGRectGetWidth(bounds)-14;
+    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-25)*0.5f);
+    CGFloat trackMaxWidth = CGRectGetWidth(bounds)-4;
     CGFloat trackWidth = floorf(trackMaxWidth*self.progress);
-    
-    return CGRectMake(7, yOffset+4, floorf(trackWidth), 7);
+
+    return CGRectMake(2, yOffset+7, floorf(trackWidth), 10);
 }
 
 - (void) setEnabled:(BOOL)enabled
@@ -175,16 +182,16 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
+
     CGRect bounds = self.bounds;
-    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-15)*0.5f);
-    self.backgroundView.frame = CGRectMake(7, yOffset+4, CGRectGetWidth(bounds)-14, 7);
-    
+    CGFloat yOffset = floorf((CGRectGetHeight(bounds)-25)*0.5f);
+    self.backgroundView.frame = CGRectMake(2, yOffset+7, CGRectGetWidth(bounds)-4, 10);
+
     self.progressView.frame = [self _progressRect];
-    
+
 	self.knobButton.frame = [self _knobRect];
 	self.knobButton.enabled = self.enabled;
-    
+
     self.trackView.frame = [self _trackRect];
 }
 
@@ -193,13 +200,13 @@
 	if (!self.enabled) {
 		return NO;
 	}
-	
+
 	NSSet* mytouches = [event touchesForView:self];
-	
+
 	if ([mytouches count] == 1) {
 		CGPoint location = [touch locationInView:self];
-        CGRect touchRect = CGRectInset([self _knobRect], -10, -10);
-		if (CGRectContainsPoint(touchRect, location)) {
+		// Allow touch anywhere on the slider - drag from current position without jumping
+		if (CGRectContainsPoint(self.bounds, location)) {
 			self.knobButton.highlighted = YES;
 			self.trackingStartPoint = location;
 			self.trackingKnobStartRect = [self _knobRect];
@@ -207,7 +214,7 @@
 			return YES;
 		}
 	}
-	
+
 	return NO;
 }
 
@@ -258,9 +265,9 @@
 	if (!self.enabled) {
 		return NO;
 	}
-	
+
 	NSSet* mytouches = [event touchesForView:self];
-	
+
 	if ([mytouches count] == 1) {
 		CGPoint location = [touch locationInView:self];
 		BOOL reset = NO;
@@ -270,28 +277,28 @@
                                      CGRectGetWidth(self.trackingKnobStartRect),
                                      CGRectGetHeight(self.trackingKnobStartRect)
                                      );
-		knobRect.origin.x = MAX(0,knobRect.origin.x);
-		knobRect.origin.x = MIN(knobRect.origin.x, CGRectGetWidth(self.bounds)-15);
+		knobRect.origin.x = MAX(-20,knobRect.origin.x);
+		knobRect.origin.x = MIN(knobRect.origin.x, CGRectGetWidth(self.bounds)-24);
 		self.trackingKnobRect = knobRect;
-		
-        double newValue = self.valueBeforeTracking + (delta / ((double)CGRectGetWidth(self.bounds)-15));
+
+        double newValue = self.valueBeforeTracking + (delta / ((double)CGRectGetWidth(self.bounds)-4));
         self.value = newValue;
-        
+
         if (!self.valueChangedTimer) {
             self.valueChangedTimer = [NSTimer scheduledTimerWithTimeInterval:0.1 target:self selector:@selector(_valueChangedTimer) userInfo:nil repeats:NO];
         }
-        
+
 		if (reset) {
 			self.trackingStartPoint = CGPointMake(self.trackingStartPoint.x+ (CGRectGetMinX(self.trackingKnobRect)-CGRectGetMinX(self.trackingKnobStartRect)), self.trackingStartPoint.y);
 			self.trackingKnobStartRect = knobRect;
 			self.valueBeforeTracking = self.value;
 		}
-        
+
 		[self setNeedsLayout];
-		
+
 		return YES;
 	}
-	
+
 	return NO;
 }
 

@@ -415,13 +415,13 @@ enum {
     if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
     {
         CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-        CGFloat controllerHeight = MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184);
+        CGFloat controllerHeight = MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb)-40, 194);
         self.controller.view.frame = CGRectMake(0, CGRectGetMaxY(b)-controllerHeight, CGRectGetWidth(b), controllerHeight);
     }
     else
     {//DevD To DO
         CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
-        CGFloat controllerHeight = MAX(CGRectGetWidth(wb)-statusbarHeight-44-CGRectGetHeight(wb), 184);
+        CGFloat controllerHeight = MAX(CGRectGetWidth(wb)-statusbarHeight-44-CGRectGetHeight(wb)-40, 194);
         self.controller.view.frame = CGRectMake(0, CGRectGetMaxY(b)-controllerHeight, CGRectGetWidth(b), controllerHeight);
     }
     

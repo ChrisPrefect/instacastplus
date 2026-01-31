@@ -293,7 +293,7 @@
 {
     UILabel *intelligentLbl = [[UILabel alloc] init];
     intelligentLbl.text = @"Intelligent Sleep Timer".ls;
-    intelligentLbl.textColor = UIColor.systemBlueColor;
+    intelligentLbl.textColor = UIColor.labelColor;
     intelligentLbl.tag = 0;
     [intelligentLbl sizeToFit];
     
@@ -313,7 +313,7 @@
     
     UILabel *screenAlwaysLbl = [[UILabel alloc] init];
     screenAlwaysLbl.text = @"Sleep Timer Always Active".ls;
-    screenAlwaysLbl.textColor = UIColor.systemBlueColor;
+    screenAlwaysLbl.textColor = UIColor.labelColor;
     screenAlwaysLbl.tag = 0;
     [screenAlwaysLbl sizeToFit];
     
@@ -334,18 +334,14 @@
     UIStackView *mainStack = [[UIStackView alloc] init];
     mainStack.axis = UILayoutConstraintAxisVertical;
     mainStack.alignment = UIStackViewAlignmentCenter;
-    mainStack.spacing = 12;
-    
+    mainStack.spacing = 8;
+
     UIView *lineView1 = [[UIView alloc] init];
     lineView1.backgroundColor = [UIColor lightGrayColor];
-    
-    UIView *lineView2 = [[UIView alloc] init];
-    lineView2.backgroundColor = [UIColor lightGrayColor];
-    
+
     [mainStack addArrangedSubview:intelligentStack];
     [mainStack addArrangedSubview:lineView1];
     [mainStack addArrangedSubview:screenAlwaysStack];
-    [mainStack addArrangedSubview:lineView2];
     
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
@@ -461,19 +457,22 @@
     //
     [alert.view addSubview:mainStack];
     alert.view.clipsToBounds = YES;
-    [mainStack.centerXAnchor constraintEqualToAnchor:alert.view.centerXAnchor].active = YES;
     mainStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [mainStack.centerXAnchor constraintEqualToAnchor:alert.view.centerXAnchor].active = YES;
     [mainStack.topAnchor constraintEqualToAnchor:alert.view.topAnchor constant:12].active = YES;
+    [mainStack.leadingAnchor constraintGreaterThanOrEqualToAnchor:alert.view.leadingAnchor constant:16].active = YES;
+    [mainStack.trailingAnchor constraintLessThanOrEqualToAnchor:alert.view.trailingAnchor constant:-16].active = YES;
     [lineView1.heightAnchor constraintEqualToConstant:0.5].active = YES;
-    [lineView1.widthAnchor constraintEqualToConstant:alert.view.bounds.size.width].active = YES;
-    [lineView2.heightAnchor constraintEqualToConstant:0.5].active = YES;
-    [lineView2.widthAnchor constraintEqualToConstant:alert.view.bounds.size.width].active = YES;
+    [lineView1.leadingAnchor constraintEqualToAnchor:alert.view.leadingAnchor].active = YES;
+    [lineView1.trailingAnchor constraintEqualToAnchor:alert.view.trailingAnchor].active = YES;
     [alert.view layoutIfNeeded];
-    
-    // use a height constraint to make the alert view big enough to hold my stack view
-    // NOTE:  strange, but this must include the header view AND all the action buttons
-    // TODO:  figure out how to get the height of the action buttons (use 52 for each action button for now)
-    CGFloat height = 55 + alert.actions.count * 52 + mainStack.bounds.size.height;
+
+    // Set minimum width for the alert to prevent text truncation
+    CGFloat minWidth = 320;
+    [alert.view.widthAnchor constraintGreaterThanOrEqualToConstant:minWidth].active = YES;
+
+    // Height constraint for the alert view
+    CGFloat height = 30 + alert.actions.count * 52 + mainStack.bounds.size.height;
     [alert.view.heightAnchor constraintEqualToConstant:height].active = YES;
     //
     if ([ICAppearanceManager sharedManager].nightSettingMode)

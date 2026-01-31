@@ -11,6 +11,8 @@ Instacast+ is a professional podcast management and playback application for iOS
 
 ## Build Commands
 
+**WICHTIG: Nicht automatisch builden!** Der Entwickler buildet selbst für den Simulator. Automatische Builds verzögern nur das Testen.
+
 ```bash
 # Build iOS (iPhone)
 xcodebuild -project Instacast.xcodeproj -scheme Instacast build
@@ -97,6 +99,30 @@ WEAK_SELF / STRONG_SELF     // Memory management helpers
 ## Supported URL Schemes
 
 `podcast://`, `itpc://`, `instacast3://`, `instacast://`, `instacast-subscribe://`, `podcast-subscribe://`
+
+## Player Controls Pane Height
+
+The player controls pane height directly affects how much of the chapter art is visible. The calculation is in `Classes/PlayerController.m`:
+
+```objc
+CGFloat controllerHeight = MAX(windowHeight - statusBarHeight - 44 - windowWidth - OFFSET, MINIMUM);
+```
+
+**Key factors:**
+- `windowWidth` is used as the chapter art height (square artwork)
+- `44` is the navigation bar height
+- `OFFSET` (currently 70): Reduces pane height to prevent overlap with chapter art. Increase this value if the pane covers the chapter art.
+- `MINIMUM` (currently 194): Base height defined in `PlayerControlView.xib`
+
+**To adjust chapter art visibility:**
+- Pane covers chapter art → Increase the OFFSET value (e.g., -70 → -80)
+- Gap between chapter art and pane → Decrease the OFFSET value (e.g., -70 → -60)
+
+**Internal layout** (`Resources-iPhone/Nibs/PlayerControlView.xib`):
+- Scrubber (seek bar + time labels): top of pane, y=15 padding from top
+- Controls (play/back/forward): y=37
+- Volume buttons: y=92
+- Toolbar: y=144
 
 ## Key Integrations
 
