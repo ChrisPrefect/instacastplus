@@ -202,6 +202,12 @@ static NSString* kUpNextCell = @"UpNextCell";
         return;
     }
 
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
+        return;
+    }
+
     NSInteger count = [[AudioSession sharedAudioSession].playlist count];
 
     UIBarButtonItem* playButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"play.fill"]

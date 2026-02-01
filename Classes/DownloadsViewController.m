@@ -18,6 +18,8 @@
 @interface DownloadsViewController ()
 @property (nonatomic, strong) UIView* functionOverlayView;
 @property (nonatomic, strong) UILabel* captionLabel;
+@property (nonatomic, strong) UIBarButtonItem* pauseItem;
+@property (nonatomic, strong) UIBarButtonItem* cancelItem;
 @end
 
 @implementation DownloadsViewController {
@@ -119,7 +121,9 @@
     captionLabel.textAlignment = NSTextAlignmentCenter;
     self.captionLabel = captionLabel;
 
-    [self setToolbarItems:@[pauseItem, flexSpace, cancelItem]];
+    // Toolbar items werden in viewDidAppear gesetzt wenn Toolbar bereit ist
+    self.pauseItem = pauseItem;
+    self.cancelItem = cancelItem;
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -147,6 +151,15 @@
 {
     [super viewDidAppear:animated];
     [self _loadImagesForOnscreenRows];
+
+    // Toolbar items setzen wenn Toolbar bereit ist
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (toolbar && toolbar.window && CGRectGetWidth(toolbar.bounds) > 0) {
+        if (!self.toolbarItems || self.toolbarItems.count == 0) {
+            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+            [self setToolbarItems:@[self.pauseItem, flexSpace, self.cancelItem]];
+        }
+    }
 }
 
 - (void) viewWillDisappear:(BOOL)animated

@@ -572,7 +572,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         }
         feed.lastUpdate = [NSDate date];
         
-        DebugLog(@"parsed %@  (%@:%@)", feed.title, feed.username, feed.password);
+        DebugLog(@"parsed %@", feed.title);
         
         [self _finishParsingFeed:feed url:url];
         

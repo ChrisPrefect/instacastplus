@@ -219,8 +219,17 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
-    UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    [self setToolbarItems:@[flexSpace, self.labelsItems, flexSpace] animated:animated];
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
+        return;
+    }
+
+    // Toolbar-Items nur setzen wenn noch nicht gesetzt
+    if (!self.toolbarItems || self.toolbarItems.count == 0) {
+        UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        [self setToolbarItems:@[flexSpace, self.labelsItems, flexSpace] animated:animated];
+    }
 }
 
 

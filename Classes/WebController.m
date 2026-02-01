@@ -99,9 +99,9 @@
     [activityIndicator startAnimating];
     self.activityItem = [[UIBarButtonItem alloc] initWithCustomView:activityIndicator];
     self.activityItem.width = 44;
-    
-    [self setToolbarItems:[NSArray arrayWithObjects:self.backItem, flexSpace, self.forwardItem, flexSpace, self.activityItem, flexSpace, self.actionItem, nil]];
-    
+
+    // Toolbar items werden in _updateToolbar gesetzt wenn die View erscheint
+
     UIBarButtonItem* notesButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"globe"] style:UIBarButtonItemStylePlain target:self action:@selector(showMoreInfoInExternalBrowser:)];
     self.navigationItem.rightBarButtonItem = notesButtonItem;
 }
@@ -147,13 +147,19 @@
 
 - (void) _updateToolbar
 {
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
+        return;
+    }
+
     BOOL loading = (_loading != 0);
-    
+
 	self.backItem.enabled = [self.webView canGoBack];
 	self.forwardItem.enabled = [self.webView canGoForward];
 	self.reloadItem.enabled = !loading;
 	self.actionItem.enabled = (!self.failed);
-	
+
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     if (loading) {
         [(UIActivityIndicatorView*)(self.activityItem.customView) startAnimating];

@@ -34,6 +34,8 @@
 @interface SubscriptionsTableViewController () <UIGestureRecognizerDelegate, NSFetchedResultsControllerDelegate, UISearchBarDelegate>
 @property (nonatomic, strong) ToolbarLabelsViewController* toolbarLabelsViewController;
 @property (nonatomic, strong) UIBarButtonItem* labelsItems;
+@property (nonatomic, strong) UIBarButtonItem* addItem;
+@property (nonatomic, strong) UIBarButtonItem* sortItem;
 @property (nonatomic, strong) ICSearchBar* searchBar;
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
 @property (nonatomic, assign) BOOL isLoadingFromCloud;
@@ -192,9 +194,9 @@
     else
     {
         self.isLoadingFromCloud = NO;
-        [self.tableView reloadData];
-        [self.tableView setNeedsLayout];
-        [self.tableView layoutIfNeeded];
+        if (self.tableView.window) {
+            [self.tableView reloadData];
+        }
     }
     [[NSNotificationCenter defaultCenter] removeObserver:self name:@"OPMLImportDidFinishNotification" object:nil];
 
@@ -228,9 +230,9 @@
 - (void)hideiCloudLogView {
     self.isLoadingFromCloud = NO;
     //self.iCloudLoadingLabel.hidden = YES;
-    [self.tableView reloadData];
-    [self.tableView setNeedsLayout];
-    [self.tableView layoutIfNeeded];
+    if (self.tableView.window) {
+        [self.tableView reloadData];
+    }
     [USER_DEFAULTS setBool:true forKey:@"icloud_sync_log_view_show"];
     [USER_DEFAULTS synchronize];
 }
@@ -285,9 +287,9 @@
         if ([[self.fetchController fetchedObjects] count] > 0 && self.isLoadingFromCloud) {
             self.isLoadingFromCloud = NO;
             //self.iCloudLoadingLabel.hidden = YES;
-            [self.tableView reloadData];
-            [self.tableView setNeedsLayout];
-            [self.tableView layoutIfNeeded];
+            if (self.tableView.window) {
+                [self.tableView reloadData];
+            }
             [USER_DEFAULTS setBool:true forKey:@"icloud_sync_log_view_show"];
             [USER_DEFAULTS synchronize];
         } else {
@@ -334,7 +336,9 @@
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
     [self.searchBar appearanceDidChange];
-    [self.tableView reloadData];
+    if (self.tableView.window) {
+        [self.tableView reloadData];
+    }
 }
 
 - (void) _updateToolbarLabels
@@ -383,25 +387,25 @@
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
-    if (!self.view.window) {
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
         return;
     }
 
-    UIBarButtonItem* addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
-    UIBarButtonItem* sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Sort"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
+    // Items nur einmal erstellen
+    if (!self.addItem) {
+        self.addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
+    }
+    if (!self.sortItem) {
+        self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Sort"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
+    }
 
-	UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-
-    [self setToolbarItems:@[addItem, flexSpace, sortItem] animated:animated];
-    
-//    UIToolbar *toolbar = self.navigationController.toolbar;
-//    if (toolbar) {
-//        NSLog(@"Toolbar found: %@", toolbar);
-//        toolbar.frame = CGRectMake(0, self.view.bounds.size.height - 200, self.view.bounds.size.width, 44);
-//    } else {
-//        NSLog(@"Toolbar NOT found!");
-//    }
+    // Toolbar-Items nur setzen wenn noch nicht gesetzt
+    if (!self.toolbarItems || self.toolbarItems.count == 0) {
+        UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        [self setToolbarItems:@[self.addItem, flexSpace, self.sortItem] animated:animated];
+    }
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -420,17 +424,16 @@
 
     [self reloadDataAndTable:YES];
     
-    if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
-        [self.refreshControl beginRefreshing];
-    }
-    else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
-        [self.refreshControl endRefreshing];
-    }
-
-    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
+    // Dispatch to avoid "offscreen beginRefreshing" warning
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self _updateToolbarItemsAnimated:YES];
+        if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
+            [self.refreshControl beginRefreshing];
+        }
+        else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
+            [self.refreshControl endRefreshing];
+        }
     });
+
     [self _updateToolbarLabels];
     
     
@@ -461,6 +464,11 @@
 
 
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self _updateToolbarItemsAnimated:NO];
+}
+
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
 }
@@ -468,10 +476,9 @@
 - (void) reloadDataAndTable:(BOOL)reloadTable
 {
     //self.feeds = [DMANAGER.feeds filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"parked == NO"]];
-    if (reloadTable) {
+    if (reloadTable && self.tableView.window) {
         //self.isLoadingFromCloud = NO;
         [self.tableView reloadData];
-
     }
 }
 
@@ -555,12 +562,12 @@
 
         _flags.userAction = 1;
 		[[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:feed];
-        [self reloadDataAndTable:NO];
-		
-        // Delete the row from the data source.
-//        [tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationFade];
+
+        // Refresh fetch controller and reload table
+        [self.fetchController performFetch:nil];
+        [self reloadDataAndTable:YES];
         _flags.userAction = 0;
-        
+
 		UIBarButtonItem* sortItem = self.navigationItem.rightBarButtonItem;
         sortItem.enabled = ([[self.fetchController fetchedObjects] count] > 1);
         [self _updateToolbarLabels];

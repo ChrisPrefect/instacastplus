@@ -142,26 +142,28 @@
 
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
+        return;
+    }
+
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
-    
-    
+
     // reload item
     self.reloadItem = [[UIBarButtonItem alloc] initWithTitle:@"Reload".ls
                                                        style:UIBarButtonItemStylePlain target:self action:@selector(reloadAction:)];
-    
+
     // share item
     self.actionItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
                                                                     target:self action:@selector(actionAction:)];
 
-    
     UIBarButtonItem* settingsItem = [[UIBarButtonItem alloc] initWithTitle:@"Settings".ls
                                                                      style:UIBarButtonItemStylePlain target:self action:@selector(settingsAction:)];
-    
-    
+
     UIBarButtonItem* fixItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
     fixItem.width = -1;
-    
+
     [self setToolbarItems:@[fixItem, self.reloadItem, flexSpace, self.actionItem, flexSpace, settingsItem, fixItem] animated:animated];
 
 }

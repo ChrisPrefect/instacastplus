@@ -386,7 +386,7 @@
 
     self.consumeIndicator2.consumed = episode.consumed;
     self.consumeIndicator2.progress = (episode.duration > 0) ? (double)episode.position / (double)episode.duration : 0;
-    self.consumeIndicator2.tintColor = (episode.consumed) ? [UIColor colorWithWhite:0.5 alpha:1.0] : self.tintColor;
+    self.consumeIndicator2.tintColor = (episode.consumed) ? [UIColor colorWithWhite:0.5 alpha:1.0] : ICTintColor;
     
     self.starredIndicator.hidden = !episode.starred;
     

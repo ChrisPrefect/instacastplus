@@ -856,8 +856,9 @@
 
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
-    if (!self.view.window) {
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
         return;
     }
 

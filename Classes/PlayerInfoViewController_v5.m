@@ -171,7 +171,7 @@ enum {
     
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
     layout.sectionInset = UIEdgeInsetsMake(0, 0, 0, 0);
-    layout.itemSize = CGSizeMake(self.view.bounds.size.width, self.view.bounds.size.width);
+    layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
     layout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
     [layout setMinimumInteritemSpacing:0.0f];
     [layout setMinimumLineSpacing:0.0f];

@@ -40,6 +40,16 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 @property (nonatomic, strong, readwrite) UIBarButtonItem* labelsItems;
 @property (nonatomic, weak) UITapGestureRecognizer* cancelDeleteButtonTapRecognizer;
 
+// Toolbar items - created once and reused
+@property (nonatomic, strong) UIBarButtonItem* cacheItem;
+@property (nonatomic, strong) UIBarButtonItem* consumeAllItem;
+@property (nonatomic, strong) UIBarButtonItem* editItem;
+@property (nonatomic, strong) UIBarButtonItem* playItem;
+@property (nonatomic, strong) UIBarButtonItem* downloadItem;
+@property (nonatomic, strong) UIBarButtonItem* selectAllItem;
+@property (nonatomic, strong) UIBarButtonItem* cancelItem;
+@property (nonatomic, strong) NumberAccessoryView* numView;
+
 @end
 
 @implementation EpisodesTableViewController {
@@ -229,12 +239,54 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
-    if (!self.view.window) {
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
         return;
     }
 
-	UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    // Items nur einmal erstellen
+    if (!self.cacheItem) {
+        self.cacheItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Select"]
+                                                          style:UIBarButtonItemStylePlain
+                                                         target:self
+                                                         action:@selector(editForCachingAction:)];
+    }
+    if (!self.consumeAllItem) {
+        self.consumeAllItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Complete"]
+                                                               style:UIBarButtonItemStylePlain
+                                                              target:self
+                                                              action:@selector(consumeAllAction:)];
+    }
+    if (!self.editItem) {
+        self.editItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Edit"]
+                                                         style:UIBarButtonItemStylePlain
+                                                        target:self
+                                                        action:@selector(showEditingOptionsForSelection:)];
+    }
+    if (!self.playItem) {
+        self.playItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Play"]
+                                                         style:UIBarButtonItemStylePlain
+                                                        target:self
+                                                        action:@selector(showPlayingOptionsForSelection:)];
+    }
+    if (!self.downloadItem) {
+        self.downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Download"]
+                                                             style:UIBarButtonItemStylePlain
+                                                            target:self
+                                                            action:@selector(downloadSelection:)];
+    }
+    if (!self.selectAllItem) {
+        self.selectAllItem = [[UIBarButtonItem alloc] initWithTitle:@"All".ls
+                                                              style:UIBarButtonItemStylePlain
+                                                             target:self
+                                                             action:@selector(selectAllAction:)];
+    }
+    if (!self.cancelItem) {
+        self.cancelItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+                                                                        target:self
+                                                                        action:@selector(editForCachingAction:)];
+    }
 
     [self willChangeValueForKey:@"toolbarItems"];
 
@@ -242,78 +294,54 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 	{
         NSInteger selectedCellsCount = [[self.tableView indexPathsForSelectedRows] count];
         NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
-        
-        UIBarButtonItem* fixedSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
-        fixedSpace.width = 20.f;
-        
-        NumberAccessoryView* numView = [[NumberAccessoryView alloc] initWithStyle:NumberAccessoryViewStyleEdgyOutline];
-        numView.backgroundColor = [UIColor clearColor];
-        numView.outlineColor = [UIColor colorWithWhite:0.8f alpha:1.f];
-        numView.font = [UIFont boldSystemFontOfSize:11.0f];
-        numView.num = [[self.tableView indexPathsForSelectedRows] count];
-        [numView sizeToFit];
-        
-//        UIBarButtonItem* countItem = [[UIBarButtonItem alloc] initWithCustomView:numView];
-//        
-        UIBarButtonItem* selectAllItem = [[UIBarButtonItem alloc] initWithTitle:(selectedCellsCount < rowCount) ? @"All".ls : @"Deselect".ls
-                                                                       style:UIBarButtonItemStylePlain
-																	  target:self
-                                                                      action:@selector(selectAllAction:)];
-        
-		UIBarButtonItem* editItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Edit"]
-                                                                      style:UIBarButtonItemStylePlain
-                                                                     target:self
-                                                                     action:@selector(showEditingOptionsForSelection:)];
-        editItem.enabled = (selectedCellsCount > 0);
-        
-        UIBarButtonItem* playItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Play"]
-                                                                     style:UIBarButtonItemStylePlain
-                                                                    target:self
-                                                                    action:@selector(showPlayingOptionsForSelection:)];
-        playItem.enabled = (selectedCellsCount > 0);
-        
-        UIBarButtonItem* downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Download"]
-                                                                         style:UIBarButtonItemStylePlain
-                                                                        target:self
-                                                                        action:@selector(downloadSelection:)];
-        downloadItem.enabled = (selectedCellsCount > 0);
-		
-		UIBarButtonItem* cancelItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
-                                                                                    target:self
-                                                                                    action:@selector(editForCachingAction:)];
-        
-        [self setToolbarItems:[NSArray arrayWithObjects: editItem, fixedSpace, playItem, fixedSpace, downloadItem, flexSpace, selectAllItem, fixedSpace, cancelItem,nil] animated:animated];
+
+        // Update selectAllItem title
+        self.selectAllItem.title = (selectedCellsCount < rowCount) ? @"All".ls : @"Deselect".ls;
+
+        // Update enabled states
+        self.editItem.enabled = (selectedCellsCount > 0);
+        self.playItem.enabled = (selectedCellsCount > 0);
+        self.downloadItem.enabled = (selectedCellsCount > 0);
+
+        // Toolbar-Items nur setzen wenn noch nicht im editing mode gesetzt
+        NSArray* currentItems = self.toolbarItems;
+        if (currentItems.count != 9 || ![currentItems containsObject:self.editItem]) {
+            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+            UIBarButtonItem* fixedSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
+            fixedSpace.width = 20.f;
+
+            [self setToolbarItems:@[self.editItem, fixedSpace, self.playItem, fixedSpace, self.downloadItem, flexSpace, self.selectAllItem, fixedSpace, self.cancelItem] animated:animated];
+        }
 	}
     else
 	{
-        UIBarButtonItem* cacheItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Select"]
-                                                                      style:UIBarButtonItemStylePlain
-                                                                     target:self
-                                                                     action:@selector(editForCachingAction:)];
-        
-        cacheItem.enabled = ([self.episodes count] > 0);
-        
-        UIBarButtonItem* consumeAllItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Complete"]
-                                                                           style:UIBarButtonItemStylePlain
-                                                                          target:self
-                                                                          action:@selector(consumeAllAction:)];
-        consumeAllItem.enabled = ([self.episodes count] > 0);
-        
+        self.cacheItem.enabled = ([self.episodes count] > 0);
+        self.consumeAllItem.enabled = ([self.episodes count] > 0);
 
-        [self setToolbarItems:@[consumeAllItem, flexSpace, cacheItem] animated:animated];
+        // Toolbar-Items nur setzen wenn noch nicht im normal mode gesetzt
+        NSArray* currentItems = self.toolbarItems;
+        if (currentItems.count != 3 || ![currentItems containsObject:self.consumeAllItem]) {
+            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+            [self setToolbarItems:@[self.consumeAllItem, flexSpace, self.cacheItem] animated:animated];
+        }
 	}
-    
+
     [self didChangeValueForKey:@"toolbarItems"];
-    
+
 }
 
 
 - (void) reloadDataAndPreserveSelection
 {
+    // Avoid layout warnings when view is not in hierarchy
+    if (!self.tableView.window) {
+        return;
+    }
+
     NSArray* myEpisodes = self.episodes;
-    
+
     NSMutableArray* selectedEpisodes = [NSMutableArray array];
-    
+
     NSArray* indexPathes = [self.tableView indexPathsForSelectedRows];
     for(NSIndexPath* indexPath in indexPathes)
     {
@@ -321,9 +349,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             [selectedEpisodes addObject:myEpisodes[indexPath.row]];
         }
     }
-    
+
     [self.tableView reloadData];
-    
+
     for(CDEpisode* episode in selectedEpisodes) {
         NSUInteger index = [myEpisodes indexOfObject:episode];
         if (index != NSNotFound) {
@@ -1400,36 +1428,39 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     {
         __weak EpisodesContainerViewController* weakSelf = self;
         [self.tableViewController addTaskObserver:self forKeyPath:@"toolbarItems" task:^(id obj, NSDictionary *change) {
-            [weakSelf setToolbarItems:[weakSelf.tableViewController toolbarItems]];
+            UIToolbar* toolbar = weakSelf.navigationController.toolbar;
+            if (weakSelf.view.window && toolbar && CGRectGetWidth(toolbar.bounds) > 0) {
+                [weakSelf setToolbarItems:[weakSelf.tableViewController toolbarItems]];
+            }
         }];
-    
+
         _observing = YES;
     }
     else if (!observing && _observing)
     {
         [self.tableViewController removeTaskObserver:self forKeyPath:@"toolbarItems"];
-        
+
         _observing = NO;
     }
-    
+
 }
 
 - (void) viewDidLoad
 {
     [super viewDidLoad];
-    
+
     UIBarButtonItem* a = [[UIBarButtonItem alloc] initWithTitle:@"" style:UIBarButtonItemStylePlain target:nil action:nil];
     self.navigationItem.backBarButtonItem = a;
-    
+
     CGRect b = self.view.bounds;
     self.tableViewController.view.frame = b;
-    
+
     self.tableViewController.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    
+
     [self addChildViewController:self.tableViewController];
     [self.view addSubview:self.tableViewController.view];
     [self.tableViewController didMoveToParentViewController:self];
-    
+
     self.navigationExtensionView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b), 20+44+22)];
     self.navigationExtensionView.backgroundColor = ICTransparentBackdropColor;
     [self.view addSubview:self.navigationExtensionView];
@@ -1438,17 +1469,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self _setObserving:YES];
-    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.view.window) {
-            [self setToolbarItems:[self.tableViewController toolbarItems] animated:YES];
-        }
-    });
 }
 
 - (void) viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (self.view.window && toolbar && CGRectGetWidth(toolbar.bounds) > 0) {
+        [self setToolbarItems:[self.tableViewController toolbarItems] animated:NO];
+    }
     [self _setObserving:NO];
 }
 

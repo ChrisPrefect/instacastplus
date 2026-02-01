@@ -933,7 +933,7 @@ static NSString* gPathToCache = nil;
 			[self _endBackgroundTaskAfterSoundPlayed];
 		}
 		
-        DebugLog(@"end");
+        DebugLog(@"caching finished");
         
         _flags.supressSendUpdate = YES;
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1128,7 +1128,6 @@ static NSString* gPathToCache = nil;
         
         NSString* episodeHash = [filename substringToIndex:32];
         if (![DMANAGER episodeWithObjectHash:episodeHash]) {
-            DebugLog(@"removing episode file: %@", filename);
             [fman removeItemAtPath:[[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename] error:nil];
             removed_episodes++;
         }

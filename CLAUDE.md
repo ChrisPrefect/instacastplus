@@ -82,6 +82,7 @@ WEAK_SELF / STRONG_SELF     // Memory management helpers
 
 - **NEVER use fallbacks or workarounds.** Always find and fix the real root cause of bugs.
 - Understand WHY something is broken before attempting to fix it.
+- **NIEMALS Verzögerungen (dispatch_after, delays) einbauen um Probleme zu kaschieren!** Immer die Ursache finden und sauber lösen.
 
 ## Coding Conventions
 

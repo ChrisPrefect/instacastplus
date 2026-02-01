@@ -228,8 +228,6 @@ enum {
     if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
         UITableViewHeaderFooterView *footerView = (UITableViewHeaderFooterView *)view;
         footerView.textLabel.textColor = [UIColor grayColor];
-    } else {
-        NSLog(@"Unexpected footer view type: %@", [view class]);
     }
 }
 

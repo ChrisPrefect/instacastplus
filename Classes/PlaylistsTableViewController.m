@@ -38,6 +38,7 @@
 @property (nonatomic, assign) NSInteger action;
 @property (nonatomic, strong) ToolbarLabelsViewController* toolbarLabelsViewController;
 @property (nonatomic, strong) UIBarButtonItem* labelsItems;
+@property (nonatomic, strong) UIBarButtonItem* addButtonItem;
 @end
 
 @implementation PlaylistsTableViewController {
@@ -79,7 +80,7 @@
     if (observing && !_observing)
     {
         [DMANAGER addTaskObserver:self forKeyPath:@"lists" task:^(id obj, NSDictionary *change) {
-            if (!self->_userAction) {
+            if (!self->_userAction && self.tableView.window) {
                 [self.tableView reloadData];
                 [self _updateToolbarItemsAnimated:NO];
                 [self _updateToolbarLabels];
@@ -114,7 +115,7 @@
 
 - (void) subscriptionManagerDidAddEpisodesNotification:(NSNotification*)notification
 {
-    if (!_userAction) {
+    if (!_userAction && self.tableView.window) {
         [self.tableView reloadData];
     }
 }
@@ -169,19 +170,17 @@
     [super viewWillAppear:animated];
     
     [self updateAppearance];
-
-    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self _updateToolbarItemsAnimated:YES];
-    });
     [self _updateToolbarLabels];
     
-    if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
-        [self.refreshControl beginRefreshing];
-    }
-    else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
-        [self.refreshControl endRefreshing];
-    }
+    // Dispatch to avoid "offscreen beginRefreshing" warning
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
+            [self.refreshControl beginRefreshing];
+        }
+        else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
+            [self.refreshControl endRefreshing];
+        }
+    });
     
     
     NSString* savedUID = [USER_DEFAULTS objectForKey:kUIPersistencePlaylistsSelectedPlaylistUID];
@@ -210,15 +209,21 @@
 - (void) updateAppearance {
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
-    
-    
-    [self.tableView reloadData];
+
+    if (self.tableView.window) {
+        [self.tableView reloadData];
+    }
 }
 
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self _updateToolbarItemsAnimated:NO];
+}
+
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
-	
+
     [self _setObserving:NO];
 }
 
@@ -246,20 +251,22 @@
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
-    if (!self.view.window) {
+    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
+    UIToolbar* toolbar = self.navigationController.toolbar;
+    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
         return;
     }
 
-    UIBarButtonItem* addButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
-    
-    
-	UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
-                                                                               target:nil
-                                                                               action:nil];
-    
+    // Items nur einmal erstellen
+    if (!self.addButtonItem) {
+        self.addButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
+    }
 
-    [self setToolbarItems:@[addButtonItem, flexSpace, self.labelsItems, flexSpace] animated:animated];
+    // Toolbar-Items nur setzen wenn noch nicht gesetzt
+    if (!self.toolbarItems || self.toolbarItems.count == 0) {
+        UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        [self setToolbarItems:@[self.addButtonItem, flexSpace, self.labelsItems, flexSpace] animated:animated];
+    }
 }
 
 

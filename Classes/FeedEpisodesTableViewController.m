@@ -437,12 +437,22 @@
     }
 }
 
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self _updateToolbarItemsAnimated:NO];
+    [self reloadDataAndPreserveSelection];
+}
+
 - (void) reloadDataWithFilter:(BOOL)isScrolled
 {
-    [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
-    
-    [self reloadDataAndPreserveSelection];
+
+    // Nur updaten wenn View im Window ist
+    if (self.view.window) {
+        [self _updateToolbarItemsAnimated:NO];
+        [self reloadDataAndPreserveSelection];
+    }
+
     self.tableView.tableHeaderView = ([self.searchTerm length] == 0) ? self.tableHeaderView : nil;
     self.headerButtonStack.frame = CGRectMake(0, 98, CGRectGetWidth(self.tableHeaderView.frame), 40);
 
@@ -503,8 +513,10 @@
 {
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
-    [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
+    // Nur layout wenn View im Window ist
+    if (self.tableView.window) {
+        [self.tableView reloadData];
+    }
     self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
 }
 
@@ -753,8 +765,7 @@
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
     [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
-    [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 
@@ -774,8 +785,7 @@
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
     [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
-    [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 
@@ -804,8 +814,7 @@
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
     [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
-    [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 
@@ -826,8 +835,7 @@
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
     [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
-    [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 
@@ -847,8 +855,7 @@
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
     [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
-    [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 
@@ -881,8 +888,7 @@
     }
     self.episodes = downloadedArray;
     [self.tableView reloadData];
-    [self.tableView layoutIfNeeded];
-    [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 

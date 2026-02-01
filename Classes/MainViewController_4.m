@@ -479,11 +479,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         {
             PlaylistsTableViewController* controller = [PlaylistsTableViewController viewController];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
-            
+
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+            navController.toolbarHidden = NO;
             return YES;
         }
 
@@ -501,11 +501,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         {
             BookmarksTableViewController* controller = [BookmarksTableViewController bookmarksController];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
-            
+
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+            navController.toolbarHidden = NO;
             return YES;
         }
         case kMainSidebarItemUnplayed:
@@ -515,9 +515,8 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
-
+            navController.toolbarHidden = NO;
             return YES;
         }
         case kMainSidebarItemFavorites:
@@ -527,9 +526,8 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
-
+            navController.toolbarHidden = NO;
             return YES;
         }
         case kMainSidebarItemUpNext:
@@ -540,21 +538,19 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
-
+            navController.toolbarHidden = NO;
             return YES;
         }
         case kMainSidebarItemDownloads:
         {
             UIViewController* controller = [DownloadsViewController downloadsViewController];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
-            
+
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
-            
+            navController.toolbarHidden = NO;
             return YES;
         }
 
@@ -563,11 +559,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         {
             SubscriptionsTableViewController* controller = [SubscriptionsTableViewController subscriptionsController];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
-            
+
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
-            navController.toolbarHidden = NO;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+            navController.toolbarHidden = NO;
             return YES;
         }
     }

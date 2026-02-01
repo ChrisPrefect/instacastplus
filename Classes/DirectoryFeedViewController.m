@@ -335,14 +335,17 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             
             [webShadowView addSubview:authorLabel];
             self.authorLabel = authorLabel;
-            
-            // create toolbar items
-            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-            UIBarButtonItem* actionItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
-                                                                                         target:self 
-                                                                                         action:@selector(actionAction:)];
-            
-            [self setToolbarItems:[NSArray arrayWithObjects:flexSpace, actionItem, nil] animated:YES];
+
+            // create toolbar items (nur wenn Toolbar bereit ist)
+            UIToolbar* toolbar = self.navigationController.toolbar;
+            if (toolbar && toolbar.window && CGRectGetWidth(toolbar.bounds) > 0) {
+                UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+                UIBarButtonItem* actionItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
+                                                                                             target:self
+                                                                                             action:@selector(actionAction:)];
+
+                [self setToolbarItems:[NSArray arrayWithObjects:flexSpace, actionItem, nil] animated:NO];
+            }
             
             self.view.backgroundColor = ICBackgroundColor;
             self.webView.backgroundColor = ICBackgroundColor;

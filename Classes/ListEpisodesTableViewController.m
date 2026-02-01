@@ -111,17 +111,22 @@
     
     [self updateEpisodes];
     [self reloadDataAndPreserveSelection];
-    
-    [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
     
-    if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
-        [self.refreshControl beginRefreshing];
-    }
-    else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
-        [self.refreshControl endRefreshing];
-    }
-    
+    // Dispatch to avoid "offscreen beginRefreshing" warning
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
+            [self.refreshControl beginRefreshing];
+        }
+        else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
+            [self.refreshControl endRefreshing];
+        }
+    });
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self _updateToolbarItemsAnimated:NO];
 }
 
 - (void) refresh:(id)sender

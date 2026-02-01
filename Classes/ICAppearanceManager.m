@@ -186,6 +186,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         self.appearance = [[ICDaylightAppearance alloc] init];
         rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
+    rootWindow.backgroundColor = ICBackgroundColor;
 }
 
 - (UIImage*) navigationBarBackgroundImage {
@@ -469,7 +470,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 -(UIColor*) backgroundColor {
-    return [UIColor systemGroupedBackgroundColor];
+    return [UIColor colorWithWhite:0.13f alpha:1.f];
 }
 
 -(UIColor*) darkBackgroundColor {
@@ -478,27 +479,27 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 
 -(UIColor*) lightBackgroundColor {
-    return [UIColor tertiarySystemGroupedBackgroundColor];
+    return [UIColor colorWithWhite:0.3f alpha:1.f];
 }
 
 -(UIColor*) transparentBackdropColor {
-    return [[UIColor systemGroupedBackgroundColor] colorWithAlphaComponent:0.9f];
+    return [UIColor colorWithWhite:0.13f alpha:0.9];
 }
 
 -(UIColor*) tableSeparatorColor {
-    return [UIColor separatorColor];
+    return [UIColor colorWithWhite:0.2f alpha:1.f];
 }
 
 -(UIColor*) tableSelectedBackgroundColor {
-    return [UIColor tertiarySystemGroupedBackgroundColor];
+    return [UIColor colorWithWhite:0.2f alpha:1.0f];
 }
 
 - (UIColor*) groupCellBackgroundColor {
-    return [UIColor secondarySystemGroupedBackgroundColor];
+    return [UIColor colorWithWhite:0.2f alpha:1.0f];
 }
 
 - (UIColor*) groupCellSelectedBackgroundColor {
-    return [UIColor tertiarySystemGroupedBackgroundColor];
+    return [UIColor colorWithWhite:0.3f alpha:1.0f];
 }
 
 - (UIStatusBarStyle) statusBarStyle {
