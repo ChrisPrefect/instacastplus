@@ -33,6 +33,10 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 @property BOOL playerWasPlayingBeforeWentToBackground;
 @property BOOL continuousPlaybackTemporarilyDisabled;
 @property BOOL autoStopDisabled;
+
+// Silent audio playback to keep app alive when paused in background
+@property (nonatomic, strong) AVPlayer* silentPlayer;
+@property (nonatomic, strong) id silentPlayerLoopObserver;
 @end
 
 
@@ -340,12 +344,14 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) clear
 {
+    [self stopSilentPlayback];
+
     if (self.episode) {
         self.episode = nil;
         [self _savePlaybackStateInUserDefaults];
-        
+
         DebugLog(@"endReceivingRemoteControlEvents");
-        
+
         [[UIApplication sharedApplication] endReceivingRemoteControlEvents];
         [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nil;
     }
@@ -648,7 +654,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 {
     [self willChangeValueForKey:@"timerRemainingTime"];
     [self didChangeValueForKey:@"timerRemainingTime"];
-    
+
     NSDate* now = [NSDate date];
     if ([self.stopDate earlierDate:now] == self.stopDate)
     {
@@ -679,10 +685,59 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
                 }
             }
             [[PlaybackManager playbackManager] pause];
+            [self stopSilentPlayback]; // Sleep timer stop should not keep app alive
             self.playerWasPlayingBeforeWentToBackground = NO;
             [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;
             self.stopDate = nil;
         }
+    }
+}
+
+#pragma mark -
+#pragma mark Silent Audio Playback (Background Keep-Alive)
+
+- (void)startSilentPlayback
+{
+    if (self.silentPlayer) {
+        return; // Already running
+    }
+
+    NSURL* url = [[NSBundle mainBundle] URLForResource:@"Silence" withExtension:@"caf"];
+    if (!url) {
+        ErrLog(@"Silence.caf not found in bundle");
+        return;
+    }
+
+    AVPlayerItem* item = [AVPlayerItem playerItemWithURL:url];
+    self.silentPlayer = [AVPlayer playerWithPlayerItem:item];
+    self.silentPlayer.volume = 0.0; // Inaudible
+
+    // Loop when finished
+    __weak typeof(self) weakSelf = self;
+    self.silentPlayerLoopObserver = [[NSNotificationCenter defaultCenter]
+        addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
+        object:item
+        queue:nil
+        usingBlock:^(NSNotification* note) {
+            [weakSelf.silentPlayer seekToTime:kCMTimeZero completionHandler:nil];
+            [weakSelf.silentPlayer play];
+        }];
+
+    [self.silentPlayer play];
+    DebugLog(@"Started silent playback for background keep-alive");
+}
+
+- (void)stopSilentPlayback
+{
+    if (self.silentPlayerLoopObserver) {
+        [[NSNotificationCenter defaultCenter] removeObserver:self.silentPlayerLoopObserver];
+        self.silentPlayerLoopObserver = nil;
+    }
+
+    if (self.silentPlayer) {
+        [self.silentPlayer pause];
+        self.silentPlayer = nil;
+        DebugLog(@"Stopped silent playback");
     }
 }
 

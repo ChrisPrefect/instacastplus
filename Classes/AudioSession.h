@@ -43,5 +43,9 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 @property (nonatomic, readonly) NSTimeInterval timerRemainingTime;
 @property (nonatomic, assign) PlaybackStopTimeValue timerValue;
 
+// Silent audio playback to keep app alive when paused in background
+- (void)startSilentPlayback;
+- (void)stopSilentPlayback;
+
 @end
 

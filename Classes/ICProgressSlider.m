@@ -23,9 +23,10 @@
     CGRect bounds = self.bounds;
     CGFloat trackWidth = CGRectGetWidth(bounds) - 4;  // Same as slider track
 
-    UIColor* color = self.markerColor ?: [UIColor colorWithWhite:1.0 alpha:0.3];
+    // Better visibility: higher alpha and contrast for both light and dark mode
+    UIColor* color = self.markerColor ?: [UIColor colorWithWhite:0.5 alpha:0.6];
     CGContextSetStrokeColorWithColor(ctx, color.CGColor);
-    CGContextSetLineWidth(ctx, 1.0);
+    CGContextSetLineWidth(ctx, 1.5);
 
     for (NSNumber* marker in self.chapterMarkers) {
         double position = [marker doubleValue];
@@ -257,6 +258,12 @@
 		// Allow touch anywhere on the slider - drag from current position without jumping
 		if (CGRectContainsPoint(self.bounds, location)) {
 			self.knobButton.highlighted = YES;
+			// Make indicator more visible while dragging: lighter in dark mode, darker in light mode
+			if (self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
+				self.knobButton.tintColor = [UIColor colorWithWhite:1.0 alpha:1.0];
+			} else {
+				self.knobButton.tintColor = [UIColor colorWithWhite:0.0 alpha:1.0];
+			}
 			self.trackingStartPoint = location;
 			self.trackingKnobStartRect = [self _knobRect];
 			self.valueBeforeTracking = self.value;
@@ -356,6 +363,7 @@
 	self.trackingStartPoint = CGPointZero;
 	self.trackingKnobRect = CGRectZero;
 	self.knobButton.highlighted = NO;
+	self.knobButton.tintColor = nil; // Reset to default tint color
 	self.scrubbingMode = kICProgressSliderScrubbingModeNoScrubbing;
 }
 
@@ -364,6 +372,7 @@
     self.trackingStartPoint = CGPointZero;
 	self.trackingKnobRect = CGRectZero;
 	self.knobButton.highlighted = NO;
+	self.knobButton.tintColor = nil; // Reset to default tint color
 	self.scrubbingMode = kICProgressSliderScrubbingModeNoScrubbing;
     [self sendActionsForControlEvents:UIControlEventTouchCancel];
 }

@@ -780,7 +780,13 @@ enum {
             [weakSelf _setNowPlayingInfoOfEpisode:(rate==0) ? nil : weakSelf.playingEpisode];
             [weakSelf _setupRemotePlaybackCenterWithEpisode:weakSelf.playingEpisode];
         } afterDelay:0.1];
-        
+
+        // Silent audio playback to keep app alive when paused in background
+        if (rate == 0 && weakSelf.playingEpisode) {
+            [[AudioSession sharedAudioSession] startSilentPlayback];
+        } else {
+            [[AudioSession sharedAudioSession] stopSilentPlayback];
+        }
     }];
 
     self.playbackObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(1,25000) queue:NULL usingBlock:^(CMTime time) {

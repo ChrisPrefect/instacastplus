@@ -64,6 +64,7 @@
 		1B2A46891924C14B0042C3E5 /* ICErrorSheetViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B2A46881924C14B0042C3E5 /* ICErrorSheetViewController.m */; };
 		1B2A468B1924C2F10042C3E5 /* ErrorSheetView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B2A468A1924C2F10042C3E5 /* ErrorSheetView.xib */; };
 		1B2A468F1925089B0042C3E5 /* Tink.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1B2A468E1925083E0042C3E5 /* Tink.caf */; };
+		CD0SILENCE2026020100000002 /* Silence.caf in Resources */ = {isa = PBXBuildFile; fileRef = CD0SILENCE2026020100000001 /* Silence.caf */; };
 		1B2EB81915D3DC0D00D2817E /* CDPlaylist.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B2EB81815D3DC0D00D2817E /* CDPlaylist.m */; };
 		1B2EB81C15D3DC0F00D2817E /* CDPlaylistEpisode.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B2EB81B15D3DC0E00D2817E /* CDPlaylistEpisode.m */; };
 		1B2EB81F15D3DC1100D2817E /* CDSmartPlaylist.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B2EB81E15D3DC1000D2817E /* CDSmartPlaylist.m */; };
@@ -385,6 +386,7 @@
 		1B2A46881924C14B0042C3E5 /* ICErrorSheetViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICErrorSheetViewController.m; sourceTree = "<group>"; };
 		1B2A468A1924C2F10042C3E5 /* ErrorSheetView.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = ErrorSheetView.xib; sourceTree = "<group>"; };
 		1B2A468E1925083E0042C3E5 /* Tink.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tink.caf; sourceTree = "<group>"; };
+		CD0SILENCE2026020100000001 /* Silence.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Silence.caf; sourceTree = "<group>"; };
 		1B2EB81715D3DC0C00D2817E /* CDPlaylist.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CDPlaylist.h; sourceTree = "<group>"; };
 		1B2EB81815D3DC0D00D2817E /* CDPlaylist.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CDPlaylist.m; sourceTree = "<group>"; };
 		1B2EB81A15D3DC0E00D2817E /* CDPlaylistEpisode.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CDPlaylistEpisode.h; sourceTree = "<group>"; };
@@ -966,6 +968,7 @@
 				1B1724D6145598D900B4959D /* Shake.caf */,
 				1BD242CA15457CE50044DFF9 /* ClockTicking.caf */,
 				1B2A468E1925083E0042C3E5 /* Tink.caf */,
+				CD0SILENCE2026020100000001 /* Silence.caf */,
 			);
 			path = Sounds;
 			sourceTree = "<group>";
@@ -1849,6 +1852,7 @@
 				1BA27BE916A450BB00D51D59 /* Defaults.plist in Resources */,
 				1B919E6317BF99B100A30BDE /* tv.png in Resources */,
 				1B2A468F1925089B0042C3E5 /* Tink.caf in Resources */,
+				CD0SILENCE2026020100000002 /* Silence.caf in Resources */,
 				188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */,
 				CDA3FD942C5FF43700314B5A /* ChapterImageCell.xib in Resources */,
 				CD7A884F2C60C27F0033C023 /* dark_dd_ic.png in Resources */,
