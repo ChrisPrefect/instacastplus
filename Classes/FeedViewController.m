@@ -142,12 +142,6 @@
 
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
-    UIToolbar* toolbar = self.navigationController.toolbar;
-    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
-        return;
-    }
-
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
 
     // reload item

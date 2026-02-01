@@ -186,7 +186,6 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         self.appearance = [[ICDaylightAppearance alloc] init];
         rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
-    rootWindow.backgroundColor = ICBackgroundColor;
 }
 
 - (UIImage*) navigationBarBackgroundImage {

@@ -239,12 +239,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
-    UIToolbar* toolbar = self.navigationController.toolbar;
-    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
-        return;
-    }
-
     // Items nur einmal erstellen
     if (!self.cacheItem) {
         self.cacheItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Select"]
@@ -333,11 +327,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) reloadDataAndPreserveSelection
 {
-    // Avoid layout warnings when view is not in hierarchy
-    if (!self.tableView.window) {
-        return;
-    }
-
     NSArray* myEpisodes = self.episodes;
 
     NSMutableArray* selectedEpisodes = [NSMutableArray array];

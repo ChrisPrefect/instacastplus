@@ -152,13 +152,10 @@
     [super viewDidAppear:animated];
     [self _loadImagesForOnscreenRows];
 
-    // Toolbar items setzen wenn Toolbar bereit ist
-    UIToolbar* toolbar = self.navigationController.toolbar;
-    if (toolbar && toolbar.window && CGRectGetWidth(toolbar.bounds) > 0) {
-        if (!self.toolbarItems || self.toolbarItems.count == 0) {
-            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-            [self setToolbarItems:@[self.pauseItem, flexSpace, self.cancelItem]];
-        }
+    // Toolbar items setzen
+    if (!self.toolbarItems || self.toolbarItems.count == 0) {
+        UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        [self setToolbarItems:@[self.pauseItem, flexSpace, self.cancelItem]];
     }
 }
 

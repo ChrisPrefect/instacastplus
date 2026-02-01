@@ -251,12 +251,6 @@
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
-    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
-    UIToolbar* toolbar = self.navigationController.toolbar;
-    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
-        return;
-    }
-
     // Items nur einmal erstellen
     if (!self.addButtonItem) {
         self.addButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];

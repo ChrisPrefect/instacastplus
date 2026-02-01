@@ -147,12 +147,6 @@
 
 - (void) _updateToolbar
 {
-    // Toolbar-Items nur setzen wenn Toolbar im Window ist und gültige Breite hat
-    UIToolbar* toolbar = self.navigationController.toolbar;
-    if (!toolbar || !toolbar.window || CGRectGetWidth(toolbar.bounds) == 0) {
-        return;
-    }
-
     BOOL loading = (_loading != 0);
 
 	self.backItem.enabled = [self.webView canGoBack];
