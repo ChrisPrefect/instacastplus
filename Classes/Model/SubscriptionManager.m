@@ -14,6 +14,7 @@
 #import "CDModel.h"
 #import "CDFeed+Helper.h"
 #import "CDEpisode+ShowNotes.h"
+#import "EpisodeLoadingManager.h"
 
 NSString* SubscriptionManagerWillStartRefreshingFeedsNotification = @"SubscriptionManagerWillStartRefreshingFeedsNotification";
 NSString* SubscriptionManagerDidStartRefreshingFeedsNotification = @"SubscriptionManagerDidStartRefreshingFeedsNotification";
@@ -129,20 +130,22 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     AudioSession* session = [AudioSession sharedAudioSession];
-    
+
     if ([pman.playingEpisode.feed isEqual:feed]) {
         [session stop];
     }
-    
-    
+
+    // Cancel any pending episode loading for this feed
+    [[EpisodeLoadingManager sharedManager] cancelLoadingForFeed:feed];
+
     // remove cache
     CacheManager* cman = [CacheManager sharedCacheManager];
     [cman removeCacheForFeed:feed automatic:NO];
     [cman resetAutoCacheForFeed:feed];
-    
+
     // remove from Up Next
     [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:[feed.episodes allObjects]];
-    
+
     [DMANAGER unsubscribeFeed:feed];
 }
 

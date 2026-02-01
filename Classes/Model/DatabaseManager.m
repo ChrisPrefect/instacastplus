@@ -18,6 +18,7 @@
 #import "ICEpisode.h"
 #import "ICMedia.h"
 #import "ICCategory.h"
+#import "EpisodeLoadingManager.h"
 
 #import "UIManager.h"
 #import "ICFTSController.h"
@@ -888,8 +889,31 @@ NS_INLINE NSString* _DataStoreFile(void) {
     }
     persistentEpisode.media = media;
     [feed addEpisodesObject:persistentEpisode];
-    
+
     return persistentEpisode;
+}
+
+- (void)addParserEpisodes:(NSArray<ICEpisode*>*)episodes toFeed:(CDFeed*)feed markConsumed:(BOOL)markConsumed
+{
+    if (!episodes || episodes.count == 0 || !feed) {
+        return;
+    }
+
+    [self beginInterruptSaving];
+
+    @autoreleasepool {
+        for (ICEpisode* parserEpisode in episodes) {
+            BOOL wasNew = NO;
+            CDEpisode* persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:feed wasNew:&wasNew];
+
+            if (wasNew && markConsumed) {
+                persistentEpisode.consumed = YES;
+            }
+        }
+    }
+
+    [self endInterruptSaving];
+    [self save];
 }
 
 - (CDEpisode*) addUnsubscribedFeed:(ICFeed*)parserFeed andEpisode:(ICEpisode*)parserEpisode
@@ -978,13 +1002,16 @@ NS_INLINE NSString* _DataStoreFile(void) {
 }
 
 
+// Maximum number of episodes to load initially (rest loads in background)
+static const NSInteger kInitialEpisodeLimit = 50;
+
 - (CDFeed*)subscribeFeed:(ICFeed*)parserFeed withOptions:(ICSubscribeOptions)options
 {
     if (!parserFeed || !parserFeed.sourceURL) {
         return nil;
     }
 
-    // 🔍 Check if feed already exists by URL (use normalized NSURL)
+    // Check if feed already exists by URL (use normalized NSURL)
     NSURL *normalizedURL = [self normalizedURL:parserFeed.sourceURL];
 
     NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] init];
@@ -995,21 +1022,30 @@ NS_INLINE NSString* _DataStoreFile(void) {
     NSError *fetchError = nil;
     NSArray *matches = [self.objectContext executeFetchRequest:fetchRequest error:&fetchError];
     if (matches.count > 0) {
-        return matches.firstObject; // ✅ Already exists
+        return matches.firstObject; // Already exists
     }
 
-    // 🆕 Create new feed
+    // Create new feed
     CDFeed *persistentFeed = [NSEntityDescription insertNewObjectForEntityForName:@"Feed" inManagedObjectContext:self.objectContext];
     persistentFeed.sourceURL = normalizedURL;
 
     [self _copyFeedValuesFrom:parserFeed to:persistentFeed];
 
-    ICEpisode *firstEpisode = [parserFeed.episodes firstObject];
+    // Sort episodes by pubDate descending (newest first) for lazy loading
+    NSArray *sortedEpisodes = [parserFeed.episodes sortedArrayUsingDescriptors:
+        @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO]]];
+
+    NSInteger totalEpisodeCount = sortedEpisodes.count;
+    NSInteger initialLoadCount = MIN(kInitialEpisodeLimit, totalEpisodeCount);
+
+    ICEpisode *firstEpisode = [sortedEpisodes firstObject];
     if (firstEpisode) {
         NSDateComponents *firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
                                                                        fromDate:firstEpisode.pubDate];
 
-        for (ICEpisode *parserEpisode in parserFeed.episodes) {
+        // Only load the first batch of episodes (newest first)
+        for (NSInteger i = 0; i < initialLoadCount; i++) {
+            ICEpisode *parserEpisode = sortedEpisodes[i];
             BOOL wasNew;
             CDEpisode *persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:persistentFeed wasNew:&wasNew];
 
@@ -1045,6 +1081,23 @@ NS_INLINE NSString* _DataStoreFile(void) {
         NSMutableArray *feedsCopy = [self.feeds mutableCopy];
         [feedsCopy insertObject:persistentFeed atIndex:0];
         [self _updateFeedOrderNums:feedsCopy];
+    }
+
+    // Set up lazy loading state if there are more episodes to load
+    if (totalEpisodeCount > kInitialEpisodeLimit) {
+        [persistentFeed setBool:NO forKey:kFeedPropertyEpisodeLoadingComplete];
+        [persistentFeed setInteger:totalEpisodeCount forKey:kFeedPropertyTotalExpectedEpisodes];
+        [persistentFeed setInteger:initialLoadCount forKey:kFeedPropertyLoadedEpisodeCount];
+
+        DebugLog(@"Lazy loading: Feed '%@' has %ld episodes, loaded %ld initially, queueing %ld for background",
+                 persistentFeed.title, (long)totalEpisodeCount, (long)initialLoadCount, (long)(totalEpisodeCount - initialLoadCount));
+
+        // Queue remaining episodes for background loading
+        [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:persistentFeed
+                                                            parserEpisodes:sortedEpisodes
+                                                                startIndex:initialLoadCount];
+    } else {
+        [persistentFeed setBool:YES forKey:kFeedPropertyEpisodeLoadingComplete];
     }
 
     [self save];

@@ -7,6 +7,7 @@
 //
 
 #import "CDFeed+Helper.h"
+#import "EpisodeLoadingManager.h"
 
 @implementation CDFeed (Helper)
 
@@ -52,9 +53,35 @@
 	if (!urlString) {
 		return nil;
 	}
-	
+
 	urlString = [urlString stringByReplacingCharactersInRange:NSMakeRange(0, [[self.sourceURL scheme] length]) withString:@"podcast"];
 	return [NSURL URLWithString:urlString];
+}
+
+#pragma mark - Episode Lazy Loading
+
+- (BOOL)hasMoreEpisodesToLoad
+{
+    // Check if the property exists - if not, assume feed is fully loaded (for backwards compatibility)
+    // We use totalExpectedEpisodes as the indicator since it's only set when lazy loading is active
+    NSInteger total = [self integerForKey:kFeedPropertyTotalExpectedEpisodes];
+    if (total == 0) {
+        // Property not set = legacy feed, fully loaded
+        return NO;
+    }
+
+    // Property exists, check the actual loading status
+    return ![self boolForKey:kFeedPropertyEpisodeLoadingComplete];
+}
+
+- (double)episodeLoadingProgress
+{
+    NSInteger total = [self integerForKey:kFeedPropertyTotalExpectedEpisodes];
+    if (total == 0) {
+        return 1.0;
+    }
+    NSInteger loaded = [self integerForKey:kFeedPropertyLoadedEpisodeCount];
+    return (double)loaded / (double)total;
 }
 
 @end

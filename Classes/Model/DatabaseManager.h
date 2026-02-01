@@ -82,6 +82,9 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 - (CDEpisode*) addNewParserEpisode:(ICEpisode*)episode toFeed:(CDFeed*)feed wasNew:(BOOL*)wasNew;
 - (CDEpisode*) addUnsubscribedFeed:(ICFeed*)feed andEpisode:(ICEpisode*)episode;
 
+// Batch episode insertion for lazy loading
+- (void)addParserEpisodes:(NSArray<ICEpisode*>*)episodes toFeed:(CDFeed*)feed markConsumed:(BOOL)markConsumed;
+
 // bookmarks
 @property (readonly, strong) NSArray* bookmarks;
 - (void) addBookmark:(CDBookmark*)bookmark;

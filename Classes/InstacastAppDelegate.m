@@ -26,6 +26,7 @@
 #import "XPFF.h"
 #import "BookmarksTableViewController.h"
 #import "CDModel.h"
+#import "EpisodeLoadingManager.h"
 
 #import "MainViewController_4.h"
 #import "SubscriptionsTableViewController.h"
@@ -241,8 +242,11 @@
             DebugLog(@"received remote notification at launch");
         }];
     }
-    
+
     [self _updateAppContentAfterBecomingActive];
+
+    // Restore incomplete episode loading (crash recovery)
+    [[EpisodeLoadingManager sharedManager] restoreLoadingState];
 }
 
 
