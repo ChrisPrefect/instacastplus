@@ -632,16 +632,12 @@ NS_INLINE NSString* _DataStoreFile(void) {
         }
        
         NSError* error;
-        //NSLog(@"==DEVD OBJECT CONTEXT STARTED==");
         if (![self.objectContext save:&error] ) {
-            NSLog(@"Error saving context after deletion: %@", error.localizedDescription);
+            NSLog(@"Error saving context: %@", error.localizedDescription);
         }
         else {
             [self.persistentContainer.viewContext processPendingChanges];
-            NSLog(@"Objects deleted and changes saved.");
         }
-        //DevD to do crashes
-        //NSLog(@"==DEVD OBJECT CONTEXT ENDED==");
         
         if (error) {
             ErrLog(@"error saving database context: %@", error);
@@ -1259,6 +1255,16 @@ static const NSInteger kInitialEpisodeLimit = 50;
 
 - (CDEpisodeList*) unplayedList
 {
+    // First, try to find by uid (most reliable)
+    for(CDEpisodeList* list in DMANAGER.lists) {
+        if ([list isKindOfClass:[CDEpisodeList class]]) {
+            if ([list.uid isEqualToString:@"default.unplayed"]) {
+                return list;
+            }
+        }
+    }
+
+    // Fallback: find by icon (for backwards compatibility)
     for(CDEpisodeList* list in DMANAGER.lists) {
         if ([list isKindOfClass:[CDEpisodeList class]]) {
             if ([list.icon isEqualToString:@"List Unplayed"]) {
@@ -1266,8 +1272,8 @@ static const NSInteger kInitialEpisodeLimit = 50;
             }
         }
     }
-    
-    // if there is not unplayed list, create one
+
+    // if there is no unplayed list, create one
     CDEpisodeList* unplayedList = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:DMANAGER.objectContext];
     unplayedList.name = @"Unplayed".ls;
     unplayedList.icon = @"List Unplayed";
@@ -1276,9 +1282,10 @@ static const NSInteger kInitialEpisodeLimit = 50;
     unplayedList.orderBy = @"pubDate";
     unplayedList.descending = YES;
     unplayedList.groupByPodcast = NO;
+    unplayedList.continuousPlayback = YES;
     unplayedList.uid = @"default.unplayed";
     [DMANAGER save];
-    
+
     return unplayedList;
 }
 
@@ -1546,18 +1553,11 @@ static const NSInteger kInitialEpisodeLimit = 50;
 }
 
 - (void)handleDebouncedEvent {
-    NSManagedObjectContext *context = self.objectContext;
-    [context performBlock:^{
-        NSError *error = nil;
-        if ([context save:&error]) {
-            [context refreshAllObjects];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:self userInfo:@{@"source": @"CloudKit"}];
-            });
-        } else {
-            NSLog(@"Failed to save context after CloudKit changes: %@", error.localizedDescription);
-        }
-    }];
+    // Nur Notification senden - Core Data merged CloudKit-Änderungen automatisch
+    // refreshAllObjects ist zu aggressiv und verursacht UI-Flackern
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:self userInfo:@{@"source": @"CloudKit"}];
+    });
 }
          
 - (void)refreshAllObjects {

@@ -246,7 +246,10 @@
     [self _updateAppContentAfterBecomingActive];
 
     // Restore incomplete episode loading (crash recovery)
+    // Hinweis: Falls das Laden abgebrochen werden soll, im Debugger aufrufen:
+    // [[EpisodeLoadingManager sharedManager] cancelAllLoading]
     [[EpisodeLoadingManager sharedManager] restoreLoadingState];
+    [[EpisodeLoadingManager sharedManager] logStatus];
 }
 
 

@@ -163,8 +163,9 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
         {
             ICMetadataImage* image = [ICMetadataImage new];
             image.url = [NSURL URLWithString:imageAttribute];
-            image.start = CMTimeMake((int64_t)(ParsedPodloveTime(startAttribute)*1000.f), 1000LL) ;
-            
+            image.start = CMTimeMake((int64_t)(ParsedPodloveTime(startAttribute)*1000.f), 1000LL);
+            image.end = kCMTimePositiveInfinity;
+
             if (!_images) {
                 _images = [NSMutableArray new];
             }

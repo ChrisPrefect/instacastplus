@@ -222,10 +222,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
+    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
+    if (!self.view.window) {
+        return;
+    }
+
 	UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
+
     [self willChangeValueForKey:@"toolbarItems"];
-	
+
 	if (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload)
 	{
         NSInteger selectedCellsCount = [[self.tableView indexPathsForSelectedRows] count];
@@ -1388,7 +1393,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self _setObserving:YES];
-    [self setToolbarItems:[self.tableViewController toolbarItems] animated:YES];
+    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.view.window) {
+            [self setToolbarItems:[self.tableViewController toolbarItems] animated:YES];
+        }
+    });
 }
 
 - (void) viewDidAppear:(BOOL)animated

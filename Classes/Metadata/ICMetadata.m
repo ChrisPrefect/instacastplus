@@ -156,28 +156,29 @@ static CGImageRef CreateScaledCGImageFromCGImage(CGImageRef image, CGFloat maxSi
 - (void) _loadDataFromMetadataItem:(id)item completion:(void (^)(NSData* data))completion
 {
     AVMetadataItem* metadataItem = (AVMetadataItem*)item;
-    
+
     [item loadValuesAsynchronouslyForKeys:[NSArray arrayWithObject:@"value"] completionHandler:^(void) {
-        
+
         NSError *error = nil;
         AVKeyValueStatus status = [item statusOfValueForKey:@"value" error:&error];
-        
+
+        NSData* data = nil;
+
         if (status == AVKeyValueStatusLoaded)
         {
-            if (completion) {
-                id value = metadataItem.value;
-                NSData* data = nil;
-                
-                if ([value isKindOfClass:[NSDictionary class]]) {
-                    data = [value objectForKey:@"data"];
-                } else if ([value isKindOfClass:[NSData class]]) {
-                    data = value;
-                }
+            id value = metadataItem.value;
 
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    completion(data);
-                });
+            if ([value isKindOfClass:[NSDictionary class]]) {
+                data = [value objectForKey:@"data"];
+            } else if ([value isKindOfClass:[NSData class]]) {
+                data = value;
             }
+        }
+
+        if (completion) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(data);
+            });
         }
     }];
 }

@@ -188,47 +188,90 @@
 - (ICMetadataImage*) _imageWithID3APICTag:(const char**)bytes
 {
     const char* chapPtr = *bytes;
-    
+
     // jump over tag name
     *bytes+=4; chapPtr +=4;
-    
+
     uint32_t c_size = CHAP_READ_4_BYTES;
     *bytes+=4; chapPtr +=4;
-    
+
     //uint32_t c_flags = CHAP_READ_2_BYTES;
     *bytes+=2; chapPtr +=2;
-    
+
     uint8_t c_text_encoding = CHAP_READ_1_BYTES;
     *bytes+=1; chapPtr +=1;
-    
+
     NSStringEncoding encoding = [self _stringEncodingWithID3EncodingValue:c_text_encoding];
-    
+    BOOL isUTF16 = (c_text_encoding == 1 || c_text_encoding == 2);
+
     unsigned long frame_length = c_size - 1;
     char* frame = malloc(frame_length);
+    if (!frame) {
+        *bytes+=frame_length;
+        return nil;
+    }
     memcpy(frame, chapPtr, frame_length);
     *bytes+=frame_length;
-    
+
     char* frame_ptr = frame;
-    
-    
-    unsigned long mime_type_length = strlen(frame_ptr);
-    NSString* mimeType = [[NSString alloc] initWithBytes:frame_ptr length:mime_type_length encoding:encoding];
-    frame_ptr += mime_type_length+1;
-    
-    //char pictureType = frame_ptr[0];
+    char* frame_end = frame + frame_length;
+
+    // MIME type is always Latin-1 per ID3v2 spec
+    unsigned long mime_type_length = strnlen(frame_ptr, frame_end - frame_ptr);
+    NSString* mimeType = [[NSString alloc] initWithBytes:frame_ptr length:mime_type_length encoding:NSISOLatin1StringEncoding];
+    frame_ptr += mime_type_length + 1;
+
+    if (frame_ptr >= frame_end) {
+        free(frame);
+        return nil;
+    }
+
+    // Skip picture type byte
     frame_ptr++;
-    
-    unsigned long description_length = strlen(frame_ptr);
+
+    if (frame_ptr >= frame_end) {
+        free(frame);
+        return nil;
+    }
+
+    // Description: For UTF-16, find double-null terminator; for others, single-null
+    unsigned long description_length = 0;
+    if (isUTF16) {
+        // UTF-16 uses double-null terminator (0x00 0x00)
+        while (frame_ptr + description_length + 1 < frame_end) {
+            if (frame_ptr[description_length] == 0 && frame_ptr[description_length + 1] == 0) {
+                break;
+            }
+            description_length += 2;
+        }
+    } else {
+        description_length = strnlen(frame_ptr, frame_end - frame_ptr);
+    }
+
     NSString* description = [[NSString alloc] initWithBytes:frame_ptr length:description_length encoding:encoding];
-    frame_ptr += description_length+1;
-    
-    NSData* pictureData = [NSData dataWithBytes:frame_ptr length:frame_length-(frame_ptr-frame)];
-    
+    frame_ptr += description_length + (isUTF16 ? 2 : 1); // Skip terminator
+
+    if (frame_ptr > frame_end) {
+        frame_ptr = frame_end;
+    }
+
+    unsigned long picture_length = frame_end - frame_ptr;
+    NSData* pictureData = nil;
+    if (picture_length > 0) {
+        pictureData = [NSData dataWithBytes:frame_ptr length:picture_length];
+    }
+
+    free(frame);
+
+    if (!pictureData || [pictureData length] == 0) {
+        return nil;
+    }
+
     ICMetadataImage* image = [ICMetadataImage new];
     image.data = pictureData;
     image.mimeType = mimeType;
     image.label = description;
-    
+
     return image;
 }
 

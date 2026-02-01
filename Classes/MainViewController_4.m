@@ -327,16 +327,32 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 - (CDEpisodeList*) unplayedPlaylist
 {
     CDEpisodeList* unplayedList = nil;
-    
+
+    // First, try to find by uid (most reliable)
     for(CDEpisodeList* list in DMANAGER.lists)
     {
         if ([list isKindOfClass:[CDEpisodeList class]]) {
-            if ([list.icon isEqualToString:@"List Unplayed"]) {
+            if ([list.uid isEqualToString:@"default.unplayed"]) {
                 unplayedList = list;
+                break;
             }
         }
     }
-    
+
+    // Fallback: find by icon (for backwards compatibility)
+    if (!unplayedList)
+    {
+        for(CDEpisodeList* list in DMANAGER.lists)
+        {
+            if ([list isKindOfClass:[CDEpisodeList class]]) {
+                if ([list.icon isEqualToString:@"List Unplayed"]) {
+                    unplayedList = list;
+                    break;
+                }
+            }
+        }
+    }
+
     if (!unplayedList)
     {
         unplayedList = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:DMANAGER.objectContext];
@@ -347,6 +363,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         unplayedList.orderBy = @"pubDate";
         unplayedList.descending = YES;
         unplayedList.groupByPodcast = NO;
+        unplayedList.continuousPlayback = YES;
         unplayedList.uid = @"default.unplayed";
         [DMANAGER save];
     }

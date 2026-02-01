@@ -319,21 +319,27 @@
 
     if (episode.duration > 0 && episode.position < episode.duration)
 	{
-		NSInteger cur = pman.time;
-		NSInteger dur = pman.duration;
+        // Use episode's saved position/duration when loading, since PlaybackManager values
+        // are 0 until the file is actually loaded
+		NSInteger cur = episode.position;
+		NSInteger dur = episode.duration;
 		NSInteger rem = dur-cur;
-		
+
 		NSString* currentText = [NSString stringWithFormat:@"%ld:%02ld:%02ld", (long)cur/3600, (long)(cur/60)%60, (long)cur%60];
 		self.elapsedTimeLabel.text = currentText;
-		
+
 		NSString* remainingText = [NSString stringWithFormat:@"-%ld:%02ld:%02ld", (long)rem/3600, (long)(rem/60)%60, (long)rem%60];
 		self.remainingTimeLabel.text = remainingText;
-		
+
 		self.timeSlider.value = (double)cur / (double) dur;
 	}
-    
+
     if (pman.duration > 0) {
         self.timeSlider.progress = pman.playableDuration / pman.duration;
+    }
+    else if (episode.duration > 0) {
+        // Show 0 progress while loading
+        self.timeSlider.progress = 0.0f;
     }
     else {
         self.timeSlider.progress = 0.0f;

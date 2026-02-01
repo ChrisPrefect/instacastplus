@@ -179,7 +179,8 @@
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     self.tableView.estimatedSectionHeaderHeight = 0;
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(cloudKitDidSync:) name:NSPersistentStoreRemoteChangeNotification object:nil];
+    // Hinweis: NSPersistentStoreRemoteChangeNotification wird bereits in DatabaseManager behandelt
+    // und über DatabaseManagerDidUpdateObservedFeedNotification weitergeleitet
     self.isLoadingFromCloud = YES;
     if ([USER_DEFAULTS valueForKey: @"icloud_sync_log_view_show"] == nil)
     {
@@ -382,6 +383,11 @@
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
+    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
+    if (!self.view.window) {
+        return;
+    }
+
     UIBarButtonItem* addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
     UIBarButtonItem* sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Sort"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
 
@@ -420,8 +426,11 @@
     else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
         [self.refreshControl endRefreshing];
     }
-    
-    [self _updateToolbarItemsAnimated:YES];
+
+    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _updateToolbarItemsAnimated:YES];
+    });
     [self _updateToolbarLabels];
     
     

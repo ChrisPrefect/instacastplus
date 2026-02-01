@@ -52,6 +52,7 @@ static const NSInteger kEpisodeBatchSize = 50;
         _loadingQueue = [[NSOperationQueue alloc] init];
         _loadingQueue.maxConcurrentOperationCount = 1;
         _loadingQueue.name = @"com.vemedio.instacast.episodeLoading";
+        _loadingQueue.qualityOfService = NSQualityOfServiceBackground; // Niedrige Priorität
         _pendingLoads = [[NSMutableDictionary alloc] init];
         _lock = [[NSLock alloc] init];
     }
@@ -124,6 +125,20 @@ static const NSInteger kEpisodeBatchSize = 50;
     DebugLog(@"EpisodeLoadingManager: Cancelled loading for %@", feedURL);
 }
 
+- (void)cancelAllLoading
+{
+    [_loadingQueue cancelAllOperations];
+
+    [_lock lock];
+    NSArray* feedURLs = [_pendingLoads allKeys];
+    [_pendingLoads removeAllObjects];
+    [_lock unlock];
+
+    [self _saveLoadingState];
+
+    NSLog(@"EpisodeLoadingManager: Cancelled all loading (%lu feeds)", (unsigned long)feedURLs.count);
+}
+
 - (BOOL)isLoadingFeed:(CDFeed*)feed
 {
     if (!feed || !feed.sourceURL) {
@@ -170,6 +185,28 @@ static const NSInteger kEpisodeBatchSize = 50;
     return urls;
 }
 
+- (void)logStatus
+{
+    [_lock lock];
+    NSUInteger feedCount = _pendingLoads.count;
+    NSUInteger totalEpisodes = 0;
+    for (NSDictionary* loadInfo in _pendingLoads.allValues) {
+        totalEpisodes += [loadInfo[@"episodes"] count];
+    }
+    NSArray* feedURLs = [_pendingLoads allKeys];
+    [_lock unlock];
+
+    if (feedCount == 0) {
+        NSLog(@"EpisodeLoadingManager: Idle (no pending loads)");
+    } else {
+        NSLog(@"EpisodeLoadingManager: Loading %lu feeds, %lu episodes pending", (unsigned long)feedCount, (unsigned long)totalEpisodes);
+        for (NSString* url in feedURLs) {
+            CDFeed* feed = [DMANAGER feedWithSourceURL:[NSURL URLWithString:url]];
+            NSLog(@"  - %@ (%@)", feed.title ?: @"Unknown", url);
+        }
+    }
+}
+
 #pragma mark - Crash Recovery
 
 - (void)restoreLoadingState
@@ -212,8 +249,8 @@ static const NSInteger kEpisodeBatchSize = 50;
     __weak typeof(self) weakSelf = self;
 
     [_loadingQueue addOperationWithBlock:^{
-        // Small delay to avoid overwhelming the system during app launch
-        [NSThread sleepForTimeInterval:0.1];
+        // Längere Pause um UI nicht zu blockieren (war 0.1s, jetzt 0.5s)
+        [NSThread sleepForTimeInterval:0.5];
         [weakSelf _loadNextBatchForFeedURL:feedURL];
     }];
 }

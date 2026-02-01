@@ -83,9 +83,26 @@ enum {
             PlaybackManager* pman = [PlaybackManager playbackManager];
             weakSelf.chapters = [pman.playingEpisode sortedChapters];
             weakSelf.duration = pman.duration;
-            //PlaybackManager* pman = [PlaybackManager playbackManager];
-            self->chapterImagesArray = pman.artworks;
-            [self.chapterImagesCollection reloadData];
+        }];
+
+        [pman addTaskObserver:self forKeyPath:@"artworks" task:^(id obj, NSDictionary *change) {
+            PlaybackManager* pman = [PlaybackManager playbackManager];
+            if ([pman.artworks count] > 0) {
+                self->chapterImagesArray = pman.artworks;
+                // +1 for episode artwork at index 0
+                [self.chapterImagesCollection reloadData];
+                // Stay on episode artwork (index 0) until currentArtwork changes
+            }
+        }];
+
+        [pman addTaskObserver:self forKeyPath:@"currentArtwork" task:^(id obj, NSDictionary *change) {
+            PlaybackManager* pman = [PlaybackManager playbackManager];
+            if (self->chapterImagesArray.count > 0) {
+                // currentArtwork -1 = no chapter image active, show episode artwork (index 0)
+                // currentArtwork 0+ maps to collection index 1+
+                NSUInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
+                [weakSelf changeChapterImageIndex:collectionIndex];
+            }
         }];
         
         [pman addTaskObserver:self forKeyPath:@"time" task:^(id obj, NSDictionary *change) {
@@ -105,11 +122,13 @@ enum {
     {
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode.duration"];
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode.chapters"];
+        [pman removeTaskObserver:self forKeyPath:@"artworks"];
+        [pman removeTaskObserver:self forKeyPath:@"currentArtwork"];
         [pman removeTaskObserver:self forKeyPath:@"time"];
         [pman removeTaskObserver:self forKeyPath:@"currentChapter"];
-        
+
         [nc removeObserver:self];
-        
+
         _observing = NO;
     }
 }
@@ -157,12 +176,6 @@ enum {
     self.chapterImagesCollection.showsVerticalScrollIndicator = NO;
     [self.chapterImagesCollection setPagingEnabled:YES];
     
-    self.pageControl = [[UIPageControl alloc] initWithFrame:CGRectZero];
-    self.pageControl.pageIndicatorTintColor = [UIColor lightGrayColor];
-    self.pageControl.currentPageIndicatorTintColor = self.view.tintColor;
-    self.pageControl.hidesForSinglePage = YES;
-    [self.pageControl setHidden:true];
-    [self.pageControl addTarget:self action:@selector(changePage:) forControlEvents:UIControlEventValueChanged];
     [self reloadData];
     
     [self _setObserving:YES];
@@ -173,32 +186,49 @@ enum {
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     _didWillAppear = YES;
-    
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
-    
+
+    // Refresh chapter images from PlaybackManager before layout
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    if ([pman.artworks count] > 0) {
+        self->chapterImagesArray = pman.artworks;
+    }
+
     [self layoutHeaderView];
-    
     [self.tableView reloadData];
+
+    // Scroll to current artwork after layout settles
+    dispatch_async(dispatch_get_main_queue(), ^{
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        if (self->chapterImagesArray.count > 0 && pman.currentArtwork >= 0) {
+            NSUInteger collectionIndex = pman.currentArtwork + 1;
+            NSUInteger totalItems = self->chapterImagesArray.count + 1;
+            if (totalItems > collectionIndex && CGRectGetWidth(self.chapterImagesCollection.bounds) > 0) {
+                [self.chapterImagesCollection scrollToItemAtIndexPath:[NSIndexPath indexPathForRow:collectionIndex inSection:0] atScrollPosition:UICollectionViewScrollPositionCenteredHorizontally animated:NO];
+            }
+        }
+    });
 }
 
 - (void) viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    
+
     _didWillAppear = NO;
 }
 
 - (void) viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    
+
     if (_didWillAppear) {
         if (!SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
-            
+
             // xxx: hard coded content Insets, because of rotation issues
             UIEdgeInsets edgeInsets = UIEdgeInsetsMake(20+44, 0, self.bottomScrollInset, 0);
-            
+
             self.tableView.contentInset = edgeInsets;
             self.tableView.scrollIndicatorInsets = edgeInsets;
             if (CGPointEqualToPoint(self.tableView.contentOffset, CGPointZero)) {
@@ -211,9 +241,9 @@ enum {
             if (@available(iOS 11.0, *)) {
                 safeAreaInsets = self.view.safeAreaInsets;
             }
-            
+
             UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
-            
+
             self.tableView.contentInset = edgeInsets;
             self.tableView.scrollIndicatorInsets = edgeInsets;
             self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);
@@ -273,7 +303,6 @@ enum {
             CGFloat size = MAX(CGRectGetWidth(b), 1);
             newFrameTemp = CGRectMake(0, 0, size, size);
             layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
-            self.pageControl.frame = CGRectMake(0, size - 60, size, 40);
         }
         else
         {
@@ -284,21 +313,18 @@ enum {
             CGFloat width = MAX(CGRectGetHeight(self.rectCollection), 1);
             CGFloat height = MAX(CGRectGetWidth(self.rectCollection) - controllerHeight, 1);
             newFrameTemp = CGRectMake(0, 0, width, height);
-            self.pageControl.frame = CGRectMake(0, MAX(CGRectGetHeight(self.rectCollection) - 60, 0), MAX(CGRectGetWidth(self.rectCollection), 1), 40);
             layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.height, 1), MAX(self.view.bounds.size.width - controllerHeight, 1));
         }
-        
+
         self.chapterImagesCollection.collectionViewLayout = layout;
         self.imageView.frame = newFrameTemp;
         self.chapterView.frame = newFrameTemp;
         self.chapterImagesCollection.frame = newFrameTemp;
 
         [self.chapterView addSubview:self.chapterImagesCollection];
-        [self.chapterView addSubview:self.pageControl];
         self.chapterImagesCollection.delegate = self;
         self.chapterImagesCollection.dataSource = self;
         [self.chapterImagesCollection reloadData];
-        self.pageControl.currentPageIndicatorTintColor = self.view.tintColor;
         [self updateCollectionsImage:0];
         
         //self.chapterImagesCollection.backgroundColor = [UIColor yellowColor];
@@ -323,7 +349,6 @@ enum {
         CGFloat size = MAX(CGRectGetWidth(b), 1);
         newFrameTemp = CGRectMake(0, 0, size, size);
         layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
-        self.pageControl.frame = CGRectMake(0, size - 60, size, 40);
     }
     else
     {
@@ -334,7 +359,6 @@ enum {
         CGFloat width = MAX(CGRectGetHeight(b), 1);
         CGFloat height = MAX(CGRectGetWidth(b) - controllerHeight, 1);
         newFrameTemp = CGRectMake(0, 0, width, height);
-        self.pageControl.frame = CGRectMake(0, MAX(CGRectGetHeight(b) - 60, 0), MAX(CGRectGetWidth(b), 1), 40);
         layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.height, 1), MAX(self.view.bounds.size.width - controllerHeight, 1));
     }
 
@@ -945,7 +969,8 @@ enum {
     {
         return 1;
     }
-    return self->chapterImagesArray.count;
+    // Episode artwork at index 0, chapter images at indices 1...N
+    return self->chapterImagesArray.count + 1;
 }
 
 - (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath
@@ -972,13 +997,15 @@ enum {
 {
     ChapterImageCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"chapter_cell" forIndexPath:indexPath];
     cell.chapterImageView.contentMode = UIViewContentModeScaleAspectFit;
-    if (self->chapterImagesArray.count <= 0)
+
+    // Index 0 is always episode/feed artwork, indices 1...N are chapter images
+    if (self->chapterImagesArray.count <= 0 || indexPath.item == 0)
     {
         CDEpisode* episode = [AudioSession sharedAudioSession].episode;
         CDFeed* feed = episode.feed;
         NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
         UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
-        
+
         if (cachedImage) {
             cell.chapterImageView.image = cachedImage;
             UIColor *averageColor = [self averageColorFromImage:cachedImage];
@@ -986,17 +1013,36 @@ enum {
         }
         else {
             cell.chapterImageView.image = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
+            cell.contentView.backgroundColor = [UIColor clearColor];
         }
     }
     else
     {
-        if ([self->chapterImagesArray objectAtIndex:indexPath.item] != nil)
+        // Chapter images are at indices 1...N, so subtract 1 to get array index
+        NSInteger chapterIndex = indexPath.item - 1;
+        if (chapterIndex < self->chapterImagesArray.count && [self->chapterImagesArray objectAtIndex:chapterIndex] != nil)
         {
-            ICMetadataImage* artwork = self->chapterImagesArray[indexPath.item];
+            ICMetadataImage* artwork = self->chapterImagesArray[chapterIndex];
             [artwork loadPlatformImageScaleToWidth:CGRectGetWidth(self.view.bounds)*[ImageCacheManager scalingFactor] completion:^(id platformImage) {
-                cell.chapterImageView.image = platformImage;
-                UIColor *averageColor = [self averageColorFromImage:platformImage];
-                cell.contentView.backgroundColor = averageColor;
+                if (platformImage) {
+                    cell.chapterImageView.image = platformImage;
+                    UIColor *averageColor = [self averageColorFromImage:platformImage];
+                    cell.contentView.backgroundColor = averageColor;
+                } else {
+                    // Fallback to episode/feed artwork when chapter image fails
+                    CDEpisode* episode = [AudioSession sharedAudioSession].episode;
+                    CDFeed* feed = episode.feed;
+                    NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
+                    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
+                    if (cachedImage) {
+                        cell.chapterImageView.image = cachedImage;
+                        UIColor *averageColor = [self averageColorFromImage:cachedImage];
+                        cell.contentView.backgroundColor = averageColor;
+                    } else {
+                        cell.chapterImageView.image = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
+                        cell.contentView.backgroundColor = [UIColor clearColor];
+                    }
+                }
             }];
         }
     }
@@ -1029,12 +1075,6 @@ enum {
 
 -(void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
-    CGFloat pageWidth = self.chapterImagesCollection.frame.size.width;
-    self.pageControl.currentPage = self.chapterImagesCollection.contentOffset.x / pageWidth;
-    [self.pageControl setHidden:true];//false
-    /*dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        //[self.pageControl setHidden:true];
-    });*/
     [currentImageTimer invalidate];
     currentImageTimer = nil;
     currentImageTimer = [NSTimer scheduledTimerWithTimeInterval: 30 target: self selector: @selector(afterTimerSetCurrentImg:) userInfo: nil repeats: NO];
@@ -1042,7 +1082,9 @@ enum {
 
 -(void)afterTimerSetCurrentImg:(NSTimer *)timer {
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    [self changeChapterImageIndex:pman.currentArtwork];
+    // currentArtwork 0 maps to collection index 1
+    NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
+    [self changeChapterImageIndex:collectionIndex];
     [currentImageTimer invalidate];
     currentImageTimer = nil;
 }
@@ -1052,17 +1094,15 @@ enum {
     if (self->chapterImagesArray.count <= 0)
     {
         PlaybackManager* pman = [PlaybackManager playbackManager];
-        if (!pman.movingVideo && [pman.artworks count] > 0 && pman.currentArtwork >= 0)
+        if (!pman.movingVideo && [pman.artworks count] > 0)
         {
             self->chapterImagesArray = pman.artworks;
-            self.pageControl.numberOfPages = [pman.artworks count];
         }
     }
     [self.chapterImagesCollection reloadData];
-    self.pageControl.currentPageIndicatorTintColor = self.view.tintColor;
-    self.pageControl.currentPage = indexNumber;
-    [self.pageControl setHidden:true];
-    if (self->chapterImagesArray.count > indexNumber)
+    // Total items = chapterImagesArray.count + 1 (episode artwork at index 0)
+    NSUInteger totalItems = self->chapterImagesArray.count + 1;
+    if (totalItems > indexNumber)
     {
         if (CGRectGetWidth(self.chapterImagesCollection.bounds) != 0)
         {
@@ -1073,25 +1113,11 @@ enum {
 
 - (void)updateCollectionsImage:(NSUInteger)indexNumber {
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    if (!pman.movingVideo && [pman.artworks count] > 0 && pman.currentArtwork >= 0)
+    if (!pman.movingVideo && [pman.artworks count] > 0)
     {
         self->chapterImagesArray = pman.artworks;
-        self.pageControl.numberOfPages = [pman.artworks count];
-        self.pageControl.currentPage = indexNumber;
-        [self.chapterImagesCollection reloadData];
-        self.pageControl.currentPageIndicatorTintColor = self.view.tintColor;
-        
     }
     [self.chapterImagesCollection reloadData];
-    self.pageControl.currentPage = indexNumber;
-    [self.pageControl setHidden:true];
-    self.pageControl.currentPageIndicatorTintColor = self.view.tintColor;
-    
-}
-
--(IBAction)changePage:(id)sender {
-    PlaybackManager* pman = [PlaybackManager playbackManager];
-    [self changeChapterImageIndex:pman.currentArtwork];
 }
 
 - (void)updateCollectionsImage:(NSArray *)images atIndex:(NSUInteger)indexNumber {

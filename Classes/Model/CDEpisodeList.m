@@ -77,10 +77,10 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 - (void) awakeFromInsert
 {
     [super awakeFromInsert];
-    
-    // should have been set correctly in the model, bummer
-    self.continuousPlayback = NO;
-    
+
+    // Match the model's defaultValueString="YES"
+    self.continuousPlayback = YES;
+
     if (self.managedObjectContext == DMANAGER.objectContext) {
         [self setObserving:YES];
     }

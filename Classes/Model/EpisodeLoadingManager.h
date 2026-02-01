@@ -36,6 +36,9 @@ extern NSString* const kFeedPropertyLoadedEpisodeCount;
 // Cancel loading for a feed (e.g., when unsubscribing)
 - (void)cancelLoadingForFeed:(CDFeed*)feed;
 
+// Cancel ALL pending loading operations
+- (void)cancelAllLoading;
+
 // Check if a feed is currently loading
 - (BOOL)isLoadingFeed:(CDFeed*)feed;
 
@@ -48,5 +51,8 @@ extern NSString* const kFeedPropertyLoadedEpisodeCount;
 // Current loading status
 @property (nonatomic, readonly) BOOL isLoading;
 @property (nonatomic, readonly) NSArray<NSString*>* feedURLsWithPendingEpisodes;
+
+// Log current loading status to console (for debugging)
+- (void)logStatus;
 
 @end

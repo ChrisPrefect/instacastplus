@@ -215,7 +215,8 @@ enum {
         ICMetadataImage* artwork = pman.artworks[pman.currentArtwork];
         [artwork loadPlatformImageScaleToWidth:CGRectGetWidth(self.view.bounds)*[ImageCacheManager scalingFactor] completion:^(id platformImage) {
             self.image = platformImage;
-            [self.infoViewController changeChapterImageIndex:pman.currentArtwork];
+            // Index 0 = episode artwork, so chapter image index = currentArtwork + 1
+            [self.infoViewController changeChapterImageIndex:pman.currentArtwork + 1];
         }];
     }
 }
@@ -276,16 +277,11 @@ enum {
             NSInteger size = (([[UIDevice currentDevice] userInterfaceIdiom]) == UIUserInterfaceIdiomPad) ? 580 : 320;
             
             [iman imageForURL:imageURL size:size grayscale:NO sender:self completion:^(UIImage *image) {
-                //NSLog(@"TOTAL COUNTS====%lu", (unsigned long)[[pman artworks] count]); //DevD To Do
-                if ([[pman artworks] count] <= 1) {
-                    self.image = image;
-                    [self.infoViewController changeChapterImageIndex:0];
-                }
-                else if ([[pman artworks] count] > 1) {
-                    self.image = image;
-                    [self.infoViewController changeChapterImageIndex:0];
-                }
-                
+                self.image = image;
+                // Scroll to current artwork (index 0 = episode artwork, index 1+ = chapter images)
+                NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
+                [self.infoViewController changeChapterImageIndex:collectionIndex];
+
                 [self _updateDynamicTintColorWithImage:image];
             }];
         }
@@ -552,7 +548,10 @@ enum {
     CGRect b = self.view.bounds;
     self.infoViewController.view.frame = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetHeight(b));
     [self.infoViewController layoutHeaderView];
-    [self.infoViewController changeChapterImageIndex:[PlaybackManager playbackManager].currentArtwork];
+    // Index 0 = episode artwork, so chapter image index = currentArtwork + 1
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
+    [self.infoViewController changeChapterImageIndex:collectionIndex];
 }
 
 - (void) viewDidAppear:(BOOL)animated

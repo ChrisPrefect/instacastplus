@@ -24,7 +24,6 @@
 @property (nonatomic) CGFloat bottomScrollInset;
 @property (nonatomic) CGRect rectCollection;
 @property (nonatomic, strong) UIView* chapterView;
-@property (nonatomic, strong) UIPageControl* pageControl;
 @property (nonatomic, strong) UICollectionView* chapterImagesCollection;
 
 - (void) layoutHeaderView;

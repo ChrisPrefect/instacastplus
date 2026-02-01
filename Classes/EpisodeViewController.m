@@ -562,8 +562,11 @@
     //b.origin.y = self.headerView.frame.origin.y + self.headerView.frame.size.height;
     self.sharedWebView.frame = b;
     [self _updateTimeDisplay];
-    [self _updateToolbarAnimated:NO];
-    
+    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _updateToolbarAnimated:NO];
+    });
+
     [self _retainSharedContent];
     
     self.longPressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
@@ -853,9 +856,14 @@
 
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
+    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
+    if (!self.view.window) {
+        return;
+    }
+
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
-    
+
+
     EpisodePlayComboButton* playButton = [EpisodePlayComboButton buttonWithType:UIButtonTypeCustom];
     playButton.frame = CGRectMake(0, 0, 44, 44);
     playButton.contentMode = UIViewContentModeRedraw;

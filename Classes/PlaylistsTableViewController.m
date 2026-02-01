@@ -164,8 +164,11 @@
     [super viewWillAppear:animated];
     
     [self updateAppearance];
-    
-    [self _updateToolbarItemsAnimated:YES];
+
+    // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _updateToolbarItemsAnimated:YES];
+    });
     [self _updateToolbarLabels];
     
     if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
@@ -238,6 +241,11 @@
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
+    // Toolbar-Items nur setzen wenn View im Window ist, um Constraint-Warnungen zu vermeiden
+    if (!self.view.window) {
+        return;
+    }
+
     UIBarButtonItem* addButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
     
     
