@@ -7,6 +7,7 @@
 //
 
 #import <QuartzCore/QuartzCore.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 #import "EpisodesTableViewController.h"
 #import "EpisodesTableViewCell.h"
@@ -65,11 +66,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
         [nc addObserver:self
                                                  selector:@selector(updateAppearance)
                                                      name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                    object:nil];
-        
+
         _observing = YES;
     }
     else if (!observing && _observing)
@@ -92,6 +94,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
 }
 
+- (void) cacheManagerDidFinishCachingEpisodeNotification:(NSNotification*)notification
+{
+    // Called on main queue after episode is fully added to cachedEpisodes
+    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+}
 
 - (BOOL) showsImage
 {
@@ -710,20 +717,58 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     AudioSession* session = [AudioSession sharedAudioSession];
     
     if (![episode isEqual:session.episode]) {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Add to Up Next".ls
+        UIAlertAction* addToPlayNextAction = [UIAlertAction actionWithTitle:@"Add to Play Next".ls
                                                   style:UIAlertActionStyleDefault
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF
                                                     [self perform:^(id sender) {
-                                                        UpNextTableViewController* upNext = [UpNextTableViewController viewController];
-                                                        upNext.episodesToInsert = @[episode];
-                                                        
-                                                        PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:upNext];
-                                                        navController.modalPresentationStyle = UIModalPresentationFormSheet;
-                                                        [self presentViewController:navController animated:YES completion:NULL];
+                                                        // Add directly to play next list
+                                                        [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
+
+                                                        // Visual feedback - show brief toast/banner
+                                                        UILabel* toastLabel = [[UILabel alloc] init];
+                                                        toastLabel.text = @"Added to Play Next".ls;
+                                                        toastLabel.textColor = [UIColor whiteColor];
+                                                        toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+                                                        toastLabel.textAlignment = NSTextAlignmentCenter;
+                                                        toastLabel.font = [UIFont systemFontOfSize:14];
+                                                        toastLabel.layer.cornerRadius = 8;
+                                                        toastLabel.clipsToBounds = YES;
+                                                        toastLabel.alpha = 0;
+
+                                                        UIWindow* window = App.ic_keyWindow;
+                                                        [window addSubview:toastLabel];
+                                                        toastLabel.translatesAutoresizingMaskIntoConstraints = NO;
+                                                        [NSLayoutConstraint activateConstraints:@[
+                                                            [toastLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+                                                            [toastLabel.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
+                                                            [toastLabel.widthAnchor constraintGreaterThanOrEqualToConstant:180],
+                                                            [toastLabel.heightAnchor constraintEqualToConstant:36]
+                                                        ]];
+
+                                                        // Audio feedback
+                                                        AudioServicesPlaySystemSound(1519); // Subtle tick sound
+
+                                                        // Animate toast
+                                                        [UIView animateWithDuration:0.3 animations:^{
+                                                            toastLabel.alpha = 1.0;
+                                                        } completion:^(BOOL finished) {
+                                                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                                                                [UIView animateWithDuration:0.3 animations:^{
+                                                                    toastLabel.alpha = 0;
+                                                                } completion:^(BOOL finished) {
+                                                                    [toastLabel removeFromSuperview];
+                                                                }];
+                                                            });
+                                                        }];
+
+                                                        [self cancelDelete:nil];
                                                     } afterDelay:0.3];
                                                     self.alertController = nil;
-                                                }]];
+                                                }];
+        UIImage* playNextImage = [UIImage systemImageNamed:@"list.bullet.indent"];
+        [addToPlayNextAction setValue:[playNextImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
+        [alert addAction:addToPlayNextAction];
     }
     
     

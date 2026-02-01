@@ -31,6 +31,7 @@
 @interface MainSidebarTableCell ()
 @property (nonatomic, strong) MainSidebarTableCellNipple* nippleView;
 @property (nonatomic, strong, readwrite) UIButton* badgeButton;
+@property (nonatomic, strong) UILabel* auxiliaryLabel;
 @end
 
 
@@ -70,10 +71,16 @@
             }) resizableImageWithCapInsets:UIEdgeInsetsMake(10, 10, 10, 10)];
         
         [_badgeButton setBackgroundImage:badgeBackgroundImage forState:UIControlStateNormal];
-        
+
         [self.contentView addSubview:_badgeButton];
+
+        _auxiliaryLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _auxiliaryLabel.font = [UIFont systemFontOfSize:13.0f];
+        _auxiliaryLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+        _auxiliaryLabel.textAlignment = NSTextAlignmentRight;
+        [self.contentView addSubview:_auxiliaryLabel];
     }
-    
+
     return self;
 }
 
@@ -88,15 +95,19 @@
         if (_objectValue) {
             [_objectValue removeTaskObserver:self forKeyPath:@"title"];
         }
-        
+
         _objectValue = objectValue;
-        
-        
+
+
         self.textLabel.text = objectValue.title;
         self.imageView.image = [objectValue.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-        
+
         self.imageView.highlightedImage = [objectValue.selectedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-        
+
+        // Update auxiliary text (e.g. download speed)
+        NSString* auxText = (objectValue.auxiliaryText) ? objectValue.auxiliaryText() : nil;
+        self.auxiliaryLabel.text = auxText;
+
         if (objectValue) {
             WEAK_SELF
             [objectValue addTaskObserver:self forKeyPath:@"title" task:^(id obj, NSDictionary *change) {
@@ -109,33 +120,50 @@
 - (void) layoutSubviews
 {
     [super layoutSubviews];
-    
+
     self.backgroundColor = ICDarkBackgroundColor;
-    
+
     CGRect b = self.bounds;
-    
+    CGFloat topOffset = self.objectValue.topSpacing;
+
     self.tintColor = (self.highlighted || self.selected) ? self.textLabel.highlightedTextColor : self.textLabel.textColor;
-    
-    self.imageView.frame = CGRectMake(30, 0, 38, CGRectGetHeight(b));
+
+    self.imageView.frame = CGRectMake(30, topOffset, 38, CGRectGetHeight(b) - topOffset);
 
     CGRect textFrame = self.textLabel.frame;
     textFrame.origin.x = 75;
+    textFrame.origin.y = topOffset + (CGRectGetHeight(b) - topOffset - textFrame.size.height) / 2;
     self.textLabel.frame = textFrame;
 
     self.nippleView.hidden = YES;
-    
-    
+
+
     [self.badgeButton sizeToFit];
     CGRect badgeButtonTitleRect = self.badgeButton.titleLabel.frame;
     CGRect badgeButtonRect = self.badgeButton.frame;
     badgeButtonRect.size.width = MAX(21, badgeButtonTitleRect.size.width+8);
     badgeButtonRect.origin.x = 280-badgeButtonRect.size.width-15;
-    badgeButtonRect.origin.y = 10;
-    
+    badgeButtonRect.origin.y = topOffset + 10;
+
     self.badgeButton.frame = badgeButtonRect;
-    
+
+    // Position auxiliary label (download speed) to the right of title
+    NSString* auxText = (self.objectValue.auxiliaryText) ? self.objectValue.auxiliaryText() : nil;
+    self.auxiliaryLabel.text = auxText;
+    if (auxText.length > 0) {
+        [self.auxiliaryLabel sizeToFit];
+        CGRect auxRect = self.auxiliaryLabel.frame;
+        auxRect.origin.x = badgeButtonRect.origin.x - auxRect.size.width - 10;
+        auxRect.origin.y = topOffset + (CGRectGetHeight(b) - topOffset - auxRect.size.height) / 2;
+        self.auxiliaryLabel.frame = auxRect;
+        self.auxiliaryLabel.hidden = NO;
+    } else {
+        self.auxiliaryLabel.hidden = YES;
+    }
+
     CGRect titleRect = self.textLabel.frame;
-    titleRect.size.width = MIN(titleRect.size.width, (badgeButtonRect.origin.x-titleRect.origin.x-5));
+    CGFloat maxTitleX = self.auxiliaryLabel.hidden ? badgeButtonRect.origin.x : CGRectGetMinX(self.auxiliaryLabel.frame);
+    titleRect.size.width = MIN(titleRect.size.width, (maxTitleX - titleRect.origin.x - 5));
     self.textLabel.frame = titleRect;
 }
 

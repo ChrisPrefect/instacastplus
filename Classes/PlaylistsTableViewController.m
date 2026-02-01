@@ -134,11 +134,16 @@
     [super viewDidLoad];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
     
-    self.navigationItem.rightBarButtonItem = self.editButtonItem;
-    self.title = @"Episodes".ls;
-    
-    self.tableView.rowHeight = 44;
-    self.tableView.separatorInset = UIEdgeInsetsZero;
+    // Use edit icon instead of text
+    UIBarButtonItem* editButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                   style:UIBarButtonItemStylePlain
+                                                                  target:self
+                                                                  action:@selector(toggleEditMode:)];
+    self.navigationItem.rightBarButtonItem = editButton;
+    self.title = @"Lists".ls;
+
+    self.tableView.rowHeight = 54;  // Increased from 44
+    self.tableView.separatorInset = UIEdgeInsetsMake(0, 18, 0, 18);  // More padding left/right
     
     ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
     refreshControl.pulldownText = @"Pull to refresh…".ls;
@@ -373,10 +378,19 @@
 #pragma mark -
 #pragma mark Actions
 
+- (void) toggleEditMode:(id)sender
+{
+    [self setEditing:!self.editing animated:YES];
+}
+
 - (void) setEditing:(BOOL)editing animated:(BOOL)animated
 {
     [super setEditing:editing animated:animated];
-    
+
+    // Update edit button icon
+    UIImage* editImage = editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"pencil"];
+    self.navigationItem.rightBarButtonItem.image = editImage;
+
     [self _updateToolbarItemsAnimated:YES];
 }
 

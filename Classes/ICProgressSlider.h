@@ -23,4 +23,7 @@ typedef NS_ENUM(NSInteger, ICProgressSliderScrubbingMode) {
 @property (nonatomic, assign, getter = isScrubbingModesEnabled) BOOL scrubbingModesEnabled;
 
 @property (nonatomic, strong) UIColor* progressColor;
+
+// Chapter markers - array of NSNumber with normalized positions (0.0 to 1.0)
+@property (nonatomic, strong) NSArray<NSNumber*>* chapterMarkers;
 @end

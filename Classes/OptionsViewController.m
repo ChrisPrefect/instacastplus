@@ -119,7 +119,7 @@ enum {
         case kOptionsSectionSettings:
             return 4;
         case kOptionsSectionIO:
-            return 3;
+            return 2;
         case kEmailFeedback:
             return 1;
         case kDonateToDeveloper:
@@ -165,19 +165,12 @@ enum {
         {
             UITableViewCell* cell = [self buttonCell];
             cell.detailTextLabel.text = nil;
-            
+
             switch (indexPath.row) {
                 case 0:
                     cell.textLabel.text = @"Export Data".ls;
                     break;
                 case 1:
-                    cell.textLabel.text = @"Send Data as Email".ls;
-                    if (![MFMailComposeViewController canSendMail]) {
-                        cell.textLabel.textColor = [UIColor colorWithWhite:0.7f alpha:1.f];
-                        cell.selectionStyle = UITableViewCellSelectionStyleNone;
-                    }
-                    break;
-                case 2:
                     cell.textLabel.text = @"Import Data".ls;
                     break;
                 default:
@@ -349,9 +342,6 @@ enum {
                     [self exportToDropboxAction:nil];
                     break;
                 case 1:
-                    [self sendEmailAction:nil];
-                    break;
-                case 2:
                     [self importDataFromFilesMailAction:nil];
                     break;
                 default:

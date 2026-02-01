@@ -284,6 +284,7 @@
 "Time Left" = "Time Left";
 "Unfinished" = "Unfinished";
 "Unplayed" = "Unplayed";
+"Unplayed & Started" = "Unplayed & Started";
 "Video" = "Video";
 
 /* SubscriptionsTableViewController.m */
@@ -526,7 +527,10 @@
 "Password" = "Password";
 
 /* EpisodesTableViewController.m */
-"Add to Up Next" = "Add to Up Next";
+"Add to Play Next" = "Add to Play Next";
+"Added to Play Next" = "Added to Play Next";
+"Remove all episodes from the play next list?" = "Remove all episodes from the play next list?";
+"To add episodes, long-press on any episode and select 'Add to Play Next'" = "To add episodes, long-press on any episode and select 'Add to Play Next'";
 "All" = "All";
 "All Played" = "All Played";
 "All Unplayed" = "All Unplayed";
@@ -612,3 +616,9 @@
 "Mail" = "Mail";
 "Files" = "Files";
 "Loading data from iCloud" = "Loading data from iCloud";
+
+/* MainSidebarController Statistics */
+"Total Episodes" = "Total Episodes";
+"Total Unplayed" = "Total Unplayed";
+"Total Downloaded" = "Total Downloaded";
+"Storage Used" = "Storage Used";

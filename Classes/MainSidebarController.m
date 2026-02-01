@@ -19,11 +19,17 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 
 + (instancetype) itemWithTitle:(NSString*)title tag:(NSInteger)tag image:(UIImage*)image selectedImage:(UIImage*)selectedImage
 {
+    return [self itemWithTitle:title tag:tag image:image selectedImage:selectedImage topSpacing:0];
+}
+
++ (instancetype) itemWithTitle:(NSString*)title tag:(NSInteger)tag image:(UIImage*)image selectedImage:(UIImage*)selectedImage topSpacing:(CGFloat)topSpacing
+{
     MainSidebarItem* item = [[self alloc] init];
     item.title = title;
     item.tag = tag;
     item.image = image;
     item.selectedImage = selectedImage;
+    item.topSpacing = topSpacing;
     return item;
 }
 
@@ -43,6 +49,12 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     self.tableView.allowsMultipleSelection = NO;
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     self.tableView.rowHeight = ROW_HEIGHT;
+    self.tableView.scrollEnabled = NO;
+
+    // Remove default section header padding (iOS 15+)
+    if (@available(iOS 15.0, *)) {
+        self.tableView.sectionHeaderTopPadding = 0;
+    }
 
     [self.tableView registerClass:[MainSidebarTableCell class] forCellReuseIdentifier:kDataCellIdentifier];
     [self.tableView registerClass:[UITableViewHeaderFooterView class] forHeaderFooterViewReuseIdentifier:kHeaderCellIdentifier];
@@ -69,50 +81,28 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 
     CGRect b = self.tableView.bounds;
 
-    UIView* footerContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b), 60)];
+    // Footer container with top padding for spacing after Settings
+    UIView* footerContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b), 140)];
     footerContainer.backgroundColor = [UIColor clearColor];
     self.footerContainerView = footerContainer;
 
-    UILabel* footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(75, 5, CGRectGetWidth(b) - 90, 50)];
-    footerLabel.font = [UIFont systemFontOfSize:15];
+    // Top padding of 25 for spacing after Settings menu item
+    UILabel* footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(75, 25, CGRectGetWidth(b) - 90, 110)];
+    footerLabel.font = [UIFont systemFontOfSize:13];
     footerLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
     footerLabel.textAlignment = NSTextAlignmentLeft;
-    footerLabel.numberOfLines = 2;
+    footerLabel.numberOfLines = 5;
     [footerContainer addSubview:footerLabel];
     self.footerInfoLabel = footerLabel;
 
-    [self.tableView addSubview:footerContainer];
-}
-
-- (void) _updateFooterPosition
-{
-    if (!self.footerContainerView) {
-        return;
-    }
-
-    CGRect b = self.tableView.bounds;
-    CGFloat bottomInset = 0;
-    if (@available(iOS 11.0, *)) {
-        bottomInset = self.tableView.safeAreaInsets.bottom;
-    }
-
-    // Account for the "now playing" bar height (44) + some padding
-    CGFloat nowPlayingBarHeight = 70;
-    CGFloat footerHeight = 50;
-    CGFloat yPosition = self.tableView.contentOffset.y + CGRectGetHeight(b) - footerHeight - bottomInset - nowPlayingBarHeight;
-    self.footerContainerView.frame = CGRectMake(0, yPosition, CGRectGetWidth(b), footerHeight);
-}
-
-- (void)scrollViewDidScroll:(UIScrollView *)scrollView
-{
-    [self _updateFooterPosition];
+    // Use tableFooterView so it appears naturally below menu items
+    self.tableView.tableFooterView = footerContainer;
 }
 
 
 - (void) viewDidLayoutSubviews
 {
     [super viewDidLayoutSubviews];
-    [self _updateFooterPosition];
 }
 
 - (BOOL)prefersStatusBarHidden {
@@ -203,26 +193,21 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     }
 }
 
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    NSArray* sectionItems = self.items[indexPath.section];
+    MainSidebarItem* item = sectionItems[indexPath.row];
+    return ROW_HEIGHT + item.topSpacing;
+}
+
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
-    if (section != 0) {
-        return 20.0f;
-    }
-    
     return 0.0f;
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
 {
-    UITableViewHeaderFooterView* headerView = [tableView dequeueReusableHeaderFooterViewWithIdentifier:kHeaderCellIdentifier];
-    
-    UIView *customView = [[UIView alloc] initWithFrame:CGRectZero];
-    customView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    customView.backgroundColor = [UIColor clearColor];
-    
-    headerView.backgroundView = customView;
-
-    return headerView;
+    return nil;
 }
 
 - (void) updateRowSelectionForSelectedItemTag
@@ -241,27 +226,52 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 
 - (void) updateFooterInfo
 {
+    // Number formatter for locale-specific thousand separators
+    NSNumberFormatter* numberFormatter = [[NSNumberFormatter alloc] init];
+    numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
+    numberFormatter.locale = [NSLocale currentLocale];
+
+    // Feed count
     NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
     feedsRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
     feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
     NSUInteger feedCount = [DMANAGER.objectContext countForFetchRequest:feedsRequest error:nil];
 
-    unsigned long long megaBytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
+    // Total episodes count
+    NSFetchRequest* episodesRequest = [[NSFetchRequest alloc] init];
+    episodesRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+    episodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO"];
+    NSUInteger totalEpisodes = [DMANAGER.objectContext countForFetchRequest:episodesRequest error:nil];
+
+    // Unplayed episodes count
+    NSFetchRequest* unplayedRequest = [[NSFetchRequest alloc] init];
+    unplayedRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+    unplayedRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO && consumed == NO"];
+    NSUInteger unplayedEpisodes = [DMANAGER.objectContext countForFetchRequest:unplayedRequest error:nil];
+
+    // Downloaded episodes count (use CacheManager for accurate count)
+    NSUInteger downloadedEpisodes = [[CacheManager sharedCacheManager].cachedEpisodes count];
+
+    // Storage size
+    unsigned long long storageBytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
 
     NSMutableString* infoText = [[NSMutableString alloc] init];
 
-    if (feedCount == 0) {
-        [infoText appendString:@"No subscription".ls];
-    } else if (feedCount == 1) {
-        [infoText appendString:@"1 subscription".ls];
-    } else {
-        [infoText appendFormat:@"%lu %@", (unsigned long)feedCount, @"Subscriptions".ls];
-    }
+    // Subscriptions
+    [infoText appendFormat:@"%@: %@\n", @"Subscriptions".ls, [numberFormatter stringFromNumber:@(feedCount)]];
 
-    if (megaBytes > 0) {
-        NSString* sizeString = [NSByteCountFormatter stringFromByteCount:megaBytes countStyle:NSByteCountFormatterCountStyleMemory];
-        [infoText appendFormat:@"\n%@", sizeString];
-    }
+    // Total Episodes
+    [infoText appendFormat:@"%@: %@\n", @"Total Episodes".ls, [numberFormatter stringFromNumber:@(totalEpisodes)]];
+
+    // Total Unplayed
+    [infoText appendFormat:@"%@: %@\n", @"Total Unplayed".ls, [numberFormatter stringFromNumber:@(unplayedEpisodes)]];
+
+    // Total Downloaded
+    [infoText appendFormat:@"%@: %@\n", @"Total Downloaded".ls, [numberFormatter stringFromNumber:@(downloadedEpisodes)]];
+
+    // Storage Used
+    NSString* sizeString = [NSByteCountFormatter stringFromByteCount:storageBytes countStyle:NSByteCountFormatterCountStyleMemory];
+    [infoText appendFormat:@"%@: %@", @"Storage Used".ls, sizeString];
 
     self.footerInfoLabel.text = infoText;
 }

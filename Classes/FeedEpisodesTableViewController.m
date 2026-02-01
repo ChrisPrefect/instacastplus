@@ -413,6 +413,13 @@
             [self.filterButton setTitle:@"Favorites".ls forState:UIControlStateNormal];
             [self reloadDataWithFilter:YES];
         }
+        else if ([filterOptionStr  isEqual: @"UnplayedAndStarted"])
+        {
+            self->isDownloadedFilter = false;
+            [self _filterUnplayedAndStartedEpisode];
+            [self.filterButton setTitle:@"Unplayed & Started".ls forState:UIControlStateNormal];
+            [self reloadDataWithFilter:YES];
+        }
         else
         {
             self->isDownloadedFilter = false;
@@ -674,6 +681,17 @@
     }];
     [alert addAction:unFinishedAction];
 
+    UIAlertAction* unplayedAndStartedAction = [UIAlertAction actionWithTitle:@"Unplayed & Started".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+        STRONG_SELF
+        self->isDownloadedFilter = false;
+        [self _filterUnplayedAndStartedEpisode];
+        [self.filterButton setTitle:@"Unplayed & Started".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"UnplayedAndStarted" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.alertController = nil;
+    }];
+    [alert addAction:unplayedAndStartedAction];
+
     UIAlertAction* downloadedAction = [UIAlertAction actionWithTitle:@"Downloaded".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         self->isDownloadedFilter = true;
@@ -704,10 +722,9 @@
 
     [alert setModalPresentationStyle:UIModalPresentationPopover];
     UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0; // Kein Pfeil
+    popPresenter.sourceView = self.filterButton;
+    popPresenter.sourceRect = self.filterButton.bounds;
+    popPresenter.permittedArrowDirections = UIPopoverArrowDirectionUp;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -803,7 +820,28 @@
     fetchRequest.predicate = predicate;
     NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_unfinished_%@", self.feed.title];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
-    
+
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
+    self.fetchController.delegate = self;
+    [self.fetchController performFetch:nil];
+    [self updateEpisodes];
+    [self.tableView reloadData];
+    [self.tableView layoutIfNeeded];
+    [self _updateToolbarItemsAnimated:NO];
+    [self _updateToolbarLabels];
+}
+
+#pragma mark - Filter By Unplayed & Started (not consumed)
+- (void) _filterUnplayedAndStartedEpisode
+{
+    BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && consumed == %d", self.feed, 0];
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+    fetchRequest.predicate = predicate;
+    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_unplayed_and_started_%@", self.feed.title];
+    fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
+
     self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];

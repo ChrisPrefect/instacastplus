@@ -38,12 +38,15 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 - (UIImage*) _navigationBarImageWithSize:(CGSize)size appearance:(id<ICAppearance>)appearance topToBottom:(BOOL)topToBottom
 {
     return ICImageFromByDrawingInContext(size, ^(void) {
-                
+
         CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
         CGContextRef context = UIGraphicsGetCurrentContext();
-        
-        //// Color Declarations
-        UIColor* topColor = appearance.backgroundColor;
+
+        //// Color Declarations - resolve dynamic color for correct trait collection
+        UITraitCollection *traitCollection = self.nightMode
+            ? [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]
+            : [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleLight];
+        UIColor* topColor = [appearance.backgroundColor resolvedColorWithTraitCollection:traitCollection];
         CGFloat red, green, blue, alpha;
         [topColor getRed:&red green:&green blue:&blue alpha:&alpha];
         
@@ -82,24 +85,24 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         [[UIToolbar appearance] setShadowImage:[[UIImage alloc] init] forToolbarPosition:UIBarPositionAny];
     
         [[UIScrollView appearance] setIndicatorStyle:appearance.scrollIndicatorStyle];
-        
+
         [[UITabBar appearance] setShadowImage:[[UIImage alloc] init]];
-        
+
         [[UITabBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(50, 50) appearance:appearance topToBottom:NO]];
-        
+
         [[UITextField appearance] setKeyboardAppearance:appearance.keyboardAppearance];
-    
+
         [[UISwitch appearance] setTintColor:ICTintColor];
         [[UISwitch appearance] setOnTintColor:ICTintColor];
-        
+
         UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
-        
+
         UIView* subview = [rootWindow.subviews lastObject];
         [subview removeFromSuperview];
         [rootWindow addSubview:subview];
-        
+
         // workaround a bug in iOS where presented view controllers don't get appearance methods
-        
+
         UIViewController* presentedViewController = rootWindow.rootViewController.presentedViewController;
 //        
 //        // xxx: iPad does not update view controller behind a form sheet
@@ -183,6 +186,10 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         self.appearance = [[ICDaylightAppearance alloc] init];
         rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
+}
+
+- (UIImage*) navigationBarBackgroundImage {
+    return [self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:self.appearance topToBottom:YES];
 }
 
 - (void)updateThemeTintColor
@@ -362,24 +369,19 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 -(UIColor*) textColor {
-    return [UIColor colorWithRed:51/255.f green:51/255.f blue:51/255.f alpha:1.f];
+    return [UIColor labelColor];
 }
 
 - (UIColor*) mutedTextColor {
-    return [UIColor colorWithWhite:0.5 alpha:1.0];
+    return [UIColor secondaryLabelColor];
 }
 
 - (UIColor*) placeholderTextColor {
-    return [UIColor colorWithWhite:0.75 alpha:1.0];
+    return [UIColor placeholderTextColor];
 }
 
 -(UIColor*) backgroundColor {
-    if (@available(iOS 13.0, *)) {
-        return [UIColor colorWithWhite:244/255.f alpha:1.f];
-    } else {
-        return [UIColor colorWithWhite:244/255.f alpha:1.f];
-    }
-    
+    return [UIColor systemGroupedBackgroundColor];
 }
 
 -(UIColor*) darkBackgroundColor {
@@ -387,27 +389,27 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 -(UIColor*) lightBackgroundColor {
-    return [UIColor colorWithWhite:0.9f alpha:1.f];
+    return [UIColor tertiarySystemGroupedBackgroundColor];
 }
 
 -(UIColor*) transparentBackdropColor {
-    return [UIColor colorWithWhite:244/255.f alpha:0.9f];
+    return [[UIColor systemGroupedBackgroundColor] colorWithAlphaComponent:0.9f];
 }
 
 -(UIColor*) tableSeparatorColor {
-    return [UIColor colorWithWhite:0.88f alpha:1.f];
+    return [UIColor separatorColor];
 }
 
 -(UIColor*) tableSelectedBackgroundColor {
-    return [UIColor colorWithWhite:0.9f alpha:1.0f];
+    return [UIColor tertiarySystemGroupedBackgroundColor];
 }
 
 - (UIColor*) groupCellBackgroundColor {
-    return [UIColor whiteColor];
+    return [UIColor secondarySystemGroupedBackgroundColor];
 }
 
 - (UIColor*) groupCellSelectedBackgroundColor {
-    return [UIColor colorWithWhite:0.8f alpha:1.0f];
+    return [UIColor tertiarySystemGroupedBackgroundColor];
 }
 
 - (UIStatusBarStyle) statusBarStyle {
@@ -455,19 +457,19 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 -(UIColor*) textColor {
-    return [UIColor colorWithWhite:0.88 alpha:1.f];
+    return [UIColor labelColor];
 }
 
 - (UIColor*) mutedTextColor {
-    return [UIColor colorWithWhite:0.5 alpha:1.0];
+    return [UIColor secondaryLabelColor];
 }
 
 - (UIColor*) placeholderTextColor {
-    return [UIColor colorWithWhite:0.3 alpha:1.0];
+    return [UIColor placeholderTextColor];
 }
 
 -(UIColor*) backgroundColor {
-    return [UIColor colorWithWhite:0.13f alpha:1.f];
+    return [UIColor systemGroupedBackgroundColor];
 }
 
 -(UIColor*) darkBackgroundColor {
@@ -476,27 +478,27 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 
 -(UIColor*) lightBackgroundColor {
-    return [UIColor colorWithWhite:0.3f alpha:1.f];
+    return [UIColor tertiarySystemGroupedBackgroundColor];
 }
 
 -(UIColor*) transparentBackdropColor {
-    return [UIColor colorWithWhite:0.13f alpha:0.9];
+    return [[UIColor systemGroupedBackgroundColor] colorWithAlphaComponent:0.9f];
 }
 
 -(UIColor*) tableSeparatorColor {
-    return [UIColor colorWithWhite:0.2f alpha:1.f];
+    return [UIColor separatorColor];
 }
 
 -(UIColor*) tableSelectedBackgroundColor {
-    return [UIColor colorWithWhite:0.2f alpha:1.0f];
+    return [UIColor tertiarySystemGroupedBackgroundColor];
 }
 
 - (UIColor*) groupCellBackgroundColor {
-    return [UIColor colorWithWhite:0.2f alpha:1.0f];
+    return [UIColor secondarySystemGroupedBackgroundColor];
 }
 
 - (UIColor*) groupCellSelectedBackgroundColor {
-    return [UIColor colorWithWhite:0.3f alpha:1.0f];
+    return [UIColor tertiarySystemGroupedBackgroundColor];
 }
 
 - (UIStatusBarStyle) statusBarStyle {

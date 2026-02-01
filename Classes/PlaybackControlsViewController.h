@@ -62,5 +62,6 @@
 - (void) updateTimeUIDuringSliding;
 - (void) updateTimeWhenLoading;
 - (void) updateControlsUI;
+- (void) updateChapterMarkers;
 - (void) resetControlUI;
 @end

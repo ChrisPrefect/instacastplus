@@ -21,11 +21,11 @@
     if (self)
     {
         self.selectedBackgroundView = [[UIView alloc] init];
-        self.textLabel.font = [UIFont systemFontOfSize:15.f];
-        
-        
+        self.textLabel.font = [UIFont systemFontOfSize:17.f];  // Increased from 15
+
+
         _numberLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_numberLabel.font = [UIFont boldSystemFontOfSize:13.f];
+		_numberLabel.font = [UIFont boldSystemFontOfSize:14.f];  // Increased from 13
 		
 		[self.contentView addSubview:_numberLabel];
         
@@ -97,31 +97,31 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
+
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
     self.textLabel.textColor = ICTextColor;
     self.numberLabel.textColor = ICMutedTextColor;
     self.accessoryView.tintColor = ICMutedTextColor;
-    
+
 	CGRect bounds = self.bounds;
-	
+
 	CGSize numViewSize = [self.numberLabel sizeThatFits:CGSizeZero];
-	CGFloat numLeft = CGRectGetMaxX(bounds)-25-numViewSize.width;
+	CGFloat numLeft = CGRectGetMaxX(bounds)-30-numViewSize.width;  // More right padding (25->30)
 	self.numberLabel.frame = CGRectMake(numLeft, floorf((CGRectGetHeight(bounds)-numViewSize.height)/2), numViewSize.width, numViewSize.height);
     self.numberLabel.alpha = (self.editing) ? 0 : 1;
-    
+
     CGRect imageRect = self.imageView.frame;
-    imageRect.origin.x = 12;
+    imageRect.origin.x = 18;  // More left padding (12->18)
     imageRect.origin.y += self.imageYOffset;
     self.imageView.frame = imageRect;
-    
+
     CGRect textLabelRect = self.textLabel.frame;
-    textLabelRect.origin.x = 50;
-    textLabelRect.size.width -= numViewSize.width;
+    textLabelRect.origin.x = 56;  // Adjusted for new image position (50->56)
+    textLabelRect.size.width = numLeft - textLabelRect.origin.x - 10;
     self.textLabel.frame = textLabelRect;
-    
+
     CGRect triangleRect = self.accessoryView.frame;
-    triangleRect.origin.x += 5;
+    triangleRect.origin.x = CGRectGetMaxX(bounds) - 18 - CGRectGetWidth(triangleRect);  // More right padding
     self.accessoryView.frame = triangleRect;
 }
 

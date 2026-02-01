@@ -273,10 +273,26 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     if (self.continuousPlaybackTemporarilyDisabled) {
         return nil;
     }
-    
+
 	BOOL canStartEpisode = YES;
 
-    CDEpisode* anEpisode = [[self playlist] firstObject];
+    // Find the next episode after the current one in the playlist
+    CDEpisode* anEpisode = nil;
+    NSArray* currentPlaylist = [self playlist];
+
+    if (self.episode && [currentPlaylist count] > 0) {
+        NSUInteger currentIndex = [currentPlaylist indexOfObject:self.episode];
+        if (currentIndex != NSNotFound && currentIndex + 1 < [currentPlaylist count]) {
+            // Return the next episode after current
+            anEpisode = currentPlaylist[currentIndex + 1];
+        } else if (currentIndex == NSNotFound) {
+            // Current episode not in playlist, return first
+            anEpisode = [currentPlaylist firstObject];
+        }
+        // If current is the last one, anEpisode stays nil (end of playlist)
+    } else {
+        anEpisode = [currentPlaylist firstObject];
+    }
 
     BOOL warn3G = (App.networkAccessTechnology < kICNetworkAccessTechnlogyWIFI && ![USER_DEFAULTS boolForKey:EnableStreamingOver3G]);
     BOOL episodeIsCached = [[CacheManager sharedCacheManager] episodeIsCached:anEpisode];
@@ -309,8 +325,9 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     CDEpisode* currentEpisode = self.episode;
 
     self.episode = anEpisode;
-    [self eraseEpisodesFromUpNext:@[anEpisode]];
-    
+    // Don't automatically remove from Up Next - user wants manual control
+    // [self eraseEpisodesFromUpNext:@[anEpisode]];
+
     if (currentEpisode && queueUpCurrent) {
         [self prependToUpNext:@[currentEpisode]];
     }

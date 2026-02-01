@@ -25,10 +25,10 @@
 {
     self = [super initWithFrame:frame];
     if (self) {
-        
+
         self.clipsToBounds = YES;
-        
-        // Labels: 34px vom linken Rand
+
+        // Labels: 34px vom linken Rand, +3px top padding (11 statt 8)
         _label1 = [[UILabel alloc] initWithFrame:CGRectMake(34, 0, CGRectGetWidth(frame)-34-80, 17)];
         _label1.font = [UIFont boldSystemFontOfSize:13.f];
         _label1.textColor = [UIColor whiteColor];
@@ -53,8 +53,8 @@
         _marqueePaused = YES;
 
 
-        // Play-Button: 60x80 Touch-Area, 22px vom rechten Rand, -7px vom oberen Rand
-        _rightButton = [[UIButton alloc] initWithFrame:CGRectMake(CGRectGetWidth(frame)-60-22, -7, 60, 80)];
+        // Play-Button: 60x80 Touch-Area, 22px vom rechten Rand, -4px vom oberen Rand (+3px padding)
+        _rightButton = [[UIButton alloc] initWithFrame:CGRectMake(CGRectGetWidth(frame)-60-22, -4, 60, 80)];
         [_rightButton setImage:[[UIImage imageNamed:@"Activity Button Play"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                       forState:UIControlStateNormal];
         _rightButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
@@ -64,7 +64,7 @@
         _rightButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
         _rightButton.tintColor = [UIColor whiteColor];
         [self addSubview:_rightButton];
-        
+
         _progressView = [[UIProgressView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(frame), 2)];
         [self addSubview:_progressView];
     }
@@ -117,19 +117,20 @@
 
 - (void) layoutSubviews{
     [super layoutSubviews];
-    
+
     CGRect b = self.bounds;
-    
+
     //self.label1.backgroundColor = [UIColor redColor];
     //self.label2.backgroundColor = [UIColor greenColor];
-    
-    self.imageView.frame = CGRectMake(5, 0, 44, 44);
-    self.label1.frame = CGRectMake(34, 8, CGRectGetWidth(b)-34-80, 17);
-    self.label2.frame = CGRectMake(34, 27, CGRectGetWidth(b)-34-80, 17);
-    self.label3.frame = CGRectMake(34, 46, CGRectGetWidth(b)-34-80, 17);
 
-    // 60x80 Touch-Area, 22px vom rechten Rand, -7px vom oberen Rand
-    self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-60-22, -7, 60, 80);
+    self.imageView.frame = CGRectMake(5, 0, 44, 44);
+    // +3px top padding (8->11, 27->30, 46->49)
+    self.label1.frame = CGRectMake(34, 11, CGRectGetWidth(b)-34-80, 17);
+    self.label2.frame = CGRectMake(34, 30, CGRectGetWidth(b)-34-80, 17);
+    self.label3.frame = CGRectMake(34, 49, CGRectGetWidth(b)-34-80, 17);
+
+    // 60x80 Touch-Area, 22px vom rechten Rand, -4px vom oberen Rand (+3px padding)
+    self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-60-22, -4, 60, 80);
     self.progressView.frame = CGRectMake(-2, 0, CGRectGetWidth(b)+2, 2);
 }
 @end

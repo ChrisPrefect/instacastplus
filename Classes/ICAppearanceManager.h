@@ -47,6 +47,7 @@ extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 - (void) updateAppearance;
 - (void) updateThemeTintColor;
 - (BOOL) updateLocation;
+- (UIImage*) navigationBarBackgroundImage;
 
 @end
 

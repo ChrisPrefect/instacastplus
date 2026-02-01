@@ -84,9 +84,29 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
+    [self _updateNavigationBarAppearance];
+
     [self.tableView reloadData];
 }
+
+- (void) _updateNavigationBarAppearance {
+    id<ICAppearance> appearance = [ICAppearanceManager sharedManager].appearance;
+    UINavigationBar *navBar = self.navigationController.navigationBar;
+
+    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
+
+    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+    [navAppearance configureWithOpaqueBackground];
+    navAppearance.backgroundImage = backgroundImage;
+    navAppearance.shadowImage = [[UIImage alloc] init];
+    navAppearance.shadowColor = nil;
+    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
+
+    navBar.standardAppearance = navAppearance;
+    navBar.scrollEdgeAppearance = navAppearance;
+    navBar.compactAppearance = navAppearance;
+}
+
 
 - (void) dealloc
 {
@@ -674,10 +694,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             [USER_DEFAULTS setObject:textField.text forKey:PlayerThemeColorHexCode];
             [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
             [USER_DEFAULTS synchronize];
-            
+
             [self.tableView reloadData];
-            [self viewDidLoad];
-            [self viewWillAppear:YES];
         }
     }
     else if (textField.tag == 777)
@@ -696,10 +714,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             [[ICAppearanceManager sharedManager] updateThemeTintColor];
             [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
             [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
-            
+
             [self.tableView reloadData];
-            [self viewDidLoad];
-            [self viewWillAppear:YES];
         }
     }
     return YES;
@@ -840,8 +856,6 @@ API_AVAILABLE(ios(14.0)){
             [USER_DEFAULTS synchronize];
 
             [self.tableView reloadData];
-            [self viewDidLoad];
-            [self viewWillAppear:YES];
         }
     }
     else
@@ -853,14 +867,12 @@ API_AVAILABLE(ios(14.0)){
             [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
             [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
             [USER_DEFAULTS synchronize];
-            
+
             [[ICAppearanceManager sharedManager] updateThemeTintColor];
             [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
             [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
-            
+
             [self.tableView reloadData];
-            [self viewDidLoad];
-            [self viewWillAppear:YES];
         }
     }
 }
@@ -1214,10 +1226,8 @@ API_AVAILABLE(ios(14.0)){
     [[ICAppearanceManager sharedManager] updateThemeTintColor];
     [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
     [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
-    
+
     [self.tableView reloadData];
-    [self viewDidLoad];
-    [self viewWillAppear:YES];
 }
 
 

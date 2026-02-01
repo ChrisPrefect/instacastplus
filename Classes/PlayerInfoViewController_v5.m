@@ -115,7 +115,8 @@ enum {
         }];
         
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
-        
+        [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
+
         _observing = YES;
     }
     else if (!observing && _observing)
@@ -136,6 +137,12 @@ enum {
 - (void) databaseManagerDidAddBookmarkNotification:(NSNotification*)notification
 {
     [self reloadBookmarks];
+    [self.tableView reloadData];
+}
+
+- (void) playbackManagerDidChangeEpisodeNotification:(NSNotification*)notification
+{
+    // Reload to update the highlighting of currently playing episode in Up Next section
     [self.tableView reloadData];
 }
 
@@ -642,13 +649,17 @@ enum {
     if ([self _hasUpNext] && indexPath.section == [self _upNextSection])
     {
         EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[tableView dequeueReusableCellWithIdentifier:kUpNextCell forIndexPath:indexPath];
-        cell.backgroundColor = self.tableView.backgroundColor;
-        
+
         CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
+
+        // Highlight currently playing episode
+        BOOL isPlaying = [episode isEqual:[AudioSession sharedAudioSession].episode];
+        cell.backgroundColor = isPlaying ? ICTableSelectedBackgroundColor : self.tableView.backgroundColor;
+
         cell.embedded = YES;
         cell.panRecognizer.enabled = NO;
         cell.objectValue = episode;
-        
+
         return cell;
     }
     

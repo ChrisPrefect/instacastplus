@@ -51,7 +51,7 @@
 "Instacast Cloud Authentication" = "Instacast Cloud Authentifizierung";
 "Instacast Cloud Maintenance" = "Instacast Cloud Wartungsarbeiten";
 "Instacast Cloud is temporary unavailable. Normal service will be back soon!" = "Instacast Cloud ist z.Z. nicht verfügbar. Sind bald wieder zurück!";
-"Request failed." = "Request failed.";
+"Request failed." = "Anfrage fehlgeschlagen.";
 
 /* FeedSettingsViewController.m */
 "1 Minute" = "1 Minute";
@@ -182,7 +182,7 @@
 
 /* ICProgressSlider.m */
 "Slider Knob" = "Auswahl-Taster";
-"Swipe left or right to adjust %@." = "Wische nach links oder rechts um %@ anzupassen..";
+"Swipe left or right to adjust %@." = "Wische nach links oder rechts um %@ anzupassen.";
 
 /* PlayerFullscreenVideoViewController.m */
 "Done" = "Fertig";
@@ -248,7 +248,7 @@
 
 /* EpisodeListEditorViewController.m */
 "%@ Extension locked!" = "%@ Erweiterung gesperrt!";
-"%@ is available as an optional in-app purchase. Please go to 'Extensions' in the main menu and purchase '%@'." = "%@ is verfügbar als optionaler In-App Kauf. Bitte gehen Sie zu 'Erweiterungen' im Hauptmenu und erwerben '%@'.";
+"%@ is available as an optional in-app purchase. Please go to 'Extensions' in the main menu and purchase '%@'." = "%@ ist verfügbar als optionaler In-App-Kauf. Bitte gehen Sie zu 'Erweiterungen' im Hauptmenü und erwerben '%@'.";
 "Add" = "Hinzufügen";
 "Add Selected Podcasts" = "Ausgewählte Podcasts hinzufügen";
 "All Podcasts" = "Alle Podcasts";
@@ -285,6 +285,7 @@
 "Time Left" = "Abspielzeit übrig";
 "Unfinished" = "angespielt";
 "Unplayed" = "ungespielt";
+"Unplayed & Started" = "un- und angespielt";
 "Video" = "Video";
 
 /* SubscriptionsTableViewController.m */
@@ -357,7 +358,7 @@
 
 /* PlayerInfoViewController_v5.m */
 "Chapters" = "Kapitel";
-"Edit Bookmark" = "Bookmark bearbeiten";
+"Edit Bookmark" = "Lesezeichen bearbeiten";
 "Up Next" = "Nächste Folgen";
 
 /* GeneralSettingsViewController.m */
@@ -384,14 +385,14 @@
 "Seeking" = "Spulen";
 "Seeking and Skipping Chapters" = "Spulen und Kapitel springen";
 "Send Reports" = "Reports senden";
-"Skipping" = "Spingen";
+"Skipping" = "Springen";
 "Switch Automatically" = "Systemeinstellung übernehmen";
-"System Controls" = "System Controls";
+"System Controls" = "Systemsteuerung";
 "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up." = "Sie können die Verwendung mobiler Daten entweder ganz abschalten, nur das Herunterladen von Mediadaten über das mobile Netzwerk verbieten oder die Nutzung mobiler Daten ganz erlauben. Das Verbieten mobiler Daten verhindert ebenfalls das Aufpoppen der Systemwarnung.";
 
 /* UtilityFunctions.m */
 "Please enter your full name." = "Bitte geben Sie Ihren Namen ein.";
-"Sharing Name" = "Ihre Name";
+"Sharing Name" = "Ihr Name";
 
 /* DirectoryViewController.m */
 "Authors" = "Autoren";
@@ -438,7 +439,7 @@
 "Tap to sign in" = "Tappen zum Einloggen";
 
 /* PlaybackViewController.m */
-"Unable to play this episode because the media format is not supported." = "Die Folge kann nicht gestartet werden, da das Medienformat nicht unterstürtzt wird.";
+"Unable to play this episode because the media format is not supported." = "Die Folge kann nicht gestartet werden, da das Medienformat nicht unterstützt wird.";
 "No media to play." = "Keine abspielbaren Inhalte.";
 "Stream" = "Streamen";
 "Streaming with Cellular Data?" = "Streaming über mobiles Datennetzwerk?";
@@ -527,7 +528,10 @@
 "Password" = "Passwort";
 
 /* EpisodesTableViewController.m */
-"Add to Up Next" = "Zu nächste Folgen hinzufügen";
+"Add to Play Next" = "Zur Abspielliste hinzufügen";
+"Added to Play Next" = "Zur Abspielliste hinzugefügt";
+"Remove all episodes from the play next list?" = "Alle Folgen aus der Abspielliste entfernen?";
+"To add episodes, long-press on any episode and select 'Add to Play Next'" = "Um Folgen hinzuzufügen, tippe lange auf eine Folge und wähle 'Zur Abspielliste hinzufügen'";
 "All" = "alle";
 "All Played" = "Alle gespielten";
 "All Unplayed" = "Alle ungespielten";
@@ -545,7 +549,7 @@
 "Mark as Favorite" = "Als Favorit markieren";
 "Mark as Played" = "Als gespielt markieren";
 "Mark as Unplayed" = "Als ungespielt markieren";
-"Play Next" = "Danach wiedergeben";
+"Play Next" = "Abspielliste";
 "Play Now" = "Jetzt wiedergeben";
 "Unmark Favorite" = "Favoritenmarkierung aufheben";
 "Unmark Favorites" = "Favoritenmarkierung aufheben";
@@ -582,7 +586,7 @@
 "Player Color" = "Farbe des Players";
 "Automatic As Per Podcast" = "Automatisch gemäß Podcast";
 "Choose Custom (Hex)" = "Wählen Sie Benutzerdefiniert (Hex)";
-"Choose Custom" = "Wählen Sie Benutzerdefiniert";
+"Choose Custom" = "Benutzerdefiniert";
 "Use Default" = "Standard verwenden";
 
 "Podcast collections" = "Podcast-sammlungen";
@@ -612,3 +616,9 @@
 "Mail" = "Mail";
 "Files" = "Dateien-App";
 "Loading data from iCloud" = "Laden von Daten aus iCloud";
+
+/* MainSidebarController Statistics */
+"Total Episodes" = "Folgen gesamt";
+"Total Unplayed" = "Ungespielt";
+"Total Downloaded" = "Heruntergeladen";
+"Storage Used" = "Speicherplatz";

@@ -1248,8 +1248,10 @@ static const NSInteger kInitialEpisodeLimit = 50;
 
 - (void) _invalidateListCaches
 {
-    for(CDEpisodeList* list in self.lists) {
-        [list invalidateCaches];
+    for(CDList* list in self.lists) {
+        if ([list isKindOfClass:[CDEpisodeList class]]) {
+            [(CDEpisodeList*)list invalidateCaches];
+        }
     }
 }
 

@@ -25,6 +25,7 @@
 
 #import "VDModalInfo.h"
 #import "OnboardScreenVC.h"
+#import "UpNextTableViewController.h"
 
 typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemSubscriptions   = 2,
@@ -36,6 +37,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemSettings        = 8,
     kMainSidebarItemUnplayed        = 9,
     kMainSidebarItemImported        = 10,
+    kMainSidebarItemFavorites       = 11,
 };
 
 @interface MainViewController_4 () <UINavigationControllerDelegate,OnboardScreenVCDelegate>
@@ -44,6 +46,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 @property (nonatomic, strong, readwrite) MainActivityViewController* activityViewController;
 
 @property (nonatomic, readonly) CDEpisodeList* unplayedPlaylist;
+@property (nonatomic, readonly) CDEpisodeList* favoritesPlaylist;
 @end
 
 @implementation MainViewController_4 {
@@ -75,7 +78,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         }];
         
         [self.unplayedPlaylist addTaskObserver:self forKeyPath:@"name" task:^(id obj, NSDictionary *change) {
-            MainSidebarItem* sidebarItem = [weakSelf.sidebarController.items[1] firstObject];
+            MainSidebarItem* sidebarItem = weakSelf.sidebarController.items[0][2];
             sidebarItem.title = self.unplayedPlaylist.name;
         }];
         
@@ -83,7 +86,12 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                  selector:@selector(updateAppearance)
                                                      name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                    object:nil];
-        
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_cacheManagerDidUpdate:)
+                                                     name:CacheManagerDidUpdateNotification
+                                                   object:nil];
+
         _observing = YES;
     }
     else if (!observing && _observing)
@@ -101,6 +109,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     self.view.backgroundColor = ICDarkBackgroundColor;
 }
 
+- (void) _cacheManagerDidUpdate:(NSNotification*)notification {
+    // Reload sidebar to update download speed display
+    [self.sidebarController.tableView reloadData];
+}
+
 - (void)viewDidLoad
 {
     [super viewDidLoad];
@@ -112,7 +125,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     
     CGRect b = self.view.bounds;
     MainActivityViewController* activityViewController = [MainActivityViewController viewController];
-    activityViewController.view.frame = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 44);
+    activityViewController.view.frame = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 49);  // 5px taller
     activityViewController.view.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleWidth;
     self.activityViewController = activityViewController;
 
@@ -127,7 +140,23 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                                   image:[UIImage imageNamed:@"Menu Subscriptions"]
                                                           selectedImage:[UIImage imageNamed:@"Menu Subscriptions Filled"]],
 
-                                         [MainSidebarItem itemWithTitle:@"Episodes".ls
+                                         [MainSidebarItem itemWithTitle:@"Favorites".ls
+                                                                    tag:kMainSidebarItemFavorites
+                                                                  image:[UIImage systemImageNamed:@"star" withConfiguration:[UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleLarge]]
+                                                          selectedImage:[UIImage systemImageNamed:@"star.fill" withConfiguration:[UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleLarge]]
+                                                             topSpacing:22],
+
+                                         [MainSidebarItem itemWithTitle:self.unplayedPlaylist.name
+                                                                    tag:kMainSidebarItemUnplayed
+                                                                  image:[UIImage imageNamed:@"Menu Unplayed"]
+                                                          selectedImage:[UIImage imageNamed:@"Menu Unplayed Filled"]],
+
+                                         [MainSidebarItem itemWithTitle:@"Play Next".ls
+                                                                    tag:kMainSidebarItemUpNext
+                                                                  image:[UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:[UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleLarge]]
+                                                          selectedImage:[UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:[UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleLarge]]],
+
+                                         [MainSidebarItem itemWithTitle:@"Lists".ls
                                                                     tag:kMainSidebarItemLists
                                                                   image:[UIImage imageNamed:@"Menu Lists"]
                                                           selectedImage:[UIImage imageNamed:@"Menu Lists"]],
@@ -138,16 +167,22 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                           selectedImage:[UIImage imageNamed:@"Menu Bookmarks Filled"]],
                                          ],
                                      @[
-                                         [MainSidebarItem itemWithTitle:self.unplayedPlaylist.name
-                                                                    tag:kMainSidebarItemUnplayed
-                                                                  image:[UIImage imageNamed:@"Menu Unplayed"]
-                                                          selectedImage:[UIImage imageNamed:@"Menu Unplayed Filled"]],
-                                         ],
-                                     @[
-                                         [MainSidebarItem itemWithTitle:@"Downloads".ls
-                                                                    tag:kMainSidebarItemDownloads
-                                                                  image:[UIImage imageNamed:@"Menu Downloads"]
-                                                          selectedImage:[UIImage imageNamed:@"Menu Downloads Filled"]],
+                                         ({
+                                             MainSidebarItem* item = [MainSidebarItem itemWithTitle:@"Downloads".ls
+                                                                        tag:kMainSidebarItemDownloads
+                                                                      image:[UIImage imageNamed:@"Menu Downloads"]
+                                                              selectedImage:[UIImage imageNamed:@"Menu Downloads Filled"]
+                                                                 topSpacing:22];
+                                             item.auxiliaryText = ^NSString* {
+                                                 CacheManager* cm = [CacheManager sharedCacheManager];
+                                                 if ([cm isCaching] && cm.rate > 0) {
+                                                     NSString* speedStr = [NSByteCountFormatter stringFromByteCount:(long long)cm.rate countStyle:NSByteCountFormatterCountStyleMemory];
+                                                     return [speedStr stringByAppendingString:@"/s"];
+                                                 }
+                                                 return nil;
+                                             };
+                                             item;
+                                         }),
 
                                          [MainSidebarItem itemWithTitle:@"Settings".ls
                                                                     tag:kMainSidebarItemSettings
@@ -282,8 +317,9 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     }
     
     CGRect b = self.view.bounds;
-    CGRect invisbleRect = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 44+safeAreaInsets.bottom);
-    CGRect visibleRect = CGRectMake(0, CGRectGetHeight(b)-44-safeAreaInsets.bottom, CGRectGetWidth(b), 44+safeAreaInsets.bottom);
+    // Now playing bar: 5px higher than before
+    CGRect invisbleRect = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 49+safeAreaInsets.bottom);
+    CGRect visibleRect = CGRectMake(0, CGRectGetHeight(b)-49-safeAreaInsets.bottom, CGRectGetWidth(b), 49+safeAreaInsets.bottom);
     
     if (self.activityViewController.visible && !self.activityViewController.parentViewController) {
         [self addChildViewController:self.activityViewController];
@@ -318,7 +354,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     
     if (self.activityViewController.visible) {
         rect.size.height -= (safeAreaInsets.bottom);
-        rect.size.height -= 44;
+        rect.size.height -= 49;  // Now playing bar is 5px taller (44->49)
     }
     
     return rect;
@@ -370,6 +406,55 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     return unplayedList;
 }
 
+- (CDEpisodeList*) favoritesPlaylist
+{
+    CDEpisodeList* favoritesList = nil;
+
+    // Find the favorites list by uid
+    for(CDList* list in DMANAGER.lists)
+    {
+        if ([list isKindOfClass:[CDEpisodeList class]]) {
+            CDEpisodeList* episodeList = (CDEpisodeList*)list;
+            if ([episodeList.uid isEqualToString:@"default.favorites"]) {
+                favoritesList = episodeList;
+                break;
+            }
+        }
+    }
+
+    // Fallback: find by icon
+    if (!favoritesList)
+    {
+        for(CDList* list in DMANAGER.lists)
+        {
+            if ([list isKindOfClass:[CDEpisodeList class]]) {
+                CDEpisodeList* episodeList = (CDEpisodeList*)list;
+                if ([episodeList.icon isEqualToString:@"List Favorites"]) {
+                    favoritesList = episodeList;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Create if not found
+    if (!favoritesList)
+    {
+        favoritesList = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:DMANAGER.objectContext];
+        favoritesList.name = @"Favorites".ls;
+        favoritesList.icon = @"List Favorites";
+        favoritesList.rank = (int32_t)[DMANAGER.lists count]+1;
+        favoritesList.starred = YES;
+        favoritesList.orderBy = @"pubDate";
+        favoritesList.descending = YES;
+        favoritesList.groupByPodcast = NO;
+        favoritesList.continuousPlayback = YES;
+        favoritesList.uid = @"default.favorites";
+        [DMANAGER save];
+    }
+
+    return favoritesList;
+}
 
 - (UIViewController*) _statusBarAdjustingContainerViewControllerForViewController:(UIViewController*)viewController
 {
@@ -427,7 +512,32 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
         {
             UIViewController* controller = [ListEpisodesTableViewController viewControllerWithList:[self unplayedPlaylist]];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
-            
+
+            PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+            navController.view.tintColor = ICTintColor;
+            navController.toolbarHidden = NO;
+            self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+
+            return YES;
+        }
+        case kMainSidebarItemFavorites:
+        {
+            UIViewController* controller = [ListEpisodesTableViewController viewControllerWithList:[self favoritesPlaylist]];
+            controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+
+            PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+            navController.view.tintColor = ICTintColor;
+            navController.toolbarHidden = NO;
+            self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+
+            return YES;
+        }
+        case kMainSidebarItemUpNext:
+        {
+            UpNextTableViewController* controller = [UpNextTableViewController viewController];
+            controller.presentedAsMainView = YES;
+            controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
             navController.view.tintColor = ICTintColor;
             navController.toolbarHidden = NO;

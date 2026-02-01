@@ -13,5 +13,6 @@
 + (instancetype) viewController;
 
 @property (nonatomic, strong) NSArray* episodesToInsert;
+@property (nonatomic) BOOL presentedAsMainView;
 
 @end

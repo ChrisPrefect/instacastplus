@@ -126,7 +126,16 @@ enum {
         [pman addTaskObserver:self forKeyPath:@"playableDuration" task:^(id obj, NSDictionary *change) {
             [weakSelf.controller updateTimeUI];
         }];
-        
+
+        [pman addTaskObserver:self forKeyPath:@"chapters" task:^(id obj, NSDictionary *change) {
+            [weakSelf.controller updateChapterMarkers];
+        }];
+
+        [pman addTaskObserver:self forKeyPath:@"time" task:^(id obj, NSDictionary *change) {
+            [weakSelf.controller updateTimeUI];
+        }];
+
+        [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidUpdateNotification:) name:PlaybackManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidEndNotification:) name:PlaybackManagerDidEndNotification object:nil];
         [nc addObserver:self selector:@selector(applicationDidRegisterTouchNotification:) name:ApplicationDidRegisterTouchNotification object:nil];
@@ -140,10 +149,17 @@ enum {
         [pman removeTaskObserver:self forKeyPath:@"currentArtwork"];
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode"];
         [pman removeTaskObserver:self forKeyPath:@"playableDuration"];
-        
+        [pman removeTaskObserver:self forKeyPath:@"chapters"];
+        [pman removeTaskObserver:self forKeyPath:@"time"];
+
         [nc removeObserver:self];
         _observing = NO;
     }
+}
+
+- (void) audioSessionDidRestorePlaybackNotification:(NSNotification*)notification
+{
+    [self.controller updateTimeWhenLoading];
 }
 
 - (void) playbackManagerDidUpdateNotification:(NSNotification*)notification
@@ -224,21 +240,22 @@ enum {
 - (void) _resetStateMachine
 {
     self.playingEpisode = nil;
-    
+
     [_showHideTimer invalidate];
     _showHideTimer = nil;
-    
+
     [self.controller resetControlUI];
+    [self.controller updateTimeWhenLoading];
 
     self.image = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
-    
+
     [self.controller updateControlsUI];
-    
+
     self.view.backgroundColor = ICBackgroundColor;
-    
+
     _state = LoadedState;
     [self _stateMachine];
-    
+
     self.feedTitleLabel.text = [AudioSession sharedAudioSession].episode.title;
 }
 
@@ -434,6 +451,7 @@ enum {
 	
 	[self.controller updateTimeWhenLoading];
     [self.controller updateControlsUI];
+    [self.controller updateChapterMarkers];
     
     //DVED TODO
     // loading image
@@ -544,6 +562,7 @@ enum {
     [self _setObserving:YES];
     [self _updateArtworkImage];
     [self.controller updateControlsUI];
+    [self.controller updateTimeWhenLoading];
     
     CGRect b = self.view.bounds;
     self.infoViewController.view.frame = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetHeight(b));
@@ -557,8 +576,9 @@ enum {
 - (void) viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
-        
+
     _viewDidAppear = YES;
+    [self.controller updateTimeWhenLoading];
     [self _stateMachine];
 }
 

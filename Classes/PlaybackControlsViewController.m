@@ -7,6 +7,7 @@
 //
 
 #import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
 #import <MediaPlayer/MPVolumeView.h>
 
 #import "PlaybackControlsViewController.h"
@@ -315,12 +316,22 @@
 - (void) updateTimeWhenLoading
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
-	CDEpisode* episode = [AudioSession sharedAudioSession].episode;
 
-    if (episode.duration > 0 && episode.position < episode.duration)
+    // If PlaybackManager is ready and has valid values, use those
+    if (pman.ready && pman.duration > 0) {
+        [self updateTimeUI];
+        return;
+    }
+
+    // Try to get episode from PlaybackManager first, then AudioSession
+    CDEpisode* episode = pman.playingEpisode;
+    if (!episode) {
+        episode = [AudioSession sharedAudioSession].episode;
+    }
+
+    // Use episode's saved position/duration while loading
+    if (episode && episode.duration > 0)
 	{
-        // Use episode's saved position/duration when loading, since PlaybackManager values
-        // are 0 until the file is actually loaded
 		NSInteger cur = episode.position;
 		NSInteger dur = episode.duration;
 		NSInteger rem = dur-cur;
@@ -337,7 +348,7 @@
     if (pman.duration > 0) {
         self.timeSlider.progress = pman.playableDuration / pman.duration;
     }
-    else if (episode.duration > 0) {
+    else if (episode && episode.duration > 0) {
         // Show 0 progress while loading
         self.timeSlider.progress = 0.0f;
     }
@@ -378,8 +389,37 @@
     self.timeSlider.enabled = NO;
     self.timeSlider.progress = 0;
     self.timeSlider.value = 0;
+    self.timeSlider.chapterMarkers = nil;
     self.elapsedTimeLabel.text = @"0:00:00";
     self.remainingTimeLabel.text = @"-0:00:00";
+}
+
+- (void) updateChapterMarkers
+{
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    NSArray* chapters = pman.chapters;
+    NSTimeInterval duration = pman.duration;
+
+    if (!chapters || chapters.count == 0 || duration <= 0) {
+        self.timeSlider.chapterMarkers = nil;
+        return;
+    }
+
+    NSMutableArray* markers = [NSMutableArray array];
+    for (id chapter in chapters) {
+        // ICMetadataChapter inherits from ICMetadataItem which has CMTime start
+        if ([chapter respondsToSelector:@selector(start)]) {
+            CMTime startCMTime = [[chapter valueForKey:@"start"] CMTimeValue];
+            NSTimeInterval startTime = CMTimeGetSeconds(startCMTime);
+            if (!isnan(startTime) && startTime > 0) {
+                double normalizedPosition = startTime / duration;
+                if (normalizedPosition > 0.0 && normalizedPosition < 1.0) {
+                    [markers addObject:@(normalizedPosition)];
+                }
+            }
+        }
+    }
+    self.timeSlider.chapterMarkers = markers;
 }
 
 #pragma mark -

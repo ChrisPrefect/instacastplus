@@ -9,6 +9,38 @@
 #import "ICProgressSlider.h"
 #import "ImageFunctions.h"
 
+@interface ICProgressSliderChapterMarkersView : UIView
+@property (nonatomic, strong) NSArray<NSNumber*>* chapterMarkers;
+@property (nonatomic, strong) UIColor* markerColor;
+@end
+
+@implementation ICProgressSliderChapterMarkersView
+
+- (void) drawRect:(CGRect)rect {
+    if (!self.chapterMarkers || self.chapterMarkers.count == 0) return;
+
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGRect bounds = self.bounds;
+    CGFloat trackWidth = CGRectGetWidth(bounds) - 4;  // Same as slider track
+
+    UIColor* color = self.markerColor ?: [UIColor colorWithWhite:1.0 alpha:0.3];
+    CGContextSetStrokeColorWithColor(ctx, color.CGColor);
+    CGContextSetLineWidth(ctx, 1.0);
+
+    for (NSNumber* marker in self.chapterMarkers) {
+        double position = [marker doubleValue];
+        if (position <= 0.0 || position >= 1.0) continue;  // Skip first and last
+
+        CGFloat x = 2 + floorf(trackWidth * position);
+        CGContextMoveToPoint(ctx, x, 0);
+        CGContextAddLineToPoint(ctx, x, CGRectGetHeight(bounds));
+    }
+    CGContextStrokePath(ctx);
+}
+
+@end
+
+
 @interface ICProgressSlider ()
 @property (nonatomic, assign) CGPoint trackingStartPoint;
 @property (nonatomic, assign) CGRect trackingKnobStartRect;
@@ -17,6 +49,7 @@
 @property (nonatomic, strong) UIImageView* trackView;
 @property (nonatomic, strong) UIImageView* backgroundView;
 @property (nonatomic, strong) UIImageView* progressView;
+@property (nonatomic, strong) ICProgressSliderChapterMarkersView* chapterMarkersView;
 @property (nonatomic, readwrite) ICProgressSliderScrubbingMode scrubbingMode;
 @property (nonatomic, assign) double valueBeforeTracking;
 @property (nonatomic, strong) NSTimer* valueChangedTimer;
@@ -48,7 +81,13 @@
     _trackView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [self addSubview:_trackView];
 
-    
+    _chapterMarkersView = [[ICProgressSliderChapterMarkersView alloc] initWithFrame:CGRectZero];
+    _chapterMarkersView.backgroundColor = [UIColor clearColor];
+    _chapterMarkersView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    _chapterMarkersView.userInteractionEnabled = NO;
+    [self addSubview:_chapterMarkersView];
+
+
 	_knobButton = [UIButton buttonWithType:UIButtonTypeCustom];
 	_knobButton.frame = CGRectMake(0, 0, 44, 25);
 	// Draw a 4px wide indicator bar programmatically
@@ -130,6 +169,13 @@
 	}
 }
 
+- (void) setChapterMarkers:(NSArray<NSNumber*>*)chapterMarkers
+{
+    _chapterMarkers = chapterMarkers;
+    self.chapterMarkersView.chapterMarkers = chapterMarkers;
+    [self.chapterMarkersView setNeedsDisplay];
+}
+
 - (void) setValue:(double)value
 {
 	if (_value != value) {
@@ -188,6 +234,9 @@
     self.backgroundView.frame = CGRectMake(2, yOffset+7, CGRectGetWidth(bounds)-4, 10);
 
     self.progressView.frame = [self _progressRect];
+
+    // Chapter markers overlay on the track area
+    self.chapterMarkersView.frame = CGRectMake(0, yOffset+7, CGRectGetWidth(bounds), 10);
 
 	self.knobButton.frame = [self _knobRect];
 	self.knobButton.enabled = self.enabled;
