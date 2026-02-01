@@ -78,6 +78,11 @@ DebugLog(format, args...)   // Conditional debug logging
 WEAK_SELF / STRONG_SELF     // Memory management helpers
 ```
 
+## Debugging Rules
+
+- **NEVER use fallbacks or workarounds.** Always find and fix the real root cause of bugs.
+- Understand WHY something is broken before attempting to fix it.
+
 ## Coding Conventions
 
 - **DMANAGER** for all database operations

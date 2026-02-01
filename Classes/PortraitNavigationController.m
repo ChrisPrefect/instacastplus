@@ -34,7 +34,7 @@
 
     - (UIViewController*) _fullscreenVideoControllerWithCurrentViewController:(UIViewController*)viewController
     {
-        if ([viewController isKindOfClass:NSClassFromString(@"PlayerFullscreenVideoViewController")]) {
+        if ([viewController isKindOfClass:NSClassFromString(@"AVPlayerViewController")]) {
             return viewController;
         }
         

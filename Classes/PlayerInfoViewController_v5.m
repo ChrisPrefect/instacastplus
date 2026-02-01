@@ -239,17 +239,24 @@ enum {
     {
         UIView* playerView = self.videoViewController.view;
         CGSize videoSize = self.videoViewController.videoSize;
-        
+
         CGFloat aspectRatio = videoSize.width / videoSize.height;
         CGFloat viewAspectRatio = CGRectGetWidth(b) / CGRectGetHeight(b);
-        
+
+        // Extra height for top margin (30px) and fullscreen button (44px)
+        CGFloat topMargin = 30.0;
+        CGFloat buttonHeight = 44.0;
+        CGFloat extraHeight = topMargin + buttonHeight;
+
         // xxx: landscape hack for iOS 8
         if (viewAspectRatio > 1) {
-            playerView.frame = CGRectMake(0, 0, CGRectGetHeight(b), floorf(CGRectGetHeight(b)/aspectRatio));
+            CGFloat videoHeight = floorf(CGRectGetHeight(b)/aspectRatio);
+            playerView.frame = CGRectMake(0, 0, CGRectGetHeight(b), videoHeight + extraHeight);
         } else {
-            playerView.frame = CGRectMake(0, 0, CGRectGetWidth(b), floorf(CGRectGetWidth(b)/aspectRatio));
+            CGFloat videoHeight = floorf(CGRectGetWidth(b)/aspectRatio);
+            playerView.frame = CGRectMake(0, 0, CGRectGetWidth(b), videoHeight + extraHeight);
         }
-        
+
         self.tableView.tableHeaderView = playerView;
     } else {
         
@@ -263,19 +270,22 @@ enum {
         
         if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
         {
-            newFrameTemp = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetWidth(b));
-            layout.itemSize = CGSizeMake(self.view.bounds.size.width, self.view.bounds.size.width);
-            self.pageControl.frame = CGRectMake(0, CGRectGetWidth(b) - 60, CGRectGetWidth(b), 40);
+            CGFloat size = MAX(CGRectGetWidth(b), 1);
+            newFrameTemp = CGRectMake(0, 0, size, size);
+            layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
+            self.pageControl.frame = CGRectMake(0, size - 60, size, 40);
         }
         else
         {
             CGRect wb = [[self getKeyWindow] bounds];
             CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
             CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
-            
-            newFrameTemp = CGRectMake(0, 0, CGRectGetHeight(self.rectCollection), CGRectGetWidth(self.rectCollection) - controllerHeight);
-            self.pageControl.frame = CGRectMake(0, CGRectGetHeight(self.rectCollection) - 60, CGRectGetWidth(self.rectCollection), 40);
-            layout.itemSize = CGSizeMake(self.view.bounds.size.height, self.view.bounds.size.width - controllerHeight);
+
+            CGFloat width = MAX(CGRectGetHeight(self.rectCollection), 1);
+            CGFloat height = MAX(CGRectGetWidth(self.rectCollection) - controllerHeight, 1);
+            newFrameTemp = CGRectMake(0, 0, width, height);
+            self.pageControl.frame = CGRectMake(0, MAX(CGRectGetHeight(self.rectCollection) - 60, 0), MAX(CGRectGetWidth(self.rectCollection), 1), 40);
+            layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.height, 1), MAX(self.view.bounds.size.width - controllerHeight, 1));
         }
         
         self.chapterImagesCollection.collectionViewLayout = layout;
@@ -299,32 +309,35 @@ enum {
 - (void)orientationDidChange
 {
     CGRect b = self.rectCollection;
-    
+
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
     layout.sectionInset = UIEdgeInsetsMake(0, 0, 0, 0);
     layout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
     [layout setMinimumInteritemSpacing:0.0f];
     [layout setMinimumLineSpacing:0.0f];
-    
+
     CGRect newFrameTemp = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetWidth(b));
-    
+
     if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
     {
-        newFrameTemp = CGRectMake(0, 0, CGRectGetWidth(b), CGRectGetWidth(b));
-        layout.itemSize = CGSizeMake(self.view.bounds.size.width, self.view.bounds.size.width);
-        self.pageControl.frame = CGRectMake(0, CGRectGetWidth(b) - 60, CGRectGetWidth(b), 40);
+        CGFloat size = MAX(CGRectGetWidth(b), 1);
+        newFrameTemp = CGRectMake(0, 0, size, size);
+        layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.width, 1), MAX(self.view.bounds.size.width, 1));
+        self.pageControl.frame = CGRectMake(0, size - 60, size, 40);
     }
     else
     {
         CGRect wb = [[self getKeyWindow] bounds];
         CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
         CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
-        
-        newFrameTemp = CGRectMake(0, 0, CGRectGetHeight(b), CGRectGetWidth(b) - controllerHeight);
-        self.pageControl.frame = CGRectMake(0, CGRectGetHeight(b) - 60, CGRectGetWidth(b), 40);
-        layout.itemSize = CGSizeMake(self.view.bounds.size.height, self.view.bounds.size.width - controllerHeight);
+
+        CGFloat width = MAX(CGRectGetHeight(b), 1);
+        CGFloat height = MAX(CGRectGetWidth(b) - controllerHeight, 1);
+        newFrameTemp = CGRectMake(0, 0, width, height);
+        self.pageControl.frame = CGRectMake(0, MAX(CGRectGetHeight(b) - 60, 0), MAX(CGRectGetWidth(b), 1), 40);
+        layout.itemSize = CGSizeMake(MAX(self.view.bounds.size.height, 1), MAX(self.view.bounds.size.width - controllerHeight, 1));
     }
-    
+
     self.chapterImagesCollection.collectionViewLayout = layout;
     self.imageView.frame = newFrameTemp;
     self.chapterView.frame = newFrameTemp;
@@ -941,14 +954,17 @@ enum {
     CGRect wb = [[self getKeyWindow] bounds];
     CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
     CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
-    
+
     if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
     {
-        return CGSizeMake(CGRectGetWidth(b), CGRectGetWidth(b));
+        CGFloat size = MAX(CGRectGetWidth(b), 1);
+        return CGSizeMake(size, size);
     }
     else
     {
-        return CGSizeMake(CGRectGetHeight(b), CGRectGetWidth(b) - controllerHeight);
+        CGFloat width = MAX(CGRectGetHeight(b), 1);
+        CGFloat height = MAX(CGRectGetWidth(b) - controllerHeight, 1);
+        return CGSizeMake(width, height);
     }
 }
 

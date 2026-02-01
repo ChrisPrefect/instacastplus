@@ -28,7 +28,7 @@
 
 #import "PlayerInfoViewController_v5.h"
 #import "PlayerVideoViewController.h"
-#import "PlayerFullscreenVideoViewController.h"
+#import <AVKit/AVKit.h>
 
 enum {
 	NoState = 0,
@@ -115,7 +115,7 @@ enum {
             if (playingEpisode)
             {
                 UIViewController* presentedViewController = weakSelf.presentedViewController;
-                if (![presentedViewController isKindOfClass:[PlayerFullscreenVideoViewController class]] || !playingEpisode.video) {
+                if (![presentedViewController isKindOfClass:[AVPlayerViewController class]] || !playingEpisode.video) {
                     [presentedViewController dismissViewControllerAnimated:YES completion:NULL];
                 }
                 
@@ -196,12 +196,10 @@ enum {
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     if (pman.movingVideo && pman.ready && self.infoViewController.videoViewController) {
-        
+        // Auto-enter fullscreen when rotating to landscape
+        // AVPlayerViewController handles rotation internally, so don't auto-exit on portrait
         if (UIDeviceOrientationIsLandscape([UIDevice currentDevice].orientation) && !self.infoViewController.videoViewController.fullscreen) {
             [self.infoViewController.videoViewController setFullscreen:YES animated:YES completion:NULL];
-        }
-        else if (UIDeviceOrientationIsPortrait([UIDevice currentDevice].orientation) && self.infoViewController.videoViewController.fullscreen) {
-            [self.infoViewController.videoViewController setFullscreen:NO animated:YES completion:NULL];
         }
     }
 }

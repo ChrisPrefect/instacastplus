@@ -6,17 +6,33 @@
 //
 //
 
+#import <AVKit/AVKit.h>
 #import "PlayerVideoViewController.h"
 #import "PlayerView.h"
-#import "PlayerFullscreenVideoViewController.h"
 #import "InstacastAppDelegate.h"
 
-@interface PlayerVideoViewController ()
-@property (nonatomic, strong) UITapGestureRecognizer* tapRecognizer;
-@property (nonatomic, strong) UIView* letterboxView;
-@property (nonatomic, strong) UIImageView* fullscreenIndicatorView;
+static const CGFloat kTopMargin = 30.0;
+static const CGFloat kFullscreenButtonSize = 44.0;
+
+// Subclass to detect dismissal
+@interface ICFullscreenPlayerViewController : AVPlayerViewController
+@property (nonatomic, copy) void (^onDismiss)(void);
+@end
+
+@implementation ICFullscreenPlayerViewController
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    if (self.isBeingDismissed && self.onDismiss) {
+        self.onDismiss();
+    }
+}
+@end
+
+@interface PlayerVideoViewController () <AVPlayerViewControllerDelegate>
+@property (nonatomic, strong) UIView* videoContainerView;
+@property (nonatomic, strong) UIButton* fullscreenButton;
 @property (nonatomic, readwrite) BOOL fullscreen;
-@property (nonatomic, strong) PlayerFullscreenVideoViewController* fullscreenViewController;
+@property (nonatomic, strong) ICFullscreenPlayerViewController* avPlayerViewController;
 @end
 
 @implementation PlayerVideoViewController
@@ -28,31 +44,55 @@
 - (void) viewDidLoad
 {
     [super viewDidLoad];
-    
-    CGRect b = self.view.bounds;
-    
-    self.view.backgroundColor = [UIColor blackColor];
+
+    self.view.backgroundColor = [UIColor clearColor];
     self.view.autoresizingMask = UIViewAutoresizingNone;
-    
-    self.letterboxView = [[UIView alloc] initWithFrame:b];
-    self.letterboxView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.letterboxView.backgroundColor = [UIColor blackColor];
-    
-    [self.view addSubview:self.letterboxView];
-    
-    self.playerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.playerView.frame = self.letterboxView.bounds;
-    [self.letterboxView addSubview:self.playerView];
-    
-    self.fullscreenIndicatorView = [[UIImageView alloc] initWithImage:[[UIImage imageNamed:@"Toolbar Fullscreen"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
-    self.fullscreenIndicatorView.tintColor = [UIColor colorWithWhite:0.9 alpha:1.0];
-    self.fullscreenIndicatorView.frame = CGRectMake(CGRectGetWidth(b)-35, CGRectGetHeight(b)-35, 20, 20);
-    self.fullscreenIndicatorView.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleLeftMargin;
-    [self.letterboxView addSubview:self.fullscreenIndicatorView];
-    
-    UITapGestureRecognizer* tapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
-    [self.letterboxView addGestureRecognizer:tapRecognizer];
-    self.tapRecognizer = tapRecognizer;
+
+    // Video container with top margin
+    self.videoContainerView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.videoContainerView.backgroundColor = [UIColor clearColor];
+    [self.view addSubview:self.videoContainerView];
+
+    // Player view inside video container
+    if (self.playerView) {
+        self.playerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [self.videoContainerView addSubview:self.playerView];
+    }
+
+    // Fullscreen button - right aligned, no text, iOS system icon
+    self.fullscreenButton = [UIButton buttonWithType:UIButtonTypeSystem];
+
+    // Use SF Symbol for fullscreen (iOS 13+)
+    UIImage* fullscreenImage = [UIImage systemImageNamed:@"arrow.up.left.and.arrow.down.right"];
+    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:16 weight:UIImageSymbolWeightMedium];
+    fullscreenImage = [fullscreenImage imageByApplyingSymbolConfiguration:config];
+    [self.fullscreenButton setImage:fullscreenImage forState:UIControlStateNormal];
+    [self.fullscreenButton addTarget:self action:@selector(fullscreenButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.fullscreenButton];
+
+    // Tap on video also enters fullscreen
+    UITapGestureRecognizer* tapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(fullscreenButtonTapped:)];
+    [self.videoContainerView addGestureRecognizer:tapRecognizer];
+
+    [self _updateLayout];
+}
+
+- (void) viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    [self _updateLayout];
+}
+
+- (void) _updateLayout
+{
+    CGRect b = self.view.bounds;
+    CGFloat videoHeight = MAX(CGRectGetHeight(b) - kTopMargin - kFullscreenButtonSize, 0);
+
+    self.videoContainerView.frame = CGRectMake(0, kTopMargin, CGRectGetWidth(b), videoHeight);
+    self.playerView.frame = self.videoContainerView.bounds;
+
+    // Button positioned at right edge
+    self.fullscreenButton.frame = CGRectMake(CGRectGetWidth(b) - kFullscreenButtonSize, kTopMargin + videoHeight, kFullscreenButtonSize, kFullscreenButtonSize);
 }
 
 - (void) setPlayerView:(PlayerView *)playerView
@@ -60,141 +100,95 @@
     if (_playerView != playerView)
     {
         [_playerView removeFromSuperview];
-        
+
         _playerView = playerView;
-        
-        if (self.letterboxView) {
+
+        if (self.videoContainerView && playerView) {
             playerView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-            playerView.frame = self.letterboxView.bounds;
-            [self.letterboxView addSubview:playerView];
+            playerView.frame = self.videoContainerView.bounds;
+            [self.videoContainerView addSubview:playerView];
         }
     }
 }
 
-
 - (void) _transitionToFullscreen:(BOOL)fullscreen animated:(BOOL)animated completion:(void (^)(void))completion
 {
-    UIView* letterboxView = self.letterboxView;
-    UIView* playerView = self.playerView;
-    
     if (fullscreen)
     {
-        self.fullscreenIndicatorView.hidden = YES;
-        
-        CGRect r = [letterboxView convertRect:self.letterboxView.bounds toView:nil];
-        [letterboxView removeFromSuperview];
-        letterboxView.frame = r;
-        [self.view.window addSubview:letterboxView];
-        
-        self.letterboxView.autoresizesSubviews = NO;
-        [UIView animateWithDuration:(animated) ? 0.5 : 0.0
-                         animations:^{
-                             CGFloat oldWidth = CGRectGetWidth(letterboxView.frame);
-                             letterboxView.frame = self.view.window.bounds;
-                             
-                             CGFloat newWidth = CGRectGetWidth(letterboxView.frame);
-                             
-                             playerView.center = CGPointMake(CGRectGetWidth(letterboxView.bounds)/2, CGRectGetHeight(letterboxView.bounds)/2);
-                             playerView.transform = CGAffineTransformScale(playerView.transform, newWidth/oldWidth, newWidth/oldWidth);
-                         }
-                         completion:^(BOOL finished) {
-                             
-                             self.fullscreenViewController = [PlayerFullscreenVideoViewController viewController];
-                             self.fullscreenViewController.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-                             
-                             [self.parentViewController presentViewController:self.fullscreenViewController animated:NO completion:^{
-                                 
-                                 [self.fullscreenViewController.doneButton addTarget:self action:@selector(closeFullscreen:) forControlEvents:UIControlEventTouchUpInside];
-                                 
-                                 [letterboxView removeFromSuperview];
-                                 letterboxView.frame = self.fullscreenViewController.view.bounds;
-                                 playerView.frame = letterboxView.bounds;
-                                 
-                                 letterboxView.autoresizesSubviews = YES;
-                                 [self.fullscreenViewController.view insertSubview:letterboxView atIndex:0];
-                                 
-                                 self.fullscreen = YES;
-                                 
-                                 [((InstacastAppDelegate*)(App.delegate)) setNeedsStatusBarAppearanceUpdate];
-                                 
-                                 if (completion) {
-                                     completion();
-                                 }
-                             }];
-                             
-                         }];
-    }
-    else
-    {
-        if (!animated)
-        {
-            [self.parentViewController dismissViewControllerAnimated:YES completion:NULL];
-            self.fullscreen = NO;
-            
-            CGRect b = letterboxView.bounds;
-            self.fullscreenIndicatorView.frame = CGRectMake(CGRectGetWidth(b)-35, CGRectGetHeight(b)-35, 20, 20);
-            self.fullscreenIndicatorView.hidden = NO;
-            
+        // Check if player is available
+        if (!self.playerView.player) {
+            DebugLog(@"No player available for fullscreen video");
             if (completion) {
                 completion();
             }
             return;
         }
-        
-        UIWindow* window = self.letterboxView.window;
-        
-        [letterboxView removeFromSuperview];
-        letterboxView.frame = window.bounds;
-        
-        CGSize s = CGSizeMake(CGRectGetWidth(letterboxView.frame), floorf(CGRectGetWidth(letterboxView.frame)/(self.videoSize.width/self.videoSize.height)));
-        playerView.frame = CGRectMake(0, (CGRectGetHeight(letterboxView.bounds)-s.height)/2, s.width, s.height);
-        [window addSubview:letterboxView];
-        
-        
-        [self.fullscreenViewController dismissViewControllerAnimated:YES completion:^{
-            
-            CGRect r = [self.view convertRect:self.view.bounds toView:nil];
-            
-            letterboxView.autoresizesSubviews = NO;
-            
-            [UIView animateWithDuration:0.5
-                             animations:^{
-                                 
-                                 CGFloat oldWidth = CGRectGetWidth(letterboxView.frame);
-                                 letterboxView.frame = r;
-                                 
-                                 CGFloat newWidth = CGRectGetWidth(letterboxView.frame);
-                                 
-                                 playerView.center = CGPointMake(CGRectGetWidth(letterboxView.bounds)/2, CGRectGetHeight(r)/2);
-                                 playerView.transform = CGAffineTransformScale(playerView.transform, newWidth/oldWidth, newWidth/oldWidth);
-                             }
-                             completion:^(BOOL finished) {
-                                 
-                                 [letterboxView removeFromSuperview];
-                                 letterboxView.frame = self.view.bounds;
-                                 [self.view addSubview:letterboxView];
-                                 letterboxView.autoresizesSubviews = YES;
-                                 
-                                 self.fullscreen = NO;
-                                 
-                                 CGRect b = letterboxView.bounds;
-                                 self.fullscreenIndicatorView.frame = CGRectMake(CGRectGetWidth(b)-35, CGRectGetHeight(b)-35, 20, 20);
-                                 self.fullscreenIndicatorView.hidden = NO;
-                                 
-                                 if (completion) {
-                                     completion();
-                                 }
-                             }];
-            
-            self.fullscreenViewController = nil;
+
+        // Create and configure AVPlayerViewController
+        self.avPlayerViewController = [[ICFullscreenPlayerViewController alloc] init];
+        self.avPlayerViewController.player = self.playerView.player;
+        self.avPlayerViewController.modalPresentationStyle = UIModalPresentationFullScreen;
+        self.avPlayerViewController.delegate = self;
+
+        // Set dismissal callback
+        __weak typeof(self) weakSelf = self;
+        self.avPlayerViewController.onDismiss = ^{
+            [weakSelf _cleanupAfterDismiss];
+        };
+
+        // Allow Picture-in-Picture if available
+        if (@available(iOS 14.2, *)) {
+            self.avPlayerViewController.canStartPictureInPictureAutomaticallyFromInline = YES;
+        }
+
+        // Present the system video player
+        [self.parentViewController presentViewController:self.avPlayerViewController animated:animated completion:^{
+            weakSelf.fullscreen = YES;
+
             [((InstacastAppDelegate*)(App.delegate)) setNeedsStatusBarAppearanceUpdate];
+
+            if (completion) {
+                completion();
+            }
+        }];
+    }
+    else
+    {
+        // Guard against calling when not in fullscreen
+        if (!self.avPlayerViewController) {
+            self.fullscreen = NO;
+            if (completion) {
+                completion();
+            }
+            return;
+        }
+
+        __weak typeof(self) weakSelf = self;
+        self.avPlayerViewController.onDismiss = nil; // Prevent callback during programmatic dismiss
+        [self.avPlayerViewController dismissViewControllerAnimated:animated completion:^{
+            weakSelf.avPlayerViewController = nil;
+            weakSelf.fullscreen = NO;
+
+            [((InstacastAppDelegate*)(App.delegate)) setNeedsStatusBarAppearanceUpdate];
+
+            if (completion) {
+                completion();
+            }
         }];
     }
 }
 
-- (void) closeFullscreen:(id)sender
+- (void) _cleanupAfterDismiss
 {
-    [self _transitionToFullscreen:NO animated:YES completion:NULL];
+    // Guard against double cleanup
+    if (!self.fullscreen) {
+        return;
+    }
+
+    self.avPlayerViewController = nil;
+    self.fullscreen = NO;
+
+    [((InstacastAppDelegate*)(App.delegate)) setNeedsStatusBarAppearanceUpdate];
 }
 
 - (void) setFullscreen:(BOOL)fullscreen animated:(BOOL)animated completion:(void (^)(void))completion
@@ -203,9 +197,12 @@
     {
         if (!self.parentViewController.view.window) {
             DebugLog(@"no window!");
+            if (completion) {
+                completion();
+            }
             return;
         }
-        
+
         [self _transitionToFullscreen:fullscreen animated:animated completion:completion];
     }
     else {
@@ -215,19 +212,11 @@
     }
 }
 
-- (void) handleTap:(UITapGestureRecognizer*)recognizer
+- (void) fullscreenButtonTapped:(id)sender
 {
-    if (recognizer.state == UIGestureRecognizerStateRecognized)
+    if (!self.fullscreen)
     {
-        
-        if (self.letterboxView.superview == self.view)
-        {
-            [self _transitionToFullscreen:YES animated:YES completion:NULL];
-        }
-        else
-        {
-            self.fullscreenViewController.controlsVisible = !self.fullscreenViewController.controlsVisible;
-        }
+        [self _transitionToFullscreen:YES animated:YES completion:NULL];
     }
 }
 @end

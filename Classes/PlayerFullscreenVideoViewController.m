@@ -25,6 +25,8 @@
 @property (nonatomic, weak) IBOutlet UILabel* elapsedTimeLabel;
 @property (nonatomic, weak) IBOutlet UILabel* remainingTimeLabel;
 @property (nonatomic, weak) IBOutlet NSLayoutConstraint* bottomBarHeightLayoutConstraint;
+@property (nonatomic, weak) NSLayoutConstraint* topBarHeightLayoutConstraint;
+@property (nonatomic, weak) NSLayoutConstraint* scrubberTopLayoutConstraint;
 
 @property (nonatomic, strong) NSTimer* progressTimer;
 @property (nonatomic, strong) NSTimer* skipTimer;
@@ -260,25 +262,62 @@
 }
 
 
+- (void) viewSafeAreaInsetsDidChange
+{
+    [super viewSafeAreaInsetsDidChange];
+    [self _updateLayout];
+}
+
 - (void) _updateLayout
 {
     BOOL portrait = (self.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassCompact && self.traitCollection.verticalSizeClass == UIUserInterfaceSizeClassRegular);
-    
-    
+
     CGRect b = self.view.bounds;
-    
+    UIEdgeInsets safeArea = self.view.safeAreaInsets;
+
+    // Top bar: include safe area top inset
+    CGFloat topBarHeight = 50 + safeArea.top;
+    if (self.topBarHeightLayoutConstraint) {
+        self.topBarHeightLayoutConstraint.constant = topBarHeight;
+    } else {
+        // Fallback: find and cache the height constraint
+        for (NSLayoutConstraint* constraint in self.topBar.constraints) {
+            if (constraint.firstAttribute == NSLayoutAttributeHeight && constraint.secondItem == nil) {
+                self.topBarHeightLayoutConstraint = constraint;
+                constraint.constant = topBarHeight;
+                break;
+            }
+        }
+    }
+
+    // Scrubber top: offset by safe area top inset
+    CGFloat scrubberTop = 20 + safeArea.top;
+    if (self.scrubberTopLayoutConstraint) {
+        self.scrubberTopLayoutConstraint.constant = scrubberTop;
+    } else {
+        // Fallback: find and cache the scrubber's top constraint
+        for (NSLayoutConstraint* constraint in self.topBar.constraints) {
+            if (constraint.firstItem == self.scrubber && constraint.firstAttribute == NSLayoutAttributeTop &&
+                constraint.secondItem == self.topBar && constraint.secondAttribute == NSLayoutAttributeTop) {
+                self.scrubberTopLayoutConstraint = constraint;
+                constraint.constant = scrubberTop;
+                break;
+            }
+        }
+    }
+
     if (portrait) {
-        self.bottomBar.frame = CGRectMake(0, CGRectGetHeight(b)-80, CGRectGetWidth(b), 80);
-        self.bottomBarHeightLayoutConstraint.constant = 80;
+        CGFloat bottomBarHeight = 80 + safeArea.bottom;
+        self.bottomBarHeightLayoutConstraint.constant = bottomBarHeight;
         self.volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-        self.volumeView.frame = CGRectMake(15, 50, CGRectGetWidth(b)-30, 30);
+        self.volumeView.frame = CGRectMake(15 + safeArea.left, 50, CGRectGetWidth(b) - 30 - safeArea.left - safeArea.right, 30);
     }
     else
     {
-        self.bottomBar.frame = CGRectMake(0, CGRectGetHeight(b)-50, CGRectGetWidth(b), 50);
-        self.bottomBarHeightLayoutConstraint.constant = 50;
+        CGFloat bottomBarHeight = 50 + safeArea.bottom;
+        self.bottomBarHeightLayoutConstraint.constant = bottomBarHeight;
         self.volumeView.autoresizingMask = UIViewAutoresizingFlexibleRightMargin;
-        self.volumeView.frame = CGRectMake(15, 16, 125, 30);
+        self.volumeView.frame = CGRectMake(15 + safeArea.left, 16, 125, 30);
     }
 }
 

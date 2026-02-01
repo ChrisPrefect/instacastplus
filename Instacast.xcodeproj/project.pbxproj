@@ -267,6 +267,7 @@
 		1D60589F0D05DD5A006BFB54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D30AB110D05D00D00671497 /* Foundation.framework */; };
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
+		83D65DAB2F2F6A9000A3CC18 /* EpisodeLoadingManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */; };
 		9259B7F32D20FA990035AA91 /* SettingInputViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B7F22D20FA990035AA91 /* SettingInputViewController.m */; };
 		9259B80D2D33B9010035AA91 /* SettingInputChapterController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */; };
 		CD0082042CD65D91001E081B /* InstacastSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */; };
@@ -756,6 +757,8 @@
 		288765FC0DF74451002DB57D /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		32CA4F630368D1EE00C91783 /* Instacast_Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Instacast_Prefix.pch; sourceTree = "<group>"; };
+		83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = EpisodeLoadingManager.h; path = Classes/Model/EpisodeLoadingManager.h; sourceTree = "<group>"; };
+		83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = EpisodeLoadingManager.m; path = Classes/Model/EpisodeLoadingManager.m; sourceTree = "<group>"; };
 		9259B7F12D20FA990035AA91 /* SettingInputViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputViewController.h; sourceTree = "<group>"; };
 		9259B7F22D20FA990035AA91 /* SettingInputViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputViewController.m; sourceTree = "<group>"; };
 		9259B80B2D33B9010035AA91 /* SettingInputChapterController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputChapterController.h; sourceTree = "<group>"; };
@@ -1585,6 +1588,8 @@
 				92A646EF2CE59B71002268B7 /* InstacastMac */,
 				29B97323FDCFA39411CA2CEA /* Frameworks */,
 				19C28FACFE9D520D11CA2CBB /* Products */,
+				83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */,
+				83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */,
 			);
 			name = CustomTemplate;
 			sourceTree = "<group>";
@@ -2106,6 +2111,7 @@
 				1BD95494177C4F1B00323386 /* ICMetadataParser.m in Sources */,
 				CE3EA6932AA7A952001900EB /* FCModelCachedObject.m in Sources */,
 				9259B7F32D20FA990035AA91 /* SettingInputViewController.m in Sources */,
+				83D65DAB2F2F6A9000A3CC18 /* EpisodeLoadingManager.m in Sources */,
 				1BB0D53B1A0A0ADE00B619C8 /* SFHFKeychainUtils.m in Sources */,
 				1BD9549D177D798600323386 /* ICPagedFeedParser.m in Sources */,
 			);
