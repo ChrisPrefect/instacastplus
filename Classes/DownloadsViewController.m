@@ -101,7 +101,10 @@
     self.tableView.rowHeight = 70;
     
     self.navigationItem.title = @"Downloads".ls;
-    self.navigationItem.rightBarButtonItem = self.editButtonItem;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                                style:UIBarButtonItemStylePlain
+                                                                               target:self
+                                                                               action:@selector(toggleEditing:)];
 
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
 
@@ -418,6 +421,8 @@
 - (void) toggleEditing:(id)sender
 {
     [self setEditing:!self.editing animated:YES];
+    UIImage* editImage = self.editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"pencil"];
+    self.navigationItem.rightBarButtonItem.image = editImage;
     [self _updateToolbar];
 }
 

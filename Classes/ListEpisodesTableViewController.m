@@ -85,7 +85,10 @@
     
     self.title = self.list.name;
     
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Edit".ls style:UIBarButtonItemStylePlain target:self action:@selector(editButtonAction:)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                                style:UIBarButtonItemStylePlain
+                                                                               target:self
+                                                                               action:@selector(editButtonAction:)];
 
     ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
     refreshControl.pulldownText = @"Pull to refresh…".ls;

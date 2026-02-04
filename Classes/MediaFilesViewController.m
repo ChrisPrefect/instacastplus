@@ -68,7 +68,10 @@ static NSString* SettingCellIdentifier = @"SettingCell";
     
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Offline Storage".ls;
-    self.navigationItem.rightBarButtonItem = self.editButtonItem;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                                style:UIBarButtonItemStylePlain
+                                                                               target:self
+                                                                               action:@selector(toggleEditMode:)];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -105,6 +108,18 @@ static NSString* SettingCellIdentifier = @"SettingCell";
 {
     [super didReceiveMemoryWarning];
     // Dispose of any resources that can be recreated.
+}
+
+- (void) toggleEditMode:(id)sender
+{
+    [self setEditing:!self.editing animated:YES];
+}
+
+- (void) setEditing:(BOOL)editing animated:(BOOL)animated
+{
+    [super setEditing:editing animated:animated];
+    UIImage* editImage = editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"pencil"];
+    self.navigationItem.rightBarButtonItem.image = editImage;
 }
 
 #pragma mark - Table view data source

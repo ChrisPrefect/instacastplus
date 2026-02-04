@@ -236,7 +236,10 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         self.title = @"Bookmarks".ls;
     }
     
-    self.navigationItem.rightBarButtonItem = self.editButtonItem;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                                style:UIBarButtonItemStylePlain
+                                                                               target:self
+                                                                               action:@selector(editAction:)];
     
 	self.tableView.rowHeight = 57+10;
 	self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
@@ -602,7 +605,10 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 - (void) setEditing:(BOOL)editing animated:(BOOL)animated
 {
     [super setEditing:editing animated:animated];
-    
+
+    UIImage* editImage = editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"pencil"];
+    self.navigationItem.rightBarButtonItem.image = editImage;
+
     [self _updateToolbarAnimated:animated];
 }
 

@@ -743,7 +743,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 {
     switch (section) {
         case k3GSection:
-            return @"Cellular Data (EDGE, 3G, LTE)".ls;
+            return @"Cellular Data".ls;
         case kLanguage:
             return @"";
         case kPlaybackSection:
@@ -753,7 +753,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case kAutomaticTimer:
             return @"";
         case kIntelligentSleep:
-            return @"Reset intelligent sleep timer on:".ls;
+            return @"Smart Sleep Timer".ls;
         case kAppearanceThemeSection:
             return @"Dark mode:".ls;
         case kPlayerColor:
@@ -818,7 +818,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         }
         case kIntelligentSleep:
         {
-            return @"Intelligent Sleep Timer resets itself to the set timeout if he detects that you are not yet sleeping.".ls;
+            return @"The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep.".ls;
         }
         case kAppIconSuggestion:
         {

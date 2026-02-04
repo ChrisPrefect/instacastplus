@@ -115,7 +115,10 @@
     [super viewDidLoad];
     
     self.title = @"Podcasts".ls;
-    self.navigationItem.rightBarButtonItem = self.editButtonItem;
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                                style:UIBarButtonItemStylePlain
+                                                                               target:self
+                                                                               action:@selector(toggleEditMode:)];
     
     self.tableView.rowHeight = 57+10;
     self.tableView.separatorInset = UIEdgeInsetsZero;
@@ -775,7 +778,7 @@
     }
     [self.tableView reloadData];
     [self _updateToolbarLabels];
-    self.editButtonItem.enabled = ([searchText length] == 0);
+    self.navigationItem.rightBarButtonItem.enabled = ([searchText length] == 0);
 }
 
 - (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText
@@ -806,6 +809,18 @@
 
 #pragma mark -
 #pragma mark Actions
+
+- (void) toggleEditMode:(id)sender
+{
+    [self setEditing:!self.editing animated:YES];
+}
+
+- (void) setEditing:(BOOL)editing animated:(BOOL)animated
+{
+    [super setEditing:editing animated:animated];
+    UIImage* editImage = editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"pencil"];
+    self.navigationItem.rightBarButtonItem.image = editImage;
+}
 
 - (void) addAction:(id)sender
 {

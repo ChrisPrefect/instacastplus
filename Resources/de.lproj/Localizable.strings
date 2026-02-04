@@ -123,10 +123,10 @@
 "Intelligent Sleep Timer" = "Intelligenter Sleep-Timer";
 "Intelligent Sleep timer (on)" = "Intelligenter Sleep-Timer (ein)";
 "Intelligent Sleep timer (off)" = "Intelligenter Sleep-Timer (aus)";
-"Reset intelligent sleep timer on" = "Intelligenter Sleeptimer wird zurückgesetzt bei";
+"Smart Sleep Timer" = "Smart Sleep-Timer";
 "Sleep Timer Always Active" = "Sleep-Timer immer aktiv";
 "If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night." = "Wenn ein Podcast spielt, wird der Sleep-Timer automatisch aktiviert. Verhindert, dass ein Podcast ungewollt die ganze Nacht spielt.";
-"Intelligent Sleep Timer resets itself to the set timeout if he detects that you are not yet sleeping." = "Der intelligente Sleep-Timer setzt sich automatisch zurück, wenn er erkennt, dass sie noch nicht schlafen.";
+"The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep." = "Der Smart Sleep-Timer setzt seinen Countdown automatisch zurück, wenn er erkennt, dass du noch wach bist – so spielt dein Podcast weiter, bis du einschläfst.";
 
 /* SubscriptionManager.m */
 "Last Updated: %@" = "Letztes Update: %@";
@@ -366,7 +366,7 @@
 "Application Badge" = "App-Plakette";
 "Ask Before Sending" = "Vor dem Senden fragen";
 "Automatically" = "Automatisch";
-"Cellular Data (EDGE, 3G, LTE)" = "Mobile Daten (EDGE, 3G, LTE)";
+"Cellular Data" = "Mobile Daten";
 "Crash & Failure Diagnostics" = "Crash- & Fehlerdiagnose";
 "Disable Auto-Lock" = "Kein Auto-Lock";
 "Don't Send" = "Nicht senden";
@@ -650,7 +650,7 @@
 
 /* GeneralSettingsViewController.m */
 "Dark mode:" = "Dunkler Modus:";
-"Reset intelligent sleep timer on:" = "Intelligenter Sleeptimer wird zurückgesetzt bei:";
+"Smart Sleep Timer" = "Smart Sleep-Timer";
 
 /* NotificationSettingsViewController.m */
 "New episode available" = "Neue Folge verfügbar";

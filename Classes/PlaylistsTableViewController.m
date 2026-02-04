@@ -296,6 +296,10 @@
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
+    if ([list.uid hasPrefix:@"default."]) {
+        return NO;
+    }
     return YES;
 }
 

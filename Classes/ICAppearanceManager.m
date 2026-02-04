@@ -96,6 +96,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         [[UISwitch appearance] setOnTintColor:ICTintColor];
 
         UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
+        rootWindow.tintColor = ICTintColor;
 
         UIView* subview = [rootWindow.subviews lastObject];
         [subview removeFromSuperview];
