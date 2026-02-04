@@ -70,73 +70,70 @@
 	NSURLRequest* request = [NSURLRequest requestWithURL:self.url];
 	[self.webView loadRequest:request];
 	
-	UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
     CGRect b = self.view.bounds;
     
     self.titleView = [[ICListTitleView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b)-88, 44)];
 
     
-    // action item
-    self.actionItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Share"]
-                                                       style:UIBarButtonItemStylePlain target:self action:@selector(actionAction:)];
-    
+    // Share button in navigation bar (swapped from toolbar)
+    UIBarButtonItem* shareButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Share"]
+                                                                       style:UIBarButtonItemStylePlain target:self action:@selector(actionAction:)];
+    self.navigationItem.rightBarButtonItem = shareButtonItem;
+
+    // Open in external browser in toolbar (swapped from nav bar)
+    self.actionItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"globe"]
+                                                       style:UIBarButtonItemStylePlain target:self action:@selector(showMoreInfoInExternalBrowser:)];
+
     self.backItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Previous"]
                                                      style:UIBarButtonItemStylePlain target:self action:@selector(backAction:)];
 
     self.forwardItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Next"]
                                                         style:UIBarButtonItemStylePlain target:self action:@selector(forwardAction:)];
-    
+
     self.reloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Reload"]
                                                        style:UIBarButtonItemStylePlain target:self action:@selector(reloadAction:)];
     self.reloadItem.width = 44;
-    
+
     self.navigationItem.titleView = self.titleView;
-    
-    
+
+
     UIActivityIndicatorView* activityIndicator = [[UIActivityIndicatorView alloc] initWithFrame:CGRectMake(0,0,44,44)];
     activityIndicator.activityIndicatorViewStyle = [ICAppearanceManager sharedManager].appearance.activityIndicatorStyle;
     [activityIndicator startAnimating];
     self.activityItem = [[UIBarButtonItem alloc] initWithCustomView:activityIndicator];
     self.activityItem.width = 44;
-
-    // Toolbar items werden in _updateToolbar gesetzt wenn die View erscheint
-
-    UIBarButtonItem* notesButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"globe"] style:UIBarButtonItemStylePlain target:self action:@selector(showMoreInfoInExternalBrowser:)];
-    self.navigationItem.rightBarButtonItem = notesButtonItem;
 }
 
 - (void) showMoreInfoInExternalBrowser:(id)sender
 {
-    if ([[UIApplication sharedApplication] canOpenURL:self.url]) {
-        [[UIApplication sharedApplication] openURL:self.url options:@{} completionHandler:nil];
+    NSURL* currentURL = self.webView.URL ?: self.url;
+    if ([[UIApplication sharedApplication] canOpenURL:currentURL]) {
+        [[UIApplication sharedApplication] openURL:currentURL options:@{} completionHandler:nil];
     }
 }
 
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-}
 
-- (void) viewDidAppear:(BOOL)animated
-{
-    [super viewDidAppear:animated];
-    
     _toolbarWasHidden = self.navigationController.toolbarHidden;
     [self.navigationController setToolbarHidden:NO animated:YES];
+
+    // Bottom inset so content can scroll past the toolbar (avoids blocking cookie banners)
+    [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(0, 0, 44, 0) byAdjustingForStandardBars:YES];
+    [self _updateToolbar];
 }
 
 
 - (void) viewWillDisappear:(BOOL)animated
 {
     [self.navigationController setToolbarHidden:_toolbarWasHidden animated:YES];
-    
+
 	self.canceled = YES;
 	[super viewWillDisappear:animated];
 	[self.webView stopLoading];
-    
-    if (_loading != 0) {
+
+    while (_loading > 0) {
         [App releaseNetworkActivity];
         _loading--;
     }
@@ -147,21 +144,33 @@
 
 - (void) _updateToolbar
 {
-    BOOL loading = (_loading != 0);
+    BOOL loading = (_loading > 0);
 
-	self.backItem.enabled = [self.webView canGoBack];
-	self.forwardItem.enabled = [self.webView canGoForward];
-	self.reloadItem.enabled = !loading;
-	self.actionItem.enabled = (!self.failed);
+    NSMutableArray* items = [NSMutableArray array];
 
-    UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    if ([self.webView canGoBack]) {
+        [items addObject:self.backItem];
+        [items addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
+    }
+
+    if ([self.webView canGoForward]) {
+        [items addObject:self.forwardItem];
+        [items addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
+    }
+
     if (loading) {
         [(UIActivityIndicatorView*)(self.activityItem.customView) startAnimating];
-        [self setToolbarItems:[NSArray arrayWithObjects:self.backItem, flexSpace, self.forwardItem, flexSpace, self.activityItem, flexSpace, self.actionItem, nil]];
+        [items addObject:self.activityItem];
     } else {
         [(UIActivityIndicatorView*)(self.activityItem.customView) stopAnimating];
-        [self setToolbarItems:[NSArray arrayWithObjects:self.backItem, flexSpace, self.forwardItem, flexSpace, self.reloadItem, flexSpace, self.actionItem, nil]];
+        [items addObject:self.reloadItem];
     }
+
+    [items addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
+    self.actionItem.enabled = (!self.failed);
+    [items addObject:self.actionItem];
+
+    [self setToolbarItems:items];
 }
 
 - (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
@@ -172,30 +181,24 @@
     [self _updateToolbar];
 }
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    [App releaseNetworkActivity];
+    _loading--;
+    [self _updateToolbar];
+
     [webView evaluateJavaScript:@"document.title" completionHandler:^(id result, NSError * _Nullable error) {
         if (error == nil) {
-            NSString* title =  result;
+            NSString* title = result;
             self.navigationItem.title = title;
             self.titleView.textLabel.text = title;
-            [App releaseNetworkActivity];
-            _loading--;
-            [self _updateToolbar];
         }
-        
     }];
-    
+
     [webView evaluateJavaScript:@"document.location.href" completionHandler:^(id result, NSError * _Nullable error) {
         if (error == nil) {
-            NSString* href =  result;
+            NSString* href = result;
             self.titleView.detailTextLabel.text = href;
-            [App releaseNetworkActivity];
-            _loading--;
-            [self _updateToolbar];
         }
-        
     }];
-    
-    
 }
 
 
@@ -247,7 +250,8 @@
 
 - (void) actionAction:(id)sender
 {
-    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[self.url] applicationActivities:@[[[OpenInSafariActivity alloc] init]]];
+    NSURL* currentURL = self.webView.URL ?: self.url;
+    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[currentURL] applicationActivities:@[[[OpenInSafariActivity alloc] init]]];
     if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
         shareController.popoverPresentationController.barButtonItem = sender;
     }
