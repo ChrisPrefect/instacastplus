@@ -13,6 +13,7 @@
 #import "PlaybackControlsViewController.h"
 #import "PlayerController.h"
 #import "ICProgressSlider.h"
+#import "ICMetadata.h"
 #import "CDEpisode+ShowNotes.h"
 
 #import "VDModalInfo.h"
@@ -95,7 +96,17 @@
     self.tintColor = ICTintColor;
     [self createVolumeViews];
     self.timeSlider.accessibilityLabel = @"Time Value".ls;
-    
+
+    // Chapter title label between time labels
+    UILabel* chapterLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    chapterLabel.font = [UIFont systemFontOfSize:14];
+    chapterLabel.textAlignment = NSTextAlignmentCenter;
+    chapterLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    chapterLabel.backgroundColor = [UIColor clearColor];
+    chapterLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [self.view addSubview:chapterLabel];
+    self.chapterTitleLabel = chapterLabel;
+
     self.timeSlider.enabled = NO;
 	[self updateControlsUI];
     
@@ -127,6 +138,7 @@
     
     self.elapsedTimeLabel.textColor = ICTextColor;
     self.remainingTimeLabel.textColor = ICTextColor;
+    self.chapterTitleLabel.textColor = ICTextColor;
     
     
     CGFloat white;
@@ -204,14 +216,19 @@
 
 - (void) viewWillLayoutSubviews {
     [super viewWillLayoutSubviews];
-    
+
     UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
     if (@available(iOS 11.0, *)) {
         safeAreaInsets = self.view.safeAreaInsets;
     }
-    
+
     CGRect b = self.view.bounds;
     self.toolsView.frame = CGRectMake(0, CGRectGetHeight(b)-safeAreaInsets.bottom-50, CGRectGetWidth(b), 50);
+
+    // Position chapter title label between the two time labels
+    CGFloat labelX = CGRectGetMaxX(self.elapsedTimeLabel.frame) + 4;
+    CGFloat labelW = CGRectGetMinX(self.remainingTimeLabel.frame) - 4 - labelX;
+    self.chapterTitleLabel.frame = CGRectMake(labelX, CGRectGetMinY(self.elapsedTimeLabel.frame), labelW, CGRectGetHeight(self.elapsedTimeLabel.frame));
 }
 
 - (void) willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)toInterfaceOrientation duration:(NSTimeInterval)duration
@@ -276,8 +293,8 @@
 	
 	self.timeSlider.value = (double)cur / (double) dur;
 	self.timeSlider.progress = pman.playableDuration / pman.duration;
-    
-    //DebugLog(@"cur %d", cur);
+
+    [self updateChapterTitle];
 }
 
 - (void) updateTimeUIDuringSliding
@@ -390,6 +407,7 @@
     self.timeSlider.progress = 0;
     self.timeSlider.value = 0;
     self.timeSlider.chapterMarkers = nil;
+    self.chapterTitleLabel.text = nil;
     self.elapsedTimeLabel.text = @"0:00:00";
     self.remainingTimeLabel.text = @"-0:00:00";
 }
@@ -420,6 +438,21 @@
         }
     }
     self.timeSlider.chapterMarkers = markers;
+}
+
+- (void) updateChapterTitle
+{
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    NSArray* chapters = pman.chapters;
+    NSInteger idx = pman.currentChapter;
+
+    if (!chapters || chapters.count == 0 || idx < 0 || idx >= (NSInteger)chapters.count) {
+        self.chapterTitleLabel.text = nil;
+        return;
+    }
+
+    ICMetadataChapter* chapter = chapters[idx];
+    self.chapterTitleLabel.text = chapter.title;
 }
 
 #pragma mark -

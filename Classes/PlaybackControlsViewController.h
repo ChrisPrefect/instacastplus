@@ -18,6 +18,7 @@
 @property (nonatomic, weak) IBOutlet UIView* controllerButtonGroup;
 @property (nonatomic, weak) IBOutlet UILabel* elapsedTimeLabel;
 @property (nonatomic, weak) IBOutlet UILabel* remainingTimeLabel;
+@property (nonatomic, strong) UILabel* chapterTitleLabel;
 @property (nonatomic, weak) IBOutlet UIButton* playButton;
 @property (nonatomic, weak) IBOutlet UIButton* backButton;
 @property (nonatomic, weak) IBOutlet UIButton* forwardButton;
@@ -63,5 +64,6 @@
 - (void) updateTimeWhenLoading;
 - (void) updateControlsUI;
 - (void) updateChapterMarkers;
+- (void) updateChapterTitle;
 - (void) resetControlUI;
 @end

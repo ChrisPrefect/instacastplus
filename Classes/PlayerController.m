@@ -129,6 +129,11 @@ enum {
 
         [pman addTaskObserver:self forKeyPath:@"chapters" task:^(id obj, NSDictionary *change) {
             [weakSelf.controller updateChapterMarkers];
+            [weakSelf.controller updateChapterTitle];
+        }];
+
+        [pman addTaskObserver:self forKeyPath:@"currentChapter" task:^(id obj, NSDictionary *change) {
+            [weakSelf.controller updateChapterTitle];
         }];
 
         [pman addTaskObserver:self forKeyPath:@"time" task:^(id obj, NSDictionary *change) {
@@ -150,6 +155,7 @@ enum {
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode"];
         [pman removeTaskObserver:self forKeyPath:@"playableDuration"];
         [pman removeTaskObserver:self forKeyPath:@"chapters"];
+        [pman removeTaskObserver:self forKeyPath:@"currentChapter"];
         [pman removeTaskObserver:self forKeyPath:@"time"];
 
         [nc removeObserver:self];

@@ -12,6 +12,7 @@
 @interface ICProgressSliderChapterMarkersView : UIView
 @property (nonatomic, strong) NSArray<NSNumber*>* chapterMarkers;
 @property (nonatomic, strong) UIColor* markerColor;
+@property (nonatomic, assign) double currentValue;
 @end
 
 @implementation ICProgressSliderChapterMarkersView
@@ -22,8 +23,45 @@
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGRect bounds = self.bounds;
     CGFloat trackWidth = CGRectGetWidth(bounds) - 4;  // Same as slider track
+    CGFloat trackHeight = CGRectGetHeight(bounds);
 
-    // Better visibility: higher alpha and contrast for both light and dark mode
+    // Determine current chapter segment boundaries
+    double segmentStart = 0.0;
+    double segmentEnd = 1.0;
+
+    // Build sorted list including 0.0 and 1.0 boundaries
+    NSMutableArray* allPositions = [NSMutableArray arrayWithObject:@(0.0)];
+    for (NSNumber* marker in self.chapterMarkers) {
+        double pos = [marker doubleValue];
+        if (pos > 0.0 && pos < 1.0) {
+            [allPositions addObject:marker];
+        }
+    }
+    [allPositions addObject:@(1.0)];
+
+    // Find the segment containing the current value
+    for (NSUInteger i = 0; i < allPositions.count - 1; i++) {
+        double start = [allPositions[i] doubleValue];
+        double end = [allPositions[i + 1] doubleValue];
+        if (self.currentValue >= start && self.currentValue < end) {
+            segmentStart = start;
+            segmentEnd = end;
+            break;
+        }
+    }
+    // Handle edge case: value exactly at 1.0
+    if (self.currentValue >= 1.0) {
+        segmentStart = [[allPositions objectAtIndex:allPositions.count - 2] doubleValue];
+        segmentEnd = 1.0;
+    }
+
+    // Draw highlight for current chapter segment
+    CGFloat highlightX = 2 + floorf(trackWidth * segmentStart);
+    CGFloat highlightW = floorf(trackWidth * segmentEnd) - floorf(trackWidth * segmentStart);
+    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:0.5 alpha:0.55].CGColor);
+    CGContextFillRect(ctx, CGRectMake(highlightX, 0, highlightW, trackHeight));
+
+    // Draw chapter marker lines
     UIColor* color = self.markerColor ?: [UIColor colorWithWhite:0.5 alpha:0.6];
     CGContextSetStrokeColorWithColor(ctx, color.CGColor);
     CGContextSetLineWidth(ctx, 1.5);
@@ -34,7 +72,7 @@
 
         CGFloat x = 2 + floorf(trackWidth * position);
         CGContextMoveToPoint(ctx, x, 0);
-        CGContextAddLineToPoint(ctx, x, CGRectGetHeight(bounds));
+        CGContextAddLineToPoint(ctx, x, trackHeight);
     }
     CGContextStrokePath(ctx);
 }
@@ -183,6 +221,10 @@
 		_value = MIN(MAX(value,0),1);
 		self.knobButton.frame = [self _knobRect];
         self.trackView.frame = [self _trackRect];
+        if (self.chapterMarkersView.currentValue != _value) {
+            self.chapterMarkersView.currentValue = _value;
+            [self.chapterMarkersView setNeedsDisplay];
+        }
         [self setNeedsLayout];
 	}
 }
