@@ -19,8 +19,11 @@
 #import "VDModalInfo.h"
 #import "FeedOptionsViewController.h"
 #import "NotificationSettingsViewController.h"
-#import "MediaFilesViewController.h"
-#import "GeneralSettingsViewController.h"
+#import "AppearanceSettingsViewController.h"
+#import "PlaybackSettingsViewController.h"
+#import "SleepTimerSettingsViewController.h"
+#import "DataSettingsViewController.h"
+#import "ImportExportSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #include <sys/sysctl.h>
@@ -31,15 +34,12 @@
 #define kDonate15ProductID @"donate_to_developer_15"
 #define kDonate20ProductID @"donate_to_developer_20"
 
-@interface OptionsViewController () <MFMailComposeViewControllerDelegate, UIDocumentInteractionControllerDelegate, UIDocumentPickerDelegate>
-@property (nonatomic, strong) UIDocumentInteractionController* interactionController;
-@property (strong) VDModalInfo* mInfo;
+@interface OptionsViewController () <MFMailComposeViewControllerDelegate>
 @end
 
 
 enum {
     kOptionsSectionSettings,
-    kOptionsSectionIO,
     kEmailFeedback,
     kDonateToDeveloper,
     kNumberOfSections
@@ -117,9 +117,7 @@ enum {
 {
     switch (section) {
         case kOptionsSectionSettings:
-            return 4;
-        case kOptionsSectionIO:
-            return 2;
+            return 7;
         case kEmailFeedback:
             return 1;
         case kDonateToDeveloper:
@@ -138,44 +136,43 @@ enum {
         case kOptionsSectionSettings:
         {
             UITableViewCell* cell = [self detailCell];
-            
+            cell.detailTextLabel.text = nil;
+
             if (indexPath.row == 0) {
-                cell.textLabel.text = @"General".ls;
-                cell.detailTextLabel.text = nil;
+                cell.textLabel.text = @"Appearance".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"paintbrush"];
             }
             else if (indexPath.row == 1)
             {
-                cell.textLabel.text = @"Subscriptions".ls;
-                cell.detailTextLabel.text = nil;
+                cell.textLabel.text = @"Playback".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"play.circle"];
             }
             else if (indexPath.row == 2)
             {
-                cell.textLabel.text = @"Notifications".ls;
-                cell.detailTextLabel.text = nil;
+                cell.textLabel.text = @"Sleep Timer".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"moon.zzz"];
             }
             else if (indexPath.row == 3)
             {
-                cell.textLabel.text = @"Offline Storage".ls;
-                cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:[[CacheManager sharedCacheManager] numberOfDownloadedBytes] countStyle:NSByteCountFormatterCountStyleMemory];
+                cell.textLabel.text = @"Data".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"tray.full"];
             }
-            return cell;
-        }
-            
-        case kOptionsSectionIO:
-        {
-            UITableViewCell* cell = [self buttonCell];
-            cell.detailTextLabel.text = nil;
-
-            switch (indexPath.row) {
-                case 0:
-                    cell.textLabel.text = @"Export Data".ls;
-                    break;
-                case 1:
-                    cell.textLabel.text = @"Import Data".ls;
-                    break;
-                default:
-                    break;
+            else if (indexPath.row == 4)
+            {
+                cell.textLabel.text = @"Subscriptions".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
             }
+            else if (indexPath.row == 5)
+            {
+                cell.textLabel.text = @"Notifications".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"bell"];
+            }
+            else if (indexPath.row == 6)
+            {
+                cell.textLabel.text = @"Import / Export".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
+            }
+            cell.imageView.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
             return cell;
         }
         case kEmailFeedback:
@@ -314,38 +311,36 @@ enum {
         case kOptionsSectionSettings:
         {
             if (indexPath.row == 0) {
-                GeneralSettingsViewController* controller = [GeneralSettingsViewController viewController];
+                AppearanceSettingsViewController* controller = [AppearanceSettingsViewController viewController];
                 [self.navigationController pushViewController:controller animated:YES];
             }
             else if (indexPath.row == 1) {
-                FeedOptionsViewController* controller = [FeedOptionsViewController viewController];
+                PlaybackSettingsViewController* controller = [PlaybackSettingsViewController viewController];
                 [self.navigationController pushViewController:controller animated:YES];
             }
             else if (indexPath.row == 2) {
-                NotificationSettingsViewController* controller = [NotificationSettingsViewController viewController];
+                SleepTimerSettingsViewController* controller = [SleepTimerSettingsViewController viewController];
                 [self.navigationController pushViewController:controller animated:YES];
             }
             else if (indexPath.row == 3) {
-                MediaFilesViewController* controller = [MediaFilesViewController viewController];
+                DataSettingsViewController* controller = [DataSettingsViewController viewController];
                 [self.navigationController pushViewController:controller animated:YES];
             }
-            
+            else if (indexPath.row == 4) {
+                FeedOptionsViewController* controller = [FeedOptionsViewController viewController];
+                [self.navigationController pushViewController:controller animated:YES];
+            }
+            else if (indexPath.row == 5) {
+                NotificationSettingsViewController* controller = [NotificationSettingsViewController viewController];
+                [self.navigationController pushViewController:controller animated:YES];
+            }
+            else if (indexPath.row == 6) {
+                ImportExportSettingsViewController* controller = [ImportExportSettingsViewController viewController];
+                [self.navigationController pushViewController:controller animated:YES];
+            }
+
             break;
         }
-            
-            
-        case kOptionsSectionIO:
-            switch (indexPath.row) {
-                case 0:
-                    [self exportToDropboxAction:nil];
-                    break;
-                case 1:
-                    [self importDataFromFilesMailAction:nil];
-                    break;
-                default:
-                    break;
-            }
-            break;
         case kEmailFeedback:
             [self emailFeedbackCLicked];
             break;
@@ -413,84 +408,6 @@ enum {
 
 #pragma mark -
 
-- (void) sendEmailAction:(id)sender
-{
-    if (![MFMailComposeViewController canSendMail]) {
-        [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
-        return;
-    }
-    
-    NSString* deviceName = [UIDevice currentDevice].name;
-    
-    WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Export Data".ls
-                                                                   message:nil
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Subscriptions".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-
-                                                    NSData* data = [[SubscriptionManager sharedSubscriptionManager] opmlData];
-                                                    NSString* fileName = [NSString stringWithFormat:@"%@-%@.opml", @"Subscriptions".ls, deviceName];
-                                                    
-                                                    MFMailComposeViewController *picker = [[MFMailComposeViewController alloc] init];
-                                                    picker.mailComposeDelegate = self;
-                                                    [picker setSubject:[NSString stringWithFormat:@"Instacast Subscriptions from %@".ls, deviceName]];
-                                                    [picker addAttachmentData:data mimeType:@"text/x-opml" fileName:fileName];
-                                                    [self presentViewController:picker animated:YES completion:NULL];
-
-                                                    
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Bookmarks".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    
-                                                    NSData* data = XPFFDataWithBookmarks(DMANAGER.bookmarks);
-                                                    NSString* fileName = [NSString stringWithFormat:@"%@-%@.xpff", @"Bookmarks".ls, deviceName];
-                                                    
-                                                    MFMailComposeViewController *picker = [[MFMailComposeViewController alloc] init];
-                                                    picker.mailComposeDelegate = self;
-                                                    [picker setSubject:[NSString stringWithFormat:@"Instacast Bookmarks from %@".ls, deviceName]];
-                                                    [picker addAttachmentData:data mimeType:@"text/x-xpff" fileName:fileName];
-                                                    [self presentViewController:picker animated:YES completion:NULL];
-
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-   
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    else
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
-    self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
-}
-
 - (void)mailComposeController:(MFMailComposeViewController*)controller didFinishWithResult:(MFMailComposeResult)result error:(NSError*)error
 {
     [self dismissViewControllerAnimated:YES completion:^{
@@ -501,365 +418,6 @@ enum {
 	}
 }
 
-- (void) exportToDropboxAction:(id)sender
-{
-    WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Export Data".ls
-                                                                   message:nil
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Subscriptions".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    
-                                                    NSData* data = [[SubscriptionManager sharedSubscriptionManager] opmlData];
-                                                    
-                                                    NSString* fileName = [NSString stringWithFormat:@"%@-%@.opml", @"Subscriptions".ls, [UIDevice currentDevice].name];
-                                                    NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-                                                    NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
-                                                    
-                                                    [data writeToURL:url atomically:YES];
-                                                    
-                                                    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-                                                    self.interactionController.delegate = self;
-                                                    self.interactionController.name = fileName;
-                                                    self.interactionController.UTI = @"instacast.opml";
-                                                    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-                                                        self.interactionController = nil;
-                                                    }
-                                                    
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Bookmarks".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-
-                                                    NSData* data = XPFFDataWithBookmarks(DMANAGER.bookmarks);
-
-                                                    NSString* fileName = [NSString stringWithFormat:@"%@-%@.xpff", @"Bookmarks".ls, [UIDevice currentDevice].name];
-                                                    NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-                                                    NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
-
-                                                    [data writeToURL:url atomically:YES];
-
-                                                    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-                                                    self.interactionController.delegate = self;
-                                                    self.interactionController.name = fileName;
-                                                    self.interactionController.UTI = @"com.vemedio.xpff";
-                                                    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-                                                        self.interactionController = nil;
-                                                    }
-
-
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-
-    [alert addAction:[UIAlertAction actionWithTitle:@"Alles".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    [self exportEverything];
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    else
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
-    self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
-}
-
-- (void) importDataFromFilesMailAction:(id)sender
-{
-    WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Open an opml file from mail or the files app in InstacastPlus to import podcasts.".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                //mail import feature
-                                                    UIDocumentPickerViewController *picker =
-                                                        [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.xml"] inMode:UIDocumentPickerModeImport];
-                                                    picker.delegate = self;
-                                                    picker.allowsMultipleSelection = NO;
-                                                    picker.shouldShowFileExtensions = YES;
-                                                    picker.modalPresentationStyle = UIModalPresentationFormSheet;
-                                                    [self presentViewController:picker animated:YES completion:nil];
-
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    else
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
-    self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
-}
-
-- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    NSURL *url = urls.firstObject;
-    if (url && [[url.pathExtension lowercaseString] isEqualToString:@"opml"]) {
-        self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
-        [self.mInfo show];
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            BOOL needsSecurity = [url startAccessingSecurityScopedResource];
-            NSLog(@"Security access granted? %@", needsSecurity ? @"YES" : @"NO");
-
-            NSData *opmlData = [NSData dataWithContentsOfURL:url];
-
-            if (needsSecurity) {
-                [url stopAccessingSecurityScopedResource];
-            }
-
-            if (!opmlData || opmlData.length == 0) {
-                NSLog(@"Invalid OPML data or empty");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                });
-                return;
-            }
-
-            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                });
-            } progress:^(float progress) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    NSLog(@"Progress: %.0f%%", progress * 100);
-                    if (progress > 0.03) {
-                        [self.mInfo setProgress:progress];
-                    }
-                });
-            }];
-        });
-    }
-}
-
-
-- (NSString*) xmlEscape:(NSString*)string
-{
-    if (!string) return @"";
-    string = [string stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
-    string = [string stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
-    string = [string stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
-    string = [string stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
-    return string;
-}
-
-- (void) exportEverything
-{
-    NSMutableString* xml = [NSMutableString string];
-    NSDateFormatter* dateFormatter = [[NSDateFormatter alloc] init];
-    [dateFormatter setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZ"];
-
-    // XML Header
-    [xml appendString:@"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"];
-    [xml appendFormat:@"<instacast version=\"1\" date=\"%@\">\n", [dateFormatter stringFromDate:[NSDate date]]];
-
-    // Podcasts
-    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
-    fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
-    NSArray* feeds = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:nil];
-
-    [xml appendString:@"  <podcasts>\n"];
-    for (CDFeed* feed in feeds) {
-        [xml appendFormat:@"    <podcast url=\"%@\" rank=\"%d\">\n",
-            [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank];
-
-        // Custom properties
-        if ([feed hasCustomProperties]) {
-            [xml appendString:@"      <settings>\n"];
-            for (NSString* key in [feed propertyKeys]) {
-                NSString* stringVal = [feed stringForKey:key];
-                if (stringVal) {
-                    [xml appendFormat:@"        <%@>%@</%@>\n", key, [self xmlEscape:stringVal], key];
-                } else {
-                    NSInteger intVal = [feed integerForKey:key];
-                    if (intVal != 0) {
-                        [xml appendFormat:@"        <%@>%ld</%@>\n", key, (long)intVal, key];
-                    }
-                }
-            }
-            [xml appendString:@"      </settings>\n"];
-        }
-
-        // Episodes with state
-        BOOL hasEpisodes = NO;
-        for (CDEpisode* episode in feed.episodes) {
-            if (episode.consumed || episode.starred || episode.archived || episode.position > 0 || episode.downloaded) {
-                if (!hasEpisodes) {
-                    [xml appendString:@"      <episodes>\n"];
-                    hasEpisodes = YES;
-                }
-                CDMedium* medium = [episode preferedMedium];
-                [xml appendFormat:@"        <episode media=\"%@\" guid=\"%@\">\n",
-                    [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
-                    [self xmlEscape:episode.guid ?: @""]];
-                if (episode.consumed) [xml appendString:@"          <played>true</played>\n"];
-                if (episode.starred) [xml appendString:@"          <starred>true</starred>\n"];
-                if (episode.archived) [xml appendString:@"          <archived>true</archived>\n"];
-                if (episode.downloaded) [xml appendString:@"          <downloaded>true</downloaded>\n"];
-                if (episode.position > 0) [xml appendFormat:@"          <position>%d</position>\n", episode.position];
-                if (episode.duration > 0) [xml appendFormat:@"          <duration>%d</duration>\n", episode.duration];
-                [xml appendString:@"        </episode>\n"];
-            }
-        }
-        if (hasEpisodes) [xml appendString:@"      </episodes>\n"];
-        [xml appendString:@"    </podcast>\n"];
-    }
-    [xml appendString:@"  </podcasts>\n"];
-
-    // Bookmarks
-    NSArray* bookmarks = DMANAGER.bookmarks;
-    if (bookmarks.count > 0) {
-        [xml appendString:@"  <bookmarks>\n"];
-        for (CDBookmark* bookmark in bookmarks) {
-            [xml appendFormat:@"    <bookmark position=\"%.0f\" title=\"%@\" episodeGuid=\"%@\" feedUrl=\"%@\"/>\n",
-                bookmark.position,
-                [self xmlEscape:bookmark.title ?: @""],
-                [self xmlEscape:bookmark.episodeGuid ?: @""],
-                [self xmlEscape:[bookmark.feedURL absoluteString] ?: @""]];
-        }
-        [xml appendString:@"  </bookmarks>\n"];
-    }
-
-    // Up Next
-    AudioSession* session = [AudioSession sharedAudioSession];
-    NSArray* upNextPlaylist = session.playlist;
-    if (upNextPlaylist.count > 0) {
-        [xml appendString:@"  <upnext>\n"];
-        for (CDEpisode* episode in upNextPlaylist) {
-            CDMedium* medium = [episode preferedMedium];
-            [xml appendFormat:@"    <episode media=\"%@\" guid=\"%@\" feedUrl=\"%@\"/>\n",
-                [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
-                [self xmlEscape:episode.guid ?: @""],
-                [self xmlEscape:[episode.feed.sourceURL absoluteString] ?: @""]];
-        }
-        [xml appendString:@"  </upnext>\n"];
-    }
-
-    // Now Playing
-    CDEpisode* currentEpisode = session.episode;
-    if (currentEpisode) {
-        CDMedium* medium = [currentEpisode preferedMedium];
-        [xml appendFormat:@"  <nowplaying media=\"%@\" guid=\"%@\" feedUrl=\"%@\" position=\"%d\"/>\n",
-            [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
-            [self xmlEscape:currentEpisode.guid ?: @""],
-            [self xmlEscape:[currentEpisode.feed.sourceURL absoluteString] ?: @""],
-            currentEpisode.position];
-    }
-
-    // Playlists
-    NSArray* lists = DMANAGER.lists;
-    BOOL hasPlaylists = NO;
-    for (CDList* list in lists) {
-        if ([list isKindOfClass:[CDPlaylist class]]) {
-            if (!hasPlaylists) {
-                [xml appendString:@"  <playlists>\n"];
-                hasPlaylists = YES;
-            }
-            CDPlaylist* playlist = (CDPlaylist*)list;
-            [xml appendFormat:@"    <playlist name=\"%@\" rank=\"%d\">\n",
-                [self xmlEscape:playlist.name], playlist.rank];
-            for (CDEpisode* episode in playlist.sortedEpisodes) {
-                CDMedium* medium = [episode preferedMedium];
-                [xml appendFormat:@"      <episode media=\"%@\" guid=\"%@\" feedUrl=\"%@\"/>\n",
-                    [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
-                    [self xmlEscape:episode.guid ?: @""],
-                    [self xmlEscape:[episode.feed.sourceURL absoluteString] ?: @""]];
-            }
-            [xml appendString:@"    </playlist>\n"];
-        }
-    }
-    if (hasPlaylists) [xml appendString:@"  </playlists>\n"];
-
-    // Settings
-    NSUserDefaults* defaults = USER_DEFAULTS;
-    [xml appendString:@"  <settings>\n"];
-    if ([defaults objectForKey:DefaultPlaybackSpeed]) [xml appendFormat:@"    <playbackSpeed>%ld</playbackSpeed>\n", (long)[defaults integerForKey:DefaultPlaybackSpeed]];
-    if ([defaults objectForKey:PlayerSkipBackPeriod]) [xml appendFormat:@"    <skipBack>%ld</skipBack>\n", (long)[defaults integerForKey:PlayerSkipBackPeriod]];
-    if ([defaults objectForKey:PlayerSkipForwardPeriod]) [xml appendFormat:@"    <skipForward>%ld</skipForward>\n", (long)[defaults integerForKey:PlayerSkipForwardPeriod]];
-    if ([defaults objectForKey:PlayerAutoSkipStartPeriod]) [xml appendFormat:@"    <autoSkipStart>%ld</autoSkipStart>\n", (long)[defaults integerForKey:PlayerAutoSkipStartPeriod]];
-    if ([defaults objectForKey:PlayerAutoSkipEndPeriod]) [xml appendFormat:@"    <autoSkipEnd>%ld</autoSkipEnd>\n", (long)[defaults integerForKey:PlayerAutoSkipEndPeriod]];
-    if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
-    if ([defaults objectForKey:AutoCacheNewAudioEpisodes]) [xml appendFormat:@"    <autoCacheAudio>%@</autoCacheAudio>\n", [defaults boolForKey:AutoCacheNewAudioEpisodes] ? @"true" : @"false"];
-    if ([defaults objectForKey:AutoCacheNewVideoEpisodes]) [xml appendFormat:@"    <autoCacheVideo>%@</autoCacheVideo>\n", [defaults boolForKey:AutoCacheNewVideoEpisodes] ? @"true" : @"false"];
-    if ([defaults objectForKey:AutoDeleteAfterFinishedPlaying]) [xml appendFormat:@"    <autoDeletePlayed>%@</autoDeletePlayed>\n", [defaults boolForKey:AutoDeleteAfterFinishedPlaying] ? @"true" : @"false"];
-    if ([defaults objectForKey:DisableAutoLock]) [xml appendFormat:@"    <disableAutoLock>%@</disableAutoLock>\n", [defaults boolForKey:DisableAutoLock] ? @"true" : @"false"];
-    if ([defaults objectForKey:kDefaultNightMode]) [xml appendFormat:@"    <nightMode>%@</nightMode>\n", [defaults boolForKey:kDefaultNightMode] ? @"true" : @"false"];
-    if ([defaults objectForKey:ScreenTimerAlwaysActive]) [xml appendFormat:@"    <sleepTimerAlways>%@</sleepTimerAlways>\n", [defaults boolForKey:ScreenTimerAlwaysActive] ? @"true" : @"false"];
-    if ([defaults objectForKey:LastSelectedSleepTimer]) [xml appendFormat:@"    <lastSleepTimer>%ld</lastSleepTimer>\n", (long)[defaults integerForKey:LastSelectedSleepTimer]];
-    [xml appendString:@"  </settings>\n"];
-
-    [xml appendString:@"</instacast>\n"];
-
-    // Write file
-    NSData* data = [xml dataUsingEncoding:NSUTF8StringEncoding];
-    NSString* fileName = [NSString stringWithFormat:@"Instacast-Backup-%@.xml", [UIDevice currentDevice].name];
-    NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
-    NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
-
-    [data writeToURL:url atomically:YES];
-
-    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-    self.interactionController.delegate = self;
-    self.interactionController.name = fileName;
-    self.interactionController.UTI = @"public.xml";
-    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-        self.interactionController = nil;
-    }
-}
 
 - (void) donateToDeveloper:(id)sender
 {
@@ -938,13 +496,6 @@ enum {
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
 
-
-#pragma mark -
-
-- (void) documentInteractionControllerDidDismissOpenInMenu: (UIDocumentInteractionController *) controller
-{
-    self.interactionController = nil;
-}
 
 -(void)fetchAvailableProducts {
     NSSet *productIdentifiers = [NSSet setWithObjects:kDonate1ProductID,kDonate5ProductID,kDonate15ProductID,kDonate20ProductID,nil];

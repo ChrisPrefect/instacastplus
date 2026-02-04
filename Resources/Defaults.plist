@@ -9,7 +9,7 @@
 	<key>EnabledBackgroundPlayback</key>
 	<true/>
 	<key>EnableCachingOver3G</key>
-	<false/>
+	<true/>
 	<key>AutoCacheNewAudioEpisodes</key>
 	<true/>
 	<key>AutoCacheNewVideoEpisodes</key>
@@ -95,9 +95,9 @@
 	<key>EnableAutomaticSparkleChecks</key>
 	<true/>
 	<key>AutoDeleteAfterFinishedPlaying</key>
-	<false/>
+	<true/>
 	<key>AutoDeleteAfterMarkedAsPlayed</key>
-	<false/>
+	<true/>
 	<key>PlayerAutoSkipStartPeriod</key>
 	<integer>0</integer>
 	<key>PlayerAutoSkipEndPeriod</key>

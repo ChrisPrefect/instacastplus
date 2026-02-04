@@ -387,7 +387,18 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
 
 - (BOOL) hasCustomProperties
 {
-    return ([self.properties count] > 0);
+    static NSSet* internalKeys = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
+    });
+
+    for (CDFeedProperty* property in self.properties) {
+        if (![internalKeys containsObject:property.key]) {
+            return YES;
+        }
+    }
+    return NO;
 }
 
 - (NSArray*) propertyKeys

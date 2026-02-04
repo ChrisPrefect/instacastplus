@@ -11,15 +11,11 @@
 
 #import "VDModalInfo.h"
 #import "CDEpisode+ShowNotes.h"
-#import "ValuesTableViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 
 enum {
-    kLimitSettingSection = 0,
-    kAutoDownloadSettingsSection,
-    kAutoDeleteSettingsSection,
-    kDownloadedSection,
+    kDownloadedSection = 0,
     kDeleteAllButton,
     kNumberOfSections
 };
@@ -67,7 +63,7 @@ static NSString* SettingCellIdentifier = @"SettingCell";
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
     
     self.clearsSelectionOnViewWillAppear = YES;
-    self.navigationItem.title = @"Offline Storage".ls;
+    self.navigationItem.title = @"Downloaded Files".ls;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
                                                                                 style:UIBarButtonItemStylePlain
                                                                                target:self
@@ -133,12 +129,6 @@ static NSString* SettingCellIdentifier = @"SettingCell";
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
-        case kLimitSettingSection:
-            return 1;
-        case kAutoDownloadSettingsSection:
-            return 2;
-        case kAutoDeleteSettingsSection:
-            return 2;
         case kDownloadedSection:
             return MAX(1,[self.cachedEpisodes count]);
         case kDeleteAllButton:
@@ -160,73 +150,7 @@ static NSString* SettingCellIdentifier = @"SettingCell";
         cell.textLabel.text = @"Delete Content".ls;
         return cell;
     }
-    
-    else if (indexPath.section == kLimitSettingSection)
-    {
-        UITableViewCell *cell = [self detailCell];
-        
-        if (indexPath.row == 0) {
-            long long limit = [USER_DEFAULTS integerForKey:AutoCacheStorageLimit];
-            
-            cell.textLabel.text = @"Storage Limit".ls;
-            
-            if (limit == 0) {
-                cell.detailTextLabel.text = @"No Limit".ls;
-            }
-            else {
-                cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:limit*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory];
-            }
-            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        }
-        
-        
-        return cell;
-    }
-    
-    else if (indexPath.section == kAutoDownloadSettingsSection)
-    {
-        UITableViewCell* cell = [self switchCell];
-        UISwitch* control = (UISwitch*)cell.accessoryView;
-        
-        switch (indexPath.row) {
-            case 0:
-                cell.textLabel.text = @"Audio Content".ls;
-                control.on = [USER_DEFAULTS boolForKey:AutoCacheNewAudioEpisodes];
-                break;
-            case 1:
-                cell.textLabel.text = @"Video Content".ls;
-                control.on = [USER_DEFAULTS boolForKey:AutoCacheNewVideoEpisodes];
-                break;
-            default:
-                break;
-        }
-        
-        control.tag = indexPath.row;
-        [control addTarget:self action:@selector(toggleDownloadSettings:) forControlEvents:UIControlEventValueChanged];
-        
-        return cell;
-    }
-    
-    else if (indexPath.section == kAutoDeleteSettingsSection)
-    {
-        UITableViewCell* cell = [self switchCell];
-        UISwitch* control = (UISwitch*)cell.accessoryView;
-        
-        if (indexPath.row == 0) {
-            cell.textLabel.text = @"Finished Playing".ls;
-            control.on = [USER_DEFAULTS boolForKey:AutoDeleteAfterFinishedPlaying];
-        }
-        else if (indexPath.row == 1) {
-            cell.textLabel.text = @"Marked as Played".ls;
-            control.on = [USER_DEFAULTS boolForKey:AutoDeleteAfterMarkedAsPlayed];
-        }
-        
-        control.tag = indexPath.row;
-        [control addTarget:self action:@selector(toggleAutoDeleteSettings:) forControlEvents:UIControlEventValueChanged];
-        
-        return cell;
-    }
-    
+
     else if (indexPath.section == kDownloadedSection)
     {
         
@@ -345,14 +269,6 @@ static NSString* SettingCellIdentifier = @"SettingCell";
     if (section == kDownloadedSection) {
         return @"Downloaded Content".ls;
     }
-    
-    else if (section == kAutoDownloadSettingsSection) {
-        return @"Auto-Download Content".ls;
-    }
-    
-    else if (section == kAutoDeleteSettingsSection) {
-        return @"Auto-Delete Content".ls;
-    }
     return nil;
 }
 
@@ -378,27 +294,7 @@ static NSString* SettingCellIdentifier = @"SettingCell";
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kLimitSettingSection)
-    {
-        ValuesTableViewController* controller = [ValuesTableViewController tableViewController];
-        controller.key = AutoCacheStorageLimit;
-        controller.valueType = kValueTypeInteger;
-        controller.title = @"Storage Limit".ls;
-        controller.values = [NSArray arrayWithObjects:@(512),@(1024),@(2048),@(5120),@(10240),@(20480),@(0), nil];
-        controller.titles = [NSArray arrayWithObjects:
-                             [NSByteCountFormatter stringFromByteCount:512*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory],
-                             [NSByteCountFormatter stringFromByteCount:1024*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory],
-                             [NSByteCountFormatter stringFromByteCount:2048*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
-                             [NSByteCountFormatter stringFromByteCount:5120*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
-                             [NSByteCountFormatter stringFromByteCount:10240*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
-                             [NSByteCountFormatter stringFromByteCount:20480*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
-                             @"No Limit".ls, nil];
-        controller.footerText = @"Played episodes and old content will be automatically deleted when the storage limit is exceeded.".ls;
-        
-        [self.navigationController pushViewController:controller animated:YES];
-    }
-    
-    else if (indexPath.section == kDeleteAllButton)
+    if (indexPath.section == kDeleteAllButton)
     {
         [self clearCacheAction:indexPath];
         [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
@@ -522,31 +418,4 @@ static NSString* SettingCellIdentifier = @"SettingCell";
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
 
-- (void) toggleDownloadSettings:(UISwitch*)sender
-{
-    switch (sender.tag) {
-        case 0:
-            [USER_DEFAULTS setBool:sender.on forKey:AutoCacheNewAudioEpisodes];
-            break;
-        case 1:
-            [USER_DEFAULTS setBool:sender.on forKey:AutoCacheNewVideoEpisodes];
-            break;
-        default:
-            break;
-    }
-
-    [USER_DEFAULTS synchronize];
-}
-
-- (void) toggleAutoDeleteSettings:(UISwitch*)sender
-{
-    if (sender.tag == 0) {
-        [USER_DEFAULTS setBool:sender.on forKey:AutoDeleteAfterFinishedPlaying];
-    }
-    else if (sender.tag == 1) {
-        [USER_DEFAULTS setBool:sender.on forKey:AutoDeleteAfterMarkedAsPlayed];
-    }
-    
-    [USER_DEFAULTS synchronize];
-}
 @end

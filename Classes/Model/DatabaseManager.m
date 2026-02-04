@@ -1184,6 +1184,66 @@ static const NSInteger kInitialEpisodeLimit = 50;
     [self save];
 }
 
+- (void) sortFeedsByComparator:(NSComparator)comparator
+{
+    NSMutableArray* feedsCopy = [self.feeds mutableCopy];
+    [feedsCopy sortUsingComparator:comparator];
+    [self _updateFeedOrderNums:feedsCopy];
+    [self save];
+}
+
+static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
+
+- (void) saveManualFeedOrder
+{
+    NSMutableArray* urls = [NSMutableArray array];
+    for (CDFeed* feed in self.feeds) {
+        NSString* urlString = [feed.sourceURL absoluteString];
+        if (urlString) {
+            [urls addObject:urlString];
+        }
+    }
+    [USER_DEFAULTS setObject:urls forKey:kManualFeedOrderKey];
+    [USER_DEFAULTS synchronize];
+}
+
+- (BOOL) hasManualFeedOrder
+{
+    NSArray* savedOrder = [USER_DEFAULTS objectForKey:kManualFeedOrderKey];
+    return (savedOrder && savedOrder.count > 0);
+}
+
+- (void) restoreManualFeedOrder
+{
+    NSArray* savedURLs = [USER_DEFAULTS objectForKey:kManualFeedOrderKey];
+    if (!savedURLs || savedURLs.count == 0) {
+        return;
+    }
+
+    NSMutableArray* feedsCopy = [self.feeds mutableCopy];
+    NSMutableArray* orderedFeeds = [NSMutableArray array];
+
+    // Restore saved order
+    for (NSString* urlString in savedURLs) {
+        for (CDFeed* feed in feedsCopy) {
+            if ([[feed.sourceURL absoluteString] isEqualToString:urlString]) {
+                [orderedFeeds addObject:feed];
+                break;
+            }
+        }
+    }
+
+    // Append any feeds not in the saved order (newly added feeds)
+    for (CDFeed* feed in feedsCopy) {
+        if (![orderedFeeds containsObject:feed]) {
+            [orderedFeeds addObject:feed];
+        }
+    }
+
+    [self _updateFeedOrderNums:orderedFeeds];
+    [self save];
+}
+
 #pragma mark -
 #pragma mark Lists
 

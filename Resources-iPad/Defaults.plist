@@ -13,7 +13,7 @@
 	<key>EnabledBackgroundPlayback</key>
 	<true/>
 	<key>EnableCachingOver3G</key>
-	<false/>
+	<true/>
 	<key>AutoCacheNewAudioEpisodes</key>
 	<true/>
 	<key>AutoCacheNewVideoEpisodes</key>
@@ -41,11 +41,11 @@
 	<key>PlayerSkipForwardPeriod</key>
 	<integer>30</integer>
 	<key>AutoClearWhenFinishedPlaying</key>
-	<false/>
+	<true/>
 	<key>AutoClearWhenNewEpisodeDownloaded</key>
 	<true/>
 	<key>AutoClearWhenMarkAsPlayed</key>
-	<false/>
+	<true/>
 	<key>EnableNewEpisodesNotification</key>
 	<true/>
 	<key>EnableDownloadFinishedNotification</key>

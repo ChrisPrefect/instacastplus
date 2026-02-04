@@ -451,6 +451,8 @@
 /* SubscriptionsCollectionViewController.m */
 "Edit Subscription Settings" = "Edit Subscription Settings";
 "Sort by" = "Sort by";
+"Newest Episodes" = "Newest Episodes";
+"Manual" = "Manual";
 
 /* OptionsViewController.m */
 "Could not find show on iTunes." = "Could not find show on iTunes.";
@@ -702,3 +704,20 @@
 "Total Unplayed" = "Total Unplayed";
 "Total Downloaded" = "Total Downloaded";
 "Storage Used" = "Storage Used";
+
+/* Settings Menu */
+"Sleep Timer" = "Sleep Timer";
+"Data" = "Data";
+"Downloaded Files" = "Downloaded Files";
+
+/* ImportExportSettingsViewController */
+"Import / Export" = "Import / Export";
+"Export" = "Export";
+"Subscriptions (OPML)" = "Subscriptions (OPML)";
+"All InstacastPlus Data" = "All InstacastPlus Data";
+"The OPML file can be read by other podcast apps but only contains the subscriptions without any additional data." = "The OPML file can be read by other podcast apps but only contains the subscriptions without any additional data.";
+"For exchanging data between InstacastPlus apps. Contains all data including subscriptions, bookmarks, playback status and settings." = "For exchanging data between InstacastPlus apps. Contains all data including subscriptions, bookmarks, playback status and settings.";
+"Export all bookmarks as a file." = "Export all bookmarks as a file.";
+"Import subscriptions from an OPML file." = "Import subscriptions from an OPML file.";
+"Import all data from an InstacastPlus backup file." = "Import all data from an InstacastPlus backup file.";
+"You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data." = "You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data.";

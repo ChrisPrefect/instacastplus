@@ -270,7 +270,7 @@
 "Include Podcasts" = "Podcasts berücksichtigen";
 "Keyword" = "Schlüsselwort";
 "Last Downloaded" = "Zuletzt geladen";
-"Last Played" = "Zuletzt gespielt";
+"Last Played" = "zuletzt gespielt";
 "New List" = "Neue Liste";
 "Not Downloaded" = "Nicht Geladen";
 "Not Starred" = "Kein Favorit";
@@ -452,6 +452,8 @@
 /* SubscriptionsCollectionViewController.m */
 "Edit Subscription Settings" = "Abo-Einstellungen";
 "Sort by" = "Sortieren nach";
+"Newest Episodes" = "neueste Folgen";
+"Manual" = "manuell";
 
 /* OptionsViewController.m */
 "Could not find show on iTunes." = "Konnte die Sendung nicht auf iTunes finden.";
@@ -702,3 +704,20 @@
 "Total Unplayed" = "Ungespielt";
 "Total Downloaded" = "Heruntergeladen";
 "Storage Used" = "Speicherplatz";
+
+/* Settings Menu */
+"Sleep Timer" = "Sleeptimer";
+"Data" = "Daten";
+"Downloaded Files" = "Geladene Dateien";
+
+/* ImportExportSettingsViewController */
+"Import / Export" = "Import / Export";
+"Export" = "Exportieren";
+"Subscriptions (OPML)" = "Abonnements (OPML)";
+"All InstacastPlus Data" = "Alle InstacastPlus-Daten";
+"The OPML file can be read by other podcast apps but only contains the subscriptions without any additional data." = "Die OPML-Datei kann von anderen Podcast-Apps gelesen werden, enthält aber nur die Abonnements ohne weitere Daten.";
+"For exchanging data between InstacastPlus apps. Contains all data including subscriptions, bookmarks, playback status and settings." = "Zum Austausch zwischen InstacastPlus-Apps. Enthält alle Daten inklusive Abonnements, Lesezeichen, Wiedergabestatus und Einstellungen.";
+"Export all bookmarks as a file." = "Alle Lesezeichen als Datei exportieren.";
+"Import subscriptions from an OPML file." = "Abonnements aus einer OPML-Datei importieren.";
+"Import all data from an InstacastPlus backup file." = "Alle Daten aus einer InstacastPlus-Sicherungsdatei importieren.";
+"You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data." = "Du kannst auch .opml- oder .xml-Dateien aus Mail oder der Dateien-App in InstacastPlus öffnen, um Daten zu importieren.";

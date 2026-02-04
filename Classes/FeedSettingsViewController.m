@@ -771,7 +771,11 @@ enum {
     //NSLog(@"Stepper value changed to: %.1f for key: %@", newValue, key);
 
     if (self.feed) {
-        [[self source] setDouble:newValue forKey:key];
+        if (newValue == [USER_DEFAULTS doubleForKey:key]) {
+            [self.feed resetValueForKey:key];
+        } else {
+            [[self source] setDouble:newValue forKey:key];
+        }
     }
 
     [self.tableView reloadRowsAtIndexPaths:@[[NSIndexPath indexPathForRow:sender.tag inSection:kAutoSkipSection]] withRowAnimation:UITableViewRowAnimationNone];
@@ -813,9 +817,13 @@ enum {
     newValue = MIN(MAX(newValue, 0.0), 300.0);
     
     if (self.feed) {
-        [[self source] setDouble:newValue forKey:key];
+        if (newValue == [USER_DEFAULTS doubleForKey:key]) {
+            [self.feed resetValueForKey:key];
+        } else {
+            [[self source] setDouble:newValue forKey:key];
+        }
     }
-    
+
     cell.stepperView.value = newValue;
     
     [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];

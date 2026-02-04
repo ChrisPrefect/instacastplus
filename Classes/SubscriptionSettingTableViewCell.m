@@ -50,13 +50,12 @@
     
     CGRect b = self.contentView.bounds;
     
-    _switchControl.frame = CGRectMake(CGRectGetWidth(b)-50-8-20, 7, 50, 30);
-    
-    CGRect textLabelFrame = self.textLabel.frame;
-    textLabelFrame.size.width = CGRectGetWidth(b)-CGRectGetMinX(textLabelFrame)-50-10-25;
-    self.textLabel.frame = textLabelFrame;
-    
     _disclosureView.frame = CGRectMake(CGRectGetWidth(b)-8-10, 15, 8, 14);
+    _switchControl.frame = CGRectMake(CGRectGetMinX(_disclosureView.frame)-50-16, 7, 50, 30);
+
+    CGRect textLabelFrame = self.textLabel.frame;
+    textLabelFrame.size.width = CGRectGetMinX(_switchControl.frame)-CGRectGetMinX(textLabelFrame)-8;
+    self.textLabel.frame = textLabelFrame;
 
 }
 

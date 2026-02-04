@@ -10,6 +10,7 @@
 #import "UITableViewController+Settings.h"
 
 typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
+    kBadgeSection,
     kNotifications,
     kSubscriptions,
     kNumberOfSections,
@@ -76,6 +77,8 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
+        case kBadgeSection:
+            return 1;
         case kNotifications:
             return 3;
         case kSubscriptions:
@@ -88,7 +91,18 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kNotifications)
+    if (indexPath.section == kBadgeSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        control.tag = 100;
+
+        cell.textLabel.text = @"Application Badge".ls;
+        control.on = [USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen];
+        [control addTarget:self action:@selector(toggleBadgeSettings:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
+    else if (indexPath.section == kNotifications)
     {
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
@@ -143,7 +157,10 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (NSString*) tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if (section == kSubscriptions) {
+    if (section == kBadgeSection) {
+        return @"";
+    }
+    else if (section == kSubscriptions) {
         return @"New episode available".ls;
     }
     else if (section == kNotifications) {
@@ -187,7 +204,16 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 {
     NSInteger index = sender.tag;
     CDFeed* feed = [DMANAGER.feeds objectAtIndex:index];
-    [feed setBool:sender.on forKey:EnableNewEpisodeNotification];
+    if (sender.on == [USER_DEFAULTS boolForKey:EnableNewEpisodeNotification]) {
+        [feed resetValueForKey:EnableNewEpisodeNotification];
+    } else {
+        [feed setBool:sender.on forKey:EnableNewEpisodeNotification];
+    }
+}
+
+- (void) toggleBadgeSettings:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:ShowApplicationBadgeForUnseen];
 }
 
 

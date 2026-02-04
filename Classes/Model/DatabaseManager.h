@@ -72,6 +72,10 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 
 - (void) reorderFeedFromIndex:(NSInteger)fromIndex toIndex:(NSInteger)toIndex;
 - (void) sortFeedsByKey:(NSString*)key ascending:(BOOL)ascending selector:(SEL)selector;
+- (void) sortFeedsByComparator:(NSComparator)comparator;
+- (void) saveManualFeedOrder;
+- (void) restoreManualFeedOrder;
+- (BOOL) hasManualFeedOrder;
 // playlists
 @property (readonly, strong) NSArray* lists;
 - (void) addList:(CDList*)list;

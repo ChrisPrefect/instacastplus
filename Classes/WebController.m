@@ -51,15 +51,19 @@
 // Implement viewDidLoad to do additional setup after loading the view, typically from a nib.
 - (void)viewDidLoad {
     [super viewDidLoad];
-        
+
+    // Prevent web content from extending under the navigation bar
+    self.edgesForExtendedLayout = UIRectEdgeBottom;
+
     self.view.backgroundColor = ICBackgroundColor;
-    
+
 	self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
 	self.webView.navigationDelegate = self;
     [self.webView sizeToFit];
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
+    self.webView.underPageBackgroundColor = ICBackgroundColor;
 
     for(UIView* subview in self.webView.scrollView.subviews) {
         subview.backgroundColor = ICBackgroundColor;
@@ -76,7 +80,7 @@
 
     
     // Share button in navigation bar (swapped from toolbar)
-    UIBarButtonItem* shareButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Share"]
+    UIBarButtonItem* shareButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"square.and.arrow.up"]
                                                                        style:UIBarButtonItemStylePlain target:self action:@selector(actionAction:)];
     self.navigationItem.rightBarButtonItem = shareButtonItem;
 
@@ -95,7 +99,6 @@
     self.reloadItem.width = 44;
 
     self.navigationItem.titleView = self.titleView;
-
 
     UIActivityIndicatorView* activityIndicator = [[UIActivityIndicatorView alloc] initWithFrame:CGRectMake(0,0,44,44)];
     activityIndicator.activityIndicatorViewStyle = [ICAppearanceManager sharedManager].appearance.activityIndicatorStyle;
@@ -119,6 +122,25 @@
     _toolbarWasHidden = self.navigationController.toolbarHidden;
     [self.navigationController setToolbarHidden:NO animated:YES];
 
+    // Force navigation bar to use opaque app theme colors
+    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+    [navAppearance configureWithOpaqueBackground];
+    navAppearance.backgroundColor = ICBackgroundColor;
+    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : [ICAppearanceManager sharedManager].appearance.textColor };
+    navAppearance.shadowColor = nil;
+    self.navigationController.navigationBar.standardAppearance = navAppearance;
+    self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
+    self.navigationController.navigationBar.compactAppearance = navAppearance;
+
+    // Force toolbar to use opaque app theme colors
+    UIToolbarAppearance *toolbarAppearance = [[UIToolbarAppearance alloc] init];
+    [toolbarAppearance configureWithOpaqueBackground];
+    toolbarAppearance.backgroundColor = ICBackgroundColor;
+    toolbarAppearance.shadowColor = nil;
+    self.navigationController.toolbar.standardAppearance = toolbarAppearance;
+    self.navigationController.toolbar.scrollEdgeAppearance = toolbarAppearance;
+    self.navigationController.toolbar.compactAppearance = toolbarAppearance;
+
     // Bottom inset so content can scroll past the toolbar (avoids blocking cookie banners)
     [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(0, 0, 44, 0) byAdjustingForStandardBars:YES];
     [self _updateToolbar];
@@ -127,6 +149,14 @@
 
 - (void) viewWillDisappear:(BOOL)animated
 {
+    // Restore default navigation bar appearance for other view controllers
+    self.navigationController.navigationBar.standardAppearance = nil;
+    self.navigationController.navigationBar.scrollEdgeAppearance = nil;
+    self.navigationController.navigationBar.compactAppearance = nil;
+    self.navigationController.toolbar.standardAppearance = nil;
+    self.navigationController.toolbar.scrollEdgeAppearance = nil;
+    self.navigationController.toolbar.compactAppearance = nil;
+
     [self.navigationController setToolbarHidden:_toolbarWasHidden animated:YES];
 
 	self.canceled = YES;

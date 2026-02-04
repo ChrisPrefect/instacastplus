@@ -59,6 +59,8 @@ NSString* FeedSortKey = @"FeedSortKey";
 NSString* SortOrderNewerFirst = @"NewerFirst";
 NSString* SortOrderOlderFirst = @"OlderFirst";
 
+NSString* FeedListSortMode = @"FeedListSortMode";
+
 NSString* DefaultPlaybackSpeed = @"DefaultPlaybackSpeed";
 NSString* DefaultIntelligentSleepTimer = @"DefaultIntelligentSleepTimer";
 NSString* EnableManualRefreshFinishedNotification = @"EnableManualRefreshFinishedNotification";

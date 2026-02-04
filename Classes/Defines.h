@@ -59,6 +59,8 @@ extern NSString* FeedSortKey;
 extern NSString* SortOrderNewerFirst;
 extern NSString* SortOrderOlderFirst;
 
+extern NSString* FeedListSortMode;
+
 extern NSString* DefaultPlaybackSpeed;
 extern NSString* DefaultIntelligentSleepTimer;
 extern NSString* UncompletedSleepTimeInterval;

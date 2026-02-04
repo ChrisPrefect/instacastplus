@@ -223,7 +223,7 @@
 - (void)setupFetchController {
     NSFetchRequest *feedsRequest = [CDFeed fetchRequest];
     feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
-    feedsRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"title" ascending:YES]];
+    feedsRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"rank" ascending:YES]];
 
     self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:feedsRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
@@ -392,10 +392,10 @@
 {
     // Items nur einmal erstellen
     if (!self.addItem) {
-        self.addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
+        self.addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
     }
     if (!self.sortItem) {
-        self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Sort"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
+        self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
     }
 
     // Toolbar-Items nur setzen wenn noch nicht gesetzt
@@ -565,8 +565,6 @@
         [self reloadDataAndTable:YES];
         _flags.userAction = 0;
 
-		UIBarButtonItem* sortItem = self.navigationItem.rightBarButtonItem;
-        sortItem.enabled = ([[self.fetchController fetchedObjects] count] > 1);
         [self _updateToolbarLabels];
     }
 }
@@ -590,7 +588,9 @@
     NSUInteger dstIndex = [feeds indexOfObject:dstFeed];
     
     [DMANAGER reorderFeedFromIndex:srcIndex toIndex:dstIndex];
-    
+    [DMANAGER saveManualFeedOrder];
+    [USER_DEFAULTS setObject:@"manual" forKey:FeedListSortMode];
+
     _flags.userAction = 0;
 }
 
@@ -667,12 +667,9 @@
 #pragma mark - FetchedResultsController delegate
 
 - (void)controllerWillChangeContent:(NSFetchedResultsController *)controller {
-//    if (_flags.userAction == 0) {
-//        [self.tableView beginUpdates];
-//    }
-    if (self.isLoadingFromCloud || _flags.userAction == 0) return;
-        self.tableViewIsUpdating = YES;
-        [self.tableView beginUpdates];
+    if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+    self.tableViewIsUpdating = YES;
+    [self.tableView beginUpdates];
 }
 
 - (void)controller:(NSFetchedResultsController *)controller
@@ -837,29 +834,101 @@
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Sort by".ls
                                                                    message:nil
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    
+
+    NSString* currentMode = [USER_DEFAULTS stringForKey:FeedListSortMode];
+
     UIAlertAction* titleAction = [UIAlertAction actionWithTitle:@"Title".ls style:UIAlertActionStyleDefault
                                                           handler:^(UIAlertAction * action) {
                                                               STRONG_SELF
-                                                              [self perform:^(id sender) {
-                                                                  [DMANAGER sortFeedsByKey:@"title" ascending:YES selector:@selector(naturalCaseInsensitiveCompare:)];
-                                                              } afterDelay:0.3];
+                                                              [self dismissViewControllerAnimated:NO completion:nil];
+                                                              self->_flags.userAction = 1;
+                                                              [USER_DEFAULTS setObject:@"title" forKey:FeedListSortMode];
+                                                              [DMANAGER sortFeedsByKey:@"title" ascending:YES selector:@selector(naturalCaseInsensitiveCompare:)];
+                                                              [self.fetchController performFetch:nil];
+                                                              [self.tableView reloadData];
+                                                              self->_flags.userAction = 0;
                                                               self.alertController = nil;
                                                           }];
+    if ([currentMode isEqualToString:@"title"]) [titleAction setValue:@YES forKey:@"checked"];
     [alert addAction:titleAction];
-    
-    
+
+
     UIAlertAction* unplayedAction = [UIAlertAction actionWithTitle:@"Unplayed".ls style:UIAlertActionStyleDefault
                                                         handler:^(UIAlertAction * action) {
                                                             STRONG_SELF
-                                                            [self perform:^(id sender) {
-                                                                [DMANAGER sortFeedsByKey:@"unplayedCount" ascending:NO selector:nil];
-                                                            } afterDelay:0.3];
+                                                            [self dismissViewControllerAnimated:NO completion:nil];
+                                                            self->_flags.userAction = 1;
+                                                            [USER_DEFAULTS setObject:@"unplayed" forKey:FeedListSortMode];
+                                                            [DMANAGER sortFeedsByKey:@"unplayedCount" ascending:NO selector:nil];
+                                                            [self.fetchController performFetch:nil];
+                                                            [self.tableView reloadData];
+                                                            self->_flags.userAction = 0;
                                                             self.alertController = nil;
                                                         }];
+    if ([currentMode isEqualToString:@"unplayed"]) [unplayedAction setValue:@YES forKey:@"checked"];
     [alert addAction:unplayedAction];
-    
+
+    UIAlertAction* lastPlayedAction = [UIAlertAction actionWithTitle:@"Last Played".ls style:UIAlertActionStyleDefault
+                                                             handler:^(UIAlertAction * action) {
+                                                                 STRONG_SELF
+                                                                 [self dismissViewControllerAnimated:NO completion:nil];
+                                                                 self->_flags.userAction = 1;
+                                                                 [USER_DEFAULTS setObject:@"lastPlayed" forKey:FeedListSortMode];
+                                                                 [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
+                                                                     NSDate* dateA = a.lastPlayed;
+                                                                     NSDate* dateB = b.lastPlayed;
+                                                                     if (!dateA && !dateB) return NSOrderedSame;
+                                                                     if (!dateA) return NSOrderedDescending;
+                                                                     if (!dateB) return NSOrderedAscending;
+                                                                     return [dateB compare:dateA];
+                                                                 }];
+                                                                 [self.fetchController performFetch:nil];
+                                                                 [self.tableView reloadData];
+                                                                 self->_flags.userAction = 0;
+                                                                 self.alertController = nil;
+                                                             }];
+    if ([currentMode isEqualToString:@"lastPlayed"]) [lastPlayedAction setValue:@YES forKey:@"checked"];
+    [alert addAction:lastPlayedAction];
+
+    UIAlertAction* newestEpisodesAction = [UIAlertAction actionWithTitle:@"Newest Episodes".ls style:UIAlertActionStyleDefault
+                                                                 handler:^(UIAlertAction * action) {
+                                                                     STRONG_SELF
+                                                                     [self dismissViewControllerAnimated:NO completion:nil];
+                                                                     self->_flags.userAction = 1;
+                                                                     [USER_DEFAULTS setObject:@"newestEpisodes" forKey:FeedListSortMode];
+                                                                     [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
+                                                                         NSDate* dateA = a.lastPubDate;
+                                                                         NSDate* dateB = b.lastPubDate;
+                                                                         if (!dateA && !dateB) return NSOrderedSame;
+                                                                         if (!dateA) return NSOrderedDescending;
+                                                                         if (!dateB) return NSOrderedAscending;
+                                                                         return [dateB compare:dateA];
+                                                                     }];
+                                                                     [self.fetchController performFetch:nil];
+                                                                     [self.tableView reloadData];
+                                                                     self->_flags.userAction = 0;
+                                                                     self.alertController = nil;
+                                                                 }];
+    if ([currentMode isEqualToString:@"newestEpisodes"]) [newestEpisodesAction setValue:@YES forKey:@"checked"];
+    [alert addAction:newestEpisodesAction];
+
+    if ([DMANAGER hasManualFeedOrder]) {
+        UIAlertAction* manualAction = [UIAlertAction actionWithTitle:@"Manual".ls style:UIAlertActionStyleDefault
+                                                             handler:^(UIAlertAction * action) {
+                                                                 STRONG_SELF
+                                                                 [self dismissViewControllerAnimated:NO completion:nil];
+                                                                 self->_flags.userAction = 1;
+                                                                 [USER_DEFAULTS setObject:@"manual" forKey:FeedListSortMode];
+                                                                 [DMANAGER restoreManualFeedOrder];
+                                                                 [self.fetchController performFetch:nil];
+                                                                 [self.tableView reloadData];
+                                                                 self->_flags.userAction = 0;
+                                                                 self.alertController = nil;
+                                                             }];
+        if ([currentMode isEqualToString:@"manual"]) [manualAction setValue:@YES forKey:@"checked"];
+        [alert addAction:manualAction];
+    }
+
     UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel
                                                           handler:^(UIAlertAction * action) {
                                                               STRONG_SELF
@@ -868,10 +937,8 @@
     [alert addAction:defaultAction];
     [alert setModalPresentationStyle:UIModalPresentationPopover];
     UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
+    popPresenter.barButtonItem = item;
+    popPresenter.permittedArrowDirections = UIPopoverArrowDirectionAny;
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -881,7 +948,7 @@
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
     self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
+    [self presentViewController:alert animated:YES completion:NULL];
 }
 
 

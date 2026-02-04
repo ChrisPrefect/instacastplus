@@ -1,0 +1,361 @@
+//
+//  DataSettingsViewController.m
+//  Instacast
+//
+
+#import "DataSettingsViewController.h"
+#import "UITableViewController+Settings.h"
+#import "MediaFilesViewController.h"
+#import "ValuesTableViewController.h"
+#import "InstacastAppDelegate.h"
+
+typedef NS_ENUM(NSInteger, DataSettingsSections) {
+    k3GSection = 0,
+    kLimitSettingSection,
+    kAutoDownloadSettingsSection,
+    kAutoDeleteSettingsSection,
+    kDownloadedFilesButton,
+    kNumberOfSections,
+};
+
+typedef NS_ENUM(NSInteger, CellularDataUsage) {
+    kDontUseCellularData = 0,
+    kDontDownloadOverCellular,
+    kUseCellularData,
+};
+
+@implementation DataSettingsViewController
+
++ (DataSettingsViewController*) viewController
+{
+    return [[self alloc] initWithStyle:UITableViewStyleGrouped];
+}
+
+- (id)initWithStyle:(UITableViewStyle)style
+{
+    self = [super initWithStyle:style];
+    if (self) {
+    }
+    return self;
+}
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
+
+    self.clearsSelectionOnViewWillAppear = YES;
+    self.navigationItem.title = @"Data".ls;
+}
+
+- (void)viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+
+    [self updateAppearance];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+- (void) updateAppearance {
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+
+    [self.tableView reloadData];
+}
+
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+#pragma mark - Table view data source
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
+{
+    return kNumberOfSections;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    switch (section) {
+        case k3GSection:
+            return 3;
+        case kLimitSettingSection:
+            return 1;
+        case kAutoDownloadSettingsSection:
+            return 2;
+        case kAutoDeleteSettingsSection:
+            return 2;
+        case kDownloadedFilesButton:
+            return 1;
+        default:
+            break;
+    }
+    return 0;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (indexPath.section == k3GSection)
+    {
+        UITableViewCell* cell = [self standardCell];
+        cell.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
+        CellularDataUsage usage = kDontUseCellularData;
+        if ([USER_DEFAULTS boolForKey:EnableStreamingOver3G] && ![USER_DEFAULTS boolForKey:EnableCachingOver3G]) {
+            usage = kDontDownloadOverCellular;
+        }
+        else if ([USER_DEFAULTS boolForKey:EnableStreamingOver3G] && [USER_DEFAULTS boolForKey:EnableCachingOver3G]) {
+            usage = kUseCellularData;
+        }
+
+        switch (indexPath.row) {
+            case 0:
+                cell.textLabel.text = @"Don't use Cellular Data".ls;
+                cell.textLabel.textColor = (usage == kDontUseCellularData) ? [[ICAppearanceManager sharedManager] appearance].tintColor : ICTextColor;
+                cell.accessoryType = (usage == kDontUseCellularData) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+                break;
+            case 1:
+                cell.textLabel.text = @"Don't download media".ls;
+                cell.textLabel.textColor = (usage == kDontDownloadOverCellular) ? [[ICAppearanceManager sharedManager] appearance].tintColor : ICTextColor;
+                cell.accessoryType = (usage == kDontDownloadOverCellular) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+                break;
+            case 2:
+                cell.textLabel.text = @"Always use Cellular Data".ls;
+                cell.textLabel.textColor = (usage == kUseCellularData) ? [[ICAppearanceManager sharedManager] appearance].tintColor : ICTextColor;
+                cell.accessoryType = (usage == kUseCellularData) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+                break;
+            default:
+                break;
+        }
+
+        cell.detailTextLabel.text = nil;
+        return cell;
+    }
+    else if (indexPath.section == kLimitSettingSection)
+    {
+        UITableViewCell *cell = [self detailCell];
+        long long limit = [USER_DEFAULTS integerForKey:AutoCacheStorageLimit];
+
+        cell.textLabel.text = @"Storage Limit".ls;
+
+        if (limit == 0) {
+            cell.detailTextLabel.text = @"No Limit".ls;
+        }
+        else {
+            cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:limit*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory];
+        }
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+
+        return cell;
+    }
+    else if (indexPath.section == kAutoDownloadSettingsSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+
+        switch (indexPath.row) {
+            case 0:
+                cell.textLabel.text = @"Audio Content".ls;
+                control.on = [USER_DEFAULTS boolForKey:AutoCacheNewAudioEpisodes];
+                break;
+            case 1:
+                cell.textLabel.text = @"Video Content".ls;
+                control.on = [USER_DEFAULTS boolForKey:AutoCacheNewVideoEpisodes];
+                break;
+            default:
+                break;
+        }
+
+        control.tag = indexPath.row;
+        [control addTarget:self action:@selector(toggleDownloadSettings:) forControlEvents:UIControlEventValueChanged];
+
+        return cell;
+    }
+    else if (indexPath.section == kAutoDeleteSettingsSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Finished Playing".ls;
+            control.on = [USER_DEFAULTS boolForKey:AutoDeleteAfterFinishedPlaying];
+        }
+        else if (indexPath.row == 1) {
+            cell.textLabel.text = @"Marked as Played".ls;
+            control.on = [USER_DEFAULTS boolForKey:AutoDeleteAfterMarkedAsPlayed];
+        }
+
+        control.tag = indexPath.row;
+        [control addTarget:self action:@selector(toggleAutoDeleteSettings:) forControlEvents:UIControlEventValueChanged];
+
+        return cell;
+    }
+    else if (indexPath.section == kDownloadedFilesButton)
+    {
+        UITableViewCell* cell = [self detailCell];
+        cell.textLabel.text = @"Downloaded Files".ls;
+        cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:[[CacheManager sharedCacheManager] numberOfDownloadedBytes] countStyle:NSByteCountFormatterCountStyleMemory];
+        return cell;
+    }
+
+    return nil;
+}
+
+- (NSString*) tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
+{
+    switch (section) {
+        case k3GSection:
+            return @"Cellular Data".ls;
+        case kLimitSettingSection:
+            return @"";
+        case kAutoDownloadSettingsSection:
+            return @"Auto-Download Content".ls;
+        case kAutoDeleteSettingsSection:
+            return @"Auto-Delete Content".ls;
+        case kDownloadedFilesButton:
+            return @"";
+        default:
+            break;
+    }
+    return nil;
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section
+{
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    [header.textLabel setTextColor:[UIColor grayColor]];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayFooterView:(UIView *)view forSection:(NSInteger)section
+{
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    [header.textLabel setTextColor:[UIColor grayColor]];
+}
+
+- (NSString*) tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
+{
+    switch (section)
+    {
+        case k3GSection:
+        {
+            return @"You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up.".ls;
+        }
+        default:
+            break;
+    }
+    return nil;
+}
+
+#pragma mark - Table view delegate
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (indexPath.section == k3GSection)
+    {
+        switch (indexPath.row) {
+            case 0:
+            {
+                [USER_DEFAULTS setBool:NO forKey:EnableStreamingOver3G];
+                [USER_DEFAULTS setBool:NO forKey:EnableCachingImagesOver3G];
+                [USER_DEFAULTS setBool:NO forKey:EnableRefreshingOver3G];
+                [USER_DEFAULTS setBool:NO forKey:EnableSyncingOver3G];
+                [USER_DEFAULTS setBool:NO forKey:EnableCachingOver3G];
+                break;
+            }
+            case 1:
+                [USER_DEFAULTS setBool:YES forKey:EnableStreamingOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableCachingImagesOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableRefreshingOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableSyncingOver3G];
+                [USER_DEFAULTS setBool:NO forKey:EnableCachingOver3G];
+                break;
+            case 2:
+                [USER_DEFAULTS setBool:YES forKey:EnableStreamingOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableCachingImagesOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableRefreshingOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableSyncingOver3G];
+                [USER_DEFAULTS setBool:YES forKey:EnableCachingOver3G];
+                break;
+            default:
+                break;
+        }
+
+        // update table
+        for(NSIndexPath* ip in [tableView indexPathsForVisibleRows]) {
+            if (ip.section == indexPath.section) {
+                [tableView cellForRowAtIndexPath:ip].accessoryType = UITableViewCellAccessoryNone;
+                [tableView cellForRowAtIndexPath:ip].textLabel.textColor = ICTextColor;
+            }
+        }
+        [tableView cellForRowAtIndexPath:indexPath].accessoryType = UITableViewCellAccessoryCheckmark;
+        [tableView cellForRowAtIndexPath:indexPath].textLabel.textColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
+    }
+    else if (indexPath.section == kLimitSettingSection)
+    {
+        ValuesTableViewController* controller = [ValuesTableViewController tableViewController];
+        controller.key = AutoCacheStorageLimit;
+        controller.valueType = kValueTypeInteger;
+        controller.title = @"Storage Limit".ls;
+        controller.values = [NSArray arrayWithObjects:@(512),@(1024),@(2048),@(5120),@(10240),@(20480),@(0), nil];
+        controller.titles = [NSArray arrayWithObjects:
+                             [NSByteCountFormatter stringFromByteCount:512*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory],
+                             [NSByteCountFormatter stringFromByteCount:1024*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory],
+                             [NSByteCountFormatter stringFromByteCount:2048*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
+                             [NSByteCountFormatter stringFromByteCount:5120*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
+                             [NSByteCountFormatter stringFromByteCount:10240*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
+                             [NSByteCountFormatter stringFromByteCount:20480*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
+                             @"No Limit".ls, nil];
+        controller.footerText = @"Played episodes and old content will be automatically deleted when the storage limit is exceeded.".ls;
+
+        [self.navigationController pushViewController:controller animated:YES];
+    }
+    else if (indexPath.section == kDownloadedFilesButton)
+    {
+        MediaFilesViewController* controller = [MediaFilesViewController viewController];
+        [self.navigationController pushViewController:controller animated:YES];
+    }
+}
+
+#pragma mark - Toggle actions
+
+- (void) toggleDownloadSettings:(UISwitch*)sender
+{
+    switch (sender.tag) {
+        case 0:
+            [USER_DEFAULTS setBool:sender.on forKey:AutoCacheNewAudioEpisodes];
+            break;
+        case 1:
+            [USER_DEFAULTS setBool:sender.on forKey:AutoCacheNewVideoEpisodes];
+            break;
+        default:
+            break;
+    }
+
+    [USER_DEFAULTS synchronize];
+}
+
+- (void) toggleAutoDeleteSettings:(UISwitch*)sender
+{
+    if (sender.tag == 0) {
+        [USER_DEFAULTS setBool:sender.on forKey:AutoDeleteAfterFinishedPlaying];
+    }
+    else if (sender.tag == 1) {
+        [USER_DEFAULTS setBool:sender.on forKey:AutoDeleteAfterMarkedAsPlayed];
+    }
+
+    [USER_DEFAULTS synchronize];
+}
+
+@end
