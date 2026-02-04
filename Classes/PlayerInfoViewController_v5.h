@@ -14,6 +14,7 @@
 {
     NSArray* chapterImagesArray;
     NSTimer *currentImageTimer;
+    UIImageView* chevronIndicatorView;
 }
 
 + (instancetype) viewController;

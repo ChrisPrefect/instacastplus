@@ -134,7 +134,7 @@
 {
     [super viewWillAppear:animated];
     
-    self.view.backgroundColor = ICTransparentBackdropColor;
+    self.view.backgroundColor = ICBackgroundColor;
     
     self.elapsedTimeLabel.textColor = ICTextColor;
     self.remainingTimeLabel.textColor = ICTextColor;

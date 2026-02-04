@@ -182,7 +182,31 @@ enum {
     self.chapterImagesCollection.showsHorizontalScrollIndicator = NO;
     self.chapterImagesCollection.showsVerticalScrollIndicator = NO;
     [self.chapterImagesCollection setPagingEnabled:YES];
-    
+
+    // Chevron indicator below chapter image
+    CGFloat chevronWidth = 22.0f;
+    CGFloat chevronHeight = 8.0f;
+    CGFloat strokeWidth = 2.0f;
+    CGFloat padding = ceilf(strokeWidth / 2.0f);
+    CGSize imageSize = CGSizeMake(chevronWidth + padding * 2, chevronHeight + padding * 2);
+    UIGraphicsBeginImageContextWithOptions(imageSize, NO, 0);
+    UIBezierPath* chevronPath = [UIBezierPath bezierPath];
+    [chevronPath moveToPoint:CGPointMake(padding, padding)];
+    [chevronPath addLineToPoint:CGPointMake(padding + chevronWidth / 2.0f, padding + chevronHeight)];
+    [chevronPath addLineToPoint:CGPointMake(padding + chevronWidth, padding)];
+    chevronPath.lineWidth = strokeWidth;
+    chevronPath.lineCapStyle = kCGLineCapRound;
+    chevronPath.lineJoinStyle = kCGLineJoinRound;
+    [[UIColor whiteColor] setStroke];
+    [chevronPath stroke];
+    UIImage* chevronImage = [UIGraphicsGetImageFromCurrentImageContext() imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    UIGraphicsEndImageContext();
+
+    chevronIndicatorView = [[UIImageView alloc] initWithImage:chevronImage];
+    chevronIndicatorView.tintColor = ICMutedTextColor;
+    chevronIndicatorView.contentMode = UIViewContentModeCenter;
+    [self.chapterView addSubview:chevronIndicatorView];
+
     [self reloadData];
     
     [self _setObserving:YES];
@@ -325,17 +349,23 @@ enum {
 
         self.chapterImagesCollection.collectionViewLayout = layout;
         self.imageView.frame = newFrameTemp;
-        self.chapterView.frame = newFrameTemp;
         self.chapterImagesCollection.frame = newFrameTemp;
+
+        CGFloat chevronAreaHeight = 25.0f;
+        CGRect chapterViewFrame = newFrameTemp;
+        chapterViewFrame.size.height += chevronAreaHeight;
+        self.chapterView.frame = chapterViewFrame;
+
+        chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
+        chevronIndicatorView.tintColor = ICMutedTextColor;
 
         [self.chapterView addSubview:self.chapterImagesCollection];
         self.chapterImagesCollection.delegate = self;
         self.chapterImagesCollection.dataSource = self;
         [self.chapterImagesCollection reloadData];
         [self updateCollectionsImage:0];
-        
-        //self.chapterImagesCollection.backgroundColor = [UIColor yellowColor];
-        self.tableView.tableHeaderView = self.chapterView;//self.imageView;//
+
+        self.tableView.tableHeaderView = self.chapterView;
     }
 }
 
@@ -371,8 +401,15 @@ enum {
 
     self.chapterImagesCollection.collectionViewLayout = layout;
     self.imageView.frame = newFrameTemp;
-    self.chapterView.frame = newFrameTemp;
     self.chapterImagesCollection.frame = newFrameTemp;
+
+    CGFloat chevronAreaHeight = 25.0f;
+    CGRect chapterViewFrame = newFrameTemp;
+    chapterViewFrame.size.height += chevronAreaHeight;
+    self.chapterView.frame = chapterViewFrame;
+
+    chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
+
     [self.chapterImagesCollection reloadData];
 }
 
