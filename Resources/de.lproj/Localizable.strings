@@ -617,6 +617,86 @@
 "Files" = "Dateien-App";
 "Loading data from iCloud" = "Laden von Daten aus iCloud";
 
+/* Fehlende .ls Keys - Fortschrittsanzeigen mit Auslassungszeichen */
+"Loading…" = "Laden…";
+"Clearing…" = "Löschen…";
+"Deleting…" = "Löschen…";
+"Importing…" = "Importieren…";
+"Reloading…" = "Neuladen…";
+"Paused…" = "Angehalten…";
+"Waiting to download…" = "Auf Download warten…";
+"Pull to refresh…" = "Ziehen zum Aktualisieren…";
+"Looking for new episodes…" = "Nach neuen Folgen suchen…";
+"Load older episodes…" = "Ältere Folgen laden…";
+
+/* ICDurationValueTransformer.m */
+"%d sec" = "%d Sek.";
+"~ min" = "~ Min.";
+
+/* Spendenbeträge */
+"$1" = "$1";
+"$5" = "$5";
+"$15" = "$15";
+"$20" = "$20";
+
+/* PlayerTimerButton.m */
+"3 Minutes" = "3 Minuten";
+
+/* OptionsViewController.m */
+"Alles" = "Alles";
+
+/* BookmarksTableViewController.m / PlaybackControlsViewController.m / PlayerInfoViewController_v5.m */
+"Bookmark title" = "Lesezeichen-Titel";
+
+/* GeneralSettingsViewController.m */
+"Dark mode:" = "Dunkler Modus:";
+"Reset intelligent sleep timer on:" = "Intelligenter Sleeptimer wird zurückgesetzt bei:";
+
+/* NotificationSettingsViewController.m */
+"New episode available" = "Neue Folge verfügbar";
+
+/* EpisodeListEditorViewController.m */
+"New Episode List" = "Neue Folgenliste";
+"Enable 'Group by Podcast' to order episodes according to podcast priority. Change the podcast priority by reordering podcasts in the podcast list manually." = "Aktivieren Sie 'Nach Podcast gruppieren' um Folgen auch nach Ihrer Podcastpriorität zu sortieren. Ändern Sie die Podcastpriorität indem Sie Einträge in der Podcastliste manuell umsortieren.";
+
+/* STActivationController.m (macOS) */
+"Enter License" = "Lizenz eingeben";
+"Your Activated License" = "Ihre aktivierte Lizenz";
+"The server sent back an unexpected response. Please contact Vemedio Support." = "Der Server hat eine unerwartete Antwort gesendet. Bitte kontaktieren Sie den Vemedio-Support.";
+
+/* DirectoryFeedViewController.m */
+"This podcast offers alternative media. Please select to check it out or cancel to continue." = "Dieser Podcast bietet alternative Medien an. Bitte auswählen um es anzusehen oder abbrechen um fortzufahren.";
+
+/* ChangeLogViewController.m */
+"Got it!" = "Verstanden!";
+"InstacastPlus Changelog" = "InstacastPlus Änderungsprotokoll";
+"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!" = "Wir haben InstacastPlus noch intelligenter und leistungsfähiger gemacht. Entdecken Sie die Neuerungen!";
+"Smarter Listening" = "Intelligenteres Hören";
+"Seamless Experience Across Devices" = "Nahtloses Erlebnis auf allen Geräten";
+"Total Control Over Your Podcasts" = "Volle Kontrolle über Ihre Podcasts";
+"Quality-of-Life Upgrades" = "Verbesserungen im Alltag";
+"Personalization & Extras" = "Personalisierung & Extras";
+"Smarter Navigation & Storage" = "Intelligentere Navigation & Speicher";
+"Community & Support" = "Community & Support";
+"Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume." = "Intelligenter Sleep-Timer – Verhindert, dass ein Podcast weiterspielt, wenn Sie bereits eingeschlafen sind. Der neue Sleep-Timer kann dauerhaft aktiviert werden und setzt sich zurück, sobald Sie mit der App interagieren, sich im Bett bewegen oder die Lautstärke ändern.";
+"Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end." = "Kapitel automatisch überspringen – Keine Lust auf Intros, Werbung oder bestimmte Segmente? Jetzt können Sie diese automatisch überspringen, indem Sie Schlüsselwörter für zu vermeidende Kapitel festlegen! Intros und Outros können ebenfalls automatisch übersprungen werden.";
+"Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position." = "Wischbare Kapitelbilder – Schauen Sie sich alle Kapitelbilder beim Hören an. Blättern Sie vor oder zurück, ohne Ihre Hörposition zu verlieren.";
+"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!" = "iCloud-Sync – Halten Sie Ihre Podcasts, den Wiedergabestatus und Scroll-Positionen auf allen Apple-Geräten synchron!";
+"Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support." = "CarPlay-Integration – Nehmen Sie Ihre Podcasts mit CarPlay-Unterstützung mit auf die Straße.";
+"Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!" = "iPad- & macOS-Unterstützung – Genießen Sie ein optimiertes Erlebnis auf iPad und Mac mit einem neuen, eigenen Layout!";
+"Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!" = "Folgen filtern – Sortieren Sie Ihre Folgen sofort nach Alle, Ungehört, Angefangen, Favoriten oder Heruntergeladen. Kein endloses Scrollen mehr!";
+"Restore Deleted Episodes – Accidentally deleted an episode? No worries—bring it back with one tap in the settings!" = "Gelöschte Folgen wiederherstellen – Versehentlich eine Folge gelöscht? Kein Problem – stellen Sie sie mit einem Tipp in den Einstellungen wieder her!";
+"Custom Interface Colors – Make the app yours! Choose your own interface color or let each podcast have its own unique tint." = "Eigene Interface-Farben – Machen Sie die App zu Ihrer! Wählen Sie Ihre eigene Interface-Farbe oder lassen Sie jeden Podcast seinen eigenen Farbton haben.";
+"Remember Scroll Position – No more losing your place when browsing for older episodes!" = "Scroll-Position merken – Verlieren Sie nie wieder Ihre Stelle beim Durchsuchen älterer Folgen!";
+"Bigger Tap Areas – Buttons are now easier to hit, especially on the player screen." = "Größere Tippflächen – Buttons sind jetzt leichter zu treffen, besonders auf dem Player-Bildschirm.";
+"More Playback Speeds – Find your perfect listening speed with new options: 1.1x, 1.2x, 1.3x." = "Mehr Wiedergabegeschwindigkeiten – Finden Sie Ihre perfekte Hörgeschwindigkeit mit neuen Optionen: 1.1x, 1.2x, 1.3x.";
+"Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version." = "Verschiedene App-Symbole – Wählen Sie aus verschiedenen Symbolen, einschließlich einer Dark-Mode-Version! Sie können uns auch Ihre eigenen Symbole senden, damit wir sie in die nächste Version integrieren.";
+"Sort Downloads by Size – Quickly manage storage by seeing which episodes take up the most space in the offline space screen." = "Downloads nach Größe sortieren – Verwalten Sie Ihren Speicher schnell, indem Sie sehen, welche Folgen am meisten Platz belegen.";
+"Auto-Delete Old Downloads – Set rules to remove unplayed episodes after a day, a week, or a month." = "Alte Downloads automatisch löschen – Legen Sie Regeln fest, um ungespielte Folgen nach einem Tag, einer Woche oder einem Monat zu entfernen.";
+"External Browser Option – Prefer Safari or Chrome? Now you can set all shownote links to open externally." = "Externer Browser – Bevorzugen Sie Safari oder Chrome? Jetzt können Sie alle Shownote-Links extern öffnen lassen.";
+"Feature Request & Bug Report Link – Share your ideas and issues directly through the app." = "Feature-Wünsche & Fehlermeldungen – Teilen Sie Ihre Ideen und Probleme direkt über die App.";
+"Donation Support – Love InstacastPlus? Now you can support development with in-app donations." = "Spenden – Sie mögen InstacastPlus? Unterstützen Sie die Entwicklung mit In-App-Spenden.";
+
 /* MainSidebarController Statistics */
 "Total Episodes" = "Folgen gesamt";
 "Total Unplayed" = "Ungespielt";

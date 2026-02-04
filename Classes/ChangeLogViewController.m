@@ -21,7 +21,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     // Add Close Button
-    UIBarButtonItem *closeButton = [[UIBarButtonItem alloc] initWithTitle:@"Got it!" style:UIBarButtonItemStylePlain target:self action:@selector(closeTapped)];
+    UIBarButtonItem *closeButton = [[UIBarButtonItem alloc] initWithTitle:@"Got it!".ls style:UIBarButtonItemStylePlain target:self action:@selector(closeTapped)];
     closeButton.tintColor = ICTintColor;
     self.navigationItem.rightBarButtonItem = closeButton;
     if (@available(iOS 13.0, *)) {
@@ -31,47 +31,47 @@
     self.view.backgroundColor = [UIColor whiteColor];
     // Define the sections and their items
     self.changelogSections = @[
-        @"🚀 Smarter Listening",
-        @"📱 Seamless Experience Across Devices",
-        @"🎛️ Total Control Over Your Podcasts",
-        @"🛠️ Quality-of-Life Upgrades",
-        @"🎨 Personalization & Extras",
-        @"🔗 Smarter Navigation & Storage",
-        @"💡 Community & Support"
+        [NSString stringWithFormat:@"🚀 %@", @"Smarter Listening".ls],
+        [NSString stringWithFormat:@"📱 %@", @"Seamless Experience Across Devices".ls],
+        [NSString stringWithFormat:@"🎛️ %@", @"Total Control Over Your Podcasts".ls],
+        [NSString stringWithFormat:@"🛠️ %@", @"Quality-of-Life Upgrades".ls],
+        [NSString stringWithFormat:@"🎨 %@", @"Personalization & Extras".ls],
+        [NSString stringWithFormat:@"🔗 %@", @"Smarter Navigation & Storage".ls],
+        [NSString stringWithFormat:@"💡 %@", @"Community & Support".ls]
     ];
     
     self.changelogItems = @[
         @[
-            @"Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume.",
-            @"Auto-Skip Chapters – Tired of intros, ads, or segments you don’t care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end.",
-            @"Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position."
+            @"Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume.".ls,
+            @"Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end.".ls,
+            @"Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position.".ls
         ],
         @[
-            @"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!",
-            @"Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support.",
-            @"Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!"
+            @"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!".ls,
+            @"Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support.".ls,
+            @"Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!".ls
         ],
         @[
-            @"Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!",
-            @"Restore Deleted Episodes – Accidentally deleted an episode? No worries—bring it back with one tap in the settings!",
-            @"Custom Interface Colors – Make the app yours! Choose your own interface color or let each podcast have its own unique tint."
+            @"Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!".ls,
+            @"Restore Deleted Episodes – Accidentally deleted an episode? No worries—bring it back with one tap in the settings!".ls,
+            @"Custom Interface Colors – Make the app yours! Choose your own interface color or let each podcast have its own unique tint.".ls
         ],
         @[
-            @"Remember Scroll Position – No more losing your place when browsing for older episodes!",
-            @"Bigger Tap Areas – Buttons are now easier to hit, especially on the player screen."
+            @"Remember Scroll Position – No more losing your place when browsing for older episodes!".ls,
+            @"Bigger Tap Areas – Buttons are now easier to hit, especially on the player screen.".ls
         ],
         @[
-            @"More Playback Speeds – Find your perfect listening speed with new options: 1.1x, 1.2x, 1.3x.",
-            @"Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version."
+            @"More Playback Speeds – Find your perfect listening speed with new options: 1.1x, 1.2x, 1.3x.".ls,
+            @"Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version.".ls
         ],
         @[
-            @"Sort Downloads by Size – Quickly manage storage by seeing which episodes take up the most space in the offline space screen.",
-            @"Auto-Delete Old Downloads – Set rules to remove unplayed episodes after a day, a week, or a month.",
-            @"External Browser Option – Prefer Safari or Chrome? Now you can set all shownote links to open externally."
+            @"Sort Downloads by Size – Quickly manage storage by seeing which episodes take up the most space in the offline space screen.".ls,
+            @"Auto-Delete Old Downloads – Set rules to remove unplayed episodes after a day, a week, or a month.".ls,
+            @"External Browser Option – Prefer Safari or Chrome? Now you can set all shownote links to open externally.".ls
         ],
         @[
-            @"Feature Request & Bug Report Link – Share your ideas and issues directly through the app.",
-            @"Donation Support – Love InstacastPlus? Now you can support development with in-app donations."
+            @"Feature Request & Bug Report Link – Share your ideas and issues directly through the app.".ls,
+            @"Donation Support – Love InstacastPlus? Now you can support development with in-app donations.".ls
         ]
     ];
     
@@ -88,13 +88,13 @@
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 165)];
     
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, self.view.frame.size.width - 32, 80)];
-    titleLabel.text = @"InstacastPlus Changelog – Fresh Features for Your Listening Pleasure! 🎉🎧";
+    titleLabel.text = @"InstacastPlus Changelog".ls;
     titleLabel.font = [UIFont boldSystemFontOfSize:18];
     titleLabel.numberOfLines = 0;
     titleLabel.textAlignment = NSTextAlignmentCenter;
     
     UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, self.view.frame.size.width - 32, 75)];
-    subtitleLabel.text = @"We’ve been busy making InstacastPlus even smarter, and more powerful. Check out what’s new and get ready to experience podcasts like never before!";
+    subtitleLabel.text = @"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!".ls;
     subtitleLabel.font = [UIFont systemFontOfSize:14];
     subtitleLabel.numberOfLines = 0;
     subtitleLabel.textAlignment = NSTextAlignmentCenter;

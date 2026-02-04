@@ -292,7 +292,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     //[self viewDidLoadContenLoad];
-    self.title = @"Show Notes";
+    self.title = @"Show Notes".ls;
     CGRect viewBounds = self.view.bounds;
     
     if (!self.episode) {
@@ -445,7 +445,7 @@
 
 - (void)viewDidLoadContenLoad
 {
-    self.title = @"Show Notes";
+    self.title = @"Show Notes".ls;
     CGRect viewBounds = self.view.bounds;
     
     if (!self.episode) {

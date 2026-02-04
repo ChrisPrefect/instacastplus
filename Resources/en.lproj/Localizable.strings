@@ -617,6 +617,86 @@
 "Files" = "Files";
 "Loading data from iCloud" = "Loading data from iCloud";
 
+/* Missing .ls keys - progress indicators with ellipsis */
+"Loading…" = "Loading…";
+"Clearing…" = "Clearing…";
+"Deleting…" = "Deleting…";
+"Importing…" = "Importing…";
+"Reloading…" = "Reloading…";
+"Paused…" = "Paused…";
+"Waiting to download…" = "Waiting to download…";
+"Pull to refresh…" = "Pull to refresh…";
+"Looking for new episodes…" = "Looking for new episodes…";
+"Load older episodes…" = "Load older episodes…";
+
+/* ICDurationValueTransformer.m */
+"%d sec" = "%d sec";
+"~ min" = "~ min";
+
+/* Donation amounts */
+"$1" = "$1";
+"$5" = "$5";
+"$15" = "$15";
+"$20" = "$20";
+
+/* PlayerTimerButton.m */
+"3 Minutes" = "3 Minutes";
+
+/* OptionsViewController.m */
+"Alles" = "Everything";
+
+/* BookmarksTableViewController.m / PlaybackControlsViewController.m / PlayerInfoViewController_v5.m */
+"Bookmark title" = "Bookmark title";
+
+/* GeneralSettingsViewController.m */
+"Dark mode:" = "Dark mode:";
+"Reset intelligent sleep timer on:" = "Reset intelligent sleep timer on:";
+
+/* NotificationSettingsViewController.m */
+"New episode available" = "New episode available";
+
+/* EpisodeListEditorViewController.m */
+"New Episode List" = "New Episode List";
+"Enable 'Group by Podcast' to order episodes according to podcast priority. Change the podcast priority by reordering podcasts in the podcast list manually." = "Enable 'Group by Podcast' to order episodes according to podcast priority. Change the podcast priority by reordering podcasts in the podcast list manually.";
+
+/* STActivationController.m (macOS) */
+"Enter License" = "Enter License";
+"Your Activated License" = "Your Activated License";
+"The server sent back an unexpected response. Please contact Vemedio Support." = "The server sent back an unexpected response. Please contact Vemedio Support.";
+
+/* DirectoryFeedViewController.m */
+"This podcast offers alternative media. Please select to check it out or cancel to continue." = "This podcast offers alternative media. Please select to check it out or cancel to continue.";
+
+/* ChangeLogViewController.m */
+"Got it!" = "Got it!";
+"InstacastPlus Changelog" = "InstacastPlus Changelog";
+"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!" = "We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!";
+"Smarter Listening" = "Smarter Listening";
+"Seamless Experience Across Devices" = "Seamless Experience Across Devices";
+"Total Control Over Your Podcasts" = "Total Control Over Your Podcasts";
+"Quality-of-Life Upgrades" = "Quality-of-Life Upgrades";
+"Personalization & Extras" = "Personalization & Extras";
+"Smarter Navigation & Storage" = "Smarter Navigation & Storage";
+"Community & Support" = "Community & Support";
+"Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume." = "Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume.";
+"Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end." = "Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end.";
+"Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position." = "Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position.";
+"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!" = "iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!";
+"Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support." = "Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support.";
+"Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!" = "Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!";
+"Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!" = "Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!";
+"Restore Deleted Episodes – Accidentally deleted an episode? No worries—bring it back with one tap in the settings!" = "Restore Deleted Episodes – Accidentally deleted an episode? No worries—bring it back with one tap in the settings!";
+"Custom Interface Colors – Make the app yours! Choose your own interface color or let each podcast have its own unique tint." = "Custom Interface Colors – Make the app yours! Choose your own interface color or let each podcast have its own unique tint.";
+"Remember Scroll Position – No more losing your place when browsing for older episodes!" = "Remember Scroll Position – No more losing your place when browsing for older episodes!";
+"Bigger Tap Areas – Buttons are now easier to hit, especially on the player screen." = "Bigger Tap Areas – Buttons are now easier to hit, especially on the player screen.";
+"More Playback Speeds – Find your perfect listening speed with new options: 1.1x, 1.2x, 1.3x." = "More Playback Speeds – Find your perfect listening speed with new options: 1.1x, 1.2x, 1.3x.";
+"Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version." = "Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version.";
+"Sort Downloads by Size – Quickly manage storage by seeing which episodes take up the most space in the offline space screen." = "Sort Downloads by Size – Quickly manage storage by seeing which episodes take up the most space in the offline space screen.";
+"Auto-Delete Old Downloads – Set rules to remove unplayed episodes after a day, a week, or a month." = "Auto-Delete Old Downloads – Set rules to remove unplayed episodes after a day, a week, or a month.";
+"External Browser Option – Prefer Safari or Chrome? Now you can set all shownote links to open externally." = "External Browser Option – Prefer Safari or Chrome? Now you can set all shownote links to open externally.";
+"Feature Request & Bug Report Link – Share your ideas and issues directly through the app." = "Feature Request & Bug Report Link – Share your ideas and issues directly through the app.";
+"Donation Support – Love InstacastPlus? Now you can support development with in-app donations." = "Donation Support – Love InstacastPlus? Now you can support development with in-app donations.";
+
 /* MainSidebarController Statistics */
 "Total Episodes" = "Total Episodes";
 "Total Unplayed" = "Total Unplayed";
