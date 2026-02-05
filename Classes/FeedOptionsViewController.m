@@ -7,6 +7,7 @@
 //
 
 #import "FeedOptionsViewController.h"
+#import "UITableViewController+Settings.h"
 
 #import "FeedSettingsViewController.h"
 #import "CDModel.h"
@@ -38,6 +39,7 @@ static NSString* kFeedCell = @"FeedCell";
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     [self.tableView registerClass:[SubscriptionSettingTableViewCell class] forCellReuseIdentifier:kFeedCell];

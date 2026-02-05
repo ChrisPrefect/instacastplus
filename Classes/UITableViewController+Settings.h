@@ -22,4 +22,5 @@
 
 - (UITableViewCell*) textCell;
 - (CGFloat)heightForTextCellUsingText:(NSString*)text;
+- (void)setupSettingsTableViewSpacing;
 @end

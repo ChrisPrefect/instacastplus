@@ -457,7 +457,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         }
         
         
-        DebugLog(@"count of '%@ (%@)': %lf, %ld", contextSelf.name, contextSelf.uid, [[NSDate date] timeIntervalSinceDate:start], (long)[filteredObjectHashes count]);
+        //DebugLog(@"count of '%@ (%@)': %lf, %ld", contextSelf.name, contextSelf.uid, [[NSDate date] timeIntervalSinceDate:start], (long)[filteredObjectHashes count]);
         
         dispatch_async(dispatch_get_main_queue(), ^{
             NSUInteger count = [filteredObjectHashes count];

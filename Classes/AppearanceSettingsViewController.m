@@ -43,6 +43,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     [self.tableView registerClass:[ChooseThemeColorCell class] forCellReuseIdentifier:@"ChooseThemeColorCell"];
@@ -652,12 +653,31 @@ API_AVAILABLE(ios(14.0)){
     return CGSizeMake(80, 80);
 }
 
+- (NSInteger)_currentAlternateIconIndex
+{
+    NSString *currentIconName = [[UIApplication sharedApplication] alternateIconName];
+    if (currentIconName) {
+        NSString *numberPart = [currentIconName stringByReplacingOccurrencesOfString:@"AppIcon-" withString:@""];
+        return [numberPart integerValue] - 1;
+    }
+    return -1;
+}
+
 - (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath
 {
     ChapterImageCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"chapter_cell" forIndexPath:indexPath];
     cell.chapterImageView.image = [UIImage imageNamed: self->appIconsArray[indexPath.item]];
     cell.chapterImageView.layer.cornerRadius = 5;
     cell.chapterImageView.layer.masksToBounds = true;
+
+    BOOL isSelected = (indexPath.item == [self _currentAlternateIconIndex]);
+    if (isSelected) {
+        cell.chapterImageView.layer.borderColor = [[ICAppearanceManager sharedManager] appearance].tintColor.CGColor;
+        cell.chapterImageView.layer.borderWidth = 3.0;
+    } else {
+        cell.chapterImageView.layer.borderWidth = 0;
+    }
+
     return cell;
 }
 
@@ -665,9 +685,12 @@ API_AVAILABLE(ios(14.0)){
 {
     NSString* appIconName = [NSString stringWithFormat:@"AppIcon-%ld", (long)(indexPath.item + 1)];
     [[UIApplication sharedApplication] setAlternateIconName:appIconName completionHandler:^(NSError * _Nullable error) {
-        if (error != nil){
-            NSLog(@"Error===%@",error.localizedDescription);
+        if (error != nil) {
+            NSLog(@"Error===%@", error.localizedDescription);
         }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [collectionView reloadData];
+        });
     }];
 }
 

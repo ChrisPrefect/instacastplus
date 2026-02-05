@@ -17,7 +17,6 @@
 @property (nonatomic) UIImage* selectedImage;
 @property (nonatomic) CGFloat topSpacing;
 @property (nonatomic, copy) NSUInteger (^badgeNumber)(void);
-@property (nonatomic, copy) NSString* (^auxiliaryText)(void);  // For download speed display
 @end
 
 

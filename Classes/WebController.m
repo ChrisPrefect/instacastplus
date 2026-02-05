@@ -18,7 +18,6 @@
 @property (nonatomic, strong) UIBarButtonItem* reloadItem;
 @property (nonatomic, strong) UIBarButtonItem* backItem;
 @property (nonatomic, strong) UIBarButtonItem* forwardItem;
-@property (nonatomic, strong) UIBarButtonItem* activityItem;
 @property (nonatomic, assign) BOOL canceled;
 @property (nonatomic, assign) BOOL failed;
 @property (nonatomic, assign) BOOL closed;
@@ -28,6 +27,8 @@
 @implementation WebController {
     NSInteger _loading;
     BOOL _toolbarWasHidden;
+    BOOL _lastCanGoBack;
+    BOOL _lastCanGoForward;
 }
 
 + (WebController*) webController
@@ -52,7 +53,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    // Prevent web content from extending under the navigation bar
+    // Allow content to extend under bottom bar for safe area coverage
     self.edgesForExtendedLayout = UIRectEdgeBottom;
 
     self.view.backgroundColor = ICBackgroundColor;
@@ -94,17 +95,11 @@
     self.forwardItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Next"]
                                                         style:UIBarButtonItemStylePlain target:self action:@selector(forwardAction:)];
 
-    self.reloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Reload"]
-                                                       style:UIBarButtonItemStylePlain target:self action:@selector(reloadAction:)];
-    self.reloadItem.width = 44;
-
     self.navigationItem.titleView = self.titleView;
 
-    UIActivityIndicatorView* activityIndicator = [[UIActivityIndicatorView alloc] initWithFrame:CGRectMake(0,0,44,44)];
-    activityIndicator.activityIndicatorViewStyle = [ICAppearanceManager sharedManager].appearance.activityIndicatorStyle;
-    [activityIndicator startAnimating];
-    self.activityItem = [[UIBarButtonItem alloc] initWithCustomView:activityIndicator];
-    self.activityItem.width = 44;
+    // Initial toolbar - nur Globe-Button
+    UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    [self setToolbarItems:@[flexSpace, self.actionItem]];
 }
 
 - (void) showMoreInfoInExternalBrowser:(id)sender
@@ -127,19 +122,10 @@
     [navAppearance configureWithOpaqueBackground];
     navAppearance.backgroundColor = ICBackgroundColor;
     navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : [ICAppearanceManager sharedManager].appearance.textColor };
-    navAppearance.shadowColor = nil;
+    navAppearance.shadowColor = [UIColor clearColor];
     self.navigationController.navigationBar.standardAppearance = navAppearance;
     self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
     self.navigationController.navigationBar.compactAppearance = navAppearance;
-
-    // Force toolbar to use opaque app theme colors
-    UIToolbarAppearance *toolbarAppearance = [[UIToolbarAppearance alloc] init];
-    [toolbarAppearance configureWithOpaqueBackground];
-    toolbarAppearance.backgroundColor = ICBackgroundColor;
-    toolbarAppearance.shadowColor = nil;
-    self.navigationController.toolbar.standardAppearance = toolbarAppearance;
-    self.navigationController.toolbar.scrollEdgeAppearance = toolbarAppearance;
-    self.navigationController.toolbar.compactAppearance = toolbarAppearance;
 
     // Bottom inset so content can scroll past the toolbar (avoids blocking cookie banners)
     [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(0, 0, 44, 0) byAdjustingForStandardBars:YES];
@@ -174,33 +160,38 @@
 
 - (void) _updateToolbar
 {
-    BOOL loading = (_loading > 0);
+    BOOL canGoBack = [self.webView canGoBack];
+    BOOL canGoForward = [self.webView canGoForward];
+
+    // Nur neu aufbauen wenn sich der Zustand tatsächlich geändert hat
+    if (canGoBack == _lastCanGoBack && canGoForward == _lastCanGoForward) {
+        self.actionItem.enabled = (!self.failed);
+        return;
+    }
+    _lastCanGoBack = canGoBack;
+    _lastCanGoForward = canGoForward;
+
+    UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    UIBarButtonItem* fixedSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
+    fixedSpace.width = 20;
 
     NSMutableArray* items = [NSMutableArray array];
 
-    if ([self.webView canGoBack]) {
+    if (canGoBack) {
         [items addObject:self.backItem];
-        [items addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
     }
-
-    if ([self.webView canGoForward]) {
+    if (canGoBack && canGoForward) {
+        [items addObject:fixedSpace];
+    }
+    if (canGoForward) {
         [items addObject:self.forwardItem];
-        [items addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
     }
 
-    if (loading) {
-        [(UIActivityIndicatorView*)(self.activityItem.customView) startAnimating];
-        [items addObject:self.activityItem];
-    } else {
-        [(UIActivityIndicatorView*)(self.activityItem.customView) stopAnimating];
-        [items addObject:self.reloadItem];
-    }
-
-    [items addObject:[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
+    [items addObject:flexSpace];
     self.actionItem.enabled = (!self.failed);
     [items addObject:self.actionItem];
 
-    [self setToolbarItems:items];
+    [self setToolbarItems:items animated:YES];
 }
 
 - (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {

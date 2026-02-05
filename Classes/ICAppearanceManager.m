@@ -185,7 +185,6 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         [rootWindow layoutIfNeeded];
     }
 
-    // Now create appearance with correct mode
     if (shouldUseDarkMode) {
         self.appearance = [[ICNightAppearance alloc] init];
     } else {

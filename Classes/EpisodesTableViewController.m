@@ -553,12 +553,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 STRONG_SELF
                                                 self.alertController = nil;
                                             }]];
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+        [alert setModalPresentationStyle:UIModalPresentationPopover];
+        UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+        popPresenter.sourceView = self.view;
+        popPresenter.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 0, 0);
+        popPresenter.permittedArrowDirections = 0;
+    }
     if ([ICAppearanceManager sharedManager].nightSettingMode)
     {
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -568,7 +569,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
     self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
+
+    // Present directly - the helper method can silently fail
+    if (self.presentedViewController) {
+        [self.presentedViewController dismissViewControllerAnimated:NO completion:^{
+            [self presentViewController:alert animated:YES completion:NULL];
+        }];
+    } else {
+        [self presentViewController:alert animated:YES completion:NULL];
+    }
 }
 
 
@@ -1165,11 +1174,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void) setEditing:(BOOL)editing animated:(BOOL)animated
 {
     [super setEditing:editing animated:animated];
-    
+
     if (!editing) {
         self.editingStyle = EpisodesTableViewEditingStyleNormal;
     }
-    
+
     [self _updateToolbarItemsAnimated:animated];
 }
 

@@ -27,7 +27,6 @@
 #import "CDSmartPlaylist.h"
 #import "CDPlaylist.h"
 #import "FSCrossbucketConnection.h"
-#import <CloudKit/CloudKit.h>
 
 
 #define MODEL_VERSION 4
@@ -179,13 +178,13 @@ NS_INLINE NSString* _DataStoreFile(void) {
     if ([fman fileExistsAtPath:[storeURL path]]) {
         return [self dataStoreNeedsMigrationForFileAtURL:storeURL];
     }
-    
+
     // check old file
     NSURL* urlOfLastDataStoreFile = [self _urlOfLastDataStoreFile];
     if ([fman fileExistsAtPath:[urlOfLastDataStoreFile path]]) {
         return [self dataStoreNeedsMigrationForFileAtURL:urlOfLastDataStoreFile];
     }
-    
+
     return NO;
 }
 
@@ -195,7 +194,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 	{
         _databaseURL = [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:_DataStoreFile()]];
         DebugLog(@"%@", _databaseURL);
-        
+
         _imageCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Images" parent:[DatabaseManager pathToDocuments]]];
         _fileCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Episodes" parent:[DatabaseManager pathToDocuments]]];
         
@@ -230,8 +229,8 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 }
             }
         }
-        
-        
+
+
         // create initial data when started first
         if (![[NSFileManager defaultManager] fileExistsAtPath:[_databaseURL path]]) {
             [self _createDatabase];
@@ -240,9 +239,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
             [self _migrateDatabase];
             [self _deleteUnsubscribedFeeds];
         }
-        
-        
-        
+
 #if TARGET_OS_IPHONE
         NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
         feedsRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
@@ -266,11 +263,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                                           cacheName:@"_databasemanager_feeds_"];
         _feedsController.delegate = self;
         [_feedsController performFetch:nil];
-        
-        
-        
 
-        
         [NSFetchedResultsController deleteCacheWithName:@"_databasemanager_lists_"];
         _listsController = [[NSFetchedResultsController alloc] initWithFetchRequest:listsRequest
                                                                managedObjectContext:self.objectContext
@@ -278,10 +271,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                                           cacheName:@"_databasemanager_lists_"];
         _listsController.delegate = self;
         [_listsController performFetch:nil];
-        
-        
 
-        
         [NSFetchedResultsController deleteCacheWithName:@"_databasemanager_bookmarks_"];
         _bookmarksController = [[NSFetchedResultsController alloc] initWithFetchRequest:bookmarksRequest
                                                                managedObjectContext:self.objectContext
@@ -321,9 +311,9 @@ NS_INLINE NSString* _DataStoreFile(void) {
         
         _ftsController = [[ICFTSController alloc] initWithSearchIndexURL:[NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"FTSIndex.sqlite"]]];
         [_ftsController open];
-        
+
         [self _migrateFTS];
-        
+
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(managedObjectContextObjectsDidChangeNotification:)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
@@ -334,36 +324,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
 	return self;
 }
 
-- (void)triggerInitialCloudKitPull {
-    NSLog(@"🔄 Triggering iCloud pull...");
-
-    NSPersistentCloudKitContainer *container = self.persistentContainer;
-    NSPersistentStoreDescription *description = container.persistentStoreDescriptions.firstObject;
-
-    if (!description.cloudKitContainerOptions) {
-        NSLog(@"❌ No CloudKit options configured — cannot trigger pull.");
-        return;
-    }
-
-    CKContainer *ckContainer = [CKContainer containerWithIdentifier:description.cloudKitContainerOptions.containerIdentifier];
-    CKDatabase *privateDatabase = [ckContainer privateCloudDatabase];
-
-    // ✅ Explicitly fetch the _defaultZone
-    CKRecordZoneID *defaultZoneID = [[CKRecordZoneID alloc] initWithZoneName:@"_defaultZone"
-                                                                   ownerName:CKCurrentUserDefaultName];
-
-    CKFetchRecordZonesOperation *operation = [[CKFetchRecordZonesOperation alloc] initWithRecordZoneIDs:@[defaultZoneID]];
-
-    operation.fetchRecordZonesCompletionBlock = ^(NSDictionary<CKRecordZoneID *,CKRecordZone *> * _Nullable recordZonesByID, NSError * _Nullable error) {
-        if (error) {
-            NSLog(@"⚠️ CK Fetch failed: %@", error.localizedDescription);
-        } else {
-            NSLog(@"✅ CK Fetch triggered — iCloud sync should start shortly.");
-        }
-    };
-
-    [privateDatabase addOperation:operation];
-}
 
 - (void) _createDatabase
 {
@@ -1526,7 +1486,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     if (_objectContext) {
         return _objectContext;
     }
-    
+
     NSPersistentCloudKitContainer* container = [self persistentContainer];
     if (container)
     {
@@ -1535,7 +1495,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
         _objectContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
         [_objectContext setPersistentStoreCoordinator:container.persistentStoreCoordinator];
     }
-    
+
     return _objectContext;
 }
 
@@ -1557,13 +1517,16 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
         }
 
         _persistentContainer = [[NSPersistentCloudKitContainer alloc] initWithName:_ModelFile()];
+
         NSURL *storeURL = self.databaseURL;
         NSPersistentStoreDescription *storeDescription = [[NSPersistentStoreDescription alloc] initWithURL:storeURL];
         [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
         [storeDescription setOption:@YES forKey:NSPersistentStoreRemoteChangeNotificationPostOptionKey];
 
         storeDescription.type = NSSQLiteStoreType;
+#if !TARGET_OS_SIMULATOR
         storeDescription.cloudKitContainerOptions = [[NSPersistentCloudKitContainerOptions alloc] initWithContainerIdentifier:kiCloundContainerIdentifier];
+#endif
         storeDescription.shouldMigrateStoreAutomatically = YES;
         storeDescription.shouldInferMappingModelAutomatically = YES;
         _persistentContainer.persistentStoreDescriptions = @[storeDescription];
@@ -1573,11 +1536,10 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
                 abort();
             }
             else {
-                    NSLog(@"✅ Persistent store loaded");
-                    [self triggerInitialCloudKitPull]; // 👈 Add this line
+                    DebugLog(@"persistent store loaded");
                 }
         }];
-    
+
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(handleCloudKitChanges:)
                                                      name:NSPersistentStoreRemoteChangeNotification

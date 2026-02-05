@@ -31,6 +31,7 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.clearsSelectionOnViewWillAppear = YES;

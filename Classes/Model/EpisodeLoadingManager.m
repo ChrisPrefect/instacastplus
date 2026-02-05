@@ -187,24 +187,16 @@ static const NSInteger kEpisodeBatchSize = 50;
 
 - (void)logStatus
 {
+    // Status-Logging nur im Debug
+#ifdef DEBUG
     [_lock lock];
     NSUInteger feedCount = _pendingLoads.count;
-    NSUInteger totalEpisodes = 0;
-    for (NSDictionary* loadInfo in _pendingLoads.allValues) {
-        totalEpisodes += [loadInfo[@"episodes"] count];
-    }
-    NSArray* feedURLs = [_pendingLoads allKeys];
     [_lock unlock];
 
-    if (feedCount == 0) {
-        NSLog(@"EpisodeLoadingManager: Idle (no pending loads)");
-    } else {
-        NSLog(@"EpisodeLoadingManager: Loading %lu feeds, %lu episodes pending", (unsigned long)feedCount, (unsigned long)totalEpisodes);
-        for (NSString* url in feedURLs) {
-            CDFeed* feed = [DMANAGER feedWithSourceURL:[NSURL URLWithString:url]];
-            NSLog(@"  - %@ (%@)", feed.title ?: @"Unknown", url);
-        }
+    if (feedCount > 0) {
+        DebugLog(@"EpisodeLoadingManager: %lu feeds pending", (unsigned long)feedCount);
     }
+#endif
 }
 
 #pragma mark - Crash Recovery

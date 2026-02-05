@@ -136,7 +136,7 @@ enum {
 	if ((self = [super init]))
 	{
 #if TARGET_OS_IPHONE
-        
+
         // overwrite current default on iOS, because we actually use the system volume
         [USER_DEFAULTS setFloat:1.0f forKey:kDefaultPlaybackVolume];
 #else
@@ -164,7 +164,6 @@ enum {
 {
 #if TARGET_OS_IPHONE
 	if (self.bufferNextItemTaskIdentifier != UIBackgroundTaskInvalid) {
-        DebugLog(@"end item handover");
 		[App endBackgroundTask:self.bufferNextItemTaskIdentifier];
 		self.bufferNextItemTaskIdentifier = UIBackgroundTaskInvalid;
 	}
@@ -175,7 +174,6 @@ enum {
 {
 	[self _endNextItemHandover];
 #if TARGET_OS_IPHONE
-    DebugLog(@"start item handover");
 	self.bufferNextItemTaskIdentifier = [App beginBackgroundTaskWithExpirationHandler:^(void) {
         [App endBackgroundTask:self.bufferNextItemTaskIdentifier];
 		self.bufferNextItemTaskIdentifier = UIBackgroundTaskInvalid;
@@ -258,7 +256,6 @@ enum {
     {
         [self.nowPlayingInfo setObject:anEpisode.objectHash forKey:kMediaItemInstacastEpisodeHash];
         
-        DebugLog(@"load episode image for lock screen");
         
         // set image in case we have an episode based image
         void (^displayImage)(IC_IMAGE*) = ^(IC_IMAGE* image) {
@@ -538,7 +535,6 @@ enum {
         urlString = [urlString stringByRemovingPercentEncoding];
         url = [NSURL URLWithString:urlString];
     }
-	DebugLog(@"play url: %@", [url absoluteString]);
 	
     self.playingEpisode = anEpisode;
 	self.state = InitializedState;
@@ -552,7 +548,6 @@ enum {
 			case AVKeyValueStatusLoaded:
             {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    DebugLog(@"open AVKeyValueStatusLoaded");
                     [self _continueOpeningAsset:self.mediaAsset autostart:autostart];
                 });
 				break;
@@ -560,7 +555,7 @@ enum {
 			case AVKeyValueStatusFailed:
             {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    DebugLog(@"open AVKeyValueStatusFailed: %@", [error description]);
+                    ErrLog(@"AVAsset load failed: %@", [error description]);
                     self.failed = YES;
                     [self close];
                     SEND_UPDATE
@@ -570,7 +565,6 @@ enum {
 			case AVKeyValueStatusCancelled:
             {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    DebugLog(@"open AVKeyValueStatusCancelled");
                     self.mediaAsset = nil;
                     [self _endNextItemHandover];
                 });
@@ -633,7 +627,6 @@ enum {
     [playerItem addTaskObserver:self forKeyPath:@"status" task:^(id obj, NSDictionary *change)
     {
         AVPlayerItem* currentItem = self.player.currentItem;
-        DebugLog(@"AVPlayerItem.status: %ld", (long)currentItem.status);
         if (currentItem.status == AVPlayerItemStatusReadyToPlay && self.state == InitializedState)
         {
             CDEpisode* episode = self.playingEpisode;
@@ -849,7 +842,6 @@ enum {
                     double skipTriggerTime = dur - skipEndPeriod;
 
                     if (currentTime >= skipTriggerTime && currentTime < dur) {
-                        DebugLog(@"End-skip triggered at %.1f (trigger: %.1f, duration: %.1f)", currentTime, skipTriggerTime, dur);
                         [weakSelf.player pause];
                         [weakSelf close];
 
@@ -1054,12 +1046,9 @@ enum {
                 return;
             }
 
-            DebugLog(@"Skipping from chapter %ld at %.1f to chapter %ld at %.1f",
-                     (long)currentChapterIndex, currentTime, (long)targetChapterIndex, targetTime);
             [self _performAutoSkipToTime:targetTime fromChapter:currentChapterIndex];
         } else {
             // All remaining chapters should be skipped - mark episode as finished
-            DebugLog(@"All remaining chapters skipped, marking episode as finished");
             [self _finishEpisodeDueToSkip:episode];
         }
         return;
@@ -1118,11 +1107,8 @@ enum {
                             return;
                         }
 
-                        DebugLog(@"Early skip from chapter %ld at %.1f to chapter %ld at %.1f (trigger: %.1f)",
-                                 (long)currentChapterIndex, currentTime, (long)targetChapterIndex, targetTime, skipTriggerTime);
                         [self _performAutoSkipToTime:targetTime fromChapter:currentChapterIndex];
                     } else {
-                        DebugLog(@"All remaining chapters skipped, marking episode as finished");
                         [self _finishEpisodeDueToSkip:episode];
                     }
                 }
@@ -2006,7 +1992,6 @@ enum {
         self.artworks = images;
         
         [self _setNowPlayingInfoOfEpisode:nil];
-        DebugLog(@"chapters loaded");
     }];
 }
 

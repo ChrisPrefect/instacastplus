@@ -48,6 +48,7 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 @property (nonatomic, readonly, strong) NSMutableArray* refreshingFeedURLs;
 @property (nonatomic, readonly, assign) double refreshProgress;
 @property (nonatomic, readonly, strong) NSURL* refreshedURL;
+@property (nonatomic, readonly) NSString* refreshStatusText;
 
 /* Enforcing Download Settings */
 - (BOOL) autoDownloadEpisodesInFeed:(CDFeed*)feed;

@@ -32,6 +32,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.clearsSelectionOnViewWillAppear = YES;

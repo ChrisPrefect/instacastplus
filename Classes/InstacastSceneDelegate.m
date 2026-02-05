@@ -62,9 +62,7 @@
 }
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
-    // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
-    // If using a storyboard, the `window` property will automatically be initialized and attached to the scene.
-    // This delegate does not imply the connecting scene or session are new (see `application:configurationForConnectingSceneSession` instead).
+
     if ([scene isKindOfClass:[UIWindowScene class]]) {
         UIWindowScene *windowScene = (UIWindowScene *)scene;
         self.window = [[UIWindow alloc] initWithWindowScene:windowScene];
@@ -76,7 +74,7 @@
         windowScene.sizeRestrictions.minimumSize = iPhoneSize;
         windowScene.sizeRestrictions.maximumSize = iPhoneSize;
 #endif
-        
+
         if ([DatabaseManager dataStoreNeedsMigration]) {
             UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
             self.window.rootViewController = migrationViewController;
@@ -95,6 +93,7 @@
             [[ICAppearanceManager sharedManager] updateAppearance];
         }
     }
+
     [self fetchAvailableProducts];
 //    if ([scene isKindOfClass:[CPTemplateApplicationScene class]]) {
 //        CPTemplateApplicationScene *carPlayScene = (CPTemplateApplicationScene *)scene;
@@ -346,8 +345,6 @@
 
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
-    // Called when the scene has moved from an inactive state to an active state.
-    // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
     [self showDonatePopupAfterDelay:300];
 }
 
@@ -359,8 +356,6 @@
 
 
 - (void)sceneWillEnterForeground:(UIScene *)scene {
-    // Called as the scene transitions from the background to the foreground.
-    // Use this method to undo the changes made on entering the background.
     [self _updateAppContentAfterBecomingActive];
     App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
 }

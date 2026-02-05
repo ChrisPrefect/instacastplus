@@ -79,23 +79,10 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
         return;
     }
 
-    CGRect b = self.tableView.bounds;
-
-    // Footer container with top padding for spacing after Settings
-    UIView* footerContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b), 140)];
+    // Empty footer to prevent extra separators
+    UIView* footerContainer = [[UIView alloc] initWithFrame:CGRectZero];
     footerContainer.backgroundColor = [UIColor clearColor];
     self.footerContainerView = footerContainer;
-
-    // Top padding of 25 for spacing after Settings menu item
-    UILabel* footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(75, 25, CGRectGetWidth(b) - 90, 110)];
-    footerLabel.font = [UIFont systemFontOfSize:13];
-    footerLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
-    footerLabel.textAlignment = NSTextAlignmentLeft;
-    footerLabel.numberOfLines = 5;
-    [footerContainer addSubview:footerLabel];
-    self.footerInfoLabel = footerLabel;
-
-    // Use tableFooterView so it appears naturally below menu items
     self.tableView.tableFooterView = footerContainer;
 }
 
@@ -226,54 +213,7 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 
 - (void) updateFooterInfo
 {
-    // Number formatter for locale-specific thousand separators
-    NSNumberFormatter* numberFormatter = [[NSNumberFormatter alloc] init];
-    numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
-    numberFormatter.locale = [NSLocale currentLocale];
-
-    // Feed count
-    NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
-    feedsRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
-    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
-    NSUInteger feedCount = [DMANAGER.objectContext countForFetchRequest:feedsRequest error:nil];
-
-    // Total episodes count
-    NSFetchRequest* episodesRequest = [[NSFetchRequest alloc] init];
-    episodesRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-    episodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO"];
-    NSUInteger totalEpisodes = [DMANAGER.objectContext countForFetchRequest:episodesRequest error:nil];
-
-    // Unplayed episodes count
-    NSFetchRequest* unplayedRequest = [[NSFetchRequest alloc] init];
-    unplayedRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-    unplayedRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO && consumed == NO"];
-    NSUInteger unplayedEpisodes = [DMANAGER.objectContext countForFetchRequest:unplayedRequest error:nil];
-
-    // Downloaded episodes count (use CacheManager for accurate count)
-    NSUInteger downloadedEpisodes = [[CacheManager sharedCacheManager].cachedEpisodes count];
-
-    // Storage size
-    unsigned long long storageBytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
-
-    NSMutableString* infoText = [[NSMutableString alloc] init];
-
-    // Subscriptions
-    [infoText appendFormat:@"%@: %@\n", @"Subscriptions".ls, [numberFormatter stringFromNumber:@(feedCount)]];
-
-    // Total Episodes
-    [infoText appendFormat:@"%@: %@\n", @"Total Episodes".ls, [numberFormatter stringFromNumber:@(totalEpisodes)]];
-
-    // Total Unplayed
-    [infoText appendFormat:@"%@: %@\n", @"Total Unplayed".ls, [numberFormatter stringFromNumber:@(unplayedEpisodes)]];
-
-    // Total Downloaded
-    [infoText appendFormat:@"%@: %@\n", @"Total Downloaded".ls, [numberFormatter stringFromNumber:@(downloadedEpisodes)]];
-
-    // Storage Used
-    NSString* sizeString = [NSByteCountFormatter stringFromByteCount:storageBytes countStyle:NSByteCountFormatterCountStyleMemory];
-    [infoText appendFormat:@"%@: %@", @"Storage Used".ls, sizeString];
-
-    self.footerInfoLabel.text = infoText;
+    // Statistics moved to Settings > Data screen
 }
 
 @end

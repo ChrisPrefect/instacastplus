@@ -85,13 +85,28 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 - (NSString*) formattedLastRefreshDate
 {
     double lastRefreshDate = [USER_DEFAULTS doubleForKey:LastRefreshSubscriptionDate];
-    NSDate* date = (lastRefreshDate > 0) ? [NSDate dateWithTimeIntervalSince1970:lastRefreshDate] : nil;
-    
-    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
-    [formatter setDateStyle:NSDateFormatterShortStyle];
-    [formatter setTimeStyle:NSDateFormatterShortStyle];
-    NSString* formattedDate = [NSString stringWithFormat:@"Last Updated: %@".ls, [formatter stringFromDate:date]];
-    return formattedDate;
+    if (lastRefreshDate <= 0) {
+        return @"Last Updated: –".ls;
+    }
+
+    NSDate* date = [NSDate dateWithTimeIntervalSince1970:lastRefreshDate];
+    NSTimeInterval elapsed = -[date timeIntervalSinceNow];
+
+    NSString* relativeTime;
+    if (elapsed < 60) {
+        relativeTime = @"just now".ls;
+    } else if (elapsed < 3600) {
+        NSInteger minutes = (NSInteger)(elapsed / 60);
+        relativeTime = [NSString stringWithFormat:@"%ld min ago".ls, (long)minutes];
+    } else if (elapsed < 86400) {
+        NSInteger hours = (NSInteger)(elapsed / 3600);
+        relativeTime = [NSString stringWithFormat:@"%ld hours ago".ls, (long)hours];
+    } else {
+        NSInteger days = (NSInteger)(elapsed / 86400);
+        relativeTime = [NSString stringWithFormat:@"%ld days ago".ls, (long)days];
+    }
+
+    return [NSString stringWithFormat:@"Last Updated: %@".ls, relativeTime];
 }
 
 - (NSString*) formattedLastRefreshDateForFeed:(CDFeed*)feed
@@ -186,7 +201,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         }
 
         [DMANAGER saveAndSync:YES];
-        
+
         if (completion) {
             completion(YES ,newEpisodes, nil);
         }
@@ -197,7 +212,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
             completion(NO, nil, error);
         }
     };
-    
+
     [_parserQueue addOperation:parser];
 }
 
@@ -215,15 +230,15 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     parser.url = url;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
     parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
-        
+
         CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed autodownload:YES options:options];
-        
+
         [DMANAGER saveAndSync:YES];
-        
+
         if (completion) {
             completion(persistentFeed, nil);
         }
-        
+
         [App releaseNetworkActivity];
 
     };
@@ -233,7 +248,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         }
         [App releaseNetworkActivity];
     };
-    
+
     [_parserQueue addOperation:parser];
 }
 
@@ -340,6 +355,12 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 - (double) refreshProgress
 {
     return MAX(0.0, MIN(1.0, (double)(self.numTotalRefreshFeeds - [self.refreshingFeedURLs count])/self.numTotalRefreshFeeds));
+}
+
+- (NSString*) refreshStatusText
+{
+    NSInteger done = self.numTotalRefreshFeeds - [self.refreshingFeedURLs count];
+    return [NSString stringWithFormat:@"%ld/%ld %@", (long)done, (long)self.numTotalRefreshFeeds, @"podcasts refreshed".ls];
 }
 
 - (void) refreshAllFeedsForce:(BOOL)force
@@ -462,7 +483,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
                                                                  repeats:YES];
         
         self.numOfNewEpisodesAfterRefresh = 0;
-        self.numTotalRefreshFeeds = [self.refreshingFeedURLs count];
+        self.numTotalRefreshFeeds = [feeds count];
 #if TARGET_OS_IPHONE
         self.backgroundIdentifier = [App beginBackgroundTaskWithExpirationHandler:(^(void) {
             [App endBackgroundTask:self.backgroundIdentifier];
@@ -1203,7 +1224,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
                     BOOL shouldSkip = error || !data || statusCode < 200 || statusCode >= 300;
                     if (shouldSkip) {
-                        NSLog(@"❌ Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
+                        ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
                         dispatch_async(dispatch_get_main_queue(), ^{
                             completedCount++;
                             if (progress) progress((float)completedCount / (float)totalCount);
@@ -1214,11 +1235,6 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [self subscribeFeedWithURL:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
-                            if (feed && feed.episodes.count > 0) {
-                                NSLog(@"✅ Imported: %@", feed.title);
-                            } else {
-                                NSLog(@"🚫 Skipped %@: %@", url.absoluteString, error.localizedDescription ?: @"no episodes");
-                            }
 
                             completedCount++;
                             if (progress) progress((float)completedCount / (float)totalCount);
@@ -1287,12 +1303,12 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
                 NSString *normalized = [self normalizedURLString:feedURL];
                 
                 if (!feedURL || !normalized || [existingFeedURLs containsObject:normalized]) {
-                    ErrLog(@"⛔️ Skipped duplicate or invalid feed: %@", xmlURL);
+                    ErrLog(@"skipped duplicate or invalid feed: %@", xmlURL);
                     continue;
                 }
 
                 [urlsToImport addObject:feedURL];
-                NSLog(@"✅ Queued for import: %@", normalized);
+                DebugLog(@"queued for import: %@", normalized);
             }
             
             if (urlsToImport.count == 0) {
@@ -1303,7 +1319,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
             [self importURLs:urlsToImport completion:completion progress:progress];
         });
     } errorHandler:^(NSError *error) {
-        ErrLog(@"❌ OPML parsing error: %@", error.localizedDescription);
+        ErrLog(@"OPML parsing error: %@", error.localizedDescription);
         [self finalizeImportWithCompletion:completion progress:progress];
     }];
 }
@@ -1330,17 +1346,12 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
             BOOL shouldSkip = error || !data || (httpResponse && (httpResponse.statusCode < 200 || httpResponse.statusCode >= 300));
             
             if (shouldSkip) {
-                NSLog(@"❌ Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription ?: @"Invalid response");
+                ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription ?: @"Invalid response");
                 [self updateProgress:&completedCount total:totalCount progress:progress group:group];
                 return;
             }
-            
+
             [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
-                if (feed && feed.episodes.count > 0) {
-                    NSLog(@"✅ Imported: %@", feed.title);
-                } else {
-                    NSLog(@"🚫 Skipped %@: %@", url.absoluteString, error.localizedDescription ?: @"No episodes");
-                }
                 [self updateProgress:&completedCount total:totalCount progress:progress group:group];
             }];
         }];

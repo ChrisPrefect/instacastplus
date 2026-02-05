@@ -73,6 +73,7 @@ enum {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Settings".ls;
+    [self setupSettingsTableViewSpacing];
     [self fetchAvailableProducts];
 
     // Register for appearance changes once in viewDidLoad, not viewWillAppear
@@ -238,13 +239,13 @@ enum {
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section {
-    if (section == kOptionsSectionSettings) {
+    if (section == kDonateToDeveloper) {
         // Create the footer view
-        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 200)];
+        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 120)];
         footerView.backgroundColor = [UIColor clearColor];
-        
+
         // Create the label
-        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, footerView.frame.size.width-40, 200)];
+        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, footerView.frame.size.width-40, 120)];
         footerLabel.numberOfLines = 0; // Allow multiple lines
         footerLabel.textAlignment = NSTextAlignmentLeft; // Center align the text
         footerLabel.userInteractionEnabled = YES; // Enable interaction
@@ -253,7 +254,7 @@ enum {
         
         // Set up the attributed string with links
         //@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nWebsite: https://instacast.ch/contact/ \nDeveloper: Devendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!"
-        NSString *footerText = [NSString stringWithFormat:@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nDeveloper: Claude Code Opus 4.5, Devendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion], [NSBundle buildVersion]];
+        NSString *footerText = [NSString stringWithFormat:@"\nVersion %@\nPublisher: Chris Thomann \nDeveloper: Claude Code Opus 4.5, Devendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion]];
         /*NSMutableAttributedString *attributedText = [[NSMutableAttributedString alloc] initWithString:footerText];
          NSMutableParagraphStyle *paragraphStyle = [[NSMutableParagraphStyle alloc] init];
          paragraphStyle.lineSpacing = 5.0;
@@ -370,7 +371,7 @@ enum {
     if ([MFMailComposeViewController canSendMail]) {
         MFMailComposeViewController *mailComposer = [[MFMailComposeViewController alloc] init];
         mailComposer.mailComposeDelegate = self;
-        
+
         NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
         NSString *buildNumber = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
         NSString *iOSVersion = [[UIDevice currentDevice] systemVersion];
@@ -383,7 +384,7 @@ enum {
         [mailComposer setSubject:feedbackSubject];
         [mailComposer setToRecipients:@[@"info@instacast.ch"]];
         [mailComposer setMessageBody:@"" isHTML:NO];
-        
+
         // Present the mail compose view controller
         [self presentViewController:mailComposer animated:YES completion:nil];
     } else {
@@ -412,8 +413,8 @@ enum {
 
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
-    if (section == kOptionsSectionSettings) {
-        return 200;
+    if (section == kDonateToDeveloper) {
+        return 120;
     }
 
     return 0.0f;

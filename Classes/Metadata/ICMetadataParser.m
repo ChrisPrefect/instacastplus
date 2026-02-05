@@ -104,8 +104,6 @@
 {
     NSArray* blackList = [[self class] _URLBlacklist];
     
-    DebugLog(@"loading metadata: %@", [((AVURLAsset*)asset).URL absoluteString]);
-    
     for(NSString* blackListedPrefix in blackList) {
         if ([[((AVURLAsset*)asset).URL absoluteString] hasPrefix:blackListedPrefix]) {
             completionHandler(NO, nil);

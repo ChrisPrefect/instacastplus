@@ -115,7 +115,7 @@
 "20 Days" = "20 Tage";
 "30 Days" = "30 Tage";
 "Suggest App Icon" = "App Icon vorschlagen";
-"We’re looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon." = "Wir suchen kreative Vorschläge für unser App-Icon. Wenn Sie Ideen haben, können Sie Ihr Design gerne als .psd-Datei teilen oder einen Link zu Ihrem vorgeschlagenen App-Symbol senden.";
+"We're looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon." = "Wir suchen kreative Vorschläge für unser App-Icon. Wenn Sie Ideen haben, können Sie Ihr Design gerne als .psd-Datei teilen oder einen Link zu Ihrem vorgeschlagenen App-Icon senden.";
 
 "Screen Touch" = "Bildschirmberührung";
 "Volume Change" = "Lautstärkeänderung";
@@ -130,6 +130,12 @@
 
 /* SubscriptionManager.m */
 "Last Updated: %@" = "Letztes Update: %@";
+"Last Updated: –" = "Letztes Update: –";
+"just now" = "gerade eben";
+"%ld min ago" = "vor %ld Min.";
+"%ld hours ago" = "vor %ld Std.";
+"%ld days ago" = "vor %ld Tagen";
+"podcasts refreshed" = "Podcasts aktualisiert";
 "New episode available in Instacast." = "Neue Folge in Instacast verfügbar.";
 "Refreshing finished and %d new episodes are available." = "Aktualisieren beendet und %d neue Folgen verfügbar.";
 "Refreshing finished and a new episode is available." = "Aktualisieren beendet und 1 neue Folge verfügbar.";
@@ -692,14 +698,15 @@
 "Remember Scroll Position – No more losing your place when browsing for older episodes!" = "Scroll-Position merken – Verlieren Sie nie wieder Ihre Stelle beim Durchsuchen älterer Folgen!";
 "Bigger Tap Areas – Buttons are now easier to hit, especially on the player screen." = "Größere Tippflächen – Buttons sind jetzt leichter zu treffen, besonders auf dem Player-Bildschirm.";
 "More Playback Speeds – Find your perfect listening speed with new options: 1.1x, 1.2x, 1.3x." = "Mehr Wiedergabegeschwindigkeiten – Finden Sie Ihre perfekte Hörgeschwindigkeit mit neuen Optionen: 1.1x, 1.2x, 1.3x.";
-"Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version." = "Verschiedene App-Symbole – Wählen Sie aus verschiedenen Symbolen, einschließlich einer Dark-Mode-Version! Sie können uns auch Ihre eigenen Symbole senden, damit wir sie in die nächste Version integrieren.";
+"Multiple App Icons – Choose from different icons, including a Dark Mode version! You can even send us your custom icons so we can integrate them in the next version." = "Verschiedene App-Icons – Wählen Sie aus verschiedenen Icons, einschließlich einer Dark-Mode-Version! Sie können uns auch Ihre eigenen Icons senden, damit wir sie in die nächste Version integrieren.";
 "Sort Downloads by Size – Quickly manage storage by seeing which episodes take up the most space in the offline space screen." = "Downloads nach Größe sortieren – Verwalten Sie Ihren Speicher schnell, indem Sie sehen, welche Folgen am meisten Platz belegen.";
 "Auto-Delete Old Downloads – Set rules to remove unplayed episodes after a day, a week, or a month." = "Alte Downloads automatisch löschen – Legen Sie Regeln fest, um ungespielte Folgen nach einem Tag, einer Woche oder einem Monat zu entfernen.";
 "External Browser Option – Prefer Safari or Chrome? Now you can set all shownote links to open externally." = "Externer Browser – Bevorzugen Sie Safari oder Chrome? Jetzt können Sie alle Shownote-Links extern öffnen lassen.";
 "Feature Request & Bug Report Link – Share your ideas and issues directly through the app." = "Feature-Wünsche & Fehlermeldungen – Teilen Sie Ihre Ideen und Probleme direkt über die App.";
 "Donation Support – Love InstacastPlus? Now you can support development with in-app donations." = "Spenden – Sie mögen InstacastPlus? Unterstützen Sie die Entwicklung mit In-App-Spenden.";
 
-/* MainSidebarController Statistics */
+/* DataSettingsViewController Statistics */
+"Statistics" = "Statistiken";
 "Total Episodes" = "Folgen gesamt";
 "Total Unplayed" = "Ungespielt";
 "Total Downloaded" = "Heruntergeladen";

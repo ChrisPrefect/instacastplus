@@ -7,13 +7,11 @@
 //
 
 #import <UIKit/UIKit.h>
-#import <CarPlay/CarPlay.h>
-#import <MediaPlayer/MediaPlayer.h>
 
 
 @class MainViewController_4;
 
-@interface InstacastAppDelegate : NSObject <UIApplicationDelegate, MPPlayableContentDelegate, MPPlayableContentDataSource>
+@interface InstacastAppDelegate : NSObject <UIApplicationDelegate>
 
 @property (nonatomic, strong) IBOutlet UIWindow *window;
 @property (nonatomic, strong) MainViewController_4* mainViewController;

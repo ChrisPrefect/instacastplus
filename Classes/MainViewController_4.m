@@ -118,11 +118,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 {
     [super viewDidLoad];
 	// Do any additional setup after loading the view.
-    
+
     //self.view.tintColor = ICTintColor;
     self.view.backgroundColor = ICDarkBackgroundColor;
     self.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    
+
     CGRect b = self.view.bounds;
     MainActivityViewController* activityViewController = [MainActivityViewController viewController];
     activityViewController.view.frame = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 49);  // 5px taller
@@ -167,22 +167,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                           selectedImage:[UIImage imageNamed:@"Menu Bookmarks Filled"]],
                                          ],
                                      @[
-                                         ({
-                                             MainSidebarItem* item = [MainSidebarItem itemWithTitle:@"Downloads".ls
-                                                                        tag:kMainSidebarItemDownloads
-                                                                      image:[UIImage imageNamed:@"Menu Downloads"]
-                                                              selectedImage:[UIImage imageNamed:@"Menu Downloads Filled"]
-                                                                 topSpacing:22];
-                                             item.auxiliaryText = ^NSString* {
-                                                 CacheManager* cm = [CacheManager sharedCacheManager];
-                                                 if ([cm isCaching] && cm.rate > 0) {
-                                                     NSString* speedStr = [NSByteCountFormatter stringFromByteCount:(long long)cm.rate countStyle:NSByteCountFormatterCountStyleMemory];
-                                                     return [speedStr stringByAppendingString:@"/s"];
-                                                 }
-                                                 return nil;
-                                             };
-                                             item;
-                                         }),
+                                         [MainSidebarItem itemWithTitle:@"Downloads".ls
+                                                                    tag:kMainSidebarItemDownloads
+                                                                  image:[UIImage imageNamed:@"Menu Downloads"]
+                                                          selectedImage:[UIImage imageNamed:@"Menu Downloads Filled"]
+                                                             topSpacing:22],
 
                                          [MainSidebarItem itemWithTitle:@"Settings".ls
                                                                     tag:kMainSidebarItemSettings
@@ -236,7 +225,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     _didWillAppear = YES;
     if ([USER_DEFAULTS valueForKey: @"onboard_will_show"] == nil)
     {
@@ -259,7 +248,6 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 }
 
 - (void) plusButtonPressDelegateMethod: (OnboardScreenVC *) sender {
-    NSLog(@"Delegates are great!");
     DirectorySearchViewController* controller = [DirectorySearchViewController directorySearchViewController];
     PortraitNavigationController* navigationController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
     navigationController.modalPresentationStyle = UIModalPresentationFullScreen;
@@ -268,7 +256,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
 
 - (void) viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    
+
     if (_didWillAppear) {
         [self setNeedsContentControllerLayoutUpdateAnimated:NO];
     }
@@ -279,7 +267,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     [super viewDidAppear:animated];
     _laterDidAppear = YES;
     _didWillAppear = NO;
-    
+
     [self presentNextViewController];
 }
 

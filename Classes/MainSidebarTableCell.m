@@ -31,7 +31,6 @@
 @interface MainSidebarTableCell ()
 @property (nonatomic, strong) MainSidebarTableCellNipple* nippleView;
 @property (nonatomic, strong, readwrite) UIButton* badgeButton;
-@property (nonatomic, strong) UILabel* auxiliaryLabel;
 @end
 
 
@@ -74,11 +73,6 @@
 
         [self.contentView addSubview:_badgeButton];
 
-        _auxiliaryLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _auxiliaryLabel.font = [UIFont systemFontOfSize:13.0f];
-        _auxiliaryLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
-        _auxiliaryLabel.textAlignment = NSTextAlignmentRight;
-        [self.contentView addSubview:_auxiliaryLabel];
     }
 
     return self;
@@ -103,10 +97,6 @@
         self.imageView.image = [objectValue.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 
         self.imageView.highlightedImage = [objectValue.selectedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-
-        // Update auxiliary text (e.g. download speed)
-        NSString* auxText = (objectValue.auxiliaryText) ? objectValue.auxiliaryText() : nil;
-        self.auxiliaryLabel.text = auxText;
 
         if (objectValue) {
             WEAK_SELF
@@ -147,23 +137,8 @@
 
     self.badgeButton.frame = badgeButtonRect;
 
-    // Position auxiliary label (download speed) to the right of title
-    NSString* auxText = (self.objectValue.auxiliaryText) ? self.objectValue.auxiliaryText() : nil;
-    self.auxiliaryLabel.text = auxText;
-    if (auxText.length > 0) {
-        [self.auxiliaryLabel sizeToFit];
-        CGRect auxRect = self.auxiliaryLabel.frame;
-        auxRect.origin.x = badgeButtonRect.origin.x - auxRect.size.width - 10;
-        auxRect.origin.y = topOffset + (CGRectGetHeight(b) - topOffset - auxRect.size.height) / 2;
-        self.auxiliaryLabel.frame = auxRect;
-        self.auxiliaryLabel.hidden = NO;
-    } else {
-        self.auxiliaryLabel.hidden = YES;
-    }
-
     CGRect titleRect = self.textLabel.frame;
-    CGFloat maxTitleX = self.auxiliaryLabel.hidden ? badgeButtonRect.origin.x : CGRectGetMinX(self.auxiliaryLabel.frame);
-    titleRect.size.width = MIN(titleRect.size.width, (maxTitleX - titleRect.origin.x - 5));
+    titleRect.size.width = MIN(titleRect.size.width, (badgeButtonRect.origin.x - titleRect.origin.x - 5));
     self.textLabel.frame = titleRect;
 }
 

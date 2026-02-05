@@ -61,32 +61,31 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 	if ((self = [super init]))
 	{
         AVAudioSession* session = [AVAudioSession sharedInstance];
-        
+
         NSError* categoryError = nil;
         if (![session setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:&categoryError]) {
             ErrLog(@"error setting audio category: %@", categoryError);
         }
-        
+
         //dispatch_async(dispatch_get_main_queue(), ^{
             [self _restorePlaybackStateFromUserDefaults];
         //});
 
-    
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(applicationWillResignActiveNotification:)
                                                      name:UIApplicationWillResignActiveNotification
                                                    object:App];
-        
+
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(applicationDidEnterBackgroundNotification:)
                                                      name:UIApplicationDidEnterBackgroundNotification
                                                    object:App];
-        
+
         [self _observeAudioSessionForChanges];
         [self _observePlaybackForStoringChapters];
         [self _observeEpisodeCacheBeingDeleted];
 	}
-	
+
 	return self;
 }
 
@@ -111,13 +110,13 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
                 ErrLog(@"error deactivating audio session %@", error);
             }
         } afterDelay:1.0];
-        
+
     }
     else
     {
         NSError* error;
         [session setActive:YES error:&error];
-        
+
         if (error) {
             ErrLog(@"error (activating audio session %@", error);
         }
@@ -485,7 +484,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 {
 	NSString* episodeHash = [USER_DEFAULTS objectForKey:kPlaybackStateEpisode];
 	NSArray* playlistHashes = [USER_DEFAULTS objectForKey:kPlaybackStatePlaylist];
-	
+
 	[self restorePlaybackStateWithEpisodeHash:episodeHash playlistHashes:playlistHashes time:-1];
 }
 
@@ -500,7 +499,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     if (![self canRestorePlaybackState]) {
         return;
     }
-    
+
     if (episodeHash)
     {
         PlaybackManager* pman = [PlaybackManager playbackManager];

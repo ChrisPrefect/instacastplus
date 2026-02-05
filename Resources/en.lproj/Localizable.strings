@@ -129,6 +129,12 @@
 
 /* SubscriptionManager.m */
 "Last Updated: %@" = "Last Updated: %@";
+"Last Updated: –" = "Last Updated: –";
+"just now" = "just now";
+"%ld min ago" = "%ld min ago";
+"%ld hours ago" = "%ld hours ago";
+"%ld days ago" = "%ld days ago";
+"podcasts refreshed" = "podcasts refreshed";
 "New episode available in Instacast." = "New episode available in Instacast.";
 "Refreshing finished and %d new episodes are available." = "Refreshing finished and %d new episodes are available.";
 "Refreshing finished and a new episode is available." = "Refreshing finished and a new episode is available.";
@@ -698,7 +704,8 @@
 "Feature Request & Bug Report Link – Share your ideas and issues directly through the app." = "Feature Request & Bug Report Link – Share your ideas and issues directly through the app.";
 "Donation Support – Love InstacastPlus? Now you can support development with in-app donations." = "Donation Support – Love InstacastPlus? Now you can support development with in-app donations.";
 
-/* MainSidebarController Statistics */
+/* DataSettingsViewController Statistics */
+"Statistics" = "Statistics";
 "Total Episodes" = "Total Episodes";
 "Total Unplayed" = "Total Unplayed";
 "Total Downloaded" = "Total Downloaded";

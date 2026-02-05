@@ -94,22 +94,22 @@
     [super viewDidLoad];
 
     self.view.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
-    
+
     CGRect b = self.view.bounds;
     self.nowPlayingControl = [[ICNowPlayingActivityControl alloc] initWithFrame:b];
     self.nowPlayingControl.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
-    
+
     [self.nowPlayingControl.rightButton addTarget:self action:@selector(nowPlayingControlRightButtonAction:) forControlEvents:UIControlEventTouchUpInside];
-    
+
     UILongPressGestureRecognizer* recognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
     [self.nowPlayingControl addGestureRecognizer:recognizer];
-    
+
     [self _updateNowPlayingAnimated:NO];
     [self _updatePlayButton];
     [self _updateChapter];
 
     [self.view addSubview:self.nowPlayingControl];
-    
+
     [self _updateVisibleAndNotify];
     [self _setObserving:YES];
 }

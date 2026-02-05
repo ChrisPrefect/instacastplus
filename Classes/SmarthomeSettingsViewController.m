@@ -44,6 +44,7 @@ enum {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.clearsSelectionOnViewWillAppear = YES;
@@ -406,8 +407,16 @@ enum {
         NSString *newText = [textField.text stringByReplacingCharactersInRange:range withString:string];
         [USER_DEFAULTS setObject:(newText ?: @"") forKey:SmarthomeDeviceName];
         [USER_DEFAULTS synchronize];
-        // Reload footer to show updated topic path
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kSmarthomeConnectionSection] withRowAnimation:UITableViewRowAnimationNone];
+        // Update footer text directly without reloading section (which would steal first responder)
+        UITableViewHeaderFooterView *footer = [self.tableView footerViewForSection:kSmarthomeConnectionSection];
+        if (footer) {
+            if (newText && newText.length > 0) {
+                footer.textLabel.text = [NSString stringWithFormat:@"Topics: InstacastPlus/%@/...".ls, newText];
+            } else {
+                footer.textLabel.text = @"Topics: InstacastPlus/...".ls;
+            }
+            [footer setNeedsLayout];
+        }
     }
     return YES;
 }

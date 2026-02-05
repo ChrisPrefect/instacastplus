@@ -71,7 +71,7 @@
     self.volumeView.hidden = NO;//DevD to do
     //self.volumeView.clipsToBounds = true;
 
-    ICVolumeView* routeButton = [[ICVolumeView alloc] initWithFrame:CGRectMake(8, -12, 60, 60)];
+    ICVolumeView* routeButton = [[ICVolumeView alloc] initWithFrame:CGRectMake(8, -17, 84, 84)];
     routeButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin;
     routeButton.backgroundColor = [UIColor clearColor];
     // showsRouteButton/showsVolumeSlider/setRouteButtonImage are deprecated in iOS 13+ but still functional
@@ -241,6 +241,25 @@
 
     CGRect b = self.view.bounds;
     self.toolsView.frame = CGRectMake(0, CGRectGetHeight(b)-safeAreaInsets.bottom-50, CGRectGetWidth(b), 50);
+
+    // Reposition all 4 toolbar buttons: same size, evenly spaced, 20% bigger than original 70x70
+    CGFloat buttonSize = 84;
+    CGFloat toolsWidth = CGRectGetWidth(self.toolsView.bounds);
+    CGFloat toolsHeight = CGRectGetHeight(self.toolsView.bounds);
+    CGFloat yPos = (toolsHeight - buttonSize) / 2.0;
+    NSMutableArray *toolButtons = [NSMutableArray array];
+    for (UIView *subview in self.toolsView.subviews) {
+        [toolButtons addObject:subview];
+    }
+    [toolButtons sortUsingComparator:^NSComparisonResult(UIView *v1, UIView *v2) {
+        return [@(v1.frame.origin.x) compare:@(v2.frame.origin.x)];
+    }];
+    CGFloat spacing = (toolsWidth - toolButtons.count * buttonSize) / (toolButtons.count + 1);
+    for (NSInteger i = 0; i < (NSInteger)toolButtons.count; i++) {
+        UIView *button = toolButtons[i];
+        CGFloat x = spacing + i * (buttonSize + spacing);
+        button.frame = CGRectMake(x, yPos, buttonSize, buttonSize);
+    }
 
     // Position chapter title label between the two time labels
     CGFloat labelX = CGRectGetMaxX(self.elapsedTimeLabel.frame) + 4;

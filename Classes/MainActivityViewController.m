@@ -51,9 +51,9 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+
     CGRect b = self.view.bounds;
-    
+
     self.nowPlayingController = [[ICNowPlayingActivityViewController alloc] initWithNibName:nil bundle:nil];
     self.nowPlayingController.view.frame = b;
     self.nowPlayingController.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;

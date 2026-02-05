@@ -38,8 +38,6 @@
 #import "Application.h"
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
-#import <MediaPlayer/MediaPlayer.h>
-#import <CarPlay/CarPlay.h>
 
 
 @interface InstacastAppDelegate () <UNUserNotificationCenterDelegate>
@@ -62,22 +60,18 @@
 {
     NSString* defaultsPlist = [[NSBundle mainBundle] pathForResource:@"Defaults" ofType:@"plist"];
     NSMutableDictionary* defaults = [[NSDictionary dictionaryWithContentsOfFile:defaultsPlist] mutableCopy];
-    
-    //#warning AutoCacheNewAudioEpisodes disabled
-    //    [defaults setObject:@(NO) forKey:AutoCacheNewAudioEpisodes];
-    
-    
+
     NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
     [defs registerDefaults:defaults];
-    
+
     if (![defs objectForKey:FirstLaunchDate]) {
         [defs setObject:[NSDate date] forKey:FirstLaunchDate];
         [USER_DEFAULTS setDouble:[[NSDate date] timeIntervalSince1970] forKey:LastRefreshSubscriptionDate];
     }
-    
+
     ICAppearanceManager* aman = [ICAppearanceManager sharedManager];
     [aman updateAppearance];
-    
+
     [NSValueTransformer setValueTransformer:[[ICDurationValueTransformer alloc] init] forName:kICDurationValueTransformer];
     [NSValueTransformer setValueTransformer:[[ICPubdateValueTransformer alloc] init] forName:kICPubdateValueTransformer];
 }
@@ -106,16 +100,14 @@
         [USER_DEFAULTS setBool:true forKey:InterfaceThemeDefaultActive];
     }
     [USER_DEFAULTS synchronize];
-    
-    // setMinimumBackgroundFetchInterval is deprecated in iOS 13+ but still functional
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [App setMinimumBackgroundFetchInterval:900];
     [App setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalMinimum];
 #pragma clang diagnostic pop
-    
+
     self.window.backgroundColor = ICBackgroundColor;
-    // Set interface style early to prevent button flashing in dark mode
     ICAppearanceMode mode = [USER_DEFAULTS integerForKey:kDefaultAppearanceMode];
     switch (mode) {
         case ICAppearanceModeDark:
@@ -129,26 +121,19 @@
             self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
             break;
     }
-    //self.window.frame = CGRectMake(0, 0, 320, 568);
-    
-    //DebugLog(@"%@ %@", NSStringFromCGRect(self.window.frame), NSStringFromCGRect([[UIScreen mainScreen] bounds]));
-    
-    
+
     [App initializeLoggers];
-    
-    
+
     if ([DatabaseManager dataStoreNeedsMigration]) {
         DebugLog(@"migration needed!");
         UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
         self.window.rootViewController = migrationViewController;
-        
         [self performSelector:@selector(_startUpApplicationWithLaunchOptions:) withObject:launchOptions afterDelay:0.1];
     }
     else {
         [self _startUpApplicationWithLaunchOptions:launchOptions];
     }
-    
-    // Request notification authorization using modern UNUserNotificationCenter API
+
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
     __weak typeof(self) weakSelf = self;
@@ -158,8 +143,6 @@
             [[NSNotificationCenter defaultCenter] postNotificationName:@"DidRegisterUserNotificationSettings" object:weakSelf];
         });
     }];
-    
-    DebugLog(@"launchOptions %@", launchOptions);
         
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidTimeout:) name:kApplicationDidTimeoutNotification object:nil];
    
@@ -210,7 +193,6 @@
     [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
     [USER_DEFAULTS synchronize];
     
-    [self setupCarPlayNowPlaying];
     return YES;
 }
 
@@ -224,37 +206,29 @@
     MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
     self.mainViewController = mainViewController;
     [UIManager sharedManager].mainViewController = mainViewController;
-    
+
     self.window.rootViewController = self.mainViewController;
-    
+
     [self.window makeKeyAndVisible];
-    
-    
+
     if ([launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey]) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
         UILocalNotification* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
         [self application:App didReceiveLocalNotification:notification];
 #pragma clang diagnostic pop
-        DebugLog(@"received local notification at launch");
     }
-    
+
     if ([launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey]) {
         NSDictionary* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey];
         [self application:App didReceiveRemoteNotification:notification fetchCompletionHandler:^(UIBackgroundFetchResult result) {
-            DebugLog(@"received remote notification at launch");
         }];
     }
 
     [self _updateAppContentAfterBecomingActive];
 
-    // Restore incomplete episode loading (crash recovery)
-    // Hinweis: Falls das Laden abgebrochen werden soll, im Debugger aufrufen:
-    // [[EpisodeLoadingManager sharedManager] cancelAllLoading]
     [[EpisodeLoadingManager sharedManager] restoreLoadingState];
-    [[EpisodeLoadingManager sharedManager] logStatus];
 
-    // Start MQTT smart home integration if configured
     if ([USER_DEFAULTS boolForKey:SmarthomeMQTTEnabled]) {
         [[SmarthomeManager sharedManager] start];
     }
@@ -921,22 +895,6 @@
     // Use this method to release any resources that were specific to the discarded scenes, as they will not return.
 }
 
-- (void)setupCarPlayNowPlaying {
-    MPPlayableContentManager *contentManager = [MPPlayableContentManager sharedContentManager];
-    contentManager.delegate = self;
-    contentManager.dataSource = self;
-}
-
-#pragma mark - MPPlayableContentDelegate and MPPlayableContentDataSource
-
-- (void)playableContentManager:(MPPlayableContentManager *)contentManager initializePlayableContent:(void (^)(NSError * _Nullable error))completionHandler {
-    // Initialize content here if needed
-    completionHandler(nil);
-}
-
-- (void)playableContentManager:(MPPlayableContentManager *)contentManager didUpdateContext:(MPPlayableContentManagerContext *)context {
-    // Handle updates to CarPlay context if needed
-}
 
 @end
 

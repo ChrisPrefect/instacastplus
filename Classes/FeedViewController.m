@@ -43,22 +43,14 @@
 
 - (void) _loadContent
 {
-    // load webview content
     NSLocale* locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US".ls];
-    
+
     NSString* description = ([self.feed.summary length] > [self.feed.fulltext length]) ? self.feed.summary : self.feed.fulltext;
-    
+
     NSMutableString* content = [NSMutableString string];
-    
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone )
-    {
-        [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
-    }
-    else
-    {
-        [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
-    }
-    
+
+    [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
+
     [content appendString:@"<style type=\"text/css\" scoped>"];
     NSString* appearanceCssPath = [[NSBundle mainBundle] pathForResource:[ICAppearanceManager sharedManager].appearance.cssFile ofType:@"css"];
     NSString* appearanceCss = [NSString stringWithContentsOfFile:appearanceCssPath encoding:NSUTF8StringEncoding error:nil];
@@ -69,18 +61,17 @@
         [content appendString:description];
     }
     [content appendString:@"<table>"];
-    
+
     if ([self.feed.title length] > 0) {
         [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Title".ls, self.feed.title];
     }
-    
+
     if ([self.feed.subtitle length] > 0 && ![self.feed.subtitle isEqualToString:self.feed.title] && ![self.feed.subtitle isEqualToString:description]) {
         [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Subtitle".ls, self.feed.subtitle];
     }
-    
+
     NSSet* categories = self.feed.categories;
-    if ([categories count] > 0)
-    {
+    if ([categories count] > 0) {
         NSInteger catNum = 0;
         for(CDCategory* category in categories) {
             NSString* catString = nil;
@@ -90,7 +81,6 @@
             } else {
                 catString = category.title.ls;
             }
-            
             [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", (catNum==0) ? @"Genre".ls : @"", catString];
             catNum++;
         }
@@ -105,7 +95,6 @@
     if (self.feed.linkURL) {
         [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\"><a href=\"%@\">%@</a></td></tr>", @"Website".ls, [self.feed.linkURL absoluteString], [self.feed.linkURL absoluteString]];
     }
-    
     if ([self.feed.copyright length] > 0) {
         [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Copyright".ls, self.feed.copyright];
     }
@@ -117,26 +106,23 @@
         [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">Feed</td><td valign=\"top\">%@</td></tr>", [self.feed.sourceURL absoluteString]];
     }
 #endif
-    
+
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     [formatter setDateStyle:NSDateFormatterLongStyle];
     [formatter setTimeStyle:NSDateFormatterShortStyle];
-    NSString* lastUpdate = [formatter stringFromDate:self.feed.lastUpdate];
-    [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Updated".ls, lastUpdate];
-    
-    
+    NSString* lastUpdateStr = [formatter stringFromDate:self.feed.lastUpdate];
+    [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Updated".ls, lastUpdateStr];
+
     [content appendString:@"</table></div>"];
-    
+
     NSString* templatePath = [[NSBundle mainBundle] pathForResource:@"InfoDescriptionTemplateIPhone" ofType:@"html"];
     NSString* infoHTMLTemplate = [NSString stringWithContentsOfFile:templatePath encoding:NSUTF8StringEncoding error:nil];
-    
+
     NSString* htmlContent = [infoHTMLTemplate stringByReplacingOccurrencesOfString:@"###CONTENT###" withString:content];
     htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###BUTTONS###" withString:@""];
+
     [self.webView setOpaque:NO];
     self.webView.backgroundColor = [UIColor clearColor];
-    
-    [self.webView evaluateJavaScript:[NSString stringWithFormat: @"window.scroll(0,0)"] completionHandler:^(id result, NSError * _Nullable error) {}];
-    
     [self.webView loadHTMLString:htmlContent baseURL:nil];
 }
 
@@ -213,13 +199,15 @@
 {
     [super viewWillAppear:animated];
     [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(93, 0, 0, 0) byAdjustingForStandardBars:YES];
-    
+
     self.webView.scrollView.contentInset = UIEdgeInsetsMake(0, 0, 50, 0);
-    
-    [self updateAppearance];
-    
-    
-    
+
+    self.view.backgroundColor = ICBackgroundColor;
+    self.webView.backgroundColor = ICBackgroundColor;
+    self.webView.scrollView.backgroundColor = ICBackgroundColor;
+
+    [self _loadContent];
+
     [self _updateToolbarAnimated:YES];
     [self.navigationController setToolbarHidden:NO animated:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -232,6 +220,7 @@
     self.view.backgroundColor = ICBackgroundColor;
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
+
     [self _loadContent];
 }
 

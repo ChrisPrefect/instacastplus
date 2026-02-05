@@ -15,6 +15,7 @@ typedef NS_ENUM(NSInteger, DataSettingsSections) {
     kAutoDownloadSettingsSection,
     kAutoDeleteSettingsSection,
     kDownloadedFilesButton,
+    kStatisticsSection,
     kNumberOfSections,
 };
 
@@ -42,6 +43,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.clearsSelectionOnViewWillAppear = YES;
@@ -106,6 +108,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             return 2;
         case kDownloadedFilesButton:
             return 1;
+        case kStatisticsSection:
+            return 5;
         default:
             break;
     }
@@ -215,6 +219,61 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:[[CacheManager sharedCacheManager] numberOfDownloadedBytes] countStyle:NSByteCountFormatterCountStyleMemory];
         return cell;
     }
+    else if (indexPath.section == kStatisticsSection)
+    {
+        UITableViewCell* cell = [self detailCell];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.accessoryType = UITableViewCellAccessoryNone;
+
+        NSNumberFormatter* numberFormatter = [[NSNumberFormatter alloc] init];
+        numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;
+        numberFormatter.locale = [NSLocale currentLocale];
+
+        switch (indexPath.row) {
+            case 0: {
+                cell.textLabel.text = @"Subscriptions".ls;
+                NSFetchRequest* request = [[NSFetchRequest alloc] init];
+                request.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
+                request.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+                NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
+                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                break;
+            }
+            case 1: {
+                cell.textLabel.text = @"Total Episodes".ls;
+                NSFetchRequest* request = [[NSFetchRequest alloc] init];
+                request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO"];
+                NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
+                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                break;
+            }
+            case 2: {
+                cell.textLabel.text = @"Total Unplayed".ls;
+                NSFetchRequest* request = [[NSFetchRequest alloc] init];
+                request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO && consumed == NO"];
+                NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
+                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                break;
+            }
+            case 3: {
+                cell.textLabel.text = @"Total Downloaded".ls;
+                NSUInteger count = [[CacheManager sharedCacheManager].cachedEpisodes count];
+                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                break;
+            }
+            case 4: {
+                cell.textLabel.text = @"Storage Used".ls;
+                unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
+                cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+                break;
+            }
+            default:
+                break;
+        }
+        return cell;
+    }
 
     return nil;
 }
@@ -232,6 +291,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             return @"Auto-Delete Content".ls;
         case kDownloadedFilesButton:
             return @"";
+        case kStatisticsSection:
+            return @"Statistics".ls;
         default:
             break;
     }

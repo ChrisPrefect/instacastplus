@@ -245,30 +245,16 @@
     content = [content stringByReplacingOccurrencesOfString:@"\r" withString:@" "];
     content = [content stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
     content = [content stringByReplacingOccurrencesOfString:@"'" withString:@"\\'"];
-    
-    //WKWebView* webView = self.sharedWebView;
+
     [self.sharedWebView evaluateJavaScript:[NSString stringWithFormat:@"setContent('%@')", content] completionHandler:^(id result, NSError * _Nullable error) {
         if (error == nil) {
             NSString* res =  (NSString*)result;
-            
+
             if (![res isEqualToString:@"ok"]) {
                 ErrLog(@"javascript error");
             }
-            dispatch_async(dispatch_get_main_queue(), ^{
- 
-//                CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);
-//                if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
-//                    topOffset = CGRectGetHeight(self.headerView.frame);
-//                }
-//                _dontSaveScrollOffset = NO;
-//                webView.scrollView.contentInset = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-//                webView.scrollView.scrollIndicatorInsets = UIEdgeInsetsMake(topOffset, 0, 44, 0);
-//                webView.scrollView.contentOffset = CGPointMake(0, -webView.scrollView.contentInset.top);
-                //_dontSaveScrollOffset = NO;
-            });
-            self.appearance = [ICAppearanceManager sharedManager].appearance;
         }
-        
+        self.appearance = [ICAppearanceManager sharedManager].appearance;
     }];
 
     
@@ -294,21 +280,24 @@
     //[self viewDidLoadContenLoad];
     self.title = @"Show Notes".ls;
     CGRect viewBounds = self.view.bounds;
-    
+
     if (!self.episode) {
         return;
     }
-    
+
     CGFloat masterWidth = CGRectGetWidth(viewBounds);
-    
-    
+
+
     UIView* headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 44, masterWidth, 10+72+10)];
-    headerView.backgroundColor = [UIColor clearColor];
+    headerView.backgroundColor = ICBackgroundColor;
     headerView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [self.view addSubview:headerView];
     self.headerView = headerView;
-    
+
     [self setupWebView];
+
+    // Ensure header stays above webview
+    [self.view bringSubviewToFront:headerView];
     
     
     UIImageView* imageView = [[UIImageView alloc] initWithFrame:CGRectMake(masterWidth-15-72, 10, 72, 72)];
@@ -358,16 +347,16 @@
     
     UILabel* timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     timeLabel.backgroundColor = [UIColor clearColor];
-    timeLabel.font = [UIFont systemFontOfSize:11.0f];
+    timeLabel.font = [UIFont systemFontOfSize:15.0f];
     [headerView addSubview:timeLabel];
     self.timeLabel = timeLabel;
-    
+
     self.consumeIndicator = [[ICEpisodeConsumeIndicator alloc] initWithFrame:CGRectMake(0, 0, 10, 10)];
     self.consumeIndicator.backgroundColor = [UIColor clearColor];
     self.consumeIndicator.opaque = NO;
     self.consumeIndicator.tintColor = (self.episode.consumed) ? ICMutedTextColor : self.view.tintColor;
     [headerView addSubview:self.consumeIndicator];
-    
+
     UIImageView* videoIndicator = [[UIImageView alloc] initWithImage:[[UIImage imageNamed:@"Episode Video"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
     videoIndicator.backgroundColor = [UIColor clearColor];
     videoIndicator.tintColor = ICMutedTextColor;
@@ -375,8 +364,8 @@
     videoIndicator.hidden = !self.episode.video;
     [headerView addSubview:videoIndicator];
     self.videoIndicator = videoIndicator;
-    
-    
+
+
     UIView* starredIndicator = [[UIView alloc] initWithFrame:CGRectMake(0, 15, 3, 72)];
     starredIndicator.backgroundColor = [UIColor colorWithRed:1.f green:174/255.0 blue:0.f alpha:1.f];
     starredIndicator.hidden = !self.episode.starred;
@@ -584,13 +573,13 @@
 
 - (void) updateAppearance {
     self.view.backgroundColor = ICBackgroundColor;
-    self.headerView.backgroundColor = ICTransparentBackdropColor;
+    self.headerView.backgroundColor = ICBackgroundColor;
 
     self.titleLabel.textColor = ICTextColor;
     self.feedTitleLabel.textColor = ICMutedTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
-    self.sharedWebView.backgroundColor = ICTransparentBackdropColor;
-    self.sharedWebView.scrollView.backgroundColor = ICTransparentBackdropColor;
+    self.sharedWebView.backgroundColor = ICBackgroundColor;
+    self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
 
     // Update navigation bar title color for dark mode
     UINavigationBarAppearance* navBarAppearance = [[UINavigationBarAppearance alloc] init];

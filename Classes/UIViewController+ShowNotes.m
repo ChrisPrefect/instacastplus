@@ -108,6 +108,18 @@
     
     UIBarButtonItem* a = [[UIBarButtonItem alloc] initWithTitle:@"" style:UIBarButtonItemStylePlain target:nil action:nil];
     navController.topViewController.navigationItem.backBarButtonItem = a;
+
+    // Toolbar-Appearance VOR dem Push setzen um schwarze Leiste zu vermeiden
+    UIToolbarAppearance *toolbarAppearance = [[UIToolbarAppearance alloc] init];
+    [toolbarAppearance configureWithOpaqueBackground];
+    toolbarAppearance.backgroundColor = ICBackgroundColor;
+    toolbarAppearance.shadowColor = [UIColor clearColor];
+    navController.toolbar.standardAppearance = toolbarAppearance;
+    navController.toolbar.scrollEdgeAppearance = toolbarAppearance;
+    navController.toolbar.compactAppearance = toolbarAppearance;
+    navController.toolbar.compactScrollEdgeAppearance = toolbarAppearance;
+    navController.toolbar.backgroundColor = ICBackgroundColor;
+
     [navController pushViewController:webController animated:YES];
 
     return NO;

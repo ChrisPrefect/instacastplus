@@ -45,18 +45,22 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 	if ((self = [super init]))
 	{
 		_mainQueue = [[NSOperationQueue alloc] init];
-        
-        _telephonyInfo = [CTTelephonyNetworkInfo new];
-        _reachability = [Reachability reachabilityForInternetConnection]; //reachabilityWithHostName:@"apple.com"];
+
+        _reachability = [Reachability reachabilityForInternetConnection];
         [_reachability startNotifier];
-        
+
+#if !TARGET_OS_SIMULATOR
+        _telephonyInfo = [CTTelephonyNetworkInfo new];
+#endif
+
         [self updateNetworkAccessTechnology];
 
-        // Use the non-deprecated notification for iOS 12+
         __weak typeof(self) weakSelf = self;
+#if !TARGET_OS_SIMULATOR
         [NSNotificationCenter.defaultCenter addObserverForName:CTServiceRadioAccessTechnologyDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){
             [weakSelf updateNetworkAccessTechnology];
         }];
+#endif
 
         [NSNotificationCenter.defaultCenter addObserverForName:kReachabilityChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
             [weakSelf updateNetworkAccessTechnology];
@@ -158,7 +162,6 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         }
     }
     
-    DebugLog(@"network changed: %ld", (long)self.networkAccessTechnology);
     
 }
 

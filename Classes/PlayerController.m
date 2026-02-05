@@ -512,14 +512,33 @@ enum {
 - (void) viewWillAppear:(BOOL)animated
 {
 	[super viewWillAppear:animated];
-    
+
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
-    
-    if (_dismissing || _viewDidAppear) {
+
+    // Make navigation bar opaque so chapter images don't show through
+    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+    [navAppearance configureWithOpaqueBackground];
+    navAppearance.backgroundColor = ICBackgroundColor;
+    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
+    navAppearance.shadowColor = nil;
+    self.navigationController.navigationBar.standardAppearance = navAppearance;
+    self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
+    self.navigationController.navigationBar.compactAppearance = navAppearance;
+
+    if (_dismissing) {
         return;
     }
-    
+
+    if (_viewDidAppear) {
+        // Player was already shown before - just update artwork and chapter image
+        [self _updateArtworkImage];
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
+        [self.infoViewController changeChapterImageIndex:collectionIndex];
+        return;
+    }
+
     if (self.image) {
         [self _updateDynamicTintColorWithImage:self.image];
     }
@@ -590,6 +609,11 @@ enum {
 
 - (void) viewWillDisappear:(BOOL)animated
 {
+    // Restore default navigation bar appearance
+    self.navigationController.navigationBar.standardAppearance = nil;
+    self.navigationController.navigationBar.scrollEdgeAppearance = nil;
+    self.navigationController.navigationBar.compactAppearance = nil;
+
     [super viewWillDisappear:animated];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
 }
