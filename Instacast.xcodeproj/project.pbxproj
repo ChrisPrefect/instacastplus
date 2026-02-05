@@ -234,8 +234,6 @@
 		1BD2B82C15DA7355003A6DBB /* libz.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1BD2B82B15DA7355003A6DBB /* libz.dylib */; };
 		1BD2BC9B15E38FB100E5D8AD /* UIManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD2BC9A15E38FB100E5D8AD /* UIManager.m */; };
 		1BD31EFA1667A6A700C9FDEB /* ValuesTableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD31EF91667A6A700C9FDEB /* ValuesTableViewController.m */; };
-		1BD3E25519877C9D00BA8C2F /* CoreLocation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1BD3E25419877C9D00BA8C2F /* CoreLocation.framework */; };
-		1BD3E25819877FCA00BA8C2F /* ICAppearanceDaylightCalculator.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD3E25719877FCA00BA8C2F /* ICAppearanceDaylightCalculator.m */; };
 		1BD7E1FE15D29762000ADBDC /* CDCategory.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD7E1FD15D29762000ADBDC /* CDCategory.m */; };
 		1BD7E20115D2B04B000ADBDC /* CDFeedProperty.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD7E20015D2B04B000ADBDC /* CDFeedProperty.m */; };
 		1BD95491177C4F1B00323386 /* _ICMetadataAssetParser.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD9548A177C4F1B00323386 /* _ICMetadataAssetParser.m */; };
@@ -268,6 +266,9 @@
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
 		835A5AF02F338F7800A70766 /* ImportExportSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */; };
+		835A5B0B2F33BBC000A70766 /* SmarthomeSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0A2F33BBC000A70766 /* SmarthomeSettingsViewController.m */; };
+		835A5B0D2F33BBDA00A70766 /* SmarthomeManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0C2F33BBDA00A70766 /* SmarthomeManager.m */; };
+		835A5B102F33BBFE00A70766 /* ICMQTTClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */; };
 		83D65DAB2F2F6A9000A3CC18 /* EpisodeLoadingManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */; };
 		9259B7F32D20FA990035AA91 /* SettingInputViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B7F22D20FA990035AA91 /* SettingInputViewController.m */; };
 		9259B80D2D33B9010035AA91 /* SettingInputChapterController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */; };
@@ -703,9 +704,6 @@
 		1BD2BC9A15E38FB100E5D8AD /* UIManager.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = UIManager.m; sourceTree = "<group>"; };
 		1BD31EF81667A6A700C9FDEB /* ValuesTableViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ValuesTableViewController.h; sourceTree = "<group>"; };
 		1BD31EF91667A6A700C9FDEB /* ValuesTableViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ValuesTableViewController.m; sourceTree = "<group>"; };
-		1BD3E25419877C9D00BA8C2F /* CoreLocation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreLocation.framework; path = System/Library/Frameworks/CoreLocation.framework; sourceTree = SDKROOT; };
-		1BD3E25619877FCA00BA8C2F /* ICAppearanceDaylightCalculator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICAppearanceDaylightCalculator.h; sourceTree = "<group>"; };
-		1BD3E25719877FCA00BA8C2F /* ICAppearanceDaylightCalculator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICAppearanceDaylightCalculator.m; sourceTree = "<group>"; };
 		1BD7101F142B28A700B29FAF /* AnimatingMarqueeLabel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AnimatingMarqueeLabel.h; sourceTree = "<group>"; };
 		1BD71020142B28A700B29FAF /* AnimatingMarqueeLabel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AnimatingMarqueeLabel.m; sourceTree = "<group>"; };
 		1BD7E1FC15D29761000ADBDC /* CDCategory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CDCategory.h; sourceTree = "<group>"; };
@@ -764,6 +762,12 @@
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		32CA4F630368D1EE00C91783 /* Instacast_Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Instacast_Prefix.pch; sourceTree = "<group>"; };
 		835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImportExportSettingsViewController.m; path = Classes/ImportExportSettingsViewController.m; sourceTree = "<group>"; };
+		835A5B082F33BBC000A70766 /* SmarthomeManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeManager.h; sourceTree = "<group>"; };
+		835A5B092F33BBC000A70766 /* SmarthomeSettingsViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeSettingsViewController.h; sourceTree = "<group>"; };
+		835A5B0A2F33BBC000A70766 /* SmarthomeSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmarthomeSettingsViewController.m; sourceTree = "<group>"; };
+		835A5B0C2F33BBDA00A70766 /* SmarthomeManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SmarthomeManager.m; sourceTree = "<group>"; };
+		835A5B0E2F33BBFE00A70766 /* ICMQTTClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ICMQTTClient.h; path = MQTT/ICMQTTClient.h; sourceTree = "<group>"; };
+		835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ICMQTTClient.m; path = MQTT/ICMQTTClient.m; sourceTree = "<group>"; };
 		83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = EpisodeLoadingManager.h; path = Classes/Model/EpisodeLoadingManager.h; sourceTree = "<group>"; };
 		83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = EpisodeLoadingManager.m; path = Classes/Model/EpisodeLoadingManager.m; sourceTree = "<group>"; };
 		9259B7F12D20FA990035AA91 /* SettingInputViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputViewController.h; sourceTree = "<group>"; };
@@ -838,7 +842,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				1BA136C1178188CC007FB3DB /* StoreKit.framework in Frameworks */,
-				1BD3E25519877C9D00BA8C2F /* CoreLocation.framework in Frameworks */,
 				1B2A468519249C6F0042C3E5 /* CoreTelephony.framework in Frameworks */,
 				1B35B37C17A9099C00339E64 /* Accelerate.framework in Frameworks */,
 				1B88AD9F17995273006BB915 /* CoreImage.framework in Frameworks */,
@@ -883,6 +886,13 @@
 				188B3C712E175728004D14A5 /* SkipTimeCell.h */,
 				188B3C722E175728004D14A5 /* SkipTimeCell.m */,
 				188B3C732E175728004D14A5 /* SkipTimeCell.xib */,
+				E981A4C97F2F43B593944594 /* MQTT */,
+				835A5B0C2F33BBDA00A70766 /* SmarthomeManager.m */,
+				835A5B082F33BBC000A70766 /* SmarthomeManager.h */,
+				835A5B092F33BBC000A70766 /* SmarthomeSettingsViewController.h */,
+				835A5B0A2F33BBC000A70766 /* SmarthomeSettingsViewController.m */,
+				835A5B0E2F33BBFE00A70766 /* ICMQTTClient.h */,
+				835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -1150,8 +1160,6 @@
 			children = (
 				1B83D1C91983B71C00669575 /* ICAppearanceManager.h */,
 				1B83D1CA1983B71C00669575 /* ICAppearanceManager.m */,
-				1BD3E25619877FCA00BA8C2F /* ICAppearanceDaylightCalculator.h */,
-				1BD3E25719877FCA00BA8C2F /* ICAppearanceDaylightCalculator.m */,
 			);
 			name = Appearance;
 			sourceTree = "<group>";
@@ -1649,7 +1657,6 @@
 			children = (
 				CDB981F32CB59B72000E7321 /* MediaPlayer.framework */,
 				CDA9C20C2CAF23A9000BEF00 /* CarPlay.framework */,
-				1BD3E25419877C9D00BA8C2F /* CoreLocation.framework */,
 				1B2A468419249C6E0042C3E5 /* CoreTelephony.framework */,
 				1B35B37B17A9099C00339E64 /* Accelerate.framework */,
 				1B88AD9E17995273006BB915 /* CoreImage.framework */,
@@ -1742,6 +1749,13 @@
 				CE3EA6902AA7A952001900EB /* FMResultSet.m */,
 			);
 			path = fmdb;
+			sourceTree = "<group>";
+		};
+		E981A4C97F2F43B593944594 /* MQTT */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = MQTT;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1981,6 +1995,7 @@
 				1B816D6C1C6CE9920001CFA8 /* UIViewController+Alert.m in Sources */,
 				1B5ADAF9132FB66000C484FB /* HTTPAuthentication.m in Sources */,
 				1BFAA6FE1333A03800484E94 /* Sound.m in Sources */,
+				835A5B102F33BBFE00A70766 /* ICMQTTClient.m in Sources */,
 				CE3EA6982AA7A952001900EB /* FMDatabase.m in Sources */,
 				1B3461E91343303A003A16A9 /* OPML.m in Sources */,
 				1B32E4F321A6EE24004E225A /* NSDictionary+VMFoundation.m in Sources */,
@@ -2084,6 +2099,7 @@
 				1B4FD20D15D13E6A00092652 /* CDEpisode.m in Sources */,
 				1BD7E1FE15D29762000ADBDC /* CDCategory.m in Sources */,
 				1B02D66319AF2AB40073151E /* ICFTSController.m in Sources */,
+				835A5B0D2F33BBDA00A70766 /* SmarthomeManager.m in Sources */,
 				1BD7E20115D2B04B000ADBDC /* CDFeedProperty.m in Sources */,
 				1B32E4EC21A6EE24004E225A /* VMAlertStylePopoverAnimator.m in Sources */,
 				1B2EB81915D3DC0D00D2817E /* CDPlaylist.m in Sources */,
@@ -2117,7 +2133,6 @@
 				1B0B3AE916808D3100789F71 /* Defines.m in Sources */,
 				1B8355BF1684AC3E00CB99E3 /* CircleProgressView.m in Sources */,
 				1B3D1434169C871A00D147D2 /* ICImageCacheOperation.m in Sources */,
-				1BD3E25819877FCA00BA8C2F /* ICAppearanceDaylightCalculator.m in Sources */,
 				1B32E4F421A6EE24004E225A /* NSUndoManager+VMFoundation.m in Sources */,
 				CE3EA69A2AA7A952001900EB /* FMDatabasePool.m in Sources */,
 				1B32E4F721A6EE24004E225A /* NSNotificationCenter+VemedioKit.m in Sources */,
@@ -2145,6 +2160,7 @@
 				835A5AF02F338F7800A70766 /* ImportExportSettingsViewController.m in Sources */,
 				83D65DAB2F2F6A9000A3CC18 /* EpisodeLoadingManager.m in Sources */,
 				1BB0D53B1A0A0ADE00B619C8 /* SFHFKeychainUtils.m in Sources */,
+				835A5B0B2F33BBC000A70766 /* SmarthomeSettingsViewController.m in Sources */,
 				1BD9549D177D798600323386 /* ICPagedFeedParser.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

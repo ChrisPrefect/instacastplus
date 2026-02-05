@@ -7,7 +7,7 @@
 //
 
 #import <Foundation/Foundation.h>
-
+#import "Defines.h"
 
 @protocol ICAppearance <NSObject>
 @property (nonatomic, readonly) UIColor* tintColor;
@@ -38,15 +38,12 @@ extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 
 @property (nonatomic, strong) id<ICAppearance> appearance;
 
-@property (nonatomic) BOOL switchesNightModeAutomatically;
-@property (nonatomic) BOOL nightMode;
-@property (nonatomic) BOOL nightSettingMode;
-- (void) setDeviceNightMode:(BOOL)nightMode;
+@property (nonatomic) ICAppearanceMode appearanceMode;
+@property (nonatomic, readonly) BOOL nightSettingMode;  // Returns current dark mode state
+@property (nonatomic, readonly) BOOL nightMode;         // Alias for nightSettingMode
 
-- (BOOL) switchNightModeAutomaticallyNow;
 - (void) updateAppearance;
 - (void) updateThemeTintColor;
-- (BOOL) updateLocation;
 - (UIImage*) navigationBarBackgroundImage;
 
 @end

@@ -128,8 +128,6 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Night mode can be switched automatically at sunrise and sunset. To calculate those times, Instacast asks for your permission to gather location data. Location data is only gathered when you open the app, never in the background.</string>
 	<key>NSMainNibFile</key>
 	<string>MainWindow</string>
 	<key>NSPrincipalClass</key>

@@ -371,15 +371,6 @@
             _flags.apnRegisterSuccess = 0;
         }
     }
-    
-    [[ICAppearanceManager sharedManager] switchNightModeAutomaticallyNow];
-    if (@available(iOS 13.0, *)) {
-        if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
-            [[ICAppearanceManager sharedManager] setDeviceNightMode:YES];
-        } else {
-            [[ICAppearanceManager sharedManager] setDeviceNightMode:NO];
-        }
-    }
 }
 
 - (void)sceneDidEnterBackground:(UIScene *)scene {

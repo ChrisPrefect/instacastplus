@@ -102,5 +102,11 @@
 	<integer>0</integer>
 	<key>PlayerAutoSkipEndPeriod</key>
 	<integer>0</integer>
+	<key>SmarthomeMQTTEnabled</key>
+	<false/>
+	<key>SmarthomeMQTTPort</key>
+	<integer>1883</integer>
+	<key>SmarthomeAllowControl</key>
+	<true/>
 </dict>
 </plist>

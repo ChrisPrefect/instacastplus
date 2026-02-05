@@ -95,9 +95,7 @@ NSString* AutoDeleteNewsMode = @"AutoDeleteNewsMode";
 NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 
 NSString* kDefaultPlayerControls = @"PlayerControls";
-NSString* kDefaultSwitchNightModeAutomatically = @"SwitchNightModeAutomatically";
-NSString* kDefaultNightMode = @"NightMode";
-NSString* kDeviceNightMode = @"DeviceNightMode";
+NSString* kDefaultAppearanceMode = @"AppearanceMode";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 
 #if TARGET_OS_IPHONE==1
@@ -114,3 +112,15 @@ NSString* kUIPersistenceSubscriptionsSelectedFeedUID = @"SubscriptionsSelectedFe
 NSString* kUIPersistenceSubscriptionsSearchTerm = @"SubscriptionsSearchTerm";
 NSString* kUIPersistencePlaylistsSelectedPlaylistUID = @"DefaultPlaylistsSelectedPlaylistUID";
 NSString* kUIPersistenceBookmarkSelectedEpisodeGUID = @"DefaultBookmarkSelectedEpisodeGUID";
+
+// Smart Home MQTT
+NSString* SmarthomeMQTTEnabled = @"SmarthomeMQTTEnabled";
+NSString* SmarthomeMQTTHost = @"SmarthomeMQTTHost";
+NSString* SmarthomeMQTTPort = @"SmarthomeMQTTPort";
+NSString* SmarthomeMQTTUsername = @"SmarthomeMQTTUsername";
+NSString* SmarthomeMQTTPassword = @"SmarthomeMQTTPassword";
+NSString* SmarthomeAllowControl = @"SmarthomeAllowControl";
+NSString* SmarthomeDeviceName = @"SmarthomeDeviceName";
+
+NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";
+NSString* ApplicationDidDetectMotionNotification = @"ApplicationDidDetectMotionNotification";

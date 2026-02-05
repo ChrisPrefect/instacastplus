@@ -222,6 +222,17 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     [self _setObserving:YES];
 }
 
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+    [super traitCollectionDidChange:previousTraitCollection];
+
+    if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
+        if (self.traitCollection.userInterfaceStyle != previousTraitCollection.userInterfaceStyle) {
+            [[ICAppearanceManager sharedManager] updateAppearance];
+        }
+    }
+}
+
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];

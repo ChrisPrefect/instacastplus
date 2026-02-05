@@ -77,11 +77,6 @@
     
     ICAppearanceManager* aman = [ICAppearanceManager sharedManager];
     [aman updateAppearance];
-    if (aman.switchesNightModeAutomatically) {
-       /* if (![aman updateLocation]) {
-            aman.switchesNightModeAutomatically = NO;
-        }*/
-    }
     
     [NSValueTransformer setValueTransformer:[[ICDurationValueTransformer alloc] init] forName:kICDurationValueTransformer];
     [NSValueTransformer setValueTransformer:[[ICPubdateValueTransformer alloc] init] forName:kICPubdateValueTransformer];
@@ -121,10 +116,18 @@
     
     self.window.backgroundColor = ICBackgroundColor;
     // Set interface style early to prevent button flashing in dark mode
-    if ([USER_DEFAULTS boolForKey:kDefaultNightMode]) {
-        self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    } else {
-        self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    ICAppearanceMode mode = [USER_DEFAULTS integerForKey:kDefaultAppearanceMode];
+    switch (mode) {
+        case ICAppearanceModeDark:
+            self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            break;
+        case ICAppearanceModeLight:
+            self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+            break;
+        case ICAppearanceModeAutomatic:
+        default:
+            self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
+            break;
     }
     //self.window.frame = CGRectMake(0, 0, 320, 568);
     
@@ -250,6 +253,11 @@
     // [[EpisodeLoadingManager sharedManager] cancelAllLoading]
     [[EpisodeLoadingManager sharedManager] restoreLoadingState];
     [[EpisodeLoadingManager sharedManager] logStatus];
+
+    // Start MQTT smart home integration if configured
+    if ([USER_DEFAULTS boolForKey:SmarthomeMQTTEnabled]) {
+        [[SmarthomeManager sharedManager] start];
+    }
 }
 
 
@@ -601,15 +609,6 @@
         
         if (![App isRegisteredForRemoteNotifications]) {
             _flags.apnRegisterSuccess = 0;
-        }    
-    }
-    
-    [[ICAppearanceManager sharedManager] switchNightModeAutomaticallyNow];
-    if (@available(iOS 13.0, *)) {
-        if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
-            [[ICAppearanceManager sharedManager] setDeviceNightMode:YES];
-        } else {
-            [[ICAppearanceManager sharedManager] setDeviceNightMode:NO];
         }
     }
 }

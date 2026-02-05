@@ -252,7 +252,10 @@
 "Add" = "Hinzufügen";
 "Add Selected Podcasts" = "Ausgewählte Podcasts hinzufügen";
 "All Podcasts" = "Alle Podcasts";
-"Appearance" = "Erscheinungsbild";
+"Appearance" = "Darstellung";
+"Automatic" = "Automatisch";
+"Light" = "Hell";
+"Dark" = "Dunkel";
 "Ascending" = "Aufsteigend";
 "Audio" = "Audio";
 "Contains Keyword" = "Enthält Schlüsselworte";
@@ -375,18 +378,14 @@
 "Enable" = "Aktivieren";
 "General" = "Allgemein";
 "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data." = "Helfen Sie InstacastPlus beim Verbessern ihrer Produkte und Dienste, indem Sie die Reports automatisch versenden. Die Reports enthalten keinerlei persönliche oder private Daten.";
-"To switch to night mode automatically, please go to iOS's Settings app and allow Instacast to use Location Services." = "Bitte gehen Sie in die Systemeinstellungen und erlauben Ortungsdienste für Instacast, um Nacht-Modus automatisch zu aktivieren.";
 "Interface Sounds" = "Interfacetöne";
-"Location Services denied" = "Ortungsdienste verweigert";
 "Miscellaneous" = "Verschiedenes";
 "Dark mode" = "Dunkler Modus";
-"Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background." = "Nacht-Modus kann bei Sonnenaufgang und Sonnenuntergang automatisch umgeschaltet werden. Um die Zeiten dafür zu berechnen, fragt Instacast Ihren aktuellen Standort ab. Standortdaten werden nur gesammelt, sofern sich Instacast im Vordergrund befindet, niemals im Hintergrund.";
 "Replay after Pause" = "Replay nach Pause";
 "Seeking" = "Spulen";
 "Seeking and Skipping Chapters" = "Spulen und Kapitel springen";
 "Send Reports" = "Reports senden";
 "Skipping" = "Springen";
-"Switch Automatically" = "Systemeinstellung übernehmen";
 "System Controls" = "Systemsteuerung";
 "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up." = "Sie können die Verwendung mobiler Daten entweder ganz abschalten, nur das Herunterladen von Mediadaten über das mobile Netzwerk verbieten oder die Nutzung mobiler Daten ganz erlauben. Das Verbieten mobiler Daten verhindert ebenfalls das Aufpoppen der Systemwarnung.";
 
@@ -721,3 +720,39 @@
 "Import subscriptions from an OPML file." = "Abonnements aus einer OPML-Datei importieren.";
 "Import all data from an InstacastPlus backup file." = "Alle Daten aus einer InstacastPlus-Sicherungsdatei importieren.";
 "You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data." = "Du kannst auch .opml- oder .xml-Dateien aus Mail oder der Dateien-App in InstacastPlus öffnen, um Daten zu importieren.";
+
+/* SmarthomeSettingsViewController */
+"Smart Home" = "Smart Home";
+"Enable MQTT" = "MQTT aktivieren";
+"Server" = "Server";
+"Port" = "Port";
+"Optional" = "Optional";
+"Username" = "Benutzername";
+"Client Name" = "Client-Name";
+"Allow Remote Control" = "Fernsteuerung erlauben";
+"Status" = "Status";
+"Disabled" = "Deaktiviert";
+"Disconnect" = "Trennen";
+"Connect" = "Verbinden";
+"MQTT Broker" = "MQTT-Broker";
+"Options" = "Optionen";
+"Connection" = "Verbindung";
+"Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect." = "Veröffentlicht Wiedergabestatus und Gerätezustand an einen MQTT-Broker für die Smart-Home-Integration. Der Dialog für die lokale Netzwerkberechtigung erscheint bei der ersten Verbindung.";
+
+/* SmarthomeManager Status */
+"Connection Status" = "Verbindungsstatus";
+"Connecting..." = "Verbinde...";
+"Connected" = "Verbunden";
+"Disconnected" = "Getrennt";
+"Error" = "Fehler";
+
+/* ICMQTTClient Errors */
+"Connection timeout - server not reachable" = "Zeitüberschreitung - Server nicht erreichbar";
+"Topics: InstacastPlus/%@/status/..." = "Topics: InstacastPlus/%@/status/...";
+"Topics: InstacastPlus/status/..." = "Topics: InstacastPlus/status/...";
+"Protocol version not supported" = "Protokollversion nicht unterstützt";
+"Client ID rejected" = "Client-ID abgelehnt";
+"Server unavailable" = "Server nicht verfügbar";
+"Invalid username or password" = "Benutzername oder Passwort ungültig";
+"Not authorized" = "Nicht autorisiert";
+"Connection refused" = "Verbindung abgelehnt";

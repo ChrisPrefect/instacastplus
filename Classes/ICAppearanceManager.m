@@ -6,20 +6,14 @@
 //
 //
 
-#import <CoreLocation/CoreLocation.h>
-
 #import "ICAppearanceManager.h"
 #import "ImageFunctions.h"
 #import "InstacastAppDelegate.h"
-#import "ICAppearanceDaylightCalculator.h"
 #import "MainViewController_4.h"
 
 NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceManagerDidUpdateAppearanceNotification";
 
-@interface ICAppearanceManager () <CLLocationManagerDelegate>
-@property (nonatomic, strong) CLLocationManager* locationManager;
-@property (nonatomic, strong) CLLocation* location;
-@property (nonatomic, strong) NSDate* nextSwitchDate;
+@interface ICAppearanceManager ()
 @end
 
 @implementation ICAppearanceManager
@@ -125,67 +119,57 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     }
 }
 
-- (BOOL) switchesNightModeAutomatically {
-    return [USER_DEFAULTS boolForKey:kDefaultSwitchNightModeAutomatically];
+- (ICAppearanceMode) appearanceMode {
+    return [USER_DEFAULTS integerForKey:kDefaultAppearanceMode];
 }
 
-- (void) setSwitchesNightModeAutomatically:(BOOL)switchesNightModeAutomatically
-{
-    if (!switchesNightModeAutomatically) {
-        _location = nil;
-    }
-    
-    [USER_DEFAULTS setBool:switchesNightModeAutomatically forKey:kDefaultSwitchNightModeAutomatically];
+- (void) setAppearanceMode:(ICAppearanceMode)appearanceMode {
+    [USER_DEFAULTS setInteger:appearanceMode forKey:kDefaultAppearanceMode];
+    [self updateAppearance];
 }
 
 - (BOOL) nightSettingMode {
-    return [USER_DEFAULTS boolForKey:kDefaultNightMode];
+    switch (self.appearanceMode) {
+        case ICAppearanceModeDark:
+            return YES;
+        case ICAppearanceModeLight:
+            return NO;
+        case ICAppearanceModeAutomatic:
+        default:
+            return [UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+    }
 }
 
 - (BOOL) nightMode {
-    //return [USER_DEFAULTS boolForKey:kDeviceNightMode] || [USER_DEFAULTS boolForKey:kDefaultNightMode];
-    return [USER_DEFAULTS boolForKey:kDefaultNightMode];
+    return self.nightSettingMode;
 }
-
-- (void) setDeviceNightMode:(BOOL)nightMode {
-    [USER_DEFAULTS setBool:nightMode forKey:kDeviceNightMode];
-    [self updateAppearance];
-}
-
 
 - (void) setNightMode:(BOOL)nightMode {
-    [USER_DEFAULTS setBool:nightMode forKey:kDefaultNightMode];
-    [self updateAppearance];
-}
-
-- (BOOL) switchNightModeAutomaticallyNow
-{
-    /*if (self.switchesNightModeAutomatically && ![self updateLocation]) {
-        ErrLog(@"night mode could not be switched");
-        self.switchesNightModeAutomatically = NO;
-        return NO;
-    }*/
-    
-    if (self.switchesNightModeAutomatically) {
-        UIUserInterfaceStyle style = [UIScreen mainScreen].traitCollection.userInterfaceStyle;
-        if (style == UIUserInterfaceStyleDark) {
-            self.nightMode = YES;
-        } else {
-            self.nightMode = NO;
-        }
-    }
-    return YES;
+    self.appearanceMode = nightMode ? ICAppearanceModeDark : ICAppearanceModeLight;
 }
 
 - (void) updateAppearance
 {
     UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
-    if (self.nightMode) {
-        self.appearance = [[ICNightAppearance alloc] init];
-        rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    } else {
-        self.appearance = [[ICDaylightAppearance alloc] init];
-        rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+
+    switch (self.appearanceMode) {
+        case ICAppearanceModeDark:
+            rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            self.appearance = [[ICNightAppearance alloc] init];
+            break;
+        case ICAppearanceModeLight:
+            rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+            self.appearance = [[ICDaylightAppearance alloc] init];
+            break;
+        case ICAppearanceModeAutomatic:
+        default:
+            rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
+            if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
+                self.appearance = [[ICNightAppearance alloc] init];
+            } else {
+                self.appearance = [[ICDaylightAppearance alloc] init];
+            }
+            break;
     }
 }
 
@@ -231,120 +215,6 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     }
 }
 
-#pragma mark -
-
-/*
-- (BOOL) updateLocation
-{
-    if (![CLLocationManager locationServicesEnabled]) {
-        return NO;
-    }
-    
-    if (!self.locationManager)
-    {
-        self.locationManager = [[CLLocationManager alloc] init];
-        self.locationManager.desiredAccuracy = kCLLocationAccuracyThreeKilometers;
-        self.locationManager.delegate = self;
-    }
-    
-
-    if ([CLLocationManager authorizationStatus] == kCLAuthorizationStatusNotDetermined) {
-        [self.locationManager requestWhenInUseAuthorization];
-    }
-    else if ([CLLocationManager authorizationStatus] < kCLAuthorizationStatusAuthorizedAlways) {
-        return NO;
-    }
-    else {
-        CLLocation* location = self.locationManager.location;
-        //DebugLog(@"location time interval: %f", [location.timestamp timeIntervalSinceNow]);
-        if (!location) {
-            [self.locationManager startUpdatingLocation];
-        } else {
-            self.location = location;
-        }
-    }
-
-    return YES;
-}
-
-- (void)locationManager:(CLLocationManager *)manager didChangeAuthorizationStatus:(CLAuthorizationStatus)status
-{
-    if (status >= kCLAuthorizationStatusAuthorizedAlways)
-    {
-        CLLocation* location = self.locationManager.location;
-        //DebugLog(@"location time interval: %f", [location.timestamp timeIntervalSinceNow]);
-        if (!location) {
-            [self.locationManager startUpdatingLocation];
-        } else {
-            self.location = location;
-        }
-    }
-    else if (status == kCLAuthorizationStatusDenied) {
-        self.switchesNightModeAutomatically = NO;
-        [self updateAppearance];
-    }
-}
-
-- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
-{
-    self.location = [locations firstObject];
-    //DebugLog(@"new location %@", self.location);
-    
-    [self perform:^(id sender) {
-        //DebugLog(@"deactivating location updating");
-        [manager stopUpdatingLocation];
-    } afterDelay:1.0];
-}
-
-- (void) setLocation:(CLLocation *)location
-{
-    if (_location != location) {
-        _location = location;
-        
-        BOOL isNight = [self _updateSwitchSchedule];
-        if (self.switchesNightModeAutomatically && self.nightMode != isNight) {
-            self.nightMode = isNight;
-        }
-    }
-}
-
-- (BOOL) _updateSwitchSchedule
-{
-    BOOL isNight = NO;
-    
-    ICAppearanceDaylightCalculator* calculator = [[ICAppearanceDaylightCalculator alloc] initWithWithLocation:self.location date:[NSDate date]];
-    NSTimeInterval sunriseInterval = [[NSDate date] timeIntervalSinceDate:calculator.sunrise];
-	NSTimeInterval sunsetInterval = [[NSDate date] timeIntervalSinceDate:calculator.sunset];
-	
-	if ( sunriseInterval < 0 && sunsetInterval < 0 )
-    {
-		isNight = YES;
-		self.nextSwitchDate = calculator.sunrise;
-	}
-    else if (sunriseInterval >= 0 && sunsetInterval < 0)
-    {
-		isNight = NO;
-		self.nextSwitchDate = calculator.sunset;
-	}
-    else if (sunriseInterval >= 0 && sunsetInterval >= 0)
-    {
-        calculator.date = [NSDate dateWithTimeIntervalSinceNow:86400];
-		NSTimeInterval tomorrowSunriseInterval = [[NSDate date] timeIntervalSinceDate:calculator.sunrise];
-		NSTimeInterval tomorrowSunsetInterval = [[NSDate date] timeIntervalSinceDate:calculator.sunset];
-		if ( tomorrowSunriseInterval < 0 && tomorrowSunsetInterval < 0 ) {
-			isNight = YES;
-			self.nextSwitchDate = calculator.sunrise;
-		} else if (tomorrowSunriseInterval >= 0 && tomorrowSunsetInterval < 0) {
-			isNight = NO;
-			self.nextSwitchDate = calculator.sunset;
-		}
-	}
-    
-    //DebugLog(@"next appearance switch date: %@", [self.nextSwitchDate descriptionWithLocale:[NSLocale currentLocale]]);
-    //isNight = YES;
-    return isNight;
-}
- */
 @end
 
 

@@ -24,6 +24,7 @@
 #import "SleepTimerSettingsViewController.h"
 #import "DataSettingsViewController.h"
 #import "ImportExportSettingsViewController.h"
+#import "SmarthomeSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #include <sys/sysctl.h>
@@ -117,7 +118,7 @@ enum {
 {
     switch (section) {
         case kOptionsSectionSettings:
-            return 7;
+            return 8;
         case kEmailFeedback:
             return 1;
         case kDonateToDeveloper:
@@ -171,6 +172,11 @@ enum {
             {
                 cell.textLabel.text = @"Import / Export".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
+            }
+            else if (indexPath.row == 7)
+            {
+                cell.textLabel.text = @"Smart Home".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"house"];
             }
             cell.imageView.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
             return cell;
@@ -336,6 +342,10 @@ enum {
             }
             else if (indexPath.row == 6) {
                 ImportExportSettingsViewController* controller = [ImportExportSettingsViewController viewController];
+                [self.navigationController pushViewController:controller animated:YES];
+            }
+            else if (indexPath.row == 7) {
+                SmarthomeSettingsViewController* controller = [SmarthomeSettingsViewController viewController];
                 [self.navigationController pushViewController:controller animated:YES];
             }
 

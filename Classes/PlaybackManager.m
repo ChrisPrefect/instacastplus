@@ -41,6 +41,7 @@ NSString* PlaybackManagerDidStartNotification = @"MPPlaybackManagerDidStartNotif
 NSString* PlaybackManagerDidEndNotification = @"MPPlaybackManagerDidEndNotification";
 NSString* PlaybackManagerDidUpdateNotification = @"MPPlaybackManagerDidUpdateNotification";
 NSString* PlaybackManagerDidChangeEpisodeNotification = @"MPPlaybackManagerDidChangeEpisodeNotification";
+NSString* PlaybackManagerEpisodeDidFinishNotification = @"MPPlaybackManagerEpisodeDidFinishNotification";
 
 
 #if TARGET_OS_IPHONE
@@ -1168,9 +1169,10 @@ enum {
         episode.consumed = YES;
         episode.position = 0;
         _changingPosition = NO;
-        
+
         [self _removeTemporarySavePosition];
-        
+        [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerEpisodeDidFinishNotification object:self];
+
         if ([episode.feed boolForKey:AutoDeleteAfterFinishedPlaying] && !episode.starred) {
             session.autoStopDisabled = YES;
             [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:YES];

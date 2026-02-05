@@ -308,6 +308,7 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                 if (motionLastXaxis != motionXaxis)
                 {
                     motionXaxis = motionLastXaxis;
+                    [[NSNotificationCenter defaultCenter] postNotificationName:ApplicationDidDetectMotionNotification object:nil];
                     BOOL isMotionActive = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
                     BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
 

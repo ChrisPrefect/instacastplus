@@ -23,6 +23,7 @@ extern NSString* PlaybackManagerDidStartNotification;
 extern NSString* PlaybackManagerDidEndNotification;
 extern NSString* PlaybackManagerDidUpdateNotification;
 extern NSString* PlaybackManagerDidChangeEpisodeNotification;
+extern NSString* PlaybackManagerEpisodeDidFinishNotification;
 
 enum {
     PlaybackStopTimeNoValue = 0,

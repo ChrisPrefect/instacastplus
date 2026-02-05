@@ -252,6 +252,9 @@
 "Add Selected Podcasts" = "Add Selected Podcasts";
 "All Podcasts" = "All Podcasts";
 "Appearance" = "Appearance";
+"Automatic" = "Automatic";
+"Light" = "Light";
+"Dark" = "Dark";
 "Ascending" = "Ascending";
 "Audio" = "Audio";
 "Contains Keyword" = "Contains Keyword";
@@ -374,18 +377,14 @@
 "Enable" = "Enable";
 "General" = "General";
 "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data." = "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data.";
-"To switch to night mode automatically, please go to iOS's Settings app and allow Instacast to use Location Services." = "To switch to night mode automatically, please go to iOS's Settings app and allow Instacast to use Location Services.";
 "Interface Sounds" = "Interface Sounds";
-"Location Services denied" = "Location Services denied";
 "Miscellaneous" = "Miscellaneous";
 "Dark mode" = "Dark mode";
-"Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background." = "Night mode can be enabled automatically at sunset, and disabled automatically at sunrise. To calculate the times of sunset and sunrise, Instacast asks for your permission to gather location data. Location data is only ever gathered when you open the app – never in the background.";
 "Replay after Pause" = "Replay after Pause";
 "Seeking" = "Seeking";
 "Seeking and Skipping Chapters" = "Seeking and Skipping Chapters";
 "Send Reports" = "Send Reports";
 "Skipping" = "Skipping";
-"Switch Automatically" = "Switch Automatically";
 "System Controls" = "System Controls";
 "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up." = "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up.";
 
@@ -721,3 +720,39 @@
 "Import subscriptions from an OPML file." = "Import subscriptions from an OPML file.";
 "Import all data from an InstacastPlus backup file." = "Import all data from an InstacastPlus backup file.";
 "You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data." = "You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data.";
+
+/* SmarthomeSettingsViewController */
+"Smart Home" = "Smart Home";
+"Enable MQTT" = "Enable MQTT";
+"Server" = "Server";
+"Port" = "Port";
+"Optional" = "Optional";
+"Username" = "Username";
+"Client Name" = "Client Name";
+"Allow Remote Control" = "Allow Remote Control";
+"Status" = "Status";
+"Disabled" = "Disabled";
+"Disconnect" = "Disconnect";
+"Connect" = "Connect";
+"MQTT Broker" = "MQTT Broker";
+"Options" = "Options";
+"Connection" = "Connection";
+"Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect." = "Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect.";
+
+/* SmarthomeManager Status */
+"Connection Status" = "Connection Status";
+"Connecting..." = "Connecting...";
+"Connected" = "Connected";
+"Disconnected" = "Disconnected";
+"Error" = "Error";
+
+/* ICMQTTClient Errors */
+"Connection timeout - server not reachable" = "Connection timeout - server not reachable";
+"Topics: InstacastPlus/%@/status/..." = "Topics: InstacastPlus/%@/status/...";
+"Topics: InstacastPlus/status/..." = "Topics: InstacastPlus/status/...";
+"Protocol version not supported" = "Protocol version not supported";
+"Client ID rejected" = "Client ID rejected";
+"Server unavailable" = "Server unavailable";
+"Invalid username or password" = "Invalid username or password";
+"Not authorized" = "Not authorized";
+"Connection refused" = "Connection refused";

@@ -109,9 +109,13 @@ typedef NS_ENUM(NSInteger, DefaultPlayerControls) {
 };
 extern NSString* kDefaultDontDeleteUpNextWhenChangingEpisode;
 
-extern NSString* kDefaultSwitchNightModeAutomatically;
-extern NSString* kDefaultNightMode;
-extern NSString* kDeviceNightMode;
+extern NSString* kDefaultAppearanceMode;
+
+typedef NS_ENUM(NSInteger, ICAppearanceMode) {
+    ICAppearanceModeAutomatic = 0,  // Default - follows system
+    ICAppearanceModeLight = 1,
+    ICAppearanceModeDark = 2
+};
 
 #if TARGET_OS_IPHONE==1
 #else
@@ -137,4 +141,16 @@ extern NSString* kUIPersistencePlaylistsSelectedPlaylistUID;
 extern NSString* kUIPersistenceBookmarkSelectedEpisodeGUID;
 extern NSString* kUIPersistenceDirectorySearchSearchString;
 extern NSString* kUIPersistenceDirectorySearchSelectedScopeIndex;
+
+// Smart Home MQTT
+extern NSString* SmarthomeMQTTEnabled;
+extern NSString* SmarthomeMQTTHost;
+extern NSString* SmarthomeMQTTPort;
+extern NSString* SmarthomeMQTTUsername;
+extern NSString* SmarthomeMQTTPassword;
+extern NSString* SmarthomeAllowControl;
+extern NSString* SmarthomeDeviceName;
+
+extern NSString* AudioSessionSleepTimerDidExpireNotification;
+extern NSString* ApplicationDidDetectMotionNotification;
 

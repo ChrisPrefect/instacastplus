@@ -84,6 +84,10 @@ WEAK_SELF / STRONG_SELF     // Memory management helpers
 - Understand WHY something is broken before attempting to fix it.
 - **NIEMALS Verzögerungen (dispatch_after, delays) einbauen um Probleme zu kaschieren!** Immer die Ursache finden und sauber lösen.
 
+## Localization
+
+- **Alle UI-Texte immer zweisprachig übersetzen** (Deutsch + Englisch). Jeder String der im UI angezeigt wird muss in beiden Sprachen vorhanden sein.
+
 ## Coding Conventions
 
 - **DMANAGER** for all database operations

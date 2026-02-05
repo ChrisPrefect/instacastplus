@@ -128,7 +128,7 @@ static NSMutableSet* gModelInfos = nil;
 
 - (void) updateAppearance
 {
-    _messageView.backgroundColor = (![ICAppearanceManager sharedManager].nightMode) ? [UIColor colorWithWhite:1 alpha:0.9] : [UIColor colorWithWhite:0 alpha:0.93];
+    _messageView.backgroundColor = (![ICAppearanceManager sharedManager].nightSettingMode) ? [UIColor colorWithWhite:1 alpha:0.9] : [UIColor colorWithWhite:0 alpha:0.93];
     _textLabel.textColor = ICTextColor;
 }
 

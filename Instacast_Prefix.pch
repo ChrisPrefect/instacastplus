@@ -25,6 +25,7 @@
     #import "Sound.h"
     #import "UIViewController+PresentationEnqueuing.h"
     #import "ICAppearanceManager.h"
+    #import "SmarthomeManager.h"
     #import "UIViewController+UIViewController_NavbarFix.h"
     #import "UIViewController+Alert.h"
 #endif

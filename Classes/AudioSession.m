@@ -689,6 +689,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
             self.playerWasPlayingBeforeWentToBackground = NO;
             [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;
             self.stopDate = nil;
+            [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidExpireNotification object:self];
         }
     }
 }

@@ -115,7 +115,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kLanguage:
             return 1;
         case kAppearanceThemeSection:
-            return 2;
+            return 1;
         case kPlayerColor:
             if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive])
             {
@@ -169,37 +169,18 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     }
     else if (indexPath.section == kAppearanceThemeSection)
     {
-        BOOL switchAutomatically = [ICAppearanceManager sharedManager].switchesNightModeAutomatically;
+        UITableViewCell* cell = [self detailCell];
+        cell.textLabel.text = @"Appearance".ls;
 
-        switch (indexPath.row) {
-            case 0:
-            {
-                UITableViewCell* cell = [self switchCell];
-                UISwitch* control = (UISwitch*)cell.accessoryView;
-                control.tag = indexPath.row;
+        NSDictionary* values = @{
+            @(ICAppearanceModeAutomatic): @"Automatic".ls,
+            @(ICAppearanceModeLight): @"Light".ls,
+            @(ICAppearanceModeDark): @"Dark".ls
+        };
+        cell.detailTextLabel.text = values[@([ICAppearanceManager sharedManager].appearanceMode)];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 
-                cell.textLabel.text = @"Enable".ls;
-
-                control.on = [ICAppearanceManager sharedManager].nightSettingMode;
-                [control addTarget:self action:@selector(toggleNightModeSettings:) forControlEvents:UIControlEventValueChanged];
-
-                return cell;
-            }
-            case 1:
-            {
-                UITableViewCell* cell = [self switchCell];
-                UISwitch* control = (UISwitch*)cell.accessoryView;
-                control.tag = indexPath.row;
-
-                cell.textLabel.text = @"Switch Automatically".ls;
-                control.on = switchAutomatically;
-                [control addTarget:self action:@selector(toggleNightModeSettings:) forControlEvents:UIControlEventValueChanged];
-                return cell;
-            }
-            default:
-                break;
-        }
-
+        return cell;
     }
     else if (indexPath.section == kPlayerColor)
     {
@@ -418,7 +399,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             [USER_DEFAULTS synchronize];
 
             [[ICAppearanceManager sharedManager] updateThemeTintColor];
-            [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
+            [[ICAppearanceManager sharedManager] updateAppearance];
             [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
 
             [self.tableView reloadData];
@@ -433,7 +414,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kLanguage:
             return @"";
         case kAppearanceThemeSection:
-            return @"Dark mode:".ls;
+            return @"";
         case kPlayerColor:
             return @"Player Color".ls;
         case kPInterfaceColor:
@@ -512,7 +493,7 @@ API_AVAILABLE(ios(14.0)){
             [USER_DEFAULTS synchronize];
 
             [[ICAppearanceManager sharedManager] updateThemeTintColor];
-            [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
+            [[ICAppearanceManager sharedManager] updateAppearance];
             [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
 
             [self.tableView reloadData];
@@ -560,6 +541,38 @@ API_AVAILABLE(ios(14.0)){
         [self suggestAppIconsAction:nil];
     }
 
+    else if (indexPath.section == kAppearanceThemeSection)
+    {
+        [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+        ICAppearanceMode currentMode = [ICAppearanceManager sharedManager].appearanceMode;
+
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil
+                                                                       message:nil
+                                                                preferredStyle:UIAlertControllerStyleActionSheet];
+
+        NSString* autoTitle = (currentMode == ICAppearanceModeAutomatic) ? [@"✓ " stringByAppendingString:@"Automatic".ls] : @"Automatic".ls;
+        [alert addAction:[UIAlertAction actionWithTitle:autoTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
+            [ICAppearanceManager sharedManager].appearanceMode = ICAppearanceModeAutomatic;
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }]];
+
+        NSString* lightTitle = (currentMode == ICAppearanceModeLight) ? [@"✓ " stringByAppendingString:@"Light".ls] : @"Light".ls;
+        [alert addAction:[UIAlertAction actionWithTitle:lightTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
+            [ICAppearanceManager sharedManager].appearanceMode = ICAppearanceModeLight;
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }]];
+
+        NSString* darkTitle = (currentMode == ICAppearanceModeDark) ? [@"✓ " stringByAppendingString:@"Dark".ls] : @"Dark".ls;
+        [alert addAction:[UIAlertAction actionWithTitle:darkTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
+            [ICAppearanceManager sharedManager].appearanceMode = ICAppearanceModeDark;
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }]];
+
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
@@ -591,45 +604,6 @@ API_AVAILABLE(ios(14.0)){
 
 #pragma mark - Toggle actions
 
-- (void) toggleNightModeSettings:(UISwitch*)sender
-{
-    UISwitch* theSwitch = sender;
-
-    switch (sender.tag) {
-        case 0:
-        {
-            [self perform:^(id sender) {
-                [ICAppearanceManager sharedManager].nightMode = theSwitch.on;
-            } afterDelay:0.3];
-        }
-            break;
-        case 1:
-        {
-            [ICAppearanceManager sharedManager].switchesNightModeAutomatically = sender.on;
-
-            [self perform:^(id sender) {
-                if ([ICAppearanceManager sharedManager].switchesNightModeAutomatically) {
-                    UIUserInterfaceStyle style = self.traitCollection.userInterfaceStyle;
-
-                    if (style == UIUserInterfaceStyleDark) {
-                        [ICAppearanceManager sharedManager].nightMode = YES;
-                    } else {
-                        [ICAppearanceManager sharedManager].nightMode = NO;
-                    }
-                }
-
-                if ([ICAppearanceManager sharedManager].switchesNightModeAutomatically != theSwitch.on) {
-                    theSwitch.on = [ICAppearanceManager sharedManager].switchesNightModeAutomatically;
-                }
-            } afterDelay:0.3];
-        }
-            break;
-        default:
-            break;
-    }
-
-}
-
 - (void) togglePlayerColorSettings:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:PlayerColorPerPodcastActive];
@@ -642,7 +616,7 @@ API_AVAILABLE(ios(14.0)){
     [USER_DEFAULTS setBool:sender.on forKey:InterfaceThemeDefaultActive];
     [USER_DEFAULTS synchronize];
     [[ICAppearanceManager sharedManager] updateThemeTintColor];
-    [[ICAppearanceManager sharedManager] setNightMode:[ICAppearanceManager sharedManager].nightSettingMode];
+    [[ICAppearanceManager sharedManager] updateAppearance];
     [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
 
     [self.tableView reloadData];
