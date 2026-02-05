@@ -44,7 +44,11 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
-    
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
 }
 
 - (void) dealloc
@@ -54,7 +58,7 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
-    
+
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -62,8 +66,10 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
-    [self.tableView reloadData];
+
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 

@@ -134,6 +134,84 @@ CGFloat controllerHeight = MAX(windowHeight - statusBarHeight - 44 - windowWidth
 - Volume buttons: y=92
 - Toolbar: y=144
 
+## Dark Mode / Appearance Handling
+
+Die App verwendet `ICAppearanceManager` für Theme-Wechsel (Light/Dark Mode). **Häufige Fehlerquellen:**
+
+### 1. Timing beim App-Start
+
+**Problem:** `ICAppearanceManager.updateAppearance` wird in `+initialize` aufgerufen, bevor das Window existiert. Zu diesem Zeitpunkt ist `[(InstacastAppDelegate*)App.delegate window]` noch `nil`.
+
+**Lösung:** Nach dem Erstellen des Windows in `InstacastSceneDelegate` nochmals `[[ICAppearanceManager sharedManager] updateAppearance]` aufrufen.
+
+### 2. Dynamische Farben vs. explizite Farben
+
+**Problem:** `[UIColor labelColor]` und andere dynamische Farben werden zum Zeitpunkt des Aufrufs mit der aktuellen Trait Collection aufgelöst. Wenn die Trait Collection noch nicht korrekt ist, werden falsche Farben verwendet.
+
+**Lösung:** In `ICNightAppearance` explizite Farben verwenden (z.B. `[UIColor whiteColor]` statt `[UIColor labelColor]`), um Timing-Probleme zu vermeiden.
+
+### 3. Hardcodierte Farben
+
+**Problem:** Views mit `backgroundColor = [UIColor whiteColor]` respektieren Dark Mode nicht.
+
+**Lösung:** Immer `ICBackgroundColor`, `ICTextColor`, etc. aus `ICAppearanceManager.h` verwenden.
+
+### 4. Notification Observer Lifecycle
+
+**Problem:** Observer für `ICAppearanceManagerDidUpdateAppearanceNotification` wird in `viewWillAppear` registriert und in `viewDidDisappear` entfernt. Wenn ein ViewController in der Navigation-Hierarchie bleibt (z.B. Settings-Hauptmenü), aber nicht sichtbar ist, erhält er keine Theme-Updates.
+
+**Lösung:** Observer in `viewDidLoad` registrieren und nur in `dealloc` entfernen:
+```objc
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+```
+
+### 5. reloadData und Navigation Stack
+
+**Problem A:** `[self.tableView reloadData]` in `updateAppearance` während `viewWillAppear` blockiert die Einfahranimation.
+
+**Problem B:** Views die im Navigation Stack bleiben (z.B. Settings-Hauptmenü → Darstellungsoptionen) aktualisieren sich nicht, wenn nur `backgroundColor` gesetzt wird. Die Zellen behalten ihre alten Farben.
+
+**Lösung - je nach ViewController-Typ:**
+
+**Für Views die im Navigation Stack bleiben können (z.B. Hauptmenüs):**
+```objc
+- (void)updateAppearance {
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.view.backgroundColor = ICBackgroundColor;
+    // IMMER reloaden - auch wenn nicht sichtbar, damit beim Zurück-Navigieren alles stimmt
+    [self.tableView reloadData];
+}
+```
+
+**Für Views am Ende der Navigation (z.B. Detail-Views, modale Views):**
+```objc
+- (void)updateAppearance {
+    self.tableView.backgroundColor = ICBackgroundColor;
+    // Nur reloaden wenn sichtbar UND keine Animation läuft
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
+}
+```
+
+### Checkliste für neue ViewControllers
+
+1. ✅ Keine hardcodierten Farben (`[UIColor whiteColor]`, etc.)
+2. ✅ `ICBackgroundColor`, `ICTextColor`, `ICTintColor` etc. verwenden
+3. ✅ Notification Observer in `viewDidLoad` registrieren, in `dealloc` entfernen
+4. ✅ Für Hauptmenüs: `reloadData` immer aufrufen (ohne Checks)
+5. ✅ Für Detail-Views: `reloadData` mit Window-Check und TransitionCoordinator-Check
+
 ## Key Integrations
 
 - CloudKit (iCloud sync)

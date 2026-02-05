@@ -19,12 +19,13 @@
 
 enum {
     kEpisodesSection,
+    kAutoSkipSection,
     kNewsModeSection,
     kAggregateUnavailableEpisodesSection,
     kAutoDownloadSettingsSection,
     kAutoDeleteSettingsSection,
     kPlaybackSection,
-    kAutoSkipSection,
+    kRestoreDeletedSection,
     kResetSection,
     kNumberOfSections
 };
@@ -98,11 +99,21 @@ enum {
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
 }
+
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
+}
+
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
-    [self.tableView reloadData];
+    [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 - (void) dealloc
@@ -138,7 +149,9 @@ enum {
 {
     switch (section) {
         case kEpisodesSection:
-            return 2;
+            return 1;
+        case kAutoSkipSection:
+            return 3;
         case kNewsModeSection:
             return 1;
         case kAggregateUnavailableEpisodesSection:
@@ -149,8 +162,8 @@ enum {
             return 3;
         case kPlaybackSection:
             return 3;
-        case kAutoSkipSection:
-            return 3;
+        case kRestoreDeletedSection:
+            return 1;
         case kResetSection:
             return 1;
         default:
@@ -167,30 +180,20 @@ enum {
 
     if (indexPath.section == kEpisodesSection)
     {
-        switch (indexPath.row) {
-            case 0:
-            {
-                cell.accessoryView = nil;
-                cell = [self detailCell];
-                cell.textLabel.text = @"Sort Order".ls;
-                
-                NSString* feedSortOrder = [self.feed stringForKey:FeedSortOrder];
-                cell.detailTextLabel.text = ([feedSortOrder isEqualToString:@"NewerFirst"]) ? @"Newest First".ls : @"Oldest First".ls;
-                break;
-            }
-            case 1:
-            {
-                cell.accessoryView = nil;
-                cell = [self detailCell];
-                cell.textLabel.text = @"Restore Deleted Episodes".ls;
-                cell.detailTextLabel.text = nil;
-                break;
-            }
-            default:
-            {
-                break;
-            }
-        }
+        cell.accessoryView = nil;
+        cell = [self detailCell];
+        cell.textLabel.text = @"Sort Order".ls;
+
+        NSString* feedSortOrder = [self.feed stringForKey:FeedSortOrder];
+        cell.detailTextLabel.text = ([feedSortOrder isEqualToString:@"NewerFirst"]) ? @"Newest First".ls : @"Oldest First".ls;
+    }
+
+    else if (indexPath.section == kRestoreDeletedSection)
+    {
+        cell.accessoryView = nil;
+        cell = [self detailCell];
+        cell.textLabel.text = @"Restore Deleted Episodes".ls;
+        cell.detailTextLabel.text = nil;
     }
     
     else if (indexPath.section == kNewsModeSection)
@@ -437,18 +440,14 @@ enum {
     switch (section) {
         case kEpisodesSection:
             return @"Episodes".ls;
-            break;
-        case kAutoDownloadSettingsSection:
-            return @"Auto-Download Content".ls;
-            break;
-        case kAutoDeleteSettingsSection:
-            return @"Auto-Delete Content".ls;
-            break;
-        case kPlaybackSection:
-            return @"Playback".ls;
-            break;
         case kAutoSkipSection:
             return @"Auto Skip".ls;
+        case kAutoDownloadSettingsSection:
+            return @"Auto-Download Content".ls;
+        case kAutoDeleteSettingsSection:
+            return @"Auto-Delete Content".ls;
+        case kPlaybackSection:
+            return @"Playback".ls;
         default:
             break;
     }
@@ -468,54 +467,51 @@ enum {
 {
     if (indexPath.section == kEpisodesSection)
     {
-        if (indexPath.row == 0)
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.feed = self.feed;
+
+        controller.key = FeedSortOrder;
+        controller.valueType = kSettingTypeString;
+        controller.title = @"Sort Order".ls;
+        controller.values = [NSArray arrayWithObjects:@"NewerFirst", @"OlderFirst", nil];
+        controller.titles = [NSArray arrayWithObjects:@"Newest First".ls, @"Oldest First".ls, nil];
+
+        [self.navigationController pushViewController:controller animated:YES];
+    }
+    else if (indexPath.section == kRestoreDeletedSection)
+    {
+        WEAK_SELF
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Are you sure you want to restore?".ls message:nil preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"Yes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+            STRONG_SELF
+            [tableView deselectRowAtIndexPath:indexPath animated:YES];
+            [self restoreDeletedEpisodes];
+            self.alertController = nil;
+        }]];
+
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
+            STRONG_SELF
+            [tableView deselectRowAtIndexPath:indexPath animated:YES];
+            self.alertController = nil;
+        }]];
+
+        [alert setModalPresentationStyle:UIModalPresentationPopover];
+        UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+        UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
+        popPresenter.sourceView = [rootViewController view];
+        popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
+        popPresenter.permittedArrowDirections = 0;
+        if ([ICAppearanceManager sharedManager].nightSettingMode)
         {
-            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-            controller.feed = self.feed;
-            
-            controller.key = FeedSortOrder;
-            controller.valueType = kSettingTypeString;
-            controller.title = @"Sort Order".ls;
-            controller.values = [NSArray arrayWithObjects:@"NewerFirst", @"OlderFirst", nil];
-            controller.titles = [NSArray arrayWithObjects:@"Newest First".ls, @"Oldest First".ls, nil];
-            
-            [self.navigationController pushViewController:controller animated:YES];
-        } else if (indexPath.row == 1) 
-        {
-            NSLog(@"Restore Deleted Episode Tappped");
-            WEAK_SELF
-            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Are you sure you want to restore?".ls message:nil preferredStyle:UIAlertControllerStyleAlert];
-            
-            [alert addAction:[UIAlertAction actionWithTitle:@"Yes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
-                STRONG_SELF
-                [tableView deselectRowAtIndexPath:indexPath animated:YES];
-                [self restoreDeletedEpisodes];
-                self.alertController = nil;
-            }]];
-            
-            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
-                STRONG_SELF
-                [tableView deselectRowAtIndexPath:indexPath animated:YES];
-                self.alertController = nil;
-            }]];
-            
-            [alert setModalPresentationStyle:UIModalPresentationPopover];
-            UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-            UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-            popPresenter.sourceView = [rootViewController view];
-            popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-            popPresenter.permittedArrowDirections = 0;
-            if ([ICAppearanceManager sharedManager].nightSettingMode)
-            {
-                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-            }
-            else
-            {
-                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-            }
-            self.alertController = alert;
-            [self presentAlertControllerAnimated:YES completion:NULL];
+            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         }
+        else
+        {
+            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+        }
+        self.alertController = alert;
+        [self presentAlertControllerAnimated:YES completion:NULL];
     }
     else if (indexPath.section == kAutoDeleteSettingsSection)
     {

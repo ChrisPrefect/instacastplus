@@ -70,11 +70,14 @@ enum {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
-    
+
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Settings".ls;
     [self fetchAvailableProducts];
+
+    // Register for appearance changes once in viewDidLoad, not viewWillAppear
+    // This ensures the view updates even when it's not visible (e.g., when in a sub-menu)
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -82,8 +85,12 @@ enum {
     [super viewWillAppear:animated];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
     [self updateAppearance];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
     [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+}
+
+- (void) viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
     [self.tableView reloadData];
 }
 
@@ -92,17 +99,13 @@ enum {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
+    self.view.backgroundColor = ICBackgroundColor;
+
+    // Always reload - the colors of cells need to update
     [self.tableView reloadData];
 }
 
@@ -235,7 +238,7 @@ enum {
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section {
-    if (section == kNumberOfSections-1) {
+    if (section == kOptionsSectionSettings) {
         // Create the footer view
         UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 200)];
         footerView.backgroundColor = [UIColor clearColor];
@@ -409,7 +412,7 @@ enum {
 
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
-    if (section == kNumberOfSections-1) {
+    if (section == kOptionsSectionSettings) {
         return 200;
     }
 

@@ -50,11 +50,19 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                                                object:nil];
 }
 
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
+}
+
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
 
-    [self.tableView reloadData];
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 - (void) dealloc

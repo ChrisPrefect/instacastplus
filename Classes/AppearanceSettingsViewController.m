@@ -64,12 +64,20 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                                                object:nil];
 }
 
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
+}
+
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     [self _updateNavigationBarAppearance];
 
-    [self.tableView reloadData];
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 - (void) _updateNavigationBarAppearance {
@@ -319,9 +327,9 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         layout.sectionInset = UIEdgeInsetsMake(0, 0, 0, 0);
         layout.itemSize = CGSizeMake(80, 80);
         layout.scrollDirection = UICollectionViewScrollDirectionHorizontal;
-        [layout setMinimumInteritemSpacing:10];
-        [layout setMinimumLineSpacing:10];
-        UICollectionView* appIconsCollection = [[UICollectionView alloc] initWithFrame:CGRectMake(20, 10, self.view.bounds.size.width - 40, 80) collectionViewLayout:layout];
+        [layout setMinimumInteritemSpacing:5];
+        [layout setMinimumLineSpacing:5];
+        UICollectionView* appIconsCollection = [[UICollectionView alloc] initWithFrame:CGRectMake(15, 10, self.view.bounds.size.width - 30, 80) collectionViewLayout:layout];
         [appIconsCollection registerClass:[ChapterImageCell class] forCellWithReuseIdentifier: @"chapter_cell"];
         [appIconsCollection registerNib:[UINib nibWithNibName:@"ChapterImageCell" bundle:nil]  forCellWithReuseIdentifier:@"chapter_cell"];
         appIconsCollection.backgroundColor = [UIColor clearColor];
@@ -420,7 +428,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kPInterfaceColor:
             return @"Interface Color".ls;
         case kAppIcons:
-            return @"App Icons".ls;
+            return @"App Icon".ls;
         case kAppIconSuggestion:
             return @"";
         case kInterfaceSoundsSection:

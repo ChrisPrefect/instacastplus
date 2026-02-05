@@ -65,6 +65,12 @@ enum {
                                                object:nil];
 }
 
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
+}
+
 - (void)dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -80,7 +86,10 @@ enum {
 {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    [self.tableView reloadData];
+
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 - (void)connectionStateChanged
@@ -219,8 +228,6 @@ enum {
     switch (section) {
         case kSmarthomeConnectionSection:
             return @"MQTT Broker".ls;
-        case kSmarthomeOptionsSection:
-            return @"Options".ls;
         default:
             return nil;
     }
@@ -231,13 +238,13 @@ enum {
     if (section == kSmarthomeConnectionSection) {
         NSString *deviceName = [USER_DEFAULTS stringForKey:SmarthomeDeviceName];
         if (deviceName && deviceName.length > 0) {
-            return [NSString stringWithFormat:@"Topics: InstacastPlus/%@/status/...".ls, deviceName];
+            return [NSString stringWithFormat:@"Topics: InstacastPlus/%@/...".ls, deviceName];
         } else {
-            return @"Topics: InstacastPlus/status/...".ls;
+            return @"Topics: InstacastPlus/...".ls;
         }
     }
     if (section == kSmarthomeEnableSection) {
-        return @"Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect.".ls;
+        return @"Publishes playback status and device state to an MQTT broker for smart home integration.".ls;
     }
     return nil;
 }
@@ -387,11 +394,22 @@ enum {
             break;
         case kTagDeviceName:
             [USER_DEFAULTS setObject:(textField.text ?: @"") forKey:SmarthomeDeviceName];
-            // Reload footer to show updated topic path
-            [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kSmarthomeConnectionSection] withRowAnimation:UITableViewRowAnimationNone];
             break;
     }
     [USER_DEFAULTS synchronize];
+}
+
+- (BOOL)textField:(UITextField *)textField shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string
+{
+    // Live update topic preview when client name changes
+    if (textField.tag == kTagDeviceName) {
+        NSString *newText = [textField.text stringByReplacingCharactersInRange:range withString:string];
+        [USER_DEFAULTS setObject:(newText ?: @"") forKey:SmarthomeDeviceName];
+        [USER_DEFAULTS synchronize];
+        // Reload footer to show updated topic path
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kSmarthomeConnectionSection] withRowAnimation:UITableViewRowAnimationNone];
+    }
+    return YES;
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField

@@ -54,7 +54,12 @@ static NSString* kFeedCell = @"FeedCell";
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
-    
+}
+
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
 }
 
 - (void) dealloc
@@ -72,8 +77,10 @@ static NSString* kFeedCell = @"FeedCell";
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
-    [self.tableView reloadData];
+
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 #pragma mark - Table view data source

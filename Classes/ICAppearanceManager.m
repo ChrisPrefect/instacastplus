@@ -152,24 +152,44 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 {
     UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
 
+    // Determine the correct appearance based on mode
+    BOOL shouldUseDarkMode;
     switch (self.appearanceMode) {
         case ICAppearanceModeDark:
-            rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-            self.appearance = [[ICNightAppearance alloc] init];
+            shouldUseDarkMode = YES;
             break;
         case ICAppearanceModeLight:
-            rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-            self.appearance = [[ICDaylightAppearance alloc] init];
+            shouldUseDarkMode = NO;
             break;
         case ICAppearanceModeAutomatic:
         default:
-            rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
-            if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark) {
-                self.appearance = [[ICNightAppearance alloc] init];
-            } else {
-                self.appearance = [[ICDaylightAppearance alloc] init];
-            }
+            shouldUseDarkMode = [UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
             break;
+    }
+
+    // Set overrideUserInterfaceStyle FIRST so trait collection is correct when appearance is created
+    if (rootWindow) {
+        switch (self.appearanceMode) {
+            case ICAppearanceModeDark:
+                rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+                break;
+            case ICAppearanceModeLight:
+                rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+                break;
+            case ICAppearanceModeAutomatic:
+            default:
+                rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
+                break;
+        }
+        // Force layout pass to apply trait collection changes
+        [rootWindow layoutIfNeeded];
+    }
+
+    // Now create appearance with correct mode
+    if (shouldUseDarkMode) {
+        self.appearance = [[ICNightAppearance alloc] init];
+    } else {
+        self.appearance = [[ICDaylightAppearance alloc] init];
     }
 }
 
@@ -328,15 +348,17 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 -(UIColor*) textColor {
-    return [UIColor labelColor];
+    // Use explicit white color for dark mode to avoid dynamic color resolution issues at startup
+    return [UIColor whiteColor];
 }
 
 - (UIColor*) mutedTextColor {
-    return [UIColor secondaryLabelColor];
+    // Use explicit light gray for dark mode
+    return [UIColor colorWithWhite:0.7f alpha:1.0f];
 }
 
 - (UIColor*) placeholderTextColor {
-    return [UIColor placeholderTextColor];
+    return [UIColor colorWithWhite:0.5f alpha:1.0f];
 }
 
 -(UIColor*) backgroundColor {

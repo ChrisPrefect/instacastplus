@@ -128,6 +128,23 @@
     [self.volumeMaxButton setImage:[[UIImage imageNamed:@"Player Volume Max"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                           forState:UIControlStateNormal];
 
+    // Enable volume buttons with larger touch targets
+    self.volumeMinButton.enabled = YES;
+    self.volumeMinButton.userInteractionEnabled = YES;
+    [self.volumeMinButton addTarget:self action:@selector(decreaseVolume:) forControlEvents:UIControlEventTouchUpInside];
+
+    self.volumeMaxButton.enabled = YES;
+    self.volumeMaxButton.userInteractionEnabled = YES;
+    [self.volumeMaxButton addTarget:self action:@selector(increaseVolume:) forControlEvents:UIControlEventTouchUpInside];
+
+    // Enlarge touch targets for volume buttons (3x larger)
+    CGRect minFrame = self.volumeMinButton.frame;
+    self.volumeMinButton.frame = CGRectMake(minFrame.origin.x - 22, minFrame.origin.y - 22, 88, 88);
+    self.volumeMinButton.contentEdgeInsets = UIEdgeInsetsMake(22, 22, 22, 22);
+
+    CGRect maxFrame = self.volumeMaxButton.frame;
+    self.volumeMaxButton.frame = CGRectMake(maxFrame.origin.x - 22, maxFrame.origin.y - 22, 88, 88);
+    self.volumeMaxButton.contentEdgeInsets = UIEdgeInsetsMake(22, 22, 22, 22);
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -250,6 +267,20 @@
 - (void)setVolume:(float)newVolume
 {
     [[PlaybackManager playbackManager] setVolume:newVolume];
+}
+
+- (void)decreaseVolume:(id)sender
+{
+    float currentVolume = self.volume;
+    float newVolume = MAX(0.0f, currentVolume - 0.1f);
+    self.volume = newVolume;
+}
+
+- (void)increaseVolume:(id)sender
+{
+    float currentVolume = self.volume;
+    float newVolume = MIN(1.0f, currentVolume + 0.1f);
+    self.volume = newVolume;
 }
 
 - (UIColor*) tintColor {

@@ -114,7 +114,7 @@
 "10 Days" = "10 Tage";
 "20 Days" = "20 Tage";
 "30 Days" = "30 Tage";
-"Suggest App Icon" = "App-Symbol Vorschlagen";
+"Suggest App Icon" = "App Icon vorschlagen";
 "We’re looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon." = "Wir suchen kreative Vorschläge für unser App-Icon. Wenn Sie Ideen haben, können Sie Ihr Design gerne als .psd-Datei teilen oder einen Link zu Ihrem vorgeschlagenen App-Symbol senden.";
 
 "Screen Touch" = "Bildschirmberührung";
@@ -198,7 +198,8 @@
 "Are you sure you want to delete?" = "Diese Episode aus der Liste löschen?";
 "Are you sure you want to restore?" = "Sind Sie sicher, dass Sie die Wiederherstellung durchführen möchten?";
 "Yes" = "Ja";
-"App Icons" = "App-Symbole";
+"App Icons" = "App Icon";
+"App Icon" = "App Icon";
 
 /* PlaybackControlsViewController.m */
 "Add Bookmark" = "Lesezeichen hinzufügen";
@@ -737,7 +738,10 @@
 "MQTT Broker" = "MQTT-Broker";
 "Options" = "Optionen";
 "Connection" = "Verbindung";
-"Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect." = "Veröffentlicht Wiedergabestatus und Gerätezustand an einen MQTT-Broker für die Smart-Home-Integration. Der Dialog für die lokale Netzwerkberechtigung erscheint bei der ersten Verbindung.";
+"Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect." = "Veröffentlicht Wiedergabestatus und Gerätezustand an einen MQTT-Broker für die Smart-Home-Integration.";
+"Publishes playback status and device state to an MQTT broker for smart home integration." = "Veröffentlicht Wiedergabestatus und Gerätezustand an einen MQTT-Broker für die Smart-Home-Integration.";
+"Topics: InstacastPlus/%@/..." = "Topics: InstacastPlus/%@/...";
+"Topics: InstacastPlus/..." = "Topics: InstacastPlus/...";
 
 /* SmarthomeManager Status */
 "Connection Status" = "Verbindungsstatus";
@@ -748,11 +752,23 @@
 
 /* ICMQTTClient Errors */
 "Connection timeout - server not reachable" = "Zeitüberschreitung - Server nicht erreichbar";
-"Topics: InstacastPlus/%@/status/..." = "Topics: InstacastPlus/%@/status/...";
-"Topics: InstacastPlus/status/..." = "Topics: InstacastPlus/status/...";
+"Topics: InstacastPlus/%@/..." = "Topics: InstacastPlus/%@/...";
+"Topics: InstacastPlus/..." = "Topics: InstacastPlus/...";
 "Protocol version not supported" = "Protokollversion nicht unterstützt";
 "Client ID rejected" = "Client-ID abgelehnt";
 "Server unavailable" = "Server nicht verfügbar";
 "Invalid username or password" = "Benutzername oder Passwort ungültig";
 "Not authorized" = "Nicht autorisiert";
 "Connection refused" = "Verbindung abgelehnt";
+
+/* ImportExportSettingsViewController - Reset App */
+"Reset App" = "App zurücksetzen";
+"Delete all data and reset the app to factory settings." = "Alle Daten löschen und die App auf Werkseinstellungen zurücksetzen.";
+"Are you sure you want to delete all data and reset the app? This action cannot be undone." = "Sind Sie sicher, dass Sie alle Daten löschen und die App zurücksetzen möchten? Diese Aktion kann nicht rückgängig gemacht werden.";
+"Resetting…" = "Zurücksetzen…";
+"Reset Complete" = "Zurücksetzen abgeschlossen";
+"Please restart the app." = "Bitte starten Sie die App neu.";
+
+/* App Icon */
+"App Icon" = "App Icon";
+"Change App Icon" = "App Icon wechseln";

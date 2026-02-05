@@ -737,7 +737,7 @@
 "MQTT Broker" = "MQTT Broker";
 "Options" = "Options";
 "Connection" = "Connection";
-"Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect." = "Publishes playback status and device state to an MQTT broker for smart home integration. The local network permission dialog appears on first connect.";
+"Publishes playback status and device state to an MQTT broker for smart home integration." = "Publishes playback status and device state to an MQTT broker for smart home integration.";
 
 /* SmarthomeManager Status */
 "Connection Status" = "Connection Status";
@@ -748,11 +748,23 @@
 
 /* ICMQTTClient Errors */
 "Connection timeout - server not reachable" = "Connection timeout - server not reachable";
-"Topics: InstacastPlus/%@/status/..." = "Topics: InstacastPlus/%@/status/...";
-"Topics: InstacastPlus/status/..." = "Topics: InstacastPlus/status/...";
+"Topics: InstacastPlus/%@/..." = "Topics: InstacastPlus/%@/...";
+"Topics: InstacastPlus/..." = "Topics: InstacastPlus/...";
 "Protocol version not supported" = "Protocol version not supported";
 "Client ID rejected" = "Client ID rejected";
 "Server unavailable" = "Server unavailable";
 "Invalid username or password" = "Invalid username or password";
 "Not authorized" = "Not authorized";
 "Connection refused" = "Connection refused";
+
+/* ImportExportSettingsViewController - Reset App */
+"Reset App" = "Reset App";
+"Delete all data and reset the app to factory settings." = "Delete all data and reset the app to factory settings.";
+"Are you sure you want to delete all data and reset the app? This action cannot be undone." = "Are you sure you want to delete all data and reset the app? This action cannot be undone.";
+"Resetting…" = "Resetting…";
+"Reset Complete" = "Reset Complete";
+"Please restart the app." = "Please restart the app.";
+
+/* App Icon */
+"App Icon" = "App Icon";
+"Change App Icon" = "Change App Icon";

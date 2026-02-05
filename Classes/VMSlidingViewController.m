@@ -52,7 +52,7 @@
     _peekWidth = CGRectGetWidth(b)-280;
     
 	
-    self.view.backgroundColor = [UIColor whiteColor];
+    self.view.backgroundColor = ICBackgroundColor;
     self.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     
     _dynamicAnimator = [[UIDynamicAnimator alloc] initWithReferenceView:self.view];

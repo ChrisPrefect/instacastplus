@@ -69,6 +69,13 @@
         UIWindowScene *windowScene = (UIWindowScene *)scene;
         self.window = [[UIWindow alloc] initWithWindowScene:windowScene];
         self.window.backgroundColor = ICBackgroundColor;
+
+#if TARGET_OS_MACCATALYST
+        // Set default window size to iPhone dimensions for Mac Catalyst
+        CGSize iPhoneSize = CGSizeMake(390, 844); // iPhone 14 dimensions
+        windowScene.sizeRestrictions.minimumSize = iPhoneSize;
+        windowScene.sizeRestrictions.maximumSize = iPhoneSize;
+#endif
         
         if ([DatabaseManager dataStoreNeedsMigration]) {
             UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
@@ -83,6 +90,9 @@
             self.window.rootViewController = mainViewController;
             ((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window = self.window;
             [((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window makeKeyAndVisible];
+
+            // Re-apply appearance now that window exists
+            [[ICAppearanceManager sharedManager] updateAppearance];
         }
     }
     [self fetchAvailableProducts];

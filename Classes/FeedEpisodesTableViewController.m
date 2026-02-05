@@ -318,10 +318,6 @@
         [shareButton addTarget:self action:@selector(share:) forControlEvents:UIControlEventTouchUpInside];
         self.shareButton = shareButton;
 
-        UIButton* settingsButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        [settingsButton setImage:[UIImage imageNamed:@"settingd_ic"] forState:UIControlStateNormal];
-        [settingsButton addTarget:self action:@selector(settings:) forControlEvents:UIControlEventTouchUpInside];
-
         UIButton* filterButton = [UIButton buttonWithType:UIButtonTypeSystem];
         [filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         filterButton.titleLabel.font = [UIFont systemFontOfSize:17];
@@ -330,7 +326,6 @@
 
         [buttonStack addArrangedSubview:reloadButton];
         [buttonStack addArrangedSubview:shareButton];
-        [buttonStack addArrangedSubview:settingsButton];
         [buttonStack addArrangedSubview:filterButton];
 
         [self.tableHeaderView addSubview:buttonStack];
@@ -371,7 +366,12 @@
     if ([self.searchTerm length] > 0)
     {
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Close"] style:UIBarButtonItemStylePlain target:self action:@selector(toolbarCloseButtonAction:)];
-                                                  
+    }
+    else
+    {
+        // Settings button in navigation bar
+        UIImage* gearImage = [UIImage systemImageNamed:@"gearshape"];
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:gearImage style:UIBarButtonItemStylePlain target:self action:@selector(settings:)];
     }
     
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];

@@ -14,6 +14,7 @@
 typedef NS_ENUM(NSInteger, ImportExportSections) {
     kExportSection = 0,
     kImportSection,
+    kResetAppSection,
     kNumberOfSections,
 };
 
@@ -58,11 +59,19 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
                                                object:nil];
 }
 
+- (void)viewDidAppear:(BOOL)animated
+{
+    [super viewDidAppear:animated];
+    [self.tableView reloadData];
+}
+
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
 
-    [self.tableView reloadData];
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 - (void) dealloc
@@ -90,6 +99,8 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             return 3;
         case kImportSection:
             return 2;
+        case kResetAppSection:
+            return 1;
     }
     return 0;
 }
@@ -145,6 +156,13 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
                 cell.detailTextLabel.text = @"Import subscriptions from an OPML file.".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
             }
+            break;
+        case kResetAppSection:
+            cell.textLabel.text = @"Reset App".ls;
+            cell.textLabel.textColor = [UIColor redColor];
+            cell.detailTextLabel.text = @"Delete all data and reset the app to factory settings.".ls;
+            cell.imageView.image = [UIImage systemImageNamed:@"trash"];
+            cell.imageView.tintColor = [UIColor redColor];
             break;
     }
 
@@ -202,6 +220,9 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             break;
         case kImportSection:
             [self showImportDocumentPicker];
+            break;
+        case kResetAppSection:
+            [self resetApp];
             break;
     }
 }
@@ -496,6 +517,66 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 - (void) documentInteractionControllerDidDismissOpenInMenu:(UIDocumentInteractionController *)controller
 {
     self.interactionController = nil;
+}
+
+#pragma mark - Reset App
+
+- (void) resetApp
+{
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Reset App".ls
+                                                                   message:@"Are you sure you want to delete all data and reset the app? This action cannot be undone.".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Reset".ls
+                                              style:UIAlertActionStyleDestructive
+                                            handler:^(UIAlertAction * action) {
+        [self performAppReset];
+    }]];
+
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void) performAppReset
+{
+    self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Resetting…".ls];
+    [self.mInfo show];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        // Clear all UserDefaults
+        NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
+        [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+
+        // Clear all downloaded files
+        [[CacheManager sharedCacheManager] clearTheFuckingCache];
+
+        // Unsubscribe all feeds (this clears Core Data)
+        NSArray* allFeeds = [DMANAGER.feeds copy];
+        for (CDFeed* feed in allFeeds) {
+            [DMANAGER unsubscribeFeed:feed];
+        }
+        [DMANAGER save];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.mInfo close];
+            self.mInfo = nil;
+
+            // Show confirmation and exit
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Reset Complete".ls
+                                                                           message:@"Please restart the app.".ls
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction * action) {
+                exit(0);
+            }]];
+            [self presentViewController:alert animated:YES completion:nil];
+        });
+    });
 }
 
 @end
