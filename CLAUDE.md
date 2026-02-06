@@ -212,6 +212,65 @@ Die App verwendet `ICAppearanceManager` für Theme-Wechsel (Light/Dark Mode). **
 4. ✅ Für Hauptmenüs: `reloadData` immer aufrufen (ohne Checks)
 5. ✅ Für Detail-Views: `reloadData` mit Window-Check und TransitionCoordinator-Check
 
+## iOS 26 Liquid Glass
+
+Ab iOS 26 verwenden `UINavigationBar`, `UIToolbar` und `UITabBar` den neuen **Liquid Glass** Effekt. Bar Button Items bekommen automatisch kreisförmige Glass-Hintergründe, die den darunterliegenden Content durchscheinen lassen.
+
+### Liquid Glass Button APIs
+
+| Property | Zweck |
+|----------|-------|
+| `barButtonItem.hidesSharedBackground = YES` | Entfernt den Glass-Hintergrund komplett (Button wird zum flachen Icon) |
+| `barButtonItem.sharesBackground = NO` | Verhindert Gruppierung mit benachbarten Buttons (Glass bleibt aber erhalten) |
+| `[UIBarButtonItem fixedSpace]` | Visueller Separator zwischen Button-Gruppen |
+
+### Content hinter der Navigation Bar = Glass-Artefakte
+
+**Problem:** Wenn Content (z.B. Chapter Art, Bilder) hinter der Navigation Bar scrollt, reagieren die Liquid Glass Buttons darauf - sie ändern ihre Farbe/Helligkeit je nach darunterliegendem Content.
+
+**Ursache:** `contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever` + fehlende `edgesForExtendedLayout` Einschränkung → Content scrollt hinter die Bar → Liquid Glass samplet diesen Content.
+
+**Lösung:** `edgesForExtendedLayout = UIRectEdgeNone` auf dem ViewController setzen. Damit startet die View UNTER der Navigation Bar - kein Content hinter der Bar, Liquid Glass sieht nur die opake Bar-Farbe.
+
+```objc
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.edgesForExtendedLayout = UIRectEdgeNone;  // Content nicht hinter die Bar
+}
+```
+
+**Vergleich der Screens:**
+
+| Eigenschaft | Player (vorher, Bug) | Podcast-/Episodenliste (korrekt) |
+|-------------|---------------------|----------------------------------|
+| `contentInsetAdjustmentBehavior` | `Never` (manuell) | `Automatic` (default) |
+| `edgesForExtendedLayout` | nicht gesetzt (default `All`) | `UIRectEdgeNone` |
+| Content hinter Bar | Ja → Glass-Artefakte | Nein → Glass stabil |
+
+### Navigation Bar Appearance Pattern
+
+Für opake Navigation Bars mit `UINavigationBarAppearance` immer `backgroundImage` verwenden (nicht nur `backgroundColor`):
+
+```objc
+UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
+UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+[navAppearance configureWithOpaqueBackground];
+navAppearance.backgroundImage = backgroundImage;
+navAppearance.shadowImage = [[UIImage alloc] init];
+navAppearance.shadowColor = nil;
+navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
+navBar.standardAppearance = navAppearance;
+navBar.scrollEdgeAppearance = navAppearance;
+navBar.compactAppearance = navAppearance;
+```
+
+### NICHT tun
+
+- **NICHT** `hidesSharedBackground = YES` verwenden um Glass-Artefakte zu lösen - das entfernt das Button-Styling komplett
+- **NICHT** `UIButtonTypeCustom` als `customView` verwenden - umgeht das gesamte iOS 26 Design
+- **NICHT** opake Views hinter die Bar legen als Workaround - löst das Problem nicht zuverlässig
+- **NICHT** `configureWithOpaqueBackground` allein nutzen - reicht in iOS 26 nicht aus, `backgroundImage` ist nötig
+
 ## Key Integrations
 
 - CloudKit (iCloud sync)

@@ -53,7 +53,7 @@
     - (void) viewDidLoad
     {
         [super viewDidLoad];
-        
+
         self.dismissalAnimator = [[ICPlaybackViewControllerDismissedAnimator alloc] init];
         self.dismissalAnimator.parent = self;
         
@@ -71,9 +71,11 @@
         self.view.tintColor = ICTintColor;
 
         // Navigation Bar Appearance für durchgehende Farbe hinter Dynamic Island
+        UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
         UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
         [appearance configureWithOpaqueBackground];
-        appearance.backgroundColor = ICBackgroundColor;
+        appearance.backgroundImage = backgroundImage;
+        appearance.shadowImage = [[UIImage alloc] init];
         appearance.shadowColor = nil;
         self.navigationBar.standardAppearance = appearance;
         self.navigationBar.scrollEdgeAppearance = appearance;

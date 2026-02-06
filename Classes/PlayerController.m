@@ -401,18 +401,16 @@ enum {
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-	
+
+    self.edgesForExtendedLayout = UIRectEdgeNone;
+
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    
+
     self.view.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
     
 	UIBarButtonItem* portraitCloseBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Player Close"] style:UIBarButtonItemStylePlain target:self action:@selector(dismiss:)];
     portraitCloseBarButtonItem.accessibilityLabel = @"Hide".ls;
-
-    
 	self.navigationItem.leftBarButtonItem = portraitCloseBarButtonItem;
-	
-
 
     UIBarButtonItem* chapterButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Show Notes"]
                                                               style:UIBarButtonItemStylePlain
@@ -515,13 +513,14 @@ enum {
 
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
-
     // Make navigation bar opaque so chapter images don't show through
+    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
     UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
     [navAppearance configureWithOpaqueBackground];
-    navAppearance.backgroundColor = ICBackgroundColor;
-    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
+    navAppearance.backgroundImage = backgroundImage;
+    navAppearance.shadowImage = [[UIImage alloc] init];
     navAppearance.shadowColor = nil;
+    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
     self.navigationController.navigationBar.standardAppearance = navAppearance;
     self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
     self.navigationController.navigationBar.compactAppearance = navAppearance;
