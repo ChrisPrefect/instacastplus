@@ -128,6 +128,7 @@
         
         [self setImage:[[UIImage imageNamed:@"Player Speed Fill"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
         self.titleLabel.textAlignment = NSTextAlignmentCenter;
+        self.titleLabel.font = [UIFont boldSystemFontOfSize:18];
         [self setTitleColor:ICBackgroundColor forState:UIControlStateNormal];
         //[self setTitle:[NSString stringWithFormat:@"%ld", sleepTimer] forState:UIControlStateNormal];
         
@@ -293,7 +294,7 @@
 - (void)showIntelligentSleepTimerAlert
 {
     UILabel *intelligentLbl = [[UILabel alloc] init];
-    intelligentLbl.text = @"Intelligent Sleep Timer".ls;
+    intelligentLbl.text = @"Smart Sleep Timer".ls;
     intelligentLbl.textColor = UIColor.labelColor;
     intelligentLbl.tag = 0;
     [intelligentLbl sizeToFit];
@@ -668,7 +669,11 @@
 */
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
-    return CGRectMake(0, (44-18)/2, 44, 18);
+    CGFloat w = 53;
+    CGFloat h = 22;
+    return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
+                      contentRect.origin.y + (contentRect.size.height - h) / 2,
+                      w, h);
 }
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
@@ -676,11 +681,19 @@
     AudioSession* session = [AudioSession sharedAudioSession];
     if (session.timerValue == PlaybackStopTimeNoValue)
     {
-        return CGRectMake((44-25)/2, (44-25)/2, 25, 25);
+        CGFloat w = 30;
+        CGFloat h = 30;
+        return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
+                          contentRect.origin.y + (contentRect.size.height - h) / 2,
+                          w, h);
     }
     else
     {
-        return CGRectMake(0, (44-18)/2, 44, 18);
+        CGFloat w = 53;
+        CGFloat h = 22;
+        return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
+                          contentRect.origin.y + (contentRect.size.height - h) / 2,
+                          w, h);
     }
 }
 

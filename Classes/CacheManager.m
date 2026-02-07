@@ -221,7 +221,7 @@ static NSString* gPathToCache = nil;
 {
     if (_rateDate) {
         NSTimeInterval since = [[NSDate date] timeIntervalSinceDate:_rateDate];
-        if (since >= 2) {
+        if (since >= 0.5) {
             self.rate = (double)_rateBytes / (double)since;
             _rateBytes = 0LL;
             _rateDate = nil;

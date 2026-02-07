@@ -272,6 +272,32 @@ navBar.compactAppearance = navAppearance;
 - **NICHT** opake Views hinter die Bar legen als Workaround - löst das Problem nicht zuverlässig
 - **NICHT** `configureWithOpaqueBackground` allein nutzen - reicht in iOS 26 nicht aus, `backgroundImage` ist nötig
 
+## iOS 26 Scroll Edge Effect (Bottom-Verlauf bei Listen)
+
+Ab iOS 26 rendert UIKit automatisch einen **Scroll Edge Effect** (`_UIScrollPocket`) am unteren Rand von ScrollViews die unter einer Floating-Toolbar liegen. Dieser dunkle Verlauf (`darkeningAlpha = 0.85`) soll die Lesbarkeit der Toolbar-Buttons verbessern.
+
+**Lösung:** `bottomEdgeEffect.hidden = YES` auf der ScrollView setzen:
+
+```objc
+if (@available(iOS 26.0, *)) {
+    self.tableView.bottomEdgeEffect.hidden = YES;       // UITableView
+    self.webView.scrollView.bottomEdgeEffect.hidden = YES; // WKWebView
+}
+```
+
+**Bereits angewendet auf:**
+- `SubscriptionsTableViewController` (Podcast-Liste)
+- `FeedEpisodesTableViewController` (Episoden-Liste)
+- `DirectoryFeedViewController` (Podcast-WebView)
+- `EpisodeViewController` (Show Notes WebView)
+
+**Was NICHT funktioniert (nicht nochmal versuchen!):**
+- `[UIToolbar appearance] setBackgroundImage:` ändern → Hat keinen Effekt auf den Edge Effect
+- `UIToolbarAppearance` mit `configureWithTransparentBackground` → Betrifft nur den Toolbar-Hintergrund, nicht den Edge Effect
+- `_UIScrollPocket` per View-Hierarchie-Suche verstecken → Extrem langsam und unzuverlässig
+
+**API-Referenz:** `UIScrollView.bottomEdgeEffect` (iOS 26+), `UIScrollEdgeEffect.hidden`, Styles: `.automaticStyle`, `.softStyle`, `.hardStyle`
+
 ## Key Integrations
 
 - CloudKit (iCloud sync)

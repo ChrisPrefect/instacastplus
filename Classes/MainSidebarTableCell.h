@@ -13,4 +13,5 @@
 
 @property (nonatomic, strong) MainSidebarItem* objectValue;
 @property (nonatomic, strong, readonly) UIButton* badgeButton;
+@property (nonatomic, strong, readonly) UILabel* subtitleLabel;
 @end

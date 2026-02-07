@@ -92,6 +92,11 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                      name:CacheManagerDidUpdateNotification
                                                    object:nil];
 
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_cacheManagerDidUpdate:)
+                                                     name:CacheManagerDidEndCachingNotification
+                                                   object:nil];
+
         _observing = YES;
     }
     else if (!observing && _observing)
@@ -167,11 +172,25 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
                                                           selectedImage:[UIImage imageNamed:@"Menu Bookmarks Filled"]],
                                          ],
                                      @[
-                                         [MainSidebarItem itemWithTitle:@"Downloads".ls
-                                                                    tag:kMainSidebarItemDownloads
-                                                                  image:[UIImage imageNamed:@"Menu Downloads"]
-                                                          selectedImage:[UIImage imageNamed:@"Menu Downloads Filled"]
-                                                             topSpacing:22],
+                                         ({
+                                             MainSidebarItem* item = [MainSidebarItem itemWithTitle:@"Downloads".ls
+                                                                                               tag:kMainSidebarItemDownloads
+                                                                                             image:[UIImage imageNamed:@"Menu Downloads"]
+                                                                                     selectedImage:[UIImage imageNamed:@"Menu Downloads Filled"]
+                                                                                        topSpacing:22];
+                                             item.subtitle = ^NSString*{
+                                                 CacheManager* cman = [CacheManager sharedCacheManager];
+                                                 if ([cman isCaching] && ![cman isCachingSuspended]) {
+                                                     double rate = cman.rate;
+                                                     if (rate > 1024) {
+                                                         NSString* rateString = [NSByteCountFormatter stringFromByteCount:(long long)rate countStyle:NSByteCountFormatterCountStyleMemory];
+                                                         return [NSString stringWithFormat:@"%@/s", rateString];
+                                                     }
+                                                 }
+                                                 return nil;
+                                             };
+                                             item;
+                                         }),
 
                                          [MainSidebarItem itemWithTitle:@"Settings".ls
                                                                     tag:kMainSidebarItemSettings

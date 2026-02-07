@@ -62,6 +62,7 @@
     }
     
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
+    self.titleLabel.font = [UIFont boldSystemFontOfSize:18];
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow
@@ -179,11 +180,19 @@
 
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
-    return CGRectMake((44-29)/2, (44-18)/2, 29, 18);
+    CGFloat w = 35;
+    CGFloat h = 22;
+    return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
+                      contentRect.origin.y + (contentRect.size.height - h) / 2,
+                      w, h);
 }
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
 {
-    return CGRectMake((44-29)/2, (44-18)/2, 29, 18);
+    CGFloat w = 35;
+    CGFloat h = 22;
+    return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
+                      contentRect.origin.y + (contentRect.size.height - h) / 2,
+                      w, h);
 }
 @end

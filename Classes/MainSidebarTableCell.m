@@ -31,6 +31,7 @@
 @interface MainSidebarTableCell ()
 @property (nonatomic, strong) MainSidebarTableCellNipple* nippleView;
 @property (nonatomic, strong, readwrite) UIButton* badgeButton;
+@property (nonatomic, strong, readwrite) UILabel* subtitleLabel;
 @end
 
 
@@ -72,6 +73,13 @@
         [_badgeButton setBackgroundImage:badgeBackgroundImage forState:UIControlStateNormal];
 
         [self.contentView addSubview:_badgeButton];
+
+        _subtitleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _subtitleLabel.font = [UIFont systemFontOfSize:14];
+        _subtitleLabel.textColor = [UIColor colorWithWhite:0.45f alpha:1.f];
+        _subtitleLabel.textAlignment = NSTextAlignmentRight;
+        _subtitleLabel.hidden = YES;
+        [self.contentView addSubview:_subtitleLabel];
 
     }
 
@@ -137,8 +145,18 @@
 
     self.badgeButton.frame = badgeButtonRect;
 
+    // Subtitle label (z.B. Download Speed) rechts positionieren
+    CGFloat rightEdge = self.badgeButton.hidden ? 255 : badgeButtonRect.origin.x - 5;
+    [self.subtitleLabel sizeToFit];
+    CGFloat subtitleW = self.subtitleLabel.frame.size.width;
+    CGFloat subtitleX = rightEdge - subtitleW;
+    self.subtitleLabel.frame = CGRectMake(subtitleX,
+                                          topOffset + (CGRectGetHeight(b) - topOffset - 16) / 2 + 1,
+                                          subtitleW, 16);
+
     CGRect titleRect = self.textLabel.frame;
-    titleRect.size.width = MIN(titleRect.size.width, (badgeButtonRect.origin.x - titleRect.origin.x - 5));
+    CGFloat maxTextRight = self.subtitleLabel.hidden ? rightEdge : subtitleX - 5;
+    titleRect.size.width = MIN(titleRect.size.width, (maxTextRight - titleRect.origin.x));
     self.textLabel.frame = titleRect;
 }
 

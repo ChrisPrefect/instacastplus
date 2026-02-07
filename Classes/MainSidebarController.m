@@ -159,9 +159,13 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     
     NSInteger badgeNumber = (item.badgeNumber) ? item.badgeNumber() : 0;
     cell.badgeButton.hidden = (badgeNumber == 0);
-    
+
     [cell.badgeButton setTitle:[@(badgeNumber) stringValue] forState:UIControlStateNormal];
-    
+
+    NSString* subtitle = (item.subtitle) ? item.subtitle() : nil;
+    cell.subtitleLabel.text = subtitle;
+    cell.subtitleLabel.hidden = (subtitle.length == 0);
+
     return cell;
 }
 

@@ -259,6 +259,10 @@
     [super viewDidLoad];
     self.edgesForExtendedLayout = UIRectEdgeNone;
 
+    if (@available(iOS 26.0, *)) {
+        self.tableView.bottomEdgeEffect.hidden = YES;
+    }
+
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
     self.title = ([self.searchTerm length] > 0) ? [NSString stringWithFormat:@"'%@'", self.searchTerm].ls : nil;
     

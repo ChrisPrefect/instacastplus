@@ -12,6 +12,8 @@
 
 #import "PlaybackControlsViewController.h"
 #import "PlayerController.h"
+#import "PlayerSpeedButton.h"
+#import "PlayerTimerButton.h"
 #import "ICProgressSlider.h"
 #import "ICMetadata.h"
 #import "CDEpisode+ShowNotes.h"
@@ -242,11 +244,11 @@
     CGRect b = self.view.bounds;
     self.toolsView.frame = CGRectMake(0, CGRectGetHeight(b)-safeAreaInsets.bottom-50, CGRectGetWidth(b), 50);
 
-    // Reposition all 4 toolbar buttons: same size, evenly spaced, 20% bigger than original 70x70
-    CGFloat buttonSize = 84;
+    // Reposition toolbar buttons: Speed and Timer 50% bigger than the others
+    CGFloat smallSize = 84;
+    CGFloat bigSize = 101; // 20% bigger than original for Speed and Timer
     CGFloat toolsWidth = CGRectGetWidth(self.toolsView.bounds);
     CGFloat toolsHeight = CGRectGetHeight(self.toolsView.bounds);
-    CGFloat yPos = (toolsHeight - buttonSize) / 2.0;
     NSMutableArray *toolButtons = [NSMutableArray array];
     for (UIView *subview in self.toolsView.subviews) {
         [toolButtons addObject:subview];
@@ -254,11 +256,26 @@
     [toolButtons sortUsingComparator:^NSComparisonResult(UIView *v1, UIView *v2) {
         return [@(v1.frame.origin.x) compare:@(v2.frame.origin.x)];
     }];
-    CGFloat spacing = (toolsWidth - toolButtons.count * buttonSize) / (toolButtons.count + 1);
-    for (NSInteger i = 0; i < (NSInteger)toolButtons.count; i++) {
-        UIView *button = toolButtons[i];
-        CGFloat x = spacing + i * (buttonSize + spacing);
-        button.frame = CGRectMake(x, yPos, buttonSize, buttonSize);
+    CGFloat totalButtonWidth = 0;
+    for (UIView *button in toolButtons) {
+        if ([button isKindOfClass:[PlayerSpeedButton class]] || [button isKindOfClass:[PlayerTimerButton class]]) {
+            totalButtonWidth += bigSize;
+        } else {
+            totalButtonWidth += smallSize;
+        }
+    }
+    CGFloat spacing = (toolsWidth - totalButtonWidth) / (toolButtons.count + 1);
+    CGFloat xPos = spacing;
+    for (UIView *button in toolButtons) {
+        CGFloat size;
+        if ([button isKindOfClass:[PlayerSpeedButton class]] || [button isKindOfClass:[PlayerTimerButton class]]) {
+            size = bigSize;
+        } else {
+            size = smallSize;
+        }
+        CGFloat yPos = (toolsHeight - size) / 2.0;
+        button.frame = CGRectMake(xPos, yPos, size, size);
+        xPos += size + spacing;
     }
 
     // Position chapter title label between the two time labels

@@ -114,7 +114,11 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+
+    if (@available(iOS 26.0, *)) {
+        self.tableView.bottomEdgeEffect.hidden = YES;
+    }
+
     self.title = @"Podcasts".ls;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
                                                                                 style:UIBarButtonItemStylePlain

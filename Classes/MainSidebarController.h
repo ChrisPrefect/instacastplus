@@ -17,6 +17,7 @@
 @property (nonatomic) UIImage* selectedImage;
 @property (nonatomic) CGFloat topSpacing;
 @property (nonatomic, copy) NSUInteger (^badgeNumber)(void);
+@property (nonatomic, copy) NSString* (^subtitle)(void);
 @end
 
 
