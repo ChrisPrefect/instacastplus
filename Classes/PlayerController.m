@@ -511,6 +511,8 @@ enum {
 {
 	[super viewWillAppear:animated];
 
+
+
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
     // Make navigation bar opaque so chapter images don't show through

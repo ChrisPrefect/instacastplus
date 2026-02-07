@@ -541,7 +541,9 @@
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
+
+
     [self updateAppearance];
     
     
@@ -581,20 +583,24 @@
     self.sharedWebView.backgroundColor = ICBackgroundColor;
     self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
 
-    // Update navigation bar title color for dark mode
+    // Navigation bar opaque with backgroundImage (backgroundColor alone doesn't disable Liquid Glass on iOS 26)
+    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
     UINavigationBarAppearance* navBarAppearance = [[UINavigationBarAppearance alloc] init];
     [navBarAppearance configureWithOpaqueBackground];
-    navBarAppearance.backgroundColor = ICBackgroundColor;
+    navBarAppearance.backgroundImage = backgroundImage;
+    navBarAppearance.shadowImage = [[UIImage alloc] init];
+    navBarAppearance.shadowColor = nil;
     [navBarAppearance setTitleTextAttributes:@{NSForegroundColorAttributeName: ICTextColor}];
     self.navigationController.navigationBar.standardAppearance = navBarAppearance;
     self.navigationController.navigationBar.scrollEdgeAppearance = navBarAppearance;
+    self.navigationController.navigationBar.compactAppearance = navBarAppearance;
 
     [self _loadWebContent];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    
+
     [self _updateTitleLayout];
     [self _setObserving:YES];
 }
@@ -862,10 +868,10 @@
     UIBarButtonItem* downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Download"]
                                                                      style:UIBarButtonItemStylePlain target:self action:@selector(downloadAction:)];
     downloadItem.enabled = ([self.episode preferedMedium] != nil);
-    
+
     UIBarButtonItem* shareItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Share"]
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(shareAction:)];
-    
+
     UIBarButtonItem* moreItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar More"]
                                                                  style:UIBarButtonItemStylePlain target:self action:@selector(moreAction:)];
     

@@ -11,6 +11,7 @@
 #import "UIViewController+ShowNotes.h"
 #import "ICListTitleView.h"
 #import "OpenInSafariActivity.h"
+#import "ICAppearanceManager.h"
 
 @interface WebController ()
 @property (nonatomic, readwrite, strong) WKWebView* webView;
@@ -26,7 +27,6 @@
 
 @implementation WebController {
     NSInteger _loading;
-    BOOL _toolbarWasHidden;
     BOOL _lastCanGoBack;
     BOOL _lastCanGoForward;
 }
@@ -34,7 +34,6 @@
 + (WebController*) webController
 {
 	WebController* controller = [[self alloc] initWithNibName:nil bundle:nil];
-    controller.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
     return controller;
 }
 
@@ -49,11 +48,10 @@
 }
 
 
-// Implement viewDidLoad to do additional setup after loading the view, typically from a nib.
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    // Allow content to extend under bottom bar for safe area coverage
+    // Extend under bottom bar for safe area coverage, but not behind nav bar
     self.edgesForExtendedLayout = UIRectEdgeBottom;
 
     self.view.backgroundColor = ICBackgroundColor;
@@ -61,43 +59,40 @@
 	self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
 	self.webView.navigationDelegate = self;
-    [self.webView sizeToFit];
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
     self.webView.underPageBackgroundColor = ICBackgroundColor;
 
-    for(UIView* subview in self.webView.scrollView.subviews) {
-        subview.backgroundColor = ICBackgroundColor;
-    }
-    
 	[self.view addSubview:self.webView];
-	
+
 	NSURLRequest* request = [NSURLRequest requestWithURL:self.url];
 	[self.webView loadRequest:request];
-	
+
     CGRect b = self.view.bounds;
-    
+
     self.titleView = [[ICListTitleView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b)-88, 44)];
 
-    
-    // Share button in navigation bar (swapped from toolbar)
+    // Close button (modal dismiss)
+    UIBarButtonItem* closeButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"xmark"]
+                                                                       style:UIBarButtonItemStylePlain target:self action:@selector(closeAction:)];
+    self.navigationItem.leftBarButtonItem = closeButtonItem;
+
     UIBarButtonItem* shareButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"square.and.arrow.up"]
                                                                        style:UIBarButtonItemStylePlain target:self action:@selector(actionAction:)];
     self.navigationItem.rightBarButtonItem = shareButtonItem;
 
-    // Open in external browser in toolbar (swapped from nav bar)
-    self.actionItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"globe"]
+    self.actionItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"safari"]
                                                        style:UIBarButtonItemStylePlain target:self action:@selector(showMoreInfoInExternalBrowser:)];
 
-    self.backItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Previous"]
+    self.backItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"chevron.left"]
                                                      style:UIBarButtonItemStylePlain target:self action:@selector(backAction:)];
 
-    self.forwardItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Next"]
+    self.forwardItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"chevron.right"]
                                                         style:UIBarButtonItemStylePlain target:self action:@selector(forwardAction:)];
 
     self.navigationItem.titleView = self.titleView;
 
-    // Initial toolbar - nur Globe-Button
+    // Initial toolbar
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     [self setToolbarItems:@[flexSpace, self.actionItem]];
 }
@@ -113,38 +108,12 @@
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-
-    _toolbarWasHidden = self.navigationController.toolbarHidden;
     [self.navigationController setToolbarHidden:NO animated:YES];
-
-    // Force navigation bar to use opaque app theme colors
-    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
-    [navAppearance configureWithOpaqueBackground];
-    navAppearance.backgroundColor = ICBackgroundColor;
-    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : [ICAppearanceManager sharedManager].appearance.textColor };
-    navAppearance.shadowColor = [UIColor clearColor];
-    self.navigationController.navigationBar.standardAppearance = navAppearance;
-    self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
-    self.navigationController.navigationBar.compactAppearance = navAppearance;
-
-    // Bottom inset so content can scroll past the toolbar (avoids blocking cookie banners)
-    [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(0, 0, 44, 0) byAdjustingForStandardBars:YES];
     [self _updateToolbar];
 }
 
-
 - (void) viewWillDisappear:(BOOL)animated
 {
-    // Restore default navigation bar appearance for other view controllers
-    self.navigationController.navigationBar.standardAppearance = nil;
-    self.navigationController.navigationBar.scrollEdgeAppearance = nil;
-    self.navigationController.navigationBar.compactAppearance = nil;
-    self.navigationController.toolbar.standardAppearance = nil;
-    self.navigationController.toolbar.scrollEdgeAppearance = nil;
-    self.navigationController.toolbar.compactAppearance = nil;
-
-    [self.navigationController setToolbarHidden:_toolbarWasHidden animated:YES];
-
 	self.canceled = YES;
 	[super viewWillDisappear:animated];
 	[self.webView stopLoading];
@@ -155,7 +124,7 @@
     }
 }
 
- 
+
 #pragma mark - WebView Delegate
 
 - (void) _updateToolbar
@@ -163,7 +132,6 @@
     BOOL canGoBack = [self.webView canGoBack];
     BOOL canGoForward = [self.webView canGoForward];
 
-    // Nur neu aufbauen wenn sich der Zustand tatsächlich geändert hat
     if (canGoBack == _lastCanGoBack && canGoForward == _lastCanGoForward) {
         self.actionItem.enabled = (!self.failed);
         return;
@@ -196,7 +164,7 @@
 
 - (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
     self.failed = NO;
-    
+
     [App retainNetworkActivity];
     _loading++;
     [self _updateToolbar];
@@ -229,21 +197,21 @@
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     [App releaseNetworkActivity];
     _loading--;
-    
+
     if ([error code] == kCFURLErrorCancelled) {
         return;
     }
-    
+
     if ([error code] == WebKitErrorCannotShowURL && [App canOpenURL:self.url]) {
         [App openURL:self.url options:@{} completionHandler:nil];
         self.canceled = YES;
-        [self performSelector:@selector(popAfterDelay) withObject:nil afterDelay:0.5];
+        [self performSelector:@selector(dismissAfterDelay) withObject:nil afterDelay:0.5];
         self.closed = YES;
         return;
     }
-    
+
     ErrLog(@"error loading page %@", error);
-    
+
     if (!self.canceled && [error code] != 204 && [error code] != WebKitErrorCannotShowURL && [error code] != WebKitErrorFrameLoadInterruptedByPolicyChange)
     {
         [self presentAlertControllerWithTitle:@"Loading website failed.".ls
@@ -252,17 +220,22 @@
                                      animated:YES
                                    completion:NULL];
     }
-    
+
     self.failed = YES;
     [self _updateToolbar];
-    [self performSelector:@selector(popAfterDelay) withObject:nil afterDelay:0.5];
+    [self performSelector:@selector(dismissAfterDelay) withObject:nil afterDelay:0.5];
     self.closed = YES;
 }
 
 
-- (void) popAfterDelay
+- (void) dismissAfterDelay
 {
-	[self.navigationController popViewControllerAnimated:YES];
+	[self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void) closeAction:(id)sender
+{
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 #pragma mark -
