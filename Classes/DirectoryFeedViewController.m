@@ -629,49 +629,56 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 {
     VDModalInfo* subscribingModelInfo = [VDModalInfo modalInfoWithProgressLabel:@"Subscribing…"];
     [subscribingModelInfo showWithCompletion:^{
-        
+
         if (feed.changedSourceURL) {
             feed.sourceURL = feed.changedSourceURL;
         }
-        
+
         CDFeed* subscribedFeed = [DMANAGER feedWithSourceURL:feed.sourceURL];
-        
+
         if (subscribedFeed) {
             subscribedFeed.parked = NO;
+            [DMANAGER save];
             [[SubscriptionManager sharedSubscriptionManager] reloadContentOfFeed:subscribedFeed recoverArchivedEpisodes:YES completion:^(BOOL success, NSArray* newEpisodes, NSError* error) {
-                
-                if (error) {
-                    [self presentError:error];
-                }
-                
-                [subscribingModelInfo closeWithCompletion:^{
-                    
-                    if (!viewController) {
-                        return;
+
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (error) {
+                        [self presentError:error];
                     }
-                    
-                    if (popping) {
-                        [viewController.navigationController popViewControllerAnimated:YES];
-                    } else {
-                        [viewController dismissViewControllerAnimated:YES completion:^{ }];
-                    }
-                }];
-                
+
+                    [subscribingModelInfo closeWithCompletion:^{
+
+                        if (!viewController) {
+                            return;
+                        }
+
+                        if (popping) {
+                            [viewController.navigationController dismissViewControllerAnimated:YES completion:^{
+                                [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
+                            }];
+                        } else {
+                            [viewController dismissViewControllerAnimated:YES completion:^{ }];
+                        }
+                    }];
+                });
+
             }];
         }
         else
         {
             CDFeed* subscribedFeed = [[SubscriptionManager sharedSubscriptionManager] subscribeParserFeed:feed autodownload:YES options:kSubscribeOptionNone];
             subscribedFeed.parked = NO;
-            
+
             [subscribingModelInfo closeWithCompletion:^{
-                
+
                 if (!viewController) {
                     return;
                 }
-                
+
                 if (popping) {
-                    [viewController.navigationController popViewControllerAnimated:YES];
+                    [viewController.navigationController dismissViewControllerAnimated:YES completion:^{
+                        [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
+                    }];
                 } else {
                     [viewController dismissViewControllerAnimated:YES completion:^{ }];
                 }

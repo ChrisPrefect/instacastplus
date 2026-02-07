@@ -43,17 +43,18 @@
     if ([[self.navigationController.viewControllers objectAtIndex:0] isKindOfClass:[FeedSettingsViewController class]]) {
         self.navigationItem.prompt = self.feed.title;
     }
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     [self updateAppearance];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void) updateAppearance {
@@ -65,12 +66,6 @@
 
 - (void) dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

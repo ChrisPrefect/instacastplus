@@ -61,24 +61,24 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 {
     [super viewDidLoad];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-    
+
     [self.tableView registerClass:[ChooseThemeColorCell class] forCellReuseIdentifier:@"ChooseThemeColorCell"];
-    
+
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"General".ls;
     self->appIconsArray = [NSArray arrayWithObjects: @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7", nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     [self updateAppearance];
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void) updateAppearance {
@@ -112,13 +112,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 
 - (void)didReceiveMemoryWarning
 {

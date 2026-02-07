@@ -356,6 +356,9 @@
 
 
 - (void)sceneWillEnterForeground:(UIScene *)scene {
+    if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
+        [[ICAppearanceManager sharedManager] updateAppearance];
+    }
     [self _updateAppContentAfterBecomingActive];
     App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
 }

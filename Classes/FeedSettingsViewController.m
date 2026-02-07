@@ -81,6 +81,11 @@ enum {
     UITapGestureRecognizer *tapGesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTap:)];
     tapGesture.cancelsTouchesInView = NO; // Allow other interactions (e.g., stepper)
     [self.tableView addGestureRecognizer:tapGesture];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void)handleTap:(UITapGestureRecognizer *)sender {
@@ -94,10 +99,6 @@ enum {
     [super viewWillAppear:animated];
     [self updateAppearance];
     [self.navigationController setToolbarHidden:YES animated:YES];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -120,13 +121,6 @@ enum {
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 
 - (void) doneAction:(id)sender
 {

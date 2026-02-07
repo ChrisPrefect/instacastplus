@@ -25,7 +25,9 @@
 - (void) viewDidLoad
 {
     [super viewDidLoad];
-    
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(setAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     self.view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
     
     // create image view
@@ -75,7 +77,6 @@
     self.triangleImageView.hidden = (self.action == nil);
     
     [self layoutContent];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(setAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 }
 
 - (void) setAppearance {
@@ -91,11 +92,6 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
 
 - (void) layoutContent
 {

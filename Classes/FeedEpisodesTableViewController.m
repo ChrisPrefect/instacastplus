@@ -258,6 +258,8 @@
 {
     [super viewDidLoad];
     self.edgesForExtendedLayout = UIRectEdgeNone;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
     self.title = ([self.searchTerm length] > 0) ? [NSString stringWithFormat:@"'%@'", self.searchTerm].ls : nil;
     
     WEAK_SELF
@@ -373,8 +375,6 @@
         UIImage* gearImage = [UIImage systemImageNamed:@"gearshape"];
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:gearImage style:UIBarButtonItemStylePlain target:self action:@selector(settings:)];
     }
-    
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
     
     if ([[NSUserDefaults standardUserDefaults] objectForKey:_feed.uid] != nil){
         NSString* filterOptionStr = [[NSUserDefaults standardUserDefaults] valueForKey:_feed.uid];
@@ -535,12 +535,6 @@
 
 - (void) dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

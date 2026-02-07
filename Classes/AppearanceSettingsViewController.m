@@ -51,6 +51,11 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Appearance".ls;
     self->appIconsArray = [NSArray arrayWithObjects: @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7", nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -58,11 +63,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     [super viewWillAppear:animated];
 
     [self updateAppearance];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -105,11 +105,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
 
 #pragma mark - Table view data source
 

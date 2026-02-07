@@ -68,29 +68,24 @@ static NSString* SettingCellIdentifier = @"SettingCell";
                                                                                 style:UIBarButtonItemStylePlain
                                                                                target:self
                                                                                action:@selector(toggleEditMode:)];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 }
 
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
+
     [[CacheManager sharedCacheManager] autoClearAndMakeRoomForBytes:0 automatic:YES];
     [self _reloadContent];
     [self.tableView reloadData];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 }
 
 - (void) dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

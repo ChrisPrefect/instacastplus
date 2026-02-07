@@ -46,16 +46,17 @@ static NSString* kFeedCell = @"FeedCell";
     
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Subscriptions".ls;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
     [self updateAppearance];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -68,13 +69,6 @@ static NSString* kFeedCell = @"FeedCell";
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;

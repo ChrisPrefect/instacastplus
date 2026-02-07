@@ -37,6 +37,11 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Playback".ls;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -44,11 +49,6 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     [super viewWillAppear:animated];
 
     [self updateAppearance];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -68,12 +68,6 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
 - (void) dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

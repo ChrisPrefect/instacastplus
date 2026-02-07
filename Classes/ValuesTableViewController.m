@@ -27,31 +27,25 @@
 {
     [super viewDidLoad];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-    
-    self.navigationItem.title = self.title;
-}
 
-- (void) viewWillAppear:(BOOL)animated {
-    [super viewWillAppear:animated];
-    
-    [self updateAppearance];
+    self.navigationItem.title = self.title;
+
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
 }
 
+- (void) viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+
+    [self updateAppearance];
+}
+
 - (void) dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;

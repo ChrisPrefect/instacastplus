@@ -40,6 +40,7 @@
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
 @property (nonatomic, assign) BOOL isLoadingFromCloud;
 @property (nonatomic, assign) BOOL tableViewIsUpdating;
+@property (nonatomic, assign) BOOL needsFullReload;
 //@property (nonatomic, strong) UILabel *iCloudLoadingLabel;
 @end
 
@@ -464,6 +465,13 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
+
+    if (self.needsFullReload) {
+        self.needsFullReload = NO;
+        [self.fetchController performFetch:nil];
+        [self.tableView reloadData];
+        [self _updateToolbarLabels];
+    }
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
@@ -472,18 +480,21 @@
 
 - (void) reloadDataAndTable:(BOOL)reloadTable
 {
-    //self.feeds = [DMANAGER.feeds filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"parked == NO"]];
-    if (reloadTable && self.tableView.window) {
-        //self.isLoadingFromCloud = NO;
+    if (reloadTable) {
+        [self.fetchController performFetch:nil];
         [self.tableView reloadData];
     }
 }
 
 - (void)handleICloudSyncUpdateNotification:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self.fetchController performFetch:nil];
         self.isLoadingFromCloud = NO;
-        [self.tableView reloadData];
+        if (self.tableView.window) {
+            [self.fetchController performFetch:nil];
+            [self.tableView reloadData];
+        } else {
+            self.needsFullReload = YES;
+        }
     });
 }
 
@@ -557,15 +568,25 @@
 	{
         CDFeed* feed = [self.fetchController objectAtIndexPath:indexPath];
 
-        _flags.userAction = 1;
-		[[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:feed];
+        NSString* title = [NSString stringWithFormat:@"%@ \"%@\"?", @"Unsubscribe".ls, feed.title ?: @""];
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:title
+                                                                       message:@"All downloaded episodes will be deleted.".ls
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction* action) {
+            [tableView setEditing:NO animated:YES];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Unsubscribe".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
+            self->_flags.userAction = 1;
+            [[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:feed];
 
-        // Refresh fetch controller and reload table
-        [self.fetchController performFetch:nil];
-        [self reloadDataAndTable:YES];
-        _flags.userAction = 0;
+            // Refresh fetch controller and reload table
+            [self.fetchController performFetch:nil];
+            [self reloadDataAndTable:YES];
+            self->_flags.userAction = 0;
 
-        [self _updateToolbarLabels];
+            [self _updateToolbarLabels];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
     }
 }
 
@@ -668,6 +689,14 @@
 
 - (void)controllerWillChangeContent:(NSFetchedResultsController *)controller {
     if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+
+    // Kein beginUpdates wenn Table nicht im Window - sonst entsteht eine Inkonsistenz
+    // zwischen FRC-State und Table-State die den Table dauerhaft korrupt macht
+    if (self.tableView.window == nil) {
+        self.needsFullReload = YES;
+        return;
+    }
+
     self.tableViewIsUpdating = YES;
     [self.tableView beginUpdates];
 }
@@ -676,18 +705,20 @@
   didChangeSection:(id <NSFetchedResultsSectionInfo>)sectionInfo
            atIndex:(NSUInteger)sectionIndex
      forChangeType:(NSFetchedResultsChangeType)type {
-    
+
+    if (!self.tableViewIsUpdating) return;
+
     switch(type) {
         case NSFetchedResultsChangeInsert:
             [self.tableView insertSections:[NSIndexSet indexSetWithIndex:sectionIndex]
                           withRowAnimation:UITableViewRowAnimationFade];
             break;
-            
+
         case NSFetchedResultsChangeDelete:
             [self.tableView deleteSections:[NSIndexSet indexSetWithIndex:sectionIndex]
                           withRowAnimation:UITableViewRowAnimationFade];
             break;
-            
+
         default:
             break;
     }
@@ -697,36 +728,31 @@
        atIndexPath:(NSIndexPath *)indexPath forChangeType:(NSFetchedResultsChangeType)type
       newIndexPath:(NSIndexPath *)newIndexPath
 {
-    if (self.isLoadingFromCloud || _flags.userAction == 1) return;
-    
-    // If table is not yet visible/valid, bail out
-    if (!self.tableViewIsUpdating || self.tableView.window == nil) {
-        return;
-    }
-    
+    if (!self.tableViewIsUpdating) return;
+
     UITableView *tableView = self.tableView;
-    
+
     switch (type) {
         case NSFetchedResultsChangeInsert:
             if (newIndexPath.section < [tableView numberOfSections]) {
                 [tableView insertRowsAtIndexPaths:@[newIndexPath] withRowAnimation:UITableViewRowAnimationFade];
             }
             break;
-            
+
         case NSFetchedResultsChangeDelete:
             if (indexPath.section < [tableView numberOfSections] &&
                 indexPath.row < [tableView numberOfRowsInSection:indexPath.section]) {
                 [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
             }
             break;
-            
+
         case NSFetchedResultsChangeUpdate:
             if (indexPath.section < [tableView numberOfSections] &&
                 indexPath.row < [tableView numberOfRowsInSection:indexPath.section]) {
                 [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
             }
             break;
-            
+
         case NSFetchedResultsChangeMove:
             if (indexPath && newIndexPath && ![indexPath isEqual:newIndexPath]) {
                 [tableView moveRowAtIndexPath:indexPath toIndexPath:newIndexPath];
@@ -739,13 +765,17 @@
 
 
 - (void)controllerDidChangeContent:(NSFetchedResultsController *)controller {
-    NSLog(@"🎯 controllerDidChangeContent triggered, userAction=%d", _flags.userAction);
-    
     if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+
+    if (!self.tableViewIsUpdating) {
+        // Wurde in willChangeContent uebersprungen (kein Window) - nichts zu tun
+        return;
+    }
+
     @try {
         [self.tableView endUpdates];
     } @catch (NSException *exception) {
-        NSLog(@"🔥 Fallback to reloadData due to: %@", exception);
+        [self.fetchController performFetch:nil];
         [self.tableView reloadData];
     }
     self.tableViewIsUpdating = NO;

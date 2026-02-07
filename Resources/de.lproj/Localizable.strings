@@ -170,6 +170,7 @@
 "Are you sure you want to unsubscribe '%@'?" = "Sind Sie sicher, dass Sie '%@' abbestellen möchten?";
 "Podcast Info" = "Podcastinfo";
 "Unsubscribe" = "Abbestellen";
+"All downloaded episodes will be deleted." = "Alle heruntergeladenen Episoden werden gelöscht.";
 "Updated" = "Aktualisiert";
 "Website" = "Webseite";
 

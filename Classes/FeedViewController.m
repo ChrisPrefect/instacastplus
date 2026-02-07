@@ -152,9 +152,13 @@
 // Implement viewDidLoad to do additional setup after loading the view, typically from a nib.
 - (void)viewDidLoad {
     [super viewDidLoad];
-	
-	
-	self.navigationItem.title = @"Podcast Info".ls;
+
+    self.navigationItem.title = @"Podcast Info".ls;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
     
 
 	if (self.feed)
@@ -210,10 +214,6 @@
 
     [self _updateToolbarAnimated:YES];
     [self.navigationController setToolbarHidden:NO animated:YES];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 -(void) updateAppearance {
@@ -228,13 +228,6 @@
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
 
 #pragma mark -
 

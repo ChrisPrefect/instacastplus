@@ -46,6 +46,11 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Import / Export".ls;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -53,11 +58,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     [super viewWillAppear:animated];
 
     [self updateAppearance];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(updateAppearance)
-                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                               object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated
@@ -77,12 +77,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
 - (void) dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

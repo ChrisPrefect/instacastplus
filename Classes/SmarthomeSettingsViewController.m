@@ -49,12 +49,6 @@ enum {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Smart Home".ls;
-}
-
-- (void)viewWillAppear:(BOOL)animated
-{
-    [super viewWillAppear:animated];
-    [self updateAppearance];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -66,6 +60,12 @@ enum {
                                                object:nil];
 }
 
+- (void)viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+    [self updateAppearance];
+}
+
 - (void)viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
@@ -74,12 +74,6 @@ enum {
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)viewDidDisappear:(BOOL)animated
-{
-    [super viewDidDisappear:animated];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

@@ -978,7 +978,22 @@ static const NSInteger kInitialEpisodeLimit = 50;
     NSError *fetchError = nil;
     NSArray *matches = [self.objectContext executeFetchRequest:fetchRequest error:&fetchError];
     if (matches.count > 0) {
-        return matches.firstObject; // Already exists
+        CDFeed *existingFeed = matches.firstObject;
+        if (!existingFeed.subscribed) {
+            // Feed war unsubscribed aber noch nicht aus Core Data entfernt - reaktivieren
+            existingFeed.subscribed = YES;
+            existingFeed.parked = NO;
+            [self _copyFeedValuesFrom:parserFeed to:existingFeed];
+            if ((options & kSubscribeOptionDontManageRanking) == 0) {
+                NSMutableArray *feedsCopy = [self.feeds mutableCopy];
+                if (![feedsCopy containsObject:existingFeed]) {
+                    [feedsCopy insertObject:existingFeed atIndex:0];
+                }
+                [self _updateFeedOrderNums:feedsCopy];
+            }
+            [self save];
+        }
+        return existingFeed;
     }
 
     // Create new feed

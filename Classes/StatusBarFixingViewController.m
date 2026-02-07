@@ -14,14 +14,19 @@
 
 @implementation StatusBarFixingViewController
 
-- (void) viewWillAppear:(BOOL)animated
+- (void)viewDidLoad
 {
-    [super viewWillAppear:animated];
-    [self updateAppearance];
+    [super viewDidLoad];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
+}
+
+- (void) viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+    [self updateAppearance];
 }
 
 -(void) updateAppearance {
@@ -36,11 +41,8 @@
     return [self.childViewControllers firstObject];
 }
 
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    
+- (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
-
 
 @end
