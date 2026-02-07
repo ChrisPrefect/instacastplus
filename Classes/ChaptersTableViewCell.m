@@ -37,7 +37,7 @@
 		[self.contentView addSubview:_numLabel];
 		
 		_timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_timeLabel.font = [UIFont systemFontOfSize:13.f];
+		_timeLabel.font = [UIFont systemFontOfSize:15.f];
 		_timeLabel.textAlignment = NSTextAlignmentRight;
         _timeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
 		[self.contentView addSubview:_timeLabel];
@@ -51,7 +51,8 @@
         _linkButton = [[UIButton alloc] initWithFrame:CGRectZero];
         [_linkButton setImage:[[UIImage imageNamed:@"Player Chapter Link"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                      forState:UIControlStateNormal];
-        _linkButton.imageEdgeInsets = UIEdgeInsetsMake(-1, 0, 1, 0);
+        _linkButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+        _linkButton.imageEdgeInsets = UIEdgeInsetsMake(0, 5, 0, 0);
         _linkButton.hidden = YES;
         [self.contentView addSubview:_linkButton];
         
@@ -108,22 +109,22 @@
 	
 	CGRect b = self.bounds;
     
-    CGSize titleSize = [self.textLabel.attributedText boundingRectWithSize:CGSizeMake(CGRectGetWidth(b)-15-15-15-55-15, 200)
+    CGSize titleSize = [self.textLabel.attributedText boundingRectWithSize:CGSizeMake(CGRectGetWidth(b)-15-15-15-80-15, 200)
                                                                    options:NSStringDrawingUsesLineFragmentOrigin
                                                                    context:nil].size;
     IC_SIZE_INTEGRAL(titleSize);
-    
-	CGRect titleRect = CGRectMake(15+15+15, 11, CGRectGetWidth(b)-15-15-15-55-15, titleSize.height);
+
+	CGRect titleRect = CGRectMake(15+15+15, 11, CGRectGetWidth(b)-15-15-15-80-15, titleSize.height);
 	self.textLabel.frame = [self.contentView convertRect:titleRect fromView:self];
-    
+
 
 	CGRect numRect = CGRectMake(15, 12.f, 20, 17.f);
 	self.numLabel.frame = [self.contentView convertRect:numRect fromView:self];
 
 	CGRect timeRect = CGRectMake(CGRectGetWidth(b)-15-55, 12.f, 55.f, 17.f);
 	self.timeLabel.frame = [self.contentView convertRect:timeRect fromView:self];
-	
-    self.linkButton.frame = CGRectMake(CGRectGetWidth(b)-85, 0, 44, 44);
+
+    self.linkButton.frame = CGRectMake(CGRectGetWidth(b)-100, 0, 100, CGRectGetHeight(b));
     
 
 //    CGFloat progressY = CGRectGetHeight(b) - 2; // Ensures 1pt height
@@ -143,7 +144,7 @@
     
     NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{NSFontAttributeName : font}];
     
-    CGSize titleSize = [attributedTitle boundingRectWithSize:CGSizeMake(width-15-15-15-55-15, 200)
+    CGSize titleSize = [attributedTitle boundingRectWithSize:CGSizeMake(width-15-15-15-80-15, 200)
                                                      options:NSStringDrawingUsesLineFragmentOrigin
                                                      context:nil].size;
     IC_SIZE_INTEGRAL(titleSize);

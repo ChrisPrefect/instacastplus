@@ -56,6 +56,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 @private
     BOOL _defaultsPushed;
     BOOL _observing;
+    BOOL _editingTransitionInProgress;
 }
 
 - (void)dealloc
@@ -280,6 +281,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         self.cancelItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                                                                         target:self
                                                                         action:@selector(editForCachingAction:)];
+        self.cancelItem.tintColor = ICTintColor;
     }
 
     [self willChangeValueForKey:@"toolbarItems"];
@@ -300,11 +302,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         // Toolbar-Items nur setzen wenn noch nicht im editing mode gesetzt
         NSArray* currentItems = self.toolbarItems;
         if (currentItems.count != 9 || ![currentItems containsObject:self.editItem]) {
-            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-            UIBarButtonItem* fixedSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
-            fixedSpace.width = 20.f;
+            UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+            UIBarButtonItem* flex2 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+            UIBarButtonItem* flex3 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+            UIBarButtonItem* flex4 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
 
-            [self setToolbarItems:@[self.editItem, fixedSpace, self.playItem, fixedSpace, self.downloadItem, flexSpace, self.selectAllItem, fixedSpace, self.cancelItem] animated:animated];
+            [self setToolbarItems:@[self.editItem, flex1, self.playItem, flex2, self.downloadItem, flex3, self.selectAllItem, flex4, self.cancelItem] animated:animated];
         }
 	}
     else
@@ -872,6 +875,16 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) editForCachingAction:(id)sender
 {
+    if (_editingTransitionInProgress) {
+        return;
+    }
+    _editingTransitionInProgress = YES;
+
+    [CATransaction begin];
+    [CATransaction setCompletionBlock:^{
+        self->_editingTransitionInProgress = NO;
+    }];
+
 	if (!self.tableView.editing) {
         self.editingStyle = EpisodesTableViewEditingStyleDownload;
 		[self setEditing:YES animated:YES];
@@ -880,6 +893,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         self.editingStyle = EpisodesTableViewEditingStyleNormal;
 		[self setEditing:NO animated:YES];
 	}
+
+    [CATransaction commit];
 }
 
 

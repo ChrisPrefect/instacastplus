@@ -73,7 +73,7 @@
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Are you sure you want to delete?".ls message:nil preferredStyle:UIAlertControllerStyleAlert];
     
-    [alert addAction:[UIAlertAction actionWithTitle:@"Yes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    [alert addAction:[UIAlertAction actionWithTitle:@"Yes".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction * action) {
         STRONG_SELF
         if (type == 1)
         {

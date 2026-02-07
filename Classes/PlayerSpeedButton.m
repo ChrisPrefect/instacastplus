@@ -180,7 +180,7 @@
 
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 35;
+    CGFloat w = 45;
     CGFloat h = 22;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
@@ -189,7 +189,7 @@
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 35;
+    CGFloat w = 45;
     CGFloat h = 22;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
