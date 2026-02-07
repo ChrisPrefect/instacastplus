@@ -350,7 +350,10 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
             return;
         }
 
-        // Ignore if value is close to current position (prevents echo)
+        // Ignore if this is our own published value echoed back (e.g. retained message on reconnect)
+        if (_lastPosition && [_lastPosition isEqualToString:message]) return;
+
+        // Ignore if value is close to current position
         NSTimeInterval currentPos = pm.time;
         NSTimeInterval requestedPos = [message doubleValue];
         if (fabs(currentPos - requestedPos) < 2.0) return;
@@ -374,6 +377,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
             [self publishPositionState];
             return;
         }
+
+        // Ignore if this is our own published value echoed back
+        if (_lastProgress && [_lastProgress isEqualToString:message]) return;
 
         // Ignore if value is close to current progress (prevents echo)
         int currentProgress = (int)((pm.time / pm.duration) * 100);
