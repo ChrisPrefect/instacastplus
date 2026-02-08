@@ -43,6 +43,7 @@
     self.textLabel.textColor = ICTextColor;
     self.detailTextLabel.textColor = ICMutedTextColor;
     self.accessoryView.tintColor = ICMutedTextColor;
+    _videoIndicator.tintColor = ICMutedTextColor;
 	
 	CGRect bounds = self.bounds;
 	

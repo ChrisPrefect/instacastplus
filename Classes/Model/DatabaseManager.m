@@ -1590,6 +1590,9 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     storeDescription.type = NSSQLiteStoreType;
     storeDescription.shouldMigrateStoreAutomatically = YES;
     storeDescription.shouldInferMappingModelAutomatically = YES;
+    // Required: DB was previously opened with history tracking (iCloud sync).
+    // Without this flag, CoreData forces Read Only mode on the existing store.
+    [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
     _persistentContainer.persistentStoreDescriptions = @[storeDescription];
     [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
         if (error) {

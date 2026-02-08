@@ -99,7 +99,6 @@
     {
         [USER_DEFAULTS setBool:true forKey:InterfaceThemeDefaultActive];
     }
-    [USER_DEFAULTS synchronize];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -191,8 +190,7 @@
         [USER_DEFAULTS setInteger:2 forKey:SelectedAppLanguage];
     }
     [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-    [USER_DEFAULTS synchronize];
-    
+
     return YES;
 }
 
@@ -227,7 +225,9 @@
 
     [self _updateAppContentAfterBecomingActive];
 
-    [[EpisodeLoadingManager sharedManager] restoreLoadingState];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[EpisodeLoadingManager sharedManager] restoreLoadingState];
+    });
 
     if ([USER_DEFAULTS boolForKey:SmarthomeMQTTEnabled]) {
         [[SmarthomeManager sharedManager] start];

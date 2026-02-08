@@ -21,7 +21,9 @@ static NSString* kUpNextCell = @"UpNextCell";
 @property (nonatomic) BOOL observing;
 @end
 
-@implementation UpNextTableViewController
+@implementation UpNextTableViewController {
+    BOOL _needsPlayComboButtonUpdate;
+}
 
 + (instancetype) viewController {
     return [[self alloc] initWithStyle:UITableViewStylePlain];
@@ -39,7 +41,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     {
         // Observe download progress changes
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
-            [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+            [self _setNeedsPlayComboButtonUpdate];
         }];
 
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
@@ -51,6 +53,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     }
     else if (!observing && _observing)
     {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_performPlayComboButtonUpdate) object:nil];
         [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachingEpisodes"];
         [nc removeObserver:self name:CacheManagerDidUpdateNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidClearCacheNotification object:nil];
@@ -61,20 +64,34 @@ static NSString* kUpNextCell = @"UpNextCell";
     }
 }
 
+- (void) _setNeedsPlayComboButtonUpdate
+{
+    if (!_needsPlayComboButtonUpdate) {
+        _needsPlayComboButtonUpdate = YES;
+        [self performSelector:@selector(_performPlayComboButtonUpdate) withObject:nil afterDelay:0];
+    }
+}
+
+- (void) _performPlayComboButtonUpdate
+{
+    _needsPlayComboButtonUpdate = NO;
+    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+}
+
 - (void) cacheManagerDidUpdateNotification:(NSNotification*)notification
 {
-    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+    [self _setNeedsPlayComboButtonUpdate];
 }
 
 - (void) cacheManagerDidClearCacheNotification:(NSNotification*)notification
 {
-    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+    [self _setNeedsPlayComboButtonUpdate];
 }
 
 - (void) cacheManagerDidFinishCachingEpisodeNotification:(NSNotification*)notification
 {
     // Called on main queue after episode is fully added to cachedEpisodes
-    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+    [self _setNeedsPlayComboButtonUpdate];
 }
 
 - (void) playbackManagerDidChangeEpisodeNotification:(NSNotification*)notification
@@ -86,6 +103,8 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsMake(20, 0, 0, 0) byAdjustingForStandardBars:YES];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
     self.title = @"Play Next".ls;
 
@@ -119,7 +138,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     self.emptyStateLabel.text = @"To add episodes, long-press on any episode and select 'Add to Play Next'".ls;
     self.emptyStateLabel.textAlignment = NSTextAlignmentCenter;
     self.emptyStateLabel.numberOfLines = 0;
-    self.emptyStateLabel.textColor = [UIColor secondaryLabelColor];
+    self.emptyStateLabel.textColor = ICMutedTextColor;
     self.emptyStateLabel.font = [UIFont systemFontOfSize:15];
     self.emptyStateLabel.translatesAutoresizingMaskIntoConstraints = NO;
 }
@@ -239,6 +258,14 @@ static NSString* kUpNextCell = @"UpNextCell";
     }
 }
 
+- (void) updateAppearance
+{
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    self.emptyStateLabel.textColor = ICMutedTextColor;
+    [self.tableView reloadData];
+}
+
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
@@ -247,7 +274,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
-    self.emptyStateLabel.textColor = ICTextColor;
+    self.emptyStateLabel.textColor = ICMutedTextColor;
 
     [self.tableView reloadData];
     [self _updateEmptyState];
@@ -341,6 +368,11 @@ static NSString* kUpNextCell = @"UpNextCell";
 }
 
 
+
+- (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return 72.f;
+}
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {

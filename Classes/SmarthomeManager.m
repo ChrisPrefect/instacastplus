@@ -51,6 +51,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     // Motion detection throttling
     NSTimer *_motionResetTimer;
     BOOL _motionDetectedState;
+
+    // Fell-asleep auto-reset
+    NSTimer *_fellAsleepResetTimer;
 }
 @end
 
@@ -171,6 +174,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [_motionResetTimer invalidate];
     _motionResetTimer = nil;
     _motionDetectedState = NO;
+    [_fellAsleepResetTimer invalidate];
+    _fellAsleepResetTimer = nil;
     [_client disconnect];
     _client = nil;
     _connectionStatusText = @"Disconnected".ls;
@@ -500,6 +505,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         _pendingFellAsleep = NO;
         _lastFellAsleep = @"1";
         [_client publishMessage:@"1" toTopic:[self topic:@"fell-asleep"] retain:YES];
+        // Auto-reset after 5 seconds
+        [_fellAsleepResetTimer invalidate];
+        _fellAsleepResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(fellAsleepResetTimerFired) userInfo:nil repeats:NO];
     }
 
     // Send episode-finished if it occurred while offline (not retained, but useful for automation)
@@ -608,7 +616,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     NSString *activeStr = active ? @"1" : @"0";
     [self publishValue:activeStr toTopic:[self topic:@"sleeptimer-active"] lastValue:&_lastSleeptimerActive retain:YES];
 
-    NSInteger remaining = (NSInteger)(as.timerRemainingTime / 60.0);
+    NSInteger remaining = (NSInteger)as.timerRemainingTime;
     if (remaining < 0) remaining = 0;
     NSString *remainStr = [NSString stringWithFormat:@"%ld", (long)remaining];
     [self publishValue:remainStr toTopic:[self topic:@"sleeptimer-remaining"] lastValue:&_lastSleeptimerRemaining retain:YES];
@@ -732,16 +740,27 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [self publishSleeptimerState];
     if (self.connected) {
         [self publishValue:@"1" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
+        // Auto-reset to "0" after 5 seconds
+        [_fellAsleepResetTimer invalidate];
+        _fellAsleepResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(fellAsleepResetTimerFired) userInfo:nil repeats:NO];
     } else {
         // Store for later when we reconnect
         _pendingFellAsleep = YES;
     }
 }
 
+- (void)fellAsleepResetTimerFired
+{
+    _fellAsleepResetTimer = nil;
+    [self publishValue:@"0" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
+}
+
 - (void)resetFellAsleep
 {
-    // Clear pending flag in case fell-asleep happened while offline and user woke up while still offline
+    // Clear pending flag and timer in case fell-asleep happened while offline and user woke up while still offline
     _pendingFellAsleep = NO;
+    [_fellAsleepResetTimer invalidate];
+    _fellAsleepResetTimer = nil;
     [self publishValue:@"0" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
 }
 
@@ -755,9 +774,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         [_client publishMessage:@"1" toTopic:[self topic:@"motion-detected"] retain:YES];
     }
 
-    // Reset/extend the timer - will publish "0" 2 seconds after last motion
+    // Reset/extend the timer - will publish "0" 5 seconds after last motion
     [_motionResetTimer invalidate];
-    _motionResetTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 target:self selector:@selector(motionResetTimerFired) userInfo:nil repeats:NO];
+    _motionResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(motionResetTimerFired) userInfo:nil repeats:NO];
 }
 
 - (void)motionResetTimerFired

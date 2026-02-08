@@ -24,8 +24,21 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     static ICAppearanceManager *sharedManager;
     dispatch_once(&once, ^ {
         sharedManager = [[self alloc] init];
+        [[NSNotificationCenter defaultCenter] addObserver:sharedManager selector:@selector(_appWillEnterForeground:) name:UIApplicationWillEnterForegroundNotification object:nil];
     });
     return sharedManager;
+}
+
+- (void)_appWillEnterForeground:(NSNotification*)note
+{
+    if (self.appearanceMode != ICAppearanceModeAutomatic) return;
+
+    // Check if iOS changed dark mode while app was in background
+    BOOL systemIsDark = [UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+    BOOL currentIsDark = [self.appearance isKindOfClass:[ICNightAppearance class]];
+    if (systemIsDark != currentIsDark) {
+        [self updateAppearance];
+    }
 }
 
 

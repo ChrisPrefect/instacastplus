@@ -28,7 +28,9 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-       
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     /*self.navigationItem.title = self.title.ls;
     if ([[self.navigationController.viewControllers objectAtIndex:0] isKindOfClass:[FeedSettingsViewController class]]) {
         self.navigationItem.prompt = self.feed.title;
@@ -43,19 +45,11 @@
     // Enable self-sizing cells
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 44.0;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        self.tableView.backgroundColor = [UIColor colorWithRed:20/255.0 green:20/255.0 blue:20/255.0 alpha:1.0];
-        self.tableView.separatorColor = [UIColor grayColor];
-    }
-    else
-    {
-        self.tableView.backgroundColor = ICBackgroundColor;
-        self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    }
-    
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+
     [self updateTableViewSeparator];
-    
+
 }
 
 -(void)titleAndPromptSetting
@@ -73,16 +67,8 @@
         titleLabel.font = [UIFont boldSystemFontOfSize:17];
         titleLabel.textAlignment = NSTextAlignmentCenter;
         
-        if ([ICAppearanceManager sharedManager].nightSettingMode)
-        {
-            promptLabel.textColor = [UIColor whiteColor]; // Change color of the prompt
-            titleLabel.textColor = [UIColor whiteColor]; // Change color of the title
-        }
-        else
-        {
-            promptLabel.textColor = [UIColor blackColor]; // Change color of the prompt
-            titleLabel.textColor = [UIColor blackColor]; // Change color of the title
-        }
+        promptLabel.textColor = ICTextColor;
+        titleLabel.textColor = ICTextColor;
         // Create a vertical stack view to hold both labels
         UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[promptLabel, titleLabel]];
         stackView.axis = UILayoutConstraintAxisVertical;
@@ -107,18 +93,9 @@
     }
 }
 - (void) updateAppearance {
-    
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        self.tableView.backgroundColor = [UIColor colorWithRed:20/255.0 green:20/255.0 blue:20/255.0 alpha:1.0];
-        self.tableView.separatorColor = [UIColor grayColor];
-    }
-    else
-    {
-        self.tableView.backgroundColor = ICBackgroundColor;
-        self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    }
-    
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+    [self titleAndPromptSetting];
     [self.tableView reloadData];
     [self updateTableViewSeparator];
 }
@@ -137,18 +114,9 @@
     self.keywordTextField.translatesAutoresizingMaskIntoConstraints = NO;
     
     
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        self.keywordTextField.textColor = [UIColor whiteColor];
-        self.keywordTextField.backgroundColor = [UIColor clearColor];
-        self.keywordTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Add Chapter Name".ls attributes:@{NSForegroundColorAttributeName: [UIColor lightGrayColor]}];
-    }
-    else
-    {
-        self.keywordTextField.textColor = [UIColor blackColor];
-        self.keywordTextField.backgroundColor = [UIColor clearColor];
-        self.keywordTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Add Chapter Name".ls attributes:@{NSForegroundColorAttributeName: [UIColor darkGrayColor]}];
-    }
+    self.keywordTextField.textColor = ICTextColor;
+    self.keywordTextField.backgroundColor = [UIColor clearColor];
+    self.keywordTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Add Chapter Name".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor}];
 
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 50)];
     
@@ -207,14 +175,7 @@
     label.numberOfLines = 0;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        label.textColor = [UIColor whiteColor];
-    }
-    else
-    {
-        label.textColor = [UIColor blackColor];
-    }
+    label.textColor = ICTextColor;
     // Settings Button
     UIButton *settingsButton = [UIButton buttonWithType:UIButtonTypeCustom];
     settingsButton.translatesAutoresizingMaskIntoConstraints = NO;

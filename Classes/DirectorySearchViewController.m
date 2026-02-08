@@ -44,7 +44,9 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     self.title = @"Search".ls;
 
     self.tableView.rowHeight = 57+10;
@@ -82,35 +84,33 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 -(void)searchBarColorUpdates
 {
-    UITextField *searchTextField;
-    UIColor *textColor;
-    UIColor *tintColorD;
-    if ([ICAppearanceManager sharedManager].nightSettingMode) {
-        tintColorD = [UIColor lightGrayColor];
-        textColor = [UIColor whiteColor];
-    } else {
-        tintColorD = [UIColor grayColor];
-        textColor = [UIColor blackColor];
-    }
-    if (@available(iOS 13.0, *)) {
-        searchTextField = self.searchBar.searchTextField;
-    } else {
-        searchTextField = [self.searchBar valueForKey:@"_searchField"];
-    }
+    UIColor *textColor = ICTextColor;
+    UIColor *tintColorD = ICMutedTextColor;
+
+    UITextField *searchTextField = self.searchBar.searchTextField;
     searchTextField.textColor = textColor;
     searchTextField.tintColor = tintColorD;
     // 1. Change placeholder text color
-    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search".ls attributes:@{NSForegroundColorAttributeName: tintColorD}];
-    
+    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor}];
+
     // 2. Change magnifying glass (search) icon color
     UIImageView *iconView = (UIImageView *)searchTextField.leftView;
     iconView.image = [iconView.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    iconView.tintColor = tintColorD;  // Set your desired color here
-    
+    iconView.tintColor = tintColorD;
+
     // 3. Change dismiss (clear) icon color
     UIButton *clearButton = [searchTextField valueForKey:@"_clearButton"];
     [clearButton setImage:[[clearButton imageForState:UIControlStateNormal] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
-    clearButton.tintColor = tintColorD;  // Set your desired color here
+    clearButton.tintColor = tintColorD;
+}
+
+- (void) updateAppearance
+{
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    [self searchBarColorUpdates];
+    [self.searchBar appearanceDidChange];
+    [self.tableView reloadData];
 }
 
 - (void) viewWillAppear:(BOOL)animated

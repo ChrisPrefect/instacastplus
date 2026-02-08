@@ -69,7 +69,9 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     self.tableView.editing = YES;
     self.tableView.allowsSelectionDuringEditing = YES;
  
@@ -152,12 +154,19 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     
 }
 
+- (void) updateAppearance
+{
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+    [self.tableView reloadData];
+}
+
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-    
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     

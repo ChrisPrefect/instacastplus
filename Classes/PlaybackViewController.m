@@ -54,12 +54,32 @@
     {
         [super viewDidLoad];
 
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
         self.dismissalAnimator = [[ICPlaybackViewControllerDismissedAnimator alloc] init];
         self.dismissalAnimator.parent = self;
-        
+
         UIPanGestureRecognizer* panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self.dismissalAnimator action:@selector(handlePan:)];
         panGestureRecognizer.delegate = self.dismissalAnimator;
         [self.navigationBar addGestureRecognizer:panGestureRecognizer];
+    }
+
+    - (void) updateAppearance
+    {
+        self.view.backgroundColor = ICBackgroundColor;
+        self.view.tintColor = ICTintColor;
+
+        UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
+        UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+        [appearance configureWithOpaqueBackground];
+        appearance.backgroundImage = backgroundImage;
+        appearance.shadowImage = [[UIImage alloc] init];
+        appearance.shadowColor = nil;
+        self.navigationBar.standardAppearance = appearance;
+        self.navigationBar.scrollEdgeAppearance = appearance;
+        self.navigationBar.compactAppearance = appearance;
+
+        [self setNeedsStatusBarAppearanceUpdate];
     }
 
 

@@ -375,9 +375,9 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
-//    NSLog(@"Hello I am viewDidLoad");
-    
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     [self.webView scrollView].delegate = self;
     
     if (self.canBeCanceled) {
@@ -386,10 +386,21 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     }
 }
 
+- (void) updateAppearance
+{
+    self.view.backgroundColor = ICBackgroundColor;
+    self.webView.backgroundColor = ICTransparentBackdropColor;
+    self.webView.scrollView.backgroundColor = ICTransparentBackdropColor;
+    self.webShadowView.backgroundColor = ICTransparentBackdropColor;
+    self.titleLabel.textColor = ICTextColor;
+    self.authorLabel.textColor = ICMutedTextColor;
+    [self _loadWebViewContent];
+}
+
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     self.view.backgroundColor = ICBackgroundColor;
     self.webView.backgroundColor = ICTransparentBackdropColor;
     self.webView.scrollView.bounces = NO;

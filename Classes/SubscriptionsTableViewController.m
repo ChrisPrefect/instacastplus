@@ -95,12 +95,13 @@
     }
     else if (!observing && _flags.observing == 1)
     {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_performCoalescedReload) object:nil];
         [nc removeObserver:self];
-        
+
         [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
         [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
         [DMANAGER removeTaskObserver:self forKeyPath:@"ftsIndexing"];
-        
+
         _flags.observing = 0;
     }
 }
@@ -138,7 +139,6 @@
     
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_scroll_position"];
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_last_index"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
     
     ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
     refreshControl.pulldownText = @"Pull to refresh…".ls;
@@ -423,12 +423,23 @@
 - (void)handleFeedListUpdateNotification:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.tableView.window) {
-            [self.fetchController performFetch:nil];
-            [self.tableView reloadData];
+            if (!self.needsFullReload) {
+                self.needsFullReload = YES;
+                [self performSelector:@selector(_performCoalescedReload) withObject:nil afterDelay:0];
+            }
         } else {
             self.needsFullReload = YES;
         }
     });
+}
+
+- (void)_performCoalescedReload {
+    if (self.needsFullReload && self.tableView.window) {
+        self.needsFullReload = NO;
+        [self.fetchController performFetch:nil];
+        [self.tableView reloadData];
+        [self _updateToolbarLabels];
+    }
 }
 
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations

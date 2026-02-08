@@ -57,6 +57,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     BOOL _defaultsPushed;
     BOOL _observing;
     BOOL _editingTransitionInProgress;
+    BOOL _needsPlayComboButtonUpdate;
 }
 
 - (void)dealloc
@@ -68,13 +69,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void) _setObserving:(BOOL)observing
 {
     NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
-    
+
     if (observing && !_observing)
     {
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
-            [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+            [self _setNeedsPlayComboButtonUpdate];
         }];
-        
+
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
@@ -87,28 +88,43 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     else if (!observing && _observing)
     {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_performPlayComboButtonUpdate) object:nil];
         [nc removeObserver:self];
-        
+
         [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachingEpisodes"];
-        
+
         _observing = NO;
     }
 }
 
+- (void) _setNeedsPlayComboButtonUpdate
+{
+    if (!_needsPlayComboButtonUpdate) {
+        _needsPlayComboButtonUpdate = YES;
+        [self performSelector:@selector(_performPlayComboButtonUpdate) withObject:nil afterDelay:0];
+    }
+}
+
+- (void) _performPlayComboButtonUpdate
+{
+    _needsPlayComboButtonUpdate = NO;
+    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+}
+
 - (void) cacheManagerDidUpdateNotification:(NSNotification*)notification
 {
-    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+    [self _setNeedsPlayComboButtonUpdate];
 }
 
 - (void) cacheManagerDidClearCacheNotification:(NSNotification*)notification
 {
-    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+    [self _setNeedsPlayComboButtonUpdate];
 }
 
 - (void) cacheManagerDidFinishCachingEpisodeNotification:(NSNotification*)notification
 {
     // Called on main queue after episode is fully added to cachedEpisodes
-    [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+    [self _setNeedsPlayComboButtonUpdate];
 }
 
 - (BOOL) showsImage
@@ -1306,14 +1322,19 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 }
 
 
+- (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return 72.f;
+}
+
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
-    
+
     CGSize imageSize = (self.showsImage) ? CGSizeMake(56, 56) : CGSizeZero;
-    
+
     CGFloat h = [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:imageSize embedded:NO editing:self.editing];
-    
+
     return h;
 }
 

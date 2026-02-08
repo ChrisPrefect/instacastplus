@@ -44,7 +44,12 @@
 
 @end
 
-@implementation EpisodesTableViewCell
+@implementation EpisodesTableViewCell {
+    CGFloat _cachedTextFieldWidth;
+    CGSize _cachedTitleSize;
+    CGSize _cachedSummarySize;
+    BOOL _textSizeCacheValid;
+}
 
 - (id)initWithStyle:(UITableViewCellStyle)mystyle reuseIdentifier:(NSString *)reuseIdentifier {
     
@@ -205,7 +210,8 @@
 
 - (void) prepareForReuse {
     [super prepareForReuse];
-    
+    _textSizeCacheValid = NO;
+
     self.objectValue = nil;
     self.leftPanImage.hidden = YES;
     self.moreButton.hidden = YES;
@@ -251,7 +257,8 @@
 {
     if (_objectValue != objectValue) {
         _objectValue = objectValue;
-        
+        _textSizeCacheValid = NO;
+
         if (!objectValue) {
             return;
         }
@@ -399,36 +406,26 @@
     }
     double progressPercentage = (episode.duration > 0) ? devideTemp : 0;
     progressView.hidden = self.consumeIndicator2.hidden;
-    [progressView setProgress:progressPercentage];//DevD to do
-   
-    dispatch_async(dispatch_get_main_queue(), ^{
-        //DevD to do
-        PlaybackManager* pman = [PlaybackManager playbackManager];
-        AudioSession* session = [AudioSession sharedAudioSession];
-        CDEpisode* playingEpisode = session.episode;
-        if (playingEpisode == episode)
-        {
-            if (pman.ready) {
-                [progressView setProgress:pman.position];
-            }
-            else if (playingEpisode.duration > 0) {
-                [progressView setProgress:(float)playingEpisode.position/(float)playingEpisode.duration];
-            }
-            else {
-                [progressView setProgress:0];
-            }
+
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    AudioSession* session = [AudioSession sharedAudioSession];
+    CDEpisode* playingEpisode = session.episode;
+    if (playingEpisode == episode)
+    {
+        if (pman.ready) {
+            [progressView setProgress:pman.position];
         }
-        else
-        {
-            double devideTemp = 0.0;
-            if (episode.position < episode.duration)
-            {
-                devideTemp = (double)episode.position / (double)episode.duration;
-            }
-            double progressPercentage = (episode.duration > 0) ? devideTemp : 0;
-            [progressView setProgress:progressPercentage];
+        else if (playingEpisode.duration > 0) {
+            [progressView setProgress:(float)playingEpisode.position/(float)playingEpisode.duration];
         }
-    });
+        else {
+            [progressView setProgress:0];
+        }
+    }
+    else
+    {
+        [progressView setProgress:progressPercentage];
+    }
 }
 
 - (UIScrollView*) _cellScrollView
@@ -460,6 +457,7 @@
     self.dateLabel.textColor = ICMutedTextColor;
     self.playAccessoryButton.tintColor = ICTintColor;
     self.topSeparatorView.backgroundColor = ICTableSeparatorColor;
+    self.videoIndicator.tintColor = ICMutedTextColor;
     //self.contentView.backgroundColor = ICTableSeparatorColor;
     
     
@@ -510,15 +508,19 @@
         videoIndicatorFrame.origin.x += imageRightOffset;
     }
     
-    // calculate textLabel height
-    CGSize textLabelSize = [[self.titleLabel attributedText] boundingRectWithSize:CGSizeMake(textFieldWidth, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
-    IC_SIZE_INTEGRAL(textLabelSize);
+    // calculate textLabel height (cached to avoid expensive re-measurement)
+    if (!_textSizeCacheValid || textFieldWidth != _cachedTextFieldWidth) {
+        _cachedTitleSize = [[self.titleLabel attributedText] boundingRectWithSize:CGSizeMake(textFieldWidth, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
+        IC_SIZE_INTEGRAL(_cachedTitleSize);
+        _cachedSummarySize = [[self.summaryLabel attributedText] boundingRectWithSize:CGSizeMake(textFieldWidth, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
+        IC_SIZE_INTEGRAL(_cachedSummarySize);
+        _cachedTextFieldWidth = textFieldWidth;
+        _textSizeCacheValid = YES;
+    }
+    CGSize textLabelSize = _cachedTitleSize;
     textLabelRect.size.height = textLabelSize.height;
-    
-    
 
-    CGSize detailTextSize = [[self.summaryLabel attributedText] boundingRectWithSize:CGSizeMake(textFieldWidth, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
-    IC_SIZE_INTEGRAL(detailTextSize);
+    CGSize detailTextSize = _cachedSummarySize;
     
 	detailLabelRect.origin.x = CGRectGetMinX(textLabelRect);
 	detailLabelRect.origin.y = CGRectGetMaxY(textLabelRect)+2;

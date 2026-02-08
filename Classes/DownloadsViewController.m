@@ -98,6 +98,8 @@
 {
     [super viewDidLoad];
 
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     self.tableView.rowHeight = 70;
     
     self.navigationItem.title = @"Downloads".ls;
@@ -120,13 +122,21 @@
     UILabel* captionLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 150, 44)];
     captionLabel.tag = 100;
     captionLabel.font = [UIFont systemFontOfSize:15];
-    captionLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.f];
+    captionLabel.textColor = ICMutedTextColor;
     captionLabel.textAlignment = NSTextAlignmentCenter;
     self.captionLabel = captionLabel;
 
     // Toolbar items werden in viewDidAppear gesetzt wenn Toolbar bereit ist
     self.pauseItem = pauseItem;
     self.cancelItem = cancelItem;
+}
+
+- (void) updateAppearance
+{
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICTableSeparatorColor;
+    self.captionLabel.textColor = ICMutedTextColor;
+    [self.tableView reloadData];
 }
 
 - (void)viewWillAppear:(BOOL)animated

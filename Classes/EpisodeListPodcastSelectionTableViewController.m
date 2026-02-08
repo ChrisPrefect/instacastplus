@@ -21,7 +21,9 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+
     self.title = @"Add Selected Podcasts".ls;
 }
 
@@ -30,19 +32,26 @@
     // Dispose of any resources that can be recreated.
 }
 
+- (void) updateAppearance
+{
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+    [self.tableView reloadData];
+}
+
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
+
     if (!self.selectedPodcasts) {
         self.selectedPodcasts = [[NSOrderedSet alloc] init];
     }
-    
+
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-    
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    
+
     [self.tableView reloadData];
 }
 

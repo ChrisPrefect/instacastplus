@@ -145,6 +145,7 @@
     self.accessoryView.tintColor = ICMutedTextColor;
     self.detailTextLabel2.textColor = ICMutedTextColor;
     self.numberLabel.textColor = ICMutedTextColor;
+    self.newsModeIndicatorImageView.tintColor = ICMutedTextColor;
     
     CGRect bounds = self.bounds;
     CGRect cframe = self.contentView.frame;
