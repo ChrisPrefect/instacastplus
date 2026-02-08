@@ -64,14 +64,10 @@
 	<string>/Instacast</string>
 	<key>AutoRefresh</key>
 	<integer>2</integer>
-	<key>EnableDownloadSyncing</key>
-	<false/>
 	<key>EnableAutoRefreshOn3G</key>
 	<true/>
 	<key>EnableStreamingOver3G</key>
 	<true/>
-	<key>EnableiCloudSyncing</key>
-	<false/>
 	<key>ReadLaterService</key>
 	<string>None</string>
 	<key>AllowSendingDiagnostics</key>

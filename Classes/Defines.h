@@ -39,8 +39,6 @@ extern NSString* WelcomeMessageVersion;
 extern NSString* EnableCachingOver3G;
 extern NSString* EnableCachingImagesOver3G;
 extern NSString* EnableRefreshingOver3G;
-extern NSString* EnableSyncingOver3G;
-
 extern NSString* AutoCacheNewAudioEpisodes;
 extern NSString* AutoCacheNewVideoEpisodes;
 

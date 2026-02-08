@@ -20,8 +20,6 @@
 	<string>NewerFirst</string>
 	<key>FeedSortOrder</key>
 	<string>NewerFirst</string>
-	<key>SimperiumSyncEnabled</key>
-	<false/>
 	<key>FeedShowOnlyLatestUnseen</key>
 	<integer>200</integer>
 	<key>UISoundEnabled</key>
@@ -62,10 +60,6 @@
 	<true/>
 	<key>PlayerControls</key>
 	<integer>0</integer>
-	<key>EnableiCloudSyncing</key>
-	<true/>
-	<key>EnableDownloadSyncing</key>
-	<false/>
 	<key>EnableCachingImagesOver3G</key>
 	<true/>
 	<key>SwitchNightModeAutomatically</key>
@@ -74,8 +68,6 @@
 	<true/>
 	<key>ReadLaterService</key>
 	<string>None</string>
-	<key>EnableSyncingOver3G</key>
-	<true/>
 	<key>AutoCacheOnlyMostRecentOne</key>
 	<true/>
 	<key>AllowSendingDiagnostics</key>

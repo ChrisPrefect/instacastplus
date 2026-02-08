@@ -39,7 +39,7 @@ NSString* DatabaseManagerDidAddBookmarkNotification = @"DatabaseManagerDidAddBoo
 
 static NSString* kDefaultEpisodePositionMigrationDone = @"EpisodePositionMigrationDone";
 static NSString* kDefaultFTSMigrationDone = @"FTSMigrationDone";
-static NSString* kiCloundContainerIdentifier = @"iCloud.com.iteconomy.instacastplusCloud";
+
 
 #if TARGET_OS_IPHONE
 
@@ -54,12 +54,12 @@ static NSString* kBookmarksProperty = @"bookmarks";
 #endif
 
 @property (nonatomic, strong, readwrite) NSManagedObjectContext* objectContext;
-@property (nonatomic, strong, readwrite) NSPersistentCloudKitContainer* persistentContainer;
+@property (nonatomic, strong, readwrite) NSPersistentContainer* persistentContainer;
 @property (nonatomic, strong, readwrite) NSPersistentStoreCoordinator* storeCoordinator;
 @property (nonatomic, strong, readwrite) NSManagedObjectModel* objectModel;
 @property (nonatomic, strong, readwrite) ICFTSController* ftsController;
 @property (nonatomic, readwrite) BOOL ftsIndexing;
-@property (nonatomic, strong) NSTimer *debounceTimer;
+
 
 @end
 
@@ -1554,7 +1554,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
         return _objectContext;
     }
 
-    NSPersistentCloudKitContainer* container = [self persistentContainer];
+    NSPersistentContainer* container = [self persistentContainer];
     if (container)
     {
         NSManagedObjectContext* context = container.viewContext;
@@ -1578,79 +1578,33 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     return _objectModel;
 }
 
-- (NSPersistentCloudKitContainer *)persistentContainer {
+- (NSPersistentContainer *)persistentContainer {
     if (_persistentContainer != nil) {
-            return _persistentContainer;
-        }
-
-        _persistentContainer = [[NSPersistentCloudKitContainer alloc] initWithName:_ModelFile()];
-
-        NSURL *storeURL = self.databaseURL;
-        NSPersistentStoreDescription *storeDescription = [[NSPersistentStoreDescription alloc] initWithURL:storeURL];
-        [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
-        [storeDescription setOption:@YES forKey:NSPersistentStoreRemoteChangeNotificationPostOptionKey];
-
-        storeDescription.type = NSSQLiteStoreType;
-#if !TARGET_OS_SIMULATOR
-        storeDescription.cloudKitContainerOptions = [[NSPersistentCloudKitContainerOptions alloc] initWithContainerIdentifier:kiCloundContainerIdentifier];
-#endif
-        storeDescription.shouldMigrateStoreAutomatically = YES;
-        storeDescription.shouldInferMappingModelAutomatically = YES;
-        _persistentContainer.persistentStoreDescriptions = @[storeDescription];
-        [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
-            if (error) {
-                NSLog(@"Unresolved error %@, %@", error, error.userInfo);
-                abort();
-            }
-            else {
-                    DebugLog(@"persistent store loaded");
-                }
-        }];
-
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(handleCloudKitChanges:)
-                                                     name:NSPersistentStoreRemoteChangeNotification
-                                                   object:nil];
-    self.storeCoordinator = _persistentContainer.persistentStoreCoordinator;
         return _persistentContainer;
+    }
+
+    _persistentContainer = [[NSPersistentContainer alloc] initWithName:_ModelFile()];
+
+    NSURL *storeURL = self.databaseURL;
+    NSPersistentStoreDescription *storeDescription = [[NSPersistentStoreDescription alloc] initWithURL:storeURL];
+    storeDescription.type = NSSQLiteStoreType;
+    storeDescription.shouldMigrateStoreAutomatically = YES;
+    storeDescription.shouldInferMappingModelAutomatically = YES;
+    _persistentContainer.persistentStoreDescriptions = @[storeDescription];
+    [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
+        if (error) {
+            NSLog(@"Unresolved error %@, %@", error, error.userInfo);
+            abort();
+        }
+        else {
+            DebugLog(@"persistent store loaded");
+        }
+    }];
+
+    self.storeCoordinator = _persistentContainer.persistentStoreCoordinator;
+    return _persistentContainer;
 }
 
-/*- (void)handleCloudKitChanges:(NSNotification *)notification {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self.debounceTimer invalidate];
-        self.debounceTimer = [NSTimer scheduledTimerWithTimeInterval:2
-                                                              target:self
-                                                            selector:@selector(handleDebouncedEvent)
-                                                            userInfo:nil
-                                                             repeats:NO];
-        [[NSRunLoop mainRunLoop] addTimer:self.debounceTimer forMode:NSRunLoopCommonModes];
-    });
-}
-
-- (void)handleDebouncedEvent {
-    [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
-}*/
-
-- (void)handleCloudKitChanges:(NSNotification *)notification {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self.debounceTimer invalidate];
-        self.debounceTimer = [NSTimer scheduledTimerWithTimeInterval:2
-                                                              target:self
-                                                            selector:@selector(handleDebouncedEvent)
-                                                            userInfo:notification.userInfo
-                                                             repeats:NO];
-        [[NSRunLoop mainRunLoop] addTimer:self.debounceTimer forMode:NSRunLoopCommonModes];
-    });
-}
-
-- (void)handleDebouncedEvent {
-    // Nur Notification senden - Core Data merged CloudKit-Änderungen automatisch
-    // refreshAllObjects ist zu aggressiv und verursacht UI-Flackern
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] postNotificationName:DatabaseManagerDidUpdateObservedFeedNotification object:self userInfo:@{@"source": @"CloudKit"}];
-    });
-}
-         
 - (void)refreshAllObjects {
     NSError *error = nil;
     if ([self.objectContext save:&error]) {

@@ -46,13 +46,6 @@
 "Description" = "Description";
 "Search or Enter URL" = "Search or Enter URL";
 
-/* ICCloudManager.m */
-"Authentication with Instacast Cloud has failed. Please logout and login again." = "Authentication with Instacast Cloud has failed. Please logout and login again.";
-"Instacast Cloud Authentication" = "Instacast Cloud Authentication";
-"Instacast Cloud Maintenance" = "Instacast Cloud Maintenance";
-"Instacast Cloud is temporary unavailable. Normal service will be back soon!" = "Instacast Cloud is temporary unavailable. Normal service will be back soon!";
-"Request failed." = "Request failed.";
-
 /* FeedSettingsViewController.m */
 "1 Minute" = "1 Minute";
 "10 Minutes" = "10 Minutes";
@@ -183,9 +176,6 @@
 "Playback set to original speed." = "Playback set to original speed.";
 "Playback set to triple speed." = "Playback set to triple speed.";
 
-/* ICCloudAccount.m */
-"Your name?" = "Your name?";
-
 /* ICProgressSlider.m */
 "Slider Knob" = "Slider Knob";
 "Swipe left or right to adjust %@." = "Swipe left or right to adjust %@.";
@@ -231,26 +221,6 @@
 "If you have an Instacast Cloud membership, please sign in to unlock all extensions." = "If you have an Instacast Cloud membership, please sign in to unlock all extensions.";
 "Show Memberships" = "Show Memberships";
 "Sign in" = "Sign in";
-
-/* CloudAccountViewController.m */
-"Account" = "Account";
-"Auto-Flattr" = "Auto-Flattr";
-"Automatic payments are turned off – either because Instacast Cloud membership has been canceled, or because Instacast Cloud membership has been purchased through the App Store." = "Automatic payments are turned off – either because Instacast Cloud membership has been canceled, or because Instacast Cloud membership has been purchased through the App Store.";
-"Email" = "Email";
-"Extend Basic Membership" = "Extend Basic Membership";
-"Extend Senator Membership" = "Extend Senator Membership";
-"Purchase Basic Membership" = "Purchase Basic Membership";
-"Purchase Senator Membership" = "Purchase Senator Membership";
-"Log out" = "Log out";
-"Membership" = "Membership";
-"Name" = "Name";
-"Not activated" = "Not activated";
-"Profile" = "Profile";
-"Services" = "Services";
-"You have a lifetime membership." = "You have a lifetime membership.";
-"You are not an Instacast Cloud member. Be awesome and get your membership today!\n\nMemberships unlock all in-app purchases for free and also include a free Instacast Mac license." = "You are not an Instacast Cloud member. Be awesome and get your membership today!\n\nMemberships unlock all in-app purchases for free and also include a free Instacast Mac license.";
-"Your membership is active until %@." = "Your membership is active until %@.";
-"Your membership is active. Next automatic payment on %@." = "Your membership is active. Next automatic payment on %@.";
 
 /* EpisodeListEditorViewController.m */
 "%@ Extension locked!" = "%@ Extension locked!";
@@ -344,10 +314,6 @@
 "Test Notification System" = "Test Notification System";
 "Types" = "Types";
 "If push notifications are set up correctly on your device, and our system is running smoothly, you should receive a message within 60 seconds confirming that push notifications are working." = "If push notifications are set up correctly on your device, and our system is running smoothly, you should receive a message within 60 seconds confirming that push notifications are working.";
-
-/* CloudAccountPurchaseMembershipCell.m */
-"%@ for 1 year" = "%@ for 1 year";
-"%@ for 6 months" = "%@ for 6 months";
 
 /* CacheManager.m */
 "'%@' is available to play." = "'%@' is available to play.";
@@ -625,7 +591,7 @@
 "Open an opml file from mail or the files app in InstacastPlus to import podcasts." = "Open an opml file from mail or the files app in InstacastPlus to import podcasts.";
 "Mail" = "Mail";
 "Files" = "Files";
-"Loading data from iCloud" = "Loading data from iCloud";
+
 
 /* Missing .ls keys - progress indicators with ellipsis */
 "Loading…" = "Loading…";
@@ -691,7 +657,6 @@
 "Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume." = "Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume.";
 "Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end." = "Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end.";
 "Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position." = "Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position.";
-"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!" = "iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!";
 "Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support." = "Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support.";
 "Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!" = "Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!";
 "Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!" = "Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!";

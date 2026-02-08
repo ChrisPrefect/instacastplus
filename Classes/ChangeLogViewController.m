@@ -47,7 +47,6 @@
             @"Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position.".ls
         ],
         @[
-            @"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!".ls,
             @"Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support.".ls,
             @"Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!".ls
         ],

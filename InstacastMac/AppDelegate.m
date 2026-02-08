@@ -36,11 +36,11 @@
 
 @synthesize persistentContainer = _persistentContainer;
 
-- (NSPersistentCloudKitContainer *)persistentContainer {
+- (NSPersistentContainer *)persistentContainer {
     // The persistent container for the application. This implementation creates and returns a container, having loaded the store for the application to it.
     @synchronized (self) {
         if (_persistentContainer == nil) {
-            _persistentContainer = [[NSPersistentCloudKitContainer alloc] initWithName:@"InstacastMac"];
+            _persistentContainer = [[NSPersistentContainer alloc] initWithName:@"InstacastMac"];
             [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *storeDescription, NSError *error) {
                 if (error != nil) {
                     // Replace this implementation with code to handle the error appropriately.

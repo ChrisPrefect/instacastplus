@@ -861,7 +861,6 @@ API_AVAILABLE(ios(14.0)){
                 [USER_DEFAULTS setBool:NO forKey:EnableStreamingOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableCachingImagesOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableRefreshingOver3G];
-                [USER_DEFAULTS setBool:NO forKey:EnableSyncingOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableCachingOver3G];
                 break;
             }
@@ -869,14 +868,12 @@ API_AVAILABLE(ios(14.0)){
                 [USER_DEFAULTS setBool:YES forKey:EnableStreamingOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableCachingImagesOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableRefreshingOver3G];
-                [USER_DEFAULTS setBool:YES forKey:EnableSyncingOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableCachingOver3G];
                 break;
             case 2:
                 [USER_DEFAULTS setBool:YES forKey:EnableStreamingOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableCachingImagesOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableRefreshingOver3G];
-                [USER_DEFAULTS setBool:YES forKey:EnableSyncingOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableCachingOver3G];
                 break;
             default:
@@ -1084,7 +1081,6 @@ API_AVAILABLE(ios(14.0)){
             [USER_DEFAULTS setBool:sender.on forKey:EnableStreamingOver3G];
             [USER_DEFAULTS setBool:sender.on forKey:EnableCachingImagesOver3G];
             [USER_DEFAULTS setBool:sender.on forKey:EnableRefreshingOver3G];
-            [USER_DEFAULTS setBool:sender.on forKey:EnableSyncingOver3G];
             break;
         }
         case 1:

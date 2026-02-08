@@ -38,10 +38,8 @@
 @property (nonatomic, strong) UIBarButtonItem* sortItem;
 @property (nonatomic, strong) ICSearchBar* searchBar;
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
-@property (nonatomic, assign) BOOL isLoadingFromCloud;
 @property (nonatomic, assign) BOOL tableViewIsUpdating;
 @property (nonatomic, assign) BOOL needsFullReload;
-//@property (nonatomic, strong) UILabel *iCloudLoadingLabel;
 @end
 
 @implementation SubscriptionsTableViewController {
@@ -85,7 +83,7 @@
 
         [nc addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
         
-        [nc addObserver:self selector:@selector(handleICloudSyncUpdateNotification:)
+        [nc addObserver:self selector:@selector(handleFeedListUpdateNotification:)
                    name:DatabaseManagerDidUpdateObservedFeedNotification
                  object:nil];
         [DMANAGER addTaskObserver:self forKeyPath:@"ftsIndexing" task:^(id obj, NSDictionary *change) {
@@ -199,23 +197,6 @@
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     self.tableView.estimatedSectionHeaderHeight = 0;
-    // Hinweis: NSPersistentStoreRemoteChangeNotification wird bereits in DatabaseManager behandelt
-    // und über DatabaseManagerDidUpdateObservedFeedNotification weitergeleitet
-    self.isLoadingFromCloud = YES;
-    if ([USER_DEFAULTS valueForKey: @"icloud_sync_log_view_show"] == nil)
-    {
-        [self checkForiCloudData];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(180 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self hideiCloudLogView];
-        });
-    }
-    else
-    {
-        self.isLoadingFromCloud = NO;
-        if (self.tableView.window) {
-            [self.tableView reloadData];
-        }
-    }
     [[NSNotificationCenter defaultCenter] removeObserver:self name:@"OPMLImportDidFinishNotification" object:nil];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleOPMLImportFinish) name:@"OPMLImportDidFinishNotification" object:nil];
@@ -245,76 +226,15 @@
 }
 
 
-- (void)hideiCloudLogView {
-    self.isLoadingFromCloud = NO;
-    //self.iCloudLoadingLabel.hidden = YES;
-    if (self.tableView.window) {
-        [self.tableView reloadData];
-    }
-    [USER_DEFAULTS setBool:true forKey:@"icloud_sync_log_view_show"];
-    [USER_DEFAULTS synchronize];
-}
-
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
-    if (self.isLoadingFromCloud) {
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 30)];
-        label.text = [@"Loading data from iCloud".ls stringByAppendingString:@"..."];
-        label.textAlignment = NSTextAlignmentCenter;
-        label.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-        label.textColor = [UIColor grayColor];
-        //NSLog(@"Returning iCloud loading header view");
-        return label;
-    }
-    //NSLog(@"Returning nil for header view (isLoadingFromCloud = NO)");
     return nil;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
-    if (self.isLoadingFromCloud) {
-        //NSLog(@"Header height: 30.0 (isLoadingFromCloud = YES)");
-        return 30.0;
-    }
-    //NSLog(@"Header height: 0.0 (isLoadingFromCloud = NO)");
     return 0.0;
 }
 
 
-
-- (void)checkForiCloudData {
-    if (self.isLoadingFromCloud && self.fetchController.fetchedObjects.count > 0) {
-        self.isLoadingFromCloud = NO;
-
-        NSError *fetchError = nil;
-        [self.fetchController performFetch:&fetchError];
-        if (fetchError) {
-            NSLog(@"❌ Fetch error: %@", fetchError);
-        }
-
-        [self.tableView reloadData]; // ✅ full reload = safe
-    } else if (self.isLoadingFromCloud) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self checkForiCloudData];
-        });
-    }
-}
-
-
-- (void)cloudKitDidSync:(NSNotification *)notification {
-    if (!self.isLoadingFromCloud) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if ([[self.fetchController fetchedObjects] count] > 0 && self.isLoadingFromCloud) {
-            self.isLoadingFromCloud = NO;
-            //self.iCloudLoadingLabel.hidden = YES;
-            if (self.tableView.window) {
-                [self.tableView reloadData];
-            }
-            [USER_DEFAULTS setBool:true forKey:@"icloud_sync_log_view_show"];
-            [USER_DEFAULTS synchronize];
-        } else {
-            //NSLog(@"⏳ Waiting for data… current feed count: %lu", (unsigned long)[[self.fetchController fetchedObjects] count]);
-        }
-    });
-}
 
 -(void)searchBarColorUpdates
 {
@@ -500,9 +420,8 @@
     }
 }
 
-- (void)handleICloudSyncUpdateNotification:(NSNotification *)notification {
+- (void)handleFeedListUpdateNotification:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
-        self.isLoadingFromCloud = NO;
         if (self.tableView.window) {
             [self.fetchController performFetch:nil];
             [self.tableView reloadData];
@@ -525,22 +444,12 @@
 #pragma mark Table view data source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    // Return the number of sections.
-    if (self.isLoadingFromCloud)
-    {
-        return 1; // Just show the loading label in header
-    }
     return [[self.fetchController sections] count];
 }
 
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (self.isLoadingFromCloud &&
-        self.fetchController.fetchedObjects.count == 0) {
-        return 0;
-    }
-    
     if ([[self.fetchController sections] count] > 0) {
         id <NSFetchedResultsSectionInfo> sectionInfo = [[self.fetchController sections] objectAtIndex:section];
         return [sectionInfo numberOfObjects];
@@ -702,7 +611,7 @@
 #pragma mark - FetchedResultsController delegate
 
 - (void)controllerWillChangeContent:(NSFetchedResultsController *)controller {
-    if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+    if (_flags.userAction == 1) return;
 
     // Kein beginUpdates wenn Table nicht im Window - sonst entsteht eine Inkonsistenz
     // zwischen FRC-State und Table-State die den Table dauerhaft korrupt macht
@@ -779,7 +688,7 @@
 
 
 - (void)controllerDidChangeContent:(NSFetchedResultsController *)controller {
-    if (self.isLoadingFromCloud || _flags.userAction == 1) return;
+    if (_flags.userAction == 1) return;
 
     if (!self.tableViewIsUpdating) {
         // Wurde in willChangeContent uebersprungen (kein Window) - nichts zu tun

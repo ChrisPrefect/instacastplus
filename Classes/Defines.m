@@ -39,8 +39,6 @@ NSString* WelcomeMessageVersion = @"WelcomeMessageVersion";
 NSString* EnableCachingOver3G = @"EnableCachingOver3G";
 NSString* EnableCachingImagesOver3G = @"EnableCachingImagesOver3G";
 NSString* EnableRefreshingOver3G = @"EnableRefreshingOver3G";
-NSString* EnableSyncingOver3G = @"EnableSyncingOver3G";
-
 NSString* AutoCacheNewAudioEpisodes = @"AutoCacheNewAudioEpisodes";
 NSString* AutoCacheNewVideoEpisodes = @"AutoCacheNewVideoEpisodes";
 NSString* AutoCacheStorageLimit = @"AutoCacheStorageLimit";

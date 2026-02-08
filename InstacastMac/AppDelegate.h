@@ -11,7 +11,7 @@
 
 @interface AppDelegate : NSObject <NSApplicationDelegate>
 
-@property (readonly, strong) NSPersistentCloudKitContainer *persistentContainer;
+@property (readonly, strong) NSPersistentContainer *persistentContainer;
 
 
 @end

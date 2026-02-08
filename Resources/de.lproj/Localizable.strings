@@ -46,13 +46,6 @@
 "Description" = "Beschreibung";
 "Search or Enter URL" = "Suchen oder URL eingeben";
 
-/* ICCloudManager.m */
-"Authentication with Instacast Cloud has failed. Please logout and login again." = "Authentifizierung fehlgeschlagen. Bitte loggen Sie sich aus und wieder ein.";
-"Instacast Cloud Authentication" = "Instacast Cloud Authentifizierung";
-"Instacast Cloud Maintenance" = "Instacast Cloud Wartungsarbeiten";
-"Instacast Cloud is temporary unavailable. Normal service will be back soon!" = "Instacast Cloud ist z.Z. nicht verfügbar. Sind bald wieder zurück!";
-"Request failed." = "Anfrage fehlgeschlagen.";
-
 /* FeedSettingsViewController.m */
 "1 Minute" = "1 Minute";
 "10 Minutes" = "10 Minuten";
@@ -184,9 +177,6 @@
 "Playback set to original speed." = "Wiedergabe in Originalgeschwindigkeit";
 "Playback set to triple speed." = "Wiedergabe mit dreifacher Geschwindigkeit";
 
-/* ICCloudAccount.m */
-"Your name?" = "Ihr Name?";
-
 /* ICProgressSlider.m */
 "Slider Knob" = "Auswahl-Taster";
 "Swipe left or right to adjust %@." = "Wische nach links oder rechts um %@ anzupassen.";
@@ -233,26 +223,6 @@
 "If you have an Instacast Cloud membership, please sign in to unlock all extensions." = "Falls Sie eine Mitgliedschaft besitzen, loggen Sie sich bitte ein, um alle Erweiterungen freizuschalten.";
 "Show Memberships" = "Mitgliedschaften anzeigen";
 "Sign in" = "Einloggen";
-
-/* CloudAccountViewController.m */
-"Account" = "Account";
-"Auto-Flattr" = "Auto-Flattr";
-"Automatic payments are turned off – either because Instacast Cloud membership has been canceled, or because Instacast Cloud membership has been purchased through the App Store." = "Automatische Abbuchungen sind abgeschaltet, entweder weil die Mitgliedschaft gekündigt oder im App Store erworben wurde.";
-"Email" = "E-Mail";
-"Extend Basic Membership" = "Basic Mitgliedschaft verlängern";
-"Extend Senator Membership" = "Senator Mitgliedschaft verlängern";
-"Purchase Basic Membership" = "Basic Mitgliedschaft erwerben";
-"Purchase Senator Membership" = "Senator Mitgliedschaft erwerben";
-"Log out" = "Ausloggen";
-"Membership" = "Mitgliedschaft";
-"Name" = "Name";
-"Not activated" = "Nicht aktiviert";
-"Profile" = "Profil";
-"Services" = "Dienste";
-"You have a lifetime membership." = "Sie besitzen eine lebenslängliche Mitgliedschaft.";
-"You are not an Instacast Cloud member. Be awesome and get your membership today!\n\nMemberships unlock all in-app purchases for free and also include a free Instacast Mac license." = "Sie sind kein Mitglied. Erwerben Sie Ihre Mitgliedschaft heute noch!\n\nMitgliedschaften schalten alle In-App Käufe kostenlos frei und beinhalten eine Lizenz für Instacast Mac.";
-"Your membership is active until %@." = "Mitgliedschaft aktiv bis zum %@.";
-"Your membership is active. Next automatic payment on %@." = "Mitgliedschaft aktiv. Nächste automatische Abbuchung am %@.";
 
 /* EpisodeListEditorViewController.m */
 "%@ Extension locked!" = "%@ Erweiterung gesperrt!";
@@ -346,10 +316,6 @@
 "Test Notification System" = "Mitteilungssystem testen";
 "Types" = "Typen";
 "If push notifications are set up correctly on your device, and our system is running smoothly, you should receive a message within 60 seconds confirming that push notifications are working." = "Wenn Push-Mitteilungen auf Ihrem Gerät korrekt eingestellt wurden und unser System rund läuft, sollten Sie innerhalb der nächsten 60 Sekunden eine Bestätigungsmitteilung erhalten.";
-
-/* CloudAccountPurchaseMembershipCell.m */
-"%@ for 1 year" = "%@ für 1 Jahr";
-"%@ for 6 months" = "%@ für 6 Monate";
 
 /* CacheManager.m */
 "'%@' is available to play." = "'%@' ist zur Wiedergabe bereit.";
@@ -626,7 +592,7 @@
 "Open an opml file from mail or the files app in InstacastPlus to import podcasts." = "zum importieren von Podcasts die opml-Datei aus Mail oder der Dateien-App in InstacastPlus öffnen.";
 "Mail" = "Mail";
 "Files" = "Dateien-App";
-"Loading data from iCloud" = "Laden von Daten aus iCloud";
+
 
 /* Fehlende .ls Keys - Fortschrittsanzeigen mit Auslassungszeichen */
 "Loading…" = "Laden…";
@@ -692,7 +658,6 @@
 "Intelligent Sleep Timer – Reduce playing in your ear while you are already sleeping. The new sleep timer can be activated permanently and resets whenever you interact with the app, your phone detects movement in the bed, or you change the volume." = "Intelligenter Sleep-Timer – Verhindert, dass ein Podcast weiterspielt, wenn Sie bereits eingeschlafen sind. Der neue Sleep-Timer kann dauerhaft aktiviert werden und setzt sich zurück, sobald Sie mit der App interagieren, sich im Bett bewegen oder die Lautstärke ändern.";
 "Auto-Skip Chapters – Tired of intros, ads, or segments you don't care about? Now you can skip them automatically by setting keyword triggers for chapters to avoid! You can also skip intros and outros automatically by selecting a time in seconds to skip at the start and end." = "Kapitel automatisch überspringen – Keine Lust auf Intros, Werbung oder bestimmte Segmente? Jetzt können Sie diese automatisch überspringen, indem Sie Schlüsselwörter für zu vermeidende Kapitel festlegen! Intros und Outros können ebenfalls automatisch übersprungen werden.";
 "Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position." = "Wischbare Kapitelbilder – Schauen Sie sich alle Kapitelbilder beim Hören an. Blättern Sie vor oder zurück, ohne Ihre Hörposition zu verlieren.";
-"iCloud Sync – Keep your podcasts, listened status, and scroll positions synced across all your Apple devices!" = "iCloud-Sync – Halten Sie Ihre Podcasts, den Wiedergabestatus und Scroll-Positionen auf allen Apple-Geräten synchron!";
 "Basic CarPlay Integration – Take your podcasts on the road with full CarPlay support." = "CarPlay-Integration – Nehmen Sie Ihre Podcasts mit CarPlay-Unterstützung mit auf die Straße.";
 "Basic iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a new, dedicated layout!" = "iPad- & macOS-Unterstützung – Genießen Sie ein optimiertes Erlebnis auf iPad und Mac mit einem neuen, eigenen Layout!";
 "Filter Episodes Your Way – Instantly sort your episodes by All, Unlistened, Started, Favorites, or Downloaded. No more endless scrolling!" = "Folgen filtern – Sortieren Sie Ihre Folgen sofort nach Alle, Ungehört, Angefangen, Favoriten oder Heruntergeladen. Kein endloses Scrollen mehr!";

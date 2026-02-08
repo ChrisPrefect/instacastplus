@@ -334,7 +334,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 [USER_DEFAULTS setBool:NO forKey:EnableStreamingOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableCachingImagesOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableRefreshingOver3G];
-                [USER_DEFAULTS setBool:NO forKey:EnableSyncingOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableCachingOver3G];
                 break;
             }
@@ -342,14 +341,12 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 [USER_DEFAULTS setBool:YES forKey:EnableStreamingOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableCachingImagesOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableRefreshingOver3G];
-                [USER_DEFAULTS setBool:YES forKey:EnableSyncingOver3G];
                 [USER_DEFAULTS setBool:NO forKey:EnableCachingOver3G];
                 break;
             case 2:
                 [USER_DEFAULTS setBool:YES forKey:EnableStreamingOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableCachingImagesOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableRefreshingOver3G];
-                [USER_DEFAULTS setBool:YES forKey:EnableSyncingOver3G];
                 [USER_DEFAULTS setBool:YES forKey:EnableCachingOver3G];
                 break;
             default:
