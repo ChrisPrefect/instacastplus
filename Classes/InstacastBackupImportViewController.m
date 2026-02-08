@@ -1,0 +1,510 @@
+//
+//  InstacastBackupImportViewController.m
+//  Instacast
+//
+
+#import "InstacastBackupImportViewController.h"
+#import "InstacastBackupData.h"
+#import "InstacastBackupImporter.h"
+#import "UITableViewController+Settings.h"
+#import "VDModalInfo.h"
+
+typedef NS_ENUM(NSInteger, ICBackupImportSection) {
+    kBackupInfoSection = 0,
+    kCategoriesSection,
+    kImportButtonSection,
+    kNumberOfImportSections,
+};
+
+typedef NS_ENUM(NSInteger, ICBackupImportRow) {
+    kRowNewPodcasts = 0,
+    kRowEpisodeStatus,
+    kRowFeedSettings,
+    kRowBookmarks,
+    kRowUpNext,
+    kRowNowPlaying,
+    kRowPlaylists,
+    kRowAppSettings,
+    kRowSortOrder,
+    kNumberOfCategoryRows,
+};
+
+@interface InstacastBackupImportViewController ()
+@property (nonatomic, strong) NSMutableSet<NSNumber *> *selectedCategories;
+
+// Analysis results
+@property (nonatomic) NSInteger newPodcastCount;
+@property (nonatomic) NSInteger totalEpisodeCount;
+@property (nonatomic) NSInteger updatedEpisodeCount;
+@property (nonatomic) NSInteger feedsWithSettingsCount;
+@property (nonatomic) NSInteger totalBookmarkCount;
+@property (nonatomic) NSInteger newBookmarkCount;
+@property (nonatomic) NSInteger upNextCount;
+@property (nonatomic) NSInteger playlistCount;
+@property (nonatomic, strong) NSString *nowPlayingTitle;
+@property (nonatomic, strong) NSString *sortModeDescription;
+@end
+
+@implementation InstacastBackupImportViewController
+
++ (instancetype)viewControllerWithBackupData:(InstacastBackupData *)backupData {
+    InstacastBackupImportViewController *vc = [[self alloc] initWithStyle:UITableViewStyleGrouped];
+    vc.backupData = backupData;
+    return vc;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    [self setupSettingsTableViewSpacing];
+
+    self.navigationItem.title = @"Import Backup".ls;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+
+    [self analyzeBackup];
+    [self initializeSelectedCategories];
+    [self updateAppearance];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)updateAppearance {
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
+}
+
+#pragma mark - Analysis
+
+- (void)analyzeBackup {
+    InstacastBackupData *backup = self.backupData;
+
+    // New podcasts
+    self.newPodcastCount = 0;
+    for (ICBackupPodcast *podcast in backup.podcasts) {
+        if (!podcast.feedURL) continue;
+        NSURL *url = [NSURL URLWithString:podcast.feedURL];
+        if (url && ![DMANAGER feedWithSourceURL:url]) {
+            self.newPodcastCount++;
+        }
+    }
+
+    // Episode status
+    self.totalEpisodeCount = 0;
+    self.updatedEpisodeCount = 0;
+    for (ICBackupPodcast *podcast in backup.podcasts) {
+        self.totalEpisodeCount += podcast.episodes.count;
+
+        if (!podcast.feedURL || podcast.episodes.count == 0) continue;
+        NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
+        if (!feedURL) continue;
+        CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
+        if (!feed) continue;
+
+        for (ICBackupEpisode *backupEp in podcast.episodes) {
+            if (!backupEp.guid) continue;
+            CDEpisode *ep = nil;
+            for (CDEpisode *localEp in feed.episodes) {
+                if ([localEp.guid isEqualToString:backupEp.guid]) {
+                    ep = localEp;
+                    break;
+                }
+            }
+            if (!ep) continue;
+
+            BOOL wouldChange = NO;
+            if (backupEp.played && !ep.consumed) wouldChange = YES;
+            if (backupEp.starred && !ep.starred) wouldChange = YES;
+            if (backupEp.archived && !ep.archived) wouldChange = YES;
+            if (backupEp.position > ep.position) wouldChange = YES;
+            if (backupEp.duration > 0 && ep.duration == 0) wouldChange = YES;
+            if (wouldChange) self.updatedEpisodeCount++;
+        }
+    }
+
+    // Feed settings (exclude internal keys from count)
+    NSSet *internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
+    self.feedsWithSettingsCount = 0;
+    for (ICBackupPodcast *podcast in backup.podcasts) {
+        if (!podcast.settings) continue;
+        for (NSString *key in podcast.settings) {
+            if (![internalKeys containsObject:key]) {
+                self.feedsWithSettingsCount++;
+                break;
+            }
+        }
+    }
+
+    // Bookmarks
+    self.totalBookmarkCount = backup.bookmarks.count;
+    self.newBookmarkCount = 0;
+    NSArray *existingBookmarks = DMANAGER.bookmarks;
+    for (ICBackupBookmark *bm in backup.bookmarks) {
+        if (!bm.episodeGuid || !bm.feedURL) continue;
+        BOOL isDuplicate = NO;
+        for (CDBookmark *existing in existingBookmarks) {
+            if ([existing.episodeGuid isEqualToString:bm.episodeGuid] &&
+                [[existing.feedURL absoluteString] isEqualToString:bm.feedURL] &&
+                fabs(existing.position - bm.position) <= 1.0) {
+                isDuplicate = YES;
+                break;
+            }
+        }
+        if (!isDuplicate) self.newBookmarkCount++;
+    }
+
+    // Up Next
+    self.upNextCount = backup.upNextEpisodes.count;
+
+    // Now Playing
+    if (backup.nowPlaying && backup.nowPlaying.guid) {
+        // Try to find the episode title
+        for (ICBackupPodcast *podcast in backup.podcasts) {
+            if ([podcast.feedURL isEqualToString:backup.nowPlaying.feedURL]) {
+                NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
+                CDFeed *feed = feedURL ? [DMANAGER feedWithSourceURL:feedURL] : nil;
+                if (feed) {
+                    for (CDEpisode *ep in feed.episodes) {
+                        if ([ep.guid isEqualToString:backup.nowPlaying.guid]) {
+                            self.nowPlayingTitle = ep.title;
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+        if (!self.nowPlayingTitle) {
+            self.nowPlayingTitle = @"1 Episode".ls;
+        }
+    }
+
+    // Playlists
+    self.playlistCount = backup.playlists.count;
+
+    // Sort order
+    if (backup.settings.manualFeedOrder.count > 0) {
+        self.sortModeDescription = [NSString stringWithFormat:@"Manual order with %ld podcasts".ls,
+                                    (long)backup.settings.manualFeedOrder.count];
+    } else if (backup.settings.feedListSortMode) {
+        self.sortModeDescription = backup.settings.feedListSortMode;
+    }
+}
+
+- (void)initializeSelectedCategories {
+    self.selectedCategories = [NSMutableSet set];
+
+    // Select all categories that have data
+    if (self.newPodcastCount > 0) [self.selectedCategories addObject:@(kRowNewPodcasts)];
+    if (self.totalEpisodeCount > 0) [self.selectedCategories addObject:@(kRowEpisodeStatus)];
+    if (self.feedsWithSettingsCount > 0) [self.selectedCategories addObject:@(kRowFeedSettings)];
+    if (self.totalBookmarkCount > 0) [self.selectedCategories addObject:@(kRowBookmarks)];
+    if (self.upNextCount > 0) [self.selectedCategories addObject:@(kRowUpNext)];
+    if (self.nowPlayingTitle) [self.selectedCategories addObject:@(kRowNowPlaying)];
+    if (self.playlistCount > 0) [self.selectedCategories addObject:@(kRowPlaylists)];
+    if (self.backupData.settings.values.count > 0) [self.selectedCategories addObject:@(kRowAppSettings)];
+    if (self.sortModeDescription) [self.selectedCategories addObject:@(kRowSortOrder)];
+}
+
+- (BOOL)rowHasData:(NSInteger)row {
+    switch (row) {
+        case kRowNewPodcasts:   return self.newPodcastCount > 0;
+        case kRowEpisodeStatus: return self.totalEpisodeCount > 0;
+        case kRowFeedSettings:  return self.feedsWithSettingsCount > 0;
+        case kRowBookmarks:     return self.totalBookmarkCount > 0;
+        case kRowUpNext:        return self.upNextCount > 0;
+        case kRowNowPlaying:    return self.nowPlayingTitle != nil;
+        case kRowPlaylists:     return self.playlistCount > 0;
+        case kRowAppSettings:   return self.backupData.settings.values.count > 0;
+        case kRowSortOrder:     return self.sortModeDescription != nil;
+        default: return NO;
+    }
+}
+
+- (ICBackupImportCategory)categoryForRow:(NSInteger)row {
+    switch (row) {
+        case kRowNewPodcasts:   return ICBackupImportNewPodcasts;
+        case kRowEpisodeStatus: return ICBackupImportEpisodeStatus;
+        case kRowFeedSettings:  return ICBackupImportFeedSettings;
+        case kRowBookmarks:     return ICBackupImportBookmarks;
+        case kRowUpNext:        return ICBackupImportUpNext;
+        case kRowNowPlaying:    return ICBackupImportNowPlaying;
+        case kRowPlaylists:     return ICBackupImportPlaylists;
+        case kRowAppSettings:   return ICBackupImportSettings;
+        case kRowSortOrder:     return ICBackupImportSortOrder;
+        default: return 0;
+    }
+}
+
+#pragma mark - Table View
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return kNumberOfImportSections;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    switch (section) {
+        case kBackupInfoSection:    return 1;
+        case kCategoriesSection:    return kNumberOfCategoryRows;
+        case kImportButtonSection:  return 1;
+    }
+    return 0;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return 50;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return UITableViewAutomaticDimension;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    if (section == kCategoriesSection) return @"Import Categories".ls;
+    return nil;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (section == kCategoriesSection) {
+        return @"Select the data you want to import. Existing data will be merged.".ls;
+    }
+    return nil;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    cell.textLabel.textColor = ICTextColor;
+    cell.detailTextLabel.textColor = [UIColor grayColor];
+    cell.detailTextLabel.numberOfLines = 0;
+    cell.backgroundColor = ICGroupCellBackgroundColor;
+
+    UIView *selectedView = [[UIView alloc] init];
+    selectedView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+    cell.selectedBackgroundView = selectedView;
+
+    switch (indexPath.section) {
+        case kBackupInfoSection: {
+            cell.textLabel.text = @"Backup Date".ls;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            if (self.backupData.date) {
+                NSDateFormatter *df = [[NSDateFormatter alloc] init];
+                df.dateStyle = NSDateFormatterMediumStyle;
+                df.timeStyle = NSDateFormatterShortStyle;
+                cell.detailTextLabel.text = [df stringFromDate:self.backupData.date];
+            } else {
+                cell.detailTextLabel.text = @"Unknown".ls;
+            }
+            break;
+        }
+
+        case kCategoriesSection: {
+            [self configureCategoryCell:cell forRow:indexPath.row];
+            break;
+        }
+
+        case kImportButtonSection: {
+            cell.textLabel.text = @"Import Selected Data".ls;
+            cell.textLabel.textColor = ICTintColor;
+            cell.textLabel.textAlignment = NSTextAlignmentCenter;
+            cell.detailTextLabel.text = nil;
+            break;
+        }
+    }
+
+    return cell;
+}
+
+- (void)configureCategoryCell:(UITableViewCell *)cell forRow:(NSInteger)row {
+    BOOL hasData = [self rowHasData:row];
+    BOOL isSelected = [self.selectedCategories containsObject:@(row)];
+
+    switch (row) {
+        case kRowNewPodcasts:
+            cell.textLabel.text = @"Subscribe New Podcasts".ls;
+            cell.detailTextLabel.text = self.newPodcastCount > 0
+                ? [NSString stringWithFormat:@"%ld new podcasts".ls, (long)self.newPodcastCount]
+                : @"No new podcasts".ls;
+            break;
+
+        case kRowEpisodeStatus:
+            cell.textLabel.text = @"Episode Status".ls;
+            if (self.totalEpisodeCount > 0) {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld episodes (%ld will be updated)".ls,
+                                             (long)self.totalEpisodeCount, (long)self.updatedEpisodeCount];
+            } else {
+                cell.detailTextLabel.text = @"No episodes".ls;
+            }
+            break;
+
+        case kRowFeedSettings:
+            cell.textLabel.text = @"Podcast Settings".ls;
+            cell.detailTextLabel.text = self.feedsWithSettingsCount > 0
+                ? [NSString stringWithFormat:@"%ld podcasts with custom settings".ls, (long)self.feedsWithSettingsCount]
+                : @"No custom settings".ls;
+            break;
+
+        case kRowBookmarks:
+            cell.textLabel.text = @"Bookmarks".ls;
+            if (self.totalBookmarkCount > 0) {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld bookmarks (%ld new)".ls,
+                                             (long)self.totalBookmarkCount, (long)self.newBookmarkCount];
+            } else {
+                cell.detailTextLabel.text = @"No bookmarks".ls;
+            }
+            break;
+
+        case kRowUpNext:
+            cell.textLabel.text = @"Up Next".ls;
+            cell.detailTextLabel.text = self.upNextCount > 0
+                ? [NSString stringWithFormat:@"%ld episodes".ls, (long)self.upNextCount]
+                : @"No episodes".ls;
+            break;
+
+        case kRowNowPlaying:
+            cell.textLabel.text = @"Now Playing".ls;
+            cell.detailTextLabel.text = self.nowPlayingTitle ?: @"Nothing playing".ls;
+            break;
+
+        case kRowPlaylists:
+            cell.textLabel.text = @"Playlists".ls;
+            cell.detailTextLabel.text = self.playlistCount > 0
+                ? [NSString stringWithFormat:@"%ld playlists".ls, (long)self.playlistCount]
+                : @"No playlists".ls;
+            break;
+
+        case kRowAppSettings:
+            cell.textLabel.text = @"App Settings".ls;
+            cell.detailTextLabel.text = self.backupData.settings.values.count > 0
+                ? @"Playback, appearance, etc.".ls
+                : @"No settings".ls;
+            break;
+
+        case kRowSortOrder:
+            cell.textLabel.text = @"Podcast Sort Order".ls;
+            cell.detailTextLabel.text = self.sortModeDescription ?: @"No sort order".ls;
+            break;
+    }
+
+    if (!hasData) {
+        cell.textLabel.textColor = [UIColor grayColor];
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    } else {
+        cell.accessoryType = isSelected ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    }
+}
+
+#pragma mark - Selection
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (indexPath.section == kCategoriesSection) {
+        if (![self rowHasData:indexPath.row]) return;
+
+        NSNumber *rowNum = @(indexPath.row);
+        if ([self.selectedCategories containsObject:rowNum]) {
+            [self.selectedCategories removeObject:rowNum];
+        } else {
+            [self.selectedCategories addObject:rowNum];
+        }
+        [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+    else if (indexPath.section == kImportButtonSection) {
+        [self confirmImport];
+    }
+}
+
+#pragma mark - Import
+
+- (void)confirmImport {
+    if (self.selectedCategories.count == 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No Data Selected".ls
+                                                                      message:@"Please select at least one category to import.".ls
+                                                               preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    NSMutableArray *summaryItems = [NSMutableArray array];
+    if ([self.selectedCategories containsObject:@(kRowNewPodcasts)])
+        [summaryItems addObject:[NSString stringWithFormat:@"%ld new podcasts".ls, (long)self.newPodcastCount]];
+    if ([self.selectedCategories containsObject:@(kRowEpisodeStatus)])
+        [summaryItems addObject:[NSString stringWithFormat:@"%ld episode updates".ls, (long)self.updatedEpisodeCount]];
+    if ([self.selectedCategories containsObject:@(kRowBookmarks)])
+        [summaryItems addObject:[NSString stringWithFormat:@"%ld new bookmarks".ls, (long)self.newBookmarkCount]];
+
+    NSString *summary = summaryItems.count > 0
+        ? [summaryItems componentsJoinedByString:@"\n"]
+        : @"Import selected data?".ls;
+
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Confirm Import".ls
+                                                                  message:summary
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self performImport];
+    }]];
+
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)performImport {
+    ICBackupImportCategory categories = 0;
+    for (NSNumber *row in self.selectedCategories) {
+        categories |= [self categoryForRow:row.integerValue];
+    }
+
+    VDModalInfo *mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
+    [mInfo show];
+
+    [InstacastBackupImporter importBackup:self.backupData
+                               categories:categories
+                                 progress:^(float progress, NSString *statusText) {
+        [mInfo setProgress:progress];
+    }
+                               completion:^(NSInteger importedCount, NSError *error) {
+        [mInfo close];
+
+        if (error) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
+                                                                          message:error.localizedDescription
+                                                                   preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+        } else {
+            NSString *message = [NSString stringWithFormat:@"Successfully imported %ld items.".ls, (long)importedCount];
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Complete".ls
+                                                                          message:message
+                                                                   preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                [self.navigationController popViewControllerAnimated:YES];
+            }]];
+            [self presentViewController:alert animated:YES completion:nil];
+        }
+    }];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section {
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    [header.textLabel setTextColor:[UIColor grayColor]];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayFooterView:(UIView *)view forSection:(NSInteger)section {
+    if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
+        UITableViewHeaderFooterView *footerView = (UITableViewHeaderFooterView *)view;
+        footerView.textLabel.textColor = [UIColor grayColor];
+    }
+}
+
+@end

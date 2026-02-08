@@ -10,6 +10,8 @@
 #import "VDModalInfo.h"
 #import "CDPlaylist.h"
 #import "InstacastAppDelegate.h"
+#import "InstacastBackupParser.h"
+#import "InstacastBackupImportViewController.h"
 
 typedef NS_ENUM(NSInteger, ImportExportSections) {
     kExportSection = 0,
@@ -21,6 +23,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 @interface ImportExportSettingsViewController () <UIDocumentInteractionControllerDelegate, UIDocumentPickerDelegate>
 @property (nonatomic, strong) UIDocumentInteractionController* interactionController;
 @property (nonatomic, strong) VDModalInfo* mInfo;
+@property (nonatomic) NSInteger selectedImportRow;
 @end
 
 @implementation ImportExportSettingsViewController
@@ -214,6 +217,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             }
             break;
         case kImportSection:
+            self.selectedImportRow = indexPath.row;
             [self showImportDocumentPicker];
             break;
         case kResetAppSection:
@@ -293,10 +297,12 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
         [xml appendFormat:@"    <podcast url=\"%@\" rank=\"%d\">\n",
             [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank];
 
-        // Custom properties
+        // Custom properties (skip internal keys)
         if ([feed hasCustomProperties]) {
+            NSSet* internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
             [xml appendString:@"      <settings>\n"];
             for (NSString* key in [feed propertyKeys]) {
+                if ([internalKeys containsObject:key]) continue;
                 NSString* stringVal = [feed stringForKey:key];
                 if (stringVal) {
                     [xml appendFormat:@"        <%@>%@</%@>\n", key, [self xmlEscape:stringVal], key];
@@ -403,19 +409,45 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     // Settings
     NSUserDefaults* defaults = USER_DEFAULTS;
     [xml appendString:@"  <settings>\n"];
+    // Playback
     if ([defaults objectForKey:DefaultPlaybackSpeed]) [xml appendFormat:@"    <playbackSpeed>%ld</playbackSpeed>\n", (long)[defaults integerForKey:DefaultPlaybackSpeed]];
     if ([defaults objectForKey:PlayerSkipBackPeriod]) [xml appendFormat:@"    <skipBack>%ld</skipBack>\n", (long)[defaults integerForKey:PlayerSkipBackPeriod]];
     if ([defaults objectForKey:PlayerSkipForwardPeriod]) [xml appendFormat:@"    <skipForward>%ld</skipForward>\n", (long)[defaults integerForKey:PlayerSkipForwardPeriod]];
     if ([defaults objectForKey:PlayerAutoSkipStartPeriod]) [xml appendFormat:@"    <autoSkipStart>%ld</autoSkipStart>\n", (long)[defaults integerForKey:PlayerAutoSkipStartPeriod]];
     if ([defaults objectForKey:PlayerAutoSkipEndPeriod]) [xml appendFormat:@"    <autoSkipEnd>%ld</autoSkipEnd>\n", (long)[defaults integerForKey:PlayerAutoSkipEndPeriod]];
     if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
+    if ([defaults objectForKey:kDefaultPlayerControls]) [xml appendFormat:@"    <playerControls>%ld</playerControls>\n", (long)[defaults integerForKey:kDefaultPlayerControls]];
+    if ([defaults objectForKey:kDefaultDontDeleteUpNextWhenChangingEpisode]) [xml appendFormat:@"    <dontDeleteUpNext>%@</dontDeleteUpNext>\n", [defaults boolForKey:kDefaultDontDeleteUpNextWhenChangingEpisode] ? @"true" : @"false"];
+    // Downloads
     if ([defaults objectForKey:AutoCacheNewAudioEpisodes]) [xml appendFormat:@"    <autoCacheAudio>%@</autoCacheAudio>\n", [defaults boolForKey:AutoCacheNewAudioEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoCacheNewVideoEpisodes]) [xml appendFormat:@"    <autoCacheVideo>%@</autoCacheVideo>\n", [defaults boolForKey:AutoCacheNewVideoEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoDeleteAfterFinishedPlaying]) [xml appendFormat:@"    <autoDeletePlayed>%@</autoDeletePlayed>\n", [defaults boolForKey:AutoDeleteAfterFinishedPlaying] ? @"true" : @"false"];
+    if ([defaults objectForKey:AutoDeleteAfterMarkedAsPlayed]) [xml appendFormat:@"    <autoDeleteMarkedPlayed>%@</autoDeleteMarkedPlayed>\n", [defaults boolForKey:AutoDeleteAfterMarkedAsPlayed] ? @"true" : @"false"];
+    if ([defaults objectForKey:AutoDeleteNewsMode]) [xml appendFormat:@"    <autoDeleteNews>%@</autoDeleteNews>\n", [defaults boolForKey:AutoDeleteNewsMode] ? @"true" : @"false"];
+    // Cellular
+    if ([defaults objectForKey:EnableCachingOver3G]) [xml appendFormat:@"    <enableCachingOver3G>%@</enableCachingOver3G>\n", [defaults boolForKey:EnableCachingOver3G] ? @"true" : @"false"];
+    if ([defaults objectForKey:EnableRefreshingOver3G]) [xml appendFormat:@"    <enableRefreshingOver3G>%@</enableRefreshingOver3G>\n", [defaults boolForKey:EnableRefreshingOver3G] ? @"true" : @"false"];
+    if ([defaults objectForKey:EnableStreamingOver3G]) [xml appendFormat:@"    <enableStreamingOver3G>%@</enableStreamingOver3G>\n", [defaults boolForKey:EnableStreamingOver3G] ? @"true" : @"false"];
+    // General
     if ([defaults objectForKey:DisableAutoLock]) [xml appendFormat:@"    <disableAutoLock>%@</disableAutoLock>\n", [defaults boolForKey:DisableAutoLock] ? @"true" : @"false"];
+    if ([defaults objectForKey:UISoundEnabled]) [xml appendFormat:@"    <uiSoundEnabled>%@</uiSoundEnabled>\n", [defaults boolForKey:UISoundEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:ShowApplicationBadgeForUnseen]) [xml appendFormat:@"    <showBadge>%@</showBadge>\n", [defaults boolForKey:ShowApplicationBadgeForUnseen] ? @"true" : @"false"];
+    if ([defaults objectForKey:kDefaultShowUnavailableEpisodes]) [xml appendFormat:@"    <showUnavailable>%@</showUnavailable>\n", [defaults boolForKey:kDefaultShowUnavailableEpisodes] ? @"true" : @"false"];
+    // Appearance
     if ([defaults objectForKey:kDefaultAppearanceMode]) [xml appendFormat:@"    <appearanceMode>%ld</appearanceMode>\n", (long)[defaults integerForKey:kDefaultAppearanceMode]];
+    if ([defaults objectForKey:InterfaceThemeDefaultActive]) [xml appendFormat:@"    <themeDefaultActive>%@</themeDefaultActive>\n", [defaults boolForKey:InterfaceThemeDefaultActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:InterfaceThemeColorHexCode]) [xml appendFormat:@"    <themeColorHex>%@</themeColorHex>\n", [self xmlEscape:[defaults stringForKey:InterfaceThemeColorHexCode]]];
+    if ([defaults objectForKey:PlayerColorPerPodcastActive]) [xml appendFormat:@"    <playerPerPodcastColor>%@</playerPerPodcastColor>\n", [defaults boolForKey:PlayerColorPerPodcastActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:PlayerThemeColorHexCode]) [xml appendFormat:@"    <playerColorHex>%@</playerColorHex>\n", [self xmlEscape:[defaults stringForKey:PlayerThemeColorHexCode]]];
+    // Sleep Timer
     if ([defaults objectForKey:ScreenTimerAlwaysActive]) [xml appendFormat:@"    <sleepTimerAlways>%@</sleepTimerAlways>\n", [defaults boolForKey:ScreenTimerAlwaysActive] ? @"true" : @"false"];
     if ([defaults objectForKey:LastSelectedSleepTimer]) [xml appendFormat:@"    <lastSleepTimer>%ld</lastSleepTimer>\n", (long)[defaults integerForKey:LastSelectedSleepTimer]];
+    // App Icon
+    NSString *alternateIconName = [[UIApplication sharedApplication] alternateIconName];
+    if (alternateIconName) {
+        [xml appendFormat:@"    <appIcon>%@</appIcon>\n", [self xmlEscape:alternateIconName]];
+    }
+    // Sort order
     if ([defaults objectForKey:FeedListSortMode]) [xml appendFormat:@"    <feedListSortMode>%@</feedListSortMode>\n", [self xmlEscape:[defaults stringForKey:FeedListSortMode]]];
     if ([defaults objectForKey:@"ManualFeedOrder"]) {
         NSArray* manualOrder = [defaults objectForKey:@"ManualFeedOrder"];
@@ -450,8 +482,14 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
 - (void) showImportDocumentPicker
 {
+    NSArray *documentTypes;
+    if (self.selectedImportRow == 0) {
+        documentTypes = @[@"public.xml"];
+    } else {
+        documentTypes = @[@"public.xml", @"org.opml.opml", @"instacast.opml"];
+    }
     UIDocumentPickerViewController *picker =
-        [[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.xml"] inMode:UIDocumentPickerModeImport];
+        [[UIDocumentPickerViewController alloc] initWithDocumentTypes:documentTypes inMode:UIDocumentPickerModeImport];
     picker.delegate = self;
     picker.allowsMultipleSelection = NO;
     picker.shouldShowFileExtensions = YES;
@@ -464,27 +502,22 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     NSURL *url = urls.firstObject;
     if (!url) return;
 
-    NSString* extension = [url.pathExtension lowercaseString];
-    if ([extension isEqualToString:@"opml"] || [extension isEqualToString:@"xml"]) {
-        [self importOPMLFromURL:url];
-    }
+    [self importFileFromURL:url];
 }
 
-- (void) importOPMLFromURL:(NSURL*)url
+- (void)importFileFromURL:(NSURL *)url
 {
-    self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing\u2026".ls];
+    self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Analyzing backup…".ls];
     [self.mInfo show];
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         BOOL needsSecurity = [url startAccessingSecurityScopedResource];
-
-        NSData *opmlData = [NSData dataWithContentsOfURL:url];
-
+        NSData *data = [NSData dataWithContentsOfURL:url];
         if (needsSecurity) {
             [url stopAccessingSecurityScopedResource];
         }
 
-        if (!opmlData || opmlData.length == 0) {
+        if (!data || data.length == 0) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.mInfo close];
                 self.mInfo = nil;
@@ -492,17 +525,49 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             return;
         }
 
-        [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.mInfo close];
-                self.mInfo = nil;
-            });
+        // Detect format: Instacast backup XML vs OPML
+        if ([InstacastBackupParser isInstacastBackupData:data]) {
+            [self importInstacastBackupFromData:data];
+        } else {
+            [self importOPMLFromData:data];
+        }
+    });
+}
+
+- (void)importInstacastBackupFromData:(NSData *)data
+{
+    [InstacastBackupParser parseData:data completion:^(InstacastBackupData *backupData, NSError *error) {
+        [self.mInfo close];
+        self.mInfo = nil;
+
+        if (error || !backupData) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
+                                                                          message:error.localizedDescription ?: @"Could not parse backup file.".ls
+                                                                   preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+            return;
+        }
+
+        InstacastBackupImportViewController *importVC = [InstacastBackupImportViewController viewControllerWithBackupData:backupData];
+        [self.navigationController pushViewController:importVC animated:YES];
+    }];
+}
+
+- (void)importOPMLFromData:(NSData *)data
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self.mInfo close];
+        self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing\u2026".ls];
+        [self.mInfo show];
+
+        [[SubscriptionManager sharedSubscriptionManager] importOPMLData:data completion:^{
+            [self.mInfo close];
+            self.mInfo = nil;
         } progress:^(float progress) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                if (progress > 0.03) {
-                    [self.mInfo setProgress:progress];
-                }
-            });
+            if (progress > 0.03) {
+                [self.mInfo setProgress:progress];
+            }
         }];
     });
 }
