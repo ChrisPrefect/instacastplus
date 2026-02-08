@@ -852,6 +852,8 @@ enum {
                         [DMANAGER setEpisode:episode position:dur];
                         self->_changingPosition = NO;
                         [DMANAGER saveAndSync:YES];
+                        // Remove consumed episode from Up Next playlist
+                        [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
                     }
                 }
             }
@@ -1138,6 +1140,8 @@ enum {
     [DMANAGER setEpisode:episode position:(double)dur];
     _changingPosition = NO;
     [DMANAGER saveAndSync:YES];
+    // Remove consumed episode from Up Next playlist
+    [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
     self.isAutoSkipping = NO;
 }
 
@@ -1159,12 +1163,15 @@ enum {
         [self _removeTemporarySavePosition];
         [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerEpisodeDidFinishNotification object:self];
 
+        // Remove consumed episode from Up Next playlist
+        [session eraseEpisodesFromUpNext:@[episode]];
+
         if ([episode.feed boolForKey:AutoDeleteAfterFinishedPlaying] && !episode.starred) {
             session.autoStopDisabled = YES;
             [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:YES];
             session.autoStopDisabled = NO;
         }
-        
+
         CDEpisode* nextEpisode = [session nextPlayableEpisode];
         if (nextEpisode) {
             self.inTransitionToNextTrack = YES;

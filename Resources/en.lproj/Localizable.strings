@@ -266,6 +266,7 @@
 "Audio" = "Audio";
 "Contains Keyword" = "Contains Keyword";
 "Continuous Playback" = "Continuous Playback";
+"Show in Main Menu" = "Show in Main Menu";
 "Deactivate attributes of episodes that should not be included in this episode list." = "Deactivate attributes of episodes that should not be included in this episode list.";
 "Descending" = "Descending";
 "Downloaded" = "Downloaded";
@@ -295,6 +296,7 @@
 "Unfinished" = "Unfinished";
 "Unplayed" = "Unplayed";
 "Unplayed & Started" = "Unplayed & Started";
+"Started" = "Started";
 "Video" = "Video";
 
 /* SubscriptionsTableViewController.m */

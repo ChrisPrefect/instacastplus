@@ -359,8 +359,29 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
 - (NSString*) refreshStatusText
 {
-    NSInteger done = self.numTotalRefreshFeeds - [self.refreshingFeedURLs count];
+    NSInteger remaining = [self.refreshingFeedURLs count];
+    NSInteger done = self.numTotalRefreshFeeds - remaining;
+
+    // For single podcast, show name instead of "1/1 podcasts refreshed"
+    if (self.numTotalRefreshFeeds <= 1) {
+        NSString* feedName = self.lastRefreshingFeedName;
+        return feedName ?: @"Looking for new episodes…".ls;
+    }
+
     return [NSString stringWithFormat:@"%ld/%ld %@", (long)done, (long)self.numTotalRefreshFeeds, @"podcasts refreshed".ls];
+}
+
+- (NSString*) lastRefreshingFeedName
+{
+    if (self.refreshingFeedURLs.count == 1) {
+        NSURL* url = self.refreshingFeedURLs.firstObject;
+        for (CDFeed* feed in [DMANAGER visibleFeeds]) {
+            if ([feed.sourceURL isEqual:url]) {
+                return feed.title;
+            }
+        }
+    }
+    return nil;
 }
 
 - (void) refreshAllFeedsForce:(BOOL)force
@@ -507,11 +528,13 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 - (void) _finishParsingFeed:(CDFeed*)feed url:(NSURL*)url
 {
     [self autoDownloadEpisodesInFeed:feed];
-    
+
+    [self willChangeValueForKey:@"refreshStatusText"];
+    [self willChangeValueForKey:@"lastRefreshingFeedName"];
     [self.refreshingFeedURLs removeObject:url];
-    
-    //DebugLog(@"%@", self.refreshingFeedURLs);
-    
+    [self didChangeValueForKey:@"lastRefreshingFeedName"];
+    [self didChangeValueForKey:@"refreshStatusText"];
+
     [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidParseFeedNotification
                                                         object:self
                                                       userInfo:(feed)?[NSDictionary dictionaryWithObject:feed forKey:@"feed"]:nil];
@@ -539,7 +562,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     feedParser.url = [feed.sourceURL copy];
     feedParser.username = feed.username;
     feedParser.password = feed.password;
-    feedParser.timeout = 20;
+    feedParser.timeout = 8;
 #if TARGET_OS_IPHONE
     feedParser.dontAskForCredentials = ([App applicationState] != UIApplicationStateActive);
     feedParser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];

@@ -39,6 +39,7 @@
 @property (nonatomic, strong) ToolbarLabelsViewController* toolbarLabelsViewController;
 @property (nonatomic, strong) UIBarButtonItem* labelsItems;
 @property (nonatomic, strong) UIBarButtonItem* addButtonItem;
+@property (nonatomic, strong) UIBarButtonItem* editButtonItem;
 @end
 
 @implementation PlaylistsTableViewController {
@@ -85,6 +86,7 @@
                 [self _updateToolbarItemsAnimated:NO];
                 [self _updateToolbarLabels];
             }
+            [self _updateEditButton];
         }];
         
         [nc addObserver:self selector:@selector(subscriptionManagerDidAddEpisodesNotification:) name:SubscriptionManagerDidAddEpisodesNotification object:nil];
@@ -94,7 +96,15 @@
         [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
             ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
         }];
-        
+
+        [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
+            SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+            if (sm.refreshing) {
+                NSString* feedName = sm.lastRefreshingFeedName;
+                ((ICRefreshControl*)self.refreshControl).refreshText = feedName ? feedName : sm.refreshStatusText;
+            }
+        }];
+
         [nc addObserver:self
                                                  selector:@selector(updateAppearance)
                                                      name:ICAppearanceManagerDidUpdateAppearanceNotification
@@ -109,6 +119,7 @@
         [nc removeObserver:self];
         
         [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
+        [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
         _observing = NO;
     }
 }
@@ -127,6 +138,7 @@
 
 - (void) subscriptionManagerDidFinishRefreshingFeedsNotification:(NSNotification*)notification
 {
+    ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
     [self.refreshControl endRefreshing];
 }
 
@@ -136,11 +148,10 @@
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
     
     // Use edit icon instead of text
-    UIBarButtonItem* editButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
-                                                                   style:UIBarButtonItemStylePlain
-                                                                  target:self
-                                                                  action:@selector(toggleEditMode:)];
-    self.navigationItem.rightBarButtonItem = editButton;
+    self.editButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                            style:UIBarButtonItemStylePlain
+                                                           target:self
+                                                           action:@selector(toggleEditMode:)];
     self.title = @"Lists".ls;
 
     self.tableView.rowHeight = 54;  // Increased from 44
@@ -171,7 +182,9 @@
     
     [self updateAppearance];
     [self _updateToolbarLabels];
-    
+
+    [self _updateEditButton];
+
     // Dispatch to avoid "offscreen beginRefreshing" warning
     dispatch_async(dispatch_get_main_queue(), ^{
         if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
@@ -296,11 +309,16 @@
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
-    if ([list.uid hasPrefix:@"default."]) {
-        return NO;
-    }
     return YES;
+}
+
+- (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
+    if (list.uid && [list.uid hasPrefix:@"default."] && ![list.uid isEqualToString:@"default.video"]) {
+        return UITableViewCellEditingStyleNone;
+    }
+    return UITableViewCellEditingStyleDelete;
 }
 
 
@@ -308,11 +326,25 @@
 {
     _userAction = YES;
     CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
+
+    // Remove from MainMenuListUIDs if present
+    if (list.uid) {
+        NSMutableArray* mainMenuUIDs = [([USER_DEFAULTS objectForKey:@"MainMenuListUIDs"] ?: @[]) mutableCopy];
+        if ([mainMenuUIDs containsObject:list.uid]) {
+            [mainMenuUIDs removeObject:list.uid];
+            [USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"];
+            [USER_DEFAULTS synchronize];
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
+        }
+    }
+
     [DMANAGER removeList:list];
-    
+
     // Delete the row from the data source.
     [tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath] withRowAnimation:UITableViewRowAnimationFade];
     _userAction = NO;
+
+    [self _updateEditButton];
 }
 
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath
@@ -382,6 +414,33 @@
 
 #pragma mark -
 #pragma mark Actions
+
+- (BOOL) _canEditAnyList
+{
+    NSArray* lists = DMANAGER.lists;
+    // Reorder needs 2+ lists
+    if (lists.count >= 2) return YES;
+    // Check if any list can be deleted
+    for (CDList* list in lists) {
+        if (!list.uid || list.uid.length == 0) return YES; // legacy list without uid
+        if (![list.uid hasPrefix:@"default."] || [list.uid isEqualToString:@"default.video"]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (void) _updateEditButton
+{
+    if ([self _canEditAnyList]) {
+        self.navigationItem.rightBarButtonItem = self.editButtonItem;
+    } else {
+        if (self.editing) {
+            [self setEditing:NO animated:NO];
+        }
+        self.navigationItem.rightBarButtonItem = nil;
+    }
+}
 
 - (void) toggleEditMode:(id)sender
 {

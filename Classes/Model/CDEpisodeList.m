@@ -101,6 +101,10 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 - (IC_IMAGE*) image
 {
 #if TARGET_OS_IPHONE
+    // Try SF Symbol first
+    UIImage* sfImage = [UIImage systemImageNamed:self.icon];
+    if (sfImage) return [sfImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    // Fallback: named image from assets
     UIImage* image = [[UIImage imageNamed:self.icon] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     return (image) ? image : [super image];
 #else

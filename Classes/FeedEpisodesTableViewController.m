@@ -31,6 +31,7 @@
 #import "CDFeed+Helper.h"
 #import "ICFTSController.h"
 #import "InstacastAppDelegate.h"
+#import "ICRefreshControl.h"
 
 @interface FeedEpisodesTableViewController() <UIGestureRecognizerDelegate, NSFetchedResultsControllerDelegate, UIScrollViewDelegate>
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
@@ -340,8 +341,61 @@
     
     //[self updateEpisodes];
     [self _updateToolbarItemsAnimated:NO];
+
+    ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
+    refreshControl.pulldownText = @"Pull to refresh…".ls;
+    refreshControl.refreshText = @"Looking for new episodes…".ls;
+    refreshControl.idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDateForFeed:self.feed];
+    [refreshControl addTarget:self action:@selector(pullToRefresh:) forControlEvents:UIControlEventValueChanged];
+    self.refreshControl = refreshControl;
+
+    SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
+    [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
+        ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDateForFeed:self.feed];
+    }];
+
+    [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
+        SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+        if (sm.refreshing) {
+            NSString* feedName = sm.lastRefreshingFeedName;
+            ((ICRefreshControl*)self.refreshControl).refreshText = feedName ? feedName : sm.refreshStatusText;
+        }
+    }];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(subscriptionManagerDidStartRefreshingFeedsNotification:)
+                                                 name:SubscriptionManagerDidStartRefreshingFeedsNotification
+                                               object:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(subscriptionManagerDidFinishRefreshingFeedsNotification:)
+                                                 name:SubscriptionManagerDidFinishRefreshingFeedsNotification
+                                               object:nil];
 }
 
+- (void) pullToRefresh:(id)sender
+{
+    SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
+    [sman refreshFeeds:@[self.feed] etagHandling:YES completion:^(BOOL success, NSArray* newEpisodes, NSError* error) {
+        if (error) {
+            [self presentError:error];
+        }
+        if ([newEpisodes count] > 0) {
+            PlaySoundFile(@"NewEpisodes",NO);
+        }
+    }];
+}
+
+- (void) subscriptionManagerDidStartRefreshingFeedsNotification:(NSNotification*)notification
+{
+    [self.refreshControl beginRefreshing];
+}
+
+- (void) subscriptionManagerDidFinishRefreshingFeedsNotification:(NSNotification*)notification
+{
+    ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
+    [self.refreshControl endRefreshing];
+}
 
 - (void) _updateToolbarLabels
 {
@@ -439,6 +493,16 @@
         [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         [self reloadDataWithFilter:YES];
     }
+
+    // Sync refresh control state
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
+            [self.refreshControl beginRefreshing];
+        }
+        else if (![SubscriptionManager sharedSubscriptionManager].refreshing && self.refreshControl.refreshing) {
+            [self.refreshControl endRefreshing];
+        }
+    });
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -540,6 +604,9 @@
 - (void) dealloc
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
+    [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
+    [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
 }
 
 #pragma mark -

@@ -68,6 +68,10 @@
 #pragma clang diagnostic pop
     }
     
+    // Tap-to-position on volume slider
+    UITapGestureRecognizer* volumeTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleVolumeTap:)];
+    [volumeView addGestureRecognizer:volumeTapRecognizer];
+
     [self.view addSubview:volumeView];
     self.volumeView = volumeView;
     self.volumeView.hidden = NO;//DevD to do
@@ -139,13 +143,13 @@
     self.volumeMaxButton.userInteractionEnabled = YES;
     [self.volumeMaxButton addTarget:self action:@selector(increaseVolume:) forControlEvents:UIControlEventTouchUpInside];
 
-    // Enlarge touch targets for volume buttons (3x larger)
-    CGRect minFrame = self.volumeMinButton.frame;
-    self.volumeMinButton.frame = CGRectMake(minFrame.origin.x - 22, minFrame.origin.y - 22, 88, 88);
+    // Enlarge touch targets for volume buttons by centering larger frame on original center
+    CGPoint minCenter = self.volumeMinButton.center;
+    self.volumeMinButton.frame = CGRectMake(minCenter.x - 44, minCenter.y - 44, 88, 88);
     self.volumeMinButton.contentEdgeInsets = UIEdgeInsetsMake(22, 22, 22, 22);
 
-    CGRect maxFrame = self.volumeMaxButton.frame;
-    self.volumeMaxButton.frame = CGRectMake(maxFrame.origin.x - 22, maxFrame.origin.y - 22, 88, 88);
+    CGPoint maxCenter = self.volumeMaxButton.center;
+    self.volumeMaxButton.frame = CGRectMake(maxCenter.x - 44, maxCenter.y - 44, 88, 88);
     self.volumeMaxButton.contentEdgeInsets = UIEdgeInsetsMake(22, 22, 22, 22);
 }
 
@@ -303,6 +307,21 @@
 - (void)setVolume:(float)newVolume
 {
     [[PlaybackManager playbackManager] setVolume:newVolume];
+}
+
+- (void)handleVolumeTap:(UITapGestureRecognizer *)recognizer
+{
+    CGPoint point = [recognizer locationInView:self.volumeView];
+    CGFloat width = CGRectGetWidth(self.volumeView.bounds);
+    float value = MAX(0.0f, MIN(1.0f, (float)(point.x / width)));
+
+    for (UIView *subview in self.volumeView.subviews) {
+        if ([subview isKindOfClass:[UISlider class]]) {
+            [(UISlider*)subview setValue:value animated:YES];
+            [(UISlider*)subview sendActionsForControlEvents:UIControlEventValueChanged];
+            return;
+        }
+    }
 }
 
 - (void)decreaseVolume:(id)sender

@@ -74,7 +74,15 @@
         [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
             ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
         }];
-        
+
+        [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
+            SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+            if (sm.refreshing) {
+                NSString* feedName = sm.lastRefreshingFeedName;
+                ((ICRefreshControl*)self.refreshControl).refreshText = feedName ? feedName : sm.refreshStatusText;
+            }
+        }];
+
         [nc addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
         
         [nc addObserver:self selector:@selector(handleICloudSyncUpdateNotification:)
@@ -92,6 +100,7 @@
         [nc removeObserver:self];
         
         [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
+        [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
         [DMANAGER removeTaskObserver:self forKeyPath:@"ftsIndexing"];
         
         _flags.observing = 0;
@@ -105,6 +114,7 @@
 
 - (void) subscriptionManagerDidFinishRefreshingFeedsNotification:(NSNotification*)notification
 {
+    ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
     [self.refreshControl endRefreshing];
 }
 

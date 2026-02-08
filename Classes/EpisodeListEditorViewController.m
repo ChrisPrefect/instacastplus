@@ -9,6 +9,8 @@
 #import "EpisodeListEditorViewController.h"
 #import "UITableViewController+Settings.h"
 #import "ICButtonsTableViewCell.h"
+#import "ICTableViewButton.h"
+#import "ImageFunctions.h"
 #import "EpisodeListPodcastSelectionTableViewController.h"
 #import "ICListEditorPodcastCell.h"
 #import "InstacastAppDelegate.h"
@@ -21,6 +23,7 @@ enum {
     kSectionOrderBy,
     kSectionOrderOptions,
     kSectionContinuousPlayback,
+    kSectionMainMenu,
     kNumberOfSections
 };
 
@@ -51,6 +54,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
 @property (nonatomic) BOOL descending;
 @property (nonatomic) BOOL groupByPodcast;
 @property (nonatomic) BOOL continuousPlayback;
+@property (nonatomic) BOOL showInMainMenu;
 
 @property (nonatomic, strong) EpisodeListPodcastSelectionTableViewController* podcastSelectionController;
 @end
@@ -110,7 +114,10 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         self.descending = list.descending;
         self.orderBy = list.orderBy;
         self.continuousPlayback = list.continuousPlayback;
-        
+
+        NSArray* mainMenuUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
+        self.showInMainMenu = (list.uid && [mainMenuUIDs containsObject:list.uid]);
+
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Save".ls
                                                                                   style:UIBarButtonItemStyleDone
                                                                                  target:self
@@ -135,7 +142,8 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         self.descending = YES;
         self.orderBy = @"pubDate";
         self.continuousPlayback = YES;
-        
+        self.showInMainMenu = NO;
+
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Add".ls
                                                                                   style:UIBarButtonItemStyleDone
                                                                                  target:self
@@ -204,8 +212,27 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     
     [list invalidateCaches];
 
+    // Ensure list has a UID (new lists don't have one yet)
+    if (!list.uid || list.uid.length == 0) {
+        list.uid = [[NSUUID UUID] UUIDString];
+    }
+
     [DMANAGER saveAndSync:NO];
     [DMANAGER addList:list];
+
+    // Update MainMenuListUIDs in UserDefaults
+    NSMutableArray* mainMenuUIDs = [([USER_DEFAULTS objectForKey:@"MainMenuListUIDs"] ?: @[]) mutableCopy];
+    if (self.showInMainMenu) {
+        if (![mainMenuUIDs containsObject:list.uid]) {
+            [mainMenuUIDs addObject:list.uid];
+        }
+    } else {
+        [mainMenuUIDs removeObject:list.uid];
+    }
+    [USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"];
+    [USER_DEFAULTS synchronize];
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
 }
 
 - (void) cancelButtonAction:(id)sender
@@ -223,7 +250,51 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
 
 - (NSArray*) _possibleIconNames
 {
-    return @[@"List Custom", @"List Unplayed", @"List Favorites", @"List Downloaded", @"List Partially Played", @"List Most Recent", @"List Recently Played", @"List Audio", @"List Video", @"List Search" ];
+    return @[@"List Custom", @"List Unplayed", @"List Favorites", @"List Downloaded", @"List Partially Played", @"List Most Recent", @"List Recently Played", @"List Audio", @"List Video", @"List Search",
+             @"headphones", @"music.note", @"mic", @"play.circle", @"waveform", @"clock", @"star", @"heart", @"bookmark", @"folder",
+             @"tray", @"archivebox", @"globe", @"antenna.radiowaves.left.and.right", @"gamecontroller",
+             @"book", @"newspaper", @"doc.text", @"chart.bar", @"lightbulb", @"brain", @"leaf", @"sun.max", @"moon", @"bolt", @"flame", @"drop" ];
+}
+
++ (UIButton*) _configuredIconButtonWithName:(NSString*)iconName selectedIcon:(NSString*)selectedIconName
+{
+    // Try SF Symbol first
+    UIImage* sfImage = [UIImage systemImageNamed:iconName];
+    if (sfImage) {
+        ICTableViewButton* button = [ICTableViewButton buttonWithType:UIButtonTypeCustom];
+        [button setBackgroundImage:ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
+            [ICGroupCellBackgroundColor set];
+            UIRectFill(CGRectMake(0, 0, 1, 1));
+        }) forState:UIControlStateNormal];
+        UIImage* tintedBackgroundImage = ICImageFromByDrawingInContext(CGSizeMake(1, 1), ^(void) {
+            [ICTintColor set];
+            UIRectFill(CGRectMake(0, 0, 1, 1));
+        });
+        [button setBackgroundImage:tintedBackgroundImage forState:UIControlStateSelected];
+        [button setBackgroundImage:tintedBackgroundImage forState:UIControlStateHighlighted];
+        [button setBackgroundImage:tintedBackgroundImage forState:UIControlStateSelected|UIControlStateHighlighted];
+
+        UIImage* normalImage = [sfImage imageWithTintColor:ICTintColor renderingMode:UIImageRenderingModeAlwaysOriginal];
+        UIImage* selectedImage = [sfImage imageWithTintColor:[UIColor whiteColor] renderingMode:UIImageRenderingModeAlwaysOriginal];
+        [button setImage:normalImage forState:UIControlStateNormal];
+        [button setImage:selectedImage forState:UIControlStateSelected];
+        [button setImage:selectedImage forState:UIControlStateHighlighted];
+        [button setImage:selectedImage forState:UIControlStateSelected|UIControlStateHighlighted];
+
+        if ([iconName isEqualToString:selectedIconName]) {
+            button.selected = YES;
+            button.tintColor = [UIColor whiteColor];
+        }
+        return button;
+    }
+
+    // Fallback: asset image
+    UIButton* button = [ICButtonsTableViewCell configuredButtonWithTitle:nil imageNamed:iconName];
+    if ([iconName isEqualToString:selectedIconName]) {
+        button.selected = YES;
+        button.tintColor = [UIColor whiteColor];
+    }
+    return button;
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
@@ -247,6 +318,8 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         case kSectionOrderOptions:
             return 3;
         case kSectionContinuousPlayback:
+            return 1;
+        case kSectionMainMenu:
             return 1;
         default:
             break;
@@ -292,25 +365,20 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
                     ICButtonsTableViewCell* cell = [self _buttonCell];
                     cell.backgroundColor = ICGroupCellBackgroundColor;
                     cell.separatorInset = UIEdgeInsetsZero;
-                    
+
                     NSMutableArray* buttons = [[NSMutableArray alloc] init];
                     for(NSString* iconName in [self _possibleIconNames])
                     {
-                        UIButton* button = [ICButtonsTableViewCell configuredButtonWithTitle:nil imageNamed:iconName];
-                        
-                        if ([iconName isEqualToString:self.selectedIcon]) {
-                            button.selected = YES;
-                        }
-                        
+                        UIButton* button = [EpisodeListEditorViewController _configuredIconButtonWithName:iconName selectedIcon:self.selectedIcon];
                         [buttons addObject:button];
                     }
-                    
+
                     cell.buttons = buttons;
 
                     cell.buttonTappedAtIndex = ^(UIButton* sender, NSInteger index) {
                         self.selectedIcon = [[self _possibleIconNames] objectAtIndex:index];
                     };
-                    
+
                     return cell;
                 }
                 default:
@@ -565,7 +633,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         case kSectionContinuousPlayback:
         {
             UITableViewCell* cell = [self standardCell];
-            
+
             switch (indexPath.row) {
                 case 0:
                 {
@@ -579,6 +647,15 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
                 default:
                     break;
             }
+            return cell;
+        }
+        case kSectionMainMenu:
+        {
+            UITableViewCell* cell = [self switchCell];
+            cell.textLabel.text = @"Show in Main Menu".ls;
+            UISwitch* control = (UISwitch*)cell.accessoryView;
+            control.on = self.showInMainMenu;
+            [control addTarget:self action:@selector(toggleShowInMainMenu:) forControlEvents:UIControlEventValueChanged];
             return cell;
         }
         default:
@@ -821,5 +898,9 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     self.continuousPlayback = sender.on;
 }
 
+- (void) toggleShowInMainMenu:(UISwitch*)sender
+{
+    self.showInMainMenu = sender.on;
+}
 
 @end

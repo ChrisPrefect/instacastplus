@@ -58,13 +58,22 @@
         }];
         
         [nc addObserver:self name:SubscriptionManagerDidFinishRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
+            ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
             [self.refreshControl endRefreshing];
         }];
         
         [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
             ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
         }];
-        
+
+        [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
+            SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+            if (sm.refreshing) {
+                NSString* feedName = sm.lastRefreshingFeedName;
+                ((ICRefreshControl*)self.refreshControl).refreshText = feedName ? feedName : sm.refreshStatusText;
+            }
+        }];
+
         _list_episodes_observing = YES;
     }
     else if (!observing && _list_episodes_observing)
@@ -75,6 +84,7 @@
         [nc removeHandlerForObserver:self name:SubscriptionManagerDidFinishRefreshingFeedsNotification object:nil];
         
         [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
+        [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
         _list_episodes_observing = NO;
     }
 }
@@ -109,8 +119,8 @@
 {
     [super viewWillAppear:animated];
     
-    // only enable editing on dynamic lists
-    self.navigationItem.rightBarButtonItem.enabled = ([self.list.episodes count] == 0);
+    // edit button is always enabled - it opens the list editor
+    self.navigationItem.rightBarButtonItem.enabled = YES;
     
     [self updateEpisodes];
     [self reloadDataAndPreserveSelection];

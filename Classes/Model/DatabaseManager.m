@@ -338,10 +338,23 @@ NS_INLINE NSString* _DataStoreFile(void) {
     unplayed.uid = @"default.unplayed";
     
     
+    CDEpisodeList* started = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+    started.name = @"Started".ls;
+    started.icon = @"List Partially Played";
+    started.rank = 1;
+    started.unfinished = YES;
+    started.unplayed = NO;
+    started.played = NO;
+    started.orderBy = @"lastPlayed";
+    started.descending = YES;
+    started.groupByPodcast = NO;
+    started.uid = @"default.started";
+
+
     CDEpisodeList* downloaded = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
     downloaded.name = @"Downloaded".ls;
     downloaded.icon = @"List Downloaded";
-    downloaded.rank = 1;
+    downloaded.rank = 2;
     downloaded.downloaded = YES;
     downloaded.notDownloaded = NO;
     downloaded.orderBy = @"pubDate";
@@ -353,7 +366,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     CDEpisodeList* favorites = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
     favorites.name = @"Favorites".ls;
     favorites.icon = @"List Favorites";
-    favorites.rank = 2;
+    favorites.rank = 3;
     favorites.notStarred = NO;
     favorites.orderBy = @"pubDate";
     favorites.descending = YES;
@@ -364,7 +377,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     CDEpisodeList* video = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
     video.name = @"Videos".ls;
     video.icon = @"List Video";
-    video.rank = 3;
+    video.rank = 4;
     video.audio = NO;
     video.orderBy = @"pubDate";
     video.descending = YES;
@@ -549,6 +562,45 @@ NS_INLINE NSString* _DataStoreFile(void) {
 - (void) _migrateDatabase
 {
     [self _migrateOldSmartPlaylists];
+    [self _migrateAddStartedList];
+}
+
+- (void) _migrateAddStartedList
+{
+    // Check if default.started already exists
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    fetchRequest.entity = [NSEntityDescription entityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"uid == %@", @"default.started"];
+    NSArray* results = [self.objectContext executeFetchRequest:fetchRequest error:nil];
+
+    if ([results count] == 0) {
+        CDEpisodeList* started = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+        started.name = @"Started".ls;
+        started.icon = @"List Partially Played";
+        started.rank = 1;
+        started.unfinished = YES;
+        started.unplayed = NO;
+        started.played = NO;
+        started.orderBy = @"lastPlayed";
+        started.descending = YES;
+        started.groupByPodcast = NO;
+        started.uid = @"default.started";
+
+        // Shift existing lists down by 1
+        NSFetchRequest* listsRequest = [[NSFetchRequest alloc] init];
+        listsRequest.entity = [NSEntityDescription entityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+        listsRequest.predicate = [NSPredicate predicateWithFormat:@"uid != %@", @"default.started"];
+        listsRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+        NSArray* existingLists = [self.objectContext executeFetchRequest:listsRequest error:nil];
+
+        for (CDList* list in existingLists) {
+            if (list.rank >= 1) {
+                list.rank = list.rank + 1;
+            }
+        }
+
+        [self save];
+    }
 }
 
 - (void) _deleteUnsubscribedFeeds
