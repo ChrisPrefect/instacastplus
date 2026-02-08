@@ -47,12 +47,37 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong) NSMutableArray<ICBackupEpisode *> *episodes;
 @end
 
+#pragma mark - ICBackupEpisodeList
+
+@interface ICBackupEpisodeList : NSObject
+@property (nonatomic, strong, nullable) NSString *uid;
+@property (nonatomic, strong, nullable) NSString *name;
+@property (nonatomic, strong, nullable) NSString *icon;
+@property (nonatomic) int32_t rank;
+@property (nonatomic) BOOL audio;
+@property (nonatomic) BOOL video;
+@property (nonatomic) BOOL downloaded;
+@property (nonatomic) BOOL downloading;
+@property (nonatomic) BOOL notDownloaded;
+@property (nonatomic) BOOL unplayed;
+@property (nonatomic) BOOL unfinished;
+@property (nonatomic) BOOL played;
+@property (nonatomic) BOOL starred;
+@property (nonatomic) BOOL notStarred;
+@property (nonatomic, strong, nullable) NSString *orderBy;
+@property (nonatomic) BOOL descending;
+@property (nonatomic) BOOL groupByPodcast;
+@property (nonatomic) BOOL continuousPlayback;
+@property (nonatomic, strong, nullable) NSMutableArray<NSString *> *includedFeedURLs;
+@end
+
 #pragma mark - ICBackupSettings
 
 @interface ICBackupSettings : NSObject
 @property (nonatomic, strong) NSMutableDictionary *values;
 @property (nonatomic, strong, nullable) NSString *feedListSortMode;
 @property (nonatomic, strong, nullable) NSMutableArray<NSString *> *manualFeedOrder;
+@property (nonatomic, strong, nullable) NSMutableArray<NSString *> *mainMenuListUIDs;
 @end
 
 #pragma mark - InstacastBackupData
@@ -65,6 +90,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong) NSMutableArray<ICBackupEpisode *> *upNextEpisodes;
 @property (nonatomic, strong, nullable) ICBackupEpisode *nowPlaying;
 @property (nonatomic, strong) NSMutableArray<ICBackupPlaylist *> *playlists;
+@property (nonatomic, strong) NSMutableArray<ICBackupEpisodeList *> *episodeLists;
 @property (nonatomic, strong) ICBackupSettings *settings;
 @end
 

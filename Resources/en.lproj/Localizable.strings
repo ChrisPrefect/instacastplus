@@ -753,6 +753,8 @@
 "Now Playing" = "Now Playing";
 "Nothing playing" = "Nothing playing";
 "%ld playlists" = "%ld playlists";
+"%ld playlists, %ld episode lists" = "%ld playlists, %ld episode lists";
+"%ld episode lists" = "%ld episode lists";
 "No playlists" = "No playlists";
 "App Settings" = "App Settings";
 "Playback, appearance, etc." = "Playback, appearance, etc.";

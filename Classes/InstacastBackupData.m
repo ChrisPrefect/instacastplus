@@ -29,6 +29,9 @@
 }
 @end
 
+@implementation ICBackupEpisodeList
+@end
+
 @implementation ICBackupSettings
 - (instancetype)init {
     if ((self = [super init])) {
@@ -45,6 +48,7 @@
         _bookmarks = [NSMutableArray array];
         _upNextEpisodes = [NSMutableArray array];
         _playlists = [NSMutableArray array];
+        _episodeLists = [NSMutableArray array];
         _settings = [[ICBackupSettings alloc] init];
     }
     return self;

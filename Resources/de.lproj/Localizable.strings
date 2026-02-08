@@ -757,6 +757,8 @@
 "Now Playing" = "Aktuelle Wiedergabe";
 "Nothing playing" = "Keine Wiedergabe";
 "%ld playlists" = "%ld Wiedergabelisten";
+"%ld playlists, %ld episode lists" = "%ld Wiedergabelisten, %ld Episodenlisten";
+"%ld episode lists" = "%ld Episodenlisten";
 "No playlists" = "Keine Wiedergabelisten";
 "App Settings" = "App-Einstellungen";
 "Playback, appearance, etc." = "Wiedergabe, Darstellung, usw.";

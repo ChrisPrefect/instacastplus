@@ -20,6 +20,7 @@
     ICBackupPodcast *_currentPodcast;
     ICBackupEpisode *_currentEpisode;
     ICBackupPlaylist *_currentPlaylist;
+    ICBackupEpisodeList *_currentEpisodeList;
 }
 
 - (instancetype)init {
@@ -110,6 +111,15 @@
         ep.feedURL = attrs[@"feedUrl"];
         [_currentPlaylist.episodes addObject:ep];
     }
+    // <episodeList uid="..." name="..." icon="..." rank="...">
+    else if ([path isEqualToString:@"instacast/episodeLists/episodeList"]) {
+        _currentEpisodeList = [[ICBackupEpisodeList alloc] init];
+        _currentEpisodeList.uid = attrs[@"uid"];
+        _currentEpisodeList.name = attrs[@"name"];
+        _currentEpisodeList.icon = attrs[@"icon"];
+        NSString *rankStr = attrs[@"rank"];
+        if (rankStr) _currentEpisodeList.rank = (int32_t)[rankStr integerValue];
+    }
 }
 
 - (void)parser:(NSXMLParser *)parser foundCharacters:(NSString *)string {
@@ -138,6 +148,31 @@
             _currentEpisode.duration = (int32_t)[text integerValue];
         }
     }
+    // EpisodeList child elements
+    else if ([path hasPrefix:@"instacast/episodeLists/episodeList/"] && _currentEpisodeList) {
+        if ([elementName isEqualToString:@"audio"]) _currentEpisodeList.audio = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"video"]) _currentEpisodeList.video = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"downloaded"]) _currentEpisodeList.downloaded = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"downloading"]) _currentEpisodeList.downloading = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"notDownloaded"]) _currentEpisodeList.notDownloaded = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"unplayed"]) _currentEpisodeList.unplayed = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"unfinished"]) _currentEpisodeList.unfinished = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"played"]) _currentEpisodeList.played = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"starred"]) _currentEpisodeList.starred = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"notStarred"]) _currentEpisodeList.notStarred = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"orderBy"]) _currentEpisodeList.orderBy = text;
+        else if ([elementName isEqualToString:@"descending"]) _currentEpisodeList.descending = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"groupByPodcast"]) _currentEpisodeList.groupByPodcast = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"continuousPlayback"]) _currentEpisodeList.continuousPlayback = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"feedUrl"] && [path isEqualToString:@"instacast/episodeLists/episodeList/includedFeeds/feedUrl"]) {
+            if (text.length > 0) {
+                if (!_currentEpisodeList.includedFeedURLs) {
+                    _currentEpisodeList.includedFeedURLs = [NSMutableArray array];
+                }
+                [_currentEpisodeList.includedFeedURLs addObject:text];
+            }
+        }
+    }
     // Settings child elements (inside podcast/settings)
     else if ([path hasPrefix:@"instacast/podcasts/podcast/settings/"] && _currentPodcast) {
         if (text.length > 0) {
@@ -148,7 +183,7 @@
         }
     }
     // Global settings child elements
-    else if ([path hasPrefix:@"instacast/settings/"] && ![elementName isEqualToString:@"manualFeedOrder"] && ![elementName isEqualToString:@"feedUrl"]) {
+    else if ([path hasPrefix:@"instacast/settings/"] && ![elementName isEqualToString:@"manualFeedOrder"] && ![elementName isEqualToString:@"feedUrl"] && ![elementName isEqualToString:@"mainMenuListUIDs"] && ![elementName isEqualToString:@"uid"]) {
         if (text.length > 0) {
             if ([elementName isEqualToString:@"feedListSortMode"]) {
                 _backupData.settings.feedListSortMode = text;
@@ -164,6 +199,15 @@
                 _backupData.settings.manualFeedOrder = [NSMutableArray array];
             }
             [_backupData.settings.manualFeedOrder addObject:text];
+        }
+    }
+    // uid inside mainMenuListUIDs
+    else if ([path isEqualToString:@"instacast/settings/mainMenuListUIDs/uid"]) {
+        if (text.length > 0) {
+            if (!_backupData.settings.mainMenuListUIDs) {
+                _backupData.settings.mainMenuListUIDs = [NSMutableArray array];
+            }
+            [_backupData.settings.mainMenuListUIDs addObject:text];
         }
     }
 
@@ -187,6 +231,13 @@
             [_backupData.playlists addObject:_currentPlaylist];
         }
         _currentPlaylist = nil;
+    }
+    // Close episodeList
+    else if ([path isEqualToString:@"instacast/episodeLists/episodeList"]) {
+        if (_currentEpisodeList) {
+            [_backupData.episodeLists addObject:_currentEpisodeList];
+        }
+        _currentEpisodeList = nil;
     }
 
     [_elementStack removeLastObject];

@@ -9,6 +9,7 @@
 #import "XPFF.h"
 #import "VDModalInfo.h"
 #import "CDPlaylist.h"
+#import "CDEpisodeList.h"
 #import "InstacastAppDelegate.h"
 #import "InstacastBackupParser.h"
 #import "InstacastBackupImportViewController.h"
@@ -406,6 +407,47 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     }
     if (hasPlaylists) [xml appendString:@"  </playlists>\n"];
 
+    // Episode Lists (default filter lists like Unplayed, Favorites, etc.)
+    BOOL hasEpisodeLists = NO;
+    for (CDList* list in lists) {
+        if ([list isKindOfClass:[CDEpisodeList class]]) {
+            CDEpisodeList* episodeList = (CDEpisodeList*)list;
+            if (!episodeList.uid) continue;
+            if (!hasEpisodeLists) {
+                [xml appendString:@"  <episodeLists>\n"];
+                hasEpisodeLists = YES;
+            }
+            [xml appendFormat:@"    <episodeList uid=\"%@\" name=\"%@\" icon=\"%@\" rank=\"%d\">\n",
+                [self xmlEscape:episodeList.uid],
+                [self xmlEscape:episodeList.name ?: @""],
+                [self xmlEscape:episodeList.icon ?: @""],
+                episodeList.rank];
+            [xml appendFormat:@"      <audio>%@</audio>\n", episodeList.audio ? @"true" : @"false"];
+            [xml appendFormat:@"      <video>%@</video>\n", episodeList.video ? @"true" : @"false"];
+            [xml appendFormat:@"      <downloaded>%@</downloaded>\n", episodeList.downloaded ? @"true" : @"false"];
+            [xml appendFormat:@"      <downloading>%@</downloading>\n", episodeList.downloading ? @"true" : @"false"];
+            [xml appendFormat:@"      <notDownloaded>%@</notDownloaded>\n", episodeList.notDownloaded ? @"true" : @"false"];
+            [xml appendFormat:@"      <unplayed>%@</unplayed>\n", episodeList.unplayed ? @"true" : @"false"];
+            [xml appendFormat:@"      <unfinished>%@</unfinished>\n", episodeList.unfinished ? @"true" : @"false"];
+            [xml appendFormat:@"      <played>%@</played>\n", episodeList.played ? @"true" : @"false"];
+            [xml appendFormat:@"      <starred>%@</starred>\n", episodeList.starred ? @"true" : @"false"];
+            [xml appendFormat:@"      <notStarred>%@</notStarred>\n", episodeList.notStarred ? @"true" : @"false"];
+            if (episodeList.orderBy) [xml appendFormat:@"      <orderBy>%@</orderBy>\n", [self xmlEscape:episodeList.orderBy]];
+            [xml appendFormat:@"      <descending>%@</descending>\n", episodeList.descending ? @"true" : @"false"];
+            [xml appendFormat:@"      <groupByPodcast>%@</groupByPodcast>\n", episodeList.groupByPodcast ? @"true" : @"false"];
+            [xml appendFormat:@"      <continuousPlayback>%@</continuousPlayback>\n", episodeList.continuousPlayback ? @"true" : @"false"];
+            if (episodeList.includedFeeds.count > 0) {
+                [xml appendString:@"      <includedFeeds>\n"];
+                for (CDFeed* feed in episodeList.includedFeeds) {
+                    [xml appendFormat:@"        <feedUrl>%@</feedUrl>\n", [self xmlEscape:[feed.sourceURL absoluteString] ?: @""]];
+                }
+                [xml appendString:@"      </includedFeeds>\n"];
+            }
+            [xml appendString:@"    </episodeList>\n"];
+        }
+    }
+    if (hasEpisodeLists) [xml appendString:@"  </episodeLists>\n"];
+
     // Settings
     NSUserDefaults* defaults = USER_DEFAULTS;
     [xml appendString:@"  <settings>\n"];
@@ -446,6 +488,23 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     NSString *alternateIconName = [[UIApplication sharedApplication] alternateIconName];
     if (alternateIconName) {
         [xml appendFormat:@"    <appIcon>%@</appIcon>\n", [self xmlEscape:alternateIconName]];
+    }
+    // SmartHome
+    if ([defaults objectForKey:SmarthomeMQTTEnabled]) [xml appendFormat:@"    <smarthomeMQTTEnabled>%@</smarthomeMQTTEnabled>\n", [defaults boolForKey:SmarthomeMQTTEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:SmarthomeMQTTHost]) [xml appendFormat:@"    <smarthomeMQTTHost>%@</smarthomeMQTTHost>\n", [self xmlEscape:[defaults stringForKey:SmarthomeMQTTHost]]];
+    if ([defaults objectForKey:SmarthomeMQTTPort]) [xml appendFormat:@"    <smarthomeMQTTPort>%ld</smarthomeMQTTPort>\n", (long)[defaults integerForKey:SmarthomeMQTTPort]];
+    if ([defaults objectForKey:SmarthomeMQTTUsername]) [xml appendFormat:@"    <smarthomeMQTTUsername>%@</smarthomeMQTTUsername>\n", [self xmlEscape:[defaults stringForKey:SmarthomeMQTTUsername]]];
+    if ([defaults objectForKey:SmarthomeMQTTPassword]) [xml appendFormat:@"    <smarthomeMQTTPassword>%@</smarthomeMQTTPassword>\n", [self xmlEscape:[defaults stringForKey:SmarthomeMQTTPassword]]];
+    if ([defaults objectForKey:SmarthomeAllowControl]) [xml appendFormat:@"    <smarthomeAllowControl>%@</smarthomeAllowControl>\n", [defaults boolForKey:SmarthomeAllowControl] ? @"true" : @"false"];
+    if ([defaults objectForKey:SmarthomeDeviceName]) [xml appendFormat:@"    <smarthomeDeviceName>%@</smarthomeDeviceName>\n", [self xmlEscape:[defaults stringForKey:SmarthomeDeviceName]]];
+    // MainMenuListUIDs
+    NSArray* mainMenuUIDs = [defaults objectForKey:@"MainMenuListUIDs"];
+    if (mainMenuUIDs.count > 0) {
+        [xml appendString:@"    <mainMenuListUIDs>\n"];
+        for (NSString* uid in mainMenuUIDs) {
+            [xml appendFormat:@"      <uid>%@</uid>\n", [self xmlEscape:uid]];
+        }
+        [xml appendString:@"    </mainMenuListUIDs>\n"];
     }
     // Sort order
     if ([defaults objectForKey:FeedListSortMode]) [xml appendFormat:@"    <feedListSortMode>%@</feedListSortMode>\n", [self xmlEscape:[defaults stringForKey:FeedListSortMode]]];

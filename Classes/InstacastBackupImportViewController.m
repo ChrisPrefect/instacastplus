@@ -41,6 +41,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 @property (nonatomic) NSInteger newBookmarkCount;
 @property (nonatomic) NSInteger upNextCount;
 @property (nonatomic) NSInteger playlistCount;
+@property (nonatomic) NSInteger episodeListCount;
 @property (nonatomic, strong) NSString *nowPlayingTitle;
 @property (nonatomic, strong) NSString *sortModeDescription;
 @end
@@ -106,7 +107,17 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
         if (!feedURL) continue;
         CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
-        if (!feed) continue;
+
+        if (!feed) {
+            // New podcast: count all episodes with state as "will be updated"
+            // (they'll be available after subscribing in Phase 1)
+            for (ICBackupEpisode *backupEp in podcast.episodes) {
+                if (backupEp.played || backupEp.starred || backupEp.archived || backupEp.position > 0) {
+                    self.updatedEpisodeCount++;
+                }
+            }
+            continue;
+        }
 
         for (ICBackupEpisode *backupEp in podcast.episodes) {
             if (!backupEp.guid) continue;
@@ -189,6 +200,9 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     // Playlists
     self.playlistCount = backup.playlists.count;
 
+    // Episode Lists
+    self.episodeListCount = backup.episodeLists.count;
+
     // Sort order
     if (backup.settings.manualFeedOrder.count > 0) {
         self.sortModeDescription = [NSString stringWithFormat:@"Manual order with %ld podcasts".ls,
@@ -208,7 +222,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     if (self.totalBookmarkCount > 0) [self.selectedCategories addObject:@(kRowBookmarks)];
     if (self.upNextCount > 0) [self.selectedCategories addObject:@(kRowUpNext)];
     if (self.nowPlayingTitle) [self.selectedCategories addObject:@(kRowNowPlaying)];
-    if (self.playlistCount > 0) [self.selectedCategories addObject:@(kRowPlaylists)];
+    if (self.playlistCount + self.episodeListCount > 0) [self.selectedCategories addObject:@(kRowPlaylists)];
     if (self.backupData.settings.values.count > 0) [self.selectedCategories addObject:@(kRowAppSettings)];
     if (self.sortModeDescription) [self.selectedCategories addObject:@(kRowSortOrder)];
 }
@@ -221,7 +235,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         case kRowBookmarks:     return self.totalBookmarkCount > 0;
         case kRowUpNext:        return self.upNextCount > 0;
         case kRowNowPlaying:    return self.nowPlayingTitle != nil;
-        case kRowPlaylists:     return self.playlistCount > 0;
+        case kRowPlaylists:     return (self.playlistCount + self.episodeListCount) > 0;
         case kRowAppSettings:   return self.backupData.settings.values.count > 0;
         case kRowSortOrder:     return self.sortModeDescription != nil;
         default: return NO;
@@ -374,9 +388,16 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 
         case kRowPlaylists:
             cell.textLabel.text = @"Playlists".ls;
-            cell.detailTextLabel.text = self.playlistCount > 0
-                ? [NSString stringWithFormat:@"%ld playlists".ls, (long)self.playlistCount]
-                : @"No playlists".ls;
+            if (self.playlistCount > 0 && self.episodeListCount > 0) {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld playlists, %ld episode lists".ls,
+                                             (long)self.playlistCount, (long)self.episodeListCount];
+            } else if (self.playlistCount > 0) {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld playlists".ls, (long)self.playlistCount];
+            } else if (self.episodeListCount > 0) {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%ld episode lists".ls, (long)self.episodeListCount];
+            } else {
+                cell.detailTextLabel.text = @"No playlists".ls;
+            }
             break;
 
         case kRowAppSettings:

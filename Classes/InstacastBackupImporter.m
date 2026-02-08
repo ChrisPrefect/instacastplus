@@ -7,6 +7,7 @@
 #import "InstacastBackupData.h"
 #import "SubscriptionManager.h"
 #import "CDPlaylist.h"
+#import "CDEpisodeList.h"
 #import "CDBookmark.h"
 #import "AudioSession.h"
 #import "AudioSession+UpNextPlaylist.h"
@@ -89,10 +90,11 @@
                 currentPhase++;
             }
 
-            // Phase 7: Playlists
+            // Phase 7: Playlists & Episode Lists
             if (categories & ICBackupImportPlaylists) {
                 reportProgress(@"Importing playlists…".ls);
                 totalImported += [self importPlaylistsFromBackup:backup];
+                totalImported += [self importEpisodeListsFromBackup:backup];
                 currentPhase++;
             }
 
@@ -403,6 +405,95 @@
     return count;
 }
 
+#pragma mark - Phase 7b: Episode Lists
+
++ (NSInteger)importEpisodeListsFromBackup:(InstacastBackupData *)backup {
+    NSInteger count = 0;
+
+    for (ICBackupEpisodeList *backupList in backup.episodeLists) {
+        if (!backupList.uid) continue;
+
+        // Find existing list by UID
+        CDEpisodeList *existingList = nil;
+        for (CDList *list in DMANAGER.lists) {
+            if ([list isKindOfClass:[CDEpisodeList class]] && [list.uid isEqualToString:backupList.uid]) {
+                existingList = (CDEpisodeList *)list;
+                break;
+            }
+        }
+
+        if (existingList) {
+            // Update settings of existing list
+            existingList.audio = backupList.audio;
+            existingList.video = backupList.video;
+            existingList.downloaded = backupList.downloaded;
+            existingList.downloading = backupList.downloading;
+            existingList.notDownloaded = backupList.notDownloaded;
+            existingList.unplayed = backupList.unplayed;
+            existingList.unfinished = backupList.unfinished;
+            existingList.played = backupList.played;
+            existingList.starred = backupList.starred;
+            existingList.notStarred = backupList.notStarred;
+            if (backupList.orderBy) existingList.orderBy = backupList.orderBy;
+            existingList.descending = backupList.descending;
+            existingList.groupByPodcast = backupList.groupByPodcast;
+            existingList.continuousPlayback = backupList.continuousPlayback;
+
+            // Update included feeds
+            if (backupList.includedFeedURLs.count > 0) {
+                NSMutableSet *feeds = [NSMutableSet set];
+                for (NSString *urlStr in backupList.includedFeedURLs) {
+                    NSURL *url = [NSURL URLWithString:urlStr];
+                    CDFeed *feed = url ? [DMANAGER feedWithSourceURL:url] : nil;
+                    if (feed) [feeds addObject:feed];
+                }
+                existingList.includedFeeds = feeds;
+            }
+
+            [existingList invalidateCaches];
+            count++;
+        } else {
+            // Create new episode list
+            CDEpisodeList *newList = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList"
+                                                                  inManagedObjectContext:DMANAGER.objectContext];
+            newList.uid = backupList.uid;
+            newList.name = backupList.name;
+            newList.icon = backupList.icon;
+            newList.rank = backupList.rank;
+            newList.audio = backupList.audio;
+            newList.video = backupList.video;
+            newList.downloaded = backupList.downloaded;
+            newList.downloading = backupList.downloading;
+            newList.notDownloaded = backupList.notDownloaded;
+            newList.unplayed = backupList.unplayed;
+            newList.unfinished = backupList.unfinished;
+            newList.played = backupList.played;
+            newList.starred = backupList.starred;
+            newList.notStarred = backupList.notStarred;
+            newList.orderBy = backupList.orderBy;
+            newList.descending = backupList.descending;
+            newList.groupByPodcast = backupList.groupByPodcast;
+            newList.continuousPlayback = backupList.continuousPlayback;
+
+            if (backupList.includedFeedURLs.count > 0) {
+                NSMutableSet *feeds = [NSMutableSet set];
+                for (NSString *urlStr in backupList.includedFeedURLs) {
+                    NSURL *url = [NSURL URLWithString:urlStr];
+                    CDFeed *feed = url ? [DMANAGER feedWithSourceURL:url] : nil;
+                    if (feed) [feeds addObject:feed];
+                }
+                newList.includedFeeds = feeds;
+            }
+
+            [DMANAGER addList:newList];
+            count++;
+        }
+    }
+
+    [DMANAGER save];
+    return count;
+}
+
 #pragma mark - Phase 8: App Settings
 
 + (NSInteger)importSettingsFromBackup:(InstacastBackupData *)backup {
@@ -434,6 +525,13 @@
         @"themeColorHex":           InterfaceThemeColorHexCode,
         @"playerPerPodcastColor":   PlayerColorPerPodcastActive,
         @"playerColorHex":          PlayerThemeColorHexCode,
+        @"smarthomeMQTTEnabled":    SmarthomeMQTTEnabled,
+        @"smarthomeMQTTHost":       SmarthomeMQTTHost,
+        @"smarthomeMQTTPort":       SmarthomeMQTTPort,
+        @"smarthomeMQTTUsername":   SmarthomeMQTTUsername,
+        @"smarthomeMQTTPassword":   SmarthomeMQTTPassword,
+        @"smarthomeAllowControl":   SmarthomeAllowControl,
+        @"smarthomeDeviceName":     SmarthomeDeviceName,
     };
 
     NSSet *boolKeys = [NSSet setWithArray:@[
@@ -442,9 +540,11 @@
         @"enableCachingOver3G", @"enableRefreshingOver3G", @"enableStreamingOver3G",
         @"uiSoundEnabled", @"showBadge", @"dontDeleteUpNext", @"showUnavailable",
         @"themeDefaultActive", @"playerPerPodcastColor",
+        @"smarthomeMQTTEnabled", @"smarthomeAllowControl",
     ]];
 
-    NSSet *stringKeys = [NSSet setWithArray:@[@"themeColorHex", @"playerColorHex"]];
+    NSSet *stringKeys = [NSSet setWithArray:@[@"themeColorHex", @"playerColorHex",
+        @"smarthomeMQTTHost", @"smarthomeMQTTUsername", @"smarthomeMQTTPassword", @"smarthomeDeviceName"]];
 
     NSInteger count = 0;
     NSUserDefaults *defaults = USER_DEFAULTS;
@@ -463,6 +563,13 @@
         } else {
             [defaults setInteger:[value integerValue] forKey:defaultsKey];
         }
+        count++;
+    }
+
+    // MainMenuListUIDs
+    if (backup.settings.mainMenuListUIDs.count > 0) {
+        [defaults setObject:backup.settings.mainMenuListUIDs forKey:@"MainMenuListUIDs"];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
         count++;
     }
 
