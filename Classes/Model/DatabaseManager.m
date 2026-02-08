@@ -256,7 +256,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
         
         
 
-        [NSFetchedResultsController deleteCacheWithName:@"_databasemanager_feeds_"];
         _feedsController = [[NSFetchedResultsController alloc] initWithFetchRequest:feedsRequest
                                                                managedObjectContext:self.objectContext
                                                                  sectionNameKeyPath:nil
@@ -264,7 +263,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
         _feedsController.delegate = self;
         [_feedsController performFetch:nil];
 
-        [NSFetchedResultsController deleteCacheWithName:@"_databasemanager_lists_"];
         _listsController = [[NSFetchedResultsController alloc] initWithFetchRequest:listsRequest
                                                                managedObjectContext:self.objectContext
                                                                  sectionNameKeyPath:nil
@@ -272,13 +270,11 @@ NS_INLINE NSString* _DataStoreFile(void) {
         _listsController.delegate = self;
         [_listsController performFetch:nil];
 
-        [NSFetchedResultsController deleteCacheWithName:@"_databasemanager_bookmarks_"];
         _bookmarksController = [[NSFetchedResultsController alloc] initWithFetchRequest:bookmarksRequest
                                                                managedObjectContext:self.objectContext
                                                                  sectionNameKeyPath:nil
                                                                           cacheName:@"_databasemanager_bookmarks_"];
         _bookmarksController.delegate = self;
-        [_bookmarksController performFetch:nil];
 #else
         _feedsController = [[NSArrayController alloc] initWithContent:nil];
         [_feedsController setManagedObjectContext:self.objectContext];
