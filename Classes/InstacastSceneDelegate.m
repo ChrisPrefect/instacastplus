@@ -42,6 +42,8 @@
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MediaPlayer.h>
+#import "PlaybackManager.h"
+#import "ImageCacheManager.h"
 
 #define kDonate1ProductID @"donate_to_developer_1"
 #define kDonate5ProductID @"donate_to_developer_5"
@@ -69,10 +71,9 @@
         self.window.backgroundColor = ICBackgroundColor;
 
 #if TARGET_OS_MACCATALYST
-        // Set default window size to iPhone dimensions for Mac Catalyst
-        CGSize iPhoneSize = CGSizeMake(390, 844); // iPhone 14 dimensions
-        windowScene.sizeRestrictions.minimumSize = iPhoneSize;
-        windowScene.sizeRestrictions.maximumSize = iPhoneSize;
+        CGSize minSize = CGSizeMake(402, 874); // iPhone 16/17 Pro dimensions
+        windowScene.sizeRestrictions.minimumSize = minSize;
+        // maximumSize nicht setzen → frei vergrösserbar
 #endif
 
         if ([DatabaseManager dataStoreNeedsMigration]) {
@@ -396,20 +397,158 @@
 }
 
 - (void)templateApplicationScene:(CPTemplateApplicationScene *)templateApplicationScene  didConnectInterfaceController:(CPInterfaceController *)interfaceController {
-    
+
     self.interfaceController = interfaceController;
-    if (@available(iOS 14.0, *)) {
-        CPNowPlayingTemplate *nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
-        [interfaceController setRootTemplate:nowPlayingTemplate animated:YES];
-    } else {
-        // Fallback on earlier versions
-    }
+
+    CPNowPlayingTemplate *nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
+    CPListTemplate *podcastList = [self carPlayPodcastListTemplate];
+
+    nowPlayingTemplate.tabTitle = @"Now Playing".ls;
+    nowPlayingTemplate.tabImage = [UIImage systemImageNamed:@"play.circle"];
+    podcastList.tabTitle = @"Podcasts".ls;
+    podcastList.tabImage = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
+
+    CPTabBarTemplate *tabBar = [[CPTabBarTemplate alloc] initWithTemplates:@[podcastList, nowPlayingTemplate]];
+    [interfaceController setRootTemplate:tabBar animated:YES completion:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(carPlayFeedsDidUpdate:)
+                                                 name:DatabaseManagerDidUpdateObservedFeedNotification
+                                               object:nil];
 }
 
-
-
 - (void)templateApplicationScene:(CPTemplateApplicationScene *)templateApplicationScene didDisconnectInterfaceController:(CPInterfaceController *)interfaceController {
+    [[NSNotificationCenter defaultCenter] removeObserver:self name:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
     self.interfaceController = nil;
+}
+
+#pragma mark - CarPlay Helpers
+
+- (CPListTemplate*)carPlayPodcastListTemplate {
+    NSArray *feeds = DMANAGER.feeds;
+    NSMutableArray *items = [NSMutableArray arrayWithCapacity:feeds.count];
+
+    for (CDFeed *feed in feeds) {
+        CPListItem *item = [self carPlayListItemForFeed:feed];
+        [items addObject:item];
+    }
+
+    CPListSection *section = [[CPListSection alloc] initWithItems:items];
+    CPListTemplate *tmpl = [[CPListTemplate alloc] initWithTitle:@"Podcasts".ls sections:@[section]];
+    tmpl.delegate = (id<CPListTemplateDelegate>)self;
+    return tmpl;
+}
+
+- (void)carPlayShowEpisodesForFeed:(CDFeed*)feed {
+    NSSortDescriptor *sort = [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO];
+    NSArray *allEpisodes = [feed.episodes sortedArrayUsingDescriptors:@[sort]];
+
+    // Limit to 50 episodes for CarPlay performance
+    NSUInteger limit = MIN(allEpisodes.count, 50);
+    NSArray *episodes = [allEpisodes subarrayWithRange:NSMakeRange(0, limit)];
+
+    NSMutableArray *items = [NSMutableArray arrayWithCapacity:episodes.count];
+    for (CDEpisode *episode in episodes) {
+        CPListItem *item = [self carPlayListItemForEpisode:episode];
+        [items addObject:item];
+    }
+
+    CPListSection *section = [[CPListSection alloc] initWithItems:items];
+    CPListTemplate *tmpl = [[CPListTemplate alloc] initWithTitle:feed.title sections:@[section]];
+    tmpl.delegate = (id<CPListTemplateDelegate>)self;
+    [self.interfaceController pushTemplate:tmpl animated:YES completion:nil];
+}
+
+- (CPListItem*)carPlayListItemForFeed:(CDFeed*)feed {
+    NSString *detail = [NSString stringWithFormat:@"%ld %@", (long)feed.episodesCount, (feed.episodesCount == 1 ? @"Episode".ls : @"Episodes".ls)];
+    CPListItem *item = [[CPListItem alloc] initWithText:feed.title detailText:detail];
+    item.userInfo = feed;
+    item.handler = ^(id<CPSelectableListItem> _Nonnull listItem, dispatch_block_t _Nonnull completionHandler) {
+        CDFeed *selectedFeed = ((CPListItem*)listItem).userInfo;
+        [self carPlayShowEpisodesForFeed:selectedFeed];
+        completionHandler();
+    };
+
+    // Load artwork asynchronously
+    if (feed.imageURL) {
+        [ImageCacheManager loadImageForURL:feed.imageURL size:80 grayscale:NO completion:^(UIImage *image, NSError *error) {
+            if (image) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [item setImage:image];
+                });
+            }
+        }];
+    }
+
+    return item;
+}
+
+- (CPListItem*)carPlayListItemForEpisode:(CDEpisode*)episode {
+    NSString *detail = nil;
+    if (episode.duration > 0) {
+        detail = [self carPlayFormattedDuration:episode.duration];
+    }
+    if (episode.pubDate) {
+        NSDateFormatter *df = [[NSDateFormatter alloc] init];
+        df.dateStyle = NSDateFormatterShortStyle;
+        df.timeStyle = NSDateFormatterNoStyle;
+        NSString *dateStr = [df stringFromDate:episode.pubDate];
+        detail = detail ? [NSString stringWithFormat:@"%@ - %@", dateStr, detail] : dateStr;
+    }
+
+    CPListItem *item = [[CPListItem alloc] initWithText:episode.title detailText:detail];
+    item.userInfo = episode;
+    item.handler = ^(id<CPSelectableListItem> _Nonnull listItem, dispatch_block_t _Nonnull completionHandler) {
+        CDEpisode *selectedEpisode = ((CPListItem*)listItem).userInfo;
+        NSTimeInterval startTime = (selectedEpisode.position > 0) ? selectedEpisode.position : 0;
+        [[PlaybackManager playbackManager] openWithEpisode:selectedEpisode at:startTime autostart:YES];
+        completionHandler();
+    };
+
+    // Load artwork asynchronously
+    NSURL *artURL = episode.imageURL ?: episode.feed.imageURL;
+    if (artURL) {
+        [ImageCacheManager loadImageForURL:artURL size:80 grayscale:NO completion:^(UIImage *image, NSError *error) {
+            if (image) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [item setImage:image];
+                });
+            }
+        }];
+    }
+
+    return item;
+}
+
+- (NSString*)carPlayFormattedDuration:(int32_t)seconds {
+    int hours = seconds / 3600;
+    int minutes = (seconds % 3600) / 60;
+    if (hours > 0) {
+        return [NSString stringWithFormat:@"%dh %02dm", hours, minutes];
+    }
+    return [NSString stringWithFormat:@"%dm", minutes];
+}
+
+- (void)carPlayFeedsDidUpdate:(NSNotification*)notification {
+    if (!self.interfaceController) return;
+
+    // Update the podcast list in the tab bar
+    CPTemplate *rootTemplate = self.interfaceController.rootTemplate;
+    if ([rootTemplate isKindOfClass:[CPTabBarTemplate class]]) {
+        CPTabBarTemplate *tabBar = (CPTabBarTemplate*)rootTemplate;
+        for (CPTemplate *tmpl in tabBar.templates) {
+            if ([tmpl isKindOfClass:[CPListTemplate class]]) {
+                CPListTemplate *list = (CPListTemplate*)tmpl;
+                if ([list.title isEqualToString:@"Podcasts".ls]) {
+                    CPListTemplate *newList = [self carPlayPodcastListTemplate];
+                    newList.tabTitle = list.tabTitle;
+                    newList.tabImage = list.tabImage;
+                    [tabBar updateTemplates:@[newList, tabBar.templates.lastObject]];
+                    break;
+                }
+            }
+        }
+    }
 }
 
 - (void)showDonatePopupAfterDelay:(NSTimeInterval)delay {
@@ -423,14 +562,30 @@
     }
 }
 
+- (NSString*)formattedPriceForProduct:(SKProduct*)product {
+    NSNumberFormatter *formatter = [[NSNumberFormatter alloc] init];
+    formatter.numberStyle = NSNumberFormatterCurrencyStyle;
+    formatter.locale = product.priceLocale;
+    return [formatter stringFromNumber:product.price];
+}
+
 - (void)showPopup {
     UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
     UIViewController *rootVC = keyWindow.rootViewController;
-    
+
+    SKProduct *p1 = validProducts[@"product_first"];
+    SKProduct *p2 = validProducts[@"product_second"];
+    SKProduct *p3 = validProducts[@"product_third"];
+    SKProduct *p4 = validProducts[@"product_fourth"];
+    NSString *title1 = p1 ? [self formattedPriceForProduct:p1] : @"$1";
+    NSString *title2 = p2 ? [self formattedPriceForProduct:p2] : @"$5";
+    NSString *title3 = p3 ? [self formattedPriceForProduct:p3] : @"$15";
+    NSString *title4 = p4 ? [self formattedPriceForProduct:p4] : @"$20";
+
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Donate for further development".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    UIAlertAction* firstAction = [UIAlertAction actionWithTitle:@"$1".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* firstAction = [UIAlertAction actionWithTitle:title1 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
@@ -444,8 +599,8 @@
         } afterDelay:0.01];
     }];
     [alert addAction:firstAction];
-    
-    UIAlertAction* secondAction = [UIAlertAction actionWithTitle:@"$5".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* secondAction = [UIAlertAction actionWithTitle:title2 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
@@ -459,15 +614,14 @@
         } afterDelay:0.01];
     }];
     [alert addAction:secondAction];
-    
-    UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:@"$15".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:title3 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
         [self perform:^(id sender) {
-          
             if([validProducts valueForKey:@"product_third"] != nil)
             {
                 [self purchaseMyProduct:[validProducts valueForKey:@"product_third"]];
@@ -475,8 +629,8 @@
         } afterDelay:0.01];
     }];
     [alert addAction:thirdAction];
-    
-    UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:@"$20".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:title4 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];

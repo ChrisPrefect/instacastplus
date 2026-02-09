@@ -433,12 +433,28 @@ enum {
 }
 
 
+- (NSString*)formattedPriceForProduct:(SKProduct*)product {
+    NSNumberFormatter *formatter = [[NSNumberFormatter alloc] init];
+    formatter.numberStyle = NSNumberFormatterCurrencyStyle;
+    formatter.locale = product.priceLocale;
+    return [formatter stringFromNumber:product.price];
+}
+
 - (void) donateToDeveloper:(id)sender
 {
+    SKProduct *p1 = validProducts[@"product_first"];
+    SKProduct *p2 = validProducts[@"product_second"];
+    SKProduct *p3 = validProducts[@"product_third"];
+    SKProduct *p4 = validProducts[@"product_fourth"];
+    NSString *title1 = p1 ? [self formattedPriceForProduct:p1] : @"$1";
+    NSString *title2 = p2 ? [self formattedPriceForProduct:p2] : @"$5";
+    NSString *title3 = p3 ? [self formattedPriceForProduct:p3] : @"$15";
+    NSString *title4 = p4 ? [self formattedPriceForProduct:p4] : @"$20";
+
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Donate for further development".ls message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    UIAlertAction* firstAction = [UIAlertAction actionWithTitle:@"$1".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* firstAction = [UIAlertAction actionWithTitle:title1 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_first"] != nil)
@@ -449,8 +465,8 @@ enum {
         self.alertController = nil;
     }];
     [alert addAction:firstAction];
-    
-    UIAlertAction* secondAction = [UIAlertAction actionWithTitle:@"$5".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* secondAction = [UIAlertAction actionWithTitle:title2 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_second"] != nil)
@@ -461,8 +477,8 @@ enum {
         self.alertController = nil;
     }];
     [alert addAction:secondAction];
-    
-    UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:@"$15".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:title3 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_third"] != nil)
@@ -473,8 +489,8 @@ enum {
         self.alertController = nil;
     }];
     [alert addAction:thirdAction];
-    
-    UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:@"$20".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+
+    UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:title4 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         [self perform:^(id sender) {
             if([validProducts valueForKey:@"product_fourth"] != nil)

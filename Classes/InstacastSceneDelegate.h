@@ -12,6 +12,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 @class MainViewController_4;
+@class CDFeed;
 
 @interface InstacastSceneDelegate : UIResponder <UIWindowSceneDelegate, CPTemplateApplicationSceneDelegate, SKProductsRequestDelegate,SKPaymentTransactionObserver>
 {
