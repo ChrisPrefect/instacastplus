@@ -192,6 +192,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 {
 	if ((self = [super init]))
 	{
+        CFAbsoluteTime dbT0 = CFAbsoluteTimeGetCurrent();
         _databaseURL = [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:_DataStoreFile()]];
         DebugLog(@"%@", _databaseURL);
 
@@ -232,6 +233,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 
         // create initial data when started first
+        CFAbsoluteTime dbT1 = CFAbsoluteTimeGetCurrent();
         if (![[NSFileManager defaultManager] fileExistsAtPath:[_databaseURL path]]) {
             [self _createDatabase];
         }
@@ -239,6 +241,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
             [self _migrateDatabase];
             [self _deleteUnsubscribedFeeds];
         }
+        NSLog(@"⏱ DB migrate+cleanup: %.3fs", CFAbsoluteTimeGetCurrent() - dbT1);
 
 #if TARGET_OS_IPHONE
         NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
@@ -275,6 +278,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                                  sectionNameKeyPath:nil
                                                                           cacheName:@"_databasemanager_bookmarks_"];
         _bookmarksController.delegate = self;
+        NSLog(@"⏱ DB fetchedResultsControllers: %.3fs", CFAbsoluteTimeGetCurrent() - dbT1);
 #else
         _feedsController = [[NSArrayController alloc] initWithContent:nil];
         [_feedsController setManagedObjectContext:self.objectContext];
@@ -314,6 +318,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                  selector:@selector(managedObjectContextObjectsDidChangeNotification:)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:self.objectContext];
+        NSLog(@"⏱ DatabaseManager.init TOTAL: %.3fs", CFAbsoluteTimeGetCurrent() - dbT0);
 	}
 //    [self checkingSaveCloudKit];
 //    [self checkFetchCloudKit];
@@ -1611,6 +1616,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
         return _persistentContainer;
     }
 
+    CFAbsoluteTime pcT0 = CFAbsoluteTimeGetCurrent();
     _persistentContainer = [[NSPersistentContainer alloc] initWithName:_ModelFile()];
 
     NSURL *storeURL = self.databaseURL;
@@ -1628,7 +1634,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
             abort();
         }
         else {
-            DebugLog(@"persistent store loaded");
+            NSLog(@"⏱ persistent store loaded: %.3fs", CFAbsoluteTimeGetCurrent() - pcT0);
         }
     }];
 

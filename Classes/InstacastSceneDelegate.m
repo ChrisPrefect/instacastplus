@@ -65,6 +65,8 @@
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
 
+    CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
+
     if ([scene isKindOfClass:[UIWindowScene class]]) {
         UIWindowScene *windowScene = (UIWindowScene *)scene;
         self.window = [[UIWindow alloc] initWithWindowScene:windowScene];
@@ -84,18 +86,29 @@
         }
         else
         {
+            CFAbsoluteTime t1 = CFAbsoluteTimeGetCurrent();
             MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
+            NSLog(@"⏱ MainViewController_4 create: %.3fs", CFAbsoluteTimeGetCurrent() - t1);
+
             [UIManager sharedManager].mainViewController = mainViewController;
             self.window.rootViewController = mainViewController;
             ((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window = self.window;
+
+            CFAbsoluteTime t2 = CFAbsoluteTimeGetCurrent();
             [((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window makeKeyAndVisible];
+            NSLog(@"⏱ makeKeyAndVisible: %.3fs", CFAbsoluteTimeGetCurrent() - t2);
 
             // Re-apply appearance now that window exists
+            CFAbsoluteTime t3 = CFAbsoluteTimeGetCurrent();
             [[ICAppearanceManager sharedManager] updateAppearance];
+            NSLog(@"⏱ updateAppearance: %.3fs", CFAbsoluteTimeGetCurrent() - t3);
         }
     }
 
+    CFAbsoluteTime t4 = CFAbsoluteTimeGetCurrent();
     [self fetchAvailableProducts];
+    NSLog(@"⏱ fetchAvailableProducts: %.3fs", CFAbsoluteTimeGetCurrent() - t4);
+    NSLog(@"⏱ TOTAL scene setup: %.3fs", CFAbsoluteTimeGetCurrent() - t0);
 //    if ([scene isKindOfClass:[CPTemplateApplicationScene class]]) {
 //        CPTemplateApplicationScene *carPlayScene = (CPTemplateApplicationScene *)scene;
 //        carPlayScene.delegate = self;
@@ -357,11 +370,15 @@
 
 
 - (void)sceneWillEnterForeground:(UIScene *)scene {
+    CFAbsoluteTime fgT0 = CFAbsoluteTimeGetCurrent();
     if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
+        CFAbsoluteTime fgT1 = CFAbsoluteTimeGetCurrent();
         [[ICAppearanceManager sharedManager] updateAppearance];
+        NSLog(@"⏱ foreground updateAppearance: %.3fs", CFAbsoluteTimeGetCurrent() - fgT1);
     }
     [self _updateAppContentAfterBecomingActive];
     App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+    NSLog(@"⏱ sceneWillEnterForeground TOTAL: %.3fs", CFAbsoluteTimeGetCurrent() - fgT0);
 }
 
 - (void) _updateAppContentAfterBecomingActive

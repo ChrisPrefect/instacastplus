@@ -81,16 +81,18 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 {
     if (_appearance != appearance) {
         _appearance = appearance;
-        
+
+        CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
+
         [[UINavigationBar appearance] setTitleTextAttributes:@{ NSForegroundColorAttributeName : appearance.textColor }];
-        
+
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefault];
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 94) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefaultPrompt];
         [[UINavigationBar appearance] setShadowImage:[[UIImage alloc] init]];
-        
+
         [[UIToolbar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 44) appearance:appearance topToBottom:NO] forToolbarPosition:UIBarPositionAny barMetrics:UIBarMetricsDefault];
         [[UIToolbar appearance] setShadowImage:[[UIImage alloc] init] forToolbarPosition:UIBarPositionAny];
-    
+
         [[UIScrollView appearance] setIndicatorStyle:appearance.scrollIndicatorStyle];
 
         [[UITabBar appearance] setShadowImage:[[UIImage alloc] init]];
@@ -102,10 +104,13 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         [[UISwitch appearance] setTintColor:ICTintColor];
         [[UISwitch appearance] setOnTintColor:ICTintColor];
 
+        NSLog(@"[PERF] setAppearance proxy setup: %.3fs", CFAbsoluteTimeGetCurrent() - t0);
+
         UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
         rootWindow.tintColor = ICTintColor;
 
         // Update existing navigation bars directly (appearance proxy only affects new instances)
+        CFAbsoluteTime tNav0 = CFAbsoluteTimeGetCurrent();
         UIImage* navBarImage = [self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES];
         UINavigationBarAppearance* navAppearance = [[UINavigationBarAppearance alloc] init];
         [navAppearance configureWithOpaqueBackground];
@@ -114,31 +119,39 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         navAppearance.shadowColor = nil;
         navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
         [self _applyNavigationBarAppearance:navAppearance toViewController:rootWindow.rootViewController];
+        NSLog(@"[PERF] setAppearance applyNavBarAppearance: %.3fs", CFAbsoluteTimeGetCurrent() - tNav0);
 
+        CFAbsoluteTime tSubview0 = CFAbsoluteTimeGetCurrent();
         UIView* subview = [rootWindow.subviews lastObject];
         [subview removeFromSuperview];
         [rootWindow addSubview:subview];
+        NSLog(@"[PERF] setAppearance remove/add subview: %.3fs", CFAbsoluteTimeGetCurrent() - tSubview0);
 
         // workaround a bug in iOS where presented view controllers don't get appearance methods
 
+        CFAbsoluteTime tPresented0 = CFAbsoluteTimeGetCurrent();
         UIViewController* presentedViewController = rootWindow.rootViewController.presentedViewController;
-//        
+//
 //        // xxx: iPad does not update view controller behind a form sheet
 //        if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
 //            presentedViewController = rootWindow.rootViewController;
 //        }
-        
+
         do {
             [presentedViewController beginAppearanceTransition:NO animated:NO];
             [presentedViewController endAppearanceTransition];
-        
+
             [presentedViewController beginAppearanceTransition:YES animated:NO];
             [presentedViewController endAppearanceTransition];
-            
+
             presentedViewController = presentedViewController.presentedViewController;
         } while (presentedViewController);
-        
+        NSLog(@"[PERF] setAppearance presentedVC transitions: %.3fs", CFAbsoluteTimeGetCurrent() - tPresented0);
+
+        CFAbsoluteTime tNotify0 = CFAbsoluteTimeGetCurrent();
         [[NSNotificationCenter defaultCenter] postNotificationName:ICAppearanceManagerDidUpdateAppearanceNotification object:self];
+        NSLog(@"[PERF] setAppearance notification: %.3fs", CFAbsoluteTimeGetCurrent() - tNotify0);
+        NSLog(@"[PERF] setAppearance TOTAL: %.3fs", CFAbsoluteTimeGetCurrent() - t0);
     }
 }
 
@@ -193,6 +206,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (void) updateAppearance
 {
+    CFAbsoluteTime t0 = CFAbsoluteTimeGetCurrent();
     UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
 
     // Determine the correct appearance based on mode
@@ -224,15 +238,19 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
                 rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
                 break;
         }
-        // Force layout pass to apply trait collection changes
-        [rootWindow layoutIfNeeded];
+        // Note: layoutIfNeeded removed — was forcing a 1s synchronous layout pass.
+        // overrideUserInterfaceStyle propagates naturally on the next layout cycle.
+        // The appearance decision (shouldUseDarkMode) is already determined independently.
     }
 
+    CFAbsoluteTime tSet0 = CFAbsoluteTimeGetCurrent();
     if (shouldUseDarkMode) {
         self.appearance = [[ICNightAppearance alloc] init];
     } else {
         self.appearance = [[ICDaylightAppearance alloc] init];
     }
+    NSLog(@"[PERF] updateAppearance setAppearance: %.3fs", CFAbsoluteTimeGetCurrent() - tSet0);
+    NSLog(@"[PERF] updateAppearance TOTAL: %.3fs", CFAbsoluteTimeGetCurrent() - t0);
 }
 
 - (UIImage*) navigationBarBackgroundImage {
