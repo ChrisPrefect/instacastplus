@@ -105,6 +105,16 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
         rootWindow.tintColor = ICTintColor;
 
+        // Update existing navigation bars directly (appearance proxy only affects new instances)
+        UIImage* navBarImage = [self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES];
+        UINavigationBarAppearance* navAppearance = [[UINavigationBarAppearance alloc] init];
+        [navAppearance configureWithOpaqueBackground];
+        navAppearance.backgroundImage = navBarImage;
+        navAppearance.shadowImage = [[UIImage alloc] init];
+        navAppearance.shadowColor = nil;
+        navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
+        [self _applyNavigationBarAppearance:navAppearance toViewController:rootWindow.rootViewController];
+
         UIView* subview = [rootWindow.subviews lastObject];
         [subview removeFromSuperview];
         [rootWindow addSubview:subview];
@@ -129,6 +139,26 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         } while (presentedViewController);
         
         [[NSNotificationCenter defaultCenter] postNotificationName:ICAppearanceManagerDidUpdateAppearanceNotification object:self];
+    }
+}
+
+- (void) _applyNavigationBarAppearance:(UINavigationBarAppearance*)navAppearance toViewController:(UIViewController*)vc
+{
+    if (!vc) return;
+
+    if ([vc isKindOfClass:[UINavigationController class]]) {
+        UINavigationController* nav = (UINavigationController*)vc;
+        nav.navigationBar.standardAppearance = navAppearance;
+        nav.navigationBar.scrollEdgeAppearance = navAppearance;
+        nav.navigationBar.compactAppearance = navAppearance;
+    }
+
+    for (UIViewController* child in vc.childViewControllers) {
+        [self _applyNavigationBarAppearance:navAppearance toViewController:child];
+    }
+
+    if (vc.presentedViewController) {
+        [self _applyNavigationBarAppearance:navAppearance toViewController:vc.presentedViewController];
     }
 }
 

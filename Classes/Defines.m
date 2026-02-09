@@ -89,6 +89,8 @@ NSString* SharingTwitterHandle= @"SharingTwitterHandle";
 NSString* AutoDeleteAfterFinishedPlaying = @"AutoDeleteAfterFinishedPlaying";
 NSString* AutoDeleteAfterMarkedAsPlayed = @"AutoDeleteAfterMarkedAsPlayed";
 NSString* AutoDeleteNewsMode = @"AutoDeleteNewsMode";
+NSString* ContinuousPlayFromFeed = @"ContinuousPlayFromFeed";
+NSString* AutoDownloadWhileStreaming = @"AutoDownloadWhileStreaming";
 
 NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 
@@ -118,7 +120,10 @@ NSString* SmarthomeMQTTPort = @"SmarthomeMQTTPort";
 NSString* SmarthomeMQTTUsername = @"SmarthomeMQTTUsername";
 NSString* SmarthomeMQTTPassword = @"SmarthomeMQTTPassword";
 NSString* SmarthomeAllowControl = @"SmarthomeAllowControl";
+NSString* SmarthomeWiFiOnly = @"SmarthomeWiFiOnly";
 NSString* SmarthomeDeviceName = @"SmarthomeDeviceName";
+
+NSString* OpenLinksInExternalBrowser = @"OpenLinksInExternalBrowser";
 
 NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";
 NSString* ApplicationDidDetectMotionNotification = @"ApplicationDidDetectMotionNotification";

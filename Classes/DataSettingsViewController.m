@@ -13,6 +13,7 @@ typedef NS_ENUM(NSInteger, DataSettingsSections) {
     k3GSection = 0,
     kLimitSettingSection,
     kAutoDownloadSettingsSection,
+    kAutoDownloadWhileStreamingSection,
     kAutoDeleteSettingsSection,
     kDownloadedFilesButton,
     kStatisticsSection,
@@ -99,6 +100,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             return 1;
         case kAutoDownloadSettingsSection:
             return 2;
+        case kAutoDownloadWhileStreamingSection:
+            return 1;
         case kAutoDeleteSettingsSection:
             return 2;
         case kDownloadedFilesButton:
@@ -186,6 +189,15 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         control.tag = indexPath.row;
         [control addTarget:self action:@selector(toggleDownloadSettings:) forControlEvents:UIControlEventValueChanged];
 
+        return cell;
+    }
+    else if (indexPath.section == kAutoDownloadWhileStreamingSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        cell.textLabel.text = @"Auto-Download While Streaming".ls;
+        control.on = [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming];
+        [control addTarget:self action:@selector(toggleAutoDownloadWhileStreaming:) forControlEvents:UIControlEventValueChanged];
         return cell;
     }
     else if (indexPath.section == kAutoDeleteSettingsSection)
@@ -282,6 +294,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             return @"";
         case kAutoDownloadSettingsSection:
             return @"Auto-Download Content".ls;
+        case kAutoDownloadWhileStreamingSection:
+            return @"";
         case kAutoDeleteSettingsSection:
             return @"Auto-Delete Content".ls;
         case kDownloadedFilesButton:
@@ -313,6 +327,10 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case k3GSection:
         {
             return @"You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up.".ls;
+        }
+        case kAutoDownloadWhileStreamingSection:
+        {
+            return @"Automatically downloads the full episode while streaming.".ls;
         }
         default:
             break;
@@ -404,6 +422,12 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             break;
     }
 
+    [USER_DEFAULTS synchronize];
+}
+
+- (void) toggleAutoDownloadWhileStreaming:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:AutoDownloadWhileStreaming];
     [USER_DEFAULTS synchronize];
 }
 

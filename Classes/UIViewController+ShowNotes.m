@@ -101,6 +101,11 @@
 
     DebugLog(@"website link %@",urlString);
 
+    if ([USER_DEFAULTS boolForKey:OpenLinksInExternalBrowser]) {
+        [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+        return NO;
+    }
+
     WebController* webController = [WebController webController];
     webController.url = url;
 

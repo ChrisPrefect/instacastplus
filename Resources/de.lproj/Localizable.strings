@@ -241,7 +241,7 @@
 "Show in Main Menu" = "Im Hauptmenü anzeigen";
 "Deactivate attributes of episodes that should not be included in this episode list." = "Deaktivieren Sie Eigenschaften von Folgen, die nicht mit in die Liste aufgenommen werden sollen.";
 "Descending" = "Absteigend";
-"Downloaded" = "heruntergeladen";
+"Downloaded" = "Heruntergeladen";
 "Duration" = "Dauer";
 "Edit List" = "Liste bearbeiten";
 "Enable 'Continuous Playback' to copy remaining episodes to Up Next when playback starts." = "Aktivieren Sie 'Kontinuierliche Wiedergabe', um verbleibende Folgen bei Wiedergabe nach 'Nächste Folgen' zu kopieren.";
@@ -266,9 +266,9 @@
 "Starred" = "Favorit";
 "Time Left" = "Abspielzeit übrig";
 "Unfinished" = "angespielt";
-"Unplayed" = "ungespielt";
-"Unplayed & Started" = "un- und angespielt";
-"Started" = "angespielt";
+"Unplayed" = "Ungespielt";
+"Unplayed & Started" = "Ungespielt & Angespielt";
+"Started" = "Angespielt";
 "Video" = "Video";
 
 /* SubscriptionsTableViewController.m */
@@ -355,6 +355,7 @@
 "General" = "Allgemein";
 "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data." = "Helfen Sie InstacastPlus beim Verbessern ihrer Produkte und Dienste, indem Sie die Reports automatisch versenden. Die Reports enthalten keinerlei persönliche oder private Daten.";
 "Interface Sounds" = "Interfacetöne";
+"Open Links in External Browser" = "Links im externen Browser öffnen";
 "Miscellaneous" = "Verschiedenes";
 "Dark mode" = "Dunkler Modus";
 "Replay after Pause" = "Replay nach Pause";
@@ -588,6 +589,7 @@
 "We Value Your Feedback" = "Wir schätzen Ihr Feedback";
 "Use system setting" = "Systemeinstellung übernehmen";
 "E-Mail Feedback" = "E-Mail Feedback";
+"Send Feedback/Question" = "Feedback/Frage zur App senden";
 "Import Data" = "Daten importieren";
 "Open an opml file from mail or the files app in InstacastPlus to import podcasts." = "zum importieren von Podcasts die opml-Datei aus Mail oder der Dateien-App in InstacastPlus öffnen.";
 "Mail" = "Mail";
@@ -720,9 +722,12 @@
 
 /* SmarthomeManager Status */
 "Connection Status" = "Verbindungsstatus";
+"Status" = "Status";
 "Connecting..." = "Verbinde...";
 "Connected" = "Verbunden";
 "Disconnected" = "Getrennt";
+"Waiting for WiFi…" = "Warte auf WLAN…";
+"WiFi Only" = "Nur im WLAN";
 "Error" = "Fehler";
 
 /* ICMQTTClient Errors */
@@ -798,6 +803,22 @@
 "Reset Complete" = "Zurücksetzen abgeschlossen";
 "Please restart the app." = "Bitte starten Sie die App neu.";
 
+/* Continuous Playback per Feed */
+"Newer to Older" = "Neuer zu Älter";
+"Older to Newer" = "Älter zu Neuer";
+
+/* Auto-Download While Streaming */
+"Auto-Download While Streaming" = "Stream speichern";
+"Automatically downloads the full episode while streaming." = "Speichert gestreamte Folgen automatisch für die Offline-Wiedergabe.";
+
 /* App Icon */
 "App Icon" = "App Icon";
 "Change App Icon" = "App Icon wechseln";
+
+/* DonationViewController */
+"Support InstacastPlus" = "InstacastPlus unterstützen";
+"Donation History" = "Spendenhistorie";
+"No donations yet" = "Noch keine Spenden";
+"Rate on App Store" = "Im App Store bewerten";
+"Instacast lebt Podcast" = "Instacast lebt Podcast";
+"Listen to Instacast lebt Podcast" = "\"Instacast lebt\" Podcast anhören";

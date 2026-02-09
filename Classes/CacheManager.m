@@ -869,9 +869,10 @@ static NSString* gPathToCache = nil;
         // in case the episode got deleted in the meantime and fault can't be fulfilled
         @try {
             episode.lastDownloaded = [NSDate date];
+            episode.downloaded = YES;
         }
         @catch (NSException *exception) {
-            
+
         }
         
 		

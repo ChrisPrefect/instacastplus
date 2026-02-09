@@ -18,8 +18,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    // Do any additional setup after loading the view from its nib.
-    
+
     self.descLabel.text = @"to add podcasts, search the podcast directory".ls;
     self.shadowView.userInteractionEnabled = YES;
     UITapGestureRecognizer *tapGesture1 = [[UITapGestureRecognizer alloc] initWithTarget:self  action:@selector(tapGesture:)];
@@ -27,7 +26,7 @@
     [self.shadowView addGestureRecognizer:tapGesture1];
     self.shadowView.backgroundColor = [UIColor blackColor];
     self.shadowView.alpha = 0.5;
-    
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         ChangeLogViewController *changelogVC = [[ChangeLogViewController alloc] init];
         UINavigationController *navVC = [[UINavigationController alloc] initWithRootViewController:changelogVC];
@@ -49,127 +48,98 @@
         self.arrowImage.image = [UIImage imageNamed:@"onboard_arrow_bl"];
         self.descLabel.textColor = [UIColor blackColor];
     }
-   /* UIToolbar *toolbar = [[UIToolbar alloc] init]; //initWithFrame:CGRectMake(0, self.view.bounds.size.height - 44, self.view.bounds.size.width, 44)];
-    toolbar.barStyle = UIBarStyleDefault;
-    toolbar.translatesAutoresizingMaskIntoConstraints = NO;
-
-    [toolbar setBackgroundImage:[UIImage new] forToolbarPosition:UIBarPositionAny barMetrics:UIBarMetricsDefault];
-    toolbar.tintColor = ICTintColor;
-
-    //
-    // Create a button instead of UIImageView
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-    
-    // Load image and set rendering mode to template
-    UIImage *addImage = [[UIImage imageNamed:@"Toolbar Add"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    [button setImage:addImage forState:UIControlStateNormal];
-    
-    // Set tint color
-    button.tintColor = ICTintColor; // Change as needed
-    button.imageView.contentMode = UIViewContentModeScaleAspectFit;
-    
-    // Adjust button size to fit the image properly
-    button.frame = CGRectMake(0, 0, 30, 30); // Ensure it's square
-    button.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0); // Prevent shifting
-    
-    // Add target action
-    [button addTarget:self action:@selector(addAction:) forControlEvents:UIControlEventTouchUpInside];
-    
-    // Add shadow effect to the button
-    button.layer.shadowColor = [UIColor whiteColor].CGColor;
-    button.layer.shadowOffset = CGSizeMake(0, 0);
-    button.layer.shadowOpacity = 0.9;
-    button.layer.shadowRadius = 3;
-    button.layer.masksToBounds = NO;
-    
-    // Wrap button in a stack view to fix alignment
-    UIStackView *stackView = [[UIStackView alloc] initWithArrangedSubviews:@[button]];
-    stackView.axis = UILayoutConstraintAxisHorizontal;
-    stackView.alignment = UIStackViewAlignmentCenter;
-    stackView.spacing = 0; // No extra space
-    
-    // Create UIBarButtonItem with the custom view
-    UIBarButtonItem *addItem = [[UIBarButtonItem alloc] initWithCustomView:stackView];
-
-    //UIBarButtonItem* addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
-    
-    UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    [toolbar setItems:@[addItem, flexSpace] animated:YES];
-    [self.view addSubview:toolbar];
-
-    // Use Auto Layout to position the toolbar at the bottom with safe area insets
-    [NSLayoutConstraint activateConstraints:@[
-        [toolbar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [toolbar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [toolbar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
-        [toolbar.heightAnchor constraintEqualToConstant:44]
-    ]];*/
-    // (0 793; 414 49);
-    [self customizeToolbar];
 }
 
--(void) customizeToolbar
+- (void)viewDidAppear:(BOOL)animated
 {
-    UIToolbar *toolbar = [[UIToolbar alloc] init];
-    toolbar.barStyle = UIBarStyleDefault;
-    toolbar.translatesAutoresizingMaskIntoConstraints = NO;
-    [toolbar setBackgroundImage:[UIImage new] forToolbarPosition:UIBarPositionAny barMetrics:UIBarMetricsDefault];
-    toolbar.tintColor = ICTintColor;
-    
-    // Create the button
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeCustom];
-    
-    // Load image and set rendering mode to template
-    UIImage *addImage = [[UIImage imageNamed:@"Toolbar Add"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    [button setImage:addImage forState:UIControlStateNormal];
-    
-    // Set tint color
-    button.tintColor = ICTintColor;
-    button.imageView.contentMode = UIViewContentModeScaleAspectFit;
-    
-    // Adjust button size
-    button.frame = CGRectMake(0, 0, 30, 30);
-    button.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
-    
-    // Add target action
-    [button addTarget:self action:@selector(addAction:) forControlEvents:UIControlEventTouchUpInside];
-    
-    // Remove shadow
-    button.layer.shadowOpacity = 0; // No shadow
-    
-    // Add a bright circular background behind the button
-    UIView *circleView = [[UIView alloc] initWithFrame:CGRectMake(-10, -10, 50, 50)]; // Positioned behind button
-    circleView.backgroundColor = [UIColor whiteColor]; // Bright yellow glow
-    circleView.layer.cornerRadius = 25; // Makes it circular
-    circleView.layer.masksToBounds = NO;
-    circleView.alpha = 1; // Adjust brightness
-    
-    // Wrap button and background in a container view to keep original position
-    UIView *containerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 30, 30)];
-    [containerView addSubview:circleView]; // Add background first
-    [containerView addSubview:button];     // Add button on top
-    
-    // Ensure button remains in the original position
-    button.center = CGPointMake(containerView.bounds.size.width / 2, containerView.bounds.size.height / 2);
-    circleView.center = button.center;
-    
-    // Create UIBarButtonItem with the custom view
-    UIBarButtonItem *addItem = [[UIBarButtonItem alloc] initWithCustomView:containerView];
-    
-    // Flexible space to align button properly
-    UIBarButtonItem *flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    
-    [toolbar setItems:@[addItem, flexSpace] animated:YES];
-    [self.view addSubview:toolbar];
-    
-    // Use Auto Layout to position the toolbar at the bottom with safe area insets
-    [NSLayoutConstraint activateConstraints:@[
-        [toolbar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [toolbar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [toolbar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],
-        [toolbar.heightAnchor constraintEqualToConstant:44]
-    ]];
+    [super viewDidAppear:animated];
+    [self _createToolbarSpotlight];
+}
 
+#pragma mark - Spotlight Cutout
+
+- (void)_createToolbarSpotlight
+{
+    // Find the real toolbar plus button in the presenting VC's view hierarchy
+    UIView *buttonView = [self _findToolbarPlusButton];
+    if (!buttonView) return;
+
+    // Convert button center to shadowView's coordinate system
+    CGPoint buttonCenter = [buttonView convertPoint:CGPointMake(CGRectGetMidX(buttonView.bounds),
+                                                                 CGRectGetMidY(buttonView.bounds))
+                                             toView:self.shadowView];
+
+    // Create mask: full overlay with circular cutout around the plus button
+    CGFloat radius = 30.0;
+    UIBezierPath *overlayPath = [UIBezierPath bezierPathWithRect:self.shadowView.bounds];
+    UIBezierPath *spotlightPath = [UIBezierPath bezierPathWithOvalInRect:
+        CGRectMake(buttonCenter.x - radius, buttonCenter.y - radius, radius * 2, radius * 2)];
+    [overlayPath appendPath:spotlightPath];
+
+    CAShapeLayer *maskLayer = [CAShapeLayer layer];
+    maskLayer.path = overlayPath.CGPath;
+    maskLayer.fillRule = kCAFillRuleEvenOdd;
+    self.shadowView.layer.mask = maskLayer;
+}
+
+- (UIView *)_findToolbarPlusButton
+{
+    UIWindow *window = self.view.window;
+    if (!window) return nil;
+
+    // Find the UIToolbar in the window, then get its leftmost button
+    UIToolbar *toolbar = [self _findToolbarInView:window];
+    if (!toolbar) return nil;
+
+    return [self _findLeftmostButtonInToolbar:toolbar];
+}
+
+- (UIToolbar *)_findToolbarInView:(UIView *)view
+{
+    // Don't search into our own view hierarchy
+    if (view == self.view) return nil;
+
+    if ([view isKindOfClass:[UIToolbar class]]) {
+        return (UIToolbar *)view;
+    }
+    for (UIView *sub in view.subviews) {
+        UIToolbar *result = [self _findToolbarInView:sub];
+        if (result) return result;
+    }
+    return nil;
+}
+
+- (UIView *)_findLeftmostButtonInToolbar:(UIView *)view
+{
+    // Look for UIControl subviews (toolbar buttons are UIControl subclasses)
+    NSMutableArray<UIView *> *buttons = [NSMutableArray array];
+    [self _collectControlsInView:view into:buttons];
+
+    // Return the leftmost one
+    UIView *leftmost = nil;
+    for (UIView *btn in buttons) {
+        CGPoint pos = [btn convertPoint:CGPointZero toView:self.view.window];
+        if (!leftmost) {
+            leftmost = btn;
+        } else {
+            CGPoint leftPos = [leftmost convertPoint:CGPointZero toView:self.view.window];
+            if (pos.x < leftPos.x) {
+                leftmost = btn;
+            }
+        }
+    }
+    return leftmost;
+}
+
+- (void)_collectControlsInView:(UIView *)view into:(NSMutableArray<UIView *> *)controls
+{
+    if ([view isKindOfClass:[UIControl class]] && view.bounds.size.width > 10 && view.bounds.size.height > 10) {
+        [controls addObject:view];
+        return;
+    }
+    for (UIView *sub in view.subviews) {
+        [self _collectControlsInView:sub into:controls];
+    }
 }
 
 - (void) addAction:(id)sender

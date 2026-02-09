@@ -18,6 +18,7 @@ extern NSString* SmarthomeManagerDidChangeConnectionStateNotification;
 - (void)start;
 - (void)stop;
 - (void)reconnectIfNeeded;
+- (void)checkWiFiAndReconnect;
 
 @property (nonatomic, readonly) BOOL connected;
 @property (nonatomic, readonly, nullable) NSString *connectionStatusText;

@@ -265,7 +265,7 @@
 "Time Left" = "Time Left";
 "Unfinished" = "Unfinished";
 "Unplayed" = "Unplayed";
-"Unplayed & Started" = "Unplayed & Started";
+"Unplayed & Started" = "Unplayed & Unfinished";
 "Started" = "Started";
 "Video" = "Video";
 
@@ -353,6 +353,7 @@
 "General" = "General";
 "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data." = "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data.";
 "Interface Sounds" = "Interface Sounds";
+"Open Links in External Browser" = "Open Links in External Browser";
 "Miscellaneous" = "Miscellaneous";
 "Dark mode" = "Dark mode";
 "Replay after Pause" = "Replay after Pause";
@@ -587,6 +588,7 @@
 "We Value Your Feedback" = "We Value Your Feedback";
 "Use system setting" = "Use system setting";
 "E-Mail Feedback" = "E-Mail Feedback";
+"Send Feedback/Question" = "Send Feedback/Question";
 "Import Data" = "Import Data";
 "Open an opml file from mail or the files app in InstacastPlus to import podcasts." = "Open an opml file from mail or the files app in InstacastPlus to import podcasts.";
 "Mail" = "Mail";
@@ -716,9 +718,12 @@
 
 /* SmarthomeManager Status */
 "Connection Status" = "Connection Status";
+"Status" = "Status";
 "Connecting..." = "Connecting...";
 "Connected" = "Connected";
 "Disconnected" = "Disconnected";
+"Waiting for WiFi…" = "Waiting for WiFi…";
+"WiFi Only" = "WiFi Only";
 "Error" = "Error";
 
 /* ICMQTTClient Errors */
@@ -794,6 +799,22 @@
 "Reset Complete" = "Reset Complete";
 "Please restart the app." = "Please restart the app.";
 
+/* Continuous Playback per Feed */
+"Newer to Older" = "Newer to Older";
+"Older to Newer" = "Older to Newer";
+
+/* Auto-Download While Streaming */
+"Auto-Download While Streaming" = "Save Stream";
+"Automatically downloads the full episode while streaming." = "Automatically saves streamed episodes for offline playback.";
+
 /* App Icon */
 "App Icon" = "App Icon";
 "Change App Icon" = "Change App Icon";
+
+/* DonationViewController */
+"Support InstacastPlus" = "Support InstacastPlus";
+"Donation History" = "Donation History";
+"No donations yet" = "No donations yet";
+"Rate on App Store" = "Rate on App Store";
+"Instacast lebt Podcast" = "Instacast lebt Podcast";
+"Listen to Instacast lebt Podcast" = "Listen to \"Instacast lebt\" Podcast";

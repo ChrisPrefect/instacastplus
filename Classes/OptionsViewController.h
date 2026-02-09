@@ -7,19 +7,9 @@
 //
 
 #import <UIKit/UIKit.h>
-#import <StoreKit/StoreKit.h>
 
-@interface OptionsViewController : UITableViewController<SKProductsRequestDelegate,SKPaymentTransactionObserver> 
-{
-    BOOL _observing;
-    SKProductsRequest *productsRequest;
-    NSMutableDictionary *validProducts;
-    UIActivityIndicatorView *activityIndicatorView;
-}
+@interface OptionsViewController : UITableViewController
 
 + (OptionsViewController*) optionsViewController;
-- (void)fetchAvailableProducts;
-- (BOOL)canMakePurchases;
-- (void)purchaseMyProduct:(SKProduct*)product;
 
 @end

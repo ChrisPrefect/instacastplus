@@ -351,11 +351,13 @@ enum {
         self.imageView.frame = newFrameTemp;
         self.chapterImagesCollection.frame = newFrameTemp;
 
-        CGFloat chevronAreaHeight = 25.0f;
+        BOOL hasContent = [self _hasContentBelowImage];
+        CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
         CGRect chapterViewFrame = newFrameTemp;
         chapterViewFrame.size.height += chevronAreaHeight;
         self.chapterView.frame = chapterViewFrame;
 
+        chevronIndicatorView.hidden = !hasContent;
         chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
         chevronIndicatorView.tintColor = ICMutedTextColor;
 
@@ -403,11 +405,13 @@ enum {
     self.imageView.frame = newFrameTemp;
     self.chapterImagesCollection.frame = newFrameTemp;
 
-    CGFloat chevronAreaHeight = 25.0f;
+    BOOL hasContent = [self _hasContentBelowImage];
+    CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
     CGRect chapterViewFrame = newFrameTemp;
     chapterViewFrame.size.height += chevronAreaHeight;
     self.chapterView.frame = chapterViewFrame;
 
+    chevronIndicatorView.hidden = !hasContent;
     chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
 
     [self.chapterImagesCollection reloadData];
@@ -589,6 +593,10 @@ enum {
 
 - (BOOL) _hasUpNext {
     return ([[AudioSession sharedAudioSession].playlist count] > 0);
+}
+
+- (BOOL) _hasContentBelowImage {
+    return [self _hasChapters] || [self _hasBookmarks] || [self _hasUpNext];
 }
 
 - (NSInteger) _chaptersSection {

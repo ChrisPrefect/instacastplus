@@ -14,6 +14,7 @@
 #import "AudioSession+UpNextPlaylist.h"
 
 #import "ICMetadata.h"
+#import "CDFeed+Helper.h"
 #import <MediaPlayer/MediaPlayer.h>
 
 static NSString* kPlaybackStateEpisode = @"PlaybackEpisode";
@@ -297,9 +298,48 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         anEpisode = [currentPlaylist firstObject];
     }
 
+    // If no episode from Up Next, check per-feed continuous play setting
+    if (!anEpisode && self.episode) {
+        CDFeed* feed = self.episode.feed;
+        NSInteger continuousMode = [feed integerForKey:ContinuousPlayFromFeed];
+
+        if (continuousMode != ContinuousPlaybackOff) {
+            BOOL newerToOlder = (continuousMode == ContinuousPlaybackOn);
+            NSArray* episodes = [feed sortedEpisodes];
+
+            if (episodes.count > 0) {
+                NSUInteger currentIdx = [episodes indexOfObject:self.episode];
+                if (currentIdx != NSNotFound) {
+                    // sortedEpisodes returns newest first by default
+                    // ContinuousPlaybackOn (newer-to-older) = go forward in the array (older episodes)
+                    // ContinuousPlaybackReverse (older-to-newer) = go backward in the array (newer episodes)
+                    if (newerToOlder && currentIdx + 1 < episodes.count) {
+                        // Next older episode
+                        for (NSUInteger i = currentIdx + 1; i < episodes.count; i++) {
+                            CDEpisode* candidate = episodes[i];
+                            if (!candidate.consumed && [candidate preferedMedium]) {
+                                anEpisode = candidate;
+                                break;
+                            }
+                        }
+                    } else if (!newerToOlder && currentIdx > 0) {
+                        // Next newer episode
+                        for (NSInteger i = (NSInteger)currentIdx - 1; i >= 0; i--) {
+                            CDEpisode* candidate = episodes[i];
+                            if (!candidate.consumed && [candidate preferedMedium]) {
+                                anEpisode = candidate;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     BOOL warn3G = (App.networkAccessTechnology < kICNetworkAccessTechnlogyWIFI && ![USER_DEFAULTS boolForKey:EnableStreamingOver3G]);
     BOOL episodeIsCached = [[CacheManager sharedCacheManager] episodeIsCached:anEpisode];
-    
+
     if (!episodeIsCached && warn3G) {
         canStartEpisode = NO;
     }

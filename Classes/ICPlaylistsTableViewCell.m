@@ -76,7 +76,7 @@
         }];
         
         [objectValue addTaskObserver:self forKeyPath:@"name" task:^(id obj, NSDictionary *change) {
-            weakSelf.textLabel.text = weakSelf.objectValue.name;
+            weakSelf.textLabel.text = weakSelf.objectValue.name.ls;
             [weakSelf setNeedsLayout];
         }];
         

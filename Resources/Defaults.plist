@@ -100,5 +100,7 @@
 	<integer>1883</integer>
 	<key>SmarthomeAllowControl</key>
 	<true/>
+	<key>AutoDownloadWhileStreaming</key>
+	<true/>
 </dict>
 </plist>

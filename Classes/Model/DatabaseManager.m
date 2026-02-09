@@ -324,7 +324,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 - (void) _createDatabase
 {
     CDEpisodeList* unplayed = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    unplayed.name = @"Unplayed".ls;
+    unplayed.name = @"Unplayed";
     unplayed.icon = @"List Unplayed";
     unplayed.rank = 0;
     unplayed.played = NO;
@@ -335,7 +335,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     
     
     CDEpisodeList* started = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    started.name = @"Started".ls;
+    started.name = @"Started";
     started.icon = @"List Partially Played";
     started.rank = 1;
     started.unfinished = YES;
@@ -348,7 +348,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 
     CDEpisodeList* downloaded = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    downloaded.name = @"Downloaded".ls;
+    downloaded.name = @"Downloaded";
     downloaded.icon = @"List Downloaded";
     downloaded.rank = 2;
     downloaded.downloaded = YES;
@@ -360,7 +360,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     
     
     CDEpisodeList* favorites = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    favorites.name = @"Favorites".ls;
+    favorites.name = @"Favorites";
     favorites.icon = @"List Favorites";
     favorites.rank = 3;
     favorites.notStarred = NO;
@@ -371,7 +371,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     
     
     CDEpisodeList* video = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    video.name = @"Videos".ls;
+    video.name = @"Videos";
     video.icon = @"List Video";
     video.rank = 4;
     video.audio = NO;
@@ -559,6 +559,38 @@ NS_INLINE NSString* _DataStoreFile(void) {
 {
     [self _migrateOldSmartPlaylists];
     [self _migrateAddStartedList];
+    [self _migrateDefaultListNamesToKeys];
+}
+
+- (void) _migrateDefaultListNamesToKeys
+{
+    // Default lists previously stored localized names (e.g. "ungespielt" on German devices).
+    // Now we store English keys and localize at display time so names follow device language.
+    NSDictionary* uidToKey = @{
+        @"default.unplayed"   : @"Unplayed",
+        @"default.started"    : @"Started",
+        @"default.downloaded" : @"Downloaded",
+        @"default.favorites"  : @"Favorites",
+        @"default.video"      : @"Videos",
+    };
+
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    fetchRequest.entity = [NSEntityDescription entityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"uid IN %@", uidToKey.allKeys];
+    NSArray* lists = [self.objectContext executeFetchRequest:fetchRequest error:nil];
+
+    BOOL changed = NO;
+    for (CDEpisodeList* list in lists) {
+        NSString* key = uidToKey[list.uid];
+        if (key && ![list.name isEqualToString:key]) {
+            list.name = key;
+            changed = YES;
+        }
+    }
+
+    if (changed) {
+        [self save];
+    }
 }
 
 - (void) _migrateAddStartedList
@@ -571,7 +603,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
     if ([results count] == 0) {
         CDEpisodeList* started = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-        started.name = @"Started".ls;
+        started.name = @"Started";
         started.icon = @"List Partially Played";
         started.rank = 1;
         started.unfinished = YES;

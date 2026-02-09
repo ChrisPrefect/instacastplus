@@ -121,7 +121,7 @@ enum {
         case kSmarthomeConnectionSection:
             return 5; // host, port, user, pass, device name
         case kSmarthomeOptionsSection:
-            return 1; // allow control
+            return 2; // allow control + wifi only
         case kSmarthomeStatusSection:
             return 2; // status display + connect/disconnect button
         default:
@@ -187,13 +187,23 @@ enum {
 
         case kSmarthomeOptionsSection:
         {
-            UITableViewCell *cell = [self switchCell];
-            UISwitch *control = (UISwitch*)cell.accessoryView;
-            cell.textLabel.text = @"Allow Remote Control".ls;
-            control.on = [USER_DEFAULTS boolForKey:SmarthomeAllowControl];
-            control.tag = 1;
-            [control addTarget:self action:@selector(toggleAllowControl:) forControlEvents:UIControlEventValueChanged];
-            return cell;
+            if (indexPath.row == 0) {
+                UITableViewCell *cell = [self switchCell];
+                UISwitch *control = (UISwitch*)cell.accessoryView;
+                cell.textLabel.text = @"Allow Remote Control".ls;
+                control.on = [USER_DEFAULTS boolForKey:SmarthomeAllowControl];
+                control.tag = 1;
+                [control addTarget:self action:@selector(toggleAllowControl:) forControlEvents:UIControlEventValueChanged];
+                return cell;
+            } else {
+                UITableViewCell *cell = [self switchCell];
+                UISwitch *control = (UISwitch*)cell.accessoryView;
+                cell.textLabel.text = @"WiFi Only".ls;
+                control.on = [USER_DEFAULTS boolForKey:SmarthomeWiFiOnly];
+                control.tag = 2;
+                [control addTarget:self action:@selector(toggleWiFiOnly:) forControlEvents:UIControlEventValueChanged];
+                return cell;
+            }
         }
 
         case kSmarthomeStatusSection:
@@ -201,7 +211,7 @@ enum {
             if (indexPath.row == 0) {
                 UITableViewCell *cell = [self detailCell];
                 SmarthomeManager *mgr = [SmarthomeManager sharedManager];
-                cell.textLabel.text = @"Connection Status".ls;
+                cell.textLabel.text = @"Status".ls;
                 cell.detailTextLabel.text = mgr.connectionStatusText ?: @"Disabled".ls;
                 cell.accessoryType = UITableViewCellAccessoryNone;
                 cell.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -293,6 +303,18 @@ enum {
     if (mgr.connected) {
         [mgr stop];
         [mgr start];
+    }
+}
+
+- (void)toggleWiFiOnly:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:SmarthomeWiFiOnly];
+    [USER_DEFAULTS synchronize];
+
+    SmarthomeManager *mgr = [SmarthomeManager sharedManager];
+    if (sender.on) {
+        // If WiFi-only enabled and currently not on WiFi, disconnect
+        [mgr checkWiFiAndReconnect];
     }
 }
 

@@ -684,18 +684,31 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             [self.mInfo close];
             self.mInfo = nil;
 
-            // Show confirmation and exit
-            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Reset Complete".ls
-                                                                           message:@"Please restart the app.".ls
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls
-                                                      style:UIAlertActionStyleDefault
-                                                    handler:^(UIAlertAction * action) {
-                exit(0);
-            }]];
-            [self presentViewController:alert animated:YES completion:nil];
+            // Reset app icon if needed, then show confirmation
+            if ([UIApplication sharedApplication].alternateIconName != nil) {
+                [[UIApplication sharedApplication] setAlternateIconName:nil completionHandler:^(NSError * _Nullable error) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self _showResetCompleteAlert];
+                    });
+                }];
+            } else {
+                [self _showResetCompleteAlert];
+            }
         });
     });
+}
+
+- (void)_showResetCompleteAlert
+{
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Reset Complete".ls
+                                                                   message:@"Please restart the app.".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction * action) {
+        exit(0);
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 @end

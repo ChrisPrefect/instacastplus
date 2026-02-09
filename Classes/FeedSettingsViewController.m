@@ -155,7 +155,7 @@ enum {
         case kAutoDeleteSettingsSection:
             return 3;
         case kPlaybackSection:
-            return 3;
+            return 4;
         case kRestoreDeletedSection:
             return 1;
         case kResetSection:
@@ -326,7 +326,7 @@ enum {
                 cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Speed".ls;
-                
+
                 NSInteger speed = [self.feed integerForKey:DefaultPlaybackSpeed];
                 switch (speed) {
                     case PlaybackSpeedControlNormalSpeed:
@@ -356,9 +356,29 @@ enum {
                     default:
                         break;
                 }
-                
-                
+
+
                 break;
+            case 3:
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
+                cell.textLabel.text = @"Continuous Playback".ls;
+
+                NSInteger mode = [self.feed integerForKey:ContinuousPlayFromFeed];
+                switch (mode) {
+                    case ContinuousPlaybackOn:
+                        cell.detailTextLabel.text = @"Newer to Older".ls;
+                        break;
+                    case ContinuousPlaybackReverse:
+                        cell.detailTextLabel.text = @"Older to Newer".ls;
+                        break;
+                    default:
+                        cell.detailTextLabel.text = @"Off".ls;
+                        break;
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -535,6 +555,17 @@ enum {
             [self.navigationController pushViewController:controller animated:YES];
         }
         
+        else if (indexPath.row == 3)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = ContinuousPlayFromFeed;
+            controller.title = @"Continuous Playback".ls;
+            controller.values = @[ @(ContinuousPlaybackOff), @(ContinuousPlaybackOn), @(ContinuousPlaybackReverse) ];
+            controller.titles = @[ @"Off".ls, @"Newer to Older".ls, @"Older to Newer".ls ];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
         else if (indexPath.row == 2)
         {
             SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];

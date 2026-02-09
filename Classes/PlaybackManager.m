@@ -527,8 +527,14 @@ enum {
 	CacheManager* eman = [CacheManager sharedCacheManager];
 	CDMedium* media = [anEpisode preferedMedium];
 	
-	NSURL* url = ([eman episodeIsCached:anEpisode]) ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
-    
+	BOOL isCached = [eman episodeIsCached:anEpisode];
+	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
+
+	// auto-download while streaming
+	if (!isCached && [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming]) {
+		[eman cacheEpisode:anEpisode];
+	}
+
     // workaround for a bug in the feed parser up to version 3.0.2
     NSString* urlString = [url absoluteString];
     if ([urlString rangeOfString:@"%25"].location != NSNotFound) {

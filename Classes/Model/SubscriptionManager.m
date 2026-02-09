@@ -37,6 +37,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 //@property (nonatomic, copy) void (^refreshCompletionHandler)(BOOL success, BOOL newData);
 @property BOOL importing;
 @property (nonatomic, strong) NSOperationQueue* parserQueue;
+@property (nonatomic, strong) NSTimer* refreshTimeoutTimer;
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundIdentifier;
@@ -70,7 +71,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 		_refreshingFeedURLs = [[NSMutableArray alloc] init];
         
         _parserQueue = [[NSOperationQueue alloc] init];
-        [_parserQueue setMaxConcurrentOperationCount:1];
+        [_parserQueue setMaxConcurrentOperationCount:5];
         
 #if TARGET_OS_IPHONE==0
         _checkTimer = [NSTimer scheduledTimerWithTimeInterval:5*60 block:^(NSTimeInterval time) {
@@ -513,9 +514,16 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 #endif
         
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidStartRefreshingFeedsNotification object:self];
+
+        // Global refresh timeout - cancel stuck operations after 60 seconds
+        self.refreshTimeoutTimer = [NSTimer scheduledTimerWithTimeInterval:60.0
+                                                                   target:self
+                                                                 selector:@selector(_refreshDidTimeout)
+                                                                 userInfo:nil
+                                                                  repeats:NO];
     }
-    
-    
+
+
     for(CDFeed* feed in feeds)
     {
         [self refreshFeed:feed
@@ -643,10 +651,19 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 }
 
 
+- (void) _refreshDidTimeout
+{
+    ErrLog(@"refresh timeout: %ld feeds still pending, cancelling", (long)[self.refreshingFeedURLs count]);
+    [self.parserQueue cancelAllOperations];
+    [self.refreshingFeedURLs removeAllObjects];
+}
+
 - (void) checkRefreshOperationsTimer:(NSTimer*)timer
 {
 	if ([self.refreshingFeedURLs count] == 0 && [self.parserQueue operationCount] == 0)
 	{
+        [self.refreshTimeoutTimer invalidate];
+        self.refreshTimeoutTimer = nil;
         [self.refreshCheckTimer invalidate];
 		self.refreshCheckTimer = nil;
         

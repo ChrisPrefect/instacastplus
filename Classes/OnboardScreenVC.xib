@@ -57,7 +57,7 @@
             <constraints>
                 <constraint firstItem="ngh-EV-y1d" firstAttribute="top" secondItem="aOk-cs-7pW" secondAttribute="top" constant="-10" id="Aie-TJ-Ix0"/>
                 <constraint firstItem="n7k-bA-d84" firstAttribute="top" secondItem="i5M-Pr-FkT" secondAttribute="top" id="BfC-QT-3rw"/>
-                <constraint firstItem="Q5M-cg-NOt" firstAttribute="bottom" secondItem="aOk-cs-7pW" secondAttribute="bottom" constant="70" id="Bgo-cQ-yvO"/>
+                <constraint firstItem="Q5M-cg-NOt" firstAttribute="bottom" secondItem="aOk-cs-7pW" secondAttribute="bottom" constant="10" id="Bgo-cQ-yvO"/>
                 <constraint firstItem="ngh-EV-y1d" firstAttribute="leading" secondItem="aOk-cs-7pW" secondAttribute="trailing" constant="10" id="Gf8-gb-zPT"/>
                 <constraint firstAttribute="trailing" secondItem="ngh-EV-y1d" secondAttribute="trailing" constant="30" id="J3y-8A-GA8"/>
                 <constraint firstItem="GNz-mD-3Ws" firstAttribute="leading" secondItem="Q5M-cg-NOt" secondAttribute="leading" id="LR5-cK-hgq"/>

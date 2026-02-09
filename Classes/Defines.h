@@ -96,6 +96,8 @@ extern NSString* SharingTwitterHandle;
 extern NSString* AutoDeleteAfterFinishedPlaying;
 extern NSString* AutoDeleteAfterMarkedAsPlayed;
 extern NSString* AutoDeleteNewsMode;
+extern NSString* ContinuousPlayFromFeed;
+extern NSString* AutoDownloadWhileStreaming;
 
 extern NSString* kDefaultShowUnavailableEpisodes;
 
@@ -147,7 +149,10 @@ extern NSString* SmarthomeMQTTPort;
 extern NSString* SmarthomeMQTTUsername;
 extern NSString* SmarthomeMQTTPassword;
 extern NSString* SmarthomeAllowControl;
+extern NSString* SmarthomeWiFiOnly;
 extern NSString* SmarthomeDeviceName;
+
+extern NSString* OpenLinksInExternalBrowser;
 
 extern NSString* AudioSessionSleepTimerDidExpireNotification;
 extern NSString* ApplicationDidDetectMotionNotification;

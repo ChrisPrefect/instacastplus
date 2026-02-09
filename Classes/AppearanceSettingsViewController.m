@@ -19,6 +19,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kAppIcons,
     kAppIconSuggestion,
     kInterfaceSoundsSection,
+    kExternalBrowserSection,
     kNumberOfSections,
 };
 
@@ -143,6 +144,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kAppIconSuggestion:
             return 1;
         case kInterfaceSoundsSection:
+            return 1;
+        case kExternalBrowserSection:
             return 1;
         default:
             break;
@@ -370,6 +373,17 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         [control addTarget:self action:@selector(toggleInterfaceSounds:) forControlEvents:UIControlEventValueChanged];
         return cell;
     }
+    else if (indexPath.section == kExternalBrowserSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        control.tag = 0;
+
+        cell.textLabel.text = @"Open Links in External Browser".ls;
+        control.on = [USER_DEFAULTS boolForKey:OpenLinksInExternalBrowser];
+        [control addTarget:self action:@selector(toggleExternalBrowser:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
 
     return nil;
 }
@@ -428,6 +442,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kAppIconSuggestion:
             return @"";
         case kInterfaceSoundsSection:
+            return @"";
+        case kExternalBrowserSection:
             return @"";
         default:
             break;
@@ -629,6 +645,11 @@ API_AVAILABLE(ios(14.0)){
 - (void) toggleInterfaceSounds:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:UISoundEnabled];
+}
+
+- (void) toggleExternalBrowser:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:OpenLinksInExternalBrowser];
 }
 
 #pragma mark - Collection View (App Icons)

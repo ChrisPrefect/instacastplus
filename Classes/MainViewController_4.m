@@ -158,7 +158,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     // Also migrate: if key exists but doesn't contain default list UIDs, add them
     NSArray* existingUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
     if (!existingUIDs) {
-        [USER_DEFAULTS setObject:@[@"default.favorites", @"default.unplayed", @"default.started"] forKey:@"MainMenuListUIDs"];
+        [USER_DEFAULTS setObject:@[@"default.favorites", @"default.unplayed", @"default.started", @"default.downloaded"] forKey:@"MainMenuListUIDs"];
         [USER_DEFAULTS synchronize];
     } else if (![USER_DEFAULTS boolForKey:@"MainMenuListUIDsMigratedDefaults"]) {
         // One-time migration: add default list UIDs that were previously hardcoded
@@ -541,7 +541,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         selectedImage = image;
     }
 
-    return [MainSidebarItem itemWithTitle:list.name tag:tag image:image selectedImage:selectedImage topSpacing:topSpacing];
+    return [MainSidebarItem itemWithTitle:list.name.ls tag:tag image:image selectedImage:selectedImage topSpacing:topSpacing];
 }
 
 - (void) _rebuildSidebarItems

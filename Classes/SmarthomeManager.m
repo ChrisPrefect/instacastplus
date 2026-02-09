@@ -8,6 +8,7 @@
 #import "SmarthomeManager.h"
 #import "ICMQTTClient.h"
 #import "ICMetadata.h"
+#import "Reachability.h"
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #import <MediaPlayer/MPVolumeView.h>
@@ -152,6 +153,12 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 #pragma mark - Public
 
+- (BOOL)_isOnWiFi
+{
+    Reachability *reachability = [Reachability reachabilityForInternetConnection];
+    return [reachability currentReachabilityStatus] == ReachableViaWiFi;
+}
+
 - (void)start
 {
     if (![USER_DEFAULTS boolForKey:SmarthomeMQTTEnabled]) return;
@@ -159,9 +166,29 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     NSString *host = [USER_DEFAULTS stringForKey:SmarthomeMQTTHost];
     if (!host || host.length == 0) return;
 
+    if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly] && ![self _isOnWiFi]) {
+        _connectionStatusText = @"Waiting for WiFi…".ls;
+        [self postConnectionStateChange];
+        return;
+    }
+
     _intentionalDisconnect = NO;
     [self buildTopicBase];
     [self connectToMQTT];
+}
+
+- (void)checkWiFiAndReconnect
+{
+    if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly] && ![self _isOnWiFi]) {
+        if (self.connected) {
+            [self stop];
+        }
+        _connectionStatusText = @"Waiting for WiFi…".ls;
+        _intentionalDisconnect = NO;
+        [self postConnectionStateChange];
+    } else if (!self.connected && !_intentionalDisconnect) {
+        [self start];
+    }
 }
 
 - (void)stop
@@ -838,7 +865,20 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)networkDidChange:(NSNotification*)note
 {
-    if (!self.connected) {
+    if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly]) {
+        if ([self _isOnWiFi]) {
+            if (!self.connected && !_intentionalDisconnect) {
+                _reconnectDelay = 2.0;
+                [self reconnectIfNeeded];
+            }
+        } else if (self.connected) {
+            // Left WiFi - disconnect
+            _connectionStatusText = @"Waiting for WiFi…".ls;
+            [_client disconnect];
+            _client = nil;
+            [self postConnectionStateChange];
+        }
+    } else if (!self.connected) {
         // Reset reconnect delay for faster reconnection when network returns
         _reconnectDelay = 2.0;
         [self reconnectIfNeeded];

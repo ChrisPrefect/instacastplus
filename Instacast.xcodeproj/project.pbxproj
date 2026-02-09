@@ -147,6 +147,7 @@
 		1B71530F12DB567900337CF0 /* FeedViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B71530E12DB567900337CF0 /* FeedViewController.m */; };
 		1B7311F21C6D34790018DA70 /* ICMonospaceLabel.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B7311F11C6D34790018DA70 /* ICMonospaceLabel.m */; };
 		1B763E59147A3B2B00617D86 /* OptionsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B6F95191468110F00894417 /* OptionsViewController.m */; };
+		F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */; };
 		1B7A634815359F760006622D /* XPFF.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B7A634715359F750006622D /* XPFF.m */; };
 		1B7B071614B47A8500B4FFC2 /* PlayerBookmarksTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B7B071514B47A8400B4FFC2 /* PlayerBookmarksTableViewCell.m */; };
 		1B7C2E3815F7827000EC86B2 /* CDBase.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B7C2E3715F7827000EC86B2 /* CDBase.m */; };
@@ -543,6 +544,8 @@
 		1B6AE6C519A61F7F00965357 /* ListEpisodesTableViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ListEpisodesTableViewController.m; sourceTree = "<group>"; };
 		1B6F95181468110E00894417 /* OptionsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OptionsViewController.h; sourceTree = "<group>"; };
 		1B6F95191468110F00894417 /* OptionsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OptionsViewController.m; sourceTree = "<group>"; };
+		74E0608347BE5D8CDADAC62E /* DonationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DonationViewController.h; sourceTree = "<group>"; };
+		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
 		1B71530D12DB567900337CF0 /* FeedViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FeedViewController.h; sourceTree = "<group>"; };
 		1B71530E12DB567900337CF0 /* FeedViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FeedViewController.m; sourceTree = "<group>"; };
 		1B7311F01C6D34790018DA70 /* ICMonospaceLabel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICMonospaceLabel.h; sourceTree = "<group>"; };
@@ -962,6 +965,8 @@
 				CDD17C3A2C6EB203001870FB /* ChooseThemeColorCell.m */,
 				9259B80B2D33B9010035AA91 /* SettingInputChapterController.h */,
 				9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */,
+				74E0608347BE5D8CDADAC62E /* DonationViewController.h */,
+				A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */,
 			);
 			name = Options;
 			sourceTree = "<group>";
@@ -2043,6 +2048,7 @@
 				1BE12AC8198CFFB900773B46 /* PlayerInfoViewController_v5.m in Sources */,
 				CE3EA6952AA7A952001900EB /* FCModelDatabaseQueue.m in Sources */,
 				1B763E59147A3B2B00617D86 /* OptionsViewController.m in Sources */,
+				F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */,
 				1BC3ADC619A255560010DC8D /* Model2.xcdatamodeld in Sources */,
 				1B141C2E149248E20042FC19 /* FeedEpisodeExtraction.m in Sources */,
 				1B7B071614B47A8500B4FFC2 /* PlayerBookmarksTableViewCell.m in Sources */,
