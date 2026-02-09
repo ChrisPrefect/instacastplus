@@ -111,6 +111,17 @@
         ep.feedURL = attrs[@"feedUrl"];
         [_currentPlaylist.episodes addObject:ep];
     }
+    // <setting key="..." value="..."/> inside podcast/settings
+    else if ([elementName isEqualToString:@"setting"] && [path isEqualToString:@"instacast/podcasts/podcast/settings/setting"] && _currentPodcast) {
+        NSString *key = attrs[@"key"];
+        NSString *value = attrs[@"value"];
+        if (key.length > 0 && value.length > 0) {
+            if (!_currentPodcast.settings) {
+                _currentPodcast.settings = [NSMutableDictionary dictionary];
+            }
+            _currentPodcast.settings[key] = value;
+        }
+    }
     // <episodeList uid="..." name="..." icon="..." rank="...">
     else if ([path isEqualToString:@"instacast/episodeLists/episodeList"]) {
         _currentEpisodeList = [[ICBackupEpisodeList alloc] init];
@@ -174,7 +185,9 @@
         }
     }
     // Settings child elements (inside podcast/settings)
-    else if ([path hasPrefix:@"instacast/podcasts/podcast/settings/"] && _currentPodcast) {
+    // New format: <setting key="..." value="..."/> handled in didStartElement
+    // Old format fallback: <keyName>value</keyName> for backward compatibility
+    else if ([path hasPrefix:@"instacast/podcasts/podcast/settings/"] && _currentPodcast && ![elementName isEqualToString:@"setting"]) {
         if (text.length > 0) {
             if (!_currentPodcast.settings) {
                 _currentPodcast.settings = [NSMutableDictionary dictionary];

@@ -306,11 +306,11 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
                 if ([internalKeys containsObject:key]) continue;
                 NSString* stringVal = [feed stringForKey:key];
                 if (stringVal) {
-                    [xml appendFormat:@"        <%@>%@</%@>\n", key, [self xmlEscape:stringVal], key];
+                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", [self xmlEscape:key], [self xmlEscape:stringVal]];
                 } else {
                     NSInteger intVal = [feed integerForKey:key];
                     if (intVal != 0) {
-                        [xml appendFormat:@"        <%@>%ld</%@>\n", key, (long)intVal, key];
+                        [xml appendFormat:@"        <setting key=\"%@\" value=\"%ld\"/>\n", [self xmlEscape:key], (long)intVal];
                     }
                 }
             }
