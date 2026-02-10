@@ -643,8 +643,12 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     NSString *activeStr = active ? @"1" : @"0";
     [self publishValue:activeStr toTopic:[self topic:@"sleeptimer-active"] lastValue:&_lastSleeptimerActive retain:YES];
 
-    NSInteger remaining = (NSInteger)as.timerRemainingTime;
-    if (remaining < 0) remaining = 0;
+    // Use stopDate directly to get accurate remaining seconds
+    NSInteger remaining = 0;
+    if (active && as.stopDate) {
+        remaining = (NSInteger)[as.stopDate timeIntervalSinceDate:[NSDate date]];
+        if (remaining < 0) remaining = 0;
+    }
     NSString *remainStr = [NSString stringWithFormat:@"%ld", (long)remaining];
     [self publishValue:remainStr toTopic:[self topic:@"sleeptimer-remaining"] lastValue:&_lastSleeptimerRemaining retain:YES];
 }
@@ -827,6 +831,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)appDidBecomeActive:(NSNotification*)note
 {
+    [self publishPlayState];
     [self publishLockState];
     [self publishAppState];
     [self resetFellAsleep];
@@ -835,18 +840,21 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)appWillResignActive:(NSNotification*)note
 {
+    [self publishPlayState];
     [self publishLockState];
     [self publishAppState];
 }
 
 - (void)appDidEnterBackground:(NSNotification*)note
 {
+    [self publishPlayState];
     [self publishLockState];
     [self publishAppState];
 }
 
 - (void)appWillEnterForeground:(NSNotification*)note
 {
+    [self publishPlayState];
     [self publishLockState];
     [self publishAppState];
     [self reconnectIfNeeded];

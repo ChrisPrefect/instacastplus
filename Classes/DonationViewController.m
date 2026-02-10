@@ -493,25 +493,81 @@ enum {
 
 #pragma mark - Fireworks Animation
 
+- (UIImage *)confettiCircleImage
+{
+    CGSize size = CGSizeMake(12, 12);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 0);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSetFillColorWithColor(ctx, [UIColor whiteColor].CGColor);
+    CGContextFillEllipseInRect(ctx, CGRectMake(0, 0, size.width, size.height));
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
+- (UIImage *)confettiRectImage
+{
+    CGSize size = CGSizeMake(14, 8);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 0);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSetFillColorWithColor(ctx, [UIColor whiteColor].CGColor);
+    CGContextFillRect(ctx, CGRectMake(0, 0, size.width, size.height));
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
+- (UIImage *)confettiStarImage
+{
+    CGSize size = CGSizeMake(14, 14);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 0);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    CGContextSetFillColorWithColor(ctx, [UIColor whiteColor].CGColor);
+    // 5-point star
+    CGFloat cx = 7, cy = 7, outerR = 7, innerR = 3;
+    CGMutablePathRef path = CGPathCreateMutable();
+    for (int i = 0; i < 10; i++) {
+        CGFloat r = (i % 2 == 0) ? outerR : innerR;
+        CGFloat angle = (M_PI / 2.0) + (i * M_PI / 5.0);
+        CGFloat x = cx + r * cosf(angle);
+        CGFloat y = cy - r * sinf(angle);
+        if (i == 0) CGPathMoveToPoint(path, NULL, x, y);
+        else CGPathAddLineToPoint(path, NULL, x, y);
+    }
+    CGPathCloseSubpath(path);
+    CGContextAddPath(ctx, path);
+    CGContextFillPath(ctx);
+    CGPathRelease(path);
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
 - (void)showFireworks
 {
     UIWindow *window = self.view.window;
     if (!window) return;
 
     UIView *overlay = [[UIView alloc] initWithFrame:window.bounds];
-    overlay.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.3];
+    overlay.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.4];
     overlay.alpha = 0.0;
     overlay.userInteractionEnabled = YES;
     [window addSubview:overlay];
 
-    // Thank you label
+    // Thank you label with shadow
     UILabel *thankYouLabel = [[UILabel alloc] init];
     thankYouLabel.text = @"Thank you! Your donation is appreciated!.".ls;
-    thankYouLabel.font = [UIFont boldSystemFontOfSize:22];
+    thankYouLabel.font = [UIFont systemFontOfSize:28 weight:UIFontWeightHeavy];
     thankYouLabel.textColor = [UIColor whiteColor];
     thankYouLabel.textAlignment = NSTextAlignmentCenter;
     thankYouLabel.numberOfLines = 0;
+    thankYouLabel.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0].CGColor;
+    thankYouLabel.layer.shadowOffset = CGSizeZero;
+    thankYouLabel.layer.shadowOpacity = 1.0;
+    thankYouLabel.layer.shadowRadius = 15;
     thankYouLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    thankYouLabel.transform = CGAffineTransformMakeScale(0.5, 0.5);
+    thankYouLabel.alpha = 0.0;
     [overlay addSubview:thankYouLabel];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -521,69 +577,179 @@ enum {
         [thankYouLabel.trailingAnchor constraintLessThanOrEqualToAnchor:overlay.trailingAnchor constant:-30]
     ]];
 
-    // Create emitter layer
-    CAEmitterLayer *emitter = [CAEmitterLayer layer];
-    emitter.emitterPosition = CGPointMake(overlay.bounds.size.width / 2.0, -10);
-    emitter.emitterSize = CGSizeMake(overlay.bounds.size.width, 1);
-    emitter.emitterShape = kCAEmitterLayerLine;
-    emitter.renderMode = kCAEmitterLayerAdditive;
+    CGFloat w = overlay.bounds.size.width;
 
+    // Shape images
+    UIImage *circleImg = [self confettiCircleImage];
+    UIImage *rectImg = [self confettiRectImage];
+    UIImage *starImg = [self confettiStarImage];
+    NSArray *shapes = @[circleImg, rectImg, starImg, circleImg, rectImg];
+
+    // Colors - vivid and varied
     NSArray *colors = @[
-        (id)[UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0].CGColor,   // gold
-        (id)[UIColor colorWithRed:1.0 green:0.2 blue:0.2 alpha:1.0].CGColor,     // red
-        (id)[UIColor colorWithRed:1.0 green:0.6 blue:0.0 alpha:1.0].CGColor,     // orange
-        (id)[UIColor colorWithRed:0.2 green:0.6 blue:1.0 alpha:1.0].CGColor,     // blue
-        (id)[UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:1.0].CGColor,     // white
-        (id)[UIColor colorWithRed:0.8 green:0.2 blue:0.8 alpha:1.0].CGColor,     // purple
+        [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0],    // gold
+        [UIColor colorWithRed:1.0 green:0.15 blue:0.15 alpha:1.0],   // red
+        [UIColor colorWithRed:1.0 green:0.55 blue:0.0 alpha:1.0],    // orange
+        [UIColor colorWithRed:0.0 green:0.8 blue:1.0 alpha:1.0],     // cyan
+        [UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:1.0],     // white
+        [UIColor colorWithRed:0.85 green:0.1 blue:0.85 alpha:1.0],   // magenta
+        [UIColor colorWithRed:0.2 green:1.0 blue:0.4 alpha:1.0],     // green
+        [UIColor colorWithRed:1.0 green:0.4 blue:0.6 alpha:1.0],     // pink
+        [UIColor colorWithRed:0.4 green:0.4 blue:1.0 alpha:1.0],     // blue
+        [UIColor colorWithRed:1.0 green:1.0 blue:0.3 alpha:1.0],     // yellow
     ];
 
-    NSMutableArray *cells = [NSMutableArray array];
+    // === Emitter 1: Top shower (main confetti rain) ===
+    CAEmitterLayer *topEmitter = [CAEmitterLayer layer];
+    topEmitter.emitterPosition = CGPointMake(w / 2.0, -20);
+    topEmitter.emitterSize = CGSizeMake(w * 1.5, 1);
+    topEmitter.emitterShape = kCAEmitterLayerLine;
+    topEmitter.renderMode = kCAEmitterLayerOldestFirst;
+
+    NSMutableArray *topCells = [NSMutableArray array];
     for (int i = 0; i < (int)colors.count; i++) {
         CAEmitterCell *cell = [CAEmitterCell emitterCell];
-        cell.birthRate = 8;
-        cell.lifetime = 3.5;
-        cell.velocity = 200;
-        cell.velocityRange = 80;
+        cell.birthRate = 30;
+        cell.lifetime = 6.0;
+        cell.velocity = 350;
+        cell.velocityRange = 150;
         cell.emissionLongitude = M_PI; // downward
-        cell.emissionRange = M_PI_4;
-        cell.spin = 2.0;
-        cell.spinRange = 4.0;
-        cell.scale = 0.06;
-        cell.scaleRange = 0.04;
+        cell.emissionRange = M_PI / 3.0; // wide spread
+        cell.spin = 3.0;
+        cell.spinRange = 6.0;
+        cell.scale = 0.15;
+        cell.scaleRange = 0.1;
         cell.scaleSpeed = -0.01;
-        cell.alphaSpeed = -0.3;
-        cell.yAcceleration = 50;
-        cell.color = (__bridge CGColorRef)colors[i];
-
-        // Use a simple circle as the particle content
-        CGSize size = CGSizeMake(20, 20);
-        UIGraphicsBeginImageContextWithOptions(size, NO, 0);
-        CGContextRef ctx = UIGraphicsGetCurrentContext();
-        CGContextSetFillColorWithColor(ctx, [UIColor whiteColor].CGColor);
-        CGContextFillEllipseInRect(ctx, CGRectMake(0, 0, size.width, size.height));
-        UIImage *circleImage = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-        cell.contents = (id)circleImage.CGImage;
-
-        [cells addObject:cell];
+        cell.alphaSpeed = -0.05;
+        cell.yAcceleration = 80;
+        cell.xAcceleration = (i % 2 == 0) ? 10 : -10; // gentle drift
+        cell.color = ((UIColor *)colors[i]).CGColor;
+        cell.contents = (id)((UIImage *)shapes[i % shapes.count]).CGImage;
+        [topCells addObject:cell];
     }
+    topEmitter.emitterCells = topCells;
+    [overlay.layer addSublayer:topEmitter];
 
-    emitter.emitterCells = cells;
-    [overlay.layer addSublayer:emitter];
+    // === Emitter 2: Center burst (explosion from center) ===
+    CAEmitterLayer *burstEmitter = [CAEmitterLayer layer];
+    burstEmitter.emitterPosition = CGPointMake(w / 2.0, overlay.bounds.size.height / 2.0);
+    burstEmitter.emitterSize = CGSizeMake(1, 1);
+    burstEmitter.emitterShape = kCAEmitterLayerPoint;
+    burstEmitter.renderMode = kCAEmitterLayerOldestFirst;
 
-    // Fade in
-    [UIView animateWithDuration:0.3 animations:^{
+    NSMutableArray *burstCells = [NSMutableArray array];
+    for (int i = 0; i < (int)colors.count; i++) {
+        CAEmitterCell *cell = [CAEmitterCell emitterCell];
+        cell.birthRate = 50;
+        cell.lifetime = 4.0;
+        cell.velocity = 400;
+        cell.velocityRange = 200;
+        cell.emissionRange = M_PI * 2; // all directions
+        cell.spin = 5.0;
+        cell.spinRange = 8.0;
+        cell.scale = 0.12;
+        cell.scaleRange = 0.08;
+        cell.scaleSpeed = -0.015;
+        cell.alphaSpeed = -0.05;
+        cell.yAcceleration = 120; // gravity pulls down
+        cell.color = ((UIColor *)colors[i]).CGColor;
+        cell.contents = (id)((UIImage *)shapes[i % shapes.count]).CGImage;
+        [burstCells addObject:cell];
+    }
+    burstEmitter.emitterCells = burstCells;
+    [overlay.layer addSublayer:burstEmitter];
+
+    // === Emitter 3: Side cannons (left and right) ===
+    CAEmitterLayer *leftEmitter = [CAEmitterLayer layer];
+    leftEmitter.emitterPosition = CGPointMake(-10, overlay.bounds.size.height * 0.7);
+    leftEmitter.emitterSize = CGSizeMake(1, 1);
+    leftEmitter.emitterShape = kCAEmitterLayerPoint;
+    leftEmitter.renderMode = kCAEmitterLayerOldestFirst;
+
+    CAEmitterLayer *rightEmitter = [CAEmitterLayer layer];
+    rightEmitter.emitterPosition = CGPointMake(w + 10, overlay.bounds.size.height * 0.7);
+    rightEmitter.emitterSize = CGSizeMake(1, 1);
+    rightEmitter.emitterShape = kCAEmitterLayerPoint;
+    rightEmitter.renderMode = kCAEmitterLayerOldestFirst;
+
+    NSMutableArray *leftCells = [NSMutableArray array];
+    NSMutableArray *rightCells = [NSMutableArray array];
+    for (int i = 0; i < (int)colors.count; i++) {
+        // Left cannon - shoots up and right
+        CAEmitterCell *lCell = [CAEmitterCell emitterCell];
+        lCell.birthRate = 20;
+        lCell.lifetime = 5.0;
+        lCell.velocity = 500;
+        lCell.velocityRange = 100;
+        lCell.emissionLongitude = -M_PI / 4.0; // up-right (315 degrees)
+        lCell.emissionRange = M_PI / 6.0;
+        lCell.spin = 4.0;
+        lCell.spinRange = 6.0;
+        lCell.scale = 0.13;
+        lCell.scaleRange = 0.07;
+        lCell.alphaSpeed = -0.05;
+        lCell.yAcceleration = 150;
+        lCell.color = ((UIColor *)colors[i]).CGColor;
+        lCell.contents = (id)((UIImage *)shapes[i % shapes.count]).CGImage;
+        [leftCells addObject:lCell];
+
+        // Right cannon - shoots up and left
+        CAEmitterCell *rCell = [CAEmitterCell emitterCell];
+        rCell.birthRate = 20;
+        rCell.lifetime = 5.0;
+        rCell.velocity = 500;
+        rCell.velocityRange = 100;
+        rCell.emissionLongitude = -3.0 * M_PI / 4.0; // up-left (225 degrees)
+        rCell.emissionRange = M_PI / 6.0;
+        rCell.spin = 4.0;
+        rCell.spinRange = 6.0;
+        rCell.scale = 0.13;
+        rCell.scaleRange = 0.07;
+        rCell.alphaSpeed = -0.05;
+        rCell.yAcceleration = 150;
+        rCell.color = ((UIColor *)colors[i]).CGColor;
+        rCell.contents = (id)((UIImage *)shapes[i % shapes.count]).CGImage;
+        [rightCells addObject:rCell];
+    }
+    leftEmitter.emitterCells = leftCells;
+    rightEmitter.emitterCells = rightCells;
+    [overlay.layer addSublayer:leftEmitter];
+    [overlay.layer addSublayer:rightEmitter];
+
+    // Fade in overlay
+    [UIView animateWithDuration:0.2 animations:^{
         overlay.alpha = 1.0;
     }];
 
-    // Tap to dismiss
+    // Pop-in animation for label
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [UIView animateWithDuration:0.5 delay:0 usingSpringWithDamping:0.6 initialSpringVelocity:0.8 options:0 animations:^{
+            thankYouLabel.transform = CGAffineTransformIdentity;
+            thankYouLabel.alpha = 1.0;
+        } completion:nil];
+    });
+
+    // After 3 seconds: stop new particles, let existing ones fall slowly
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!overlay.superview) return;
+
+        // Stop all emitters (layer-level birthRate, not cell-level)
+        for (CALayer *sublayer in [overlay.layer.sublayers copy]) {
+            if ([sublayer isKindOfClass:[CAEmitterLayer class]]) {
+                CAEmitterLayer *em = (CAEmitterLayer *)sublayer;
+                em.birthRate = 0;
+            }
+        }
+
+        // Let particles fall for 4 more seconds, then fade out
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self dismissOverlay:overlay];
+        });
+    });
+
+    // Tap to dismiss early
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissFireworksOverlay:)];
     [overlay addGestureRecognizer:tap];
-
-    // Auto-remove after 5 seconds
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self dismissOverlay:overlay];
-    });
 }
 
 - (void)dismissFireworksOverlay:(UITapGestureRecognizer *)gesture
@@ -595,17 +761,15 @@ enum {
 {
     if (!overlay.superview) return;
 
-    // Stop emitter birth rate
-    for (CALayer *sublayer in overlay.layer.sublayers) {
+    // Stop all emitters (layer-level birthRate)
+    for (CALayer *sublayer in [overlay.layer.sublayers copy]) {
         if ([sublayer isKindOfClass:[CAEmitterLayer class]]) {
             CAEmitterLayer *emitter = (CAEmitterLayer *)sublayer;
-            for (CAEmitterCell *cell in emitter.emitterCells) {
-                cell.birthRate = 0;
-            }
+            emitter.birthRate = 0;
         }
     }
 
-    [UIView animateWithDuration:0.5 animations:^{
+    [UIView animateWithDuration:1.0 animations:^{
         overlay.alpha = 0.0;
     } completion:^(BOOL finished) {
         [overlay removeFromSuperview];

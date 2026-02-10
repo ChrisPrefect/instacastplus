@@ -9,7 +9,6 @@
 #import "CacheOperation.h"
 #import "HTTPAuthentication.h"
 #import "UtilityFunctions.h"
-#import "CacheManager+FileDetector.h"
 
 static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
@@ -24,9 +23,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 @property BOOL finishedLoading;
 @property BOOL mainCanceled;
 @property BOOL tryAgain;
-@property (strong) NSMutableSet* reflectors;
-@property (strong) id currentReflector;
-
 @property (strong) NSURLSession* urlSession;
 @property (strong) NSURLSessionDataTask* mainTask;
 @property (strong) HTTPAuthentication* authentication;
@@ -61,8 +57,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
         _expectedContentLength = 0;
 
         _temporaryData = [[NSMutableData alloc] initWithCapacity:1024*1024*2];
-
-        _reflectors = [[[CacheManager sharedCacheManager] fileReflectors] mutableCopy];
 	}
 
 	return self;
@@ -163,12 +157,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
 
     NSURL* requestURL = self.remoteURL;
-    if ([self.reflectors count] > 0) {
-        id fileReflector = [self.reflectors anyObject];
-        requestURL = [[CacheManager sharedCacheManager] remoteURLWithLocalURL:self.localURL forFileReflector:fileReflector];
-        self.currentReflector = fileReflector;
-    }
-
 
     BOOL enabled3G = (self.overwriteCellularLock || [USER_DEFAULTS boolForKey:EnableCachingOver3G]);
 	NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:requestURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.f];
@@ -363,16 +351,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
     if (statusCode < 200 || statusCode > 299 )
     {
-        if (self.currentReflector) {
-            [self.reflectors removeObject:self.currentReflector];
-            self.currentReflector = nil;
-            self.tryAgain = YES;
-            ErrLog(@"status code: %ld, try again", (long)statusCode);
-        }
-        else {
-            ErrLog(@"media download failed. status code: %ld", (long)statusCode);
-
-        }
+        ErrLog(@"media download failed. status code: %ld", (long)statusCode);
         self.failed = (!self.suspended);
         completionHandler(NSURLSessionResponseCancel);
 		return;
@@ -468,12 +447,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 {
     if (error) {
         DebugLog(@"could not cache episode: %@", error);
-
-        if (self.currentReflector) {
-            [self.reflectors removeObject:self.currentReflector];
-            self.currentReflector = nil;
-            self.tryAgain = YES;
-        }
 
         self.failed = YES;
 

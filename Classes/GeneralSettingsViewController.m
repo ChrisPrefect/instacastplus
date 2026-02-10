@@ -38,7 +38,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     kUseCellularData,
 };
 
-@interface GeneralSettingsViewController ()<UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, MFMailComposeViewControllerDelegate, UITextFieldDelegate>
+@interface GeneralSettingsViewController ()<UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, MFMailComposeViewControllerDelegate, UITextFieldDelegate, UIPopoverPresentationControllerDelegate>
 @end
 
 @implementation GeneralSettingsViewController
@@ -1040,8 +1040,24 @@ API_AVAILABLE(ios(14.0)){
             [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
         }]];
 
+        [alert setModalPresentationStyle:UIModalPresentationPopover];
+        UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+        popPresenter.sourceView = [tableView cellForRowAtIndexPath:indexPath];
+        popPresenter.sourceRect = [tableView cellForRowAtIndexPath:indexPath].bounds;
+        popPresenter.permittedArrowDirections = 0;
+        popPresenter.delegate = self;
+        if ([ICAppearanceManager sharedManager].nightSettingMode) {
+            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        } else {
+            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+        }
         [self presentViewController:alert animated:YES completion:nil];
     }
+}
+
+- (UIModalPresentationStyle)adaptivePresentationStyleForPresentationController:(UIPresentationController *)controller
+{
+    return UIModalPresentationNone;
 }
 
 - (void) suggestAppIconsAction:(id)sender

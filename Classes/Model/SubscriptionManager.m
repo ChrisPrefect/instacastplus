@@ -37,7 +37,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 //@property (nonatomic, copy) void (^refreshCompletionHandler)(BOOL success, BOOL newData);
 @property BOOL importing;
 @property (nonatomic, strong) NSOperationQueue* parserQueue;
-@property (nonatomic, strong) NSTimer* refreshTimeoutTimer;
+@property (nonatomic, strong) NSDate* refreshStartDate;
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundIdentifier;
@@ -71,7 +71,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 		_refreshingFeedURLs = [[NSMutableArray alloc] init];
         
         _parserQueue = [[NSOperationQueue alloc] init];
-        [_parserQueue setMaxConcurrentOperationCount:5];
+        [_parserQueue setMaxConcurrentOperationCount:10];
         
 #if TARGET_OS_IPHONE==0
         _checkTimer = [NSTimer scheduledTimerWithTimeInterval:5*60 block:^(NSTimeInterval time) {
@@ -369,6 +369,14 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         return feedName ?: @"Looking for new episodes…".ls;
     }
 
+    // When only 1 feed remains, show "Waiting for 'feedname'…"
+    if (remaining == 1) {
+        NSString* feedName = self.lastRefreshingFeedName;
+        if (feedName) {
+            return [NSString stringWithFormat:@"Waiting for '%@'…".ls, feedName];
+        }
+    }
+
     return [NSString stringWithFormat:@"%ld/%ld %@", (long)done, (long)self.numTotalRefreshFeeds, @"podcasts refreshed".ls];
 }
 
@@ -506,6 +514,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         
         self.numOfNewEpisodesAfterRefresh = 0;
         self.numTotalRefreshFeeds = [feeds count];
+        self.refreshStartDate = [NSDate date];
 #if TARGET_OS_IPHONE
         self.backgroundIdentifier = [App beginBackgroundTaskWithExpirationHandler:(^(void) {
             [App endBackgroundTask:self.backgroundIdentifier];
@@ -514,13 +523,6 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 #endif
         
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidStartRefreshingFeedsNotification object:self];
-
-        // Global refresh timeout - cancel stuck operations after 60 seconds
-        self.refreshTimeoutTimer = [NSTimer scheduledTimerWithTimeInterval:60.0
-                                                                   target:self
-                                                                 selector:@selector(_refreshDidTimeout)
-                                                                 userInfo:nil
-                                                                  repeats:NO];
     }
 
 
@@ -537,6 +539,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 {
     [self autoDownloadEpisodesInFeed:feed];
 
+    // Always called from main thread (via performSelectorOnMainThread in ICFeedParser)
     [self willChangeValueForKey:@"refreshStatusText"];
     [self willChangeValueForKey:@"lastRefreshingFeedName"];
     [self.refreshingFeedURLs removeObject:url];
@@ -651,19 +654,18 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 }
 
 
-- (void) _refreshDidTimeout
-{
-    ErrLog(@"refresh timeout: %ld feeds still pending, cancelling", (long)[self.refreshingFeedURLs count]);
-    [self.parserQueue cancelAllOperations];
-    [self.refreshingFeedURLs removeAllObjects];
-}
-
 - (void) checkRefreshOperationsTimer:(NSTimer*)timer
 {
-	if ([self.refreshingFeedURLs count] == 0 && [self.parserQueue operationCount] == 0)
+    // Safety timeout: force-finish after 30 seconds regardless
+    NSTimeInterval elapsed = -[self.refreshStartDate timeIntervalSinceNow];
+    if (elapsed > 30.0 && [self.refreshingFeedURLs count] > 0) {
+        DebugLog(@"refresh safety timeout after %.0fs, %lu feeds remaining", elapsed, (unsigned long)[self.refreshingFeedURLs count]);
+        [self.parserQueue cancelAllOperations];
+        [self.refreshingFeedURLs removeAllObjects];
+    }
+
+	if ([self.refreshingFeedURLs count] == 0)
 	{
-        [self.refreshTimeoutTimer invalidate];
-        self.refreshTimeoutTimer = nil;
         [self.refreshCheckTimer invalidate];
 		self.refreshCheckTimer = nil;
         

@@ -95,7 +95,7 @@
 "Video Content" = "Video Content";
 "In app purchase are disabled in your device." = "In app purchase are disabled in your device.";
 "Okay" = "Okay";
-"Thank you! Your donation is appreciated!." = "Thank you! Your donation is appreciated!.";
+"Thank you! Your donation is appreciated!." = "Thank you so much for your support!";
 
 "Screen Touch" = "Screen Touch";
 "Volume Change" = "Volume Change";
@@ -128,6 +128,7 @@
 "%ld hours ago" = "%ld hours ago";
 "%ld days ago" = "%ld days ago";
 "podcasts refreshed" = "podcasts refreshed";
+"Waiting for '%@'…" = "Waiting for '%@'…";
 "New episode available in Instacast." = "New episode available in Instacast.";
 "Refreshing finished and %d new episodes are available." = "Refreshing finished and %d new episodes are available.";
 "Refreshing finished and a new episode is available." = "Refreshing finished and a new episode is available.";
@@ -804,8 +805,8 @@
 "Older to Newer" = "Older to Newer";
 
 /* Auto-Download While Streaming */
-"Auto-Download While Streaming" = "Save Stream";
-"Automatically downloads the full episode while streaming." = "Automatically saves streamed episodes for offline playback.";
+"Auto-Download While Streaming" = "Download Episodes on Play";
+"Automatically downloads the full episode while streaming." = "Automatically downloads episodes for offline playback when you start playing them.";
 
 /* App Icon */
 "App Icon" = "App Icon";

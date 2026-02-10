@@ -95,7 +95,7 @@
 "Video Content" = "Videoinhalte";
 "In app purchase are disabled in your device." = "In-App-Käufe sind auf Ihrem Gerät deaktiviert.";
 "Okay" = "Okay";
-"Thank you! Your donation is appreciated!." = "Herzlichen Dank für Ihre Unterstützung!";
+"Thank you! Your donation is appreciated!." = "Herzlichen Dank für die Unterstützung!";
 
 "If not played after" = "Wenn nicht angespielt innert";
 
@@ -129,6 +129,7 @@
 "%ld hours ago" = "vor %ld Std.";
 "%ld days ago" = "vor %ld Tagen";
 "podcasts refreshed" = "Podcasts aktualisiert";
+"Waiting for '%@'…" = "Warten auf \U201E%@\U201C\U2026";
 "New episode available in Instacast." = "Neue Folge in Instacast verfügbar.";
 "Refreshing finished and %d new episodes are available." = "Aktualisieren beendet und %d neue Folgen verfügbar.";
 "Refreshing finished and a new episode is available." = "Aktualisieren beendet und 1 neue Folge verfügbar.";
@@ -808,8 +809,8 @@
 "Older to Newer" = "Älter zu Neuer";
 
 /* Auto-Download While Streaming */
-"Auto-Download While Streaming" = "Stream speichern";
-"Automatically downloads the full episode while streaming." = "Speichert gestreamte Folgen automatisch für die Offline-Wiedergabe.";
+"Auto-Download While Streaming" = "Beim Streamen auch herunterladen";
+"Automatically downloads the full episode while streaming." = "Lädt Folgen beim Abspielen automatisch für die Offline-Wiedergabe herunter.";
 
 /* App Icon */
 "App Icon" = "App Icon";

@@ -7,7 +7,6 @@
 //
 
 #import "CacheOperation_iOS7.h"
-#import "CacheManager+FileDetector.h"
 #import "HTTPAuthentication.h"
 #import "UtilityFunctions.h"
 
@@ -15,9 +14,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 
 @interface CacheOperation_iOS7 () <NSURLSessionDelegate, NSURLSessionDownloadDelegate>
-@property (strong) NSMutableSet* reflectors;
-@property (strong) id currentReflector;
-
 @property (strong) NSURLSession* session;
 @property (strong) NSURLSessionDownloadTask* downloadTask;
 
@@ -72,10 +68,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 		_localURL = [aLocalURL copy];
         _identifier = [identifier copy];
         _expectedContentLength = expectedContentLength;
-        
-        _reflectors = [[[CacheManager sharedCacheManager] fileReflectors] mutableCopy];
-        
-        
         
         NSString* logsPath = [[NSBundle pathToLogsDirectory] stringByAppendingPathComponent:@"MediaFileImporter.log"];
         
@@ -175,24 +167,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 	@autoreleasepool
     {
         NSURL* remoteURL = self.remoteURL;
-        
-        // iterate over all reflectors and check for a corresponding of in the local network
-        for(id fileReflectors in self.reflectors) {
-            NSURL* fileIndexURL = [NSURL fileURLWithPath:@"/FileIndex.plist"];
-            NSURL* reflectorFileIndexURL = [[CacheManager sharedCacheManager] remoteURLWithLocalURL:fileIndexURL forFileReflector:fileReflectors];
-            
-            NSArray* fileIndex = [[NSArray alloc] initWithContentsOfURL:reflectorFileIndexURL];
-            for(NSDictionary* entry in fileIndex) {
-                if ([entry[@"remoteURL"] isEqualToString:[remoteURL absoluteString]]) {
-                    NSURL* localFile = [NSURL fileURLWithPath:[NSString stringWithFormat:@"/%@", entry[@"localFile"]]];
-                    remoteURL = [[CacheManager sharedCacheManager] remoteURLWithLocalURL:localFile forFileReflector:fileReflectors];
-                    break;
-                }
-            }
-        }
-        
 
-        
         dispatch_sync(dispatch_get_main_queue(), ^{
             
             BOOL enabled3G = (self.overwriteCellularLock || [USER_DEFAULTS boolForKey:EnableCachingOver3G]);

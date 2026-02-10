@@ -12,8 +12,6 @@
 #import "ICCacheHistory.h"
 #import "UtilityFunctions.h"
 
-#import "CacheManager+FileDetector.h"
-
 #if TARGET_OS_IPHONE
 #import "CacheOperation_iOS7.h"
 #define CACHE_OPERATION_CLASS CacheOperation_iOS7
@@ -21,10 +19,7 @@
 
 #import "CacheOperation.h"
 #define CACHE_OPERATION_CLASS CacheOperation
-#import "CacheManager+FileReflector.h"
 #import <IOKit/pwr_mgt/IOPMLib.h>
-
-#define CACHE_OPERATION_CLASS CacheOperation
 
 #endif
 
@@ -165,11 +160,6 @@ static NSString* gPathToCache = nil;
         [App addTaskObserver:self forKeyPath:@"networkAccessTechnology" task:^(id obj, NSDictionary *change) {
             [self _handleNetworkStatusChanged];
         }];
-        
-#if !TARGET_OS_IPHONE
-        [self initFileReflector];
-#endif
-        [self initFileDetector];
         
         [self restoreCachingEpisodes];
 	}
