@@ -308,6 +308,15 @@
 		CE3EA6992AA7A952001900EB /* FMStatement.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA68C2AA7A952001900EB /* FMStatement.m */; };
 		CE3EA69A2AA7A952001900EB /* FMDatabasePool.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA68F2AA7A952001900EB /* FMDatabasePool.m */; };
 		CE3EA69B2AA7A952001900EB /* FMResultSet.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA6902AA7A952001900EB /* FMResultSet.m */; };
+		E45CD2ABF2D1BAC48600A1E4 /* ICCloudSyncManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 126B43AF2E24D44D2E43E25D /* ICCloudSyncManager.m */; };
+		248D26F8299CFFB314ED4DB8 /* ICCloudSyncDeviceInfo.m in Sources */ = {isa = PBXBuildFile; fileRef = D1B2EB9A09A60DEE7C15C25F /* ICCloudSyncDeviceInfo.m */; };
+		C070840DF6F1CC2F602ABC4A /* ICCloudSyncSubscriptionHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 46C63C71A3AF8033E477EB83 /* ICCloudSyncSubscriptionHandler.m */; };
+		22AED23EE168E55567505A65 /* ICCloudSyncPlaybackHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 094F7924BA769BA2A224BDC8 /* ICCloudSyncPlaybackHandler.m */; };
+		C6D6259CADBA597AA7A86729 /* ICCloudSyncNowPlayingHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = C422536400D398C30FCDE076 /* ICCloudSyncNowPlayingHandler.m */; };
+		A0B881E96A221DECBBBC945E /* ICCloudSyncFeedSettingsHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 661371EEE9F9A467AB106E4B /* ICCloudSyncFeedSettingsHandler.m */; };
+		C6D7F074C7C58483B00A5A43 /* ICCloudSyncAppSettingsHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 15D8AC236AFFF2953F443F30 /* ICCloudSyncAppSettingsHandler.m */; };
+		E7067A799038969ACBC8E024 /* ICCloudSyncDownloadHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */; };
+		C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -842,6 +851,25 @@
 		1965448EF551B91A1C5B9BA5 /* InstacastBackupImporter.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupImporter.m; sourceTree = "<group>"; };
 		EC277288AEE288A71CA39AAA /* InstacastBackupImportViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImportViewController.h; sourceTree = "<group>"; };
 		1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupImportViewController.m; sourceTree = "<group>"; };
+		AAFAB4141348B8FBE6336AEC /* ICCloudSyncHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncHandler.h; sourceTree = "<group>"; };
+		BEB97CE0A4AA96E0776442F7 /* ICCloudSyncManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncManager.h; sourceTree = "<group>"; };
+		126B43AF2E24D44D2E43E25D /* ICCloudSyncManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncManager.m; sourceTree = "<group>"; };
+		3D0B18A58DC1690A96BD814C /* ICCloudSyncDeviceInfo.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncDeviceInfo.h; sourceTree = "<group>"; };
+		D1B2EB9A09A60DEE7C15C25F /* ICCloudSyncDeviceInfo.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncDeviceInfo.m; sourceTree = "<group>"; };
+		DB86B85B33B44EE1A02CEEB0 /* ICCloudSyncSubscriptionHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncSubscriptionHandler.h; sourceTree = "<group>"; };
+		46C63C71A3AF8033E477EB83 /* ICCloudSyncSubscriptionHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncSubscriptionHandler.m; sourceTree = "<group>"; };
+		E4A3BB2DB72062B531041483 /* ICCloudSyncPlaybackHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncPlaybackHandler.h; sourceTree = "<group>"; };
+		094F7924BA769BA2A224BDC8 /* ICCloudSyncPlaybackHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncPlaybackHandler.m; sourceTree = "<group>"; };
+		1950BDBC546374FB68E55730 /* ICCloudSyncNowPlayingHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncNowPlayingHandler.h; sourceTree = "<group>"; };
+		C422536400D398C30FCDE076 /* ICCloudSyncNowPlayingHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncNowPlayingHandler.m; sourceTree = "<group>"; };
+		0B2B18E0DCCAC3B77682E51D /* ICCloudSyncFeedSettingsHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncFeedSettingsHandler.h; sourceTree = "<group>"; };
+		661371EEE9F9A467AB106E4B /* ICCloudSyncFeedSettingsHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncFeedSettingsHandler.m; sourceTree = "<group>"; };
+		46391C2C1D1336DD2951C148 /* ICCloudSyncAppSettingsHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncAppSettingsHandler.h; sourceTree = "<group>"; };
+		15D8AC236AFFF2953F443F30 /* ICCloudSyncAppSettingsHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncAppSettingsHandler.m; sourceTree = "<group>"; };
+		2E64F6C89464B37DC80901D6 /* ICCloudSyncDownloadHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncDownloadHandler.h; sourceTree = "<group>"; };
+		CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncDownloadHandler.m; sourceTree = "<group>"; };
+		CDAA978C300BCF14542D5C63 /* iCloudSettingsViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = iCloudSettingsViewController.h; sourceTree = "<group>"; };
+		DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = iCloudSettingsViewController.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -899,6 +927,7 @@
 				188B3C722E175728004D14A5 /* SkipTimeCell.m */,
 				188B3C732E175728004D14A5 /* SkipTimeCell.xib */,
 				E981A4C97F2F43B593944594 /* MQTT */,
+				A77E623558635E19243F9114 /* iCloud */,
 				835A5B0C2F33BBDA00A70766 /* SmarthomeManager.m */,
 				835A5B082F33BBC000A70766 /* SmarthomeManager.h */,
 				835A5B092F33BBC000A70766 /* SmarthomeSettingsViewController.h */,
@@ -1778,6 +1807,32 @@
 			path = MQTT;
 			sourceTree = "<group>";
 		};
+		A77E623558635E19243F9114 /* iCloud */ = {
+			isa = PBXGroup;
+			children = (
+				AAFAB4141348B8FBE6336AEC /* ICCloudSyncHandler.h */,
+				BEB97CE0A4AA96E0776442F7 /* ICCloudSyncManager.h */,
+				126B43AF2E24D44D2E43E25D /* ICCloudSyncManager.m */,
+				3D0B18A58DC1690A96BD814C /* ICCloudSyncDeviceInfo.h */,
+				D1B2EB9A09A60DEE7C15C25F /* ICCloudSyncDeviceInfo.m */,
+				DB86B85B33B44EE1A02CEEB0 /* ICCloudSyncSubscriptionHandler.h */,
+				46C63C71A3AF8033E477EB83 /* ICCloudSyncSubscriptionHandler.m */,
+				E4A3BB2DB72062B531041483 /* ICCloudSyncPlaybackHandler.h */,
+				094F7924BA769BA2A224BDC8 /* ICCloudSyncPlaybackHandler.m */,
+				1950BDBC546374FB68E55730 /* ICCloudSyncNowPlayingHandler.h */,
+				C422536400D398C30FCDE076 /* ICCloudSyncNowPlayingHandler.m */,
+				0B2B18E0DCCAC3B77682E51D /* ICCloudSyncFeedSettingsHandler.h */,
+				661371EEE9F9A467AB106E4B /* ICCloudSyncFeedSettingsHandler.m */,
+				46391C2C1D1336DD2951C148 /* ICCloudSyncAppSettingsHandler.h */,
+				15D8AC236AFFF2953F443F30 /* ICCloudSyncAppSettingsHandler.m */,
+				2E64F6C89464B37DC80901D6 /* ICCloudSyncDownloadHandler.h */,
+				CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */,
+				CDAA978C300BCF14542D5C63 /* iCloudSettingsViewController.h */,
+				DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */,
+			);
+			path = iCloud;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -2186,6 +2241,15 @@
 				1BB0D53B1A0A0ADE00B619C8 /* SFHFKeychainUtils.m in Sources */,
 				835A5B0B2F33BBC000A70766 /* SmarthomeSettingsViewController.m in Sources */,
 				1BD9549D177D798600323386 /* ICPagedFeedParser.m in Sources */,
+				E45CD2ABF2D1BAC48600A1E4 /* ICCloudSyncManager.m in Sources */,
+				248D26F8299CFFB314ED4DB8 /* ICCloudSyncDeviceInfo.m in Sources */,
+				C070840DF6F1CC2F602ABC4A /* ICCloudSyncSubscriptionHandler.m in Sources */,
+				22AED23EE168E55567505A65 /* ICCloudSyncPlaybackHandler.m in Sources */,
+				C6D6259CADBA597AA7A86729 /* ICCloudSyncNowPlayingHandler.m in Sources */,
+				A0B881E96A221DECBBBC945E /* ICCloudSyncFeedSettingsHandler.m in Sources */,
+				C6D7F074C7C58483B00A5A43 /* ICCloudSyncAppSettingsHandler.m in Sources */,
+				E7067A799038969ACBC8E024 /* ICCloudSyncDownloadHandler.m in Sources */,
+				C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

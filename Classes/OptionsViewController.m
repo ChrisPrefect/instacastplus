@@ -24,6 +24,7 @@
 #import "DataSettingsViewController.h"
 #import "ImportExportSettingsViewController.h"
 #import "SmarthomeSettingsViewController.h"
+#import "iCloudSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #import "DonationViewController.h"
@@ -46,6 +47,7 @@ enum {
     kRowData,
     kRowSubscriptions,
     kRowNotifications,
+    kRowiCloud,
     kRowImportExport,
     kRowSmartHome,
     kRowEmailFeedback,
@@ -162,6 +164,10 @@ enum {
             cell.textLabel.text = @"Notifications".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"bell"];
             break;
+        case kRowiCloud:
+            cell.textLabel.text = @"iCloud Sync".ls;
+            cell.imageView.image = [UIImage systemImageNamed:@"icloud"];
+            break;
         case kRowImportExport:
             cell.textLabel.text = @"Import / Export".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
@@ -245,6 +251,11 @@ enum {
             [self.navigationController pushViewController:controller animated:YES];
             break;
         }
+        case kRowiCloud: {
+            iCloudSettingsViewController* controller = [iCloudSettingsViewController viewController];
+            [self.navigationController pushViewController:controller animated:YES];
+            break;
+        }
         case kRowImportExport: {
             ImportExportSettingsViewController* controller = [ImportExportSettingsViewController viewController];
             [self.navigationController pushViewController:controller animated:YES];
@@ -315,7 +326,7 @@ enum {
         UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 120)];
         footerView.backgroundColor = [UIColor clearColor];
 
-        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 0, footerView.frame.size.width-40, 120)];
+        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 120)];
         footerLabel.numberOfLines = 0;
         footerLabel.textAlignment = NSTextAlignmentLeft;
         [footerLabel setTextColor:[UIColor grayColor]];

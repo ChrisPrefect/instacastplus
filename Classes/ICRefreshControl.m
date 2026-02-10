@@ -48,6 +48,32 @@ typedef NS_ENUM(NSInteger, ICRefreshState) {
     return self;
 }
 
+- (void) setPulldownText:(NSString *)pulldownText
+{
+    if ((_pulldownText == pulldownText) || [_pulldownText isEqualToString:pulldownText]) {
+        return;
+    }
+    _pulldownText = [pulldownText copy];
+    [self setNeedsLayout];
+}
+
+- (void) setRefreshText:(NSString *)refreshText
+{
+    if ((_refreshText == refreshText) || [_refreshText isEqualToString:refreshText]) {
+        return;
+    }
+    _refreshText = [refreshText copy];
+    [self setNeedsLayout];
+}
+
+- (void) setIdleText:(NSString *)idleText
+{
+    if ((_idleText == idleText) || [_idleText isEqualToString:idleText]) {
+        return;
+    }
+    _idleText = [idleText copy];
+    [self setNeedsLayout];
+}
 
 - (void) beginRefreshing
 {

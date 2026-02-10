@@ -125,5 +125,18 @@ NSString* SmarthomeDeviceName = @"SmarthomeDeviceName";
 
 NSString* OpenLinksInExternalBrowser = @"OpenLinksInExternalBrowser";
 
+// iCloud Sync
+NSString* iCloudSyncEnabled = @"iCloudSyncEnabled";
+NSString* iCloudSyncPlaybackStatus = @"iCloudSyncPlaybackStatus";
+NSString* iCloudSyncNowPlaying = @"iCloudSyncNowPlaying";
+NSString* iCloudSyncSubscriptions = @"iCloudSyncSubscriptions";
+NSString* iCloudSyncFeedSettings = @"iCloudSyncFeedSettings";
+NSString* iCloudSyncAppSettings = @"iCloudSyncAppSettings";
+NSString* iCloudSyncDownloadStatus = @"iCloudSyncDownloadStatus";
+NSString* iCloudSyncDeviceID = @"iCloudSyncDeviceID";
+NSString* iCloudSyncLastSyncDate = @"iCloudSyncLastSyncDate";
+NSString* iCloudSyncServerChangeToken = @"iCloudSyncServerChangeToken";
+NSString* iCloudSyncInitialSyncCompleted = @"iCloudSyncInitialSyncCompleted";
+
 NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";
 NSString* ApplicationDidDetectMotionNotification = @"ApplicationDidDetectMotionNotification";

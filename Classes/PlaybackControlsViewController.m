@@ -24,11 +24,118 @@
 #import "ImageFunctions.h"
 #import <MediaPlayer/MediaPlayer.h>
 
+// Container that only accepts touches within 3x the thumb area
+@interface ICVolumeThumbHitView : UIView
+@property (nonatomic, strong) MPVolumeView *volumeView;
+@property (nonatomic, strong) UIView *debugBorderView;
+@property (nonatomic, strong) CADisplayLink *debugLink;
+@end
+
+@implementation ICVolumeThumbHitView
+
+- (void)dealloc {
+    [_debugLink invalidate];
+}
+
+- (UISlider *)_findSlider {
+    for (UIView *subview in self.volumeView.subviews) {
+        if ([subview isKindOfClass:[UISlider class]]) {
+            return (UISlider *)subview;
+        }
+    }
+    return nil;
+}
+
+- (CGRect)_expandedThumbRect {
+    UISlider *slider = [self _findSlider];
+    if (!slider) return CGRectZero;
+
+    CGRect trackRect = [slider trackRectForBounds:slider.bounds];
+    CGRect thumbRect = [slider thumbRectForBounds:slider.bounds trackRect:trackRect value:slider.value];
+    CGRect thumbInSelf = [self convertRect:thumbRect fromView:slider];
+
+    // 3x height, 4.5x width (3x * 1.5)
+    CGFloat expandX = thumbInSelf.size.width * 1.5;
+    CGFloat expandY = thumbInSelf.size.height;
+    return CGRectInset(thumbInSelf, -expandX, -expandY);
+}
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    return CGRectContainsPoint([self _expandedThumbRect], point);
+}
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    if ([self pointInside:point withEvent:event]) {
+        return self; // handle all touches ourselves via gesture recognizers
+    }
+    return nil;
+}
+
+- (void)setupGestures {
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(_handlePan:)];
+    [self addGestureRecognizer:pan];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_handleTap:)];
+    [self addGestureRecognizer:tap];
+}
+
+- (void)_handlePan:(UIPanGestureRecognizer *)pan {
+    UISlider *slider = [self _findSlider];
+    if (!slider) return;
+
+    CGPoint point = [pan locationInView:slider];
+    CGRect trackRect = [slider trackRectForBounds:slider.bounds];
+    float value = (point.x - trackRect.origin.x) / trackRect.size.width;
+    value = MAX(0.0f, MIN(1.0f, value));
+
+    [slider setValue:value animated:NO];
+    [slider sendActionsForControlEvents:UIControlEventValueChanged];
+}
+
+- (void)_handleTap:(UITapGestureRecognizer *)tap {
+    UISlider *slider = [self _findSlider];
+    if (!slider) return;
+
+    CGPoint point = [tap locationInView:slider];
+    CGRect trackRect = [slider trackRectForBounds:slider.bounds];
+    float value = (point.x - trackRect.origin.x) / trackRect.size.width;
+    value = MAX(0.0f, MIN(1.0f, value));
+
+    [slider setValue:value animated:YES];
+    [slider sendActionsForControlEvents:UIControlEventValueChanged];
+}
+
+- (void)startDebugBorder {
+    self.debugBorderView = [[UIView alloc] init];
+    self.debugBorderView.layer.borderColor = [UIColor redColor].CGColor;
+    self.debugBorderView.layer.borderWidth = 2.0;
+    self.debugBorderView.userInteractionEnabled = NO;
+    [self addSubview:self.debugBorderView];
+
+    self.debugLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(_updateDebug)];
+    self.debugLink.preferredFramesPerSecond = 15;
+    [self.debugLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)stopDebugBorder {
+    [self.debugLink invalidate];
+    self.debugLink = nil;
+    [self.debugBorderView removeFromSuperview];
+    self.debugBorderView = nil;
+}
+
+- (void)_updateDebug {
+    self.debugBorderView.frame = [self _expandedThumbRect];
+}
+
+@end
+
 @interface PlaybackControlsViewController () <UIGestureRecognizerDelegate>
 @property (nonatomic, weak) NSTimer* progressTimer;
 @property (nonatomic, weak) NSTimer* skipTimer;
 @property (nonatomic) BOOL toolsVisible;
 @property (nonatomic, strong) VDModalInfo* scrubbingModalInfo;
+@property (nonatomic, strong) ICVolumeThumbHitView *volumeHitView;
 @end
 
 @implementation PlaybackControlsViewController {
@@ -47,13 +154,19 @@
 - (void) createVolumeViews
 {
     CGRect b = self.view.bounds;
-    
-    // 3x height (87pt) for larger thumb touch area
-    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(57.5, 82.333, CGRectGetWidth(b)-120, 87)];
+    CGFloat sliderWidth = CGRectGetWidth(b) - 120;
+    CGFloat sliderHeight = 87;
+
+    // Container: same frame as original volumeView, intercepts touches only near thumb
+    ICVolumeThumbHitView *hitView = [[ICVolumeThumbHitView alloc] initWithFrame:CGRectMake(57.5, 82.333, sliderWidth, sliderHeight)];
+    hitView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    hitView.backgroundColor = [UIColor clearColor];
+
+    // MPVolumeView: same size, fills container (visual position unchanged)
+    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(0, 0, sliderWidth, sliderHeight)];
     volumeView.backgroundColor = [UIColor clearColor];
-    volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-    //volumeView.showsVolumeSlider = YES;
-    //[volumeView setVolumeThumbImage:[UIImage imageNamed:@"Video Slider Thumb"] forState:UIControlStateNormal];
+    volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    volumeView.userInteractionEnabled = NO; // container handles all touches
     if (@available(iOS 16, *)) {
         for (UIView *subview in volumeView.subviews) {
             if ([subview isKindOfClass:[UIButton class]]) {
@@ -62,21 +175,19 @@
             }
         }
     } else {
-        // showsRouteButton is deprecated but still functional
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [volumeView setValue:@(NO) forKey:@"showsRouteButton"];
 #pragma clang diagnostic pop
     }
-    
-    // Tap-to-position on volume slider
-    UITapGestureRecognizer* volumeTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleVolumeTap:)];
-    [volumeView addGestureRecognizer:volumeTapRecognizer];
 
-    [self.view addSubview:volumeView];
+    [hitView addSubview:volumeView];
+    hitView.volumeView = volumeView;
+    [hitView setupGestures];
+
+    [self.view addSubview:hitView];
+    self.volumeHitView = hitView;
     self.volumeView = volumeView;
-    self.volumeView.hidden = NO;//DevD to do
-    //self.volumeView.clipsToBounds = true;
 
     ICVolumeView* routeButton = [[ICVolumeView alloc] initWithFrame:CGRectMake(8, -17, 84, 84)];
     routeButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin;
@@ -329,7 +440,7 @@
         _shown = shown;
         
         // when controller is not shown, we want the HUD for volume
-        self.volumeView.hidden = !shown;
+        self.volumeHitView.hidden = !shown;
         self.routeButton.hidden = !shown;//Devd TO Do
     }
 }

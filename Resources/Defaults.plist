@@ -102,5 +102,21 @@
 	<true/>
 	<key>AutoDownloadWhileStreaming</key>
 	<true/>
+	<key>iCloudSyncEnabled</key>
+	<false/>
+	<key>iCloudSyncPlaybackStatus</key>
+	<false/>
+	<key>iCloudSyncNowPlaying</key>
+	<false/>
+	<key>iCloudSyncSubscriptions</key>
+	<false/>
+	<key>iCloudSyncFeedSettings</key>
+	<false/>
+	<key>iCloudSyncAppSettings</key>
+	<false/>
+	<key>iCloudSyncDownloadStatus</key>
+	<false/>
+	<key>iCloudSyncInitialSyncCompleted</key>
+	<false/>
 </dict>
 </plist>

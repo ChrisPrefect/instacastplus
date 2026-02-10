@@ -823,3 +823,35 @@
 "Rate on App Store" = "Im App Store bewerten";
 "Instacast lebt Podcast" = "Instacast lebt Podcast";
 "Listen to Instacast lebt Podcast" = "\"Instacast lebt\" Podcast anhören";
+
+/* iCloudSettingsViewController */
+"iCloud" = "iCloud";
+"iCloud Sync" = "iCloud-Synchronisierung";
+"Syncs data between your devices via iCloud." = "Synchronisiert Daten zwischen deinen Geräten via iCloud.";
+"Sync Categories" = "Sync-Kategorien";
+"Select which data to sync between your devices." = "Wähle aus, welche Daten zwischen deinen Geräten synchronisiert werden.";
+"Playback Status" = "Abspielstatus";
+"Download Status" = "Downloadstatus";
+"Last Synced" = "Zuletzt synchronisiert";
+"Sync Now" = "Jetzt synchronisieren";
+"Reset Sync Data" = "Sync-Daten zurücksetzen";
+"Never" = "Nie";
+"Are you sure you want to reset all sync data? This will remove all cloud data for this app." = "Möchtest du alle Sync-Daten zurücksetzen? Dies entfernt alle Cloud-Daten dieser App.";
+"Devices" = "Geräte";
+"Upload Local Data" = "Lokale Daten hochladen";
+"Download from iCloud" = "Von iCloud herunterladen";
+"Merge" = "Zusammenführen";
+"Cloud data already exists. How would you like to handle the initial sync?" = "Cloud-Daten sind bereits vorhanden. Wie möchtest du die erste Synchronisierung durchführen?";
+"Initial Sync" = "Erste Synchronisierung";
+"Syncing…" = "Synchronisieren…";
+"No iCloud Account" = "Kein iCloud-Account";
+"Please sign in to iCloud in Settings to use sync." = "Bitte melde dich in den Einstellungen bei iCloud an, um die Synchronisierung zu nutzen.";
+
+/* Refresh Status */
+"%ld/%ld podcasts updating…" = "%ld/%ld Podcasts werden aktualisiert…";
+"Not updated yet (%ld):" = "Noch nicht aktualisiert (%ld):";
+"Unknown error" = "Unbekannter Fehler";
+"Timeout" = "Zeitüberschreitung";
+"Not found" = "Nicht gefunden";
+"No access" = "Kein Zugriff";
+"Some podcasts could not be updated" = "Einige Podcasts konnten nicht aktualisiert werden";

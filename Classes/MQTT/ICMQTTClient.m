@@ -33,6 +33,36 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
 @implementation ICMQTTClient
 
++ (void)_networkThreadMain:(id)__unused object
+{
+    @autoreleasepool {
+        [[NSThread currentThread] setName:@"ICMQTTClient.NetworkThread"];
+        NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+        [runLoop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode];
+        while (YES) {
+            @autoreleasepool {
+                [runLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+            }
+        }
+    }
+}
+
++ (NSThread *)networkThread
+{
+    static NSThread *thread = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        thread = [[NSThread alloc] initWithTarget:self selector:@selector(_networkThreadMain:) object:nil];
+        [thread start];
+    });
+    return thread;
+}
+
+- (void)performOnNetworkThread:(SEL)selector waitUntilDone:(BOOL)wait
+{
+    [self performSelector:selector onThread:[[self class] networkThread] withObject:nil waitUntilDone:wait];
+}
+
 - (instancetype)init
 {
     self = [super init];
@@ -57,6 +87,11 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
 - (void)connect
 {
+    [self performOnNetworkThread:@selector(connectOnNetworkThread) waitUntilDone:NO];
+}
+
+- (void)connectOnNetworkThread
+{
     if (_connectionState != ICMQTTConnectionStateDisconnected) {
         return;
     }
@@ -74,8 +109,8 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     _inputStream.delegate = self;
     _outputStream.delegate = self;
 
-    [_inputStream scheduleInRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-    [_outputStream scheduleInRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    [_inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [_outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
 
     [_inputStream open];
     [_outputStream open];
@@ -86,6 +121,11 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 }
 
 - (void)disconnect
+{
+    [self performOnNetworkThread:@selector(disconnectOnNetworkThread) waitUntilDone:NO];
+}
+
+- (void)disconnectOnNetworkThread
 {
     if (_connectionState == ICMQTTConnectionStateDisconnected) {
         return;
@@ -110,8 +150,8 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     _inputStream.delegate = nil;
     _outputStream.delegate = nil;
 
-    [_inputStream removeFromRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-    [_outputStream removeFromRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    [_inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [_outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
 
     [_inputStream close];
     [_outputStream close];
@@ -319,6 +359,8 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
     const uint8_t *bytes = data.bytes;
     NSUInteger offset = 0;
+    uint8_t headerFlags = flags & 0x0F;
+    uint8_t qos = (headerFlags >> 1) & 0x03;
 
     // Topic length (MSB + LSB)
     uint16_t topicLen = (bytes[offset] << 8) | bytes[offset + 1];
@@ -329,7 +371,11 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     NSString *topic = [[NSString alloc] initWithBytes:bytes + offset length:topicLen encoding:NSUTF8StringEncoding];
     offset += topicLen;
 
-    // QoS 0 has no packet identifier
+    // QoS 1/2 includes packet identifier after topic.
+    if (qos > 0) {
+        if (offset + 2 > data.length) return;
+        offset += 2;
+    }
 
     NSString *message = @"";
     if (offset < data.length) {
@@ -461,9 +507,23 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
 - (void)publishMessage:(NSString*)message toTopic:(NSString*)topic retain:(BOOL)retain
 {
+    NSDictionary *payload = @{
+        @"message": message ?: @"",
+        @"topic": topic ?: @"",
+        @"retain": @(retain)
+    };
+    [self performSelector:@selector(publishOnNetworkThread:) onThread:[[self class] networkThread] withObject:payload waitUntilDone:NO];
+}
+
+- (void)publishOnNetworkThread:(NSDictionary *)payload
+{
     if (_connectionState != ICMQTTConnectionStateConnected) {
         return;
     }
+
+    NSString *message = payload[@"message"];
+    NSString *topic = payload[@"topic"];
+    BOOL retain = [payload[@"retain"] boolValue];
 
     NSMutableData *variableHeader = [NSMutableData data];
     [self appendUTF8String:topic toData:variableHeader];
@@ -484,6 +544,11 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 }
 
 - (void)subscribeToTopic:(NSString*)topic
+{
+    [self performSelector:@selector(subscribeOnNetworkThread:) onThread:[[self class] networkThread] withObject:topic waitUntilDone:NO];
+}
+
+- (void)subscribeOnNetworkThread:(NSString*)topic
 {
     if (_connectionState != ICMQTTConnectionStateConnected) return;
 

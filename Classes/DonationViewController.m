@@ -30,8 +30,8 @@ static NSString * const kPodcastAudioURL = @"https://www.schleifenquadrat.fm/pod
 
 enum {
     kSectionDonationButtons,
-    kSectionDonationHistory,
     kSectionLinks,
+    kSectionDonationHistory,
     kNumberOfSections
 };
 

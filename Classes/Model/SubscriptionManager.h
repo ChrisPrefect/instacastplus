@@ -50,6 +50,10 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 @property (nonatomic, readonly, strong) NSURL* refreshedURL;
 @property (nonatomic, readonly) NSString* refreshStatusText;
 @property (nonatomic, readonly) NSString* lastRefreshingFeedName;
+@property (nonatomic, readonly, strong) NSArray<NSString*>* pendingRefreshFeedTitles;
+@property (nonatomic, readonly) NSString* pendingRefreshStatusDetailsText;
+@property (nonatomic, readonly) NSString* lastRefreshFailedFeedName;
+@property (nonatomic, readonly, strong) NSArray<NSString*>* lastRefreshFailureMessages;
 
 /* Enforcing Download Settings */
 - (BOOL) autoDownloadEpisodesInFeed:(CDFeed*)feed;

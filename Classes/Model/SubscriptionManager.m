@@ -31,6 +31,13 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 @property (nonatomic, readwrite, strong) NSMutableArray* refreshedFeeds;
 @property (nonatomic, readwrite, weak) NSTimer* refreshCheckTimer;
 @property (nonatomic, readwrite, strong) NSURL* refreshedURL;
+@property (nonatomic, readwrite, copy) NSString* lastRefreshFailedFeedName;
+@property (nonatomic, strong) NSMutableDictionary<NSURL*, NSDate*>* refreshFeedStartDates;
+@property (nonatomic, strong) NSMutableDictionary<NSURL*, NSString*>* refreshFeedTitlesByURL;
+@property (nonatomic, strong) NSMutableOrderedSet<NSString*>* refreshFailedFeedTitles;
+@property (nonatomic, strong) NSMutableOrderedSet<NSString*>* refreshTimedOutFeedTitles;
+@property (nonatomic, strong) NSMutableOrderedSet<NSString*>* refreshFailureMessages;
+@property (nonatomic, copy) NSString* finalRefreshStatusText;
 
 @property (nonatomic) NSInteger numOfNewEpisodesAfterRefresh;
 @property (nonatomic) NSInteger numTotalRefreshFeeds;
@@ -55,6 +62,8 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     } _flags;
 }
 
+static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
+
 + (SubscriptionManager*) sharedSubscriptionManager
 {
 	if (!gSharedSubscriptionManager) {
@@ -69,6 +78,11 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 	if ((self = [super init]))
 	{
 		_refreshingFeedURLs = [[NSMutableArray alloc] init];
+        _refreshFeedStartDates = [[NSMutableDictionary alloc] init];
+        _refreshFeedTitlesByURL = [[NSMutableDictionary alloc] init];
+        _refreshFailedFeedTitles = [[NSMutableOrderedSet alloc] init];
+        _refreshTimedOutFeedTitles = [[NSMutableOrderedSet alloc] init];
+        _refreshFailureMessages = [[NSMutableOrderedSet alloc] init];
         
         _parserQueue = [[NSOperationQueue alloc] init];
         [_parserQueue setMaxConcurrentOperationCount:10];
@@ -360,24 +374,18 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
 - (NSString*) refreshStatusText
 {
+    if (!self.isRefreshing && self.finalRefreshStatusText.length > 0) {
+        return self.finalRefreshStatusText;
+    }
+
     NSInteger remaining = [self.refreshingFeedURLs count];
     NSInteger done = self.numTotalRefreshFeeds - remaining;
 
-    // For single podcast, show name instead of "1/1 podcasts refreshed"
-    if (self.numTotalRefreshFeeds <= 1) {
-        NSString* feedName = self.lastRefreshingFeedName;
-        return feedName ?: @"Looking for new episodes…".ls;
+    if (self.numTotalRefreshFeeds <= 0) {
+        return @"Looking for new episodes…".ls;
     }
 
-    // When only 1 feed remains, show "Waiting for 'feedname'…"
-    if (remaining == 1) {
-        NSString* feedName = self.lastRefreshingFeedName;
-        if (feedName) {
-            return [NSString stringWithFormat:@"Waiting for '%@'…".ls, feedName];
-        }
-    }
-
-    return [NSString stringWithFormat:@"%ld/%ld %@", (long)done, (long)self.numTotalRefreshFeeds, @"podcasts refreshed".ls];
+    return [NSString stringWithFormat:@"%ld/%ld podcasts updating…".ls, (long)done, (long)self.numTotalRefreshFeeds];
 }
 
 - (NSString*) lastRefreshingFeedName
@@ -391,6 +399,144 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         }
     }
     return nil;
+}
+
+- (NSArray<NSString*>*) pendingRefreshFeedTitles
+{
+    NSMutableArray<NSString*>* titles = [NSMutableArray arrayWithCapacity:self.refreshingFeedURLs.count];
+    for (NSURL* url in self.refreshingFeedURLs) {
+        NSString* title = self.refreshFeedTitlesByURL[url];
+        if (!title.length) {
+            title = url.host ?: url.absoluteString;
+        }
+        [titles addObject:title];
+    }
+    return titles;
+}
+
+- (NSString*) pendingRefreshStatusDetailsText
+{
+    NSArray<NSString*>* pendingTitles = self.pendingRefreshFeedTitles;
+    if (pendingTitles.count == 0) {
+        return nil;
+    }
+    NSMutableString* details = [NSMutableString stringWithFormat:@"Not updated yet (%ld):".ls, (long)pendingTitles.count];
+    for (NSString* title in pendingTitles) {
+        [details appendFormat:@"\n• %@", title];
+    }
+    return details;
+}
+
+- (NSArray<NSString*>*) lastRefreshFailureMessages
+{
+    return [self.refreshFailureMessages array];
+}
+
+- (NSString*) _friendlyRefreshFailureReasonForError:(NSError*)error
+{
+    if (!error) {
+        return @"Unknown error".ls;
+    }
+
+    if ([error.domain isEqualToString:NSURLErrorDomain]) {
+        switch (error.code) {
+            case NSURLErrorTimedOut:
+                return @"Timeout".ls;
+            case NSURLErrorCannotFindHost:
+            case NSURLErrorDNSLookupFailed:
+            case NSURLErrorFileDoesNotExist:
+            case NSURLErrorResourceUnavailable:
+                return @"Not found".ls;
+            case NSURLErrorUserAuthenticationRequired:
+            case NSURLErrorNoPermissionsToReadFile:
+            case NSURLErrorDataNotAllowed:
+                return @"No access".ls;
+            default:
+                break;
+        }
+    }
+
+    NSString* lowerDescription = [[error localizedDescription] lowercaseString];
+    NSString* lowerRecovery = [[[error userInfo][NSLocalizedRecoverySuggestionErrorKey] description] lowercaseString];
+    NSString* lowerCombined = [NSString stringWithFormat:@"%@ %@", lowerDescription ?: @"", lowerRecovery ?: @""];
+
+    if ([lowerCombined rangeOfString:@"timeout"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"timed out"].location != NSNotFound) {
+        return @"Timeout".ls;
+    }
+    if ([lowerCombined rangeOfString:@"not found"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"cannot be found"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"404"].location != NSNotFound) {
+        return @"Not found".ls;
+    }
+    if ([lowerCombined rangeOfString:@"permission"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"forbidden"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"unauthorized"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"401"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"403"].location != NSNotFound ||
+        [lowerCombined rangeOfString:@"auth"].location != NSNotFound) {
+        return @"No access".ls;
+    }
+
+    return error.localizedDescription ?: @"Unknown error".ls;
+}
+
+- (void) _beginRefreshTrackingForFeeds:(NSArray*)feeds
+{
+    [self.refreshFeedStartDates removeAllObjects];
+    [self.refreshFeedTitlesByURL removeAllObjects];
+    [self.refreshFailedFeedTitles removeAllObjects];
+    [self.refreshTimedOutFeedTitles removeAllObjects];
+    [self.refreshFailureMessages removeAllObjects];
+    self.lastRefreshFailedFeedName = nil;
+    self.finalRefreshStatusText = nil;
+
+    NSDate* now = [NSDate date];
+    for (CDFeed* feed in feeds) {
+        NSURL* url = [feed.sourceURL copy];
+        if (!url) {
+            continue;
+        }
+        self.refreshFeedStartDates[url] = now;
+        if (feed.title.length > 0) {
+            self.refreshFeedTitlesByURL[url] = feed.title;
+        }
+    }
+}
+
+- (void) _markFeedFailedForURL:(NSURL*)url timedOut:(BOOL)timedOut error:(NSError*)error
+{
+    NSString* title = self.refreshFeedTitlesByURL[url];
+    if (!title.length) {
+        title = url.host ?: url.absoluteString;
+    }
+    if (title.length == 0) {
+        return;
+    }
+    [self.refreshFailedFeedTitles addObject:title];
+    if (timedOut) {
+        [self.refreshTimedOutFeedTitles addObject:title];
+    }
+
+    NSString* reason = timedOut ? @"Timeout".ls : [self _friendlyRefreshFailureReasonForError:error];
+    NSString* line = [NSString stringWithFormat:@"%@ - %@", title, reason];
+    [self.refreshFailureMessages addObject:line];
+}
+
+- (void) _removeFeedTrackingForURL:(NSURL*)url
+{
+    [self.refreshFeedStartDates removeObjectForKey:url];
+    [self.refreshFeedTitlesByURL removeObjectForKey:url];
+}
+
+- (void) _finishRefreshingURL:(NSURL*)url
+{
+    [self willChangeValueForKey:@"refreshStatusText"];
+    [self willChangeValueForKey:@"lastRefreshingFeedName"];
+    [self.refreshingFeedURLs removeObject:url];
+    [self _removeFeedTrackingForURL:url];
+    [self didChangeValueForKey:@"lastRefreshingFeedName"];
+    [self didChangeValueForKey:@"refreshStatusText"];
 }
 
 - (void) refreshAllFeedsForce:(BOOL)force
@@ -498,7 +644,6 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         return;
     }
     
-    DebugLog(@"refresh %lu feeds", (unsigned long)[feeds count]);
     
     if (!self.refreshCheckTimer)
     {
@@ -515,6 +660,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         self.numOfNewEpisodesAfterRefresh = 0;
         self.numTotalRefreshFeeds = [feeds count];
         self.refreshStartDate = [NSDate date];
+        [self _beginRefreshTrackingForFeeds:feeds];
 #if TARGET_OS_IPHONE
         self.backgroundIdentifier = [App beginBackgroundTaskWithExpirationHandler:(^(void) {
             [App endBackgroundTask:self.backgroundIdentifier];
@@ -540,11 +686,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     [self autoDownloadEpisodesInFeed:feed];
 
     // Always called from main thread (via performSelectorOnMainThread in ICFeedParser)
-    [self willChangeValueForKey:@"refreshStatusText"];
-    [self willChangeValueForKey:@"lastRefreshingFeedName"];
-    [self.refreshingFeedURLs removeObject:url];
-    [self didChangeValueForKey:@"lastRefreshingFeedName"];
-    [self didChangeValueForKey:@"refreshStatusText"];
+    [self _finishRefreshingURL:url];
 
     [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidParseFeedNotification
                                                         object:self
@@ -580,6 +722,9 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 #endif
     __weak ICFeedParser* weakFeedParser = feedParser;
     feedParser.didParseFeedBlock = ^(ICFeed* parsedFeed) {
+        if (![self.refreshingFeedURLs containsObject:url]) {
+            return;
+        }
         
         if (!notificationBefore) {
             self.refreshedURL = feed.sourceURL;
@@ -637,6 +782,9 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
     };
     
     feedParser.didEndWithError = ^(NSError* error) {
+        if (![self.refreshingFeedURLs containsObject:url]) {
+            return;
+        }
         
         if (completion) {
             completion(NO, nil, error);
@@ -647,6 +795,7 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
         }
         
         ErrLog(@"error parsing '%@': %@", feed.title, [error description]);
+        [self _markFeedFailedForURL:url timedOut:NO error:error];
         [self _finishParsingFeed:feed url:url];
     };
     
@@ -656,16 +805,49 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
 - (void) checkRefreshOperationsTimer:(NSTimer*)timer
 {
+    if (self.refreshingFeedURLs.count > 0) {
+        NSDate* now = [NSDate date];
+        NSMutableArray<NSURL*>* timedOutURLs = [NSMutableArray array];
+        for (NSURL* url in [self.refreshingFeedURLs copy]) {
+            NSDate* started = self.refreshFeedStartDates[url];
+            if (!started) {
+                self.refreshFeedStartDates[url] = now;
+                continue;
+            }
+            NSTimeInterval elapsedForFeed = [now timeIntervalSinceDate:started];
+            if (elapsedForFeed >= kPerFeedRefreshTimeout) {
+                [timedOutURLs addObject:url];
+            }
+        }
+
+        if (timedOutURLs.count > 0) {
+            for (NSURL* url in timedOutURLs) {
+                [self _markFeedFailedForURL:url timedOut:YES error:nil];
+                [self _finishRefreshingURL:url];
+            }
+        }
+    }
+
     // Safety timeout: force-finish after 30 seconds regardless
     NSTimeInterval elapsed = -[self.refreshStartDate timeIntervalSinceNow];
     if (elapsed > 30.0 && [self.refreshingFeedURLs count] > 0) {
-        DebugLog(@"refresh safety timeout after %.0fs, %lu feeds remaining", elapsed, (unsigned long)[self.refreshingFeedURLs count]);
+        for (NSURL* url in [self.refreshingFeedURLs copy]) {
+            [self _markFeedFailedForURL:url timedOut:YES error:nil];
+            [self _finishRefreshingURL:url];
+        }
         [self.parserQueue cancelAllOperations];
-        [self.refreshingFeedURLs removeAllObjects];
     }
 
 	if ([self.refreshingFeedURLs count] == 0)
 	{
+        if (self.refreshFailedFeedTitles.count == 1) {
+            self.lastRefreshFailedFeedName = self.refreshFailedFeedTitles.firstObject;
+            self.finalRefreshStatusText = self.lastRefreshFailedFeedName;
+        } else {
+            self.lastRefreshFailedFeedName = nil;
+            self.finalRefreshStatusText = nil;
+        }
+
         [self.refreshCheckTimer invalidate];
 		self.refreshCheckTimer = nil;
         

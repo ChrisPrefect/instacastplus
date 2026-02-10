@@ -376,7 +376,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     }
 
 	[self _savePlaybackStateInUserDefaults];
-    [[PlaybackManager playbackManager] openWithEpisode:anEpisode at:0 autostart:autostart];
+    [[PlaybackManager playbackManager] openWithEpisode:anEpisode at:MAX(0, time) autostart:autostart];
     
     self.continuousPlaybackTemporarilyDisabled = NO;
 }

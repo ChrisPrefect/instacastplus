@@ -10,11 +10,11 @@
 #import "InstacastAppDelegate.h"
 
 typedef NS_ENUM(NSInteger, DataSettingsSections) {
-    k3GSection = 0,
-    kLimitSettingSection,
+    kLimitSettingSection = 0,
     kAutoDownloadSettingsSection,
     kAutoDownloadWhileStreamingSection,
     kAutoDeleteSettingsSection,
+    k3GSection,
     kDownloadedFilesButton,
     kStatisticsSection,
     kNumberOfSections,

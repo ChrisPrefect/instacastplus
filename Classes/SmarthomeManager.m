@@ -44,14 +44,15 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     NSString *_lastBatteryLevel;
     NSString *_lastFellAsleep;
     NSString *_lastAppActive;
+    NSString *_lastMotionDetected;
 
     // Pending events to send after reconnect
-    BOOL _pendingFellAsleep;
     BOOL _pendingEpisodeFinished;
 
     // Motion detection throttling
     NSTimer *_motionResetTimer;
     BOOL _motionDetectedState;
+    BOOL _fellAsleepActive;
 
     // Fell-asleep auto-reset
     NSTimer *_fellAsleepResetTimer;
@@ -213,7 +214,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)clearPendingEvents
 {
-    _pendingFellAsleep = NO;
     _pendingEpisodeFinished = NO;
 }
 
@@ -514,7 +514,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         [self publishFellAsleepState];
     }
     else if ([topic isEqualToString:[self topic:@"motion-detected"]]) {
-        [_client publishMessage:(_motionDetectedState ? @"1" : @"0") toTopic:[self topic:@"motion-detected"] retain:YES];
+        _lastMotionDetected = nil;
+        [self publishMotionState];
     }
     else if ([topic isEqualToString:[self topic:@"episode-finished"]]) {
         // Event topic - don't correct, just ignore
@@ -526,16 +527,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)sendPendingEvents
 {
     if (!self.connected) return;
-
-    // Send fell-asleep if it occurred while offline
-    if (_pendingFellAsleep) {
-        _pendingFellAsleep = NO;
-        _lastFellAsleep = @"1";
-        [_client publishMessage:@"1" toTopic:[self topic:@"fell-asleep"] retain:YES];
-        // Auto-reset after 5 seconds
-        [_fellAsleepResetTimer invalidate];
-        _fellAsleepResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(fellAsleepResetTimerFired) userInfo:nil repeats:NO];
-    }
 
     // Send episode-finished if it occurred while offline (not retained, but useful for automation)
     if (_pendingEpisodeFinished) {
@@ -561,15 +552,15 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [self publishBatteryLevel];
     [self publishAppState];
     [self publishFellAsleepState];
+    [self publishMotionState];
 }
 
 - (void)publishFellAsleepState
 {
-    // If there's a pending fell-asleep event, don't publish "0" here - sendPendingEvents will handle it
-    if (_pendingFellAsleep) return;
-
-    // Otherwise publish current state (0 = user is awake / no recent sleep timer expiry)
-    [self publishValue:@"0" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
+    [self publishValue:(_fellAsleepActive ? @"1" : @"0")
+               toTopic:[self topic:@"fell-asleep"]
+             lastValue:&_lastFellAsleep
+                retain:YES];
 }
 
 - (void)publishPlayState
@@ -697,6 +688,14 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [self publishValue:(active ? @"1" : @"0") toTopic:[self topic:@"app-active"] lastValue:&_lastAppActive retain:YES];
 }
 
+- (void)publishMotionState
+{
+    [self publishValue:(_motionDetectedState ? @"1" : @"0")
+               toTopic:[self topic:@"motion-detected"]
+             lastValue:&_lastMotionDetected
+                retain:YES];
+}
+
 #pragma mark - Deduplication Helper
 
 - (void)publishValue:(NSString*)value toTopic:(NSString*)topic lastValue:(NSString*__strong*)lastValue retain:(BOOL)retain
@@ -727,6 +726,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     _lastBatteryLevel = nil;
     _lastFellAsleep = nil;
     _lastAppActive = nil;
+    _lastMotionDetected = nil;
 }
 
 #pragma mark - Notification Handlers
@@ -737,7 +737,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [self publishEpisodeInfo];
     [self publishChapterState];
     [self publishSpeedState];
-    [self resetFellAsleep];
 }
 
 - (void)playbackDidEnd:(NSNotification*)note
@@ -769,41 +768,35 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)sleepTimerDidExpire:(NSNotification*)note
 {
     [self publishSleeptimerState];
-    if (self.connected) {
-        [self publishValue:@"1" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
-        // Auto-reset to "0" after 5 seconds
-        [_fellAsleepResetTimer invalidate];
-        _fellAsleepResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(fellAsleepResetTimerFired) userInfo:nil repeats:NO];
-    } else {
-        // Store for later when we reconnect
-        _pendingFellAsleep = YES;
-    }
+    _fellAsleepActive = YES;
+    [self publishFellAsleepState];
+
+    // Auto-reset to "0" after 5 seconds, independent of connection state.
+    [_fellAsleepResetTimer invalidate];
+    _fellAsleepResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(fellAsleepResetTimerFired) userInfo:nil repeats:NO];
 }
 
 - (void)fellAsleepResetTimerFired
 {
     _fellAsleepResetTimer = nil;
-    [self publishValue:@"0" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
+    _fellAsleepActive = NO;
+    [self publishFellAsleepState];
 }
 
 - (void)resetFellAsleep
 {
-    // Clear pending flag and timer in case fell-asleep happened while offline and user woke up while still offline
-    _pendingFellAsleep = NO;
+    // Manual reset helper (kept for compatibility).
+    _fellAsleepActive = NO;
     [_fellAsleepResetTimer invalidate];
     _fellAsleepResetTimer = nil;
-    [self publishValue:@"0" toTopic:[self topic:@"fell-asleep"] lastValue:&_lastFellAsleep retain:YES];
+    [self publishFellAsleepState];
 }
 
 - (void)motionDidDetect:(NSNotification*)note
 {
-    if (!self.connected) return;
-
-    // Only publish "1" if state changed
-    if (!_motionDetectedState) {
-        _motionDetectedState = YES;
-        [_client publishMessage:@"1" toTopic:[self topic:@"motion-detected"] retain:YES];
-    }
+    // Keep state independent from playback/app/sleeptimer and connection.
+    _motionDetectedState = YES;
+    [self publishMotionState];
 
     // Reset/extend the timer - will publish "0" 5 seconds after last motion
     [_motionResetTimer invalidate];
@@ -814,9 +807,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     _motionResetTimer = nil;
     _motionDetectedState = NO;
-    if (self.connected) {
-        [_client publishMessage:@"0" toTopic:[self topic:@"motion-detected"] retain:YES];
-    }
+    [self publishMotionState];
 }
 
 - (void)episodeDidFinish:(NSNotification*)note
@@ -834,7 +825,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [self publishPlayState];
     [self publishLockState];
     [self publishAppState];
-    [self resetFellAsleep];
     [self reconnectIfNeeded];
 }
 
@@ -906,8 +896,11 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)statusTimerFired
 {
+    [self publishPlayState];
     [self publishPositionState];
     [self publishSleeptimerState];
+    [self publishFellAsleepState];
+    [self publishMotionState];
 }
 
 #pragma mark - System Volume

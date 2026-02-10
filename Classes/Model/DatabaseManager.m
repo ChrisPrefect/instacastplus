@@ -677,6 +677,9 @@ NS_INLINE NSString* _DataStoreFile(void) {
         }
         else {
             [self.persistentContainer.viewContext processPendingChanges];
+            if (sync) {
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"ICDatabaseDidSaveWithSyncNotification" object:self];
+            }
         }
         
         if (error) {

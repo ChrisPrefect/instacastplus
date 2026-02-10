@@ -357,8 +357,7 @@
     [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
         SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
         if (sm.refreshing) {
-            NSString* feedName = sm.lastRefreshingFeedName;
-            ((ICRefreshControl*)self.refreshControl).refreshText = feedName ? feedName : sm.refreshStatusText;
+            ((ICRefreshControl*)self.refreshControl).refreshText = sm.refreshStatusText;
         }
     }];
 
@@ -391,8 +390,44 @@
     [self.refreshControl beginRefreshing];
 }
 
+- (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures
+{
+    if (failures.count == 0) {
+        return;
+    }
+    if (!self.isViewLoaded || !self.view.window || self.presentedViewController) {
+        return;
+    }
+
+    UIFont* regularFont = [UIFont systemFontOfSize:13.0f];
+    UIFont* boldFont = [UIFont boldSystemFontOfSize:13.0f];
+    NSMutableAttributedString* message = [[NSMutableAttributedString alloc] init];
+
+    [failures enumerateObjectsUsingBlock:^(NSString* line, NSUInteger idx, BOOL *stop) {
+        NSRange separatorRange = [line rangeOfString:@" - "];
+        NSString* title = (separatorRange.location != NSNotFound) ? [line substringToIndex:separatorRange.location] : line;
+        NSString* reason = (separatorRange.location != NSNotFound) ? [line substringFromIndex:separatorRange.location] : @"";
+
+        [message appendAttributedString:[[NSAttributedString alloc] initWithString:title attributes:@{ NSFontAttributeName : boldFont }]];
+        [message appendAttributedString:[[NSAttributedString alloc] initWithString:reason attributes:@{ NSFontAttributeName : regularFont }]];
+        if (idx + 1 < failures.count) {
+            [message appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n\n" attributes:@{ NSFontAttributeName : regularFont }]];
+        }
+    }];
+
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Some podcasts could not be updated".ls
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert setValue:message forKey:@"attributedMessage"];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void) subscriptionManagerDidFinishRefreshingFeedsNotification:(NSNotification*)notification
 {
+    SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+    [self _presentRefreshFailureAlert:sm.lastRefreshFailureMessages];
+
     ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
     [self.refreshControl endRefreshing];
 }
@@ -958,4 +993,3 @@
 }
 
 @end
-

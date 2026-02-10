@@ -690,6 +690,9 @@ enum {
             
             weakSelf.ready = YES;
             weakSelf.state = (autostart) ? ShouldRunState : RunningState;
+            if (!autostart) {
+                [weakSelf _endNextItemHandover];
+            }
 
             // don't use the setter, otherwise the value will be stored
             [weakSelf willChangeValueForKey:@"speedControl"];
