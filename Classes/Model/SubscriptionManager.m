@@ -138,6 +138,29 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     return [self formattedLastRefreshDate];
 }
 
+- (BOOL)_isSynchronizationPausedForFeed:(CDFeed*)feed
+{
+    if (!feed) {
+        return NO;
+    }
+    return [feed boolForKey:PauseFeedSynchronization];
+}
+
+- (NSArray<CDFeed*>*)_feedsEligibleForSynchronization:(NSArray<CDFeed*>*)feeds
+{
+    if (feeds.count == 0) {
+        return @[];
+    }
+
+    NSMutableArray<CDFeed*>* eligibleFeeds = [NSMutableArray arrayWithCapacity:feeds.count];
+    for (CDFeed* feed in feeds) {
+        if (![self _isSynchronizationPausedForFeed:feed]) {
+            [eligibleFeeds addObject:feed];
+        }
+    }
+    return eligibleFeeds;
+}
+
 - (CDFeed*) subscribeParserFeed:(ICFeed*)parserFeed
 {
     return [self subscribeParserFeed:parserFeed autodownload:YES options:kSubscribeOptionNone];
@@ -180,7 +203,14 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 }
 
 - (void) reloadContentOfFeed:(CDFeed*)feed recoverArchivedEpisodes:(BOOL)recoverArchived completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
-{    
+{
+    if (!feed || [self _isSynchronizationPausedForFeed:feed]) {
+        if (completion) {
+            completion(YES, @[], nil);
+        }
+        return;
+    }
+
     NSURL* sourceURL = feed.sourceURL;
     ICPagedFeedParser* parser = [[ICPagedFeedParser alloc] init];
     parser.url = sourceURL;
@@ -555,11 +585,21 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     NSArray* allNonParkedFeeds = [DMANAGER visibleFeeds];
     
 #if TARGET_OS_IPHONE
-    [feeds addObjectsFromArray:allNonParkedFeeds];
+    for (CDFeed* feed in allNonParkedFeeds) {
+        if ([self _isSynchronizationPausedForFeed:feed]) {
+            continue;
+        }
+        [feeds addObject:feed];
+    }
 #else
     // check settings
     if (force) {
-        [feeds addObjectsFromArray:allNonParkedFeeds];
+        for (CDFeed* feed in allNonParkedFeeds) {
+            if ([self _isSynchronizationPausedForFeed:feed]) {
+                continue;
+            }
+            [feeds addObject:feed];
+        }
     }
     else
     {
@@ -570,6 +610,10 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         
         for(CDFeed* feed in allNonParkedFeeds)
         {
+            if ([self _isSynchronizationPausedForFeed:feed]) {
+                continue;
+            }
+
             NSDate* lastRefreshDate = (feed.lastUpdate) ? feed.lastUpdate : [NSDate distantPast];
             
             AutoRefreshInterval autoRefreshInterval = [feed integerForKey:AutoRefresh];
@@ -640,7 +684,16 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         return;
     }
 
-    if ([feeds count] == 0) {
+    NSArray* eligibleFeeds = [self _feedsEligibleForSynchronization:feeds];
+    if ([eligibleFeeds count] == 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(YES, @[], nil);
+            }
+            if (!self.refreshCheckTimer) {
+                [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidFinishRefreshingFeedsNotification object:self];
+            }
+        });
         return;
     }
     
@@ -654,13 +707,13 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         self.refreshCheckTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
                                                                   target:self
                                                                 selector:@selector(checkRefreshOperationsTimer:)
-                                                                userInfo:feeds
+                                                                userInfo:eligibleFeeds
                                                                  repeats:YES];
         
         self.numOfNewEpisodesAfterRefresh = 0;
-        self.numTotalRefreshFeeds = [feeds count];
+        self.numTotalRefreshFeeds = [eligibleFeeds count];
         self.refreshStartDate = [NSDate date];
-        [self _beginRefreshTrackingForFeeds:feeds];
+        [self _beginRefreshTrackingForFeeds:eligibleFeeds];
 #if TARGET_OS_IPHONE
         self.backgroundIdentifier = [App beginBackgroundTaskWithExpirationHandler:(^(void) {
             [App endBackgroundTask:self.backgroundIdentifier];
@@ -672,11 +725,11 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     }
 
 
-    for(CDFeed* feed in feeds)
+    for(CDFeed* feed in eligibleFeeds)
     {
         [self refreshFeed:feed
              etagHandling:etagHandling
-               completion:(([feeds lastObject] == feed) ? completion : nil)];
+               completion:(([eligibleFeeds lastObject] == feed) ? completion : nil)];
     }
     
 }
@@ -695,6 +748,13 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
 {    
+    if (!feed || [self _isSynchronizationPausedForFeed:feed]) {
+        if (completion) {
+            completion(YES, @[], nil);
+        }
+        return;
+    }
+
     NSURL* url = [feed.sourceURL copy];
     if (!url) {
         return;

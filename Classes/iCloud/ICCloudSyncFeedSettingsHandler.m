@@ -5,6 +5,15 @@
 
 #import "ICCloudSyncFeedSettingsHandler.h"
 
+static NSSet* internalFeedPropertyKeys(void) {
+    static NSSet *keys = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        keys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
+    });
+    return keys;
+}
+
 @implementation ICCloudSyncFeedSettingsHandler
 
 - (NSString *)recordType
@@ -18,18 +27,27 @@
     NSMutableArray *records = [NSMutableArray array];
 
     for (CDFeed *feed in feeds) {
-        if (![feed hasCustomProperties]) continue;
         if (!feed.sourceURL) continue;
 
-        NSArray *keys = [feed propertyKeys];
-        for (NSString *key in keys) {
+        NSMutableOrderedSet *keysToSync = [NSMutableOrderedSet orderedSetWithObject:PauseFeedSynchronization];
+        NSArray *propertyKeys = [feed propertyKeys];
+        for (NSString *key in propertyKeys) {
+            if ([internalFeedPropertyKeys() containsObject:key]) {
+                continue;
+            }
+            [keysToSync addObject:key];
+        }
+
+        for (NSString *key in keysToSync) {
             CKRecord *record = [self recordForFeed:feed propertyKey:key];
             if (record) [records addObject:record];
         }
     }
 
     if (records.count == 0) {
-        completion(nil);
+        if (completion) {
+            completion(nil);
+        }
         return;
     }
 
@@ -38,7 +56,9 @@
     op.savePolicy = CKRecordSaveAllKeys;
     op.modifyRecordsCompletionBlock = ^(NSArray *saved, NSArray *deleted, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            completion(error);
+            if (completion) {
+                completion(error);
+            }
         });
     };
     [self.database addOperation:op];
@@ -82,7 +102,19 @@
         NSNumber *doubleVal = record[@"doubleValue"];
         NSString *strVal = record[@"stringValue"];
 
-        if (doubleVal && [doubleVal doubleValue] != 0.0) {
+        if ([internalFeedPropertyKeys() containsObject:key]) {
+            continue;
+        }
+
+        if ([key isEqualToString:PauseFeedSynchronization] && boolVal) {
+            BOOL incomingValue = [boolVal boolValue];
+            BOOL defaultValue = [USER_DEFAULTS boolForKey:key];
+            if (incomingValue == defaultValue) {
+                [feed resetValueForKey:key];
+            } else {
+                [feed setBool:incomingValue forKey:key];
+            }
+        } else if (doubleVal && [doubleVal doubleValue] != 0.0) {
             [feed setDouble:[doubleVal doubleValue] forKey:key];
         } else if (intVal && [intVal integerValue] != 0) {
             [feed setInteger:[intVal integerValue] forKey:key];
@@ -94,12 +126,16 @@
     }
 
     [DMANAGER saveAndSync:NO];
-    completion(nil);
+    if (completion) {
+        completion(nil);
+    }
 }
 
 - (void)handleDeletedRecordIDs:(NSArray<CKRecordID *> *)recordIDs completion:(void(^)(NSError *error))completion
 {
-    completion(nil);
+    if (completion) {
+        completion(nil);
+    }
 }
 
 - (void)pushAllDataWithCompletion:(void(^)(NSError *error))completion

@@ -299,11 +299,19 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank];
 
         // Custom properties (skip internal keys)
-        if ([feed hasCustomProperties]) {
+        NSArray* propertyKeys = [feed propertyKeys];
+        BOOL hasPauseSyncProperty = [propertyKeys containsObject:PauseFeedSynchronization];
+        if ([feed hasCustomProperties] || hasPauseSyncProperty) {
             NSSet* internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
             [xml appendString:@"      <settings>\n"];
-            for (NSString* key in [feed propertyKeys]) {
+            for (NSString* key in propertyKeys) {
                 if ([internalKeys containsObject:key]) continue;
+                if ([key isEqualToString:PauseFeedSynchronization]) {
+                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n",
+                        [self xmlEscape:key],
+                        [feed boolForKey:key] ? @"true" : @"false"];
+                    continue;
+                }
                 NSString* stringVal = [feed stringForKey:key];
                 if (stringVal) {
                     [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", [self xmlEscape:key], [self xmlEscape:stringVal]];

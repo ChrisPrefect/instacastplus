@@ -395,6 +395,10 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
 
     for (CDFeedProperty* property in self.properties) {
         if (![internalKeys containsObject:property.key]) {
+            if ([property.key isEqualToString:PauseFeedSynchronization] &&
+                property.boolValue == [USER_DEFAULTS boolForKey:PauseFeedSynchronization]) {
+                continue;
+            }
             return YES;
         }
     }
@@ -412,5 +416,4 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
     return keys;
 }
 @end
-
 

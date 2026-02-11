@@ -89,6 +89,7 @@ NSString* SharingTwitterHandle= @"SharingTwitterHandle";
 NSString* AutoDeleteAfterFinishedPlaying = @"AutoDeleteAfterFinishedPlaying";
 NSString* AutoDeleteAfterMarkedAsPlayed = @"AutoDeleteAfterMarkedAsPlayed";
 NSString* AutoDeleteNewsMode = @"AutoDeleteNewsMode";
+NSString* PauseFeedSynchronization = @"PauseFeedSynchronization";
 NSString* ContinuousPlayFromFeed = @"ContinuousPlayFromFeed";
 NSString* AutoDownloadWhileStreaming = @"AutoDownloadWhileStreaming";
 

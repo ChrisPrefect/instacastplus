@@ -80,9 +80,11 @@
 "Normal (1x)" = "Normal (1x)";
 "Oldest First" = "Oldest First";
 "Playback" = "Playback";
+"Pause Synchronization" = "Pause Synchronization";
 "Reset" = "Reset";
 "Reset to Defaults" = "Reset to Defaults";
 "Resets subscription specific settings back to default settings." = "Resets subscription specific settings back to default settings.";
+"Temporarily stop updating this podcast when syncing subscriptions." = "Temporarily stop updating this podcast when syncing subscriptions.";
 "Show Unavailable Episodes" = "Show Unavailable Episodes";
 "Skipping Back" = "Skipping Back";
 "Skipping Forward" = "Skipping Forward";

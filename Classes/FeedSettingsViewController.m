@@ -26,6 +26,7 @@ enum {
     kAutoDeleteSettingsSection,
     kPlaybackSection,
     kRestoreDeletedSection,
+    kSyncPauseSection,
     kResetSection,
     kNumberOfSections
 };
@@ -157,6 +158,8 @@ enum {
         case kPlaybackSection:
             return 4;
         case kRestoreDeletedSection:
+            return 1;
+        case kSyncPauseSection:
             return 1;
         case kResetSection:
             return 1;
@@ -445,6 +448,17 @@ enum {
             cell.textLabel.textColor = [UIColor redColor];
         }
     }
+    else if (indexPath.section == kSyncPauseSection)
+    {
+        cell.accessoryView = nil;
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        cell.textLabel.text = @"Pause Synchronization".ls;
+        control.on = [self.feed boolForKey:PauseFeedSynchronization];
+        control.tag = indexPath.row;
+        [control addTarget:self action:@selector(togglePauseSynchronization:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
     
     return cell;
 }
@@ -681,6 +695,9 @@ enum {
     if (section == kResetSection) {
         return @"Resets subscription specific settings back to default settings.".ls;
     }
+    else if (section == kSyncPauseSection) {
+        return @"Temporarily stop updating this podcast when syncing subscriptions.".ls;
+    }
     else if (section == kNewsModeSection) {
         return @"Enable News Mode to only keep the most recent episode(s) of a podcast.".ls;
     }
@@ -739,6 +756,15 @@ enum {
         [self setBool:sender.on forKey:AutoDeleteNewsMode];
     }
     
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void) togglePauseSynchronization:(UISwitch*)sender
+{
+    if (sender.tag == 0) {
+        [self.feed setBool:sender.on forKey:PauseFeedSynchronization];
+    }
+
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];
 }
 

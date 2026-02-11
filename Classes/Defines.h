@@ -96,6 +96,7 @@ extern NSString* SharingTwitterHandle;
 extern NSString* AutoDeleteAfterFinishedPlaying;
 extern NSString* AutoDeleteAfterMarkedAsPlayed;
 extern NSString* AutoDeleteNewsMode;
+extern NSString* PauseFeedSynchronization;
 extern NSString* ContinuousPlayFromFeed;
 extern NSString* AutoDownloadWhileStreaming;
 
@@ -169,4 +170,3 @@ extern NSString* iCloudSyncInitialSyncCompleted;
 
 extern NSString* AudioSessionSleepTimerDidExpireNotification;
 extern NSString* ApplicationDidDetectMotionNotification;
-
