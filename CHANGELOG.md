@@ -104,28 +104,20 @@ Alle Daten der App können jetzt vollständig gesichert und wiederhergestellt we
 
 ### iCloud-Synchronisierung
 
-InstacastPlus unterstützt jetzt die Synchronisierung über iCloud (CloudKit) zwischen mehreren Geräten.
+Nahtlos zwischen deinen Geräten wechseln! Deine Podcasts, Einstellungen und dein Wiedergabefortschritt werden automatisch synchronisiert.
 
-**Synchronisierte Daten:**
-- Abonnements (neue Podcasts werden automatisch abonniert)
-- Podcast-Einstellungen (Auto-Skip, News-Modus, etc.)
-- Wiedergabestatus (gehört/ungehört, Wiedergabeposition)
-- Aktuelle Wiedergabe (Episode und Position werden geräteübergreifend fortgesetzt)
-- App-Einstellungen (Darstellung, Wiedergabe, Daten-Optionen)
-- Download-Status
-
-**Echtzeit-Sync:** Änderungen werden sofort per Push-Notification an andere Geräte übertragen.
+- **Abonnements:** Neuen Podcast auf dem iPhone abonniert? Erscheint sofort auf dem iPad.
+- **Wiedergabefortschritt:** Auf dem iPhone angefangen, auf dem iPad weitergehört -- genau da, wo du aufgehört hast.
+- **Einstellungen:** Podcast-Einstellungen, App-Einstellungen und mehr werden übernommen
+- **In Echtzeit:** Änderungen werden sofort an deine anderen Geräte übertragen
 
 > **Tipp:** Die iCloud-Einstellungen findest du unter *Einstellungen > iCloud Sync*. Dort kannst du einzeln auswählen, welche Daten synchronisiert werden sollen.
 
 ---
 
-### Podcast-Synchronisierung pausieren
+### Podcast-Aktualisierung pausieren
 
-Einzelne Podcasts können jetzt von der Aktualisierung ausgenommen werden. Wenn aktiviert, wird der Podcast beim Synchronisieren übersprungen.
-
-- Die Einstellung wird im Backup exportiert und importiert
-- Wird über iCloud Sync synchronisiert
+Du kannst einzelne Podcasts von der Aktualisierung ausschliessen. Praktisch für Podcasts, die du behalten aber gerade nicht aktiv hören möchtest. Die Einstellung wird auch im Backup gesichert und über iCloud synchronisiert.
 
 > **Tipp:** Die Option findest du in den Einstellungen des jeweiligen Podcasts unter "Synchronisieren pausieren".
 
@@ -318,27 +310,26 @@ Wenn eine Episode gestreamt wird, kann sie gleichzeitig automatisch heruntergela
 
 ## Optimierungen
 
-### Schnellere Podcast-Aktualisierung
+### Blitzschnelle Podcast-Aktualisierung
 
-- Bis zu 10 Podcasts werden jetzt gleichzeitig aktualisiert (vorher 5).
-- **Per-Podcast-Timeout:** Jeder Podcast hat ein individuelles 8-Sekunden-Timeout. Hängende Feeds blockieren nicht mehr die restliche Aktualisierung.
-- Sicherheits-Timeout nach 30 Sekunden statt 60 Sekunden, um hängende Verbindungen schneller zu erkennen.
+- Bis zu 10 Podcasts werden jetzt gleichzeitig aktualisiert -- doppelt so schnell wie zuvor!
+- Nicht erreichbare Podcasts blockieren nicht mehr die Aktualisierung. Die restlichen Podcasts werden einfach weiter aktualisiert, statt auf einen einzelnen hängenden Podcast zu warten.
 
-### Fehlermeldungen bei Aktualisierung
+### Transparente Fehlermeldungen
 
-Nach dem Aktualisieren wird jetzt ein Alert angezeigt, wenn einzelne Podcasts nicht aktualisiert werden konnten. Für jeden fehlgeschlagenen Podcast wird der Name und der Grund (Timeout, Nicht gefunden, Kein Zugriff, etc.) angezeigt.
+Du siehst jetzt sofort, wenn einzelne Podcasts nicht aktualisiert werden konnten. Eine übersichtliche Meldung zeigt den Podcast-Namen und den Grund an (z.B. "Nicht erreichbar", "Nicht gefunden") -- kein Rätselraten mehr.
 
 ### Verbesserter Lautstärkeregler
 
-Der Lautstärkeregler im Player akzeptiert Touches jetzt nur noch in einem erweiterten Bereich um den Thumb herum. So werden versehentliche Berührungen beim Wischen vermieden, während der Thumb selbst leicht zu greifen ist.
+Der Lautstärkeregler im Player reagiert jetzt viel präziser. Versehentliche Berührungen beim Wischen gehören der Vergangenheit an, gleichzeitig ist der Regler leicht zu greifen.
 
 ### Hintergrund-Laden von Episoden
 
 Bei Podcasts mit vielen Episoden werden die neuesten Episoden sofort angezeigt, während ältere Episoden im Hintergrund geladen werden. Der Fortschritt wird angezeigt, und bei einem App-Neustart wird das Laden automatisch fortgesetzt.
 
-### Startgeschwindigkeit
+### Schnellerer App-Start
 
-Die Startzeit der App wurde optimiert. Der Aufbau der Datenbank und der Scene-Lifecycle wurden beschleunigt.
+Die App startet jetzt spürbar schneller.
 
 ### Download-Optimierungen
 
@@ -347,20 +338,18 @@ Die Startzeit der App wurde optimiert. Der Aufbau der Datenbank und der Scene-Li
 - Mobilfunk-Downloads standardmässig aktiviert
 - Auto-Löschen nach Wiedergabe und nach "Als gespielt markieren" standardmässig aktiviert
 
-### Instacast Cloud entfernt
+### Datenaustausch neu gedacht
 
-Die nicht mehr verfügbare Instacast Cloud (iCloud-Synchronisation) wurde vollständig entfernt. Die App arbeitet jetzt ausschliesslich lokal. Für den Datenaustausch zwischen Geräten steht die neue Backup/Restore-Funktion zur Verfügung.
+Die alte Instacast Cloud wurde durch die neue, schnellere iCloud-Synchronisierung ersetzt. Für den manuellen Datenaustausch steht zusätzlich die Backup/Restore-Funktion zur Verfügung.
 
 ---
 
 ## Bugfixes
 
-### MQTT Smart Home
-- Zuverlässigere WiFi-Erkennung über BSD-Netzwerkinterfaces statt Reachability
-- Sauberer Verbindungsabbau verhindert Crashes bei schnellem Wechsel zwischen WiFi und Mobilfunk
-- Schutz vor doppelten Verbindungsaufbauten wenn bereits verbunden oder verbindend
-- Stale-Delegate-Callbacks werden korrekt ignoriert
-- Automatische Reconnect-Logik verbessert
+### Smart Home
+- Smart Home-Verbindung noch stabiler und zuverlässiger
+- Wechsel zwischen WLAN und Mobilfunk funktioniert jetzt reibungslos
+- Schnellere automatische Wiederverbindung
 
 ### Wiedergabe
 - Wiedergabe nach dem Entsperren des Geräts funktioniert jetzt zuverlässig
@@ -368,24 +357,23 @@ Die nicht mehr verfügbare Instacast Cloud (iCloud-Synchronisation) wurde vollst
 - Kapitel-Überspringen funktioniert jetzt optimiert und verhindert Endlosschleifen
 - Player-Rotation im Vollbildmodus korrigiert
 - Stilles Auto-Play bei Pause behoben
-- Wiedergabeposition wird jetzt korrekt übernommen beim Abspielen aus der Episodenliste
+- Wiedergabeposition wird jetzt korrekt übernommen wenn eine Episode aus der Liste gestartet wird
 
 ### Downloads
 - Doppelte Downloads bei gleichzeitigem Streaming und Auto-Download behoben
-- Import-Timeout wird jetzt asynchron behandelt, statt die App zu blockieren
+- Import grosser Dateien blockiert die App nicht mehr
 - Export-Fehler behoben
 
 ### Oberfläche
 - Schatten unter Podcast- und Episodenliste entfernt
 - Grauer Hintergrund in Shownotes wiederhergestellt
-- Constraint-Warnungen bei SF-Symbol-Buttons sind UIKit-intern und nicht behebbar
 - Navigation-Bar-Buttons sind nicht mehr transparent
 - Episodenlisten-Editor: Menübutton-Fix
 - Darstellungsfehler im Dark Mode behoben
 
 ### Abonnements
 - Abonnieren und Löschen von Podcasts funktioniert jetzt zuverlässig
-- MQTT-Verbindungsprobleme behoben
+- Smart Home-Verbindungsprobleme behoben
 - OPML-Import erkennt Duplikate und überspringt bereits abonnierte Podcasts
 
 ---

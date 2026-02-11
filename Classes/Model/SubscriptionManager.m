@@ -15,6 +15,7 @@
 #import "CDFeed+Helper.h"
 #import "CDEpisode+ShowNotes.h"
 #import "EpisodeLoadingManager.h"
+#import "ICMedia.h"
 
 NSString* SubscriptionManagerWillStartRefreshingFeedsNotification = @"SubscriptionManagerWillStartRefreshingFeedsNotification";
 NSString* SubscriptionManagerDidStartRefreshingFeedsNotification = @"SubscriptionManagerDidStartRefreshingFeedsNotification";
@@ -44,7 +45,9 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 //@property (nonatomic, copy) void (^refreshCompletionHandler)(BOOL success, BOOL newData);
 @property BOOL importing;
 @property (nonatomic, strong) NSOperationQueue* parserQueue;
+@property (nonatomic, strong) NSOperationQueue* mergeQueue;
 @property (nonatomic, strong) NSDate* refreshStartDate;
+@property (nonatomic, strong) NSMutableSet<NSURL*>* feedsMergingURLs;
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundIdentifier;
@@ -86,6 +89,12 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         
         _parserQueue = [[NSOperationQueue alloc] init];
         [_parserQueue setMaxConcurrentOperationCount:10];
+
+        _mergeQueue = [[NSOperationQueue alloc] init];
+        [_mergeQueue setMaxConcurrentOperationCount:2];
+        _mergeQueue.qualityOfService = NSQualityOfServiceUtility;
+
+        _feedsMergingURLs = [[NSMutableSet alloc] init];
         
 #if TARGET_OS_IPHONE==0
         _checkTimer = [NSTimer scheduledTimerWithTimeInterval:5*60 block:^(NSTimeInterval time) {
@@ -220,6 +229,9 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
         
         NSArray* newEpisodes = [self _mergeLocalFeed:feed withWithRemoteFeed:parserFeed force:YES];
+        if (newEpisodes.count > 0) {
+            [self _postDidAddEpisodesNotification:newEpisodes];
+        }
 
         // delete cached chapters
         for(CDEpisode* episode in feed.episodes) {
@@ -518,6 +530,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     [self.refreshFailedFeedTitles removeAllObjects];
     [self.refreshTimedOutFeedTitles removeAllObjects];
     [self.refreshFailureMessages removeAllObjects];
+    [self.feedsMergingURLs removeAllObjects];
     self.lastRefreshFailedFeedName = nil;
     self.finalRefreshStatusText = nil;
 
@@ -564,6 +577,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     [self willChangeValueForKey:@"refreshStatusText"];
     [self willChangeValueForKey:@"lastRefreshingFeedName"];
     [self.refreshingFeedURLs removeObject:url];
+    [self.feedsMergingURLs removeObject:url];
     [self _removeFeedTrackingForURL:url];
     [self didChangeValueForKey:@"lastRefreshingFeedName"];
     [self didChangeValueForKey:@"refreshStatusText"];
@@ -734,11 +748,13 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     
 }
 
-- (void) _finishParsingFeed:(CDFeed*)feed url:(NSURL*)url
+- (void) _finishParsingFeed:(CDFeed*)feed url:(NSURL*)url shouldAutoDownload:(BOOL)shouldAutoDownload
 {
-    [self autoDownloadEpisodesInFeed:feed];
+    if (shouldAutoDownload) {
+        [self autoDownloadEpisodesInFeed:feed];
+    }
 
-    // Always called from main thread (via performSelectorOnMainThread in ICFeedParser)
+    // Must always run on main thread.
     [self _finishRefreshingURL:url];
 
     [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidParseFeedNotification
@@ -781,70 +797,131 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     feedParser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
 #endif
     __weak ICFeedParser* weakFeedParser = feedParser;
+    __weak typeof(self) weakSelf = self;
+    NSManagedObjectID* feedObjectID = feed.objectID;
     feedParser.didParseFeedBlock = ^(ICFeed* parsedFeed) {
-        if (![self.refreshingFeedURLs containsObject:url]) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf || ![strongSelf.refreshingFeedURLs containsObject:url]) {
             return;
         }
         
         if (!notificationBefore) {
-            self.refreshedURL = feed.sourceURL;
-            [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:self userInfo:@{@"url" : url}];
+            strongSelf.refreshedURL = feed.sourceURL;
+            [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:strongSelf userInfo:@{@"url" : url}];
         }
-        
-        
-        NSMutableArray* allNewEpisodes = [NSMutableArray array];
-        
-        if (parsedFeed)
-        {
-            // merge
-            NSArray* feeds = [DMANAGER visibleFeeds];
-            
-            for(CDFeed* feed in feeds) {
-                if ([feed.sourceURL isEqual:parsedFeed.sourceURL])
-                {
-                    // import new episodes
-                    if (!etagHandling || ![feed.contentHash isEqual:parsedFeed.contentHash]) {
-                        NSArray* newEpisodes = [self _mergeLocalFeed:feed withWithRemoteFeed:parsedFeed force:NO];
-                        if ([newEpisodes count] > 0) {
-                            [allNewEpisodes addObjectsFromArray:newEpisodes];
+
+        [strongSelf.feedsMergingURLs addObject:url];
+
+        [strongSelf.mergeQueue addOperationWithBlock:^{
+            @autoreleasepool {
+                NSManagedObjectContext* mergeContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+                mergeContext.parentContext = DMANAGER.objectContext;
+                mergeContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
+                mergeContext.undoManager = nil;
+
+                __block NSMutableArray<NSManagedObjectID*>* newEpisodeObjectIDs = [NSMutableArray array];
+                __block NSError* mergeError = nil;
+
+                [mergeContext performBlockAndWait:^{
+                    NSError* feedFetchError = nil;
+                    CDFeed* localFeed = (CDFeed*)[mergeContext existingObjectWithID:feedObjectID error:&feedFetchError];
+                    if (![localFeed isKindOfClass:[CDFeed class]]) {
+                        mergeError = feedFetchError ?: [NSError errorWithDomain:@"SubscriptionManager"
+                                                                            code:1001
+                                                                        userInfo:@{NSLocalizedDescriptionKey: @"Feed not found while merging refresh result.".ls}];
+                        return;
+                    }
+
+                    if (parsedFeed) {
+                        if (!etagHandling || ![localFeed.contentHash isEqual:parsedFeed.contentHash]) {
+                            NSArray* newEpisodes = [strongSelf _mergeLocalFeed:localFeed withWithRemoteFeed:parsedFeed force:NO];
+                            for (CDEpisode* episode in newEpisodes) {
+                                if (episode.objectID) {
+                                    [newEpisodeObjectIDs addObject:episode.objectID];
+                                }
+                            }
+                        }
+
+                        localFeed.contentHash = parsedFeed.contentHash;
+                        localFeed.etag = parsedFeed.etag;
+                    }
+
+                    if (weakFeedParser.username && ![weakFeedParser.username isEqualToString:localFeed.username]) {
+                        localFeed.username = weakFeedParser.username;
+                    }
+                    if (weakFeedParser.password && ![weakFeedParser.password isEqualToString:localFeed.password]) {
+                        localFeed.password = weakFeedParser.password;
+                    }
+                    localFeed.lastUpdate = [NSDate date];
+
+                    NSError* saveError = nil;
+                    if (![mergeContext save:&saveError]) {
+                        mergeError = saveError;
+                    }
+                }];
+
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) strongSelfInner = weakSelf;
+                    if (!strongSelfInner) {
+                        return;
+                    }
+
+                    if (mergeError) {
+                        [strongSelfInner.feedsMergingURLs removeObject:url];
+                        if (![strongSelfInner.refreshingFeedURLs containsObject:url]) {
+                            return;
+                        }
+
+                        ErrLog(@"error merging '%@': %@", feed.title, mergeError);
+                        [strongSelfInner _markFeedFailedForURL:url timedOut:NO error:mergeError];
+                        [strongSelfInner _finishParsingFeed:feed url:url shouldAutoDownload:NO];
+
+                        if (completion) {
+                            completion(NO, nil, mergeError);
+                        }
+                        return;
+                    }
+
+                    if (![strongSelfInner.refreshingFeedURLs containsObject:url]) {
+                        [strongSelfInner.feedsMergingURLs removeObject:url];
+                        return;
+                    }
+
+                    NSMutableArray* allNewEpisodes = [NSMutableArray arrayWithCapacity:newEpisodeObjectIDs.count];
+                    for (NSManagedObjectID* objectID in newEpisodeObjectIDs) {
+                        CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext objectWithID:objectID];
+                        if (episode) {
+                            [allNewEpisodes addObject:episode];
                         }
                     }
-                    
-                    // update existing content
-                    feed.contentHash = parsedFeed.contentHash;
-                    feed.etag = parsedFeed.etag;
-                    break;
-                }
+
+                    strongSelfInner.numOfNewEpisodesAfterRefresh += [allNewEpisodes count];
+
+                    if ([allNewEpisodes count] > 0) {
+                        [strongSelfInner _postDidAddEpisodesNotification:allNewEpisodes];
+                        if ([feed boolForKey:AutoDeleteNewsMode]) {
+                            [strongSelfInner _recycleOldEpisodesInNewsModeFeed:feed];
+                        }
+                    }
+
+                    DebugLog(@"parsed %@", feed.title);
+
+                    [strongSelfInner _finishParsingFeed:feed url:url shouldAutoDownload:([allNewEpisodes count] > 0)];
+
+                    if (completion) {
+                        completion(YES, allNewEpisodes, nil);
+                    }
+                });
             }
-            
-            self.numOfNewEpisodesAfterRefresh += [allNewEpisodes count];
-            
-            
-            if ([allNewEpisodes count] > 0 && [feed boolForKey:AutoDeleteNewsMode]) {
-                [self _recycleOldEpisodesInNewsModeFeed:feed];
-            }
-        }
-        if (weakFeedParser.username && ![weakFeedParser.username isEqualToString:feed.username]) {
-            feed.username = weakFeedParser.username;
-        }
-        if (weakFeedParser.password && ![weakFeedParser.password isEqualToString:feed.password]) {
-            feed.password = weakFeedParser.password;
-        }
-        feed.lastUpdate = [NSDate date];
-        
-        DebugLog(@"parsed %@", feed.title);
-        
-        [self _finishParsingFeed:feed url:url];
-        
-        if (completion) {
-            completion(YES, allNewEpisodes, nil);
-        }
+        }];
     };
     
     feedParser.didEndWithError = ^(NSError* error) {
         if (![self.refreshingFeedURLs containsObject:url]) {
             return;
         }
+
+        [self.feedsMergingURLs removeObject:url];
         
         if (completion) {
             completion(NO, nil, error);
@@ -856,7 +933,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         
         ErrLog(@"error parsing '%@': %@", feed.title, [error description]);
         [self _markFeedFailedForURL:url timedOut:NO error:error];
-        [self _finishParsingFeed:feed url:url];
+        [self _finishParsingFeed:feed url:url shouldAutoDownload:NO];
     };
     
     [self.parserQueue addOperation:feedParser];
@@ -869,6 +946,10 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         NSDate* now = [NSDate date];
         NSMutableArray<NSURL*>* timedOutURLs = [NSMutableArray array];
         for (NSURL* url in [self.refreshingFeedURLs copy]) {
+            if ([self.feedsMergingURLs containsObject:url]) {
+                continue;
+            }
+
             NSDate* started = self.refreshFeedStartDates[url];
             if (!started) {
                 self.refreshFeedStartDates[url] = now;
@@ -888,14 +969,24 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         }
     }
 
-    // Safety timeout: force-finish after 30 seconds regardless
+    // Safety timeout: force-finish after 30 seconds for feeds still doing network work.
     NSTimeInterval elapsed = -[self.refreshStartDate timeIntervalSinceNow];
     if (elapsed > 30.0 && [self.refreshingFeedURLs count] > 0) {
+        NSMutableArray<NSURL*>* timedOutNetworkURLs = [NSMutableArray array];
         for (NSURL* url in [self.refreshingFeedURLs copy]) {
+            if (![self.feedsMergingURLs containsObject:url]) {
+                [timedOutNetworkURLs addObject:url];
+            }
+        }
+
+        for (NSURL* url in timedOutNetworkURLs) {
             [self _markFeedFailedForURL:url timedOut:YES error:nil];
             [self _finishRefreshingURL:url];
         }
-        [self.parserQueue cancelAllOperations];
+
+        if (timedOutNetworkURLs.count > 0) {
+            [self.parserQueue cancelAllOperations];
+        }
     }
 
 	if ([self.refreshingFeedURLs count] == 0)
@@ -975,6 +1066,101 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 	}
 }
 
+- (void)_postDidAddEpisodesNotification:(NSArray<CDEpisode*>*)newEpisodes
+{
+    NSArray* episodes = newEpisodes ?: @[];
+    [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidAddEpisodesNotification
+                                                        object:self
+                                                      userInfo:@{@"episodes" : episodes}];
+}
+
+- (void)_copyFeedValuesFrom:(ICFeed*)parserFeed toPersistentFeed:(CDFeed*)persistentFeed
+{
+    persistentFeed.title = parserFeed.title;
+    persistentFeed.subtitle = parserFeed.subtitle;
+    persistentFeed.sourceURL = parserFeed.sourceURL;
+    persistentFeed.imageURL = parserFeed.imageURL;
+    persistentFeed.pubDate = parserFeed.pubDate;
+    persistentFeed.lastUpdate = parserFeed.lastUpdate;
+    persistentFeed.video = parserFeed.video;
+    persistentFeed.completed = parserFeed.completed;
+    persistentFeed.linkURL = parserFeed.linkURL;
+    persistentFeed.language = parserFeed.language;
+    persistentFeed.country = parserFeed.country;
+    persistentFeed.summary = parserFeed.summary;
+    persistentFeed.fulltext = parserFeed.textDescription;
+    persistentFeed.author = parserFeed.author;
+    persistentFeed.copyright = parserFeed.copyright;
+    persistentFeed.owner = parserFeed.owner;
+    persistentFeed.ownerEmail = parserFeed.ownerEmail;
+    persistentFeed.explicitContent = parserFeed.explicitContent;
+    persistentFeed.paymentURL = parserFeed.paymentURL;
+    persistentFeed.username = parserFeed.username;
+    persistentFeed.password = parserFeed.password;
+    persistentFeed.etag = parserFeed.etag;
+    persistentFeed.contentHash = parserFeed.contentHash;
+}
+
+- (void)_copyEpisodeValuesFrom:(ICEpisode*)parserEpisode toPersistentEpisode:(CDEpisode*)persistentEpisode
+{
+    persistentEpisode.objectHash = parserEpisode.objectHash;
+    persistentEpisode.title = parserEpisode.title;
+    persistentEpisode.subtitle = parserEpisode.subtitle;
+    persistentEpisode.guid = parserEpisode.guid;
+    persistentEpisode.pubDate = parserEpisode.pubDate;
+    persistentEpisode.imageURL = parserEpisode.imageURL;
+    persistentEpisode.linkURL = parserEpisode.link;
+    persistentEpisode.author = parserEpisode.author;
+    persistentEpisode.summary = parserEpisode.summary;
+    persistentEpisode.fulltext = parserEpisode.textDescription;
+    persistentEpisode.paymentURL = parserEpisode.paymentURL;
+    persistentEpisode.deeplinkURL = parserEpisode.deeplink;
+    persistentEpisode.video = parserEpisode.video;
+    persistentEpisode.explicitContent = parserEpisode.explicitContent;
+    persistentEpisode.duration = (int32_t)parserEpisode.duration;
+}
+
+- (void)_copyMediumValuesFrom:(ICMedia*)parserMedium toPersistentMedium:(CDMedium*)persistentMedium
+{
+    persistentMedium.fileURL = parserMedium.fileURL;
+    persistentMedium.byteSize = parserMedium.byteSize;
+    persistentMedium.mimeType = parserMedium.mimeType;
+}
+
+- (CDEpisode*)_addNewParserEpisode:(ICEpisode*)parserEpisode
+                            toFeed:(CDFeed*)feed
+                         inContext:(NSManagedObjectContext*)context
+                            wasNew:(BOOL*)wasNew
+{
+    if (wasNew) {
+        *wasNew = NO;
+    }
+    if (!parserEpisode || !feed || !context) {
+        return nil;
+    }
+
+    CDEpisode* persistentEpisode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode"
+                                                                   inManagedObjectContext:context];
+    [self _copyEpisodeValuesFrom:parserEpisode toPersistentEpisode:persistentEpisode];
+
+    NSMutableSet* media = [[NSMutableSet alloc] init];
+    for (ICMedia* parserMedia in parserEpisode.media) {
+        if (parserMedia.fileURL) {
+            CDMedium* persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
+                                                                         inManagedObjectContext:context];
+            [self _copyMediumValuesFrom:parserMedia toPersistentMedium:persistentMedium];
+            [media addObject:persistentMedium];
+        }
+    }
+    persistentEpisode.media = media;
+    [feed addEpisodesObject:persistentEpisode];
+
+    if (wasNew) {
+        *wasNew = YES;
+    }
+    return persistentEpisode;
+}
+
 - (void) updateLocalFeedInfo:(CDFeed*)localFeed withRemoteFeed:(ICFeed*)remoteFeed force:(BOOL)force
 {
     if (!force)
@@ -1023,7 +1209,8 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     
     else
     {
-        [DMANAGER _copyFeedValuesFrom:remoteFeed to:localFeed];
+        NSManagedObjectContext* context = localFeed.managedObjectContext;
+        [self _copyFeedValuesFrom:remoteFeed toPersistentFeed:localFeed];
         
         NSMutableDictionary* localEpisodeIndex = [NSMutableDictionary dictionary];
         for(CDEpisode* episode in localFeed.episodes) {
@@ -1042,32 +1229,29 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
             if (!localEpisode) {
                 continue;
             }
-            [DMANAGER _copyEpisodeValuesFrom:episode to:localEpisode];
+            [self _copyEpisodeValuesFrom:episode toPersistentEpisode:localEpisode];
             
             
             NSArray* localMedia = [localEpisode.media allObjects];
-            for(ICMedia* remoteMedium in episode.media)
+            [episode.media enumerateObjectsUsingBlock:^(ICMedia* remoteMedium, NSUInteger idx, BOOL *stop) 
             {
                 // dont add mediums without file URL, because medium depends on it for syncing
                 if (!remoteMedium.fileURL) {
-                    continue;
+                    return;
                 }
-                
-                [[episode.media copy] enumerateObjectsUsingBlock:^(ICMedia* media, NSUInteger idx, BOOL *stop) {
-                    
-                    if ([localMedia count] > idx) {
-                        CDMedium* localMedium = localMedia[idx];
-                        [DMANAGER _copyMediumValuesFrom:remoteMedium to:localMedium];
-                    }
-                    else
-                    {
-                        CDMedium* persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium" inManagedObjectContext:DMANAGER.objectContext];
-                        [DMANAGER _copyMediumValuesFrom:remoteMedium to:persistentMedium];
-                        [[localEpisode mutableSetValueForKey:@"media"] addObject:persistentMedium];
-                    }
-                    
-                }];
-            }
+
+                if ([localMedia count] > idx) {
+                    CDMedium* localMedium = localMedia[idx];
+                    [self _copyMediumValuesFrom:remoteMedium toPersistentMedium:localMedium];
+                }
+                else
+                {
+                    CDMedium* persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
+                                                                                inManagedObjectContext:context];
+                    [self _copyMediumValuesFrom:remoteMedium toPersistentMedium:persistentMedium];
+                    [[localEpisode mutableSetValueForKey:@"media"] addObject:persistentMedium];
+                }
+            }];
         }
         
         // remove duplicate episodes
@@ -1082,7 +1266,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 [guids addObject:episode.guid];
             }
             else {
-                [DMANAGER.objectContext deleteObject:episode];
+                [context deleteObject:episode];
             }
         }
     }
@@ -1090,12 +1274,17 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
 - (NSArray*) _mergeLocalFeed:(CDFeed*)localFeed withWithRemoteFeed:(ICFeed*)remoteFeed force:(BOOL)force
 {
+    NSManagedObjectContext* context = localFeed.managedObjectContext;
     NSSet* localEpisodes = localFeed.episodes;
     NSMutableSet* episodeGuids = [[NSMutableSet alloc] initWithCapacity:[localEpisodes count]];
+    NSMutableSet* episodeObjectHashes = [[NSMutableSet alloc] initWithCapacity:[localEpisodes count]];
 
     for(CDEpisode* episode in localEpisodes) {
         if (episode.guid) {
             [episodeGuids addObject:episode.guid];
+        }
+        if (episode.objectHash) {
+            [episodeObjectHashes addObject:episode.objectHash];
         }
     }
     
@@ -1104,26 +1293,38 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     CDEpisode* newestLocalEpisode = [[localFeed sortedEpisodes] firstObject];
 	
     NSMutableArray* newEpisodes = [[NSMutableArray alloc] init];
-    CDEpisode* mostCurrentEpisode = nil;
 	for (ICEpisode* remoteEpisode in remoteEpisodes)
 	{
-		// local episode does not exist
-		if (![episodeGuids containsObject:remoteEpisode.guid])
+        if (!remoteEpisode.guid) {
+            continue;
+        }
+
+        BOOL guidAlreadyExists = [episodeGuids containsObject:remoteEpisode.guid];
+        BOOL hashAlreadyExists = (remoteEpisode.objectHash && [episodeObjectHashes containsObject:remoteEpisode.objectHash]);
+
+        // local episode does not exist
+        if (!guidAlreadyExists && !hashAlreadyExists)
 		{
             // make persistent
-			DebugLog(@"add episode %@", remoteEpisode.title);
             BOOL wasNew;
-            CDEpisode* newPersistentEpisode = [DMANAGER addNewParserEpisode:remoteEpisode toFeed:localFeed wasNew:&wasNew];
+            CDEpisode* newPersistentEpisode = [self _addNewParserEpisode:remoteEpisode
+                                                                  toFeed:localFeed
+                                                               inContext:context
+                                                                  wasNew:&wasNew];
+            if (!newPersistentEpisode) {
+                continue;
+            }
+
+            [episodeGuids addObject:remoteEpisode.guid];
+            if (newPersistentEpisode.objectHash) {
+                [episodeObjectHashes addObject:newPersistentEpisode.objectHash];
+            }
             
             // only mark those episodes as unplayed that are newer than the latest episodes we already got
             NSTimeInterval newEpisodeTimeInterval = [newPersistentEpisode.pubDate timeIntervalSince1970];
             NSTimeInterval formerEpisodeTimeInterval = [newestLocalEpisode.pubDate timeIntervalSince1970];
             if (wasNew && newEpisodeTimeInterval > formerEpisodeTimeInterval) {
                 newPersistentEpisode.consumed = NO;
-            }
-
-            if (!mostCurrentEpisode || [newPersistentEpisode.pubDate laterDate:mostCurrentEpisode.pubDate] == newPersistentEpisode.pubDate) {
-                mostCurrentEpisode = newPersistentEpisode;
             }
 
             [newEpisodes addObject:newPersistentEpisode];
@@ -1136,10 +1337,10 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 #endif
 		}
 	}
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidAddEpisodesNotification
-                                                        object:self
-                                                      userInfo:@{@"episodes" : newEpisodes}];
+
+    if (newEpisodes.count > 0) {
+        DebugLog(@"merged %lu new episodes into %@", (unsigned long)newEpisodes.count, localFeed.title);
+    }
     
     [self updateLocalFeedInfo:localFeed withRemoteFeed:remoteFeed force:force];
     
