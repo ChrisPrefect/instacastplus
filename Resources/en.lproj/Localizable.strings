@@ -40,6 +40,11 @@
 "Played episodes and old content will be automatically deleted when the storage limit is exceeded." = "Played episodes and old content will be automatically deleted when the storage limit is exceeded.";
 "Only Delete Played" = "Only Delete Played";
 "Storage Limit" = "Storage Limit";
+"Size" = "Size";
+"Date" = "Date";
+"Podcast" = "Podcast";
+"Swipe left to delete." = "Swipe left to delete.";
+"Delete all downloads from '%@'?" = "Delete all downloads from '%@'?";
 
 /* DirectorySearchViewController.m */
 "Author" = "Author";

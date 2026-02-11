@@ -85,10 +85,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                    object:nil];
 
         _observing = YES;
+        [self _setNeedsPlayComboButtonUpdate];
     }
     else if (!observing && _observing)
     {
         [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_performPlayComboButtonUpdate) object:nil];
+        _needsPlayComboButtonUpdate = NO;
         [nc removeObserver:self];
 
         [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachingEpisodes"];
@@ -108,7 +110,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     if (!_needsPlayComboButtonUpdate) {
         _needsPlayComboButtonUpdate = YES;
-        [self performSelector:@selector(_performPlayComboButtonUpdate) withObject:nil afterDelay:0];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self->_needsPlayComboButtonUpdate) {
+                [self _performPlayComboButtonUpdate];
+            }
+        });
     }
 }
 
@@ -221,6 +227,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     [super viewWillAppear:animated];
 
+    [self _setObserving:YES];
     [self updateAppearance];
     
     [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:animated];
@@ -236,8 +243,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    
-    [self _setObserving:YES];
 }
 
 
@@ -245,6 +250,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     [super viewWillDisappear:animated];
     
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
     [self _setObserving:NO];
 }
 

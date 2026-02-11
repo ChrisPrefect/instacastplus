@@ -54,6 +54,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
+
+    [[CacheManager sharedCacheManager] addObserver:self forKeyPath:@"numberOfDownloadedBytes" options:0 context:NULL];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -80,7 +82,17 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 
 - (void) dealloc
 {
+    [[CacheManager sharedCacheManager] removeObserver:self forKeyPath:@"numberOfDownloadedBytes"];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
+{
+    if ([keyPath isEqualToString:@"numberOfDownloadedBytes"]) {
+        [self.tableView reloadData];
+    } else {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+    }
 }
 
 

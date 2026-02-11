@@ -530,7 +530,8 @@ static NSString* gPathToCache = nil;
 #endif
     [_cachedEpisodes removeObject:episode];
     _downloadedBytes = 0;
-    
+    [self recalculateDownloadedBytesInBackground];
+
     episode.lastDownloaded = nil;
     [DMANAGER save];
     
@@ -570,6 +571,7 @@ static NSString* gPathToCache = nil;
     
     if (cleared > 0) {
         _downloadedBytes = 0;
+        [self recalculateDownloadedBytesInBackground];
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidClearCacheNotification object:self];
     }
 }
