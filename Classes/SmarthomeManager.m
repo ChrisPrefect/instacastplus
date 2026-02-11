@@ -12,6 +12,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 #import <MediaPlayer/MPVolumeView.h>
+#import <ifaddrs.h>
+#import <net/if.h>
 
 NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeManagerDidChangeConnectionStateNotification";
 
@@ -99,7 +101,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         [[AVAudioSession sharedInstance] addObserver:self forKeyPath:@"outputVolume" options:NSKeyValueObservingOptionNew context:NULL];
 
         // Network change
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(networkDidChange:) name:@"kReachabilityChangedNotification" object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(networkDidChange:) name:kReachabilityChangedNotification object:nil];
     }
     return self;
 }
@@ -154,10 +156,48 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 #pragma mark - Public
 
+- (BOOL)_hasActiveWiFiInterface
+{
+    struct ifaddrs *interfaces = NULL;
+    if (getifaddrs(&interfaces) != 0) {
+        return NO;
+    }
+
+    BOOL hasWiFi = NO;
+    for (struct ifaddrs *ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_name || !ifa->ifa_addr) continue;
+        if (strcmp(ifa->ifa_name, "en0") != 0) continue;
+
+        sa_family_t family = ifa->ifa_addr->sa_family;
+        if (family != AF_INET && family != AF_INET6) continue;
+
+        BOOL isUp = (ifa->ifa_flags & IFF_UP) != 0;
+        BOOL isRunning = (ifa->ifa_flags & IFF_RUNNING) != 0;
+        BOOL isLoopback = (ifa->ifa_flags & IFF_LOOPBACK) != 0;
+        if (isUp && isRunning && !isLoopback) {
+            hasWiFi = YES;
+            break;
+        }
+    }
+
+    freeifaddrs(interfaces);
+    return hasWiFi;
+}
+
+- (void)_tearDownClient
+{
+    if (!_client) return;
+    [_statusTimer invalidate];
+    _statusTimer = nil;
+    _client.delegate = nil;
+    [_client disconnect];
+    _client = nil;
+}
+
 - (BOOL)_isOnWiFi
 {
-    Reachability *reachability = [Reachability reachabilityForInternetConnection];
-    return [reachability currentReachabilityStatus] == ReachableViaWiFi;
+    // WiFi-only means "real WLAN interface active", independent of cellular fallback routes.
+    return [self _hasActiveWiFiInterface];
 }
 
 - (void)start
@@ -168,10 +208,15 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     if (!host || host.length == 0) return;
 
     if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly] && ![self _isOnWiFi]) {
+        if (_client && _client.connectionState != ICMQTTConnectionStateDisconnected) {
+            [self _tearDownClient];
+        }
         _connectionStatusText = @"Waiting for WiFi…".ls;
         [self postConnectionStateChange];
         return;
     }
+
+    if (_client && _client.connectionState != ICMQTTConnectionStateDisconnected) return;
 
     _intentionalDisconnect = NO;
     [self buildTopicBase];
@@ -181,13 +226,14 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)checkWiFiAndReconnect
 {
     if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly] && ![self _isOnWiFi]) {
-        if (self.connected) {
-            [self stop];
+        if (_client && _client.connectionState != ICMQTTConnectionStateDisconnected) {
+            [self _tearDownClient];
         }
         _connectionStatusText = @"Waiting for WiFi…".ls;
         _intentionalDisconnect = NO;
         [self postConnectionStateChange];
-    } else if (!self.connected && !_intentionalDisconnect) {
+    } else if (!self.connected && _client.connectionState != ICMQTTConnectionStateConnecting && !_intentionalDisconnect) {
+        _reconnectDelay = 2.0;
         [self start];
     }
 }
@@ -204,8 +250,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     _motionDetectedState = NO;
     [_fellAsleepResetTimer invalidate];
     _fellAsleepResetTimer = nil;
-    [_client disconnect];
-    _client = nil;
+    [self _tearDownClient];
     _connectionStatusText = @"Disconnected".ls;
     [self clearLastValues];
     [self clearPendingEvents];
@@ -221,6 +266,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     if (_intentionalDisconnect) return;
     if (self.connected) return;
+    if (_client.connectionState == ICMQTTConnectionStateConnecting) return;
 
     [self start];
 }
@@ -234,8 +280,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)connectToMQTT
 {
-    [_client disconnect];
-    _client = nil;
+    [self _tearDownClient];
 
     NSString *host = [USER_DEFAULTS stringForKey:SmarthomeMQTTHost];
     NSInteger port = [USER_DEFAULTS integerForKey:SmarthomeMQTTPort];
@@ -266,6 +311,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)scheduleReconnect
 {
     if (_intentionalDisconnect) return;
+    if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly] && ![self _isOnWiFi]) return;
 
     [_reconnectTimer invalidate];
     _reconnectTimer = [NSTimer scheduledTimerWithTimeInterval:_reconnectDelay target:self selector:@selector(reconnectTimerFired) userInfo:nil repeats:NO];
@@ -284,6 +330,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)mqttClientDidConnect:(ICMQTTClient*)client
 {
+    if (client != _client) return;
+
     _reconnectDelay = 2.0;
     _connectionStatusText = @"Connected".ls;
     [self postConnectionStateChange];
@@ -311,8 +359,16 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)mqttClientDidDisconnect:(ICMQTTClient*)client error:(NSError*)error
 {
+    if (client != _client) return;
+
     [_statusTimer invalidate];
     _statusTimer = nil;
+
+    if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly] && ![self _isOnWiFi]) {
+        _connectionStatusText = @"Waiting for WiFi…".ls;
+        [self postConnectionStateChange];
+        return;
+    }
 
     if (error) {
         _connectionStatusText = [NSString stringWithFormat:@"%@: %@", @"Error".ls, error.localizedDescription];
@@ -326,6 +382,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)mqttClient:(ICMQTTClient*)client didReceiveMessage:(NSString*)message onTopic:(NSString*)topic
 {
+    if (client != _client) return;
+
     // Ignore empty/placeholder messages
     if (!message || message.length == 0 || [message isEqualToString:@"NaN"]) {
         return;
@@ -865,18 +923,19 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     if ([USER_DEFAULTS boolForKey:SmarthomeWiFiOnly]) {
         if ([self _isOnWiFi]) {
-            if (!self.connected && !_intentionalDisconnect) {
+            if (!self.connected && _client.connectionState != ICMQTTConnectionStateConnecting && !_intentionalDisconnect) {
                 _reconnectDelay = 2.0;
                 [self reconnectIfNeeded];
             }
-        } else if (self.connected) {
-            // Left WiFi - disconnect
+        } else {
+            // Left WiFi (or WiFi went down while connecting) - disconnect immediately.
+            if (_client && _client.connectionState != ICMQTTConnectionStateDisconnected) {
+                [self _tearDownClient];
+            }
             _connectionStatusText = @"Waiting for WiFi…".ls;
-            [_client disconnect];
-            _client = nil;
             [self postConnectionStateChange];
         }
-    } else if (!self.connected) {
+    } else if (!self.connected && _client.connectionState != ICMQTTConnectionStateConnecting) {
         // Reset reconnect delay for faster reconnection when network returns
         _reconnectDelay = 2.0;
         [self reconnectIfNeeded];

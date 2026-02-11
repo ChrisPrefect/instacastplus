@@ -28,6 +28,7 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     NSTimer *_pingTimer;
     NSTimer *_connectTimeoutTimer;
     uint16_t _packetId;
+    ICMQTTClient *_selfRetainWhileDisconnecting;
 }
 @end
 
@@ -60,7 +61,15 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
 - (void)performOnNetworkThread:(SEL)selector waitUntilDone:(BOOL)wait
 {
-    [self performSelector:selector onThread:[[self class] networkThread] withObject:nil waitUntilDone:wait];
+    NSThread *networkThread = [[self class] networkThread];
+    if ([NSThread currentThread] == networkThread) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [self performSelector:selector];
+#pragma clang diagnostic pop
+        return;
+    }
+    [self performSelector:selector onThread:networkThread withObject:nil waitUntilDone:wait];
 }
 
 - (instancetype)init
@@ -80,7 +89,7 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
 - (void)dealloc
 {
-    [self disconnect];
+    _delegate = nil;
 }
 
 #pragma mark - Connection
@@ -122,12 +131,14 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
 - (void)disconnect
 {
+    _selfRetainWhileDisconnecting = self;
     [self performOnNetworkThread:@selector(disconnectOnNetworkThread) waitUntilDone:NO];
 }
 
 - (void)disconnectOnNetworkThread
 {
     if (_connectionState == ICMQTTConnectionStateDisconnected) {
+        _selfRetainWhileDisconnecting = nil;
         return;
     }
 
@@ -137,6 +148,7 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
     [self closeStreams];
     _connectionState = ICMQTTConnectionStateDisconnected;
+    _selfRetainWhileDisconnecting = nil;
 }
 
 - (void)closeStreams

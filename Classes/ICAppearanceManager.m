@@ -81,16 +81,16 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 {
     if (_appearance != appearance) {
         _appearance = appearance;
-
+        
         [[UINavigationBar appearance] setTitleTextAttributes:@{ NSForegroundColorAttributeName : appearance.textColor }];
-
+        
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefault];
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 94) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefaultPrompt];
         [[UINavigationBar appearance] setShadowImage:[[UIImage alloc] init]];
-
+        
         [[UIToolbar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 44) appearance:appearance topToBottom:NO] forToolbarPosition:UIBarPositionAny barMetrics:UIBarMetricsDefault];
         [[UIToolbar appearance] setShadowImage:[[UIImage alloc] init] forToolbarPosition:UIBarPositionAny];
-
+    
         [[UIScrollView appearance] setIndicatorStyle:appearance.scrollIndicatorStyle];
 
         [[UITabBar appearance] setShadowImage:[[UIImage alloc] init]];
@@ -105,16 +105,6 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
         rootWindow.tintColor = ICTintColor;
 
-        // Update existing navigation bars directly (appearance proxy only affects new instances)
-        UIImage* navBarImage = [self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES];
-        UINavigationBarAppearance* navAppearance = [[UINavigationBarAppearance alloc] init];
-        [navAppearance configureWithOpaqueBackground];
-        navAppearance.backgroundImage = navBarImage;
-        navAppearance.shadowImage = [[UIImage alloc] init];
-        navAppearance.shadowColor = nil;
-        navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
-        [self _applyNavigationBarAppearance:navAppearance toViewController:rootWindow.rootViewController];
-
         UIView* subview = [rootWindow.subviews lastObject];
         [subview removeFromSuperview];
         [rootWindow addSubview:subview];
@@ -122,43 +112,23 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         // workaround a bug in iOS where presented view controllers don't get appearance methods
 
         UIViewController* presentedViewController = rootWindow.rootViewController.presentedViewController;
-//
+//        
 //        // xxx: iPad does not update view controller behind a form sheet
 //        if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
 //            presentedViewController = rootWindow.rootViewController;
 //        }
-
+        
         do {
             [presentedViewController beginAppearanceTransition:NO animated:NO];
             [presentedViewController endAppearanceTransition];
-
+        
             [presentedViewController beginAppearanceTransition:YES animated:NO];
             [presentedViewController endAppearanceTransition];
-
+            
             presentedViewController = presentedViewController.presentedViewController;
         } while (presentedViewController);
-
+        
         [[NSNotificationCenter defaultCenter] postNotificationName:ICAppearanceManagerDidUpdateAppearanceNotification object:self];
-    }
-}
-
-- (void) _applyNavigationBarAppearance:(UINavigationBarAppearance*)navAppearance toViewController:(UIViewController*)vc
-{
-    if (!vc) return;
-
-    if ([vc isKindOfClass:[UINavigationController class]]) {
-        UINavigationController* nav = (UINavigationController*)vc;
-        nav.navigationBar.standardAppearance = navAppearance;
-        nav.navigationBar.scrollEdgeAppearance = navAppearance;
-        nav.navigationBar.compactAppearance = navAppearance;
-    }
-
-    for (UIViewController* child in vc.childViewControllers) {
-        [self _applyNavigationBarAppearance:navAppearance toViewController:child];
-    }
-
-    if (vc.presentedViewController) {
-        [self _applyNavigationBarAppearance:navAppearance toViewController:vc.presentedViewController];
     }
 }
 
@@ -224,9 +194,8 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
                 rootWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
                 break;
         }
-        // Note: layoutIfNeeded removed — was forcing a 1s synchronous layout pass.
-        // overrideUserInterfaceStyle propagates naturally on the next layout cycle.
-        // The appearance decision (shouldUseDarkMode) is already determined independently.
+        // Force layout pass to apply trait collection changes
+        [rootWindow layoutIfNeeded];
     }
 
     if (shouldUseDarkMode) {
