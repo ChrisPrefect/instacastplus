@@ -317,6 +317,8 @@
 		A0B881E96A221DECBBBC945E /* ICCloudSyncFeedSettingsHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 661371EEE9F9A467AB106E4B /* ICCloudSyncFeedSettingsHandler.m */; };
 		C6D7F074C7C58483B00A5A43 /* ICCloudSyncAppSettingsHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 15D8AC236AFFF2953F443F30 /* ICCloudSyncAppSettingsHandler.m */; };
 		E7067A799038969ACBC8E024 /* ICCloudSyncDownloadHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */; };
+		E5F6A7B8C9D0E1F2A3B4C5D6 /* ICCloudSyncListHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7B8C9D0E1F2A3 /* ICCloudSyncListHandler.m */; };
+		F6A7B8C9D0E1F2A3B4C5D6E7 /* ICCloudSyncUpNextHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* ICCloudSyncUpNextHandler.m */; };
 		C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */; };
 /* End PBXBuildFile section */
 
@@ -870,6 +872,10 @@
 		46391C2C1D1336DD2951C148 /* ICCloudSyncAppSettingsHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncAppSettingsHandler.h; sourceTree = "<group>"; };
 		15D8AC236AFFF2953F443F30 /* ICCloudSyncAppSettingsHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncAppSettingsHandler.m; sourceTree = "<group>"; };
 		2E64F6C89464B37DC80901D6 /* ICCloudSyncDownloadHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncDownloadHandler.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B8C9D0E1F2 /* ICCloudSyncListHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncListHandler.h; sourceTree = "<group>"; };
+		B2C3D4E5F6A7B8C9D0E1F2A3 /* ICCloudSyncListHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncListHandler.m; sourceTree = "<group>"; };
+		C3D4E5F6A7B8C9D0E1F2A3B4 /* ICCloudSyncUpNextHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncUpNextHandler.h; sourceTree = "<group>"; };
+		D4E5F6A7B8C9D0E1F2A3B4C5 /* ICCloudSyncUpNextHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncUpNextHandler.m; sourceTree = "<group>"; };
 		CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncDownloadHandler.m; sourceTree = "<group>"; };
 		CDAA978C300BCF14542D5C63 /* iCloudSettingsViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = iCloudSettingsViewController.h; sourceTree = "<group>"; };
 		DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = iCloudSettingsViewController.m; sourceTree = "<group>"; };
@@ -1832,6 +1838,10 @@
 				15D8AC236AFFF2953F443F30 /* ICCloudSyncAppSettingsHandler.m */,
 				2E64F6C89464B37DC80901D6 /* ICCloudSyncDownloadHandler.h */,
 				CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */,
+				A1B2C3D4E5F6A7B8C9D0E1F2 /* ICCloudSyncListHandler.h */,
+				B2C3D4E5F6A7B8C9D0E1F2A3 /* ICCloudSyncListHandler.m */,
+				C3D4E5F6A7B8C9D0E1F2A3B4 /* ICCloudSyncUpNextHandler.h */,
+				D4E5F6A7B8C9D0E1F2A3B4C5 /* ICCloudSyncUpNextHandler.m */,
 				CDAA978C300BCF14542D5C63 /* iCloudSettingsViewController.h */,
 				DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */,
 			);
@@ -2255,6 +2265,8 @@
 				A0B881E96A221DECBBBC945E /* ICCloudSyncFeedSettingsHandler.m in Sources */,
 				C6D7F074C7C58483B00A5A43 /* ICCloudSyncAppSettingsHandler.m in Sources */,
 				E7067A799038969ACBC8E024 /* ICCloudSyncDownloadHandler.m in Sources */,
+				E5F6A7B8C9D0E1F2A3B4C5D6 /* ICCloudSyncListHandler.m in Sources */,
+				F6A7B8C9D0E1F2A3B4C5D6E7 /* ICCloudSyncUpNextHandler.m in Sources */,
 				C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

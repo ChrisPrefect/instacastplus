@@ -10,6 +10,8 @@
 #import "ICCloudSyncFeedSettingsHandler.h"
 #import "ICCloudSyncAppSettingsHandler.h"
 #import "ICCloudSyncDownloadHandler.h"
+#import "ICCloudSyncListHandler.h"
+#import "ICCloudSyncUpNextHandler.h"
 #import "PlaybackManager.h"
 
 NSString *ICCloudSyncManagerDidSyncNotification = @"ICCloudSyncManagerDidSyncNotification";
@@ -38,6 +40,7 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
 @property (nonatomic, assign) BOOL zoneCreated;
 @property (nonatomic, assign) BOOL subscriptionCreated;
 @property (nonatomic, strong) ICCloudSyncNowPlayingHandler *nowPlayingHandler;
+@property (nonatomic, strong) ICCloudSyncUpNextHandler *upNextHandler;
 @property (nonatomic, assign) BOOL hasPendingPush;
 @property (nonatomic, assign) BOOL hasPendingFetch;
 @end
@@ -113,6 +116,7 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
                 [self ensureSubscriptionExists:^{
                     [self registerDevice];
                     [self.nowPlayingHandler startObserving];
+                    [self.upNextHandler startObserving];
                     if ([PlaybackManager playbackManager].playingEpisode) {
                         self.hasPendingFetch = YES;
                     } else {
@@ -155,6 +159,17 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
     dlHandler.database = self.privateDatabase;
     dlHandler.zoneID = self.syncZoneID;
     [self registerHandler:dlHandler];
+
+    ICCloudSyncListHandler *listHandler = [[ICCloudSyncListHandler alloc] init];
+    listHandler.database = self.privateDatabase;
+    listHandler.zoneID = self.syncZoneID;
+    [self registerHandler:listHandler];
+
+    ICCloudSyncUpNextHandler *upNextHandler = [[ICCloudSyncUpNextHandler alloc] init];
+    upNextHandler.database = self.privateDatabase;
+    upNextHandler.zoneID = self.syncZoneID;
+    self.upNextHandler = upNextHandler;
+    [self registerHandler:upNextHandler];
 }
 
 - (void)stop
@@ -164,6 +179,7 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
     [self.debounceTimer invalidate];
     self.debounceTimer = nil;
     [self.nowPlayingHandler stopObserving];
+    [self.upNextHandler stopObserving];
 }
 
 - (void)syncNow
@@ -861,6 +877,10 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
         return iCloudSyncAppSettings;
     } else if ([type isEqualToString:@"SyncDownloadStatus"]) {
         return iCloudSyncDownloadStatus;
+    } else if ([type isEqualToString:@"SyncList"]) {
+        return iCloudSyncLists;
+    } else if ([type isEqualToString:@"SyncUpNext"]) {
+        return iCloudSyncUpNext;
     }
     return nil;
 }

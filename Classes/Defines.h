@@ -163,6 +163,8 @@ extern NSString* iCloudSyncSubscriptions;
 extern NSString* iCloudSyncFeedSettings;
 extern NSString* iCloudSyncAppSettings;
 extern NSString* iCloudSyncDownloadStatus;
+extern NSString* iCloudSyncLists;
+extern NSString* iCloudSyncUpNext;
 extern NSString* iCloudSyncDeviceID;
 extern NSString* iCloudSyncLastSyncDate;
 extern NSString* iCloudSyncServerChangeToken;

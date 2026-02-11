@@ -16,10 +16,12 @@ typedef NS_ENUM(NSInteger, iCloudSettingsSections) {
 };
 
 typedef NS_ENUM(NSInteger, iCloudCategoryRows) {
-    kCategoryPlaybackStatus = 0,
-    kCategoryNowPlaying,
+    kCategoryNowPlaying = 0,
+    kCategoryPlaybackStatus,
     kCategorySubscriptions,
     kCategoryFeedSettings,
+    kCategoryLists,
+    kCategoryUpNext,
     kCategoryAppSettings,
     kCategoryDownloadStatus,
     kCategoryNumberOfRows,
@@ -236,6 +238,8 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
             @"nowplaying": @"Now Playing",
             @"subscriptions": @"Subscriptions",
             @"feedsettings": @"Podcast Settings",
+            @"lists": @"Lists",
+            @"upnext": @"Up Next",
             @"appsettings": @"App Settings",
             @"downloads": @"Download Status",
         };
@@ -312,6 +316,14 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
                 case kCategoryFeedSettings:
                     cell.textLabel.text = @"Podcast Settings".ls;
                     control.on = [USER_DEFAULTS boolForKey:iCloudSyncFeedSettings];
+                    break;
+                case kCategoryLists:
+                    cell.textLabel.text = @"Lists".ls;
+                    control.on = [USER_DEFAULTS boolForKey:iCloudSyncLists];
+                    break;
+                case kCategoryUpNext:
+                    cell.textLabel.text = @"Up Next".ls;
+                    control.on = [USER_DEFAULTS boolForKey:iCloudSyncUpNext];
                     break;
                 case kCategoryAppSettings:
                     cell.textLabel.text = @"App Settings".ls;
@@ -524,6 +536,12 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
             break;
         case kCategoryFeedSettings:
             key = iCloudSyncFeedSettings;
+            break;
+        case kCategoryLists:
+            key = iCloudSyncLists;
+            break;
+        case kCategoryUpNext:
+            key = iCloudSyncUpNext;
             break;
         case kCategoryAppSettings:
             key = iCloudSyncAppSettings;
