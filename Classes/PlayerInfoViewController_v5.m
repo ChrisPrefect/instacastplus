@@ -658,6 +658,39 @@ enum {
             cell.timeLabel.textColor = ICMutedTextColor;
         }
         
+        // Strikethrough for auto-skipped chapters
+        BOOL shouldStrike = NO;
+        CDEpisode *episode = pman.playingEpisode;
+        if (episode.feed) {
+            NSString *skipKey = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
+            NSString *chaptersName = [episode.feed stringForKey:skipKey];
+            if (chaptersName.length > 0) {
+                NSArray *skipNames = [chaptersName componentsSeparatedByString:@".  "];
+                NSString *lowerTitle = chapter.title.lowercaseString;
+                for (NSString *name in skipNames) {
+                    if (name.length > 0 && [lowerTitle containsString:name.lowercaseString]) {
+                        shouldStrike = YES;
+                        break;
+                    }
+                }
+            }
+        }
+        NSDictionary *attrs;
+        if (shouldStrike) {
+            attrs = @{
+                NSStrikethroughStyleAttributeName: @(NSUnderlineStyleSingle),
+                NSForegroundColorAttributeName: cell.textLabel.textColor,
+                NSFontAttributeName: cell.textLabel.font
+            };
+        } else {
+            attrs = @{
+                NSStrikethroughStyleAttributeName: @(NSUnderlineStyleNone),
+                NSForegroundColorAttributeName: cell.textLabel.textColor,
+                NSFontAttributeName: cell.textLabel.font
+            };
+        }
+        cell.textLabel.attributedText = [[NSAttributedString alloc] initWithString:chapter.title attributes:attrs];
+
         cell.progressView.hidden = (pman.currentChapter != indexPath.row);
         cell.progressView.progress = 0;
         cell.progressView.tintColor = self.view.tintColor;

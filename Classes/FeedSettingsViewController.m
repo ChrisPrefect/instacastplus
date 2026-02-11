@@ -15,6 +15,7 @@
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #import "SettingInputViewController.h"
+#import "ChapterSkipListViewController.h"
 #import "SkipTimeCell.h"
 
 enum {
@@ -395,8 +396,18 @@ enum {
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", self.feed.uid];
             NSString *chaptersName = [self.feed stringForKey:key];
-            cell.textLabel.text = @"Auto Skip Chapter".ls;
-            cell.detailTextLabel.text = chaptersName;
+            cell.textLabel.text = @"Skip Chapter".ls;
+
+            if (chaptersName.length == 0) {
+                cell.detailTextLabel.text = @"None".ls;
+            } else {
+                NSArray *names = [chaptersName componentsSeparatedByString:@".  "];
+                if (names.count == 1) {
+                    cell.detailTextLabel.text = names.firstObject;
+                } else {
+                    cell.detailTextLabel.text = [NSString stringWithFormat:@"%d Keywords".ls, (int)names.count];
+                }
+            }
             return cell;
         }
         else
@@ -612,19 +623,9 @@ enum {
     
     else if (indexPath.section == kAutoSkipSection) {
         if (indexPath.row == 0) {
-            SettingInputViewController* controller = [SettingInputViewController inputSampleViewController];
-            //controller.title = @"Skipping Chapter".ls;
-            controller.feed = self.feed;
-            controller.titleStr = @"Skipping Chapter".ls;
-            NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", self.feed.uid];
-            controller.key = key;
-            NSString *chaptersName = [self.feed stringForKey:key];
-            NSArray *names = [chaptersName componentsSeparatedByString:@".  "];
-            controller.valueType = kSettingTypeString;
-            controller.inputValues = [NSMutableArray arrayWithArray:names];
+            ChapterSkipListViewController *controller = [ChapterSkipListViewController controllerWithFeed:self.feed];
             [self.navigationController pushViewController:controller animated:YES];
         }
-       
     }
         
     else if (indexPath.section == kResetSection)

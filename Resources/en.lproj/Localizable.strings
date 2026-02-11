@@ -588,6 +588,13 @@
 "Skip intro" = "Skip intro";
 "Skip outro" = "Skip outro";
 "Seconds" = "Seconds";
+"Skip Chapter" = "Skip Chapter";
+"%d Keywords" = "%d Keywords";
+"Add Keyword" = "Add Keyword";
+"Remove Keyword" = "Remove Keyword";
+"Start" = "Start";
+"End" = "End";
+"Chapters whose name contains one of these keywords will be automatically skipped. Matching is case-insensitive and works on partial names.\n\nStart: Offset in seconds. +2s plays the first 2s of the chapter before skipping. −2s begins skipping 2s before the chapter starts.\nEnd: Offset in seconds. +2s also skips the first 2s after the chapter." = "Chapters whose name contains one of these keywords will be automatically skipped. Matching is case-insensitive and works on partial names.\n\nStart: Offset in seconds. +2s plays the first 2s of the chapter before skipping. −2s begins skipping 2s before the chapter starts.\nEnd: Offset in seconds. +2s also skips the first 2s after the chapter.";
 "We Value Your Feedback" = "We Value Your Feedback";
 "Use system setting" = "Use system setting";
 "E-Mail Feedback" = "E-Mail Feedback";

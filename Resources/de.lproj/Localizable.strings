@@ -92,7 +92,7 @@
 "Sort Order" = "Sortierung";
 "Speed" = "Geschwindigkeit";
 "Intelligent Sleep" = "Intelligenter Schlaf";
-"None" = "Keiner";
+"None" = "Keine";
 "Subscription Settings" = "Abo-Einstellungen";
 "Video Content" = "Videoinhalte";
 "In app purchase are disabled in your device." = "In-App-Käufe sind auf Ihrem Gerät deaktiviert.";
@@ -589,6 +589,13 @@
 "Skip intro" = "Intro überspringen";
 "Skip outro" = "Outro überspringen";
 "Seconds" = "Sekunden";
+"Skip Chapter" = "Kapitel überspringen";
+"%d Keywords" = "%d Suchbegriffe";
+"Add Keyword" = "Suchbegriff hinzufügen";
+"Remove Keyword" = "Suchbegriff entfernen";
+"Start" = "Anfang";
+"End" = "Ende";
+"Chapters whose name contains one of these keywords will be automatically skipped. Matching is case-insensitive and works on partial names.\n\nStart: Offset in seconds. +2s plays the first 2s of the chapter before skipping. −2s begins skipping 2s before the chapter starts.\nEnd: Offset in seconds. +2s also skips the first 2s after the chapter." = "Kapitel, deren Name einen dieser Suchbegriffe enthält, werden automatisch übersprungen. Der Abgleich ignoriert Gross-/Kleinschreibung und erkennt auch Teilbegriffe.\n\nAnfang: Versatz in Sekunden. +2s spielt die ersten 2s des Kapitels vor dem Überspringen ab. −2s beginnt 2s vor dem Kapitel zu überspringen.\nEnde: Versatz in Sekunden. +2s überspringt zusätzlich die ersten 2s nach dem Kapitel.";
 "We Value Your Feedback" = "Wir schätzen Ihr Feedback";
 "Use system setting" = "Systemeinstellung übernehmen";
 "E-Mail Feedback" = "E-Mail Feedback";

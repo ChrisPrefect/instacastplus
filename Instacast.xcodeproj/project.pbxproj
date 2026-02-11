@@ -275,6 +275,7 @@
 		835A5B102F33BBFE00A70766 /* ICMQTTClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */; };
 		83D65DAB2F2F6A9000A3CC18 /* EpisodeLoadingManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */; };
 		9259B7F32D20FA990035AA91 /* SettingInputViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B7F22D20FA990035AA91 /* SettingInputViewController.m */; };
+		188B3C7A2E175728004D14A5 /* ChapterSkipListViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */; };
 		9259B80D2D33B9010035AA91 /* SettingInputChapterController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
 		CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000006 /* PlaybackSettingsViewController.m */; };
@@ -785,6 +786,8 @@
 		83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = EpisodeLoadingManager.m; path = Classes/Model/EpisodeLoadingManager.m; sourceTree = "<group>"; };
 		9259B7F12D20FA990035AA91 /* SettingInputViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputViewController.h; sourceTree = "<group>"; };
 		9259B7F22D20FA990035AA91 /* SettingInputViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputViewController.m; sourceTree = "<group>"; };
+		188B3C7B2E175728004D14A5 /* ChapterSkipListViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ChapterSkipListViewController.h; sourceTree = "<group>"; };
+		188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ChapterSkipListViewController.m; sourceTree = "<group>"; };
 		9259B80B2D33B9010035AA91 /* SettingInputChapterController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputChapterController.h; sourceTree = "<group>"; };
 		9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputChapterController.m; sourceTree = "<group>"; };
 		92A647082CE5A201002268B7 /* Instacast-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Instacast-Info.plist"; sourceTree = "<group>"; };
@@ -959,6 +962,8 @@
 			children = (
 				9259B7F12D20FA990035AA91 /* SettingInputViewController.h */,
 				9259B7F22D20FA990035AA91 /* SettingInputViewController.m */,
+				188B3C7B2E175728004D14A5 /* ChapterSkipListViewController.h */,
+				188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */,
 				1B6F95181468110E00894417 /* OptionsViewController.h */,
 				1B6F95191468110F00894417 /* OptionsViewController.m */,
 				1BA72ED81774A03300FAFED1 /* GeneralSettingsViewController.h */,
@@ -2232,6 +2237,7 @@
 				1BD95494177C4F1B00323386 /* ICMetadataParser.m in Sources */,
 				CE3EA6932AA7A952001900EB /* FCModelCachedObject.m in Sources */,
 				9259B7F32D20FA990035AA91 /* SettingInputViewController.m in Sources */,
+				188B3C7A2E175728004D14A5 /* ChapterSkipListViewController.m in Sources */,
 				835A5AF02F338F7800A70766 /* ImportExportSettingsViewController.m in Sources */,
 				A09342B69F23219DCA42408C /* InstacastBackupData.m in Sources */,
 				8D2721308493583FDC2D5AF0 /* InstacastBackupParser.m in Sources */,

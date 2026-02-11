@@ -107,7 +107,8 @@ enum {
 // Chapter skip protection
 @property (nonatomic) BOOL isAutoSkipping;
 @property (nonatomic, strong) NSDate *lastAutoSkipDate;
-@property (nonatomic) NSInteger lastSkippedFromChapter;
+@property (nonatomic, strong) NSArray *autoSkipMarkers;  // @[@{@"start": @(time), @"resume": @(time)}], resume == -1 → finish episode
+@property (nonatomic) NSInteger suppressedSkipMarker;    // Manual seek protection: marker index to suppress
 @end
 
 
@@ -933,19 +934,6 @@ enum {
     SEND_UPDATE
 }
 
-- (BOOL)shouldSkipChapter:(ICMetadataChapter *)chapterObj withNames:(NSArray *)skipNames {
-    if (!chapterObj.title || skipNames.count == 0) {
-        return NO;
-    }
-    NSString *lowerTitle = chapterObj.title.lowercaseString;
-    for (NSString *skipName in skipNames) {
-        if (skipName.length > 0 && [lowerTitle containsString:skipName.lowercaseString]) {
-            return YES;
-        }
-    }
-    return NO;
-}
-
 - (NSString *)matchingSkipNameForChapter:(ICMetadataChapter *)chapterObj withNames:(NSArray *)skipNames {
     if (!chapterObj.title || skipNames.count == 0) {
         return nil;
@@ -960,180 +948,38 @@ enum {
 }
 
 - (void)nextTimeAfterSkipChapter:(CDEpisode *)episode {
-    // Protection against skip loops
-    if (self.isAutoSkipping) {
-        return;
-    }
-
-    // Don't skip again within 1 second (wall clock time) of last skip
-    if (self.lastAutoSkipDate && [[NSDate date] timeIntervalSinceDate:self.lastAutoSkipDate] < 1.0) {
-        return;
-    }
+    if (self.isAutoSkipping) return;
+    if (!self.autoSkipMarkers || self.autoSkipMarkers.count == 0) return;
+    if (self.lastAutoSkipDate && [[NSDate date] timeIntervalSinceDate:self.lastAutoSkipDate] < 1.0) return;
 
     NSTimeInterval currentTime = [self time];
-    NSInteger currentChapterIndex = self.currentChapter;
 
-    // Validate chapter index
-    if (currentChapterIndex < 0 || self.chapters.count == 0 || currentChapterIndex >= self.chapters.count) {
-        return;
-    }
+    for (NSInteger i = 0; i < (NSInteger)self.autoSkipMarkers.count; i++) {
+        NSDictionary *marker = self.autoSkipMarkers[i];
+        NSTimeInterval skipStart = [marker[@"start"] doubleValue];
+        NSTimeInterval resumeTime = [marker[@"resume"] doubleValue];
 
-    // Don't skip again from the same chapter we just skipped from
-    if (self.lastSkippedFromChapter == currentChapterIndex) {
-        return;
-    }
+        if (currentTime >= skipStart) {
+            // Manual seek protection: don't re-skip if user deliberately seeked here
+            if (i == self.suppressedSkipMarker) continue;
 
-    // Get skip chapter names
-    NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
-    NSString *chaptersName = [episode.feed stringForKey:key];
-    if (!chaptersName || chaptersName.length == 0) {
-        return;
-    }
-    NSArray *skipNames = [chaptersName componentsSeparatedByString:@".  "];
-    if (skipNames.count == 0) {
-        return;
-    }
-
-    ICMetadataChapter *currentChapter = self.chapters[currentChapterIndex];
-    NSTimeInterval currentChapterStart = CMTimeGetSeconds(currentChapter.start);
-    NSTimeInterval currentChapterEnd = CMTimeGetSeconds(currentChapter.end);
-
-    NSString *currentSkipName = [self matchingSkipNameForChapter:currentChapter withNames:skipNames];
-    BOOL currentChapterShouldSkip = (currentSkipName != nil);
-
-    // CASE 1: We're in a chapter that should be skipped
-    if (currentChapterShouldSkip) {
-        // Get the startOffset for this skip chapter (positive = wait X seconds before skipping)
-        NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, currentSkipName];
-        double startOffset = [episode.feed doubleForKey:startKey];
-
-        // Calculate when to trigger the skip
-        // If startOffset > 0: wait startOffset seconds into the chapter before skipping
-        // If startOffset < 0: this was handled by early-skip from previous chapter
-        // If startOffset = 0: skip immediately when entering the chapter
-        NSTimeInterval skipTriggerTime = currentChapterStart + MAX(0, startOffset);
-
-        // Only skip if we've reached the trigger time
-        if (currentTime < skipTriggerTime) {
-            return;
-        }
-
-        // Find the next non-skip chapter
-        NSInteger targetChapterIndex = currentChapterIndex + 1;
-        NSString *lastSkipName = currentSkipName;
-
-        while (targetChapterIndex < self.chapters.count) {
-            ICMetadataChapter *targetChapter = self.chapters[targetChapterIndex];
-            NSString *targetSkipName = [self matchingSkipNameForChapter:targetChapter withNames:skipNames];
-            if (!targetSkipName) {
-                break;
-            }
-            lastSkipName = targetSkipName;
-            targetChapterIndex++;
-        }
-
-        if (targetChapterIndex < self.chapters.count) {
-            // Found a non-skip chapter
-            ICMetadataChapter *targetChapter = self.chapters[targetChapterIndex];
-            NSTimeInterval targetChapterStart = CMTimeGetSeconds(targetChapter.start);
-            NSTimeInterval targetChapterEnd = CMTimeGetSeconds(targetChapter.end);
-            NSTimeInterval targetTime = targetChapterStart;
-
-            // Add skip_end offset (skip into the target chapter)
-            if (lastSkipName) {
-                NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
-                double endOffset = [episode.feed doubleForKey:endKey];
-                if (endOffset > 0) {
-                    targetTime += endOffset;
-                }
-            }
-
-            // Clamp targetTime to valid range
-            targetTime = MAX(targetTime, targetChapterStart);
-            targetTime = MIN(targetTime, targetChapterEnd - 1.0);
-
-            // Don't skip if we're already at the target
-            if (fabs(targetTime - currentTime) < 1.0) {
+            if (resumeTime < 0) {
+                // All remaining chapters are skip → finish episode
+                [self _finishEpisodeDueToSkip:episode];
                 return;
             }
 
-            [self _performAutoSkipToTime:targetTime fromChapter:currentChapterIndex];
-        } else {
-            // All remaining chapters should be skipped - mark episode as finished
-            [self _finishEpisodeDueToSkip:episode];
-        }
-        return;
-    }
-
-    // CASE 2: Current chapter is not a skip chapter, but check for early-skip
-    // This handles negative startOffset (skip X seconds before reaching the skip chapter)
-    if (currentChapterIndex < self.chapters.count - 1) {
-        ICMetadataChapter *nextChapter = self.chapters[currentChapterIndex + 1];
-        NSString *nextSkipName = [self matchingSkipNameForChapter:nextChapter withNames:skipNames];
-
-        if (nextSkipName) {
-            NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, nextSkipName];
-            double startOffset = [episode.feed doubleForKey:startKey];
-
-            // Only handle negative offsets here (early skip before chapter boundary)
-            // Positive offsets are handled in CASE 1 when we enter the skip chapter
-            if (startOffset < 0) {
-                NSTimeInterval skipTriggerTime = currentChapterEnd + startOffset;
-
-                if (currentTime >= skipTriggerTime) {
-                    // Find the target chapter (first non-skip chapter)
-                    NSInteger targetChapterIndex = currentChapterIndex + 1;
-                    NSString *lastSkipName = nextSkipName;
-
-                    while (targetChapterIndex < self.chapters.count) {
-                        ICMetadataChapter *targetChapter = self.chapters[targetChapterIndex];
-                        NSString *targetSkipName = [self matchingSkipNameForChapter:targetChapter withNames:skipNames];
-                        if (!targetSkipName) {
-                            break;
-                        }
-                        lastSkipName = targetSkipName;
-                        targetChapterIndex++;
-                    }
-
-                    if (targetChapterIndex < self.chapters.count) {
-                        ICMetadataChapter *targetChapter = self.chapters[targetChapterIndex];
-                        NSTimeInterval targetChapterStart = CMTimeGetSeconds(targetChapter.start);
-                        NSTimeInterval targetChapterEnd = CMTimeGetSeconds(targetChapter.end);
-                        NSTimeInterval targetTime = targetChapterStart;
-
-                        // Add skip_end offset
-                        if (lastSkipName) {
-                            NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
-                            double endOffset = [episode.feed doubleForKey:endKey];
-                            if (endOffset > 0) {
-                                targetTime += endOffset;
-                            }
-                        }
-
-                        // Clamp targetTime to valid range
-                        targetTime = MAX(targetTime, targetChapterStart);
-                        targetTime = MIN(targetTime, targetChapterEnd - 1.0);
-
-                        if (fabs(targetTime - currentTime) < 1.0) {
-                            return;
-                        }
-
-                        [self _performAutoSkipToTime:targetTime fromChapter:currentChapterIndex];
-                    } else {
-                        [self _finishEpisodeDueToSkip:episode];
-                    }
-                }
+            if (currentTime < resumeTime) {
+                // We're in the skip zone → jump to resume point
+                self.isAutoSkipping = YES;
+                self.lastAutoSkipDate = [NSDate date];
+                [self seekToTime:resumeTime tolerance:NO];
+                self.isAutoSkipping = NO;
+                return;
             }
+            // currentTime >= resumeTime → already past this marker, check next
         }
     }
-}
-
-- (void)_performAutoSkipToTime:(NSTimeInterval)targetTime fromChapter:(NSInteger)fromChapter {
-    self.isAutoSkipping = YES;
-    self.lastAutoSkipDate = [NSDate date];
-    self.lastSkippedFromChapter = fromChapter;
-    [self seekToTime:targetTime tolerance:NO];
-    self.isAutoSkipping = NO;
 }
 
 - (void)_finishEpisodeDueToSkip:(CDEpisode *)episode {
@@ -1277,7 +1123,8 @@ enum {
     // Reset chapter skip protection
     self.isAutoSkipping = NO;
     self.lastAutoSkipDate = nil;
-    self.lastSkippedFromChapter = -1;
+    self.autoSkipMarkers = nil;
+    self.suppressedSkipMarker = -1;
 
 	[self.controlTimer invalidate];
 	self.controlTimer = nil;
@@ -1480,6 +1327,47 @@ enum {
 	[self seekToTime:time tolerance:YES];
 }
 
+// If time falls inside a skip zone, return one full skip-back duration before the zone start.
+- (NSTimeInterval)_adjustTimeBeforeSkipZone:(NSTimeInterval)time {
+    if (!self.autoSkipMarkers) return time;
+    for (NSDictionary *marker in self.autoSkipMarkers) {
+        NSTimeInterval skipStart = [marker[@"start"] doubleValue];
+        NSTimeInterval resumeTime = [marker[@"resume"] doubleValue];
+        if (resumeTime > 0 && time >= skipStart && time < resumeTime) {
+            NSInteger skipPeriod = [self.playingEpisode.feed integerForKey:PlayerSkipBackPeriod];
+            return MAX(skipStart - skipPeriod, 0);
+        }
+    }
+    return time;
+}
+
+// If time falls inside a skip zone, return the resume point after the zone (for forward seek).
+- (NSTimeInterval)_adjustTimeAfterSkipZone:(NSTimeInterval)time {
+    if (!self.autoSkipMarkers) return time;
+    for (NSDictionary *marker in self.autoSkipMarkers) {
+        NSTimeInterval skipStart = [marker[@"start"] doubleValue];
+        NSTimeInterval resumeTime = [marker[@"resume"] doubleValue];
+        if (resumeTime > 0 && time >= skipStart && time < resumeTime) {
+            return resumeTime;
+        }
+    }
+    return time;
+}
+
+- (void)_suppressAutoSkipMarkerAtTime:(NSTimeInterval)time {
+    if (!self.autoSkipMarkers) return;
+    self.suppressedSkipMarker = -1;
+    for (NSInteger i = 0; i < (NSInteger)self.autoSkipMarkers.count; i++) {
+        NSDictionary *marker = self.autoSkipMarkers[i];
+        NSTimeInterval skipStart = [marker[@"start"] doubleValue];
+        NSTimeInterval resumeTime = [marker[@"resume"] doubleValue];
+        if (resumeTime > 0 && time >= skipStart && time < resumeTime) {
+            self.suppressedSkipMarker = i;
+            break;
+        }
+    }
+}
+
 - (void) seekToTime:(NSTimeInterval)time tolerance:(BOOL)tolerance
 {
 	CMTime current = CMTimeMake((int64_t)(time*1000), 1000);
@@ -1489,21 +1377,8 @@ enum {
         [self.player seekToTime:current];
     }
 
-    // If this is a manual seek (not auto-skip), mark the target chapter as "manually entered"
-    // This prevents auto-skip from bouncing the user out of a chapter they deliberately seeked into
-    if (!self.isAutoSkipping) {
-        // Find which chapter we're seeking to and mark it as skipped-from
-        // This effectively disables auto-skip for this chapter
-        for (NSInteger i = 0; i < self.chapters.count; i++) {
-            ICMetadataChapter *chapter = self.chapters[i];
-            NSTimeInterval chapterStart = CMTimeGetSeconds(chapter.start);
-            NSTimeInterval chapterEnd = CMTimeGetSeconds(chapter.end);
-            if (time >= chapterStart && time < chapterEnd) {
-                self.lastSkippedFromChapter = i;
-                break;
-            }
-        }
-    }
+    // Suppress auto-skip marker is handled by callers that represent deliberate position
+    // choices (setPosition:, seekToChapter:) — NOT here, so skip buttons still trigger auto-skip
 
 	SEND_UPDATE
 
@@ -1527,6 +1402,7 @@ enum {
     } afterDelay:5.0];
     
     NSTimeInterval time = CMTimeGetSeconds(chapter.start);
+    [self _suppressAutoSkipMarkerAtTime:time];
     [self seekToTime:time tolerance:NO];
 }
 
@@ -1623,19 +1499,19 @@ enum {
 	
 	NSInteger next = MIN(dur-1,cur + skipPeriod);
 	if (next < dur) {
-		[self seekToTime:next];
+		[self seekToTime:[self _adjustTimeAfterSkipZone:next]];
 	}
 }
 
 - (void) seekBackward
 {
     CDFeed* feed = self.playingEpisode.feed;
-    
+
 	NSInteger skipPeriod = [feed integerForKey:PlayerSkipBackPeriod];
 	NSTimeInterval cur = self.time;
 	NSInteger next = MAX(cur - skipPeriod,0);
     if (cur > 2) {
-        [self seekToTime:next];
+        [self seekToTime:[self _adjustTimeBeforeSkipZone:next]];
     }
 }
 
@@ -1644,7 +1520,7 @@ enum {
 {
 	NSTimeInterval cur = self.time;
 	NSInteger next = MAX(cur - 30, 0);
-	[self seekToTime:next];
+	[self seekToTime:[self _adjustTimeBeforeSkipZone:next]];
 }
 
 - (BOOL) hasPlaylist
@@ -1843,6 +1719,7 @@ enum {
 - (void) setPosition:(double)position
 {
 	NSTimeInterval time = [self duration]*position;
+	[self _suppressAutoSkipMarkerAtTime:time];
 	[self seekToTime:time];
     
     self.seekingPosition = position;
@@ -1995,8 +1872,9 @@ enum {
         
         [self _findAndSetCurrentChapter:-1];
         self.chapters = chapters;
-        
-        
+        [self _computeAutoSkipMarkers];
+
+
         NSArray* images = parser.metadataAsset.images;
 
         _artworkTimesIdx = (float*)malloc(sizeof(float)*[images count]);
@@ -2009,6 +1887,120 @@ enum {
         
         [self _setNowPlayingInfoOfEpisode:nil];
     }];
+}
+
+- (void)_computeAutoSkipMarkers {
+    CDEpisode *episode = self.playingEpisode;
+    if (!episode || !self.chapters || self.chapters.count == 0) {
+        self.autoSkipMarkers = nil;
+        return;
+    }
+
+    // Get skip keywords
+    NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
+    NSString *chaptersName = [episode.feed stringForKey:key];
+    if (!chaptersName || chaptersName.length == 0) {
+        self.autoSkipMarkers = nil;
+        return;
+    }
+    NSArray *skipNames = [chaptersName componentsSeparatedByString:@".  "];
+    if (skipNames.count == 0) {
+        self.autoSkipMarkers = nil;
+        return;
+    }
+
+    NSMutableArray *markers = [NSMutableArray array];
+    NSInteger chapterCount = self.chapters.count;
+    NSInteger i = 0;
+
+    while (i < chapterCount) {
+        ICMetadataChapter *chapter = self.chapters[i];
+        NSString *skipName = [self matchingSkipNameForChapter:chapter withNames:skipNames];
+
+        if (!skipName) {
+            // Check if next chapter is a skip chapter with negative startOffset → early skip from this chapter
+            if (i + 1 < chapterCount) {
+                ICMetadataChapter *nextChapter = self.chapters[i + 1];
+                NSString *nextSkipName = [self matchingSkipNameForChapter:nextChapter withNames:skipNames];
+                if (nextSkipName) {
+                    NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, nextSkipName];
+                    double startOffset = [episode.feed doubleForKey:startKey];
+                    if (startOffset < 0) {
+                        // Negative startOffset: skip starts before the skip chapter boundary
+                        // Don't advance i here — the next iteration will handle the skip chapter group
+                        // Just note: the group starting at i+1 will use this negative offset
+                    }
+                }
+            }
+            i++;
+            continue;
+        }
+
+        // Found a skip chapter — start of a skip group
+        NSString *firstSkipName = skipName;
+        NSInteger groupStart = i;
+        NSString *lastSkipName = skipName;
+        NSInteger groupEnd = i; // inclusive
+
+        // Find consecutive skip chapters
+        NSInteger j = i + 1;
+        while (j < chapterCount) {
+            ICMetadataChapter *nextChap = self.chapters[j];
+            NSString *nextName = [self matchingSkipNameForChapter:nextChap withNames:skipNames];
+            if (!nextName) break;
+            lastSkipName = nextName;
+            groupEnd = j;
+            j++;
+        }
+
+        // Calculate skipStart: first skip chapter start + startOffset
+        ICMetadataChapter *firstSkipChapter = self.chapters[groupStart];
+        NSTimeInterval firstSkipChapterStart = CMTimeGetSeconds(firstSkipChapter.start);
+
+        NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, firstSkipName];
+        double startOffset = [episode.feed doubleForKey:startKey];
+
+        NSTimeInterval skipStart;
+        if (startOffset < 0) {
+            // Negative: skip starts before the skip chapter (in the previous chapter)
+            skipStart = firstSkipChapterStart + startOffset;
+        } else {
+            // Positive or zero: skip starts within/at the skip chapter
+            skipStart = firstSkipChapterStart + startOffset;
+        }
+        skipStart = MAX(0, skipStart);
+
+        // Calculate resumeTime
+        NSTimeInterval resumeTime;
+        if (j >= chapterCount) {
+            // All remaining chapters are skip → finish episode
+            resumeTime = -1;
+        } else {
+            // Resume at end of last skip chapter (= start of next non-skip chapter)
+            ICMetadataChapter *lastSkipChapter = self.chapters[groupEnd];
+            NSTimeInterval lastSkipChapterEnd = CMTimeGetSeconds(lastSkipChapter.end);
+
+            NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
+            double endOffset = [episode.feed doubleForKey:endKey];
+
+            resumeTime = lastSkipChapterEnd + endOffset;
+
+            // Clamp: resume must not go before start of last skip chapter
+            NSTimeInterval lastSkipChapterStart = CMTimeGetSeconds(lastSkipChapter.start);
+            resumeTime = MAX(resumeTime, lastSkipChapterStart);
+
+            // Clamp: resume must be after skipStart
+            resumeTime = MAX(resumeTime, skipStart + 1.0);
+        }
+
+        [markers addObject:@{@"start": @(skipStart), @"resume": @(resumeTime)}];
+
+        // Advance past the skip group
+        i = j;
+    }
+
+    self.autoSkipMarkers = (markers.count > 0) ? [markers copy] : nil;
+    self.suppressedSkipMarker = -1;
 }
 
 
