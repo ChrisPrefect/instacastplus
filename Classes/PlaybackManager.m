@@ -1068,7 +1068,6 @@ enum {
             
             [playbackPositions setObject:@(cur) forKey:key];
             [USER_DEFAULTS setObject:playbackPositions forKey:kDefaultTemporaryPlaybackPositions];
-            [USER_DEFAULTS synchronize];
         }
     }
 }
@@ -1080,7 +1079,6 @@ enum {
     NSMutableDictionary* playbackPositions = [[USER_DEFAULTS objectForKey:kDefaultTemporaryPlaybackPositions] mutableCopy];
     [playbackPositions removeObjectForKey:key];
     [USER_DEFAULTS setObject:playbackPositions forKey:kDefaultTemporaryPlaybackPositions];
-    [USER_DEFAULTS synchronize];
 }
 
 - (void) _saveCurrentPlaybackPosition
@@ -1382,11 +1380,11 @@ enum {
 
 	SEND_UPDATE
 
-	[self _findAndSetCurrentChapter:time];
+    [self _findAndSetCurrentChapter:time];
     [self _findAndSetCurrentArtwork];
     [self coalescedPerformSelector:@selector(_setNowPlayingInfoOfEpisode:) object:nil afterDelay:1.0];
 
-    if (self.paused) {
+    if (self.paused && !self.seeking) {
         [self _saveCurrentPlaybackPosition];
     }
 }

@@ -409,10 +409,10 @@
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [NSString stringWithFormat:@"Playback time set to %d:%02d:%02d".ls, cur/3600, (cur/60)%60, cur%60]);
     }
     
+    [pman endSeeking];
     if (_wasPlaying) {
         [pman play];
     }
-    pman.seeking = NO;
 }
 
 #pragma mark -

@@ -73,7 +73,12 @@
                 dispatch_semaphore_signal(semaphore);
             }];
             [task resume];
-            dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+            while (dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC))) != 0) {
+                if ([self isCancelled]) {
+                    [task cancel];
+                    break;
+                }
+            }
             error = blockError;
             
             if ([self isCancelled]) {

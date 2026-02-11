@@ -111,7 +111,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 - (void)startRelativeTimeUpdates
 {
     [self stopRelativeTimeUpdates];
-    self.relativeTimeTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+    self.relativeTimeTimer = [NSTimer scheduledTimerWithTimeInterval:15.0
                                                                target:self
                                                              selector:@selector(updateRelativeTimeUI)
                                                              userInfo:nil

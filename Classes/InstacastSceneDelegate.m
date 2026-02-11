@@ -255,8 +255,7 @@
             
             [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
                 STRONG_SELF
-                [self perform:^(id sender) {
-                    
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                     BOOL accessGranted = [url startAccessingSecurityScopedResource];
                     if (!accessGranted) {
                         NSLog(@"Failed to access security-scoped URL: %@", url);
@@ -288,8 +287,7 @@
                             [bookmarksController reload];
                         }
                     });
-                    
-                } afterDelay:0.3];
+                });
                 
                 self.mainViewController.alertController = nil;
             }]];

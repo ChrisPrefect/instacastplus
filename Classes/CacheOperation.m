@@ -25,6 +25,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 @property BOOL tryAgain;
 @property (strong) NSURLSession* urlSession;
 @property (strong) NSURLSessionDataTask* mainTask;
+@property (strong) NSOperationQueue* delegateQueue;
 @property (strong) HTTPAuthentication* authentication;
 @property (readwrite, strong) NSString* identifier;
 @end
@@ -35,6 +36,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 	long long			_loadedContentLength;
     long long           _restartedAtContentLength;
     NSMutableData*      _temporaryData;
+    dispatch_semaphore_t _stateChangeSemaphore;
 }
 
 @dynamic progress;
@@ -57,6 +59,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
         _expectedContentLength = 0;
 
         _temporaryData = [[NSMutableData alloc] initWithCapacity:1024*1024*2];
+        _stateChangeSemaphore = dispatch_semaphore_create(0);
 	}
 
 	return self;
@@ -82,12 +85,56 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 {
     if (![self isExecuting]) {
         self.failed = YES;
-        if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
-            [self.delegate cacheOperationDidEnd:self];
-        }
+        [self _notifyDidEndOnMainThread];
     }
 
     [super cancel];
+    dispatch_semaphore_signal(_stateChangeSemaphore);
+}
+
+- (void)_notifyDidEndOnMainThread
+{
+    id<CacheOperationDelegate> delegate = self.delegate;
+    if (!delegate || ![delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id<CacheOperationDelegate> strongDelegate = self.delegate;
+        if (strongDelegate && [strongDelegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
+            [strongDelegate cacheOperationDidEnd:self];
+        }
+    });
+}
+
+- (void)_notifyDidLoadBytesOnMainThread:(int64_t)loadedBytes
+{
+    id<CacheOperationDelegate> delegate = self.delegate;
+    if (!delegate || ![delegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id<CacheOperationDelegate> strongDelegate = self.delegate;
+        if (strongDelegate && [strongDelegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
+            [strongDelegate cacheOperation:self didLoadNumberOfBytes:loadedBytes];
+        }
+    });
+}
+
+- (void)_performSessionStateWorkAndWait:(dispatch_block_t)block
+{
+    if (!block) {
+        return;
+    }
+
+    if (!self.delegateQueue) {
+        block();
+        return;
+    }
+
+    NSBlockOperation* operation = [NSBlockOperation blockOperationWithBlock:block];
+    [self.delegateQueue addOperations:@[operation] waitUntilFinished:YES];
 }
 
 - (double) progress
@@ -181,10 +228,17 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     config.allowsCellularAccess = enabled3G;
     config.timeoutIntervalForRequest = 30.0;
 
-    // Create session with delegate on main queue for UI updates
-    self.urlSession = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:[NSOperationQueue mainQueue]];
+    if (!self.delegateQueue) {
+        NSOperationQueue* delegateQueue = [[NSOperationQueue alloc] init];
+        delegateQueue.maxConcurrentOperationCount = 1;
+        delegateQueue.name = [NSString stringWithFormat:@"com.vemedio.instacast.cache.mac.%@", self.identifier ?: @"download"];
+        self.delegateQueue = delegateQueue;
+    }
+
+    self.urlSession = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:self.delegateQueue];
     self.mainTask = [self.urlSession dataTaskWithRequest:request];
     [self.mainTask resume];
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 
     return YES;
 }
@@ -229,6 +283,8 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     else if (!self.suspended && !self.mainTask) {
         [self _initializeDownload];
     }
+
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void) _finishDownload
@@ -263,9 +319,11 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
         [self _deleteResumeInfo];
     }
 
-    if (!self.tryAgain && self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
-		[self.delegate cacheOperationDidEnd:self];
-	}
+    if (!self.tryAgain) {
+        [self _notifyDidEndOnMainThread];
+    }
+
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 
@@ -274,13 +332,13 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 	@autoreleasepool
     {
         while (self.suspended && ![self isCancelled]) {
-            [NSThread sleepForTimeInterval:0.5];
+            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)));
         }
 
         if ([self isCancelled]) {
-            dispatch_sync(dispatch_get_main_queue(), ^{
+            [self _performSessionStateWorkAndWait:^{
                 [self _finishDownload];
-            });
+            }];
             return;
         }
 
@@ -290,39 +348,36 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
             self.failed = NO;
             self.finishedLoading = NO;
 
-
-            dispatch_sync(dispatch_get_main_queue(), ^{
-                if (![self _initializeDownload]) {
-                    [self _finishDownload];
-                    [self cancel];
-                }
-            });
+            if (![self _initializeDownload]) {
+                [self _finishDownload];
+                [self cancel];
+                break;
+            }
 
 
             while (![self isCancelled] && (!self.failed || self.suspended))
             {
                 @autoreleasepool {
-                    [NSThread sleepForTimeInterval:0.5];
+                    dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)));
 
                     if (self.finishedLoading) {
                         break;
                     }
 
-                    dispatch_sync(dispatch_get_main_queue(), ^{
+                    [self _performSessionStateWorkAndWait:^{
                         [self _runDownload];
-                    });
+                    }];
                 }
             }
 
-            dispatch_sync(dispatch_get_main_queue(), ^{
-
-                if ([_temporaryData length] > 0) {
+            [self _performSessionStateWorkAndWait:^{
+                if ([_temporaryData length] > 0 && self.fileHandle) {
                     [self.fileHandle writeData:_temporaryData];
                     [_temporaryData setData:[NSData data]];
                 }
 
                 [self _finishDownload];
-            });
+            }];
 
         } while (self.tryAgain);
 
@@ -345,6 +400,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 	if (statusCode == 401) {
 		ErrLog(@"authorization required");
 		self.failed = (!self.suspended);
+        dispatch_semaphore_signal(_stateChangeSemaphore);
         completionHandler(NSURLSessionResponseCancel);
 		return;
 	}
@@ -353,6 +409,7 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     {
         ErrLog(@"media download failed. status code: %ld", (long)statusCode);
         self.failed = (!self.suspended);
+        dispatch_semaphore_signal(_stateChangeSemaphore);
         completionHandler(NSURLSessionResponseCancel);
 		return;
 	}
@@ -377,12 +434,14 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
             if (currentEtag != savedEtag && ![currentEtag isEqualToString:savedEtag]) {
                 ErrLog(@"can't resume, 'Etag' changed.");
                 self.mainCanceled = YES;
+                dispatch_semaphore_signal(_stateChangeSemaphore);
                 completionHandler(NSURLSessionResponseCancel);
                 return;
             }
         }
     }
 
+    dispatch_semaphore_signal(_stateChangeSemaphore);
     completionHandler(NSURLSessionResponseAllow);
 }
 
@@ -405,22 +464,25 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 		return;
 	}
 
-    self.authentication = [[HTTPAuthentication alloc] init];
-    self.authentication.url = self.remoteURL;
-    self.authentication.username = (self.username) ? self.username : [[challenge proposedCredential] user];
-    self.authentication.userInfo = challenge;
-    self.authentication.failedBefore = ([challenge previousFailureCount] > 0);
-    [self.authentication showAuthenticationDialogCompletion:^(BOOL success, NSString *username, NSString *password)
-    {
-        if (!success) {
-            completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, nil);
-        } else {
-            self.username = username;
-            self.password = password;
-            NSURLCredential* credentials = [NSURLCredential credentialWithUser:self.username password:self.password persistence:NSURLCredentialPersistenceNone];
-            completionHandler(NSURLSessionAuthChallengeUseCredential, credentials);
-        }
-    }];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self.authentication = [[HTTPAuthentication alloc] init];
+        self.authentication.url = self.remoteURL;
+        self.authentication.username = (self.username) ? self.username : [[challenge proposedCredential] user];
+        self.authentication.userInfo = challenge;
+        self.authentication.failedBefore = ([challenge previousFailureCount] > 0);
+        [self.authentication showAuthenticationDialogCompletion:^(BOOL success, NSString *username, NSString *password)
+        {
+            if (!success) {
+                completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, nil);
+            } else {
+                self.username = username;
+                self.password = password;
+                NSURLCredential* credentials = [NSURLCredential credentialWithUser:self.username password:self.password persistence:NSURLCredentialPersistenceNone];
+                completionHandler(NSURLSessionAuthChallengeUseCredential, credentials);
+            }
+            dispatch_semaphore_signal(_stateChangeSemaphore);
+        }];
+    });
 
 }
 
@@ -437,9 +499,8 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
     //DebugLog(@"_loadedContentLength %ld", _loadedContentLength);
 
-    if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
-        [self.delegate cacheOperation:self didLoadNumberOfBytes:[data length]];
-    }
+    [self _notifyDidLoadBytesOnMainThread:[data length]];
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 
 }
 
@@ -448,15 +509,16 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     if (error) {
         DebugLog(@"could not cache episode: %@", error);
 
-        self.failed = YES;
-
-        if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
-            [self.delegate cacheOperationDidEnd:self];
+        BOOL cancelledError = [error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled;
+        if (!cancelledError && !self.mainCanceled && !self.suspended && ![self isCancelled]) {
+            self.failed = YES;
         }
+        dispatch_semaphore_signal(_stateChangeSemaphore);
     } else {
         if (_expectedContentLength== 0LL || _loadedContentLength == _expectedContentLength) {
             self.finishedLoading = YES;
         }
+        dispatch_semaphore_signal(_stateChangeSemaphore);
     }
 }
 
@@ -480,7 +542,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     if (resourceHash && resumeData) {
         [resumeInfos setObject:resumeData forKey:resourceHash];
         [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
-        [USER_DEFAULTS synchronize];
     }
 }
 
@@ -493,7 +554,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
     if (resumeInfos[resourceHash]) {
         [resumeInfos removeObjectForKey:resourceHash];
         [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
-        [USER_DEFAULTS synchronize];
     }
 }
 

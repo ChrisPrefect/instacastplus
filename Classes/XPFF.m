@@ -61,7 +61,7 @@ NSTimeInterval ParsedPodloveTime(NSString* time)
     NSURL* _feedURL;
     NSURL* _feedImageURL;
 }
-@property (nonatomic, strong) NSMutableArray* bookmarks;
+@property (nonatomic, strong) NSMutableArray* bookmarkRecords;
 @end
 
 @implementation XPFFParserDelegate
@@ -69,7 +69,7 @@ NSTimeInterval ParsedPodloveTime(NSString* time)
 - (id) init
 {
     if ((self = [super init])) {
-        _bookmarks = [[NSMutableArray alloc] init];
+        _bookmarkRecords = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -113,18 +113,21 @@ NSTimeInterval ParsedPodloveTime(NSString* time)
 		NSString* title = [attributeDict objectForKey:@"title"];
         NSString* timeStr = [attributeDict objectForKey:@"time"];
         NSTimeInterval time = ParsedPodloveTime(timeStr);
-        
-        CDBookmark* bookmark = [NSEntityDescription insertNewObjectForEntityForName:@"Bookmark" inManagedObjectContext:DMANAGER.objectContext];
-        bookmark.episodeHash = [[NSString stringWithFormat:@"%@%@", [_feedURL absoluteString], _episodeGuid] MD5Hash];
-        bookmark.title = title;
-        bookmark.position = time;
-        bookmark.feedTitle = _feedTitle;
-        bookmark.feedURL = _feedURL;
-        bookmark.imageURL =_feedImageURL;
-        bookmark.episodeTitle = _episodeTitle;
-        bookmark.episodeGuid = _episodeGuid;
-        
-        [self.bookmarks addObject:bookmark];
+
+        NSString* feedURLString = [_feedURL absoluteString] ?: @"";
+        NSString* episodeGuid = _episodeGuid ?: @"";
+        NSDictionary* bookmarkRecord = @{
+            @"episodeHash": [[NSString stringWithFormat:@"%@%@", feedURLString, episodeGuid] MD5Hash],
+            @"title": title ?: @"",
+            @"position": @(time),
+            @"feedTitle": _feedTitle ?: @"",
+            @"feedURL": _feedURL ?: [NSNull null],
+            @"imageURL": _feedImageURL ?: [NSNull null],
+            @"episodeTitle": _episodeTitle ?: @"",
+            @"episodeGuid": episodeGuid
+        };
+
+        [self.bookmarkRecords addObject:bookmarkRecord];
 	}
 }
 
@@ -145,6 +148,35 @@ NSTimeInterval ParsedPodloveTime(NSString* time)
 
 
 @end
+
+static NSArray* XPFFBookmarksFromRecords(NSArray* bookmarkRecords)
+{
+    NSMutableArray* bookmarks = [[NSMutableArray alloc] initWithCapacity:[bookmarkRecords count]];
+
+    for (NSDictionary* record in bookmarkRecords) {
+        CDBookmark* bookmark = [NSEntityDescription insertNewObjectForEntityForName:@"Bookmark" inManagedObjectContext:DMANAGER.objectContext];
+        bookmark.episodeHash = record[@"episodeHash"];
+        bookmark.title = record[@"title"];
+        bookmark.position = [record[@"position"] doubleValue];
+        bookmark.feedTitle = record[@"feedTitle"];
+
+        id feedURL = record[@"feedURL"];
+        if ([feedURL isKindOfClass:[NSURL class]]) {
+            bookmark.feedURL = feedURL;
+        }
+
+        id imageURL = record[@"imageURL"];
+        if ([imageURL isKindOfClass:[NSURL class]]) {
+            bookmark.imageURL = imageURL;
+        }
+
+        bookmark.episodeTitle = record[@"episodeTitle"];
+        bookmark.episodeGuid = record[@"episodeGuid"];
+        [bookmarks addObject:bookmark];
+    }
+
+    return bookmarks;
+}
 
 
 NSData* XPFFDataWithBookmarks(NSArray* bookmarks)
@@ -223,7 +255,8 @@ BOOL XPFFImportData(NSData* data, void(^completion)(NSArray* bookmarks, NSError*
         
         dispatch_async(dispatch_get_main_queue(), ^{
             if (completion) {
-                completion((result)?delegate.bookmarks:nil, [parser parserError]);
+                NSArray* bookmarks = (result) ? XPFFBookmarksFromRecords(delegate.bookmarkRecords) : nil;
+                completion(bookmarks, [parser parserError]);
             }
         });
     });

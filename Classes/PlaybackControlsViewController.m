@@ -666,7 +666,6 @@
             if (tRem > 0)
             {
                 [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-                [USER_DEFAULTS synchronize];
             }
         }
         else if (isAlwaysTimerActive)
@@ -675,7 +674,6 @@
             if (tRem > 0)
             {
                 [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-                [USER_DEFAULTS synchronize];
             }
         }
         [pman pause];
@@ -741,10 +739,10 @@
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [NSString stringWithFormat:@"Playback time set to %d:%02d:%02d".ls, cur/3600, (cur/60)%60, cur%60]);
 	}
     
+    [pman endSeeking];
 	if (_wasPlaying) {
 		[pman play];
 	}
-	pman.seeking = NO;
 }
 
 - (void) _beginBackwardDelayed

@@ -16,6 +16,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 @interface CacheOperation_iOS7 () <NSURLSessionDelegate, NSURLSessionDownloadDelegate>
 @property (strong) NSURLSession* session;
 @property (strong) NSURLSessionDownloadTask* downloadTask;
+@property (strong) NSOperationQueue* delegateQueue;
 
 @property (readwrite, strong) NSString* identifier;
 @property (readwrite) long long expectedContentLength;
@@ -29,6 +30,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 @implementation CacheOperation_iOS7 {
     BOOL _shouldBeSuspended;
+    dispatch_semaphore_t _stateChangeSemaphore;
 }
 
 - (id) initWithURL:(NSURL*)aRemoteURL localURL:(NSURL*)aLocalURL identifier:(NSString*)identifier expectedContentLength:(long long)expectedContentLength
@@ -73,6 +75,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
         
         _logger = [GTMLogger standardLoggerWithPath:logsPath];
         [_logger setFilter:[[GTMLogLevelFilter alloc] init]];
+        _stateChangeSemaphore = dispatch_semaphore_create(0);
         
         VMLoggerInfo(@"remote url: %@, local url: %@, identifier: %@", aRemoteURL, aLocalURL, identifier);
 	}
@@ -132,6 +135,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 - (void) cancel
 {
     [super cancel];
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (BOOL) suspended {
@@ -159,7 +163,39 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
             self.restartedAtContentLength = self.loadedContentLength;
             self.startDate = [NSDate date];
         }
+
+        dispatch_semaphore_signal(_stateChangeSemaphore);
     }
+}
+
+- (void)_notifyDidEndOnMainThread
+{
+    id<CacheOperationDelegate> delegate = self.delegate;
+    if (!delegate || ![delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id<CacheOperationDelegate> strongDelegate = self.delegate;
+        if (strongDelegate && [strongDelegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
+            [strongDelegate cacheOperationDidEnd:self];
+        }
+    });
+}
+
+- (void)_notifyDidLoadBytesOnMainThread:(int64_t)bytesWritten
+{
+    id<CacheOperationDelegate> delegate = self.delegate;
+    if (!delegate || ![delegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id<CacheOperationDelegate> strongDelegate = self.delegate;
+        if (strongDelegate && [strongDelegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
+            [strongDelegate cacheOperation:self didLoadNumberOfBytes:bytesWritten];
+        }
+    });
 }
 
 - (void) main
@@ -168,117 +204,122 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
     {
         NSURL* remoteURL = self.remoteURL;
 
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            
-            BOOL enabled3G = (self.overwriteCellularLock || [USER_DEFAULTS boolForKey:EnableCachingOver3G]);
-            
-            NSURLSessionConfiguration* config = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:self.identifier];
-            config.discretionary = NO;
-            config.allowsCellularAccess = enabled3G;
+        BOOL enabled3G = (self.overwriteCellularLock || [USER_DEFAULTS boolForKey:EnableCachingOver3G]);
+        NSURLSessionConfiguration* config = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:self.identifier];
+        config.discretionary = NO;
+        config.allowsCellularAccess = enabled3G;
 
-            NSURLSession* session = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-            self.session = session;
-            
-            [session getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
-                
-                DebugLog(@"download tasks %lu", (unsigned long)[downloadTasks count]);
-                
-                if ([downloadTasks count] > 0) {
-                    self.downloadTask = [downloadTasks firstObject];
-                }
-                else
-                {
-                    NSData* resumeData = [self _resumeData];
-                    
-                    if (resumeData)
-                    {
-                        // case there's bogus data in the resume data, it seems to throw and exception
-                        @try {
-                            self.downloadTask = [session downloadTaskWithResumeData:resumeData];
-                        }
-                        @catch (NSException *exception) {
-                            ErrLog(@"downloadTaskWithResumeData exception: %@", [exception description]);
-                            self.downloadTask = nil;
-                        }
-                        @finally {
-                            
-                        }
-
-                        [self _deleteResumeInfo];
-                        
-                        if (!self.downloadTask) {
-                            // we need a new session, because this session is invalid
-                            [self.session invalidateAndCancel];
-                            self.session = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:[NSOperationQueue mainQueue]];
-                        }
-                    }
-                    
-                    if (!self.downloadTask)
-                    {
-                        @try {
-                            NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:remoteURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.f];
-                            self.downloadTask = [session downloadTaskWithRequest:request];
-                        }
-                        @catch (NSException *exception) {
-                            ErrLog(@"downloadTaskWithRequest exception: %@", [exception description]);
-                            self.downloadTask = nil;
-                            [self cancel];
-                        }
-                        @finally {
-                            
-                        }
-                    }
-                    
-                    if (!_shouldBeSuspended) {
-                        [self.downloadTask resume];
-                    }
-                    self.startDate = [NSDate date];
-                }
-            }];
-        });
-        
-        while ((!self.downloadTask || self.downloadTask.state != NSURLSessionTaskStateCompleted) && ![self isCancelled]) {
-            @autoreleasepool {
-                [NSThread sleepForTimeInterval:1];
-            }
-            
+        if (!self.delegateQueue) {
+            NSOperationQueue* delegateQueue = [[NSOperationQueue alloc] init];
+            delegateQueue.maxConcurrentOperationCount = 1;
+            delegateQueue.name = [NSString stringWithFormat:@"com.vemedio.instacast.cache.%@", self.identifier ?: @"download"];
+            self.delegateQueue = delegateQueue;
         }
-        
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            if ([self isCancelled])
+
+        __block BOOL setupFinished = NO;
+        __block NSURLSession* activeSession = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:self.delegateQueue];
+        self.session = activeSession;
+
+        [activeSession getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
+            DebugLog(@"download tasks %lu", (unsigned long)[downloadTasks count]);
+
+            if ([downloadTasks count] > 0) {
+                self.downloadTask = [downloadTasks firstObject];
+                if (_shouldBeSuspended) {
+                    [self.downloadTask suspend];
+                } else if (self.downloadTask.state == NSURLSessionTaskStateSuspended) {
+                    [self.downloadTask resume];
+                }
+                self.startDate = [NSDate date];
+                setupFinished = YES;
+                dispatch_semaphore_signal(_stateChangeSemaphore);
+                return;
+            }
+
+            NSData* resumeData = [self _resumeData];
+            if (resumeData)
             {
-                [self.downloadTask cancelByProducingResumeData:^(NSData *resumeData) {
+                // In case the resume data is invalid, creating the task can throw.
+                @try {
+                    self.downloadTask = [activeSession downloadTaskWithResumeData:resumeData];
+                }
+                @catch (NSException *exception) {
+                    ErrLog(@"downloadTaskWithResumeData exception: %@", [exception description]);
+                    self.downloadTask = nil;
+                }
 
-                    if (resumeData) {
-                        [self _saveResumeData:resumeData];
-                    }
-                }];
-                
-                [self.session invalidateAndCancel];
-            } else {
-                [self.session finishTasksAndInvalidate];
+                [self _deleteResumeInfo];
+
+                if (!self.downloadTask) {
+                    [activeSession invalidateAndCancel];
+                    activeSession = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:self.delegateQueue];
+                    self.session = activeSession;
+                }
             }
-        });
-        
-        NSInteger i=0;
-        while (self.session && ![self isCancelled]) {
-            [NSThread sleepForTimeInterval:1];
-            DebugLog(@"loadedContentLength: %llu", self.loadedContentLength);
-            i++;
-            
-            if (i>=20 && self.loadedContentLength == 0) {
-                [self.session finishTasksAndInvalidate];
-                self.session = nil;
-                self.failed = YES;
+
+            if (!self.downloadTask)
+            {
+                @try {
+                    NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:remoteURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.f];
+                    self.downloadTask = [activeSession downloadTaskWithRequest:request];
+                }
+                @catch (NSException *exception) {
+                    ErrLog(@"downloadTaskWithRequest exception: %@", [exception description]);
+                    self.downloadTask = nil;
+                    self.failed = YES;
+                    [self cancel];
+                }
+            }
+
+            if (self.downloadTask && !_shouldBeSuspended) {
+                [self.downloadTask resume];
+            }
+            self.startDate = [NSDate date];
+            setupFinished = YES;
+            dispatch_semaphore_signal(_stateChangeSemaphore);
+        }];
+
+        while (!setupFinished && ![self isCancelled]) {
+            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+        }
+
+        NSInteger idleCounter = 0;
+        while ((!self.downloadTask || self.downloadTask.state != NSURLSessionTaskStateCompleted) && ![self isCancelled]) {
+            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+
+            if (self.loadedContentLength == 0 && self.downloadTask && self.downloadTask.state == NSURLSessionTaskStateRunning) {
+                idleCounter++;
+                if (idleCounter >= 20) {
+                    self.failed = YES;
+                    [self.session invalidateAndCancel];
+                    break;
+                }
+            } else if (self.loadedContentLength > 0) {
+                idleCounter = 0;
             }
         }
-        
-        
-        dispatch_sync(dispatch_get_main_queue(), ^{
-            if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperationDidEnd:)]) {
-                [self.delegate cacheOperationDidEnd:self];
-            }
-        });
+
+        if ([self isCancelled])
+        {
+            [self.downloadTask cancelByProducingResumeData:^(NSData *resumeData) {
+                if (resumeData) {
+                    [self _saveResumeData:resumeData];
+                }
+                dispatch_semaphore_signal(_stateChangeSemaphore);
+            }];
+
+            [self.session invalidateAndCancel];
+        }
+        else if (self.session)
+        {
+            [self.session finishTasksAndInvalidate];
+        }
+
+        while (self.session && ![self isCancelled]) {
+            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+        }
+
+        [self _notifyDidEndOnMainThread];
     }
 }
 
@@ -290,6 +331,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
         DebugLog(@"didBecomeInvalidWithError %@ for: %@", error, session.configuration.identifier);
     }
     self.session = nil;
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void)URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)session
@@ -365,15 +407,15 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
     DebugLog(@"task didCompleteWithError %@", error);
     
     if (error) {
-        [self cancel];
+        self.failed = (!self.suspended);
         
         NSData* resumeData = [error userInfo][NSURLSessionDownloadTaskResumeData];
         if (resumeData) {
             [self _saveResumeData:resumeData];
         }
     }
-    
-    self.session = nil;
+
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location
@@ -388,6 +430,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
     if (error) {
         ErrLog(@"could not get file attributes for downloaded file: %@", location);
         self.failed = YES;
+        dispatch_semaphore_signal(_stateChangeSemaphore);
         return;
     }
     
@@ -395,6 +438,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
     if (fileSize < 100*1024) {
         ErrLog(@"file is too small, maybe DNS error");
         self.failed = YES;
+        dispatch_semaphore_signal(_stateChangeSemaphore);
         return;
     }
     
@@ -406,6 +450,8 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
     else {
         AddSkipBackupAttributeToFile([self.localURL path]);
     }
+
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask
@@ -420,9 +466,8 @@ totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite
         self.expectedContentLength = totalBytesExpectedToWrite;
     }
     
-    if (self.delegate && [self.delegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
-        [self.delegate cacheOperation:self didLoadNumberOfBytes:bytesWritten];
-    }
+    [self _notifyDidLoadBytesOnMainThread:bytesWritten];
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask
@@ -431,6 +476,7 @@ expectedTotalBytes:(int64_t)expectedTotalBytes
 {
     self.expectedContentLength = expectedTotalBytes;
     self.restartedAtContentLength = fileOffset;
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 #pragma mark - Handling Resume Information
@@ -446,7 +492,6 @@ expectedTotalBytes:(int64_t)expectedTotalBytes
     if (resumeData) {
         [resumeInfos setObject:resumeData forKey:self.identifier];
         [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
-        [USER_DEFAULTS synchronize];
     }
 }
 
@@ -457,7 +502,6 @@ expectedTotalBytes:(int64_t)expectedTotalBytes
     if (resumeInfos[identifier]) {
         [resumeInfos removeObjectForKey:identifier];
         [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
-        [USER_DEFAULTS synchronize];
     }
 }
 

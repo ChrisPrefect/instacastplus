@@ -26,7 +26,7 @@ NSString* const kFeedPropertyLoadedEpisodeCount = @"loadedEpisodeCount";
 static NSString* const kUserDefaultsEpisodeLoadingQueueKey = @"EpisodeLoadingQueueKey";
 
 // Batch size for background loading
-static const NSInteger kEpisodeBatchSize = 50;
+static const NSInteger kEpisodeBatchSize = 20;
 
 @interface EpisodeLoadingManager ()
 @property (nonatomic, strong) NSOperationQueue* loadingQueue;
@@ -241,8 +241,6 @@ static const NSInteger kEpisodeBatchSize = 50;
     __weak typeof(self) weakSelf = self;
 
     [_loadingQueue addOperationWithBlock:^{
-        // Längere Pause um UI nicht zu blockieren (war 0.1s, jetzt 0.5s)
-        [NSThread sleepForTimeInterval:0.5];
         [weakSelf _loadNextBatchForFeedURL:feedURL];
     }];
 }
@@ -356,7 +354,6 @@ static const NSInteger kEpisodeBatchSize = 50;
     [_lock unlock];
 
     [USER_DEFAULTS setObject:allLoads forKey:kUserDefaultsEpisodeLoadingQueueKey];
-    [USER_DEFAULTS synchronize];
 }
 
 #pragma mark - Episode Serialization

@@ -45,6 +45,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 @property (nonatomic, strong) UIView* webShadowView;
 @property (nonatomic, strong) UILabel* titleLabel;
 @property (nonatomic, strong) UILabel* authorLabel;
+@property (nonatomic) NSUInteger webContentGeneration;
 
 @end
 
@@ -72,12 +73,11 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     [_feedParser cancel];
 }
 
-- (void) _loadWebViewContent
+- (NSString*)_webViewHTMLForFeed:(ICFeed*)feed retina:(BOOL)retina
 {
-    // load webview content
     NSLocale* locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US".ls];
     
-    NSString* description = ([self.feed.summary length] > [self.feed.textDescription length]) ? self.feed.summary : self.feed.textDescription;
+    NSString* description = ([feed.summary length] > [feed.textDescription length]) ? feed.summary : feed.textDescription;
     
     NSMutableString* content = [NSMutableString string];
     [content appendString:@"<style type=\"text/css\" scoped>"];
@@ -101,16 +101,16 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     }
     [content appendString:@"<table>"];
     
-    if (self.feed.title) {
-        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Title".ls, self.feed.title];
+    if (feed.title) {
+        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Title".ls, feed.title];
     }
     
-    if (self.feed.subtitle && ![self.feed.subtitle isEqualToString:self.feed.title] && ![self.feed.subtitle isEqualToString:description]) {
-        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Subtitle".ls, self.feed.subtitle];
+    if (feed.subtitle && ![feed.subtitle isEqualToString:feed.title] && ![feed.subtitle isEqualToString:description]) {
+        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Subtitle".ls, feed.subtitle];
     }
     
     
-    NSArray* categories = self.feed.categories;
+    NSArray* categories = feed.categories;
     if ([categories count] > 0)
     {
         NSInteger catNum = 0;
@@ -128,33 +128,33 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
         }
     }
     
-    if ([self.feed.language length] > 0) {
-        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Language".ls, [locale displayNameForKey:NSLocaleLanguageCode value:self.feed.language]];
+    if ([feed.language length] > 0) {
+        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Language".ls, [locale displayNameForKey:NSLocaleLanguageCode value:feed.language]];
     }
-    if ([self.feed.country length] > 0) {
-        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Country".ls, [locale displayNameForKey:NSLocaleCountryCode value:self.feed.country]];
+    if ([feed.country length] > 0) {
+        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Country".ls, [locale displayNameForKey:NSLocaleCountryCode value:feed.country]];
     }
-    if ([self.feed.copyright length] > 0) {
-        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Copyright".ls, self.feed.copyright];
+    if ([feed.copyright length] > 0) {
+        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\">%@</td></tr>", @"Copyright".ls, feed.copyright];
     }
-    if ([self.feed.owner length] > 0 && [self.feed.ownerEmail length] > 0) {
-        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\"><a href=\"mailto:%@\">%@</a></td></tr>", @"Owner".ls, self.feed.ownerEmail, self.feed.owner];
+    if ([feed.owner length] > 0 && [feed.ownerEmail length] > 0) {
+        [content appendFormat:@"<tr><td class=\"label\" valign=\"top\">%@</td><td valign=\"top\"><a href=\"mailto:%@\">%@</a></td></tr>", @"Owner".ls, feed.ownerEmail, feed.owner];
     }
     
     [content appendString:@"</table>"];
     [content appendString:@"</div>"];
     
     [content appendString:@"<div id=\"other_podcasts_container\" style=\"display: none;\">"];
-    [content appendFormat:@"<div class=\"label\">%@</div>", [NSString stringWithFormat:@"Other Podcasts by %@".ls, self.feed.author]];
+    [content appendFormat:@"<div class=\"label\">%@</div>", [NSString stringWithFormat:@"Other Podcasts by %@".ls, feed.author]];
     [content appendString:@"<div id=\"other_podcasts\">"];
     [content appendString:@"</div>"];
     [content appendString:@"</div>"];
     
     [content appendString:@"<div id=\"episodes_list\">"];
-    [content appendFormat:@"<div class=\"label\">%@</div>", [NSString stringWithFormat:@"%d Episodes".ls, [self.feed.episodes count]]];
+    [content appendFormat:@"<div class=\"label\">%@</div>", [NSString stringWithFormat:@"%d Episodes".ls, [feed.episodes count]]];
     [content appendString:@"</div>"];
     
-    NSArray* sortedEpisodes = [self.feed.episodes sortedArrayUsingSelector:@selector(compare:)];
+    NSArray* sortedEpisodes = [feed.episodes sortedArrayUsingSelector:@selector(compare:)];
     if ([sortedEpisodes count] > 0) {
         [content appendString:@"<table id=\"episodes\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\">"];
     }
@@ -165,7 +165,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     [sortedEpisodes enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop)
      {
          ICEpisode* episode = (ICEpisode*)obj;
-         NSString* cleanTitle = [episode cleanTitleUsingFeedTitle:self.feed.title];
+         NSString* cleanTitle = [episode cleanTitleUsingFeedTitle:feed.title];
          
          NSInteger pubYear = [[[NSCalendar currentCalendar] components:NSCalendarUnitYear fromDate:episode.pubDate] year];
          
@@ -185,10 +185,10 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
           [formatter stringFromDate:episode.pubDate]
           ];
      }];
-    
+
     [content appendString:@"</table>"];
     
-    if (self.feed.firstPageURL != self.feed.lastPageURL) {
+    if (feed.firstPageURL != feed.lastPageURL) {
         [content appendFormat:@"<div id=\"load_more\" ontouchstart=""><a href=\"delegate://load-more-episodes\">%@</a></div>", @"Load older episodes…".ls];
     }
     
@@ -216,8 +216,6 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     NSString* buttons = @"";
     htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###BUTTONS###" withString:buttons];
     
-    BOOL retina = ([[[self.view window] screen] scale] > 1);
-    
     NSString* videoPath = [[NSBundle mainBundle] pathForResource:(retina)?@"tv@2x":@"tv" ofType:@"png"];
     NSURL* videoURL = (videoPath) ? [NSURL fileURLWithPath:videoPath] : nil;
     htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###VIDEO_IMAGE_URL###" withString:[videoURL absoluteString]];
@@ -229,9 +227,32 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     NSString* videoPathH = [[NSBundle mainBundle] pathForResource:(retina)?@"tv@2x":@"tv" ofType:@"png"];
     NSURL* videoURLH = (videoPathH) ? [NSURL fileURLWithPath:videoPathH] : nil;
     htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###VIDEO_SELECTED_IMAGE_URL###" withString:[videoURLH absoluteString]];
-    [self.webView setOpaque:NO];
-    self.webView.backgroundColor = [UIColor clearColor];
-    [self.webView loadHTMLString:htmlContent baseURL:nil];
+    return htmlContent;
+}
+
+- (void) _loadWebViewContent
+{
+    if (!self.feed || !self.webView) {
+        return;
+    }
+
+    ICFeed* feed = self.feed;
+    BOOL retina = ([[[self.view window] screen] scale] > 1);
+    NSUInteger generation = ++self.webContentGeneration;
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString* htmlContent = [self _webViewHTMLForFeed:feed retina:retina];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.webContentGeneration || self.feed != feed || !self.webView) {
+                return;
+            }
+
+            [self.webView setOpaque:NO];
+            self.webView.backgroundColor = [UIColor clearColor];
+            [self.webView loadHTMLString:htmlContent baseURL:nil];
+        });
+    });
 }
 
 - (void) _prepareViewWhenFeedLoaded

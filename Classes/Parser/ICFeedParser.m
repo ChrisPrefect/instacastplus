@@ -221,8 +221,8 @@ start:
         {
             if (!self.dontAskForCredentials)
             {
-                __block BOOL authDone = NO;
                 __block BOOL authCancel = NO;
+                dispatch_semaphore_t authSemaphore = dispatch_semaphore_create(0);
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
                     
@@ -238,18 +238,21 @@ start:
                             self.password = password;
                         }
                         
-                        authDone = YES;
+                        dispatch_semaphore_signal(authSemaphore);
                     }];
                 });
                 
-                
-                while (!authDone) {
-                    [NSThread sleepForTimeInterval:1.0];
+                while (dispatch_semaphore_wait(authSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC))) != 0) {
+                    if ([self isCancelled]) {
+                        authCancel = YES;
+                        break;
+                    }
                 }
-            
-                if (authCancel) {
+
+                NSInteger authErrorCode = (error) ? [error code] : kCFURLErrorUserAuthenticationRequired;
+                if (authCancel || [self isCancelled]) {
                     error = [NSError errorWithDomain:NSURLErrorDomain
-                                                code:[error code]
+                                                code:authErrorCode
                                             userInfo:@{NSLocalizedDescriptionKey: @"Authentication failed.".ls, NSLocalizedRecoverySuggestionErrorKey : @"The feed could not be read because the username or password is incorrect.".ls }];
                 }
                 else {
@@ -258,8 +261,9 @@ start:
             }
             else
             {
+                NSInteger authErrorCode = (error) ? [error code] : kCFURLErrorUserAuthenticationRequired;
                 error = [NSError errorWithDomain:NSURLErrorDomain
-                                            code:[error code]
+                                            code:authErrorCode
                                         userInfo:@{NSLocalizedDescriptionKey: @"Authentication failed.".ls, NSLocalizedRecoverySuggestionErrorKey : @"The feed could not be read because the username or password is incorrect.".ls }];
             }
         }

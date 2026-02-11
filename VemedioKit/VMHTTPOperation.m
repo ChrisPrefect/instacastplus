@@ -96,17 +96,47 @@
         self.dataTask = [self.session dataTaskWithRequest:request];
         [self.dataTask resume];
 
-        // wait some seconds timeout
+        // wait for completion, but keep cancellation responsive.
+        BOOL waitTimedOut = NO;
+        BOOL waitCancelled = NO;
+        if (self.timeout > 0) {
+            dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(self.timeout * 2 * NSEC_PER_SEC));
+            while (dispatch_semaphore_wait(_connectionSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC))) != 0) {
+                if ([self isCancelled]) {
+                    waitCancelled = YES;
+                    break;
+                }
+                if (dispatch_time(DISPATCH_TIME_NOW, 0) >= deadline) {
+                    waitTimedOut = YES;
+                    break;
+                }
+            }
+        } else {
+            while (dispatch_semaphore_wait(_connectionSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC))) != 0) {
+                if ([self isCancelled]) {
+                    waitCancelled = YES;
+                    break;
+                }
+            }
+        }
 
-        dispatch_time_t timeout = (self.timeout > 0) ? dispatch_time(DISPATCH_TIME_NOW, self.timeout*2*1000000000LL) : DISPATCH_TIME_FOREVER;
-        if (dispatch_semaphore_wait(_connectionSemaphore, timeout) != 0) {
+        if (waitTimedOut || waitCancelled) {
             [self.dataTask cancel];
 
-            self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
-                                                       code:kCFURLErrorTimedOut
-                                                   userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                                                             @"Connection Timeout", NSLocalizedDescriptionKey,
-                                                             @"Connection timed out.", NSLocalizedRecoverySuggestionErrorKey, nil]];
+            if (waitTimedOut) {
+                self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
+                                                           code:kCFURLErrorTimedOut
+                                                       userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+                                                                 @"Connection Timeout", NSLocalizedDescriptionKey,
+                                                                 @"Connection timed out.", NSLocalizedRecoverySuggestionErrorKey, nil]];
+            } else {
+                self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
+                                                           code:kCFURLErrorCancelled
+                                                       userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+                                                                 @"Connection Cancelled", NSLocalizedDescriptionKey,
+                                                                 @"The request was cancelled.", NSLocalizedRecoverySuggestionErrorKey, nil]];
+            }
+
             self.connectionData = nil;
             self.dataTask = nil;
             break;
