@@ -7,6 +7,10 @@
 //
 
 #import "Defines.h"
+#import <math.h>
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+#endif
 
 NSString* InstacastErrorDomain = @"InstacastErrorDomain";
 
@@ -113,6 +117,9 @@ NSString* kUIPersistenceSubscriptionsSelectedFeedUID = @"SubscriptionsSelectedFe
 NSString* kUIPersistenceSubscriptionsSearchTerm = @"SubscriptionsSearchTerm";
 NSString* kUIPersistencePlaylistsSelectedPlaylistUID = @"DefaultPlaylistsSelectedPlaylistUID";
 NSString* kUIPersistenceBookmarkSelectedEpisodeGUID = @"DefaultBookmarkSelectedEpisodeGUID";
+NSString* kUIPersistenceListScrollPositions = @"ListScrollPositions";
+NSString* kUIPersistenceListScrollPositionsLastModified = @"ListScrollPositionsLastModified";
+NSString* ICListScrollPositionsDidChangeNotification = @"ICListScrollPositionsDidChangeNotification";
 
 // Smart Home MQTT
 NSString* SmarthomeMQTTEnabled = @"SmarthomeMQTTEnabled";
@@ -143,3 +150,137 @@ NSString* iCloudSyncInitialSyncCompleted = @"iCloudSyncInitialSyncCompleted";
 
 NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";
 NSString* ApplicationDidDetectMotionNotification = @"ApplicationDidDetectMotionNotification";
+
+static NSDictionary<NSString*, NSNumber*>* _validatedListScrollPositionsDictionary(NSDictionary* rawPositions)
+{
+    if (![rawPositions isKindOfClass:[NSDictionary class]]) {
+        return @{};
+    }
+
+    NSMutableDictionary<NSString*, NSNumber*>* validated = [NSMutableDictionary dictionaryWithCapacity:[rawPositions count]];
+    [rawPositions enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+        if ([key isKindOfClass:[NSString class]] && [obj isKindOfClass:[NSNumber class]]) {
+            validated[(NSString*)key] = (NSNumber*)obj;
+        }
+    }];
+    return [validated copy];
+}
+
+NSDictionary<NSString*, NSNumber*>* ICListScrollPositionsSnapshot(void)
+{
+    NSDictionary* rawPositions = [USER_DEFAULTS objectForKey:kUIPersistenceListScrollPositions];
+    return _validatedListScrollPositionsDictionary(rawPositions);
+}
+
+NSDate* ICListScrollPositionsLastModifiedDate(void)
+{
+    id value = [USER_DEFAULTS objectForKey:kUIPersistenceListScrollPositionsLastModified];
+    return [value isKindOfClass:[NSDate class]] ? (NSDate*)value : nil;
+}
+
+NSNumber* ICListScrollPositionForKey(NSString* key)
+{
+    if (![key isKindOfClass:[NSString class]] || [key length] == 0) {
+        return nil;
+    }
+    return ICListScrollPositionsSnapshot()[key];
+}
+
+void ICUpdateListScrollPositionForKey(NSString* key, CGFloat offsetY)
+{
+    if (![key isKindOfClass:[NSString class]] || [key length] == 0) {
+        return;
+    }
+
+    NSDictionary<NSString*, NSNumber*>* current = ICListScrollPositionsSnapshot();
+    NSNumber* previousOffset = current[key];
+    if (previousOffset && fabs(previousOffset.doubleValue - offsetY) < 0.5) {
+        return;
+    }
+
+    NSMutableDictionary<NSString*, NSNumber*>* updated = [current mutableCopy];
+    updated[key] = @(offsetY);
+
+    [USER_DEFAULTS setObject:updated forKey:kUIPersistenceListScrollPositions];
+    [USER_DEFAULTS setObject:[NSDate date] forKey:kUIPersistenceListScrollPositionsLastModified];
+    [USER_DEFAULTS synchronize];
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:ICListScrollPositionsDidChangeNotification object:nil];
+}
+
+void ICApplySyncedListScrollPositions(NSDictionary<NSString*, NSNumber*>* positions, NSDate* lastModified)
+{
+    if (!lastModified) {
+        return;
+    }
+
+    NSDate* localLastModified = ICListScrollPositionsLastModifiedDate();
+    if (localLastModified && [lastModified compare:localLastModified] != NSOrderedDescending) {
+        return;
+    }
+
+    NSDictionary<NSString*, NSNumber*>* validated = _validatedListScrollPositionsDictionary(positions);
+    [USER_DEFAULTS setObject:validated forKey:kUIPersistenceListScrollPositions];
+    [USER_DEFAULTS setObject:lastModified forKey:kUIPersistenceListScrollPositionsLastModified];
+    [USER_DEFAULTS synchronize];
+}
+
+#if TARGET_OS_IPHONE
+static UIEdgeInsets _effectiveInsetsForScrollView(UIScrollView* scrollView)
+{
+    if (@available(iOS 11.0, *)) {
+        return scrollView.adjustedContentInset;
+    }
+    return scrollView.contentInset;
+}
+
+static CGFloat _clampedOffsetYForScrollView(UIScrollView* scrollView, CGFloat offsetY)
+{
+    UIEdgeInsets insets = _effectiveInsetsForScrollView(scrollView);
+    CGFloat minOffset = -insets.top;
+    CGFloat maxOffset = scrollView.contentSize.height - CGRectGetHeight(scrollView.bounds) + insets.bottom;
+    if (maxOffset < minOffset) {
+        maxOffset = minOffset;
+    }
+    return MIN(MAX(offsetY, minOffset), maxOffset);
+}
+
+void ICStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView)
+{
+    if (!scrollView || !scrollView.window) {
+        return;
+    }
+    CGFloat offsetY = _clampedOffsetYForScrollView(scrollView, scrollView.contentOffset.y);
+    ICUpdateListScrollPositionForKey(key, offsetY);
+}
+
+void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView)
+{
+    if (!scrollView) {
+        return;
+    }
+    NSNumber* storedOffset = ICListScrollPositionForKey(key);
+    if (!storedOffset) {
+        return;
+    }
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!scrollView.window) {
+            return;
+        }
+
+        [scrollView layoutIfNeeded];
+        CGFloat offsetY = storedOffset.doubleValue;
+
+        // Legacy/stale absolute offset 0 causes clipped top content when top inset is > 0.
+        UIEdgeInsets insets = _effectiveInsetsForScrollView(scrollView);
+        CGFloat minOffset = -insets.top;
+        if (fabs(offsetY) < 0.5f && minOffset < -0.5f) {
+            offsetY = minOffset;
+        }
+
+        offsetY = _clampedOffsetYForScrollView(scrollView, offsetY);
+        [scrollView setContentOffset:CGPointMake(scrollView.contentOffset.x, offsetY) animated:NO];
+    });
+}
+#endif

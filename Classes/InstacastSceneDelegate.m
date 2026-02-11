@@ -79,18 +79,24 @@
         if ([DatabaseManager dataStoreNeedsMigration]) {
             UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
             self.window.rootViewController = migrationViewController;
-            ((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window = self.window;
-            [((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window makeKeyAndVisible];
+            InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
+            self.mainViewController = nil;
+            appDelegate.mainViewController = nil;
+            [UIManager sharedManager].mainViewController = nil;
+            appDelegate.window = self.window;
+            [appDelegate.window makeKeyAndVisible];
         }
         else
         {
             MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
+            InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
 
+            self.mainViewController = mainViewController;
+            appDelegate.mainViewController = mainViewController;
             [UIManager sharedManager].mainViewController = mainViewController;
             self.window.rootViewController = mainViewController;
-            ((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window = self.window;
-
-            [((InstacastAppDelegate *)[UIApplication sharedApplication].delegate).window makeKeyAndVisible];
+            appDelegate.window = self.window;
+            [appDelegate.window makeKeyAndVisible];
 
             // Re-apply appearance now that window exists
             [[ICAppearanceManager sharedManager] updateAppearance];

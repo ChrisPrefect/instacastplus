@@ -4,6 +4,10 @@
 //
 
 #import "ICCloudSyncPlaybackHandler.h"
+#import "Defines.h"
+
+static NSString * const kPlaybackScrollPositionsRecordName = @"ep_scroll_positions";
+static NSString * const kPlaybackScrollPositionsJSONKey = @"listScrollPositionsJSON";
 
 @implementation ICCloudSyncPlaybackHandler
 
@@ -28,6 +32,14 @@
     for (CDEpisode *episode in episodes) {
         CKRecord *record = [self recordForEpisode:episode];
         if (record) [records addObject:record];
+    }
+
+    NSDate *scrollPositionsLastModified = ICListScrollPositionsLastModifiedDate();
+    if (scrollPositionsLastModified && [scrollPositionsLastModified compare:lastSync] == NSOrderedDescending) {
+        CKRecord *scrollPositionsRecord = [self recordForScrollPositions];
+        if (scrollPositionsRecord) {
+            [records addObject:scrollPositionsRecord];
+        }
     }
 
     if (records.count == 0) {
@@ -65,9 +77,51 @@
     return record;
 }
 
+- (CKRecord *)recordForScrollPositions
+{
+    NSDate *lastModified = ICListScrollPositionsLastModifiedDate();
+    if (!lastModified) {
+        return nil;
+    }
+
+    NSDictionary<NSString*, NSNumber*> *positions = ICListScrollPositionsSnapshot();
+    NSError *jsonError = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:positions options:0 error:&jsonError];
+    if (jsonError || !jsonData) {
+        return nil;
+    }
+
+    NSString *jsonString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+    if (!jsonString) {
+        return nil;
+    }
+
+    CKRecordID *recordID = [[CKRecordID alloc] initWithRecordName:kPlaybackScrollPositionsRecordName zoneID:self.zoneID];
+    CKRecord *record = [[CKRecord alloc] initWithRecordType:@"SyncEpisodeStatus" recordID:recordID];
+    record[kPlaybackScrollPositionsJSONKey] = jsonString;
+    record[@"lastModified"] = lastModified;
+    return record;
+}
+
 - (void)handleReceivedRecords:(NSArray<CKRecord *> *)records completion:(void(^)(NSError *error))completion
 {
     for (CKRecord *record in records) {
+        NSString *positionsJSON = record[kPlaybackScrollPositionsJSONKey];
+        if ([positionsJSON isKindOfClass:[NSString class]]) {
+            NSData *jsonData = [positionsJSON dataUsingEncoding:NSUTF8StringEncoding];
+            NSDictionary *positions = nil;
+            if (jsonData) {
+                id parsed = [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:nil];
+                if ([parsed isKindOfClass:[NSDictionary class]]) {
+                    positions = (NSDictionary*)parsed;
+                }
+            }
+            if (positions) {
+                ICApplySyncedListScrollPositions(positions, record[@"lastModified"]);
+            }
+            continue;
+        }
+
         NSString *hash = record[@"episodeHash"];
         if (!hash) continue;
 
@@ -106,6 +160,11 @@
             CKRecord *record = [self recordForEpisode:episode];
             if (record) [records addObject:record];
         }
+    }
+
+    CKRecord *scrollPositionsRecord = [self recordForScrollPositions];
+    if (scrollPositionsRecord) {
+        [records addObject:scrollPositionsRecord];
     }
 
     if (records.count == 0) {

@@ -94,6 +94,9 @@
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
     cell.detailTextLabel.textColor = ICMutedTextColor;
+    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    cell.accessoryView = nil;
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     
     return cell;
 }

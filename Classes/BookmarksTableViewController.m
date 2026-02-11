@@ -49,6 +49,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 @implementation BookmarksTableViewController {
     BOOL _observing;
     BOOL _userAction;
+    BOOL _didRestoreScrollPosition;
 }
 
 + (id) bookmarksController
@@ -253,8 +254,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    
-    
+    _didRestoreScrollPosition = NO;
     
     [self _reloadBookmarks];
     [self updateAppearance];
@@ -275,13 +275,36 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 - (void) viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
+    [self _restoreScrollPositionIfNeeded];
 }
 
 - (void) viewDidDisappear:(BOOL)animated
 {
     [super viewDidDisappear:animated];
-    
+    [self _storeScrollPosition];
     [self _setObserving:NO];
+}
+
+- (NSString*) _scrollPersistenceKey
+{
+    if ([self.parentHash length] > 0) {
+        return [NSString stringWithFormat:@"bookmarks.%@", self.parentHash];
+    }
+    return @"bookmarks.root";
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
 
@@ -556,6 +579,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
    
     if (!self.editing && [self.sections count] > 0)
     {
+        [self _storeScrollPosition];
         NSDictionary* section = [self.sections objectAtIndex:indexPath.row];
         
         if (self.parentHash)
@@ -586,6 +610,18 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     {
         [self _updateToolbarAnimated:NO];
     }
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    if (!decelerate) {
+        [self _storeScrollPosition];
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+    [self _storeScrollPosition];
 }
 
 - (void)tableView:(UITableView *)tableView didDeselectRowAtIndexPath:(NSIndexPath *)indexPath

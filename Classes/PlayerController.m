@@ -29,6 +29,8 @@
 #import "PlayerInfoViewController_v5.h"
 #import "PlayerVideoViewController.h"
 #import <AVKit/AVKit.h>
+#import "InstacastAppDelegate.h"
+#import "MainViewController_4.h"
 
 enum {
 	NoState = 0,
@@ -332,6 +334,73 @@ enum {
 	}
 }
 
+- (void) _dismissPlayerWithCompletion:(void (^)(void))completion
+{
+    _dismissing = YES;
+    
+    [_showHideTimer invalidate];
+    _showHideTimer = nil;
+    
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    
+    if ([pman hasMovingVideo]) {
+        [pman stopAirPlayVideo];
+    }
+    
+    if (!pman.ready || !self.backgroundPlayback) {
+        [pman close];
+    }
+    
+    [DMANAGER save];
+    
+    if (self.loadingInfo) {
+        [self.loadingInfo close];
+        self.loadingInfo = nil;
+    }
+    
+    void (^finishBlock)(void) = ^{
+        self->_dismissing = NO;
+        if (completion) {
+            completion();
+        }
+    };
+    
+    if (![self isBeingDismissed]) {
+        [self dismissViewControllerAnimated:YES completion:finishBlock];
+    } else {
+        finishBlock();
+    }
+}
+
+- (void) _openCurrentPodcastFromPlayerTitle
+{
+    if (_dismissing) {
+        return;
+    }
+
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode;
+    if (!episode) {
+        episode = [AudioSession sharedAudioSession].episode;
+    }
+    if (!episode || !episode.feed) {
+        return;
+    }
+    
+    [self _dismissPlayerWithCompletion:^{
+        InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+        if (appDelegate.mainViewController) {
+            [appDelegate.mainViewController showShowNotesOfEpisode:episode animated:NO];
+        }
+    }];
+}
+
+- (void) titleViewTapped:(UITapGestureRecognizer*)recognizer
+{
+    if (recognizer.state == UIGestureRecognizerStateRecognized) {
+        [self _openCurrentPodcastFromPlayerTitle];
+    }
+}
+
 - (void) _updateDynamicTintColorWithImage:(UIImage*)image
 {
     UIColor* calculatedColor = ICTintColor;
@@ -578,6 +647,10 @@ enum {
         [titleView addSubview:feedTitleLabel];
         self.feedTitleLabel = feedTitleLabel;
         
+        titleView.userInteractionEnabled = YES;
+        UITapGestureRecognizer* titleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(titleViewTapped:)];
+        [titleView addGestureRecognizer:titleTapRecognizer];
+        
         self.titleView = titleView;
         self.navigationItem.titleView = titleView;
     }
@@ -690,33 +763,7 @@ enum {
 
 - (void) dismiss:(id)sender
 {
-    _dismissing = YES;
-    
-	[_showHideTimer invalidate];
-	_showHideTimer = nil;
-	
-	PlaybackManager* pman = [PlaybackManager playbackManager];
-	
-	if ([pman hasMovingVideo]) {
-		[pman stopAirPlayVideo];
-	}
-	
-	if (!pman.ready || !self.backgroundPlayback) {
-		[pman close];
-	}
-
-    
-    [DMANAGER save];
-    
-    if (self.loadingInfo) {
-        [self.loadingInfo close];
-        self.loadingInfo = nil;
-    }
-    
-    if (![self isBeingDismissed]) {
-        [self.presentingViewController dismissViewControllerAnimated:YES completion:NULL];
-    }
-    _dismissing = NO;
+    [self _dismissPlayerWithCompletion:nil];
 }
 
 

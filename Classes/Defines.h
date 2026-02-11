@@ -142,6 +142,21 @@ extern NSString* kUIPersistencePlaylistsSelectedPlaylistUID;
 extern NSString* kUIPersistenceBookmarkSelectedEpisodeGUID;
 extern NSString* kUIPersistenceDirectorySearchSearchString;
 extern NSString* kUIPersistenceDirectorySearchSelectedScopeIndex;
+extern NSString* kUIPersistenceListScrollPositions;
+extern NSString* kUIPersistenceListScrollPositionsLastModified;
+extern NSString* ICListScrollPositionsDidChangeNotification;
+
+FOUNDATION_EXPORT NSDictionary<NSString*, NSNumber*>* ICListScrollPositionsSnapshot(void);
+FOUNDATION_EXPORT NSDate* ICListScrollPositionsLastModifiedDate(void);
+FOUNDATION_EXPORT NSNumber* ICListScrollPositionForKey(NSString* key);
+FOUNDATION_EXPORT void ICUpdateListScrollPositionForKey(NSString* key, CGFloat offsetY);
+FOUNDATION_EXPORT void ICApplySyncedListScrollPositions(NSDictionary<NSString*, NSNumber*>* positions, NSDate* lastModified);
+
+#if TARGET_OS_IPHONE
+@class UIScrollView;
+FOUNDATION_EXPORT void ICStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
+FOUNDATION_EXPORT void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
+#endif
 
 // Smart Home MQTT
 extern NSString* SmarthomeMQTTEnabled;

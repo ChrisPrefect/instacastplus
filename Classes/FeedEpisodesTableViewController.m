@@ -46,7 +46,7 @@
 
 @implementation FeedEpisodesTableViewController {
     NSMutableSet* _selectionPreservingIndexPathes;
-    BOOL isFirstTimeScrolled;
+    BOOL _didRestoreScrollPosition;
     BOOL isDownloadedFilter;
 }
 
@@ -452,6 +452,7 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    _didRestoreScrollPosition = NO;
     
     CGFloat w = CGRectGetWidth(self.view.bounds);
     self.headerButtonStack.frame = CGRectMake(0, 98, w, 40);
@@ -544,6 +545,7 @@
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
     [self reloadDataAndPreserveSelection];
+    [self _restoreScrollPositionIfNeeded];
 }
 
 - (void) reloadDataWithFilter:(BOOL)isScrolled
@@ -561,7 +563,7 @@
 
     if (isScrolled)
     {
-        [self srollToLastScrollingPosition];
+        [self _restoreScrollPositionIfNeeded];
     }
 }
 
@@ -575,41 +577,39 @@
     self.tableView.tableHeaderView = ([self.searchTerm length] == 0) ? self.tableHeaderView : nil;
     self.headerButtonStack.frame = CGRectMake(0, 98, CGRectGetWidth(self.tableHeaderView.frame), 40);
 
-    [self srollToLastScrollingPosition];
+    [self _restoreScrollPositionIfNeeded];
 }
 
 
-- (void) srollToLastScrollingPosition
+- (NSString*) _scrollPersistenceKey
 {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if ([[NSUserDefaults standardUserDefaults] objectForKey:[NSString stringWithFormat:@"%@_visible_row", _feed.uid]] != nil)
-        {
-            if (!self->isFirstTimeScrolled)
-            {
-                self->isFirstTimeScrolled = true;
-                NSInteger lastIndexToScroll = [[NSUserDefaults standardUserDefaults] integerForKey:[NSString stringWithFormat:@"%@_visible_row", _feed.uid]];
-                if (lastIndexToScroll < self.episodes.count)
-                {
-                    if (lastIndexToScroll > 0)
-                    {
-                        [self.tableView scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:lastIndexToScroll inSection:0] atScrollPosition:UITableViewScrollPositionTop animated:NO];
-                    }
-                }
-            }
-        }
-    });
+    NSString* feedKey = self.feed.uid;
+    if ([feedKey length] == 0) {
+        feedKey = [self.feed.sourceURL absoluteString];
+    }
+    if ([feedKey length] == 0) {
+        return @"feedEpisodes.unknown";
+    }
+    return [NSString stringWithFormat:@"feedEpisodes.%@", feedKey];
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
     [super viewWillDisappear:animated];
-    
-    NSArray *visibleIndexPaths = [self.tableView indexPathsForVisibleRows];
-    if (visibleIndexPaths.count > 0) {
-        NSInteger visibleRow = [visibleIndexPaths.firstObject row];
-        [[NSUserDefaults standardUserDefaults] setInteger:visibleRow forKey:[NSString stringWithFormat:@"%@_visible_row", _feed.uid]];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        //NSLog(@"VISIble stored row====%ld",(long)visibleRow);
-    }
+    [self _storeScrollPosition];
 }
 
 - (void) updateAppearance
@@ -667,6 +667,18 @@
 //        EpisodesTableViewCell *customCell = (EpisodesTableViewCell *)cell;
 //        [customCell stopProgressUpdate];
 //    }
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    if (!decelerate) {
+        [self _storeScrollPosition];
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+    [self _storeScrollPosition];
 }
 
 #pragma mark - Actions

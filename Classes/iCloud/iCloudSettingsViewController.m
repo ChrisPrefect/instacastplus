@@ -239,7 +239,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
             @"subscriptions": @"Subscriptions",
             @"feedsettings": @"Podcast Settings",
             @"lists": @"Lists",
-            @"upnext": @"Up Next",
+            @"upnext": @"Play Next",
             @"appsettings": @"App Settings",
             @"downloads": @"Download Status",
         };
@@ -322,7 +322,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
                     control.on = [USER_DEFAULTS boolForKey:iCloudSyncLists];
                     break;
                 case kCategoryUpNext:
-                    cell.textLabel.text = @"Up Next".ls;
+                    cell.textLabel.text = @"Play Next".ls;
                     control.on = [USER_DEFAULTS boolForKey:iCloudSyncUpNext];
                     break;
                 case kCategoryAppSettings:

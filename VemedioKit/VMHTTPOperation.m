@@ -112,9 +112,15 @@
                 }
             }
         } else {
+            // Fallback max timeout of 120 seconds to prevent indefinite blocking
+            dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC));
             while (dispatch_semaphore_wait(_connectionSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC))) != 0) {
                 if ([self isCancelled]) {
                     waitCancelled = YES;
+                    break;
+                }
+                if (dispatch_time(DISPATCH_TIME_NOW, 0) >= deadline) {
+                    waitTimedOut = YES;
                     break;
                 }
             }

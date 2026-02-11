@@ -23,6 +23,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 
 @implementation UpNextTableViewController {
     BOOL _needsPlayComboButtonUpdate;
+    BOOL _didRestoreScrollPosition;
 }
 
 + (instancetype) viewController {
@@ -269,6 +270,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    _didRestoreScrollPosition = NO;
 
     [self _setObserving:YES];
 
@@ -284,6 +286,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void) viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
+    [self _storeScrollPosition];
     [self _setObserving:NO];
 }
 
@@ -316,11 +319,32 @@ static NSString* kUpNextCell = @"UpNextCell";
         [self _updateEmptyState];
         [self _updateToolbarItems];
     }
+
+    [self _restoreScrollPositionIfNeeded];
 }
 
 - (void)didReceiveMemoryWarning {
     [super didReceiveMemoryWarning];
     // Dispose of any resources that can be recreated.
+}
+
+- (NSString*) _scrollPersistenceKey
+{
+    return @"upnext";
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
 #pragma mark - Table view data source
@@ -449,6 +473,19 @@ static NSString* kUpNextCell = @"UpNextCell";
             [coordinator dropItem:item.dragItem toRowAtIndexPath:destinationIndexPath];
         }
     }
+    [self _storeScrollPosition];
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    if (!decelerate) {
+        [self _storeScrollPosition];
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+    [self _storeScrollPosition];
 }
 
 @end

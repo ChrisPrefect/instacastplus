@@ -25,6 +25,7 @@
 @implementation DownloadsViewController {
     BOOL _observing;
     BOOL _userAction;
+    BOOL _didRestoreScrollPosition;
 }
 
 + (DownloadsViewController*) downloadsViewController
@@ -142,6 +143,7 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    _didRestoreScrollPosition = NO;
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.tableView.backgroundColor = ICBackgroundColor;
@@ -164,6 +166,7 @@
 {
     [super viewDidAppear:animated];
     [self _loadImagesForOnscreenRows];
+    [self _restoreScrollPositionIfNeeded];
 
     // Toolbar items setzen
     if (!self.toolbarItems || self.toolbarItems.count == 0) {
@@ -175,6 +178,7 @@
 - (void) viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
+    [self _storeScrollPosition];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
 }
 
@@ -199,23 +203,38 @@
 	
 	long long expectedContentLength = [cman expectedContentLengthForEpisode:episode];
 	long long loadedContentLength = expectedContentLength*progress;
+
+    BOOL cached = [cman episodeIsCached:episode fastLookup:YES];
+    BOOL caching = [cman isCachingEpisode:episode];
+    BOOL loading = [cman isLoadingEpisode:episode];
+    BOOL suspended = [cman isLoadingEpisodeSuspended:episode];
 	
-	if ([cman isLoadingEpisodeSuspended:episode]) {
+	if (cached) {
+        cell.sizeLabel.text = [NSString stringWithFormat:@"%@ of %@".ls, [NSByteCountFormatter stringFromByteCount:loadedContentLength countStyle:NSByteCountFormatterCountStyleFile], [NSByteCountFormatter stringFromByteCount:expectedContentLength countStyle:NSByteCountFormatterCountStyleFile]];
+        cell.playAccessoryButton.comboState = kEpisodePlayButtonComboStateFilled;
+    }
+	else if (caching && suspended) {
 		cell.sizeLabel.text = @"Paused…".ls;
         cell.playAccessoryButton.comboState = kEpisodePlayButtonComboStateHolding;
 	}
-    else if (![cman isLoadingEpisode:episode]) {
+    else if (caching && !loading) {
 		cell.sizeLabel.text = @"Waiting to download…".ls;
         cell.playAccessoryButton.comboState = kEpisodePlayButtonComboStateHolding;
 	}
-	else if (loadedContentLength == 0) {
+    else if (caching && loading && loadedContentLength == 0) {
 		cell.sizeLabel.text = @"Loading…".ls;
         cell.playAccessoryButton.comboState = kEpisodePlayButtonComboStateFilling;
 	}
-    else {
+    else if (caching && loading) {
 		cell.sizeLabel.text = [NSString stringWithFormat:@"%@ of %@".ls, [NSByteCountFormatter stringFromByteCount:loadedContentLength countStyle:NSByteCountFormatterCountStyleFile], [NSByteCountFormatter stringFromByteCount:expectedContentLength countStyle:NSByteCountFormatterCountStyleFile]];
         cell.playAccessoryButton.comboState = kEpisodePlayButtonComboStateFilling;
 	}
+    else {
+		cell.sizeLabel.text = @"Waiting to download…".ls;
+        cell.playAccessoryButton.comboState = kEpisodePlayButtonComboStateOutline;
+	}
+
+    cell.playAccessoryButton.fillingProgress = progress;
 	
 	NSString* timeString = nil;
 	if (timeLeft > 0 && expectedContentLength > 0) {
@@ -453,6 +472,25 @@
 #pragma mark -
 #pragma mark ScrollView Delegate
 
+- (NSString*) _scrollPersistenceKey
+{
+    return @"downloads";
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
 - (void) _loadImagesForOnscreenRows
 {
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
@@ -495,11 +533,13 @@
 {
 	if (!decelerate) {
         [self _loadImagesForOnscreenRows];
+        [self _storeScrollPosition];
     }
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
     [self _loadImagesForOnscreenRows];
+    [self _storeScrollPosition];
 }
 @end

@@ -212,6 +212,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
         if (!self.delegateQueue) {
             NSOperationQueue* delegateQueue = [[NSOperationQueue alloc] init];
             delegateQueue.maxConcurrentOperationCount = 1;
+            delegateQueue.qualityOfService = self.automatic ? NSQualityOfServiceUtility : NSQualityOfServiceUserInitiated;
             delegateQueue.name = [NSString stringWithFormat:@"com.vemedio.instacast.cache.%@", self.identifier ?: @"download"];
             self.delegateQueue = delegateQueue;
         }

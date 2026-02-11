@@ -231,9 +231,13 @@ enum {
     currencyFormatter.locale = product.priceLocale;
     NSString *currencyCode = currencyFormatter.currencyCode ?: @"USD";
 
-    NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-    dateFormatter.dateFormat = @"yyyy-MM-dd";
-    NSString *dateString = [dateFormatter stringFromDate:[NSDate date]];
+    static NSDateFormatter *saveDateFormatter = nil;
+    static dispatch_once_t saveDateOnce;
+    dispatch_once(&saveDateOnce, ^{
+        saveDateFormatter = [[NSDateFormatter alloc] init];
+        saveDateFormatter.dateFormat = @"yyyy-MM-dd";
+    });
+    NSString *dateString = [saveDateFormatter stringFromDate:[NSDate date]];
 
     NSDictionary *entry = @{
         @"amount": amount,
@@ -259,25 +263,31 @@ enum {
     NSString *currency = entry[@"currency"] ?: @"USD";
     NSString *dateStr = entry[@"date"] ?: @"";
 
-    // Format the date nicely
-    NSDateFormatter *inputFormatter = [[NSDateFormatter alloc] init];
-    inputFormatter.dateFormat = @"yyyy-MM-dd";
+    // Format the date nicely (cached formatters)
+    static NSDateFormatter *inputFormatter = nil;
+    static NSDateFormatter *outputFormatter = nil;
+    static NSNumberFormatter *currencyFormatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        inputFormatter = [[NSDateFormatter alloc] init];
+        inputFormatter.dateFormat = @"yyyy-MM-dd";
+        outputFormatter = [[NSDateFormatter alloc] init];
+        outputFormatter.dateStyle = NSDateFormatterMediumStyle;
+        outputFormatter.timeStyle = NSDateFormatterNoStyle;
+        currencyFormatter = [[NSNumberFormatter alloc] init];
+        currencyFormatter.numberStyle = NSNumberFormatterCurrencyStyle;
+    });
     NSDate *date = [inputFormatter dateFromString:dateStr];
 
     NSString *displayDate = dateStr;
     if (date) {
-        NSDateFormatter *outputFormatter = [[NSDateFormatter alloc] init];
-        outputFormatter.dateStyle = NSDateFormatterMediumStyle;
-        outputFormatter.timeStyle = NSDateFormatterNoStyle;
         displayDate = [outputFormatter stringFromDate:date];
     }
 
     // Format amount with currency
-    NSNumberFormatter *formatter = [[NSNumberFormatter alloc] init];
-    formatter.numberStyle = NSNumberFormatterCurrencyStyle;
-    formatter.currencyCode = currency;
+    currencyFormatter.currencyCode = currency;
     NSNumber *amountNumber = @([amount doubleValue]);
-    NSString *formattedAmount = [formatter stringFromNumber:amountNumber] ?: [NSString stringWithFormat:@"%@ %@", amount, currency];
+    NSString *formattedAmount = [currencyFormatter stringFromNumber:amountNumber] ?: [NSString stringWithFormat:@"%@ %@", amount, currency];
 
     return [NSString stringWithFormat:@"%@ — %@", displayDate, formattedAmount];
 }

@@ -71,6 +71,7 @@ static NSString* gPathToCache = nil;
     struct {
         unsigned int supressSendUpdate:1;
         unsigned int supressDidClear:1;
+        unsigned int restoringCachingEpisodes:1;
     } _flags;
 }
 
@@ -209,6 +210,11 @@ static NSString* gPathToCache = nil;
 
 - (void) _postDidUpdateNotification
 {
+    if (![NSThread isMainThread]) {
+        // UI updates are driven by the main-runloop timer.
+        return;
+    }
+
     if (_rateDate) {
         NSTimeInterval since = [[NSDate date] timeIntervalSinceDate:_rateDate];
         if (since >= 0.5) {
@@ -312,7 +318,24 @@ static NSString* gPathToCache = nil;
 		return [self episodeIsCached:episode];
 	}
 	
-	return [_cachedEpisodes containsObject:episode];
+    if (!episode) {
+        return NO;
+    }
+    if ([_cachedEpisodes containsObject:episode]) {
+        return YES;
+    }
+
+    NSString* targetHash = episode.objectHash;
+    if ([targetHash length] == 0) {
+        return NO;
+    }
+    for (CDEpisode* cachedEpisode in [_cachedEpisodes copy]) {
+        if ([cachedEpisode.objectHash isEqualToString:targetHash]) {
+            return YES;
+        }
+    }
+
+	return NO;
 }
 
 - (BOOL) _cacheEpisode:(CDEpisode*)episode autoCache:(BOOL)autoCache overwriteCellularLock:(BOOL)overwriteCellularLock
@@ -352,11 +375,11 @@ static NSString* gPathToCache = nil;
 	cacheOperation.userInfo = episode;
 	cacheOperation.username = feed.username;
 	cacheOperation.password = feed.password;
-	cacheOperation.automatic = autoCache;
+    cacheOperation.automatic = autoCache;
     cacheOperation.overwriteCellularLock = overwriteCellularLock;
     cacheOperation.suspended = self.suspended;
     if ([cacheOperation respondsToSelector:@selector(setQualityOfService:)]) {
-        cacheOperation.qualityOfService = NSOperationQualityOfServiceBackground;
+        cacheOperation.qualityOfService = autoCache ? NSOperationQualityOfServiceUtility : NSOperationQualityOfServiceUserInitiated;
     }
 	[_downloadQueue addOperation:cacheOperation];
     
@@ -370,7 +393,9 @@ static NSString* gPathToCache = nil;
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidAddEpisodeToCachingQueueNotification object:self];
     }
     
-    [self saveCachingEpisodes];
+    if (!_flags.restoringCachingEpisodes) {
+        [self saveCachingEpisodes];
+    }
     
     _flags.supressSendUpdate = YES;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -385,19 +410,33 @@ static NSString* gPathToCache = nil;
 	
 	if (!_updateTimer)
 	{
-		_updateTimer = [NSTimer scheduledTimerWithTimeInterval:0.5f target:self selector:@selector(_postDidUpdateNotification) userInfo:nil repeats:YES];
+        void (^startUpdateTimer)(void) = ^{
+            if (_updateTimer) {
+                return;
+            }
+
+            _updateTimer = [NSTimer scheduledTimerWithTimeInterval:0.5f target:self selector:@selector(_postDidUpdateNotification) userInfo:nil repeats:YES];
         
 #if TARGET_OS_IPHONE
 
 #else
-        IOReturn success = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep,
-                                                       kIOPMAssertionLevelOn,
-                                                       CFSTR("Currently downloading"),
-                                                       &_noSystemSleepAssertionID);
-        if (success != kIOReturnSuccess) {
-            _noSystemSleepAssertionID = 0;
-        }
+            IOReturn success = IOPMAssertionCreateWithName(kIOPMAssertionTypePreventUserIdleSystemSleep,
+                                                           kIOPMAssertionLevelOn,
+                                                           CFSTR("Currently downloading"),
+                                                           &_noSystemSleepAssertionID);
+            if (success != kIOReturnSuccess) {
+                _noSystemSleepAssertionID = 0;
+            }
 #endif
+        };
+
+        if ([NSThread isMainThread]) {
+            startUpdateTimer();
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                startUpdateTimer();
+            });
+        }
 	}
 	
 	return YES;
@@ -574,7 +613,24 @@ static NSString* gPathToCache = nil;
 
 - (BOOL) isCachingEpisode:(CDEpisode*)episode
 {
-    return [_cachingEpisodes containsObject:episode];
+    if (!episode) {
+        return NO;
+    }
+    if ([_cachingEpisodes containsObject:episode]) {
+        return YES;
+    }
+
+    NSString* targetHash = episode.objectHash;
+    if ([targetHash length] == 0) {
+        return NO;
+    }
+    for (CDEpisode* cachingEpisode in [_cachingEpisodes copy]) {
+        if ([cachingEpisode.objectHash isEqualToString:targetHash]) {
+            return YES;
+        }
+    }
+
+    return NO;
 //	NSArray* operations = [_downloadQueue operations];
 //	for(CACHE_OPERATION_CLASS* operation in operations) {
 //		if ([operation.userInfo isEqual:episode]) {
@@ -822,6 +878,7 @@ static NSString* gPathToCache = nil;
     
 	if (![operation isCancelled] && !operation.failed)
 	{
+        _downloadedBytes = 0;
         [self willChangeValueForKey:@"cachedEpisodes"];
         [_cachedEpisodes addObject:episode];
         [self didChangeValueForKey:@"cachedEpisodes"];
@@ -1109,18 +1166,23 @@ static NSString* gPathToCache = nil;
 #endif
     
     NSInteger removed_episodes = 0;
-    // checking for part files that are left over
+    // checking for part files that are left over (limit to 50 files per run for performance)
+    NSInteger episodeFilesChecked = 0;
     e = [fman enumeratorAtPath:[CacheManager _pathToStorageLocation]];
     for(NSString* filename in e)
 	{
-        if (filename.length < 32) {
-            continue;
-        }
-        
-        NSString* episodeHash = [filename substringToIndex:32];
-        if (![DMANAGER episodeWithObjectHash:episodeHash]) {
-            [fman removeItemAtPath:[[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename] error:nil];
-            removed_episodes++;
+        @autoreleasepool {
+            if (filename.length < 32) {
+                continue;
+            }
+
+            NSString* episodeHash = [filename substringToIndex:32];
+            if (![DMANAGER episodeWithObjectHash:episodeHash]) {
+                [fman removeItemAtPath:[[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename] error:nil];
+                removed_episodes++;
+            }
+            episodeFilesChecked++;
+            if (episodeFilesChecked >= 50) break;
         }
     }
 #ifdef DEBUG
@@ -1137,46 +1199,44 @@ static NSString* gPathToCache = nil;
 
 - (unsigned long long) numberOfDownloadedBytes
 {
-    if (_downloadedBytes == 0)
-    {
-        NSMutableArray* files = [[NSMutableArray alloc] init];
-        
-        NSFileManager* fman = [NSFileManager defaultManager];
-        
+    if (_downloadedBytes == 0) {
+        [self recalculateDownloadedBytesInBackground];
+    }
+    return _downloadedBytes;
+}
+
+- (void)recalculateDownloadedBytesInBackground
+{
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        NSFileManager* fman = [[NSFileManager alloc] init];
+        unsigned long long size = 0;
+
         NSString* pathToDownloads = [CacheManager _pathToStorageLocation];
         NSDirectoryEnumerator* e = [fman enumeratorAtPath:pathToDownloads];
-        for(NSString* filename in e)
-        {
-            NSString* path = [pathToDownloads stringByAppendingPathComponent:filename];
-            [files addObject:path];
-        }
-        
-        NSString* pathToPartialDownloads = [CacheManager _pathToCache];
-        e = [fman enumeratorAtPath:pathToPartialDownloads];
-        for(NSString* filename in e)
-        {
-            NSString* path = [pathToPartialDownloads stringByAppendingPathComponent:filename];
-            [files addObject:path];
-        }
-        
-        unsigned long long size = 0;
-        
-        for(NSString* path in files) {
-            if ([fman fileExistsAtPath:path]) {
-                
-                NSError* error = nil;
-                NSDictionary* fileAttributes = [fman attributesOfItemAtPath:path error:&error];
-                if (!error) {
-                    unsigned long long fileSize = [fileAttributes fileSize];
-                    size += fileSize;
-                }
+        for (NSString* filename in e) {
+            @autoreleasepool {
+                NSString* path = [pathToDownloads stringByAppendingPathComponent:filename];
+                NSDictionary* attrs = [fman attributesOfItemAtPath:path error:nil];
+                if (attrs) size += [attrs fileSize];
             }
         }
-        
-        _downloadedBytes = size;
-    }
-    
-    return _downloadedBytes;
+
+        NSString* pathToPartialDownloads = [CacheManager _pathToCache];
+        e = [fman enumeratorAtPath:pathToPartialDownloads];
+        for (NSString* filename in e) {
+            @autoreleasepool {
+                NSString* path = [pathToPartialDownloads stringByAppendingPathComponent:filename];
+                NSDictionary* attrs = [fman attributesOfItemAtPath:path error:nil];
+                if (attrs) size += [attrs fileSize];
+            }
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self->_downloadedBytes = size;
+            [self willChangeValueForKey:@"numberOfDownloadedBytes"];
+            [self didChangeValueForKey:@"numberOfDownloadedBytes"];
+        });
+    });
 }
 
 - (unsigned long long) numberOfDownloadedBytesForEpisode:(CDEpisode*)episode
@@ -1259,12 +1319,13 @@ static NSString* gPathToCache = nil;
     }
     
     [USER_DEFAULTS setObject:cachingEpisodes forKey:kUserDefaultsCachingEpisodesKey];
-    [USER_DEFAULTS synchronize];
 }
 
 - (void) restoreCachingEpisodes
 {
     NSArray* cachingEpisodes = [USER_DEFAULTS objectForKey:kUserDefaultsCachingEpisodesKey];
+
+    _flags.restoringCachingEpisodes = YES;
     
     for (NSDictionary* dict in cachingEpisodes)
     {
@@ -1277,6 +1338,9 @@ static NSString* gPathToCache = nil;
             [self _cacheEpisode:episode autoCache:automatic overwriteCellularLock:cellular];
         }
     }
+
+    _flags.restoringCachingEpisodes = NO;
+    [self saveCachingEpisodes];
 }
 
 #pragma mark -
@@ -1437,11 +1501,12 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
         BOOL success = [fman copyItemAtURL:url toURL:cachedURL error:&error];
         
         dispatch_async(dispatch_get_main_queue(), ^{
-           
+
+            self->_downloadedBytes = 0;
             [self willChangeValueForKey:@"cachedEpisodes"];
             [_cachedEpisodes addObject:episode];
             [self didChangeValueForKey:@"cachedEpisodes"];
-            
+
             if (completion) {
                 completion(success, error);
             }

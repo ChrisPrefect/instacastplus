@@ -266,6 +266,7 @@ static const NSInteger kEpisodeBatchSize = 20;
     NSInteger batchEnd = MIN(kEpisodeBatchSize, episodes.count);
     NSArray* batch = [episodes subarrayWithRange:NSMakeRange(0, batchEnd)];
     [episodes removeObjectsInRange:NSMakeRange(0, batchEnd)];
+    NSArray<ICEpisode*>* parserEpisodes = [self _deserializeEpisodes:batch];
 
     // Update pending loads with remaining episodes
     NSDictionary* updatedInfo = @{
@@ -290,9 +291,6 @@ static const NSInteger kEpisodeBatchSize = 20;
                 [self _cancelLoadingForFeedURL:feedURL];
                 return;
             }
-
-            // Deserialize and insert episodes
-            NSArray<ICEpisode*>* parserEpisodes = [self _deserializeEpisodes:batch];
 
             if (parserEpisodes.count > 0) {
                 [DMANAGER addParserEpisodes:parserEpisodes toFeed:feed markConsumed:YES];

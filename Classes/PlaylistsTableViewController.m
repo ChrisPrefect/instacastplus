@@ -46,6 +46,7 @@
     BOOL _observing;
     BOOL _defaultPushed;
     BOOL _userAction;
+    BOOL _didRestoreScrollPosition;
 }
 
 #pragma mark -
@@ -224,6 +225,7 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    _didRestoreScrollPosition = NO;
     
     [self updateAppearance];
     [self _updateToolbarLabels];
@@ -277,12 +279,33 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
+    [self _restoreScrollPositionIfNeeded];
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
 
+    [self _storeScrollPosition];
     [self _setObserving:NO];
+}
+
+- (NSString*) _scrollPersistenceKey
+{
+    return @"playlists";
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
 - (void) _updateToolbarLabels
@@ -428,6 +451,7 @@
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     if (!self.editing) {
+        [self _storeScrollPosition];
         [self _pushControllerForListAtIndex:indexPath.row animated:YES];
         
         CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
@@ -454,6 +478,14 @@
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
+    if (!decelerate) {
+        [self _storeScrollPosition];
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+    [self _storeScrollPosition];
 }
 
 

@@ -21,6 +21,7 @@
 
 @implementation ListEpisodesTableViewController {
     BOOL _list_episodes_observing;
+    BOOL _didRestoreScrollPosition;
 }
 
 - (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures
@@ -162,6 +163,7 @@
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    _didRestoreScrollPosition = NO;
     
     // edit button is always enabled - it opens the list editor
     self.navigationItem.rightBarButtonItem.enabled = YES;
@@ -184,6 +186,13 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
+    [self _restoreScrollPositionIfNeeded];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    [self _storeScrollPosition];
 }
 
 - (void) refresh:(id)sender
@@ -230,6 +239,52 @@
 - (void)enumerateEpisodesUsingBlock:(void (^)(CDEpisode* episode, NSUInteger idx, BOOL *stop))block
 {
     [self.allEpisodes enumerateObjectsUsingBlock:block];
+}
+
+- (NSString*) _scrollPersistenceKey
+{
+    NSString* listKey = self.list.uid;
+    if ([listKey length] == 0) {
+        listKey = self.list.name;
+    }
+    if ([listKey length] == 0) {
+        return @"listEpisodes.unknown";
+    }
+    return [NSString stringWithFormat:@"listEpisodes.%@", listKey];
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+
+    NSString* key = [self _scrollPersistenceKey];
+    NSNumber* storedOffset = ICListScrollPositionForKey(key);
+    if (storedOffset) {
+        CGFloat targetOffset = storedOffset.doubleValue;
+        CGFloat requiredHeight = targetOffset + CGRectGetHeight(self.tableView.bounds);
+        [self.tableView layoutIfNeeded];
+
+        // Ensure enough pages are loaded before restoring a deep scroll offset.
+        while (self.episodes.count < self.allEpisodes.count &&
+               self.tableView.contentSize.height < requiredHeight) {
+            NSArray* newEpisodes = [self _loadNextPage];
+            if ([newEpisodes count] == 0) {
+                break;
+            }
+            [self reloadDataAndPreserveSelection];
+            [self.tableView layoutIfNeeded];
+        }
+    }
+
+    ICRestoreScrollPositionForScrollView(key, self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
 #pragma mark -
@@ -283,6 +338,18 @@
             [self reloadDataAndPreserveSelection];
         }
     }
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    if (!decelerate) {
+        [self _storeScrollPosition];
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+    [self _storeScrollPosition];
 }
 
 - (void) playComboButtonAction:(EpisodePlayComboButton*)button

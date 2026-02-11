@@ -99,6 +99,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) _setNeedsPlayComboButtonUpdate
 {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _setNeedsPlayComboButtonUpdate];
+        });
+        return;
+    }
+
     if (!_needsPlayComboButtonUpdate) {
         _needsPlayComboButtonUpdate = YES;
         [self performSelector:@selector(_performPlayComboButtonUpdate) withObject:nil afterDelay:0];

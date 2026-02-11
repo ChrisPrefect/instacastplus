@@ -254,7 +254,7 @@ typedef enum {
 	}];
 	[task resume];
 
-	dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+	dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)));
 
 	if (error || [response statusCode] != 200) {
 		return nil;
@@ -346,7 +346,7 @@ typedef enum {
 	}];
 	[task resume];
 
-	dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+	dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)));
 
 	if (!imageData) {
 		return nil;
@@ -368,7 +368,7 @@ typedef enum {
 	}];
 	[task resume];
 
-	dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+	dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)));
 
 	if (!imageData) {
 		return nil;

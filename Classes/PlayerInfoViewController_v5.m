@@ -44,6 +44,7 @@ enum {
 @property (nonatomic, strong) NSArray* chapters;
 @property (nonatomic) NSInteger	currentChapterIndex;
 @property (nonatomic, strong) NSArray* bookmarks;
+@property (nonatomic, strong) NSMutableDictionary<NSValue*, UIColor*>* averageColorCache;
 @end
 
 
@@ -1139,26 +1140,30 @@ enum {
 }
 
 - (UIColor *)averageColorFromImage:(UIImage *)image {
+    if (!image) return [UIColor clearColor];
+
+    // Cache lookup by image pointer identity
+    NSValue *key = [NSValue valueWithNonretainedObject:image];
+    if (!self.averageColorCache) {
+        self.averageColorCache = [NSMutableDictionary dictionary];
+    }
+    UIColor *cached = self.averageColorCache[key];
+    if (cached) return cached;
+
     // Resize the image to a 1x1 pixel to get the average color
-    CGSize size = CGSizeMake(1, 1);
-    UIGraphicsBeginImageContext(size);
-    [image drawInRect:CGRectMake(0, 0, size.width, size.height)];
-    UIImage *resizedImage = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    // Get the pixel data
-    CGImageRef cgImage = resizedImage.CGImage;
     unsigned char pixel[4] = {0};
-    CGContextRef context = CGBitmapContextCreate(pixel, 1, 1, 8, 4, CGColorSpaceCreateDeviceRGB(), (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
-    CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), cgImage);
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(pixel, 1, 1, 8, 4, colorSpace, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(colorSpace);
+    CGContextDrawImage(context, CGRectMake(0, 0, 1, 1), image.CGImage);
     CGContextRelease(context);
-    
-    // Extract color components
-    CGFloat red = pixel[0] / 255.0;
-    CGFloat green = pixel[1] / 255.0;
-    CGFloat blue = pixel[2] / 255.0;
-    
-    return [UIColor colorWithRed:red green:green blue:blue alpha:1.0];
+
+    UIColor *color = [UIColor colorWithRed:pixel[0] / 255.0
+                                     green:pixel[1] / 255.0
+                                      blue:pixel[2] / 255.0
+                                     alpha:1.0];
+    self.averageColorCache[key] = color;
+    return color;
 }
 
 

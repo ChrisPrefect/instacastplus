@@ -130,8 +130,18 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 }
 
 - (void) _cacheManagerDidUpdate:(NSNotification*)notification {
+    [self coalescedPerformSelector:@selector(_reloadSidebarAfterCacheUpdate) afterDelay:0.2];
+}
+
+- (void) _reloadSidebarAfterCacheUpdate
+{
+    if (!self.isViewLoaded || !self.view.window) {
+        return;
+    }
+
     // Reload sidebar to update download speed display
     [self.sidebarController.tableView reloadData];
+    [self.sidebarController updateRowSelectionForSelectedItemTag];
 }
 
 - (void)viewDidLoad

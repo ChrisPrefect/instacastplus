@@ -13,6 +13,7 @@
 #import "ICCloudSyncListHandler.h"
 #import "ICCloudSyncUpNextHandler.h"
 #import "PlaybackManager.h"
+#import "Defines.h"
 
 NSString *ICCloudSyncManagerDidSyncNotification = @"ICCloudSyncManagerDidSyncNotification";
 NSString *ICCloudSyncManagerDidUpdateDevicesNotification = @"ICCloudSyncManagerDidUpdateDevicesNotification";
@@ -72,6 +73,7 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleSyncNow) name:ICCloudSyncManagerSyncNowNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleReset) name:ICCloudSyncManagerResetNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleDatabaseSave:) name:ICDatabaseDidSaveWithSyncNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleListScrollPositionsChanged:) name:ICListScrollPositionsDidChangeNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleAccountChange) name:CKAccountChangedNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleAppForeground) name:UIApplicationWillEnterForegroundNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleAppBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
@@ -250,6 +252,11 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
     // Debounce: wait 2 seconds before pushing
     [self.debounceTimer invalidate];
     self.debounceTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 target:self selector:@selector(debouncedPush) userInfo:nil repeats:NO];
+}
+
+- (void)handleListScrollPositionsChanged:(NSNotification *)notification
+{
+    [self handleDatabaseSave:notification];
 }
 
 - (void)debouncedPush

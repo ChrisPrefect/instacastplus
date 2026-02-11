@@ -81,7 +81,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackDidStart:) name:PlaybackManagerDidStartNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackDidEnd:) name:PlaybackManagerDidEndNotification object:nil];
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackDidUpdate:) name:PlaybackManagerDidUpdateNotification object:nil];
+        // PlaybackManagerDidUpdateNotification fires 30+ times/second during playback.
+        // All continuous state (position, chapter, play) is handled by the 5-second statusTimer instead.
+        // Discrete events (start, stop, episode change) have their own handlers below.
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackDidChangeEpisode:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(audioRouteDidChange:) name:AudioSessionAudioRouteDidChangeNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(sleepTimerDidExpire:) name:AudioSessionSleepTimerDidExpireNotification object:nil];
@@ -805,12 +807,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     [self publishPositionState];
 }
 
-- (void)playbackDidUpdate:(NSNotification*)note
-{
-    [self publishPlayState];
-    [self publishChapterState];
-}
-
 - (void)playbackDidChangeEpisode:(NSNotification*)note
 {
     [self publishEpisodeInfo];
@@ -957,6 +953,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     [self publishPlayState];
     [self publishPositionState];
+    [self publishChapterState];
     [self publishSleeptimerState];
     [self publishFellAsleepState];
     [self publishMotionState];

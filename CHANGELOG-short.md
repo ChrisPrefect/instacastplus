@@ -7,7 +7,7 @@
 - **CarPlay** -- Deine Podcasts jetzt auch im Auto! Durchsuchen, auswählen, abspielen -- direkt über CarPlay.
 - **Smart Home Integration** -- Steuere deine Podcasts über dein Smart Home! Wiedergabestatus, Kapitel, Sleep Timer und mehr werden an deinen MQTT-Broker gesendet. Fernsteuerung (Play/Pause, Skip, Lautstärke) inklusive.
 - **Backup & Restore** -- Nie wieder Daten verlieren! Vollständiger Export aller Abonnements, Einstellungen, Playlists und Wiedergabestatus. Beim Import wählst du selbst aus, was übernommen wird.
-- **iCloud Sync** -- Nahtlos zwischen Geräten wechseln! Podcasts, Einstellungen und Wiedergabefortschritt werden automatisch synchronisiert. Auf dem iPhone angefangen, auf dem iPad weitergehört.
+- **iCloud Sync** -- Nahtlos zwischen Geräten wechseln! Podcasts, Playlists, Play Next, Einstellungen und Wiedergabefortschritt werden automatisch synchronisiert. Auf dem iPhone angefangen, auf dem iPad weitergehört -- mit der gleichen Warteschlange und denselben Listen.
 - **Podcast-Aktualisierung pausieren** -- Podcasts, die du gerade nicht hörst, einfach von der Aktualisierung ausschliessen.
 - **Spenden** -- InstacastPlus direkt in der App unterstützen und die Weiterentwicklung ermöglichen.
 
@@ -41,7 +41,8 @@
 - **Blitzschnelle Aktualisierung** -- Bis zu 10 Podcasts gleichzeitig, nicht erreichbare Podcasts blockieren nicht mehr
 - **Transparente Fehlermeldungen** -- Sieh sofort, welche Podcasts nicht aktualisiert werden konnten und warum
 - **Verbesserter Lautstärkeregler** -- Reagiert präziser, keine versehentlichen Berührungen mehr
-- **Smart Home stabiler** -- Zuverlässigere WLAN-Erkennung und schnellere Wiederverbindung
+- **Smart Home stabiler** -- Zuverlässigere WLAN-Erkennung, schnellere Wiederverbindung und effizientere Status-Updates
+- **Flüssigeres Erlebnis** -- Speicherplatz-Berechnungen und Feed-Aktualisierungen laufen im Hintergrund, damit die App auch bei grossen Sammlungen nicht stockt
 - **Hintergrund-Laden** bei Podcasts mit vielen Episoden -- neueste Folgen sofort sichtbar
 - **Schnellerer App-Start**
 - **Datenaustausch neu gedacht** -- iCloud Sync und Backup/Restore ersetzen die alte Instacast Cloud

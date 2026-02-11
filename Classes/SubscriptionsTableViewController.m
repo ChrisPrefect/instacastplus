@@ -48,6 +48,7 @@
         unsigned int defaultPushed:1;
         unsigned int userAction:1;
     } _flags;
+    BOOL _didRestoreScrollPosition;
 }
 
 #pragma mark -
@@ -183,9 +184,6 @@
     self.tableView.rowHeight = 57+10;
     self.tableView.separatorInset = UIEdgeInsetsZero;
     
-    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_scroll_position"];
-    [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_last_index"];
-    
     ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
     refreshControl.pulldownText = @"Pull to refresh…".ls;
     refreshControl.refreshText = @"Looking for new episodes…".ls;
@@ -246,6 +244,25 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self name:@"OPMLImportDidFinishNotification" object:nil];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleOPMLImportFinish) name:@"OPMLImportDidFinishNotification" object:nil];
+}
+
+- (NSString*) _scrollPersistenceKey
+{
+    return @"subscriptions";
+}
+
+- (void) _restoreScrollPositionIfNeeded
+{
+    if (_didRestoreScrollPosition) {
+        return;
+    }
+    _didRestoreScrollPosition = YES;
+    ICRestoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
+}
+
+- (void) _storeScrollPosition
+{
+    ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
 - (void)handleOPMLImportFinish {
@@ -389,6 +406,7 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    _didRestoreScrollPosition = NO;
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
     [self.searchBar appearanceDidChange];
@@ -445,6 +463,7 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
+    [self _restoreScrollPositionIfNeeded];
 
     if (self.needsFullReload) {
         self.needsFullReload = NO;
@@ -456,6 +475,7 @@
 
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
+    [self _storeScrollPosition];
 }
 
 - (void) reloadDataAndTable:(BOOL)reloadTable
@@ -471,7 +491,7 @@
         if (self.tableView.window) {
             if (!self.needsFullReload) {
                 self.needsFullReload = YES;
-                [self performSelector:@selector(_performCoalescedReload) withObject:nil afterDelay:0];
+                [self performSelector:@selector(_performCoalescedReload) withObject:nil afterDelay:0.2];
             }
         } else {
             self.needsFullReload = YES;
@@ -602,6 +622,15 @@
 
 - (void) showEpisodeListForFeed:(CDFeed*)feed animated:(BOOL)animated
 {
+    if (!feed) {
+        return;
+    }
+
+    if ([self.searchBar.text length] > 0) {
+        self.searchBar.text = nil;
+        [self _searchTermDidChange];
+    }
+
     UINavigationBarAppearance *navBarAppearance = [[UINavigationBarAppearance alloc] init];
     [navBarAppearance configureWithOpaqueBackground];
     [navBarAppearance setTitleTextAttributes:@{NSForegroundColorAttributeName: ICTextColor}];
@@ -610,14 +639,15 @@
     self.navigationController.navigationBar.standardAppearance = navBarAppearance;
     self.navigationController.navigationBar.scrollEdgeAppearance = navBarAppearance;
 
+    if ([feed.uid length] > 0) {
+        [USER_DEFAULTS setObject:feed.uid forKey:kUIPersistenceSubscriptionsSelectedFeedUID];
+    }
+
     NSArray* feeds = [self.fetchController fetchedObjects];
     if (feeds) {
         FeedEpisodesTableViewController* controller = [FeedEpisodesTableViewController episodesControllerWithFeed:feed];
         
         [self.navigationController pushViewController:controller animated:animated];
-    }
-    else {
-        [USER_DEFAULTS setObject:feed.uid forKey:kUIPersistenceSubscriptionsSelectedFeedUID];
     }
 }
 
@@ -643,22 +673,7 @@
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    NSInteger rowDev = [indexPath row];
-    if ([[NSUserDefaults standardUserDefaults] valueForKey:@"episode_list_last_index"] != nil){
-        NSInteger lastIndex = [[NSUserDefaults standardUserDefaults] integerForKey:@"episode_list_last_index"];
-        if (lastIndex != rowDev)
-        {
-            [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_scroll_position"];
-            [[NSUserDefaults standardUserDefaults] synchronize];
-        }
-    }
-    else
-    {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"episode_list_scroll_position"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
-    [[NSUserDefaults standardUserDefaults] setInteger:rowDev forKey:@"episode_list_last_index"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self _storeScrollPosition];
     [self _pushControllerForFeedAtIndexPath:indexPath animated:YES];
     
     CDFeed* feed = [self.fetchController objectAtIndexPath:indexPath];
@@ -801,6 +816,18 @@
 - (void) scrollViewDidScroll:(UIScrollView *)scrollView
 {
     [self.searchBar resignFirstResponder];
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    if (!decelerate) {
+        [self _storeScrollPosition];
+    }
+}
+
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+    [self _storeScrollPosition];
 }
 
 #pragma mark -

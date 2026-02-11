@@ -108,10 +108,12 @@ Nahtlos zwischen deinen Geräten wechseln! Deine Podcasts, Einstellungen und dei
 
 - **Abonnements:** Neuen Podcast auf dem iPhone abonniert? Erscheint sofort auf dem iPad.
 - **Wiedergabefortschritt:** Auf dem iPhone angefangen, auf dem iPad weitergehört -- genau da, wo du aufgehört hast.
-- **Einstellungen:** Podcast-Einstellungen, App-Einstellungen und mehr werden übernommen
-- **In Echtzeit:** Änderungen werden sofort an deine anderen Geräte übertragen
+- **Listen & Playlists:** Deine manuellen Playlists, smarten Playlists und Episodenlisten werden auf allen Geräten synchron gehalten -- inklusive Filtereinstellungen und Episoden-Reihenfolge.
+- **Play Next:** Deine Warteschlange wird automatisch übertragen, damit du auf jedem Gerät nahtlos weiterhören kannst.
+- **Einstellungen:** Podcast-Einstellungen, App-Einstellungen und mehr werden übernommen.
+- **In Echtzeit:** Änderungen werden sofort an deine anderen Geräte übertragen.
 
-> **Tipp:** Die iCloud-Einstellungen findest du unter *Einstellungen > iCloud Sync*. Dort kannst du einzeln auswählen, welche Daten synchronisiert werden sollen.
+> **Tipp:** Die iCloud-Einstellungen findest du unter *Einstellungen > iCloud Sync*. Dort kannst du einzeln auswählen, welche Daten synchronisiert werden sollen -- darunter auch die neuen Optionen "Listen" und "Play Next".
 
 ---
 
@@ -331,6 +333,10 @@ Bei Podcasts mit vielen Episoden werden die neuesten Episoden sofort angezeigt, 
 
 Die App startet jetzt spürbar schneller.
 
+### Flüssigeres Erlebnis
+
+Podcast-Listen, der Player und die Einstellungen reagieren jetzt spürbar schneller. Aufwendige Berechnungen wie Speicherplatz-Anzeigen oder Feed-Aktualisierungen laufen im Hintergrund, damit die Oberfläche nicht ins Stocken gerät -- auch bei grossen Podcast-Sammlungen.
+
 ### Download-Optimierungen
 
 - Verbessertes Caching-Verhalten
@@ -350,6 +356,7 @@ Die alte Instacast Cloud wurde durch die neue, schnellere iCloud-Synchronisierun
 - Smart Home-Verbindung noch stabiler und zuverlässiger
 - Wechsel zwischen WLAN und Mobilfunk funktioniert jetzt reibungslos
 - Schnellere automatische Wiederverbindung
+- Effizientere Status-Updates: Daten werden nur noch gesendet, wenn sich tatsächlich etwas geändert hat
 
 ### Wiedergabe
 - Wiedergabe nach dem Entsperren des Geräts funktioniert jetzt zuverlässig

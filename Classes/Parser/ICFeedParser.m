@@ -459,12 +459,16 @@ parse:
             _feed.summary = [_feed.textDescription stringByStrippingHTML];
         }
         
-        NSDateFormatter* guidDateFormatter = [[NSDateFormatter alloc] init];
-        NSLocale *locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US"];
-        [guidDateFormatter setLocale:locale];
-        [guidDateFormatter setDateFormat:@"yyyyMMddHHmmss"];
-        
-        
+        static NSDateFormatter* guidDateFormatter = nil;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            guidDateFormatter = [[NSDateFormatter alloc] init];
+            [guidDateFormatter setLocale:[NSLocale localeWithLocaleIdentifier:@"en_US"]];
+            [guidDateFormatter setDateFormat:@"yyyyMMddHHmmss"];
+        });
+
+        NSString *feedSourceURLString = [_feed.sourceURL absoluteString];
+
         for(ICEpisode* episode in _feed.episodes)
         {
             // if no guids, try to constuct some
@@ -473,13 +477,13 @@ parse:
                 NSString* label2 = [guidDateFormatter stringFromDate:episode.pubDate];
                 NSString* constructedGuid = [NSString stringWithFormat:@"%@#%@",label1, label2];
                 episode.guid = constructedGuid;
-                episode.objectHash = [[NSString stringWithFormat:@"%@%@", [_feed.sourceURL absoluteString], constructedGuid] MD5Hash];
+                episode.objectHash = [[NSString stringWithFormat:@"%@%@", feedSourceURLString, constructedGuid] MD5Hash];
             }
-            
+
             if ([episode.title length] == 0) {
                 episode.title = @"Untitled".ls;
             }
-            
+
             // if no subtitle, try to construct some
             if ([episode.subtitle length] == 0) {
                 NSString* strippedDescription = [episode.textDescription stringByStrippingHTML];
@@ -490,16 +494,13 @@ parse:
                     episode.subtitle = strippedDescription;
                 }
             }
-            
+
             // if no pubdate, use the current date
             if (!episode.pubDate) {
                 episode.pubDate = [NSDate date];
             }
-        }
-        
-        
-        // if no titles, try to use the text
-        for(ICEpisode* episode in _feed.episodes) {
+
+            // if still no title, use the subtitle
             if ([episode.title length] == 0) {
                 episode.title = episode.subtitle;
             }
