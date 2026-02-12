@@ -77,7 +77,7 @@
         [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
             SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
             if (sm.refreshing) {
-                ((ICRefreshControl*)self.refreshControl).refreshText = sm.refreshStatusText;
+                ((ICRefreshControl*)self.refreshControl).refreshText = [sm refreshStatusTextWithPodcastCount];
             }
         }];
 

@@ -860,6 +860,7 @@
 "Please sign in to iCloud in Settings to use sync." = "Please sign in to iCloud in Settings to use sync.";
 
 /* Refresh Status */
+"%ld/%ld podcasts updating" = "%ld/%ld podcasts updating";
 "%ld/%ld podcasts updating…" = "%ld/%ld podcasts updating…";
 "Not updated yet (%ld):" = "Not updated yet (%ld):";
 "Unknown error" = "Unknown error";

@@ -49,6 +49,8 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 @property (nonatomic, readonly, assign) double refreshProgress;
 @property (nonatomic, readonly, strong) NSURL* refreshedURL;
 @property (nonatomic, readonly) NSString* refreshStatusText;
+// Status text including done/total podcast count. Use in podcast list UI only.
+- (NSString*) refreshStatusTextWithPodcastCount;
 @property (nonatomic, readonly) NSString* lastRefreshingFeedName;
 @property (nonatomic, readonly, strong) NSArray<NSString*>* pendingRefreshFeedTitles;
 @property (nonatomic, readonly) NSString* pendingRefreshStatusDetailsText;

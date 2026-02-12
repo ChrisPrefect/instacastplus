@@ -420,6 +420,20 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         return self.finalRefreshStatusText;
     }
 
+    if (self.numTotalRefreshFeeds <= 0) {
+        return @"Looking for new episodes…".ls;
+    }
+
+    // Generic status for episode-centric views (no podcast count here).
+    return @"Looking for new episodes…".ls;
+}
+
+- (NSString*) refreshStatusTextWithPodcastCount
+{
+    if (!self.isRefreshing && self.finalRefreshStatusText.length > 0) {
+        return self.finalRefreshStatusText;
+    }
+
     NSInteger remaining = [self.refreshingFeedURLs count];
     NSInteger done = self.numTotalRefreshFeeds - remaining;
 
