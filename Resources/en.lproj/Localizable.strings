@@ -868,3 +868,6 @@
 "Not found" = "Not found";
 "No access" = "No access";
 "Some podcasts could not be updated" = "Some podcasts could not be updated";
+
+/* ApplePodcastChartsClient / DirectorySearchViewController */
+"Popular Podcasts" = "Popular Podcasts";

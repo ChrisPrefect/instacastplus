@@ -320,6 +320,7 @@
 		E7067A799038969ACBC8E024 /* ICCloudSyncDownloadHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */; };
 		F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */; };
 		F6A7B8C9D0E1F2A3B4C5D6E7 /* ICCloudSyncUpNextHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* ICCloudSyncUpNextHandler.m */; };
+		A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -879,6 +880,8 @@
 		EC277288AEE288A71CA39AAA /* InstacastBackupImportViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImportViewController.h; sourceTree = "<group>"; };
 		F047AE18988303F971448133 /* InstacastBackupParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupParser.h; sourceTree = "<group>"; };
 		F169BFC4C1DC5A7320C86CCA /* InstacastBackupParser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupParser.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ApplePodcastChartsClient.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ApplePodcastChartsClient.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -951,6 +954,8 @@
 				1965448EF551B91A1C5B9BA5 /* InstacastBackupImporter.m */,
 				EC277288AEE288A71CA39AAA /* InstacastBackupImportViewController.h */,
 				1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */,
+				A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */,
+				A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -2268,6 +2273,7 @@
 				E5F6A7B8C9D0E1F2A3B4C5D6 /* ICCloudSyncListHandler.m in Sources */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* ICCloudSyncUpNextHandler.m in Sources */,
 				C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */,
+				A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -9,6 +9,7 @@
 #import <AVFoundation/AVFoundation.h>
 #if TARGET_OS_IPHONE
 #import <MediaPlayer/MediaPlayer.h>
+#import <CarPlay/CarPlay.h>
 #import "PlayerView.h"
 #else
 #import "AudioSession_OSX.h"
@@ -185,8 +186,141 @@ enum {
         [App endBackgroundTask:self.bufferNextItemTaskIdentifier];
 		self.bufferNextItemTaskIdentifier = UIBackgroundTaskInvalid;
 	}];
+	#endif
+}
+
+#if TARGET_OS_IPHONE
+- (BOOL)_isCarPlaySceneConnectedForNowPlaying
+{
+#if TARGET_OS_MACCATALYST
+    return NO;
+#else
+    if (@available(iOS 13.0, *))
+    {
+        NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene* scene in connectedScenes)
+        {
+            if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
+                scene.activationState != UISceneActivationStateUnattached &&
+                scene.activationState != UISceneActivationStateBackground)
+            {
+                return YES;
+            }
+        }
+    }
+    return NO;
 #endif
 }
+
+- (void)_setNowPlayingArtworkFromImage:(UIImage*)image
+{
+    if (!image) {
+        return;
+    }
+
+    MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:image.size requestHandler:^UIImage * _Nonnull(CGSize size) {
+        return image;
+    }];
+    if (artwork) {
+        self.nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork;
+    }
+}
+
+- (void)_applyEpisodeArtworkToNowPlayingForEpisode:(CDEpisode*)episode forceRefresh:(BOOL)forceRefresh
+{
+    if (!episode) {
+        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
+        [self.nowPlayingInfo removeObjectForKey:kMediaItemInstacastEpisodeHash];
+        return;
+    }
+
+    NSString* episodeHash = episode.objectHash ?: @"";
+    NSString* currentEpisodeHash = self.nowPlayingInfo[kMediaItemInstacastEpisodeHash];
+    BOOL hasArtwork = (self.nowPlayingInfo[MPMediaItemPropertyArtwork] != nil);
+    if (!forceRefresh && [currentEpisodeHash isEqualToString:episodeHash] && hasArtwork) {
+        return;
+    }
+
+    self.nowPlayingInfo[kMediaItemInstacastEpisodeHash] = episodeHash;
+
+    void (^clearArtworkIfCurrentEpisode)(void) = ^{
+        CDEpisode* playingEpisode = self.playingEpisode;
+        if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
+            return;
+        }
+        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
+    };
+
+    void (^displayImageIfCurrentEpisode)(UIImage*) = ^(UIImage* image) {
+        if (!image) {
+            return;
+        }
+        CDEpisode* playingEpisode = self.playingEpisode;
+        if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
+            return;
+        }
+        [self _setNowPlayingArtworkFromImage:image];
+    };
+
+    ImageCacheManager* imageManager = [ImageCacheManager sharedImageCacheManager];
+    UIImage* cachedEpisodeImage = [imageManager localImageForImageURL:episode.imageURL size:320 grayscale:NO];
+    if (cachedEpisodeImage) {
+        displayImageIfCurrentEpisode(cachedEpisodeImage);
+        return;
+    }
+
+    UIImage* cachedFeedImage = [imageManager localImageForImageURL:episode.feed.imageURL size:320 grayscale:NO];
+    if (cachedFeedImage) {
+        displayImageIfCurrentEpisode(cachedFeedImage);
+        return;
+    }
+
+    if (episode.imageURL) {
+        ICImageCacheOperation* episodeOperation = [[ICImageCacheOperation alloc] initWithURL:episode.imageURL size:320 grayscale:NO];
+        episodeOperation.didEndBlock = ^(IC_IMAGE* image, NSError* error) {
+            if (image) {
+                displayImageIfCurrentEpisode(image);
+                [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
+                return;
+            }
+
+            if (episode.feed.imageURL) {
+                ICImageCacheOperation* feedOperation = [[ICImageCacheOperation alloc] initWithURL:episode.feed.imageURL size:320 grayscale:NO];
+                feedOperation.didEndBlock = ^(IC_IMAGE* feedImage, NSError* feedError) {
+                    if (feedImage) {
+                        displayImageIfCurrentEpisode(feedImage);
+                    } else {
+                        clearArtworkIfCurrentEpisode();
+                    }
+                    [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
+                };
+                [imageManager addImageCacheOperation:feedOperation sender:self];
+            } else {
+                clearArtworkIfCurrentEpisode();
+                [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
+            }
+        };
+        [imageManager addImageCacheOperation:episodeOperation sender:self];
+        return;
+    }
+
+    if (episode.feed.imageURL) {
+        ICImageCacheOperation* feedOperation = [[ICImageCacheOperation alloc] initWithURL:episode.feed.imageURL size:320 grayscale:NO];
+        feedOperation.didEndBlock = ^(IC_IMAGE* image, NSError* error) {
+            if (image) {
+                displayImageIfCurrentEpisode(image);
+            } else {
+                clearArtworkIfCurrentEpisode();
+            }
+            [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
+        };
+        [imageManager addImageCacheOperation:feedOperation sender:self];
+        return;
+    }
+
+    clearArtworkIfCurrentEpisode();
+}
+#endif
 
 
 - (void) _setNowPlayingInfoOfEpisode:(CDEpisode*)anEpisode
@@ -236,105 +370,105 @@ enum {
         chapterTitle = chapter.title;
     }
 
-    if (podcastTitle.length > 0) {
-        [self.nowPlayingInfo setObject:podcastTitle forKey:MPMediaItemPropertyArtist];
-    } else {
-        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtist];
+    NSString* nowPlayingTitle = episodeTitle;
+    NSString* nowPlayingArtist = podcastTitle;
+    NSString* nowPlayingAlbum = chapterTitle;
+
+    if ([self _isCarPlaySceneConnectedForNowPlaying]) {
+        // CarPlay layout: top = episode, second line = current chapter, third line = podcast.
+        NSString* carPlayTitle = (episodeTitle.length > 0) ? episodeTitle : podcastTitle;
+        NSString* carPlayArtist = nil;
+        NSString* carPlayAlbum = nil;
+
+        if (chapterTitle.length > 0) {
+            carPlayArtist = chapterTitle;
+            if (podcastTitle.length > 0 &&
+                ![podcastTitle isEqualToString:carPlayTitle] &&
+                ![podcastTitle isEqualToString:carPlayArtist]) {
+                carPlayAlbum = podcastTitle;
+            }
+        }
+        else if (podcastTitle.length > 0 && ![podcastTitle isEqualToString:carPlayTitle]) {
+            carPlayArtist = podcastTitle;
+        }
+
+        nowPlayingTitle = carPlayTitle;
+        nowPlayingArtist = carPlayArtist;
+        nowPlayingAlbum = carPlayAlbum;
     }
 
-    if (episodeTitle.length > 0) {
-        [self.nowPlayingInfo setObject:episodeTitle forKey:MPMediaItemPropertyTitle];
+    if (nowPlayingTitle.length > 0) {
+        [self.nowPlayingInfo setObject:nowPlayingTitle forKey:MPMediaItemPropertyTitle];
     } else {
         [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyTitle];
     }
 
-    if (chapterTitle.length > 0) {
-        [self.nowPlayingInfo setObject:chapterTitle forKey:MPMediaItemPropertyAlbumTitle];
+    if (nowPlayingArtist.length > 0) {
+        [self.nowPlayingInfo setObject:nowPlayingArtist forKey:MPMediaItemPropertyArtist];
+    } else {
+        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtist];
+    }
+
+    if (nowPlayingAlbum.length > 0) {
+        [self.nowPlayingInfo setObject:nowPlayingAlbum forKey:MPMediaItemPropertyAlbumTitle];
     } else {
         [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyAlbumTitle];
     }
 
     
     // set image in case we have chapter based images
-    if (!self.movingVideo && [self.artworks count] > 0 && self.currentArtwork >= 0)
+    if (!self.movingVideo && [self.artworks count] > 0 && self.currentArtwork >= 0 && self.currentArtwork < [self.artworks count])
     {
         ICMetadataImage* artwork = self.artworks[self.currentArtwork];
         NSNumber* currentArtwork = self.nowPlayingInfo[kMediaItemInstacastCurrentArtwork];
+        NSString* episodeHash = anEpisode.objectHash ?: @"";
+        NSString* currentEpisodeHash = self.nowPlayingInfo[kMediaItemInstacastEpisodeHash] ?: @"";
+        BOOL episodeChanged = ![currentEpisodeHash isEqualToString:episodeHash];
         
-        if (!currentArtwork || [currentArtwork integerValue] != self.currentArtwork)
+        if (!currentArtwork || [currentArtwork integerValue] != self.currentArtwork || episodeChanged)
         {
+            NSInteger expectedArtworkIndex = self.currentArtwork;
+            NSString* expectedEpisodeHash = episodeHash;
             [artwork loadPlatformImageWithCompletion:^(id platformImage) {
+                CDEpisode* playingEpisode = self.playingEpisode;
+                if (expectedEpisodeHash.length > 0 &&
+                    (!playingEpisode || ![playingEpisode.objectHash isEqualToString:expectedEpisodeHash])) {
+                    return;
+                }
 
                 if (platformImage)
                 {
-                    MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:((UIImage*)platformImage).size requestHandler:^UIImage * _Nonnull(CGSize size) {
-                        return platformImage;
-                    }];
-                    self.nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork;
-                    self.nowPlayingInfo[kMediaItemInstacastCurrentArtwork] = @(self.currentArtwork);
+                    if (self.currentArtwork != expectedArtworkIndex) {
+                        return;
+                    }
+                    [self _setNowPlayingArtworkFromImage:(UIImage*)platformImage];
+                    self.nowPlayingInfo[kMediaItemInstacastCurrentArtwork] = @(expectedArtworkIndex);
+                    if (expectedEpisodeHash.length > 0) {
+                        self.nowPlayingInfo[kMediaItemInstacastEpisodeHash] = expectedEpisodeHash;
+                    } else {
+                        [self.nowPlayingInfo removeObjectForKey:kMediaItemInstacastEpisodeHash];
+                    }
                 }
                 else {
-                    [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
+                    [self.nowPlayingInfo removeObjectForKey:kMediaItemInstacastCurrentArtwork];
+                    [self _applyEpisodeArtworkToNowPlayingForEpisode:anEpisode forceRefresh:YES];
                 }
                 
                 [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
 
             }];
         }
+        if (episodeHash.length > 0) {
+            self.nowPlayingInfo[kMediaItemInstacastEpisodeHash] = episodeHash;
+        } else {
+            [self.nowPlayingInfo removeObjectForKey:kMediaItemInstacastEpisodeHash];
+        }
     }
-
-    else if (anEpisode && ![self.nowPlayingInfo[kMediaItemInstacastEpisodeHash] isEqual:anEpisode.objectHash])
+    else
     {
-        [self.nowPlayingInfo setObject:anEpisode.objectHash forKey:kMediaItemInstacastEpisodeHash];
-        
-        
-        // set image in case we have an episode based image
-        void (^displayImage)(IC_IMAGE*) = ^(IC_IMAGE* image) {
-            MPMediaItemArtwork* artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:image.size requestHandler:^UIImage * _Nonnull(CGSize size) {
-                return image;
-            }];
-            if (artwork) {
-                [self.nowPlayingInfo setObject:artwork forKey:MPMediaItemPropertyArtwork];
-            }
-        };
-        
-        ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-        IC_IMAGE* cachedImage = [iman localImageForImageURL:anEpisode.imageURL size:320 grayscale:NO];
-        if (cachedImage) {
-            displayImage(cachedImage);
-        }
-        else
-        {
-            IC_IMAGE* cachedImage = [iman localImageForImageURL:anEpisode.feed.imageURL size:320 grayscale:NO];
-            if (cachedImage) {
-                displayImage(cachedImage);
-            }
-            else
-            {
-                ICImageCacheOperation* operation = [[ICImageCacheOperation alloc] initWithURL:anEpisode.imageURL size:320 grayscale:NO];
-                operation.didEndBlock = ^(IC_IMAGE* image, NSError* error) {
-                    if (image) {
-                        displayImage(image);
-                        [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
-                    }
-                    else
-                    {
-                        ICImageCacheOperation* operation = [[ICImageCacheOperation alloc] initWithURL:anEpisode.feed.imageURL size:320 grayscale:NO];
-                        operation.didEndBlock = ^(IC_IMAGE* image, NSError* error) {
-                            if (image) {
-                                displayImage(image);
-                            }
-                            else {
-                                [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
-                            }
-                            [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
-                        };
-                        [iman addImageCacheOperation:operation sender:self];
-                    }
-                };
-                [iman addImageCacheOperation:operation sender:self];
-            }
-        }
+        BOOL hadChapterArtwork = (self.nowPlayingInfo[kMediaItemInstacastCurrentArtwork] != nil);
+        [self.nowPlayingInfo removeObjectForKey:kMediaItemInstacastCurrentArtwork];
+        [self _applyEpisodeArtworkToNowPlayingForEpisode:anEpisode forceRefresh:hadChapterArtwork];
     }
     
     [self.nowPlayingInfo setObject:[NSNumber numberWithFloat:self.duration] forKey:MPMediaItemPropertyPlaybackDuration];

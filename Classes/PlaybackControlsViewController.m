@@ -217,7 +217,7 @@
 
     // Chapter title label between time labels
     UILabel* chapterLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    chapterLabel.font = [UIFont systemFontOfSize:14];
+    chapterLabel.font = [UIFont systemFontOfSize:16];
     chapterLabel.textAlignment = NSTextAlignmentCenter;
     chapterLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     chapterLabel.backgroundColor = [UIColor clearColor];

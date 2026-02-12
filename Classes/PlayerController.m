@@ -242,7 +242,30 @@ enum {
             // Index 0 = episode artwork, so chapter image index = currentArtwork + 1
             [self.infoViewController changeChapterImageIndex:pman.currentArtwork + 1];
         }];
+	}
+}
+
+- (NSString*)_navigationTitleForEpisode:(CDEpisode*)episode
+{
+    if (!episode) {
+        return nil;
     }
+
+    NSString* podcastTitle = episode.feed.title;
+    if (podcastTitle.length > 0) {
+        return podcastTitle;
+    }
+
+    return [episode cleanTitleUsingFeedTitle:nil];
+}
+
+- (void)_updateNavigationTitleForEpisode:(CDEpisode*)episode
+{
+    if (!self.feedTitleLabel) {
+        return;
+    }
+
+    self.feedTitleLabel.text = [self _navigationTitleForEpisode:episode];
 }
 
 - (void) _resetStateMachine
@@ -264,7 +287,7 @@ enum {
     _state = LoadedState;
     [self _stateMachine];
 
-    self.feedTitleLabel.text = [AudioSession sharedAudioSession].episode.title;
+    [self _updateNavigationTitleForEpisode:[AudioSession sharedAudioSession].episode];
 }
 
 - (void) _stateMachine
@@ -624,6 +647,7 @@ enum {
         // Player was already shown before - just update artwork and chapter image
         [self _updateArtworkImage];
         PlaybackManager* pman = [PlaybackManager playbackManager];
+        [self _updateNavigationTitleForEpisode:pman.playingEpisode];
         NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
         [self.infoViewController changeChapterImageIndex:collectionIndex];
         return;
@@ -658,7 +682,7 @@ enum {
         CGRect tb = titleView.bounds;
         UILabel* feedTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(tb), CGRectGetHeight(tb)-2)];
         feedTitleLabel.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
-        feedTitleLabel.text = [episode cleanTitleUsingFeedTitle:feedTitle];
+        feedTitleLabel.text = feedTitle;
         feedTitleLabel.font = [UIFont boldSystemFontOfSize:15.0f];
         feedTitleLabel.opaque = NO;
         feedTitleLabel.backgroundColor = [UIColor clearColor];
@@ -674,6 +698,8 @@ enum {
         self.titleView = titleView;
         self.navigationItem.titleView = titleView;
     }
+
+    [self _updateNavigationTitleForEpisode:episode];
     
     // can change, that's why it needs to go here
     self.feedTitleLabel.textColor = ICTextColor;

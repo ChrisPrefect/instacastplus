@@ -17,6 +17,7 @@
 #import "PlayerVideoViewController.h"
 #import "PlayerView.h"
 #import "PlaybackViewController.h"
+#import "AudioSession.h"
 #import "ChapterImageCell.h"
 #import "UIImage+Utils.h"
 #import "ICMetadata.h"
@@ -117,6 +118,7 @@ enum {
         
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
+        [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
 
         _observing = YES;
     }
@@ -138,12 +140,25 @@ enum {
 - (void) databaseManagerDidAddBookmarkNotification:(NSNotification*)notification
 {
     [self reloadBookmarks];
+    [self layoutHeaderView];
     [self.tableView reloadData];
 }
 
 - (void) playbackManagerDidChangeEpisodeNotification:(NSNotification*)notification
 {
-    // Reload to update the highlighting of currently playing episode in Up Next section
+    (void)notification;
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    chapterImagesArray = pman.artworks ?: @[];
+    [self reloadData];
+    [self layoutHeaderView];
+    [self.tableView reloadData];
+}
+
+- (void) audioSessionDidRestorePlaybackNotification:(NSNotification*)notification
+{
+    (void)notification;
+    [self reloadData];
+    [self layoutHeaderView];
     [self.tableView reloadData];
 }
 
@@ -472,9 +487,10 @@ enum {
 - (void) reloadData
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    self.chapters = [pman.playingEpisode sortedChapters];
+    CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    self.chapters = (episode != nil) ? [episode sortedChapters] : @[];
     self.currentChapterIndex = pman.currentChapter;
-    self.duration = pman.playingEpisode.duration;
+    self.duration = episode.duration;
     
     [self reloadBookmarks];
 }
@@ -521,11 +537,15 @@ enum {
 
 - (void) reloadBookmarks
 {
-    PlaybackManager* pman = [PlaybackManager playbackManager];
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    if (!episode.objectHash) {
+        self.bookmarks = @[];
+        return;
+    }
     
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Bookmark" inManagedObjectContext:DMANAGER.objectContext];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"episodeHash == %@", pman.playingEpisode.objectHash];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"episodeHash == %@", episode.objectHash];
     fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"position" ascending:YES] ];
     
     self.bookmarks = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:nil];
@@ -535,7 +555,10 @@ enum {
 - (void) setChapters:(NSArray *)chapters
 {
     if (_chapters != chapters) {
-        _chapters = chapters;
+        _chapters = chapters ?: @[];
+        if (self.isViewLoaded) {
+            [self layoutHeaderView];
+        }
         [self.tableView reloadData];
     }
 }

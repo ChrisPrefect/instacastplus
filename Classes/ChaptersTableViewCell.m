@@ -9,6 +9,8 @@
 #import <QuartzCore/QuartzCore.h>
 #import "ChaptersTableViewCell.h"
 
+static CGFloat const kChapterTitleFontSize = 16.0f;
+
 @interface ChaptersTableViewCell ()
 @property (nonatomic, readwrite, strong) UILabel* numLabel;
 @property (nonatomic, readwrite, strong) UILabel* timeLabel;
@@ -26,7 +28,7 @@
     {
         self.selectedBackgroundView = [[UIView alloc] init];
         
-        self.textLabel.font = [UIFont systemFontOfSize:15.f];
+        self.textLabel.font = [UIFont systemFontOfSize:kChapterTitleFontSize];
         self.textLabel.lineBreakMode = NSLineBreakByWordWrapping;
         self.textLabel.numberOfLines = 20;
         
@@ -140,7 +142,7 @@
     }
     
     CGFloat width = CGRectGetWidth(tableBounds);
-    UIFont* font = [UIFont systemFontOfSize:15.f];
+    UIFont* font = [UIFont systemFontOfSize:kChapterTitleFontSize];
     
     NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{NSFontAttributeName : font}];
     
