@@ -138,7 +138,7 @@
 {
     [super viewDidLoad];
     
-    self.title = self.list.name;
+    self.title = self.list.name.ls;
     
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
                                                                                 style:UIBarButtonItemStylePlain

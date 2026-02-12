@@ -8,14 +8,12 @@
 - **Smart Home Integration** -- Steuere deine Podcasts über dein Smart Home! Wiedergabestatus, Kapitel, Sleep Timer und mehr werden an deinen MQTT-Broker gesendet. Fernsteuerung (Play/Pause, Skip, Lautstärke) inklusive.
 - **Backup & Restore** -- Nie wieder Daten verlieren! Vollständiger Export aller Abonnements, Einstellungen, Playlists und Wiedergabestatus. Beim Import wählst du selbst aus, was übernommen wird.
 - **iCloud Sync** -- Nahtlos zwischen Geräten wechseln! Podcasts, Playlists, Play Next, Einstellungen und Wiedergabefortschritt werden automatisch synchronisiert. Auf dem iPhone angefangen, auf dem iPad weitergehört -- mit der gleichen Warteschlange und denselben Listen.
-- **Podcast-Aktualisierung pausieren** -- Podcasts, die du gerade nicht hörst, einfach von der Aktualisierung ausschliessen.
-- **Spenden** -- InstacastPlus direkt in der App unterstützen und die Weiterentwicklung ermöglichen.
+- **Podcast-Aktualisierung pausieren** -- Podcasts, die du gerade nicht hörst oder die nicht mehr verfügbar sind, einfach von der Aktualisierung ausschliessen.
 
 ## Player & Wiedergabe
 
 - **Kapitelmarkierungen in der Seekbar** -- Sieh auf einen Blick, wo die Kapitel sind. Das aktuelle Kapitel wird hervorgehoben.
 - **Wischbare Kapitelbilder** -- Durch die Kapitelbilder blättern, ohne die Wiedergabe zu unterbrechen
-- **Kapitelname** wird direkt unter der Seekbar angezeigt
 - **Feinere Geschwindigkeitsstufen** -- 0.5x bis 3x in feinen Abstufungen, perfekt zum Anpassen
 - **Play Next** -- Deine Warteschlange, dein Programm! Mit Drag & Drop umsortieren, alle herunterladen oder entfernen
 - **Auto-Download beim Streamen** -- Streame eine Episode und sie wird automatisch zum Offline-Hören gespeichert
@@ -26,15 +24,13 @@
 - **Episodenfilter:** Finde sofort was du suchst -- Ungehört, Angefangen, Favoriten, Heruntergeladen
 - **Gelöschte Episoden wiederherstellen** -- Versehentlich gelöscht? Kein Problem!
 - **Podcast-Sortierung** -- Nach neuesten Episoden oder manuell per Drag & Drop
-- **Live-Fortschritt** beim Aktualisieren mit relativen Zeitanzeigen ("vor 5 Min.")
+
 
 ## Design
 
 - **Neues Einstellungsmenü** -- Übersichtlich in 7 Kategorien aufgeteilt: Darstellung, Wiedergabe, Sleep Timer, Daten, Import/Export, iCloud Sync, Smart Home
 - **Dark Mode** -- Automatisch (System), Hell oder Dunkel. Ersetzt den alten standortbasierten Nachtmodus.
 - **Eigene Farben** -- Interface- und Player-Farbe individuell einstellbar
-- **7 App-Icons** zur Auswahl inkl. Dark-Mode-Variante
-- **Opake Navigation Bar** und grössere Player-Buttons
 
 ## Optimierungen
 
@@ -43,15 +39,7 @@
 - **Verbesserter Lautstärkeregler** -- Reagiert präziser, keine versehentlichen Berührungen mehr
 - **Smart Home stabiler** -- Zuverlässigere WLAN-Erkennung, schnellere Wiederverbindung und effizientere Status-Updates
 - **Flüssigeres Erlebnis** -- Speicherplatz-Berechnungen und Feed-Aktualisierungen laufen im Hintergrund, damit die App auch bei grossen Sammlungen nicht stockt
-- **Hintergrund-Laden** bei Podcasts mit vielen Episoden -- neueste Folgen sofort sichtbar
+- **Hintergrund-Laden** bei Podcasts mit vielen Episoden -- neueste Folgen sofort sichtbar. Subscriben zu riesigen Podcasts oder Import grosser ompl-Files jetzt kein Problem mehr
 - **Schnellerer App-Start**
 - **Datenaustausch neu gedacht** -- iCloud Sync und Backup/Restore ersetzen die alte Instacast Cloud
 - **App zurücksetzen** -- Kompletter Neustart auf Knopfdruck
-
-## Plattformen
-
-- iPad- und macOS-Unterstützung (Basis)
-
----
-
-*InstacastPlus v2.9*

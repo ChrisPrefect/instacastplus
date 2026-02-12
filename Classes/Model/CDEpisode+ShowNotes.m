@@ -51,7 +51,6 @@ NSString* kEpisodeShowLinksLink = @"link";
 {
     NSMutableString* showNotes = [((self.fulltext) ? self.fulltext : self.summary) mutableCopy];
     [showNotes replaceOccurrencesOfRegex:@"<p><br\\s*/>\\s*</p>" withString:@"" options:NSRegularExpressionCaseInsensitive|NSRegularExpressionDotMatchesLineSeparators];
-    [showNotes replaceOccurrencesOfRegex:@"<td class=\"flattr_cell\">.*?</td>" withString:@"" options:NSRegularExpressionCaseInsensitive|NSRegularExpressionDotMatchesLineSeparators];
     [showNotes replaceOccurrencesOfRegex:@"<object.*?>.*?<\\/object>" withString:@"" options:NSRegularExpressionCaseInsensitive|NSRegularExpressionDotMatchesLineSeparators];
     [showNotes replaceOccurrencesOfRegex:@"<iframe.*?>.*?<\\/iframe>" withString:@"" options:NSRegularExpressionCaseInsensitive|NSRegularExpressionDotMatchesLineSeparators];
     [showNotes replaceOccurrencesOfRegex:@"<audio.*?>.*?<\\/audio>" withString:@"" options:NSRegularExpressionCaseInsensitive|NSRegularExpressionDotMatchesLineSeparators];
@@ -59,8 +58,6 @@ NSString* kEpisodeShowLinksLink = @"link";
     [showNotes replaceOccurrencesOfRegex:@"<script.*?>.*?<\\/script>" withString:@"" options:NSRegularExpressionCaseInsensitive|NSRegularExpressionDotMatchesLineSeparators];
     [showNotes replaceOccurrencesOfRegex:@"style=\".*?\"" withString:@"" options:NSRegularExpressionCaseInsensitive];
     [showNotes replaceOccurrencesOfRegex:@"class=\"(?!podlove).*?\"" withString:@"" options:NSRegularExpressionCaseInsensitive];
-    [showNotes replaceOccurrencesOfRegex:@"<a.*?<img.*?src=\".*?\\/flattr-badge-large.png\".*?<\\/a>" withString:@"" options:NSRegularExpressionCaseInsensitive];
-    [showNotes replaceOccurrencesOfRegex:@"<a.*?<img.*?src=\".*?\\/flattr_logo_16.png\".*?<\\/a>" withString:@"" options:NSRegularExpressionCaseInsensitive];
     [showNotes replaceOccurrencesOfRegex:@"<a.*?<img.*?src=\"\".*?<\\/a>" withString:@"" options:NSRegularExpressionCaseInsensitive];
     [showNotes replaceOccurrencesOfRegex:@"<img.*?width=\"1\".*?>" withString:@"" options:NSRegularExpressionCaseInsensitive];
     

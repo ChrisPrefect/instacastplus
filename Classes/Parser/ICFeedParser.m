@@ -954,41 +954,6 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
                 _episode.subtitle = _episode.summary;
             }
             
-            // check if a paymentURL can be extracted from a flattr button
-            if (!_episode.paymentURL)
-            {
-                NSString* showNotes = _episode.textDescription;
-                NSRange range = [showNotes rangeOfString:@"flattr-badge-large.png" options:NSCaseInsensitiveSearch];
-                if (range.location == NSNotFound) {
-                    range = [showNotes rangeOfString:@"flattr_logo_16.png" options:NSCaseInsensitiveSearch];
-                }
-                
-                if (range.location != NSNotFound)
-                {
-                    NSRange beginRange = [showNotes rangeOfString:@"<a"
-                                                          options:(NSCaseInsensitiveSearch|NSBackwardsSearch)
-                                                            range:NSMakeRange(0, range.location)];
-                    
-                    if (beginRange.location != NSNotFound)
-                    {
-                        NSRange endRange = [showNotes rangeOfString:@"</a>"
-                                                            options:(NSCaseInsensitiveSearch)
-                                                              range:NSMakeRange(beginRange.location, [showNotes length]-beginRange.location)];
-                        
-                        
-                        NSString* substr = [showNotes substringWithRange:NSMakeRange(beginRange.location, endRange.location-beginRange.location+endRange.length)];
-                        substr = [substr stringByReplacingOccurrencesOfString:@"\n" withString:@""];
-                        NSString* flattrLink = [substr stringByMatchingRegex:@"<a.*?href=\"(.*?)\"" capture:1];
-                        flattrLink = [flattrLink stringByReplacingOccurrencesOfString:@" " withString:@""];
-                        
-                        if (flattrLink) {
-                            flattrLink = [flattrLink stringByDecodingHTMLEntities];
-                            _episode.paymentURL = [NSURL URLWithInsecureString:flattrLink];
-                        }
-                    }
-                }
-            }
-            
             if ([_episode preferedMedium] != nil) {
                 [_episodes addObject:_episode];
             }

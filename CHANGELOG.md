@@ -131,13 +131,6 @@ Die App kann jetzt vollständig auf den Werkszustand zurückgesetzt werden. Dabe
 
 > **Tipp:** Die Reset-Funktion findest du unter *Einstellungen > Import / Export > App zurücksetzen*.
 
----
-
-### Spendenseite
-
-InstacastPlus kann jetzt direkt in der App durch Spenden unterstützt werden. Vier Beträge stehen zur Auswahl: $1, $5, $15 und $20.
-
-> **Tipp:** Die Spendenseite findest du im Seitenmenü unter "Donate for further development".
 
 ---
 
@@ -409,12 +402,12 @@ In den Dateneinstellungen werden jetzt Nutzungsstatistiken angezeigt:
 
 ## Plattform-Unterstützung
 
+### CarPlay
+Podcasts und Listen in CarPlay anhören.
+
 ### iPad-Unterstützung (Basis)
 Grundlegende iPad-Unterstützung mit angepasstem Layout.
 
 ### macOS-Unterstützung (Basis)
 Erste Mac-Version über Mac Catalyst mit eigener Fensterverwaltung.
 
----
-
-*InstacastPlus v2.9*

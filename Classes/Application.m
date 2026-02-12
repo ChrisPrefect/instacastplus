@@ -398,22 +398,33 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 
 - (UIWindow *)ic_keyWindow
 {
-    // For iOS 13+ with scene support, we need to get the key window from connected scenes
-    for (UIWindowScene *scene in self.connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive) {
-            for (UIWindow *window in scene.windows) {
+    // Only UIWindowScene instances have UIWindow collections. CarPlay template scenes do not.
+    for (UIScene *scene in self.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) {
+            continue;
+        }
+
+        UIWindowScene* windowScene = (UIWindowScene*)scene;
+        if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+            for (UIWindow *window in windowScene.windows) {
                 if (window.isKeyWindow) {
                     return window;
                 }
             }
         }
     }
-    // Fallback: return first window from any foreground scene
-    for (UIWindowScene *scene in self.connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive ||
-            scene.activationState == UISceneActivationStateForegroundInactive) {
-            if (scene.windows.count > 0) {
-                return scene.windows.firstObject;
+
+    // Fallback: return first window from any foreground UIWindowScene.
+    for (UIScene *scene in self.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) {
+            continue;
+        }
+
+        UIWindowScene* windowScene = (UIWindowScene*)scene;
+        if (windowScene.activationState == UISceneActivationStateForegroundActive ||
+            windowScene.activationState == UISceneActivationStateForegroundInactive) {
+            if (windowScene.windows.count > 0) {
+                return windowScene.windows.firstObject;
             }
         }
     }
@@ -421,4 +432,3 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 }
 
 @end
-

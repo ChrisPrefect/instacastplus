@@ -85,7 +85,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
             for (NSArray* section in weakSelf.sidebarController.items) {
                 for (MainSidebarItem* item in section) {
                     if (item.tag == kMainSidebarItemUnplayed) {
-                        item.title = weakSelf.unplayedPlaylist.name;
+                        item.title = weakSelf.unplayedPlaylist.name.ls;
                         break;
                     }
                 }

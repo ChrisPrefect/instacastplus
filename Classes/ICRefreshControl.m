@@ -104,26 +104,26 @@ typedef NS_ENUM(NSInteger, ICRefreshState) {
 
 - (void) _updateProgress
 {
-    if (!self.refreshing)
-    {
-        UIScrollView* scrollView = (UIScrollView*)self.superview;
-        CGPoint contentOffset = scrollView.contentOffset;
-        CGFloat yDelta = contentOffset.y + 44;
-        
-        CGFloat progress = MAX(0, MIN(yDelta*-1 / 140, 0.85));
+    UIScrollView* scrollView = [self.superview isKindOfClass:[UIScrollView class]] ? (UIScrollView*)self.superview : nil;
+    if (!scrollView) {
+        return;
+    }
+
+    if (!self.refreshing) {
+        CGFloat restingOffsetY = -scrollView.adjustedContentInset.top;
+        CGFloat pullDistance = MAX(0.0f, restingOffsetY - scrollView.contentOffset.y);
+
+        CGFloat progress = MIN(pullDistance / 140.0f, 0.85f);
         self.progressView.style = CircleProgressStyleFillingOutline;
         self.progressView.progress = progress;
-        
-        if (self.refreshState == kICRefreshStateClosed && (NSInteger)yDelta != 0) {
-            self.refreshState = kICRefreshStateDragging;
-        }
-        else if (yDelta == 0) {
+
+        if (pullDistance <= 0.5f) {
             self.refreshState = kICRefreshStateClosed;
         }
-        
-        //DebugLog(@"yDelta %lf %lf", yDelta, contentInsets.top);
-    }
-    else {
+        else if (self.refreshState == kICRefreshStateClosed || self.refreshState == kICRefreshStateDragging) {
+            self.refreshState = kICRefreshStateDragging;
+        }
+    } else {
         self.progressView.style = CircleProgressStyleStandard;
         self.progressView.progress = -1;
     }
@@ -131,8 +131,6 @@ typedef NS_ENUM(NSInteger, ICRefreshState) {
 
 - (void) setFrame:(CGRect)frame
 {
-    // correct frame
-    frame.origin.y = -frame.size.height;
     [super setFrame:frame];
 
     [self _updateProgress];

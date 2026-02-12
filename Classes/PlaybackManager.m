@@ -158,7 +158,13 @@ enum {
 
 - (void) _sendUpdateNotification
 {
-	[[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerDidUpdateNotification object:self];
+    if ([NSThread isMainThread]) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerDidUpdateNotification object:self];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[NSNotificationCenter defaultCenter] postNotificationName:PlaybackManagerDidUpdateNotification object:self];
+        });
+    }
 }
 
 - (void) _endNextItemHandover
@@ -190,7 +196,7 @@ enum {
     if (!self.nowPlayingInfo) {
         self.nowPlayingInfo = [NSMutableDictionary dictionary];
     }
-    else if (![self.nowPlayingInfo isKindOfClass:[NSMutableArray class]])
+    else if (![self.nowPlayingInfo isKindOfClass:[NSMutableDictionary class]])
     {
         self.nowPlayingInfo = [self.nowPlayingInfo mutableCopy];
     }
@@ -199,29 +205,53 @@ enum {
     [self.nowPlayingInfo setObject:@(MPMediaTypePodcast) forKey:MPMediaItemPropertyMediaType];
     
 	
+    NSString* podcastTitle = nil;
+    NSString* episodeTitle = nil;
+    NSString* chapterTitle = nil;
+    
     if (anEpisode)
     {
         CDFeed* feed = anEpisode.feed;
-    
-        if (feed.title) {
-            [self.nowPlayingInfo setObject:feed.title forKey:MPMediaItemPropertyArtist];
-        }
-    
+        podcastTitle = feed.title;
+
         if (anEpisode.title && feed.title) {
-            NSString* title = [anEpisode cleanTitleUsingFeedTitle:feed.title];
-            [self.nowPlayingInfo setObject:title forKey:MPMediaItemPropertyTitle];
+            episodeTitle = [anEpisode cleanTitleUsingFeedTitle:feed.title];
+        } else {
+            episodeTitle = anEpisode.title;
         }
-   
-        if (feed.author) {
-            [self.nowPlayingInfo setObject:feed.author forKey:MPMediaItemPropertyAlbumTitle];
+
+        if (feed.uid.length > 0) {
+            [self.nowPlayingInfo setObject:feed.uid forKey:MPNowPlayingInfoCollectionIdentifier];
+        } else {
+            [self.nowPlayingInfo removeObjectForKey:MPNowPlayingInfoCollectionIdentifier];
         }
+    } else {
+        [self.nowPlayingInfo removeObjectForKey:MPNowPlayingInfoCollectionIdentifier];
     }
     
-    // change episode title in case we have chapters
+    // Put the current chapter into the subtitle line where supported.
     if ([self.chapters count] > 0 && self.currentChapter >= 0 && self.currentChapter < [self.chapters count])
     {
         ICMetadataChapter* chapter = [self.chapters objectAtIndex:self.currentChapter];
-        [self.nowPlayingInfo setObject:chapter.title forKey:MPMediaItemPropertyAlbumTitle];
+        chapterTitle = chapter.title;
+    }
+
+    if (podcastTitle.length > 0) {
+        [self.nowPlayingInfo setObject:podcastTitle forKey:MPMediaItemPropertyArtist];
+    } else {
+        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtist];
+    }
+
+    if (episodeTitle.length > 0) {
+        [self.nowPlayingInfo setObject:episodeTitle forKey:MPMediaItemPropertyTitle];
+    } else {
+        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyTitle];
+    }
+
+    if (chapterTitle.length > 0) {
+        [self.nowPlayingInfo setObject:chapterTitle forKey:MPMediaItemPropertyAlbumTitle];
+    } else {
+        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyAlbumTitle];
     }
 
     
@@ -321,6 +351,9 @@ enum {
     }
     
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
+    if (@available(iOS 13.0, *)) {
+        MPNowPlayingInfoCenter.defaultCenter.playbackState = (self.player.rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
+    }
     
 #endif
 }
@@ -369,6 +402,10 @@ enum {
     MPRemoteCommand* seekBackwardCommand = rcc.seekBackwardCommand;
     seekBackwardCommand.enabled = NO;
     [seekBackwardCommand removeTarget:self];
+
+    MPChangePlaybackPositionCommand* changePlaybackPositionCommand = rcc.changePlaybackPositionCommand;
+    changePlaybackPositionCommand.enabled = NO;
+    [changePlaybackPositionCommand removeTarget:self];
     
     
     if (episode)
@@ -386,6 +423,10 @@ enum {
         MPRemoteCommand *togglePlayPauseCommand = rcc.togglePlayPauseCommand;
         togglePlayPauseCommand.enabled = YES;
         [togglePlayPauseCommand addTarget:self action:@selector(_playPauseEvent:)];
+
+        MPChangePlaybackPositionCommand* changePlaybackPositionCommand = rcc.changePlaybackPositionCommand;
+        changePlaybackPositionCommand.enabled = YES;
+        [changePlaybackPositionCommand addTarget:self action:@selector(_changePlaybackPositionEvent:)];
         
         if ([feed integerForKey:kDefaultPlayerControls] == kPlayerSkippingControls)
         {
@@ -471,6 +512,19 @@ enum {
 - (MPRemoteCommandHandlerStatus) _playPauseEvent:(MPRemoteCommandEvent*)event
 {
     [self playPause];
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus)_changePlaybackPositionEvent:(MPChangePlaybackPositionCommandEvent*)event
+{
+    if (!self.playingEpisode || self.duration <= 0) {
+        return MPRemoteCommandHandlerStatusCommandFailed;
+    }
+
+    NSTimeInterval requestedTime = event.positionTime;
+    requestedTime = MAX(0.0, MIN(requestedTime, self.duration));
+    [self _suppressAutoSkipMarkerAtTime:requestedTime];
+    [self seekToTime:requestedTime tolerance:NO];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
@@ -781,7 +835,7 @@ enum {
         }
         
         [weakSelf perform:^(id sender) {
-            [weakSelf _setNowPlayingInfoOfEpisode:(rate==0) ? nil : weakSelf.playingEpisode];
+            [weakSelf _setNowPlayingInfoOfEpisode:weakSelf.playingEpisode];
             [weakSelf _setupRemotePlaybackCenterWithEpisode:weakSelf.playingEpisode];
         } afterDelay:0.1];
 
@@ -791,6 +845,13 @@ enum {
         } else {
             [[AudioSession sharedAudioSession] stopSilentPlayback];
         }
+
+        if (@available(iOS 13.0, *)) {
+            MPNowPlayingInfoCenter.defaultCenter.playbackState = (rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
+        }
+
+        // Propagate the effective player state (rate-based paused/running) immediately.
+        [weakSelf _sendUpdateNotification];
     }];
 
     self.playbackObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(1,25000) queue:NULL usingBlock:^(CMTime time) {
@@ -1382,7 +1443,7 @@ enum {
 
     [self _findAndSetCurrentChapter:time];
     [self _findAndSetCurrentArtwork];
-    [self coalescedPerformSelector:@selector(_setNowPlayingInfoOfEpisode:) object:nil afterDelay:1.0];
+    [self coalescedPerformSelector:@selector(_setNowPlayingInfoOfEpisode:) object:self.playingEpisode afterDelay:1.0];
 
     if (self.paused && !self.seeking) {
         [self _saveCurrentPlaybackPosition];
@@ -1868,8 +1929,8 @@ enum {
             _chapterTimesIdx[idx] = (float)CMTimeGetSeconds(chapter.start);
         }];
         
-        [self _findAndSetCurrentChapter:-1];
         self.chapters = chapters;
+        [self _findAndSetCurrentChapter:-1];
         [self _computeAutoSkipMarkers];
 
 
@@ -1880,10 +1941,10 @@ enum {
             _artworkTimesIdx[idx] = (float)CMTimeGetSeconds(image.start);
         }];
         
-        [self _findAndSetCurrentArtwork];
         self.artworks = images;
+        [self _findAndSetCurrentArtwork];
         
-        [self _setNowPlayingInfoOfEpisode:nil];
+        [self _setNowPlayingInfoOfEpisode:self.playingEpisode];
     }];
 }
 

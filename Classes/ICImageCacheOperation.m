@@ -224,46 +224,46 @@
     if (!error && image && ![self isCancelled])
     {
         
-        NSArray* scaledSizes = @[@(56),@(60),@(72),@(320)];
-        
-        for(NSNumber* scaledSizeNumber in scaledSizes)
-        {
-            NSInteger imageSize = scaledSizeNumber.integerValue*[ImageCacheManager scalingFactor];
-            NSURL* fileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:scaledSizeNumber.integerValue grayscale:self.grayscale];
-            NSString* localPath = [fileURL path];
-            NSString* filename = [localPath lastPathComponent];
-            NSString* path = [[DMANAGER.imageCacheURL path] stringByAppendingPathComponent:filename];
-            
+        NSMutableOrderedSet* scaledSizes = [NSMutableOrderedSet orderedSetWithArray:@[@(56), @(60), @(72), @(320)]];
+        NSNumber* requestedSize = @(self.size);
+        if (![scaledSizes containsObject:requestedSize]) {
+            [scaledSizes addObject:requestedSize];
+        }
+
+        IC_IMAGE* requestedImage = nil;
+        for (NSNumber* scaledSizeNumber in scaledSizes) {
+            NSInteger size = [scaledSizeNumber integerValue];
+            NSInteger imageSize = size * [ImageCacheManager scalingFactor];
+            NSURL* scaledFileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:size grayscale:self.grayscale];
+            NSString* scaledPath = [scaledFileURL path];
+
             CGImageRef scaledRef = CreateSquaredScaledCGImageFromCGImage([image CGImage], imageSize);
+            IC_IMAGE* outputImage = nil;
             if (scaledRef) {
                 IC_IMAGE* thumb = [[IC_IMAGE alloc] initWithCGImage:scaledRef];
                 CGImageRelease(scaledRef);
-                
-                if (self.grayscale) {
-                    IC_IMAGE* thumbg = [ImageCacheManager grayscaleImageForImage:thumb];
-                    [self _writeJPGImage:thumbg toFile:path];
-                    AddSkipBackupAttributeToFile(path);
-                    
-                    [self _cacheImage:thumbg forKey:cacheKey];
-                    [self _sendCompletionBlockImage:thumbg error:nil];
-                }
-                else {
-                    [self _writeJPGImage:thumb toFile:path];
-                    AddSkipBackupAttributeToFile(path);
-                    
-                    [self _cacheImage:thumb forKey:cacheKey];
-                    [self _sendCompletionBlockImage:thumb error:nil];
-                }
+                outputImage = (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:thumb] : thumb;
             }
-            else
-            {
-                [self _writeJPGImage:image toFile:path];
-                
-                [self _cacheImage:image forKey:cacheKey];
-                [self _sendCompletionBlockImage:image error:nil];
+            else {
+                outputImage = (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:image] : image;
+            }
+
+            [self _writeJPGImage:outputImage toFile:scaledPath];
+            AddSkipBackupAttributeToFile(scaledPath);
+
+            if (size == self.size) {
+                requestedImage = outputImage;
             }
         }
 
+        if (!requestedImage) {
+            requestedImage = (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:image] : image;
+            [self _writeJPGImage:requestedImage toFile:localPath];
+            AddSkipBackupAttributeToFile(localPath);
+        }
+
+        [self _cacheImage:requestedImage forKey:cacheKey];
+        [self _sendCompletionBlockImage:requestedImage error:nil];
         return;
     }
 

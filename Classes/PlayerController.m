@@ -554,9 +554,9 @@ enum {
 
 -(UIInterfaceOrientation)getDeviceOrientation
 {
-    UIWindowScene *windowScene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
-    if ([windowScene isKindOfClass:[UIWindowScene class]]) {
-        return  windowScene.interfaceOrientation;
+    UIWindowScene* windowScene = [self _activeWindowScene];
+    if (windowScene) {
+        return windowScene.interfaceOrientation;
     }
     return UIInterfaceOrientationPortrait;
 }
@@ -567,13 +567,33 @@ enum {
 }
 
 - (CGRect)getStatusBarFrame {
-    // Get the statusBarFrame using the window scene (iOS 13+)
-    for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive) {
-            return scene.statusBarManager.statusBarFrame;
-        }
+    UIWindowScene* windowScene = [self _activeWindowScene];
+    if (windowScene.statusBarManager) {
+        return windowScene.statusBarManager.statusBarFrame;
     }
     return CGRectZero;
+}
+
+- (UIWindowScene*)_activeWindowScene
+{
+    if (@available(iOS 13.0, *)) {
+        UIWindow* keyWindow = [self getKeyWindow];
+        if ([keyWindow.windowScene isKindOfClass:[UIWindowScene class]]) {
+            return keyWindow.windowScene;
+        }
+
+        for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:[UIWindowScene class]]) {
+                continue;
+            }
+            UIWindowScene* windowScene = (UIWindowScene*)scene;
+            if (windowScene.activationState == UISceneActivationStateForegroundActive ||
+                windowScene.activationState == UISceneActivationStateForegroundInactive) {
+                return windowScene;
+            }
+        }
+    }
+    return nil;
 }
 
 - (void) viewWillAppear:(BOOL)animated

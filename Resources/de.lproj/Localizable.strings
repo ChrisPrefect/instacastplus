@@ -291,7 +291,7 @@
 
 /* PlaylistsTableViewController.m */
 "Looking for new episodes" = "Nach neuen Folgen suchen";
-"Pull to refresh" = "Ziehen zum Aktualisieren";
+"Pull to refresh" = "Zum Aktualisieren herunterziehen";
 
 /* DirectoryAuthorsViewController.m */
 "%d More Authors" = "%d weitere Autoren";
@@ -621,7 +621,7 @@
 "Reloading…" = "Neuladen…";
 "Paused…" = "Angehalten…";
 "Waiting to download…" = "Auf Download warten…";
-"Pull to refresh…" = "Ziehen zum Aktualisieren…";
+"Pull to refresh…" = "Zum Aktualisieren herunterziehen…";
 "Looking for new episodes…" = "Nach neuen Folgen suchen…";
 "Load older episodes…" = "Ältere Folgen laden…";
 

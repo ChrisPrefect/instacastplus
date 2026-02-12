@@ -30,8 +30,6 @@
 	<false/>
 	<key>AutoCacheStorageLimit</key>
 	<integer>0</integer>
-	<key>LinkFlattr</key>
-	<false/>
 	<key>DisableAutoLock</key>
 	<false/>
 	<key>PlayerSkipBackPeriod</key>

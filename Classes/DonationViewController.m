@@ -27,6 +27,7 @@
 #define kDonationHistoryKey @"DonationHistory"
 
 static NSString * const kPodcastAudioURL = @"https://www.schleifenquadrat.fm/podlove/file/1957/s/webplayer/sq265.mp3";
+static NSString * const kInstacastPlusAppStoreID = @"6472283494";
 
 enum {
     kSectionDonationButtons,
@@ -136,6 +137,16 @@ enum {
         case 3: return _validProducts[@"product_fourth"];
         default: return nil;
     }
+}
+
+- (void)openAppStoreReviewPage
+{
+    NSString *reviewURLString = [NSString stringWithFormat:@"itms-apps://itunes.apple.com/app/id%@?action=write-review", kInstacastPlusAppStoreID];
+    NSURL *reviewURL = [NSURL URLWithString:reviewURLString];
+    if (!reviewURL) {
+        return;
+    }
+    [[UIApplication sharedApplication] openURL:reviewURL options:@{} completionHandler:nil];
 }
 
 - (NSString *)fallbackPriceForRow:(NSInteger)row
@@ -418,7 +429,7 @@ enum {
         {
             if (indexPath.row == 0) {
                 // Rate on App Store
-                [SKStoreReviewController requestReview];
+                [self openAppStoreReviewPage];
             } else {
                 // Instacast lebt Podcast - create temporary episode and play
                 [self playPodcastEpisode];

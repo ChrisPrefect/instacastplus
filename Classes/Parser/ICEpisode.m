@@ -77,8 +77,6 @@
     [showNotes replaceOccurrencesOfRegex:@"<video.*?>.*?<\\/video>" withString:@""];
     [showNotes replaceOccurrencesOfRegex:@"style=\".*?\"" withString:@""];
     [showNotes replaceOccurrencesOfRegex:@"class=\".*?\"" withString:@""];
-    [showNotes replaceOccurrencesOfRegex:@"<a.*?<img.*?src=\".*?\\/flattr-badge-large.png\".*?<\\/a>" withString:@""];
-    [showNotes replaceOccurrencesOfRegex:@"<a.*?<img.*?src=\".*?\\/flattr_logo_16.png\".*?<\\/a>" withString:@""];
     [showNotes replaceOccurrencesOfString:@"<p></p>" withString:@"" options:NSCaseInsensitiveSearch range:NSMakeRange(0, [showNotes length])];
     
     return showNotes;
