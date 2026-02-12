@@ -682,14 +682,14 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
         // Clear all downloaded files
         [[CacheManager sharedCacheManager] clearTheFuckingCache];
 
-        // Unsubscribe all feeds (this clears Core Data)
-        NSArray* allFeeds = [DMANAGER.feeds copy];
-        for (CDFeed* feed in allFeeds) {
-            [DMANAGER unsubscribeFeed:feed];
-        }
-        [DMANAGER save];
-
         dispatch_async(dispatch_get_main_queue(), ^{
+            // Unsubscribe all feeds (Core Data must be on main thread)
+            NSArray* allFeeds = [DMANAGER.feeds copy];
+            for (CDFeed* feed in allFeeds) {
+                [DMANAGER unsubscribeFeed:feed];
+            }
+            [DMANAGER save];
+
             [self.mInfo close];
             self.mInfo = nil;
 

@@ -30,22 +30,19 @@
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            
-            CDEpisode* persistentEpisode = [DMANAGER addUnsubscribedFeed:feed andEpisode:extractedEpisode];
-            [DMANAGER save];
-            
-            if (!error) {
+
+            if (feed && extractedEpisode) {
+                CDEpisode* persistentEpisode = [DMANAGER addUnsubscribedFeed:feed andEpisode:extractedEpisode];
+                [DMANAGER save];
                 if (completionBlock) {
                     completionBlock(persistentEpisode, nil);
                 }
-            }
-            else {
+            } else {
                 if (completionBlock) {
-                    completionBlock(nil, nil);
+                    completionBlock(nil, error ?: [NSError errorWithDomain:@"InstacastErrorDomain" code:-1 userInfo:@{NSLocalizedDescriptionKey: @"Could not extract episode from feed."}]);
                 }
             }
-            
-            
+
         });
     });
 }

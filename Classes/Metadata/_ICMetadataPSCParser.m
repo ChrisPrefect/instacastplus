@@ -86,7 +86,7 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
     }
     else if ([timeComponents1 count] > 1) {
         timeWithoutMilliseconds = [timeComponents1 objectAtIndex:0];
-        milliseconds = [timeComponents1 objectAtIndex:0];
+        milliseconds = [timeComponents1 objectAtIndex:1];
     }
     
     NSArray* timeComponents2 = [timeWithoutMilliseconds componentsSeparatedByString:@":"];

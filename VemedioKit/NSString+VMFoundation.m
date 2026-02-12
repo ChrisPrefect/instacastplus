@@ -74,7 +74,7 @@ NSString* kVMFoundationURLRegexPattern = @"\\b(([\\w-]+://?|www[.])[^\\s()<>]+(?
 	NSMutableDictionary *entityMap = [NSMutableDictionary dictionaryWithObjectsAndKeys:
 							   @"&amp;", @"&",
 							   @"&lt;", @"<",
-							   @"&rt;", @">",
+							   @"&gt;", @">",
 							   @"&apos;", @"'",
 							   @"&apos;", @"’",
 							   @"&quot;", @"\"",

@@ -38,6 +38,7 @@
 #import "ICPubdateValueTransformer.h"
 #import "Application.h"
 #import "ICCloudSyncManager.h"
+#import "InstacastSceneDelegate.h"
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
 
@@ -893,12 +894,48 @@
 
 
 - (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
-    // Called when a new scene session is being created.
-    // Use this method to select a configuration to create the new scene with.
-    NSString *configurationName = [connectingSceneSession.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication]
-        ? @"CarPlay"
-        : @"Default Configuration";
-    return [[UISceneConfiguration alloc] initWithName:configurationName sessionRole:connectingSceneSession.role];
+    (void)application;
+    (void)options;
+
+    UISceneSessionRole role = connectingSceneSession.role;
+
+    if ([role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication]) {
+        UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:@"CarPlay" sessionRole:role];
+        if (!configuration.sceneClass) {
+            configuration.sceneClass = [CPTemplateApplicationScene class];
+        }
+        if (!configuration.delegateClass) {
+            configuration.delegateClass = [InstacastSceneDelegate class];
+        }
+        return configuration;
+    }
+
+    if (@available(iOS 13.4, *)) {
+        if ([role isEqualToString:CPTemplateApplicationDashboardSceneSessionRoleApplication]) {
+            UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:nil sessionRole:role];
+            configuration.sceneClass = [CPTemplateApplicationDashboardScene class];
+            configuration.delegateClass = [InstacastSceneDelegate class];
+            return configuration;
+        }
+    }
+
+    if (@available(iOS 15.4, *)) {
+        if ([role isEqualToString:CPTemplateApplicationInstrumentClusterSceneSessionRoleApplication]) {
+            UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:nil sessionRole:role];
+            configuration.sceneClass = [CPTemplateApplicationInstrumentClusterScene class];
+            configuration.delegateClass = [InstacastSceneDelegate class];
+            return configuration;
+        }
+    }
+
+    UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:@"Default Configuration" sessionRole:role];
+    if (!configuration.sceneClass) {
+        configuration.sceneClass = [UIWindowScene class];
+    }
+    if (!configuration.delegateClass) {
+        configuration.delegateClass = [InstacastSceneDelegate class];
+    }
+    return configuration;
 }
 
 

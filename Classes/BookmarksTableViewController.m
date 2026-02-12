@@ -448,12 +448,13 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         
         [FeedEpisodeExtraction extractEpisodeWithGuid:episodeGuid fromFeedWithURL:feedURL completion:^(CDEpisode *episode, NSError *error) {
             if (error) {
+                [modelInfo close];
                 [self presentError:error];
                 return;
             }
 
             [self _playEpisode:episode withBookmark:bookmark];
-            
+
             [modelInfo close];
         }];
     }

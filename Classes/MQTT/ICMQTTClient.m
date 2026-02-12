@@ -184,10 +184,13 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
         [self closeStreams];
         _connectionState = ICMQTTConnectionStateDisconnected;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.delegate mqttClientDidDisconnect:self error:error];
+            if ([self.delegate respondsToSelector:@selector(mqttClientDidDisconnect:error:)]) {
+                [self.delegate mqttClientDidDisconnect:self error:error];
+            }
         });
     }
 }
+
 
 #pragma mark - NSStreamDelegate
 
@@ -220,7 +223,9 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
             _connectionState = ICMQTTConnectionStateDisconnected;
             if (prevState != ICMQTTConnectionStateDisconnected) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.delegate mqttClientDidDisconnect:self error:error];
+                    if ([self.delegate respondsToSelector:@selector(mqttClientDidDisconnect:error:)]) {
+                        [self.delegate mqttClientDidDisconnect:self error:error];
+                    }
                 });
             }
             break;
@@ -233,7 +238,9 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
             _connectionState = ICMQTTConnectionStateDisconnected;
             if (prevState != ICMQTTConnectionStateDisconnected) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.delegate mqttClientDidDisconnect:self error:nil];
+                    if ([self.delegate respondsToSelector:@selector(mqttClientDidDisconnect:error:)]) {
+                        [self.delegate mqttClientDidDisconnect:self error:nil];
+                    }
                 });
             }
             break;
@@ -341,7 +348,9 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
         _connectionState = ICMQTTConnectionStateConnected;
         [self startPingTimer];
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.delegate mqttClientDidConnect:self];
+            if ([self.delegate respondsToSelector:@selector(mqttClientDidConnect:)]) {
+                [self.delegate mqttClientDidConnect:self];
+            }
         });
     } else {
         [_connectTimeoutTimer invalidate];
@@ -360,7 +369,9 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
         [self closeStreams];
         _connectionState = ICMQTTConnectionStateDisconnected;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.delegate mqttClientDidDisconnect:self error:error];
+            if ([self.delegate respondsToSelector:@selector(mqttClientDidDisconnect:error:)]) {
+                [self.delegate mqttClientDidDisconnect:self error:error];
+            }
         });
     }
 }
@@ -396,7 +407,9 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     }
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self.delegate mqttClient:self didReceiveMessage:message onTopic:topic];
+        if ([self.delegate respondsToSelector:@selector(mqttClient:didReceiveMessage:onTopic:)]) {
+            [self.delegate mqttClient:self didReceiveMessage:message onTopic:topic];
+        }
     });
 }
 

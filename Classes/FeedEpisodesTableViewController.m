@@ -136,7 +136,6 @@
                                                 STRONG_SELF
         [self showDeleteConfirmPopUp:2 rowIndexPath:[NSIndexPath indexPathForRow:0 inSection:0] selectedIndexPathes:selectedIndexPathes];
         completionBlock();
-                                                completionBlock();
                                             }]];
 }
 

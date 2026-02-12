@@ -1784,14 +1784,17 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
             self.importing = YES;
             [App retainNetworkActivity];
 
-            // Normalize and collect existing feed URLs
-            NSMutableSet<NSString *> *existingFeedURLs = [NSMutableSet set];
-            for (CDFeed *feed in DMANAGER.feeds) {
-                NSString *normalized = [self normalizedURLString:feed.sourceURL];
-                if (normalized) {
-                    [existingFeedURLs addObject:normalized];
+            // Collect existing feed URLs on main thread (Core Data is not thread-safe)
+            __block NSMutableSet<NSString *> *existingFeedURLs;
+            dispatch_sync(dispatch_get_main_queue(), ^{
+                existingFeedURLs = [NSMutableSet set];
+                for (CDFeed *feed in DMANAGER.feeds) {
+                    NSString *normalized = [self normalizedURLString:feed.sourceURL];
+                    if (normalized) {
+                        [existingFeedURLs addObject:normalized];
+                    }
                 }
-            }
+            });
             
             NSMutableArray<NSURL *> *urlsToImport = [NSMutableArray arrayWithCapacity:feeds.count];
             for (NSDictionary *feedDict in feeds) {
@@ -1894,12 +1897,12 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 	
 	for(CDFeed* feed in feeds)
 	{
-		NSDictionary* dict = [NSDictionary dictionaryWithObjectsAndKeys:
-							  feed.title, OPMLFeedTitle,
-							  @"rss", OPMLFeedType,
-							  [feed.sourceURL absoluteString], OPMLFeedXmlUrl,
-							  [feed.linkURL absoluteString], OPMLFeedHtmlUrl,
-							  nil];
+		if (!feed.sourceURL) continue;
+		NSMutableDictionary* dict = [NSMutableDictionary dictionary];
+		if (feed.title) dict[OPMLFeedTitle] = feed.title;
+		dict[OPMLFeedType] = @"rss";
+		dict[OPMLFeedXmlUrl] = [feed.sourceURL absoluteString];
+		if (feed.linkURL) dict[OPMLFeedHtmlUrl] = [feed.linkURL absoluteString];
 		[feedDicts addObject:dict];
 	}
 	

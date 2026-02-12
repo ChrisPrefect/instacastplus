@@ -963,7 +963,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     
     // Normalize feed URL before checking
     NSURL *normalizedURL = [self normalizedURL:parserFeed.sourceURL];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", normalizedURL];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", [normalizedURL absoluteString]];
     //fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", parserFeed.sourceURL];
     NSArray* feeds = [self.objectContext executeFetchRequest:fetchRequest error:nil];
     CDFeed* persistentFeed = [feeds lastObject];
@@ -1055,7 +1055,7 @@ static const NSInteger kInitialEpisodeLimit = 50;
 
     NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", normalizedURL];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", [normalizedURL absoluteString]];
     fetchRequest.fetchLimit = 1;
 
     NSError *fetchError = nil;

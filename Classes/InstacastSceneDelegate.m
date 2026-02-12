@@ -434,6 +434,32 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
     [self carPlayDidDisconnectInterfaceController:interfaceController];
 }
 
+- (void)templateApplicationDashboardScene:(CPTemplateApplicationDashboardScene *)templateApplicationDashboardScene didConnectDashboardController:(CPDashboardController *)dashboardController toWindow:(UIWindow *)window
+{
+    (void)templateApplicationDashboardScene;
+    (void)dashboardController;
+    (void)window;
+}
+
+- (void)templateApplicationDashboardScene:(CPTemplateApplicationDashboardScene *)templateApplicationDashboardScene didDisconnectDashboardController:(CPDashboardController *)dashboardController fromWindow:(UIWindow *)window
+{
+    (void)templateApplicationDashboardScene;
+    (void)dashboardController;
+    (void)window;
+}
+
+- (void)templateApplicationInstrumentClusterScene:(CPTemplateApplicationInstrumentClusterScene *)templateApplicationInstrumentClusterScene didConnectInstrumentClusterController:(CPInstrumentClusterController *)instrumentClusterController
+{
+    (void)templateApplicationInstrumentClusterScene;
+    (void)instrumentClusterController;
+}
+
+- (void)templateApplicationInstrumentClusterScene:(CPTemplateApplicationInstrumentClusterScene *)templateApplicationInstrumentClusterScene didDisconnectInstrumentClusterController:(CPInstrumentClusterController *)instrumentClusterController
+{
+    (void)templateApplicationInstrumentClusterScene;
+    (void)instrumentClusterController;
+}
+
 - (void)carPlayDidConnectInterfaceController:(CPInterfaceController*)interfaceController
 {
     if (self.interfaceController == interfaceController && self.carPlayRootTemplate) {

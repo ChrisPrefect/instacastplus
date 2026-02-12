@@ -61,17 +61,17 @@
             if (serverRecord) {
                 // Last-Write-Wins: check lastModified
                 NSDate *serverDate = serverRecord[@"lastModified"];
-                NSDate *localDate = [NSDate date];
-                if ([localDate compare:serverDate] == NSOrderedDescending) {
-                    // Local is newer, overwrite server
-                    for (CKRecord *local in records) {
-                        if ([local.recordID isEqual:recordID]) {
+                for (CKRecord *local in records) {
+                    if ([local.recordID isEqual:recordID]) {
+                        NSDate *localDate = local[@"lastModified"] ?: [NSDate date];
+                        if ([localDate compare:serverDate] == NSOrderedDescending) {
+                            // Local is newer, overwrite server
                             for (NSString *key in local.allKeys) {
                                 serverRecord[key] = local[key];
                             }
                             [retryRecords addObject:serverRecord];
-                            break;
                         }
+                        break;
                     }
                 }
             }

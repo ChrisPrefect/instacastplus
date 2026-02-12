@@ -60,7 +60,7 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
         dispatch_async(dispatch_get_main_queue(), ^{
             NSError* opmlError = [xmlParser parserError];
 
-            if (completion && [self.feeds count] > 0)
+            if (completion && !opmlError)
             {
                 completion(self.feeds);
             }

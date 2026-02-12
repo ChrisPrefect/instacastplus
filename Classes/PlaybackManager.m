@@ -687,10 +687,10 @@ enum {
     
     [playerItem addTaskObserver:self forKeyPath:@"status" task:^(id obj, NSDictionary *change)
     {
-        AVPlayerItem* currentItem = self.player.currentItem;
-        if (currentItem.status == AVPlayerItemStatusReadyToPlay && self.state == InitializedState)
+        AVPlayerItem* currentItem = weakSelf.player.currentItem;
+        if (currentItem.status == AVPlayerItemStatusReadyToPlay && weakSelf.state == InitializedState)
         {
-            CDEpisode* episode = self.playingEpisode;
+            CDEpisode* episode = weakSelf.playingEpisode;
             CDFeed* feed = episode.feed;
             
             episode.lastPlayed = [NSDate date];
@@ -709,7 +709,7 @@ enum {
                         weakSelf.movingVideo = YES;
                         
                         CGSize videodimensions = CMVideoFormatDescriptionGetPresentationDimensions(formatDescription, true, true);
-                        self.viewImageSize = videodimensions;
+                        weakSelf.viewImageSize = videodimensions;
                         break;
                     }
                 }
@@ -739,7 +739,7 @@ enum {
             }
 #if !TARGET_OS_IPHONE
             else {
-                [[ICSharingManager sharedManager] triggerEvent:ICSharingServiceEpisodeDidStartPlaying object:self.playingEpisode];
+                [[ICSharingManager sharedManager] triggerEvent:ICSharingServiceEpisodeDidStartPlaying object:weakSelf.playingEpisode];
             }
 #endif
             
@@ -760,31 +760,31 @@ enum {
             SEND_UPDATE
             [weakSelf _startLoadingChapters];
             if (weakSelf.player.currentItem.playbackLikelyToKeepUp && autostart) {
-                [self play];
-                [self updateNowPlayingInfo];
+                [weakSelf play];
+                [weakSelf updateNowPlayingInfo];
             }
         }
-        
-        else if (self.player.status == AVPlayerItemStatusFailed) {
-            ErrLog(@"playback failed/interrupted due to error :%@", self.player.error);
-            self.failed = YES;
-            [self close];
+
+        else if (weakSelf.player.currentItem.status == AVPlayerItemStatusFailed) {
+            ErrLog(@"playback failed/interrupted due to error :%@", weakSelf.player.currentItem.error);
+            weakSelf.failed = YES;
+            [weakSelf close];
         }
     }];
     
     [playerItem addTaskObserver:self forKeyPath:@"playbackLikelyToKeepUp" task:^(id obj, NSDictionary *change)
     {
-        if (self.state == ShouldRunState) {
-            [self play];
-            [self updateNowPlayingInfo];
+        if (weakSelf.state == ShouldRunState) {
+            [weakSelf play];
+            [weakSelf updateNowPlayingInfo];
         }
     }];
-    
+
     [playerItem addTaskObserver:self forKeyPath:@"playbackBufferFull" task:^(id obj, NSDictionary *change)
      {
-         if (self.state == ShouldRunState) {
-             [self play];
-             [self updateNowPlayingInfo];
+         if (weakSelf.state == ShouldRunState) {
+             [weakSelf play];
+             [weakSelf updateNowPlayingInfo];
          }
      }];
     

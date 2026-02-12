@@ -125,7 +125,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     NSDate* start = [NSDate date];
 #endif
     NSMutableArray* subPredicates = [[NSMutableArray alloc] init];
-    [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived = NO"]];
+    [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived == NO"]];
     
     if (!self.audio) {
         [subPredicates addObject:[NSPredicate predicateWithFormat:@"video == YES"]];
@@ -275,7 +275,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     
     DebugLog(@"stage 2: %lf, %ld", [[NSDate date] timeIntervalSinceDate:start], (long)[objectHashes count]);
     
-    // limit search results to 1000
+    // limit search results to 500
     if ([objectHashes count] > 500) {
         objectHashes = [objectHashes subarrayWithRange:NSMakeRange(0, 500)];
     }
@@ -363,7 +363,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         NSDate* start = [NSDate date];
 #endif
         NSMutableArray* subPredicates = [[NSMutableArray alloc] init];
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived = NO"]];
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived == NO"]];
         
         if (!contextSelf.audio) {
             [subPredicates addObject:[NSPredicate predicateWithFormat:@"video == YES"]];

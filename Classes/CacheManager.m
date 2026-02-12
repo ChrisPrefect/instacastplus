@@ -1405,11 +1405,12 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
     }
     
     unsigned long long loadedBytes = [cman numberOfDownloadedBytes];
-    unsigned long long spaceToDelete = loadedBytes - maxAllowedBytes;
-    
-    if (loadedBytes < maxAllowedBytes) {
+
+    if (loadedBytes + bytes < maxAllowedBytes) {
         return;
     }
+
+    unsigned long long spaceToDelete = (loadedBytes + bytes) - maxAllowedBytes;
     
     NSArray* loadedEpisodes = [cman cachedEpisodes];
     loadedEpisodes = [loadedEpisodes sortedArrayUsingFunction:ReverseDownloadDateSort context:NULL];

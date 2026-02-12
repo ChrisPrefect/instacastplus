@@ -29,7 +29,7 @@
     
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", self, @NO, @NO];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@ AND consumed == %@", self, @NO, @NO];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO]];
     
     NSError* error;
