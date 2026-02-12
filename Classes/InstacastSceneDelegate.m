@@ -406,15 +406,15 @@
 
     self.interfaceController = interfaceController;
 
-    CPNowPlayingTemplate *nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
     CPListTemplate *podcastList = [self carPlayPodcastListTemplate];
+    CPListTemplate *nowPlayingList = [self carPlayNowPlayingListTemplate];
 
-    nowPlayingTemplate.tabTitle = @"Now Playing".ls;
-    nowPlayingTemplate.tabImage = [UIImage systemImageNamed:@"play.circle"];
     podcastList.tabTitle = @"Podcasts".ls;
     podcastList.tabImage = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
+    nowPlayingList.tabTitle = @"Now Playing".ls;
+    nowPlayingList.tabImage = [UIImage systemImageNamed:@"play.circle"];
 
-    CPTabBarTemplate *tabBar = [[CPTabBarTemplate alloc] initWithTemplates:@[podcastList, nowPlayingTemplate]];
+    CPTabBarTemplate *tabBar = [[CPTabBarTemplate alloc] initWithTemplates:@[podcastList, nowPlayingList]];
     [interfaceController setRootTemplate:tabBar animated:YES completion:nil];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -441,6 +441,20 @@
 
     CPListSection *section = [[CPListSection alloc] initWithItems:items];
     CPListTemplate *tmpl = [[CPListTemplate alloc] initWithTitle:@"Podcasts".ls sections:@[section]];
+    tmpl.delegate = (id<CPListTemplateDelegate>)self;
+    return tmpl;
+}
+
+- (CPListTemplate*)carPlayNowPlayingListTemplate {
+    CPListItem *item = [[CPListItem alloc] initWithText:@"Open Now Playing".ls detailText:nil];
+    item.handler = ^(id<CPSelectableListItem> _Nonnull listItem, dispatch_block_t _Nonnull completionHandler) {
+        CPNowPlayingTemplate *nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
+        [self.interfaceController pushTemplate:nowPlayingTemplate animated:YES completion:nil];
+        completionHandler();
+    };
+
+    CPListSection *section = [[CPListSection alloc] initWithItems:@[item]];
+    CPListTemplate *tmpl = [[CPListTemplate alloc] initWithTitle:@"Now Playing".ls sections:@[section]];
     tmpl.delegate = (id<CPListTemplateDelegate>)self;
     return tmpl;
 }

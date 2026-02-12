@@ -9,6 +9,7 @@
 
 #import <Accounts/Accounts.h>
 #import <UserNotifications/UserNotifications.h>
+#import <CarPlay/CarPlay.h>
 
 #import "Test.h"
 #import "InstacastAppDelegate.h"
@@ -894,7 +895,10 @@
 - (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
     // Called when a new scene session is being created.
     // Use this method to select a configuration to create the new scene with.
-    return [[UISceneConfiguration alloc] initWithName:@"Default Configuration" sessionRole:connectingSceneSession.role];
+    NSString *configurationName = [connectingSceneSession.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication]
+        ? @"CarPlay"
+        : @"Default Configuration";
+    return [[UISceneConfiguration alloc] initWithName:configurationName sessionRole:connectingSceneSession.role];
 }
 
 
