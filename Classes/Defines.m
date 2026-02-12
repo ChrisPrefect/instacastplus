@@ -24,6 +24,7 @@ NSString* ScreenTimerAlwaysActive = @"ScreenTimerAlwaysActive";
 NSString* ScreenTouchIntelligentSleep = @"ScreenTouchIntelligentSleep";
 NSString* VolumeChangeIntelligentSleep = @"VolumeChangeIntelligentSleep";
 NSString* DeviceMovementIntelligentSleep = @"DeviceMovementIntelligentSleep";
+NSString* DisableSleepTimerInCarPlay = @"DisableSleepTimerInCarPlay";
 
 NSString* PlayerColorPerPodcastActive = @"PlayerColorPerPodcastActive";
 NSString* PlayerThemeColorCode = @"PlayerThemeColorCode";

@@ -7,6 +7,11 @@
 #import "UITableViewController+Settings.h"
 #import "PlaybackDefines.h"
 #import "InstacastAppDelegate.h"
+#import "AudioSession.h"
+#import "PlaybackManager.h"
+#if !TARGET_OS_MACCATALYST
+#import <CarPlay/CarPlay.h>
+#endif
 
 typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     kAutomaticTimer = 0,
@@ -82,7 +87,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 {
     switch (section) {
         case kAutomaticTimer:
-            return 1;
+            return 2;
         case kIntelligentSleep:
             return 3;
         default:
@@ -95,14 +100,28 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 {
     if (indexPath.section == kAutomaticTimer)
     {
-        UITableViewCell* cell = [self switchCell];
-        UISwitch* control = (UISwitch*)cell.accessoryView;
-        control.tag = indexPath.row;
+        if (indexPath.row == 0)
+        {
+            UITableViewCell* cell = [self switchCell];
+            UISwitch* control = (UISwitch*)cell.accessoryView;
+            control.tag = indexPath.row;
 
-        cell.textLabel.text = @"Sleep Timer Always Active".ls;
-        control.on = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
-        [control addTarget:self action:@selector(toggleSleepTimeAlwaysSettings:) forControlEvents:UIControlEventValueChanged];
-        return cell;
+            cell.textLabel.text = @"Sleep Timer Always Active".ls;
+            control.on = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
+            [control addTarget:self action:@selector(toggleSleepTimeAlwaysSettings:) forControlEvents:UIControlEventValueChanged];
+            return cell;
+        }
+        else if (indexPath.row == 1)
+        {
+            UITableViewCell* cell = [self switchCell];
+            UISwitch* control = (UISwitch*)cell.accessoryView;
+            control.tag = indexPath.row;
+
+            cell.textLabel.text = @"Disable Sleep Timer in CarPlay".ls;
+            control.on = [USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay];
+            [control addTarget:self action:@selector(toggleCarPlaySleepTimerSettings:) forControlEvents:UIControlEventValueChanged];
+            return cell;
+        }
     }
     else if (indexPath.section == kIntelligentSleep)
     {
@@ -179,14 +198,16 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     {
         case kAutomaticTimer:
         {
+            NSMutableArray* footerLines = [NSMutableArray array];
             if ([USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
             {
-                return @"If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night.".ls;
+                [footerLines addObject:@"If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night.".ls];
             }
-            else
+            if ([USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay])
             {
-                return nil;
+                [footerLines addObject:@"While CarPlay is active, the Sleep Timer stays disabled.".ls];
             }
+            return ([footerLines count] > 0) ? [footerLines componentsJoinedByString:@"\n\n"] : nil;
         }
         case kIntelligentSleep:
         {
@@ -201,6 +222,30 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+}
+
+#pragma mark - Helpers
+
+- (BOOL)isCarPlayConnected
+{
+#if TARGET_OS_MACCATALYST
+    return NO;
+#else
+    if (@available(iOS 13.0, *))
+    {
+        NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene* scene in connectedScenes)
+        {
+            if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
+                scene.activationState != UISceneActivationStateUnattached &&
+                scene.activationState != UISceneActivationStateBackground)
+            {
+                return YES;
+            }
+        }
+    }
+    return NO;
+#endif
 }
 
 #pragma mark - Toggle actions
@@ -227,6 +272,29 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
             }
         }
     }
+    [self.tableView reloadData];
+}
+
+- (void) toggleCarPlaySleepTimerSettings:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:DisableSleepTimerInCarPlay];
+    [USER_DEFAULTS synchronize];
+
+    AudioSession* session = [AudioSession sharedAudioSession];
+    if (sender.on) {
+        if ([self isCarPlayConnected]) {
+            session.timerValue = PlaybackStopTimeNoValue;
+        }
+    }
+    else if ([PlaybackManager playbackManager].isPodcastPlaying && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive]) {
+        NSInteger timer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+        if (timer == PlaybackStopTimeNoValue) {
+            NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+            timer = (lastSleepTimer > 0) ? lastSleepTimer : PlaybackStopTime5min;
+        }
+        session.timerValue = timer;
+    }
+
     [self.tableView reloadData];
 }
 

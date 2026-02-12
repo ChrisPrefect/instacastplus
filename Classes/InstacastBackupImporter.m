@@ -510,6 +510,7 @@
         @"disableAutoLock":         DisableAutoLock,
         @"appearanceMode":          kDefaultAppearanceMode,
         @"sleepTimerAlways":        ScreenTimerAlwaysActive,
+        @"disableSleepTimerCarPlay": DisableSleepTimerInCarPlay,
         @"lastSleepTimer":          LastSelectedSleepTimer,
         @"playerControls":          kDefaultPlayerControls,
         @"autoDeleteMarkedPlayed":  AutoDeleteAfterMarkedAsPlayed,
@@ -536,7 +537,7 @@
 
     NSSet *boolKeys = [NSSet setWithArray:@[
         @"autoCacheAudio", @"autoCacheVideo", @"autoDeletePlayed", @"disableAutoLock",
-        @"sleepTimerAlways", @"autoDeleteMarkedPlayed", @"autoDeleteNews",
+        @"sleepTimerAlways", @"disableSleepTimerCarPlay", @"autoDeleteMarkedPlayed", @"autoDeleteNews",
         @"enableCachingOver3G", @"enableRefreshingOver3G", @"enableStreamingOver3G",
         @"uiSoundEnabled", @"showBadge", @"dontDeleteUpNext", @"showUnavailable",
         @"themeDefaultActive", @"playerPerPodcastColor",

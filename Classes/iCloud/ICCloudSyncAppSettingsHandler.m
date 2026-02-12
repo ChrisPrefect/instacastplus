@@ -52,6 +52,7 @@ static NSArray *syncableSettingsKeys(void) {
             @"InterfaceThemeColorHexCode",
             @"IntelligentSleepTimerAlwaysActive",
             @"ScreenTimerAlwaysActive",
+            @"DisableSleepTimerInCarPlay",
             @"ScreenTouchIntelligentSleep",
             @"VolumeChangeIntelligentSleep",
             @"DeviceMovementIntelligentSleep",

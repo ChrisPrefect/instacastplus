@@ -491,6 +491,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:PlayerThemeColorHexCode]) [xml appendFormat:@"    <playerColorHex>%@</playerColorHex>\n", [self xmlEscape:[defaults stringForKey:PlayerThemeColorHexCode]]];
     // Sleep Timer
     if ([defaults objectForKey:ScreenTimerAlwaysActive]) [xml appendFormat:@"    <sleepTimerAlways>%@</sleepTimerAlways>\n", [defaults boolForKey:ScreenTimerAlwaysActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:DisableSleepTimerInCarPlay]) [xml appendFormat:@"    <disableSleepTimerCarPlay>%@</disableSleepTimerCarPlay>\n", [defaults boolForKey:DisableSleepTimerInCarPlay] ? @"true" : @"false"];
     if ([defaults objectForKey:LastSelectedSleepTimer]) [xml appendFormat:@"    <lastSleepTimer>%ld</lastSleepTimer>\n", (long)[defaults integerForKey:LastSelectedSleepTimer]];
     // App Icon
     NSString *alternateIconName = [[UIApplication sharedApplication] alternateIconName];

@@ -9,6 +9,9 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MPNowPlayingInfoCenter.h>
+#if !TARGET_OS_MACCATALYST
+#import <CarPlay/CarPlay.h>
+#endif
 
 #import "AudioSession.h"
 #import "AudioSession+UpNextPlaylist.h"
@@ -124,6 +127,33 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     }
     
     
+}
+
+- (BOOL)_isCarPlaySceneConnected
+{
+#if TARGET_OS_MACCATALYST
+    return NO;
+#else
+    if (@available(iOS 13.0, *))
+    {
+        NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene* scene in connectedScenes)
+        {
+            if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
+                scene.activationState != UISceneActivationStateUnattached &&
+                scene.activationState != UISceneActivationStateBackground)
+            {
+                return YES;
+            }
+        }
+    }
+    return NO;
+#endif
+}
+
+- (BOOL)_shouldDisableSleepTimerForCarPlay
+{
+    return [USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay] && [self _isCarPlaySceneConnected];
 }
 
 // XXX Hack to keep video playing in background
@@ -653,6 +683,10 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) setTimerValue:(PlaybackStopTimeValue)timerValue
 {
+    if ([self _shouldDisableSleepTimerForCarPlay]) {
+        timerValue = PlaybackStopTimeNoValue;
+    }
+
     if (_timerValue != timerValue) {
         _timerValue = timerValue;
     }
@@ -683,6 +717,10 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         }
         self.playbackTimer = [NSTimer scheduledTimerWithTimeInterval:1  target:self selector:@selector(stopPlaybackTimer:) userInfo:nil repeats:YES];
         [[NSRunLoop currentRunLoop] addTimer:self.playbackTimer forMode:NSRunLoopCommonModes];
+    }
+    else
+    {
+        self.stopDate = nil;
     }
     
     [self willChangeValueForKey:@"timerRemainingTime"];

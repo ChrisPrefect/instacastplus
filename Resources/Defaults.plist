@@ -60,6 +60,8 @@
 	<true/>
 	<key>PlayerControls</key>
 	<integer>0</integer>
+	<key>DisableSleepTimerInCarPlay</key>
+	<true/>
 	<key>EnableCachingImagesOver3G</key>
 	<true/>
 	<key>SwitchNightModeAutomatically</key>
