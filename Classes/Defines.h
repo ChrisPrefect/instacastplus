@@ -155,6 +155,7 @@ FOUNDATION_EXPORT void ICApplySyncedListScrollPositions(NSDictionary<NSString*, 
 #if TARGET_OS_IPHONE
 @class UIScrollView;
 FOUNDATION_EXPORT void ICStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
+FOUNDATION_EXPORT void ICScheduleStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView, NSTimeInterval delay);
 FOUNDATION_EXPORT void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView);
 #endif
 

@@ -245,13 +245,65 @@ static CGFloat _clampedOffsetYForScrollView(UIScrollView* scrollView, CGFloat of
     return MIN(MAX(offsetY, minOffset), maxOffset);
 }
 
-void ICStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView)
+static void _updateScrollPositionWithDelay(NSString* key, CGFloat offsetY, NSTimeInterval delay)
 {
-    if (!scrollView || !scrollView.window) {
+    static NSMutableDictionary<NSString*, NSNumber*>* pendingOffsets = nil;
+    static NSMutableDictionary<NSString*, NSNumber*>* pendingTokens = nil;
+    static unsigned long long tokenCounter = 0;
+
+    if (!pendingOffsets) {
+        pendingOffsets = [[NSMutableDictionary alloc] init];
+        pendingTokens = [[NSMutableDictionary alloc] init];
+    }
+
+    if (delay <= 0) {
+        [pendingTokens removeObjectForKey:key];
+        [pendingOffsets removeObjectForKey:key];
+        ICUpdateListScrollPositionForKey(key, offsetY);
         return;
     }
+
+    tokenCounter++;
+    NSNumber* token = @(tokenCounter);
+    pendingOffsets[key] = @(offsetY);
+    pendingTokens[key] = token;
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(MAX(delay, 0) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSNumber* currentToken = pendingTokens[key];
+        if (!currentToken || ![currentToken isEqualToNumber:token]) {
+            return;
+        }
+
+        NSNumber* pendingOffset = pendingOffsets[key];
+        [pendingTokens removeObjectForKey:key];
+        [pendingOffsets removeObjectForKey:key];
+
+        if (pendingOffset) {
+            ICUpdateListScrollPositionForKey(key, pendingOffset.doubleValue);
+        }
+    });
+}
+
+void ICStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView)
+{
+    ICScheduleStoreScrollPositionForScrollView(key, scrollView, 0);
+}
+
+void ICScheduleStoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView, NSTimeInterval delay)
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            ICScheduleStoreScrollPositionForScrollView(key, scrollView, delay);
+        });
+        return;
+    }
+
+    if (!scrollView || !scrollView.window || ![key isKindOfClass:[NSString class]] || [key length] == 0) {
+        return;
+    }
+
     CGFloat offsetY = _clampedOffsetYForScrollView(scrollView, scrollView.contentOffset.y);
-    ICUpdateListScrollPositionForKey(key, offsetY);
+    _updateScrollPositionWithDelay(key, offsetY, delay);
 }
 
 void ICRestoreScrollPositionForScrollView(NSString* key, UIScrollView* scrollView)

@@ -21,9 +21,9 @@ typedef NS_ENUM(NSInteger, MediaFilesSortMode) {
 };
 
 static NSString *CellIdentifier = @"Cell";
-static NSString* PlaceholderCellIdentifier = @"PlaceholderCell";
-static NSString* SettingCellIdentifier = @"SettingCell";
-static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
+static NSString *PodcastHeaderCellIdentifier = @"PodcastHeaderCell";
+static NSString *PlaceholderCellIdentifier = @"PlaceholderCell";
+static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 @interface MediaFilesViewController () <UIDocumentInteractionControllerDelegate>
 @property (nonatomic, strong) NSArray* cachedEpisodes;
@@ -40,13 +40,27 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
     return [[self alloc] initWithStyle:UITableViewStyleGrouped];
 }
 
+#pragma mark - Podcast mode helpers
+
+- (BOOL)_isPodcastMode
+{
+    return (self.sortMode == kSortByPodcast && self.podcastSections.count > 0);
+}
+
+- (BOOL)_isPodcastHeaderAtIndexPath:(NSIndexPath *)indexPath
+{
+    return ([self _isPodcastMode] && [self _isEpisodeSection:indexPath.section] && indexPath.row == 0);
+}
+
 - (CDEpisode *)_episodeAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
+    if ([self _isPodcastMode]) {
         if (indexPath.section < (NSInteger)self.podcastSections.count) {
+            // row 0 = podcast header, episodes start at row 1
+            NSInteger episodeIndex = indexPath.row - 1;
             NSArray *episodes = self.podcastSections[indexPath.section][@"episodes"];
-            if (indexPath.row < (NSInteger)episodes.count) {
-                return episodes[indexPath.row];
+            if (episodeIndex >= 0 && episodeIndex < (NSInteger)episodes.count) {
+                return episodes[episodeIndex];
             }
         }
         return nil;
@@ -59,19 +73,21 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (NSInteger)_deleteAllButtonSection
 {
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
+    if ([self _isPodcastMode]) {
         return self.podcastSections.count;
     }
-    return 1; // kDeleteAllButton
+    return 1;
 }
 
 - (BOOL)_isEpisodeSection:(NSInteger)section
 {
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
+    if ([self _isPodcastMode]) {
         return section < (NSInteger)self.podcastSections.count;
     }
-    return section == 0; // kDownloadedSection
+    return section == 0;
 }
+
+#pragma mark - Data
 
 - (void) _reloadContent
 {
@@ -110,7 +126,6 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
         }
         case kSortByPodcast:
         {
-            // Group by feed
             NSMutableDictionary<NSString*, NSMutableArray*> *grouped = [NSMutableDictionary dictionary];
             NSMutableDictionary<NSString*, CDFeed*> *feedMap = [NSMutableDictionary dictionary];
 
@@ -123,12 +138,11 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
                 [grouped[feedTitle] addObject:episode];
             }
 
-            // Sort feed titles alphabetically
             NSArray *sortedTitles = [grouped.allKeys sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
 
+            CacheManager *cman = [CacheManager sharedCacheManager];
             NSMutableArray *sections = [NSMutableArray array];
             for (NSString *title in sortedTitles) {
-                // Sort episodes within group by pubDate descending
                 NSArray *sortedEpisodes = [grouped[title] sortedArrayUsingComparator:^NSComparisonResult(CDEpisode *ep1, CDEpisode *ep2) {
                     NSDate *d1 = ep1.pubDate;
                     NSDate *d2 = ep2.pubDate;
@@ -137,27 +151,37 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
                     if (!d2) return NSOrderedAscending;
                     return [d2 compare:d1];
                 }];
-                [sections addObject:@{ @"feed": feedMap[title] ?: [NSNull null], @"episodes": sortedEpisodes }];
+
+                unsigned long long totalBytes = 0;
+                for (CDEpisode *ep in sortedEpisodes) {
+                    totalBytes += [cman numberOfDownloadedBytesForEpisode:ep];
+                }
+
+                [sections addObject:@{
+                    @"feed": feedMap[title] ?: [NSNull null],
+                    @"episodes": sortedEpisodes,
+                    @"totalBytes": @(totalBytes)
+                }];
             }
 
             self.podcastSections = sections;
-            self.cachedEpisodes = allEpisodes; // keep for clearCacheAction
+            self.cachedEpisodes = allEpisodes;
             break;
         }
     }
 }
 
+#pragma mark - Table header
+
 - (void) _setupTableHeaderView
 {
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 74)];
 
-    // Segmented Control
     self.sortControl = [[UISegmentedControl alloc] initWithItems:@[@"Size".ls, @"Date".ls, @"Podcast".ls]];
     self.sortControl.selectedSegmentIndex = self.sortMode;
     [self.sortControl addTarget:self action:@selector(sortModeChanged:) forControlEvents:UIControlEventValueChanged];
     self.sortControl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Hint Label
     UILabel *hintLabel = [[UILabel alloc] init];
     hintLabel.text = @"Swipe left to delete.".ls;
     hintLabel.font = [UIFont systemFontOfSize:12];
@@ -190,6 +214,8 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
     [self.tableView reloadData];
 }
 
+#pragma mark - View lifecycle
+
 - (void)viewDidLoad
 {
     [super viewDidLoad];
@@ -219,7 +245,6 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
 
-    // Update hint label color
     UILabel *hintLabel = [self.tableView.tableHeaderView viewWithTag:100];
     hintLabel.textColor = ICMutedTextColor;
 
@@ -246,7 +271,6 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
 - (void)didReceiveMemoryWarning
 {
     [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
 }
 
 - (void) toggleEditMode:(id)sender
@@ -263,10 +287,9 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 #pragma mark - Table view data source
 
-
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
+    if ([self _isPodcastMode]) {
         return self.podcastSections.count + 1; // +1 for delete button
     }
     return 2; // episodes + delete button
@@ -278,20 +301,21 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
         return 1;
     }
 
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
+    if ([self _isPodcastMode]) {
         if (section < (NSInteger)self.podcastSections.count) {
-            return [self.podcastSections[section][@"episodes"] count];
+            // +1 for podcast header row at index 0
+            return [self.podcastSections[section][@"episodes"] count] + 1;
         }
         return 0;
     }
 
-    // Flat mode (size or date)
+    // Flat mode
     return MAX(1, [self.cachedEpisodes count]);
 }
 
-
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    // Delete All button
     if (indexPath.section == [self _deleteAllButtonSection])
     {
         UITableViewCell* cell = [self resetCell];
@@ -300,9 +324,52 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
         return cell;
     }
 
-    if (self.sortMode == kSortByPodcast && self.podcastSections)
+    // Podcast mode
+    if ([self _isPodcastMode])
     {
-        // Podcast mode — always has episodes (empty feeds wouldn't appear)
+        // Row 0 = podcast header cell
+        if (indexPath.row == 0)
+        {
+            NSDictionary *sectionInfo = self.podcastSections[indexPath.section];
+            CDFeed *feed = sectionInfo[@"feed"];
+            unsigned long long totalBytes = [sectionInfo[@"totalBytes"] unsignedLongLongValue];
+
+            UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:PodcastHeaderCellIdentifier];
+            if (cell == nil) {
+                cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:PodcastHeaderCellIdentifier];
+                cell.selectedBackgroundView = [[UIView alloc] init];
+            }
+
+            cell.backgroundColor = ICGroupCellBackgroundColor;
+            cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+            cell.textLabel.textColor = ICTextColor;
+            cell.textLabel.text = ([feed isKindOfClass:[NSNull class]]) ? @"" : feed.title;
+
+            UILabel *sizeLabel = (UILabel*)cell.accessoryView;
+            if (!sizeLabel) {
+                sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+                sizeLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+                sizeLabel.textAlignment = NSTextAlignmentRight;
+                sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+                cell.accessoryView = sizeLabel;
+
+                UILabel *editLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+                editLabel.font = sizeLabel.font;
+                editLabel.textAlignment = NSTextAlignmentRight;
+                editLabel.textColor = sizeLabel.textColor;
+                cell.editingAccessoryView = editLabel;
+            }
+
+            NSString *sizeText = [NSByteCountFormatter stringFromByteCount:totalBytes countStyle:NSByteCountFormatterCountStyleMemory];
+            sizeLabel.text = sizeText;
+            ((UILabel*)cell.editingAccessoryView).text = sizeText;
+
+            return cell;
+        }
+
+        // Episode cell
         CDEpisode *episode = [self _episodeAtIndexPath:indexPath];
         if (!episode) return [[UITableViewCell alloc] init];
 
@@ -325,23 +392,29 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
             sizeLabel.textAlignment = NSTextAlignmentRight;
             sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
             cell.accessoryView = sizeLabel;
+
+            UILabel *editLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+            editLabel.font = sizeLabel.font;
+            editLabel.textAlignment = NSTextAlignmentRight;
+            editLabel.textColor = sizeLabel.textColor;
+            cell.editingAccessoryView = editLabel;
         }
 
         CDFeed* feed = episode.feed;
         cell.textLabel.text = [episode cleanTitleUsingFeedTitle:feed.title];
+        cell.detailTextLabel.text = feed.title;
+        cell.textLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
 
         unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
-        cell.detailTextLabel.text = feed.title;
-
-        cell.textLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
-        sizeLabel.text = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+        NSString *sizeText = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+        sizeLabel.text = sizeText;
+        ((UILabel*)cell.editingAccessoryView).text = sizeText;
 
         return cell;
     }
 
-    // Flat mode (size or date)
+    // Flat mode — empty placeholder
     NSArray* episodes = self.cachedEpisodes;
-
     if ([episodes count] == 0)
     {
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:PlaceholderCellIdentifier];
@@ -359,42 +432,47 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
 
         return cell;
     }
-    else
-    {
-        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:CellIdentifier];
-        if (cell == nil) {
-            cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
-            cell.selectedBackgroundView = [[UIView alloc] init];
-            cell.textLabel.font = [UIFont systemFontOfSize:13];
-            cell.detailTextLabel.font = [UIFont systemFontOfSize:11];
-        }
 
-        cell.backgroundColor = ICGroupCellBackgroundColor;
-        cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
-        cell.detailTextLabel.textColor = ICMutedTextColor;
-
-        UILabel* sizeLabel = (UILabel*)cell.accessoryView;
-        if (!sizeLabel) {
-            sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
-            sizeLabel.font = [UIFont systemFontOfSize:14];
-            sizeLabel.textAlignment = NSTextAlignmentRight;
-            sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
-            cell.accessoryView = sizeLabel;
-        }
-
-        CDEpisode* episode = episodes[indexPath.row];
-        CDFeed* feed = episode.feed;
-
-        cell.textLabel.text = [episode cleanTitleUsingFeedTitle:feed.title];
-
-        unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
-        cell.detailTextLabel.text = feed.title;
-
-        cell.textLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
-        sizeLabel.text = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
-
-        return cell;
+    // Flat mode — episode cell
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:CellIdentifier];
+    if (cell == nil) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
+        cell.selectedBackgroundView = [[UIView alloc] init];
+        cell.textLabel.font = [UIFont systemFontOfSize:13];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:11];
     }
+
+    cell.backgroundColor = ICGroupCellBackgroundColor;
+    cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+    cell.detailTextLabel.textColor = ICMutedTextColor;
+
+    UILabel* sizeLabel = (UILabel*)cell.accessoryView;
+    if (!sizeLabel) {
+        sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+        sizeLabel.font = [UIFont systemFontOfSize:14];
+        sizeLabel.textAlignment = NSTextAlignmentRight;
+        sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+        cell.accessoryView = sizeLabel;
+
+        UILabel *editLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+        editLabel.font = sizeLabel.font;
+        editLabel.textAlignment = NSTextAlignmentRight;
+        editLabel.textColor = sizeLabel.textColor;
+        cell.editingAccessoryView = editLabel;
+    }
+
+    CDEpisode* episode = episodes[indexPath.row];
+    CDFeed* feed = episode.feed;
+    cell.textLabel.text = [episode cleanTitleUsingFeedTitle:feed.title];
+    cell.detailTextLabel.text = feed.title;
+    cell.textLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
+
+    unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
+    NSString *sizeText = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+    sizeLabel.text = sizeText;
+    ((UILabel*)cell.editingAccessoryView).text = sizeText;
+
+    return cell;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
@@ -410,66 +488,13 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
-        return nil; // Custom header views in podcast mode
+    if ([self _isPodcastMode]) {
+        return nil;
     }
     if (section == 0) {
         return @"Downloaded Content".ls;
     }
     return nil;
-}
-
-- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
-{
-    if (self.sortMode != kSortByPodcast || !self.podcastSections) {
-        return nil;
-    }
-    if (section >= (NSInteger)self.podcastSections.count) {
-        return nil;
-    }
-
-    NSDictionary *sectionInfo = self.podcastSections[section];
-    CDFeed *feed = sectionInfo[@"feed"];
-    NSString *title = ([feed isKindOfClass:[NSNull class]]) ? @"" : feed.title;
-
-    UIView *headerView = [[UIView alloc] init];
-
-    UILabel *titleLabel = [[UILabel alloc] init];
-    titleLabel.text = title.uppercaseString;
-    titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-    titleLabel.textColor = [UIColor grayColor];
-    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-
-    UIButton *deleteButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [deleteButton setImage:[UIImage systemImageNamed:@"trash"] forState:UIControlStateNormal];
-    deleteButton.tintColor = [UIColor systemRedColor];
-    deleteButton.tag = section;
-    [deleteButton addTarget:self action:@selector(deletePodcastSection:) forControlEvents:UIControlEventTouchUpInside];
-    deleteButton.translatesAutoresizingMaskIntoConstraints = NO;
-
-    [headerView addSubview:titleLabel];
-    [headerView addSubview:deleteButton];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [titleLabel.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:20],
-        [titleLabel.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor],
-        [titleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:deleteButton.leadingAnchor constant:-8],
-
-        [deleteButton.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-20],
-        [deleteButton.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor],
-        [deleteButton.widthAnchor constraintEqualToConstant:30],
-        [deleteButton.heightAnchor constraintEqualToConstant:30],
-    ]];
-
-    return headerView;
-}
-
-- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
-{
-    if (self.sortMode == kSortByPodcast && self.podcastSections && section < (NSInteger)self.podcastSections.count) {
-        return 36.0f;
-    }
-    return UITableViewAutomaticDimension;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
@@ -491,65 +516,7 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
     [header.textLabel setTextColor:[UIColor grayColor]];
 }
 
-#pragma mark - Delete podcast section
-
-- (void) deletePodcastSection:(UIButton *)sender
-{
-    NSInteger section = sender.tag;
-    if (section >= (NSInteger)self.podcastSections.count) return;
-
-    NSDictionary *sectionInfo = self.podcastSections[section];
-    CDFeed *feed = sectionInfo[@"feed"];
-    if ([feed isKindOfClass:[NSNull class]]) return;
-
-    NSString *message = [NSString stringWithFormat:@"Delete all downloads from '%@'?".ls, feed.title];
-
-    WEAK_SELF
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil
-                                                                   message:message
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:nil]];
-
-    [alert addAction:[UIAlertAction actionWithTitle:@"Delete".ls
-                                              style:UIAlertActionStyleDestructive
-                                            handler:^(UIAlertAction * action) {
-        STRONG_SELF
-        [[CacheManager sharedCacheManager] removeCacheForFeed:feed automatic:NO];
-        [self _reloadContent];
-        [self.tableView reloadData];
-    }]];
-
-    if ([ICAppearanceManager sharedManager].nightSettingMode) {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    } else {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
-
-    [self presentViewController:alert animated:YES completion:nil];
-}
-
 #pragma mark - Editing
-
-// Override to support editing the table view.
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    if (editingStyle == UITableViewCellEditingStyleDelete)
-    {
-        CDEpisode* episode = [self _episodeAtIndexPath:indexPath];
-        if (!episode) return;
-
-        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-
-        [self _reloadContent];
-        [self.tableView reloadData];
-    }
-    else if (editingStyle == UITableViewCellEditingStyleInsert) {
-        // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view
-    }
-}
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
 {
@@ -557,14 +524,38 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
         return NO;
     }
 
-    if (self.sortMode == kSortByPodcast && self.podcastSections) {
-        return YES; // podcast mode always has episodes in episode sections
+    if ([self _isPodcastMode]) {
+        return YES; // both header rows and episode rows are editable
     }
 
     // Flat mode
     return ([self.cachedEpisodes count] != 0);
 }
 
+- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (editingStyle != UITableViewCellEditingStyleDelete) return;
+
+    if ([self _isPodcastHeaderAtIndexPath:indexPath])
+    {
+        // Delete all downloads for this podcast
+        NSDictionary *sectionInfo = self.podcastSections[indexPath.section];
+        CDFeed *feed = sectionInfo[@"feed"];
+        if (![feed isKindOfClass:[NSNull class]]) {
+            [[CacheManager sharedCacheManager] removeCacheForFeed:feed automatic:NO];
+        }
+    }
+    else
+    {
+        // Delete single episode
+        CDEpisode* episode = [self _episodeAtIndexPath:indexPath];
+        if (!episode) return;
+        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+    }
+
+    [self _reloadContent];
+    [self.tableView reloadData];
+}
 
 #pragma mark - Table view delegate
 
@@ -573,6 +564,12 @@ static NSString* MediaFilesSortModeKey = @"MediaFilesSortMode";
     if (indexPath.section == [self _deleteAllButtonSection])
     {
         [self clearCacheAction:indexPath];
+        [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+        return;
+    }
+
+    // Podcast header rows are not tappable
+    if ([self _isPodcastHeaderAtIndexPath:indexPath]) {
         [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
         return;
     }

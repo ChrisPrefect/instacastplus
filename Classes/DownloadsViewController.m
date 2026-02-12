@@ -533,13 +533,13 @@
 {
 	if (!decelerate) {
         [self _loadImagesForOnscreenRows];
-        [self _storeScrollPosition];
+        ICScheduleStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView, 0.5);
     }
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
     [self _loadImagesForOnscreenRows];
-    [self _storeScrollPosition];
+    ICScheduleStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView, 0.5);
 }
 @end
