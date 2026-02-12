@@ -942,6 +942,24 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
+    if ([notification.name isEqualToString:PlaybackManagerDidStartNotification] ||
+        [notification.name isEqualToString:PlaybackManagerDidChangeEpisodeNotification] ||
+        [notification.name isEqualToString:PlaybackManagerDidEndNotification])
+    {
+        [self carPlayUpdateVisiblePlaybackStateIfNeeded];
+
+        CPTemplate* topTemplate = self.interfaceController.topTemplate;
+        if ([topTemplate isKindOfClass:[CPListTemplate class]]) {
+            CPListTemplate* listTemplate = (CPListTemplate*)topTemplate;
+            NSDictionary* info = ([listTemplate.userInfo isKindOfClass:[NSDictionary class]]) ? (NSDictionary*)listTemplate.userInfo : nil;
+            NSString* kind = info[kCarPlayTemplateKindKey];
+            if ([kind isEqualToString:kCarPlayTemplateKindChapters]) {
+                [listTemplate updateSections:[self carPlayChapterSections]];
+            }
+        }
+        return;
+    }
+
     [self carPlayRefreshVisibleTemplateIfNeeded];
 }
 
@@ -1035,8 +1053,6 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
             CDEpisode* episode = (CDEpisode*)item.userInfo;
             BOOL isCurrent = [self carPlayEpisodeIsCurrent:episode];
-            // Keep indicator stable for the current episode even when paused to avoid row jumping on play/pause toggles.
-            BOOL shouldShowPlaying = isCurrent;
 
             if (isCurrent) {
                 NSString* detailText = [self carPlayEpisodeDetailText:episode];
@@ -1049,8 +1065,8 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                 if (isCurrent) {
                     item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
                 }
-                if (item.playing != shouldShowPlaying) {
-                    item.playing = shouldShowPlaying;
+                if (item.playing) {
+                    item.playing = NO;
                 }
             }
         }
@@ -1485,8 +1501,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     if (@available(iOS 14.0, *)) {
         item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
-        // Keep the current item marker stable even when playback is paused to avoid row jumping.
-        item.playing = [self carPlayEpisodeIsCurrent:episode];
+        item.playing = NO;
         item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
     }
 
