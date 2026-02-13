@@ -13,6 +13,7 @@ NSString* const kAppleChartsArtworkUrl100 = @"kAppleChartsArtworkUrl100";
 NSString* const kAppleChartsID = @"kAppleChartsID";
 NSString* const kAppleChartsURL = @"kAppleChartsURL";
 NSString* const kAppleChartsGenres = @"kAppleChartsGenres";
+NSString* const kAppleChartsGenreIDs = @"kAppleChartsGenreIDs";
 
 static NSString* const kCacheDirectoryName = @"ApplePodcastCharts";
 static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
@@ -59,6 +60,45 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
     return @"ch";
 }
 
+- (NSString *)_cacheKeyForCountryCode:(NSString *)countryCode limit:(NSInteger)limit
+{
+    return [NSString stringWithFormat:@"%@_%ld", countryCode, (long)limit];
+}
+
+- (NSInteger)_clampLimit:(NSInteger)limit
+{
+    if (limit <= 10) return 10;
+    if (limit <= 25) return 25;
+    if (limit <= 50) return 50;
+    return 100;
+}
+
+- (NSArray *)cachedTopPodcastsForCountryCode:(NSString *)countryCode limit:(NSInteger)limit
+{
+    if (!countryCode) {
+        countryCode = [self defaultCountryCode];
+    }
+    countryCode = [countryCode lowercaseString];
+    limit = [self _clampLimit:limit];
+
+    NSString *cacheKey = [self _cacheKeyForCountryCode:countryCode limit:limit];
+
+    // Check memory cache (any age)
+    NSDictionary *cached = [self.memoryCache objectForKey:cacheKey];
+    if (cached) {
+        return cached[@"results"];
+    }
+
+    // Check disk cache (any age)
+    NSDictionary *diskCached = [self _loadDiskCacheForKey:cacheKey];
+    if (diskCached) {
+        [self.memoryCache setObject:diskCached forKey:cacheKey];
+        return diskCached[@"results"];
+    }
+
+    return nil;
+}
+
 - (void)fetchTopPodcastsWithCountryCode:(NSString *)countryCode
                                   limit:(NSInteger)limit
                              completion:(void (^)(NSArray *results, NSString *updated, NSError *error))completion
@@ -67,19 +107,11 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
         countryCode = [self defaultCountryCode];
     }
     countryCode = [countryCode lowercaseString];
+    limit = [self _clampLimit:limit];
 
-    // Clamp limit to valid values
-    if (limit <= 10) {
-        limit = 10;
-    } else if (limit <= 25) {
-        limit = 25;
-    } else {
-        limit = 50;
-    }
+    NSString *cacheKey = [self _cacheKeyForCountryCode:countryCode limit:limit];
 
-    NSString *cacheKey = [NSString stringWithFormat:@"%@_%ld", countryCode, (long)limit];
-
-    // 1. Check memory cache
+    // 1. Check memory cache (still valid)
     NSDictionary *cached = [self.memoryCache objectForKey:cacheKey];
     if (cached && [self _isCacheValid:cached]) {
         if (completion) {
@@ -88,7 +120,7 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
         return;
     }
 
-    // 2. Check disk cache
+    // 2. Check disk cache (still valid)
     NSDictionary *diskCached = [self _loadDiskCacheForKey:cacheKey];
     if (diskCached && [self _isCacheValid:diskCached]) {
         [self.memoryCache setObject:diskCached forKey:cacheKey];
@@ -175,6 +207,157 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
     [task resume];
 }
 
++ (NSArray *)podcastGenreIDs
+{
+    static NSArray *ids = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        ids = @[
+            @"1301", // Arts
+            @"1303", // Comedy
+            @"1304", // Education
+            @"1305", // Kids & Family
+            @"1309", // TV & Film
+            @"1310", // Music
+            @"1314", // Religion & Spirituality
+            @"1318", // Technology
+            @"1321", // Business
+            @"1324", // Society & Culture
+            @"1483", // Fiction
+            @"1487", // History
+            @"1488", // True Crime
+            @"1489", // News
+            @"1502", // Leisure
+            @"1511", // Government
+            @"1512", // Health & Fitness
+            @"1533", // Science
+            @"1545", // Sports
+        ];
+    });
+    return ids;
+}
+
+- (void)fetchGenrePodcastsWithCountryCode:(NSString *)countryCode
+                            limitPerGenre:(NSInteger)limitPerGenre
+                               completion:(void (^)(NSArray *results, NSError *error))completion
+{
+    if (!countryCode) {
+        countryCode = [self defaultCountryCode];
+    }
+    countryCode = [countryCode lowercaseString];
+
+    NSString *cacheKey = [NSString stringWithFormat:@"legacy_genres_%@", countryCode];
+
+    // Check memory cache (still valid)
+    NSDictionary *cached = [self.memoryCache objectForKey:cacheKey];
+    if (cached && [self _isCacheValid:cached]) {
+        if (completion) {
+            completion(cached[@"results"], nil);
+        }
+        return;
+    }
+
+    // Check disk cache (still valid)
+    NSDictionary *diskCached = [self _loadGenreDiskCacheForKey:cacheKey];
+    if (diskCached && [self _isCacheValid:diskCached]) {
+        [self.memoryCache setObject:diskCached forKey:cacheKey];
+        if (completion) {
+            completion(diskCached[@"results"], nil);
+        }
+        return;
+    }
+
+    // Fetch from network — all genres in parallel
+    NSArray *genreIDs = [ApplePodcastChartsClient podcastGenreIDs];
+    NSMutableArray *allResults = [NSMutableArray array];
+    NSMutableSet *seenIDs = [NSMutableSet set];
+    dispatch_group_t group = dispatch_group_create();
+    dispatch_queue_t mergeQueue = dispatch_queue_create("com.instacast.charts.merge", DISPATCH_QUEUE_SERIAL);
+
+    for (NSString *genreId in genreIDs) {
+        dispatch_group_enter(group);
+
+        NSString *urlString = [NSString stringWithFormat:@"https://itunes.apple.com/%@/rss/toppodcasts/limit=%ld/genre=%@/json",
+                               countryCode, (long)limitPerGenre, genreId];
+        NSURL *url = [NSURL URLWithString:urlString];
+
+        NSURLSessionDataTask *task = [self.session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (data && !error) {
+                NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+                if (httpResponse.statusCode == 200) {
+                    NSArray *results = nil;
+                    [self _parseLegacyData:data results:&results error:nil];
+
+                    if (results.count > 0) {
+                        dispatch_sync(mergeQueue, ^{
+                            for (NSDictionary *item in results) {
+                                NSString *podcastId = item[kAppleChartsID];
+                                if (podcastId && ![seenIDs containsObject:podcastId]) {
+                                    [seenIDs addObject:podcastId];
+                                    [allResults addObject:item];
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            dispatch_group_leave(group);
+        }];
+        [task resume];
+    }
+
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+        NSArray *results = [allResults copy];
+
+        if (results.count > 0) {
+            NSDictionary *cacheEntry = @{
+                @"results": results,
+                @"timestamp": @([[NSDate date] timeIntervalSince1970])
+            };
+            [self.memoryCache setObject:cacheEntry forKey:cacheKey];
+            [self _saveGenreDiskCache:cacheEntry forKey:cacheKey];
+        }
+
+        // Fallback to stale cache
+        if (results.count == 0) {
+            NSDictionary *staleCache = diskCached ?: cached;
+            if (staleCache) {
+                if (completion) {
+                    completion(staleCache[@"results"], nil);
+                }
+                return;
+            }
+        }
+
+        if (completion) {
+            completion(results.count > 0 ? results : nil, nil);
+        }
+    });
+}
+
+- (NSArray *)cachedGenrePodcastsForCountryCode:(NSString *)countryCode
+{
+    if (!countryCode) {
+        countryCode = [self defaultCountryCode];
+    }
+    countryCode = [countryCode lowercaseString];
+
+    NSString *cacheKey = [NSString stringWithFormat:@"legacy_genres_%@", countryCode];
+
+    NSDictionary *cached = [self.memoryCache objectForKey:cacheKey];
+    if (cached) {
+        return cached[@"results"];
+    }
+
+    NSDictionary *diskCached = [self _loadGenreDiskCacheForKey:cacheKey];
+    if (diskCached) {
+        [self.memoryCache setObject:diskCached forKey:cacheKey];
+        return diskCached[@"results"];
+    }
+
+    return nil;
+}
+
 - (void)clearCache
 {
     [self.memoryCache removeAllObjects];
@@ -244,20 +427,28 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
             item[kAppleChartsURL] = url;
         }
 
-        // Parse genres into comma-separated string
+        // Parse genres
         NSArray *genres = entry[@"genres"];
         if ([genres isKindOfClass:[NSArray class]] && genres.count > 0) {
             NSMutableArray *genreNames = [NSMutableArray array];
+            NSMutableArray *genreIDs = [NSMutableArray array];
             for (NSDictionary *genre in genres) {
                 if ([genre isKindOfClass:[NSDictionary class]]) {
                     NSString *genreName = genre[@"name"];
+                    NSString *genreId = genre[@"genreId"];
                     if ([genreName isKindOfClass:[NSString class]]) {
                         [genreNames addObject:genreName];
+                    }
+                    if ([genreId isKindOfClass:[NSString class]]) {
+                        [genreIDs addObject:genreId];
                     }
                 }
             }
             if (genreNames.count > 0) {
                 item[kAppleChartsGenres] = [genreNames componentsJoinedByString:@", "];
+            }
+            if (genreIDs.count > 0) {
+                item[kAppleChartsGenreIDs] = [genreIDs copy];
             }
         }
 
@@ -325,6 +516,137 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
         @"updated": updated ?: meta[@"updated"] ?: @"",
         @"timestamp": meta[@"timestamp"] ?: @0
     };
+}
+
+#pragma mark - Legacy iTunes RSS API Parsing
+
+- (void)_parseLegacyData:(NSData *)data results:(NSArray **)outResults error:(NSError **)outError
+{
+    NSError *jsonError = nil;
+    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
+    if (!json || ![json isKindOfClass:[NSDictionary class]]) {
+        if (outError) *outError = jsonError ?: [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain" code:-1
+                                                              userInfo:@{NSLocalizedDescriptionKey: @"Invalid JSON response"}];
+        return;
+    }
+
+    NSDictionary *feed = json[@"feed"];
+    if (!feed || ![feed isKindOfClass:[NSDictionary class]]) {
+        if (outError) *outError = [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain" code:-2
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"Missing feed object"}];
+        return;
+    }
+
+    NSArray *entries = feed[@"entry"];
+    if (!entries || ![entries isKindOfClass:[NSArray class]]) {
+        if (outResults) *outResults = @[];
+        return;
+    }
+
+    NSMutableArray *parsedResults = [NSMutableArray arrayWithCapacity:entries.count];
+
+    for (NSDictionary *entry in entries) {
+        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+
+        NSMutableDictionary *item = [NSMutableDictionary dictionary];
+
+        // im:name
+        NSDictionary *nameObj = entry[@"im:name"];
+        if ([nameObj isKindOfClass:[NSDictionary class]]) {
+            NSString *name = nameObj[@"label"];
+            if ([name isKindOfClass:[NSString class]]) {
+                item[kAppleChartsName] = name;
+            }
+        }
+
+        // im:artist
+        NSDictionary *artistObj = entry[@"im:artist"];
+        if ([artistObj isKindOfClass:[NSDictionary class]]) {
+            NSString *artist = artistObj[@"label"];
+            if ([artist isKindOfClass:[NSString class]]) {
+                item[kAppleChartsArtistName] = artist;
+            }
+        }
+
+        // im:image — get largest (last in array, typically 170px)
+        NSArray *images = entry[@"im:image"];
+        if ([images isKindOfClass:[NSArray class]] && images.count > 0) {
+            NSDictionary *largestImage = [images lastObject];
+            if ([largestImage isKindOfClass:[NSDictionary class]]) {
+                NSString *imageUrl = largestImage[@"label"];
+                if ([imageUrl isKindOfClass:[NSString class]]) {
+                    item[kAppleChartsArtworkUrl100] = imageUrl;
+                }
+            }
+        }
+
+        // id → attributes.im:id
+        NSDictionary *idObj = entry[@"id"];
+        if ([idObj isKindOfClass:[NSDictionary class]]) {
+            NSDictionary *idAttrs = idObj[@"attributes"];
+            if ([idAttrs isKindOfClass:[NSDictionary class]]) {
+                NSString *podcastId = idAttrs[@"im:id"];
+                if ([podcastId isKindOfClass:[NSString class]]) {
+                    item[kAppleChartsID] = podcastId;
+                }
+            }
+            NSString *url = idObj[@"label"];
+            if ([url isKindOfClass:[NSString class]]) {
+                item[kAppleChartsURL] = url;
+            }
+        }
+
+        // category
+        NSDictionary *category = entry[@"category"];
+        if ([category isKindOfClass:[NSDictionary class]]) {
+            NSDictionary *catAttrs = category[@"attributes"];
+            if ([catAttrs isKindOfClass:[NSDictionary class]]) {
+                NSString *genreName = catAttrs[@"label"];
+                NSString *genreId = catAttrs[@"im:id"];
+                if ([genreName isKindOfClass:[NSString class]]) {
+                    item[kAppleChartsGenres] = genreName;
+                }
+                if ([genreId isKindOfClass:[NSString class]]) {
+                    item[kAppleChartsGenreIDs] = @[genreId];
+                }
+            }
+        }
+
+        if (item[kAppleChartsName]) {
+            [parsedResults addObject:item];
+        }
+    }
+
+    if (outResults) *outResults = [parsedResults copy];
+}
+
+#pragma mark - Genre Disk Cache
+
+- (void)_saveGenreDiskCache:(NSDictionary *)cacheEntry forKey:(NSString *)key
+{
+    NSURL *cacheDir = [self _cacheDirectory];
+    [[NSFileManager defaultManager] createDirectoryAtURL:cacheDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSURL *dataFileURL = [cacheDir URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.plist", key]];
+    NSData *data = [NSPropertyListSerialization dataWithPropertyList:cacheEntry format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+    [data writeToURL:dataFileURL atomically:YES];
+}
+
+- (NSDictionary *)_loadGenreDiskCacheForKey:(NSString *)key
+{
+    NSURL *cacheDir = [self _cacheDirectory];
+    NSURL *dataFileURL = [cacheDir URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.plist", key]];
+
+    NSData *data = [NSData dataWithContentsOfURL:dataFileURL];
+    if (!data) return nil;
+
+    NSDictionary *cacheEntry = [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:nil error:nil];
+    if (![cacheEntry isKindOfClass:[NSDictionary class]]) return nil;
+
+    NSArray *results = cacheEntry[@"results"];
+    if (![results isKindOfClass:[NSArray class]]) return nil;
+
+    return cacheEntry;
 }
 
 @end

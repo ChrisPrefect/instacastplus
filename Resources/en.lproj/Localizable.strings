@@ -871,3 +871,6 @@
 
 /* ApplePodcastChartsClient / DirectorySearchViewController */
 "Popular Podcasts" = "Popular Podcasts";
+"All" = "All";
+"Genre" = "Genre";
+"Cancel" = "Cancel";

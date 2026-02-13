@@ -16,6 +16,8 @@
 #import "ICSearchBar.h"
 #import "ApplePodcastChartsClient.h"
 
+static NSInteger const kChartsDisplayLimit = 50;
+static NSInteger const kChartsGenreMinCount = 5;
 
 @interface DirectorySearchViewController ()
 @property (nonatomic, strong) ICSearchBar* searchBar;
@@ -29,7 +31,10 @@
 @property (nonatomic) BOOL searchBarActive;
 
 // Charts
-@property (nonatomic, strong) NSArray* chartsResults;
+@property (nonatomic, strong) NSArray* chartsAllResults;      // All 100 from API
+@property (nonatomic, strong) NSArray* chartsFilteredResults;  // Filtered + capped to 50
+@property (nonatomic, strong) NSArray* chartsGenres;           // Array of @{@"genreId", @"name", @"count"}
+@property (nonatomic, strong) NSString* selectedGenreId;       // nil = "Alle"
 @property (nonatomic) BOOL chartsLoading;
 @property (nonatomic, strong) NSURLSessionDataTask* chartsLookupTask;
 @end
@@ -82,7 +87,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 	self.imageCache = [NSMutableDictionary dictionary];
 
-    // Load top podcast charts
+    // Load charts: 50 from new API (fast) + 20/genre from old API (background)
     [self _loadCharts];
 }
 
@@ -94,15 +99,12 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     UITextField *searchTextField = self.searchBar.searchTextField;
     searchTextField.textColor = textColor;
     searchTextField.tintColor = tintColorD;
-    // 1. Change placeholder text color
     searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor}];
 
-    // 2. Change magnifying glass (search) icon color
     UIImageView *iconView = (UIImageView *)searchTextField.leftView;
     iconView.image = [iconView.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
     iconView.tintColor = tintColorD;
 
-    // 3. Change dismiss (clear) icon color
     UIButton *clearButton = [searchTextField valueForKey:@"_clearButton"];
     [clearButton setImage:[[clearButton imageForState:UIControlStateNormal] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
     clearButton.tintColor = tintColorD;
@@ -142,7 +144,6 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 {
 	[super viewWillDisappear:animated];
 
-	// remove search timer
 	[self.searchTimer invalidate];
 	self.searchTimer = nil;
 
@@ -163,29 +164,281 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     [self dismissViewControllerAnimated:YES completion:NULL];
 }
 
-#pragma mark - Charts Loading
+#pragma mark - Charts Loading & Filtering
 
 - (void)_loadCharts
 {
-    self.chartsLoading = YES;
-
     ApplePodcastChartsClient *client = [ApplePodcastChartsClient sharedClient];
+
+    // 1. Show cached data instantly (merged from both sources, even if stale)
+    NSArray *cachedMain = [client cachedTopPodcastsForCountryCode:nil limit:50];
+    NSArray *cachedGenres = [client cachedGenrePodcastsForCountryCode:nil];
+    if (cachedMain.count > 0 || cachedGenres.count > 0) {
+        self.chartsAllResults = [self _mergeMainResults:cachedMain withGenreResults:cachedGenres];
+        [self _buildGenreList];
+        [self _applyGenreFilter];
+        [self.tableView reloadData];
+    }
+
+    // 2. Fetch both sources in parallel
+    self.chartsLoading = YES;
     __weak typeof(self) weakSelf = self;
 
+    // Phase 1: 50 from new API (fast, single request)
     [client fetchTopPodcastsWithCountryCode:nil limit:50 completion:^(NSArray *results, NSString *updated, NSError *error) {
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        if (results) {
+            NSArray *genreResults = [client cachedGenrePodcastsForCountryCode:nil];
+            strongSelf.chartsAllResults = [strongSelf _mergeMainResults:results withGenreResults:genreResults];
+            [strongSelf _buildGenreList];
+            [strongSelf _applyGenreFilter];
+            if ([strongSelf _isShowingCharts]) {
+                [strongSelf.tableView reloadData];
+            }
+        }
+    }];
+
+    // Phase 2: 20 per genre from old iTunes RSS API (background enrichment)
+    [client fetchGenrePodcastsWithCountryCode:nil limitPerGenre:20 completion:^(NSArray *genreResults, NSError *error) {
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf) return;
 
         strongSelf.chartsLoading = NO;
 
-        if (results) {
-            strongSelf.chartsResults = results;
-        }
-
-        if ([strongSelf _isShowingCharts]) {
-            [strongSelf.tableView reloadData];
+        if (genreResults.count > 0) {
+            NSArray *mainResults = [client cachedTopPodcastsForCountryCode:nil limit:50];
+            strongSelf.chartsAllResults = [strongSelf _mergeMainResults:mainResults withGenreResults:genreResults];
+            [strongSelf _buildGenreList];
+            [strongSelf _applyGenreFilter];
+            if ([strongSelf _isShowingCharts]) {
+                [strongSelf.tableView reloadData];
+            }
         }
     }];
+}
+
+- (NSArray *)_mergeMainResults:(NSArray *)mainResults withGenreResults:(NSArray *)genreResults
+{
+    if (!mainResults && !genreResults) return nil;
+    if (!genreResults) return mainResults;
+    if (!mainResults) return genreResults;
+
+    NSMutableArray *merged = [NSMutableArray arrayWithArray:mainResults];
+    NSMutableSet *existingIDs = [NSMutableSet set];
+    for (NSDictionary *item in mainResults) {
+        NSString *podcastId = item[kAppleChartsID];
+        if (podcastId) [existingIDs addObject:podcastId];
+    }
+
+    for (NSDictionary *item in genreResults) {
+        NSString *podcastId = item[kAppleChartsID];
+        if (podcastId && ![existingIDs containsObject:podcastId]) {
+            [merged addObject:item];
+            [existingIDs addObject:podcastId];
+        }
+    }
+
+    return [merged copy];
+}
+
+- (void)_buildGenreList
+{
+    // Count podcasts per genre
+    NSMutableDictionary *genreCounts = [NSMutableDictionary dictionary]; // genreId -> count
+    NSMutableDictionary *genreNames = [NSMutableDictionary dictionary]; // genreId -> name
+
+    for (NSDictionary *entry in self.chartsAllResults) {
+        NSArray *genreIDs = entry[kAppleChartsGenreIDs];
+        NSString *genresString = entry[kAppleChartsGenres];
+        if (![genreIDs isKindOfClass:[NSArray class]]) continue;
+
+        // Parse genre names from the comma-separated string
+        NSArray *names = [genresString componentsSeparatedByString:@", "];
+
+        for (NSUInteger i = 0; i < genreIDs.count; i++) {
+            NSString *genreId = genreIDs[i];
+            NSNumber *count = genreCounts[genreId] ?: @0;
+            genreCounts[genreId] = @(count.integerValue + 1);
+
+            if (i < names.count && !genreNames[genreId]) {
+                genreNames[genreId] = names[i];
+            }
+        }
+    }
+
+    // Build sorted genre list, only genres with >= kChartsGenreMinCount
+    NSMutableArray *genres = [NSMutableArray array];
+    for (NSString *genreId in genreCounts) {
+        NSInteger count = [genreCounts[genreId] integerValue];
+        if (count >= kChartsGenreMinCount) {
+            [genres addObject:@{
+                @"genreId": genreId,
+                @"name": genreNames[genreId] ?: genreId,
+                @"count": @(count)
+            }];
+        }
+    }
+
+    // Sort by count descending
+    [genres sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"count"] compare:a[@"count"]];
+    }];
+
+    self.chartsGenres = [genres copy];
+}
+
+- (void)_applyGenreFilter
+{
+    NSArray *source = self.chartsAllResults;
+    if (!source) {
+        self.chartsFilteredResults = nil;
+        return;
+    }
+
+    if (self.selectedGenreId) {
+        NSMutableArray *filtered = [NSMutableArray array];
+        for (NSDictionary *entry in source) {
+            NSArray *genreIDs = entry[kAppleChartsGenreIDs];
+            if ([genreIDs containsObject:self.selectedGenreId]) {
+                [filtered addObject:entry];
+                if (filtered.count >= kChartsDisplayLimit) break;
+            }
+        }
+        self.chartsFilteredResults = [filtered copy];
+    } else {
+        // "Alle" — show first 50
+        if (source.count > kChartsDisplayLimit) {
+            self.chartsFilteredResults = [source subarrayWithRange:NSMakeRange(0, kChartsDisplayLimit)];
+        } else {
+            self.chartsFilteredResults = source;
+        }
+    }
+}
+
+- (NSString *)_selectedGenreName
+{
+    if (!self.selectedGenreId) {
+        return @"All".ls;
+    }
+    for (NSDictionary *genre in self.chartsGenres) {
+        if ([genre[@"genreId"] isEqualToString:self.selectedGenreId]) {
+            return genre[@"name"];
+        }
+    }
+    return @"All".ls;
+}
+
+#pragma mark - Genre Menu
+
+- (void)_showGenreMenu:(UIButton *)sender
+{
+    if (@available(iOS 14.0, *)) {
+        // Menu is already attached via UIButton.menu + showsMenuAsPrimaryAction
+        return;
+    }
+
+    // iOS 13 fallback: UIAlertController
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Genre".ls
+                                                                  message:nil
+                                                           preferredStyle:UIAlertControllerStyleActionSheet];
+
+    // "Alle" option
+    NSString *allTitle = self.selectedGenreId == nil
+        ? [NSString stringWithFormat:@"\u2713 %@", @"All".ls]
+        : @"All".ls;
+    [alert addAction:[UIAlertAction actionWithTitle:allTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        self.selectedGenreId = nil;
+        [self _applyGenreFilter];
+        [self.tableView reloadData];
+    }]];
+
+    for (NSDictionary *genre in self.chartsGenres) {
+        NSString *genreId = genre[@"genreId"];
+        NSString *name = genre[@"name"];
+        NSString *title = [self.selectedGenreId isEqualToString:genreId]
+            ? [NSString stringWithFormat:@"\u2713 %@", name]
+            : name;
+
+        [alert addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            self.selectedGenreId = genreId;
+            [self _applyGenreFilter];
+            [self.tableView reloadData];
+        }]];
+    }
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+
+    if (alert.popoverPresentationController) {
+        alert.popoverPresentationController.sourceView = sender;
+        alert.popoverPresentationController.sourceRect = sender.bounds;
+    }
+
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (UIButton *)_createGenreButton
+{
+    UIButton *button;
+
+    NSString *title = [NSString stringWithFormat:@"%@  \u25BE", [self _selectedGenreName]];
+
+    if (@available(iOS 14.0, *)) {
+        button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.showsMenuAsPrimaryAction = YES;
+        button.menu = [self _buildGenreUIMenu];
+    } else {
+        button = [UIButton buttonWithType:UIButtonTypeSystem];
+        [button addTarget:self action:@selector(_showGenreMenu:) forControlEvents:UIControlEventTouchUpInside];
+    }
+
+    [button setTitle:title forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont systemFontOfSize:15.f weight:UIFontWeightMedium];
+    [button setTitleColor:ICTintColor forState:UIControlStateNormal];
+    button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+
+    return button;
+}
+
+- (UIMenu *)_buildGenreUIMenu API_AVAILABLE(ios(14.0))
+{
+    NSMutableArray *actions = [NSMutableArray array];
+
+    // "Alle" option
+    UIAction *allAction = [UIAction actionWithTitle:@"All".ls
+                                              image:nil
+                                         identifier:nil
+                                            handler:^(UIAction *action) {
+        self.selectedGenreId = nil;
+        [self _applyGenreFilter];
+        [self.tableView reloadData];
+    }];
+    if (!self.selectedGenreId) {
+        allAction.state = UIMenuElementStateOn;
+    }
+    [actions addObject:allAction];
+
+    for (NSDictionary *genre in self.chartsGenres) {
+        NSString *genreId = genre[@"genreId"];
+        NSString *name = genre[@"name"];
+
+        UIAction *action = [UIAction actionWithTitle:name
+                                               image:nil
+                                          identifier:nil
+                                             handler:^(UIAction *action) {
+            self.selectedGenreId = genreId;
+            [self _applyGenreFilter];
+            [self.tableView reloadData];
+        }];
+        if ([self.selectedGenreId isEqualToString:genreId]) {
+            action.state = UIMenuElementStateOn;
+        }
+        [actions addObject:action];
+    }
+
+    return [UIMenu menuWithTitle:@"" children:actions];
 }
 
 #pragma mark TableView Datasource
@@ -198,39 +451,57 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     if ([self _isShowingCharts]) {
-        return [self.chartsResults count];
+        return [self.chartsFilteredResults count];
     }
 	return [self.searchResults count];
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
 {
-    if (![self _isShowingCharts] || [self.chartsResults count] == 0) {
+    if (![self _isShowingCharts] || [self.chartsFilteredResults count] == 0) {
         return nil;
     }
 
     UIView *headerView = [[UIView alloc] init];
     headerView.backgroundColor = ICBackgroundColor;
 
+    // Title label
     UILabel *label = [[UILabel alloc] init];
     label.text = @"Popular Podcasts".ls;
     label.textColor = ICTextColor;
     label.font = [UIFont systemFontOfSize:20.f weight:UIFontWeightBold];
     label.translatesAutoresizingMaskIntoConstraints = NO;
+    [label setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     [headerView addSubview:label];
 
-    [NSLayoutConstraint activateConstraints:@[
-        [label.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:10],
-        [label.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-10],
-        [label.bottomAnchor constraintEqualToAnchor:headerView.bottomAnchor constant:-4]
-    ]];
+    if (self.chartsGenres.count > 0) {
+        // Genre dropdown button — right-aligned, same baseline as title
+        UIButton *genreButton = [self _createGenreButton];
+        [genreButton setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        [genreButton setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+        [headerView addSubview:genreButton];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [label.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:10],
+            [label.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor],
+
+            [genreButton.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-10],
+            [genreButton.firstBaselineAnchor constraintEqualToAnchor:label.firstBaselineAnchor],
+            [genreButton.leadingAnchor constraintGreaterThanOrEqualToAnchor:label.trailingAnchor constant:8]
+        ]];
+    } else {
+        [NSLayoutConstraint activateConstraints:@[
+            [label.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:10],
+            [label.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor]
+        ]];
+    }
 
     return headerView;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
-    if ([self _isShowingCharts] && [self.chartsResults count] > 0) {
+    if ([self _isShowingCharts] && [self.chartsFilteredResults count] > 0) {
         return 44;
     }
     return 0;
@@ -263,7 +534,6 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 	cell.textLabel.text = [searchResult objectForKey:kiTunesStoreAlbum];
 	cell.detailTextLabel.text = [searchResult objectForKey:kiTunesStoreArtist];
 
-
 	cell.video = NO;
 	cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 
@@ -283,11 +553,11 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     }
     cell.backgroundColor = tableView.backgroundColor;
 
-    if (indexPath.row >= [self.chartsResults count]) {
+    if (indexPath.row >= [self.chartsFilteredResults count]) {
         return cell;
     }
 
-    NSDictionary* chartEntry = self.chartsResults[indexPath.row];
+    NSDictionary* chartEntry = self.chartsFilteredResults[indexPath.row];
     cell.textLabel.text = [NSString stringWithFormat:@"%ld. %@", (long)(indexPath.row + 1), chartEntry[kAppleChartsName] ?: @""];
     cell.detailTextLabel.text = chartEntry[kAppleChartsArtistName];
 
@@ -372,7 +642,6 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
         };
         [feedViewController startLoading];
 
-
         [self.navigationController pushViewController:feedViewController animated:YES];
     }
     else
@@ -383,12 +652,12 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 - (void)_didSelectChartEntryAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.row >= [self.chartsResults count]) {
+    if (indexPath.row >= [self.chartsFilteredResults count]) {
         [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
         return;
     }
 
-    NSDictionary *chartEntry = self.chartsResults[indexPath.row];
+    NSDictionary *chartEntry = self.chartsFilteredResults[indexPath.row];
     NSString *podcastID = chartEntry[kAppleChartsID];
 
     if (!podcastID) {
@@ -520,7 +789,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 	}
     else if ([searchText length] == 0)
     {
-        // Cleared search → show charts again
+        // Cleared search -> show charts again
         self.searchResults = nil;
         [self.tableView reloadData];
     }
@@ -581,13 +850,11 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 - (void)searchBarTextDidBeginEditing:(UISearchBar *)searchBar
 {
     self.searchBarActive = YES;
-	//[self.searchBar setShowsCancelButton:YES animated:YES];
 }
 
 - (void)searchBarTextDidEndEditing:(UISearchBar *)searchBar
 {
     self.searchBarActive = NO;
-	//[self.searchBar setShowsCancelButton:NO animated:YES];
 }
 
 - (void)searchBar:(UISearchBar *)searchBar selectedScopeButtonIndexDidChange:(NSInteger)selectedScope
@@ -598,50 +865,10 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 	self.searchTimer = [NSTimer scheduledTimerWithTimeInterval:0 target:self selector:@selector(searchTimer:) userInfo:self.searchBar.text repeats:NO];
 }
 
-//- (BOOL) prefersStatusBarHidden
-//{
-//    return self.searchBarActive;
-//}
-
 - (void) setSearchBarActive:(BOOL)searchBarActive
 {
     if (searchBarActive != _searchBarActive) {
         _searchBarActive = searchBarActive;
-
-        /*
-        CGFloat barHeight = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) ? 20 : 0;
-
-        if (searchBarActive)
-        {
-            [self setNeedsStatusBarAppearanceUpdate];
-
-            [self.tableView setContentOffset:CGPointMake(0, 0) animated:YES];
-            [self perform:^(id sender) {
-                [self.tableView setContentInset:UIEdgeInsetsMake(0, 0, 50, 0)];
-            } afterDelay:0.3];
-
-            [self.searchBar setShowsCancelButton:YES animated:YES];
-
-            UIButton* button = [self.searchBar valueForKey:@"cancelButton"];
-            button.tintColor = ICTintColor;
-
-            [self.navigationController setNavigationBarHidden:YES animated:YES];
-        }
-        else
-        {
-
-            [self.tableView setContentOffset:CGPointMake(0, -barHeight-44) animated:YES];
-            [self perform:^(id sender) {
-                [self.tableView setContentInset:UIEdgeInsetsMake(barHeight+44, 0, 50, 0)];
-                [self setNeedsStatusBarAppearanceUpdate];
-            } afterDelay:0.3];
-
-            [self.navigationController setNavigationBarHidden:NO animated:YES];
-
-            [self.searchBar setShowsCancelButton:NO animated:YES];
-            [self.searchBar resignFirstResponder];
-        }
-         */
     }
 }
 
@@ -654,9 +881,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 	self.searchResults = theSearchResults;
 	self.store = nil;
 
-	//self.tableView.scrollEnabled = ([self.searchResults count] > 0);
 	[self.tableView reloadData];
-	//[self.tableView setContentOffset:CGPointMake(0, -20-44) animated:NO];
 
 	[App releaseNetworkActivity];
 }
@@ -667,9 +892,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 	self.store = nil;
 	self.searchResults = nil;
 
-	//self.tableView.scrollEnabled = NO;
 	[self.tableView reloadData];
-	//[self.tableView setContentOffset:CGPointMake(0, -20-44) animated:NO];
 
 	[App releaseNetworkActivity];
 }
@@ -678,13 +901,9 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
-    if (!decelerate) {
-
-    }
 }
 
 - (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
-
 }
 @end
