@@ -490,6 +490,12 @@ enum {
 @end
 
 
+// Static in-memory cache for parsed transcript cues — survives across player open/close cycles
+static NSString* s_transcriptCachedEpisodeHash;
+static NSArray<NSDictionary*>* s_transcriptCachedCues;
+static NSDictionary* s_transcriptCachedDescriptor;
+static NSArray<NSDictionary*>* s_transcriptCachedSources;
+
 @implementation PlayerInfoViewController_v5 {
     BOOL _observing;
     CGPoint _oldContentOffset;
@@ -1110,6 +1116,14 @@ enum {
         return;
     }
 
+    // Clear static in-memory cache if it matches
+    if ([episodeHash isEqualToString:s_transcriptCachedEpisodeHash]) {
+        s_transcriptCachedEpisodeHash = nil;
+        s_transcriptCachedCues = nil;
+        s_transcriptCachedDescriptor = nil;
+        s_transcriptCachedSources = nil;
+    }
+
     NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
     if (!directoryURL) {
         return;
@@ -1130,6 +1144,12 @@ enum {
 
 - (void)_clearAllTranscriptCache
 {
+    // Clear static in-memory cache
+    s_transcriptCachedEpisodeHash = nil;
+    s_transcriptCachedCues = nil;
+    s_transcriptCachedDescriptor = nil;
+    s_transcriptCachedSources = nil;
+
     NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
     if (!directoryURL) {
         return;
@@ -1141,6 +1161,13 @@ enum {
 {
     if (episode.consumed) {
         [self _removeTranscriptCacheForEpisode:episode];
+        // Also clear static in-memory cache if it matches
+        if ([episode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
+            s_transcriptCachedEpisodeHash = nil;
+            s_transcriptCachedCues = nil;
+            s_transcriptCachedDescriptor = nil;
+            s_transcriptCachedSources = nil;
+        }
     }
 }
 
@@ -1310,6 +1337,14 @@ enum {
     resolvedDescriptor[@"resolvedURL"] = resolvedURL;
     self.selectedTranscriptDescriptor = resolvedDescriptor;
     self.transcriptCues = cues;
+
+    // Save to static in-memory cache for instant restore on player reopen
+    s_transcriptCachedEpisodeHash = loadedEpisode.objectHash;
+    s_transcriptCachedCues = cues;
+    s_transcriptCachedDescriptor = [resolvedDescriptor copy];
+    s_transcriptCachedSources = [self.transcriptSources copy];
+    DebugLog(@"[TranscriptData] saved to in-memory cache episode=%@ cues=%ld", s_transcriptCachedEpisodeHash, (long)cues.count);
+
     [self _rebuildTranscriptLines];
     [self _updateTranscriptPickerButton];
 
@@ -1864,6 +1899,8 @@ enum {
     DebugLog(@"[TranscriptData] refresh start");
 
     CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+
+    // 1) Same VC instance already has cues for this episode
     if (self.transcriptCues.count > 0 &&
         self.transcriptLoadedEpisodeHash.length > 0 &&
         [currentEpisode.objectHash isEqualToString:self.transcriptLoadedEpisodeHash]) {
@@ -1872,6 +1909,42 @@ enum {
         return;
     }
 
+    // 2) Static in-memory cache has cues for this episode — instant state restore, deferred label creation
+    if (s_transcriptCachedCues.count > 0 &&
+        s_transcriptCachedEpisodeHash.length > 0 &&
+        [currentEpisode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
+        DebugLog(@"[TranscriptData] instant restore from in-memory cache episode=%@ cues=%ld",
+                 s_transcriptCachedEpisodeHash, (long)s_transcriptCachedCues.count);
+
+        self.transcriptLoadedEpisodeHash = s_transcriptCachedEpisodeHash;
+        self.transcriptSources = s_transcriptCachedSources ?: @[];
+        self.selectedTranscriptDescriptor = s_transcriptCachedDescriptor;
+        self.transcriptCues = s_transcriptCachedCues;
+        [self _updateTranscriptPickerButton];
+
+        // Set visibility/availability immediately so chapter images are hidden from first frame
+        BOOL shouldRestoreVisible = [USER_DEFAULTS boolForKey:@"TranscriptVisiblePreference"];
+        if (shouldRestoreVisible) {
+            self.transcriptVisible = YES;
+        }
+        [self _setTranscriptAvailableState:YES];
+        [self _applyTranscriptVisibility];
+
+        // Defer heavy UILabel creation to after player appears
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            [self _rebuildTranscriptLines];
+            PlaybackManager* pman = [PlaybackManager playbackManager];
+            [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+            [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+            [self _updateTranscriptSyncTimerState];
+        });
+        return;
+    }
+
+    // 3) Full reset + async load
     [self.transcriptTask cancel];
     [self _cancelTranscriptPrefetchTasks];
     _transcriptLoadingURL = nil;
@@ -1884,7 +1957,7 @@ enum {
     self.transcriptVisible = NO;
     self.transcriptLoadedEpisodeHash = nil;
 
-    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    CDEpisode* episode = currentEpisode;
     BOOL isCached = [[CacheManager sharedCacheManager] episodeIsCached:episode];
     DebugLog(@"[TranscriptData] refresh episode=%@ title='%@' cached=%@ consumed=%@",
              episode.objectHash ?: @"(nil)",
