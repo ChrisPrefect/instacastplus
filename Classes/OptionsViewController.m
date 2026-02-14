@@ -157,7 +157,7 @@ enum {
             cell.imageView.image = [UIImage systemImageNamed:@"tray.full"];
             break;
         case kRowSubscriptions:
-            cell.textLabel.text = @"Subscriptions".ls;
+            cell.textLabel.text = @"Podcast Settings".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
             break;
         case kRowNotifications:

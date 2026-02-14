@@ -170,6 +170,8 @@
         [AudioSession sharedAudioSession].timerValue = PlaybackStopTimeNoValue;
         [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
         [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
+        [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
+        [USER_DEFAULTS setBool:NO forKey:IntelligentSleepTimerAlwaysActive];
         [USER_DEFAULTS synchronize];
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Sleep Timer disabled.".ls);
         
@@ -260,17 +262,18 @@
         NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
         if (sleepTimer == PlaybackStopTimeNoValue)
         {
-//            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-//            [USER_DEFAULTS synchronize];
             NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
             if (lastSleepTimer > 0)
             {
                 [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
+                [USER_DEFAULTS setInteger:lastSleepTimer forKey:DefaultIntelligentSleepTimer];
             }
             else
             {
                 [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
+                [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:DefaultIntelligentSleepTimer];
             }
+            [USER_DEFAULTS synchronize];
         }
         [self IntelligentSleepTimerUpdate];
     }
@@ -336,13 +339,9 @@
     UIStackView *mainStack = [[UIStackView alloc] init];
     mainStack.axis = UILayoutConstraintAxisVertical;
     mainStack.alignment = UIStackViewAlignmentCenter;
-    mainStack.spacing = 8;
-
-    UIView *lineView1 = [[UIView alloc] init];
-    lineView1.backgroundColor = [UIColor lightGrayColor];
+    mainStack.spacing = 4;
 
     [mainStack addArrangedSubview:intelligentStack];
-    [mainStack addArrangedSubview:lineView1];
     [mainStack addArrangedSubview:screenAlwaysStack];
     
     WEAK_SELF
@@ -474,16 +473,13 @@
     alert.view.clipsToBounds = YES;
     mainStack.translatesAutoresizingMaskIntoConstraints = NO;
     [mainStack.centerXAnchor constraintEqualToAnchor:alert.view.centerXAnchor].active = YES;
-    [mainStack.topAnchor constraintEqualToAnchor:alert.view.topAnchor constant:12].active = YES;
+    [mainStack.topAnchor constraintEqualToAnchor:alert.view.topAnchor constant:8].active = YES;
     [mainStack.leadingAnchor constraintGreaterThanOrEqualToAnchor:alert.view.leadingAnchor constant:16].active = YES;
     [mainStack.trailingAnchor constraintLessThanOrEqualToAnchor:alert.view.trailingAnchor constant:-16].active = YES;
-    [lineView1.heightAnchor constraintEqualToConstant:0.5].active = YES;
-    [lineView1.leadingAnchor constraintEqualToAnchor:alert.view.leadingAnchor].active = YES;
-    [lineView1.trailingAnchor constraintEqualToAnchor:alert.view.trailingAnchor].active = YES;
     [alert.view layoutIfNeeded];
 
     // Set minimum width for the alert to prevent text truncation
-    CGFloat minWidth = 320;
+    CGFloat minWidth = 280;
     [alert.view.widthAnchor constraintGreaterThanOrEqualToConstant:minWidth].active = YES;
 
     // Height constraint for the alert view

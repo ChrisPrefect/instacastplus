@@ -74,7 +74,7 @@
 
 - (void) setupWebView {
     WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
-    CGRect bTemp = CGRectMake(10, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width-20, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));
+    CGRect bTemp = CGRectMake(0, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));
     
     self.sharedWebView = [[WKWebView alloc] initWithFrame:bTemp configuration:config];
     [self.sharedWebView setOpaque:NO];

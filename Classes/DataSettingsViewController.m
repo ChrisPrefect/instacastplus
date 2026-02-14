@@ -399,7 +399,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         controller.key = AutoCacheStorageLimit;
         controller.valueType = kValueTypeInteger;
         controller.title = @"Storage Limit".ls;
-        controller.values = [NSArray arrayWithObjects:@(512),@(1024),@(2048),@(5120),@(10240),@(20480),@(0), nil];
+        controller.values = [NSArray arrayWithObjects:@(512),@(1024),@(2048),@(5120),@(10240),@(20480),@(51200),@(0), nil];
         controller.titles = [NSArray arrayWithObjects:
                              [NSByteCountFormatter stringFromByteCount:512*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory],
                              [NSByteCountFormatter stringFromByteCount:1024*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory],
@@ -407,6 +407,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                              [NSByteCountFormatter stringFromByteCount:5120*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
                              [NSByteCountFormatter stringFromByteCount:10240*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
                              [NSByteCountFormatter stringFromByteCount:20480*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
+                             [NSByteCountFormatter stringFromByteCount:51200*1024LL*1024LL countStyle:NSByteCountFormatterCountStyleMemory].ls,
                              @"No Limit".ls, nil];
         controller.footerText = @"Played episodes and old content will be automatically deleted when the storage limit is exceeded.".ls;
 

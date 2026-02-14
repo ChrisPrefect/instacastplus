@@ -17,13 +17,13 @@
 
 enum {
     kSectionAppearance,
+    kSectionMainMenu,
     kSectionIncludeAttributes,
     kSectionIncludeSearch,
     kSectionIncludePodcasts,
     kSectionOrderBy,
     kSectionOrderOptions,
     kSectionContinuousPlayback,
-    kSectionMainMenu,
     kNumberOfSections
 };
 

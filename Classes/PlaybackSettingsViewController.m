@@ -202,7 +202,24 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     return nil;
 }
 
+- (NSString*) tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
+{
+    switch (section) {
+        case kPlaybackSection:
+            return @"These are the default settings. They can be overridden per podcast in the podcast settings.".ls;
+        default:
+            break;
+    }
+    return nil;
+}
+
 - (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section
+{
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    [header.textLabel setTextColor:[UIColor grayColor]];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayFooterView:(UIView *)view forSection:(NSInteger)section
 {
     UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
     [header.textLabel setTextColor:[UIColor grayColor]];

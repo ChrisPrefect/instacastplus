@@ -159,7 +159,13 @@ enum {
         case kPlaybackSection:
             return 4;
         case kRestoreDeletedSection:
-            return 1;
+        {
+            NSFetchRequest* countRequest = [[NSFetchRequest alloc] init];
+            countRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
+            countRequest.predicate = [NSPredicate predicateWithFormat:@"feed = %@ && archived == %@", self.feed, @YES];
+            NSUInteger archivedCount = [DMANAGER.objectContext countForFetchRequest:countRequest error:nil];
+            return (archivedCount > 0) ? 1 : 0;
+        }
         case kSyncPauseSection:
             return 1;
         case kResetSection:

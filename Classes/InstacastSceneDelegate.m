@@ -1097,7 +1097,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (CPListTemplate*)carPlayMainMenuTemplate
 {
-    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:@"instacastPlus" sections:[self carPlayMainMenuSections]];
+    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:@"InstacastPlus" sections:[self carPlayMainMenuSections]];
     template.userInfo = [self carPlayTemplateInfoWithKind:kCarPlayTemplateKindRoot source:nil];
     [self carPlayConfigureLegacySelectionDelegateIfNeededForTemplate:template];
     return template;

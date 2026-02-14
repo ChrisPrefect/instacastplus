@@ -45,7 +45,7 @@ static NSString* kFeedCell = @"FeedCell";
     [self.tableView registerClass:[SubscriptionSettingTableViewCell class] forCellReuseIdentifier:kFeedCell];
     
     self.clearsSelectionOnViewWillAppear = YES;
-    self.navigationItem.title = @"Subscriptions".ls;
+    self.navigationItem.title = @"Podcast Settings".ls;
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -120,7 +120,7 @@ static NSString* kFeedCell = @"FeedCell";
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    return @"Use switch to temporarily disable subscription. Colored disclosure triangles indicate that custom settings apply.".ls;
+    return @"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Colored disclosure triangles indicate that custom settings apply.".ls;
 }
 
 - (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section

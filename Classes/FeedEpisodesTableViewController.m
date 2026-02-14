@@ -756,13 +756,51 @@
 
 - (void) share:(id)sender
 {
-    NSURL* feedURL = [self.feed sourceURLAsPcastURL];
-    
-    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[feedURL] applicationActivities:nil];
-    if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
-        shareController.popoverPresentationController.barButtonItem = sender;
+    if (self.feed.username.length > 0)
+    {
+        WEAK_SELF
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Share podcast with login credentials?".ls
+                                                                       message:nil
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"With Credentials".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+            STRONG_SELF
+            NSURLComponents* components = [NSURLComponents componentsWithURL:self.feed.sourceURL resolvingAgainstBaseURL:NO];
+            components.scheme = @"podcast";
+            components.user = self.feed.username;
+            components.password = self.feed.password;
+            NSURL* feedURL = components.URL;
+            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[feedURL] applicationActivities:nil];
+            if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
+                shareController.popoverPresentationController.barButtonItem = sender;
+            }
+            [self presentViewController:shareController animated:YES completion:NULL];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Without Credentials".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+            STRONG_SELF
+            NSURL* feedURL = [self.feed sourceURLAsPcastURL];
+            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[feedURL] applicationActivities:nil];
+            if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
+                shareController.popoverPresentationController.barButtonItem = sender;
+            }
+            [self presentViewController:shareController animated:YES completion:NULL];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+        if ([ICAppearanceManager sharedManager].nightSettingMode) {
+            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        } else {
+            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+        }
+        [self presentViewController:alert animated:YES completion:NULL];
     }
-    [self presentViewController:shareController animated:YES completion:NULL];
+    else
+    {
+        NSURL* feedURL = [self.feed sourceURLAsPcastURL];
+        UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[feedURL] applicationActivities:nil];
+        if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
+            shareController.popoverPresentationController.barButtonItem = sender;
+        }
+        [self presentViewController:shareController animated:YES completion:NULL];
+    }
 }
 
 

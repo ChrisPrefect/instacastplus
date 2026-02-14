@@ -175,7 +175,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (void) _setupTableHeaderView
 {
-    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 74)];
+    UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.tableView.bounds.size.width, 84)];
 
     self.sortControl = [[UISegmentedControl alloc] initWithItems:@[@"Size".ls, @"Date".ls, @"Podcast".ls]];
     self.sortControl.selectedSegmentIndex = self.sortMode;
@@ -488,12 +488,6 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if ([self _isPodcastMode]) {
-        return nil;
-    }
-    if (section == 0) {
-        return @"Downloaded Content".ls;
-    }
     return nil;
 }
 

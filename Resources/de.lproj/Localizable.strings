@@ -352,7 +352,7 @@
 
 /* GeneralSettingsViewController.m */
 "Always use Cellular Data" = "Mobile Daten immer erlauben";
-"Application Badge" = "App-Plakette";
+"Application Badge" = "App Badge";
 "Ask Before Sending" = "Vor dem Senden fragen";
 "Automatically" = "Automatisch";
 "Cellular Data" = "Mobile Daten";
@@ -395,6 +395,7 @@
 /* FeedOptionsViewController.m */
 "Subscriptions" = "Abonnements";
 "Use switch to temporarily disable subscription. Colored disclosure triangles indicate that custom settings apply." = "Schalter betätigen um Abonnements temporär zu deaktivieren. Farbige Pfeile zeigen an, dass Einstellungen vorgenommen wurden.";
+"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Colored disclosure triangles indicate that custom settings apply." = "Schalter betätigen um einen Podcast vorübergehend zu pausieren. Es werden keine neuen Folgen abgerufen und keine automatischen Downloads durchgeführt. Farbige Pfeile zeigen an, dass eigene Einstellungen vorgenommen wurden.";
 
 /* EpisodeViewController.m */
 "File" = "Datei";
@@ -744,7 +745,7 @@
 "Connected" = "Verbunden";
 "Disconnected" = "Getrennt";
 "Waiting for WiFi…" = "Warte auf WLAN…";
-"WiFi Only" = "Nur im WLAN";
+"WiFi Only" = "Nur im WLAN verbinden";
 "Error" = "Fehler";
 
 /* ICMQTTClient Errors */
@@ -878,3 +879,14 @@
 "All Categories" = "Alle Kategorien";
 "Genre" = "Genre";
 "Cancel" = "Abbrechen";
+
+/* PlaybackSettingsViewController */
+"These are the default settings. They can be overridden per podcast in the podcast settings." = "Dies sind die Standard-Einstellungen. Sie können pro Podcast in den Podcast-Einstellungen überschrieben werden.";
+
+/* Share with Credentials */
+"Share podcast with login credentials?" = "Podcast mit Anmeldeinformationen teilen?";
+"With Credentials" = "Mit Anmeldedaten";
+"Without Credentials" = "Ohne Anmeldedaten";
+
+/* SleepTimerSettingsViewController */
+"Smart Sleep Timer reset at:" = "Smart Sleep Timer zurücksetzen bei:";

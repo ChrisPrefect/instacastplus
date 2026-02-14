@@ -36,7 +36,7 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 	NSInteger	_networkActivityRetainCount;
 	BOOL		_errorShown;
     BOOL        _sendTouchNotifications;
-    double     motionXaxis;
+    double     lastTotalAccel;
     UIInterfaceOrientation orientationLast;
 }
 
@@ -307,10 +307,12 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         NSOperationQueue *queue = [[NSOperationQueue alloc] init];
         [self.motionManager startAccelerometerUpdatesToQueue:queue withHandler:^(CMAccelerometerData *accelerometerData, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                double motionLastXaxis = round(accelerometerData.acceleration.x*100)/100;
-                if (motionLastXaxis != motionXaxis)
+                CMAcceleration acc = accelerometerData.acceleration;
+                double totalAccel = sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+                double delta = fabs(totalAccel - self->lastTotalAccel);
+                if (delta > 0.02)
                 {
-                    motionXaxis = motionLastXaxis;
+                    self->lastTotalAccel = totalAccel;
                     [[NSNotificationCenter defaultCenter] postNotificationName:ApplicationDidDetectMotionNotification object:nil];
                     BOOL isMotionActive = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
                     BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
