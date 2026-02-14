@@ -219,7 +219,6 @@
     [transcriptButton setImage:transcriptImage forState:UIControlStateNormal];
     [transcriptButton setImage:transcriptImageSelected forState:UIControlStateSelected];
     transcriptButton.contentEdgeInsets = UIEdgeInsetsMake(14, 14, 14, 14);
-    transcriptButton.tintColor = self.view.tintColor;
     [transcriptButton addTarget:self action:@selector(toggleTranscript:) forControlEvents:UIControlEventTouchUpInside];
     transcriptButton.accessibilityLabel = @"Transcript".ls;
     transcriptButton.hidden = YES;
@@ -514,6 +513,7 @@
                  transcriptVisible ? @"YES" : @"NO");
         _transcriptVisible = transcriptVisible;
         self.transcriptButton.selected = transcriptVisible;
+        self.transcriptButton.contentEdgeInsets = transcriptVisible ? UIEdgeInsetsMake(7, 7, 7, 7) : UIEdgeInsetsMake(14, 14, 14, 14);
     }
 }
 

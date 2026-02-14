@@ -511,11 +511,21 @@ enum {
 }
 
 // Implement viewDidLoad to do additional setup after loading the view, typically from a nib.
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)viewDidLoad
 {
     [super viewDidLoad];
 
     self.edgesForExtendedLayout = UIRectEdgeNone;
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 
     PlaybackManager* pman = [PlaybackManager playbackManager];
 
@@ -603,6 +613,9 @@ enum {
         self.controller.transcriptAvailable = available;
         if (!available) {
             self.controller.transcriptVisible = NO;
+        } else {
+            // Sync controls with restored transcript visibility from infoViewController
+            self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
         }
         DebugLog(@"[TranscriptBridge] controls state after callback available=%@ visible=%@",
                  self.controller.transcriptAvailable ? @"YES" : @"NO",
@@ -782,6 +795,27 @@ enum {
         DebugLog(@"[TranscriptBridge] viewDidAppear sync available=%@ visible=%@",
                  self.controller.transcriptAvailable ? @"YES" : @"NO",
                  self.controller.transcriptVisible ? @"YES" : @"NO");
+    }
+}
+
+- (void)_updateAppearance
+{
+    self.view.backgroundColor = ICBackgroundColor;
+    self.feedTitleLabel.textColor = ICTextColor;
+
+    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
+    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+    [navAppearance configureWithOpaqueBackground];
+    navAppearance.backgroundImage = backgroundImage;
+    navAppearance.shadowImage = [[UIImage alloc] init];
+    navAppearance.shadowColor = nil;
+    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
+    self.navigationController.navigationBar.standardAppearance = navAppearance;
+    self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
+    self.navigationController.navigationBar.compactAppearance = navAppearance;
+
+    if (self.image) {
+        [self _updateDynamicTintColorWithImage:self.image];
     }
 }
 

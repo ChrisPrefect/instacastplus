@@ -120,7 +120,7 @@ static NSString* kFeedCell = @"FeedCell";
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    return @"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Colored disclosure triangles indicate that custom settings apply.".ls;
+    return @"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Tap a row to change individual podcast settings. Colored disclosure triangles indicate that custom settings apply.".ls;
 }
 
 - (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section

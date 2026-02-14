@@ -395,7 +395,7 @@
 /* FeedOptionsViewController.m */
 "Subscriptions" = "Abonnements";
 "Use switch to temporarily disable subscription. Colored disclosure triangles indicate that custom settings apply." = "Schalter betätigen um Abonnements temporär zu deaktivieren. Farbige Pfeile zeigen an, dass Einstellungen vorgenommen wurden.";
-"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Colored disclosure triangles indicate that custom settings apply." = "Schalter betätigen um einen Podcast vorübergehend zu pausieren. Es werden keine neuen Folgen abgerufen und keine automatischen Downloads durchgeführt. Farbige Pfeile zeigen an, dass eigene Einstellungen vorgenommen wurden.";
+"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Tap a row to change individual podcast settings. Colored disclosure triangles indicate that custom settings apply." = "Schalter betätigen um einen Podcast vorübergehend zu pausieren. Es werden keine neuen Folgen abgerufen und keine automatischen Downloads durchgeführt. Auf eine Zeile tippen um die individuellen Podcast-Einstellungen zu ändern. Farbige Pfeile zeigen an, dass eigene Einstellungen vorgenommen wurden.";
 
 /* EpisodeViewController.m */
 "File" = "Datei";

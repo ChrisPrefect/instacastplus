@@ -476,8 +476,10 @@ enum {
 @property (nonatomic, strong) NSTimer* transcriptFollowResumeTimer;
 @property (nonatomic, strong) NSTimer* transcriptSyncTimer;
 @property (nonatomic) BOOL transcriptAutoFollowSuspended;
+@property (nonatomic) BOOL transcriptWasPaused;
 @property (nonatomic) BOOL pendingTranscriptShowAfterScrollToTop;
 @property (nonatomic, copy) NSString* transcriptDataEpisodeHash;
+@property (nonatomic, copy) NSString* transcriptLoadedEpisodeHash;
 
 - (NSInteger)_transcriptUtilityRankForDescriptor:(NSDictionary*)descriptor;
 - (void)_updateTranscriptSyncTimerState;
@@ -577,6 +579,7 @@ enum {
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
         [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
+        [nc addObserver:self selector:@selector(_playbackDidUpdateForTranscriptFollow:) name:PlaybackManagerDidUpdateNotification object:nil];
 
         _observing = YES;
     }
@@ -813,7 +816,7 @@ enum {
 {
     self.transcriptContainerView.hidden = !self.transcriptVisible;
     self.chapterImagesCollection.hidden = self.transcriptVisible;
-    chevronIndicatorView.hidden = self.transcriptVisible || ![self _hasContentBelowImage];
+    chevronIndicatorView.hidden = ![self _hasContentBelowImage];
     DebugLog(@"[TranscriptUI] apply visibility visible=%@ containerHidden=%@ chapterHidden=%@",
              self.transcriptVisible ? @"YES" : @"NO",
              self.transcriptContainerView.hidden ? @"YES" : @"NO",
@@ -1030,7 +1033,7 @@ enum {
 {
     NSString* title = (self.selectedTranscriptDescriptor != nil) ? [self _transcriptDisplayNameForDescriptor:self.selectedTranscriptDescriptor] : @"Transcript".ls;
     [self.transcriptPickerButton setTitle:title forState:UIControlStateNormal];
-    self.transcriptPickerButton.hidden = (self.transcriptSources.count <= 1);
+    self.transcriptPickerButton.hidden = YES;
     DebugLog(@"[TranscriptUI] picker title='%@' hidden=%@ sources=%ld selected=%@",
              title,
              self.transcriptPickerButton.hidden ? @"YES" : @"NO",
@@ -1300,13 +1303,26 @@ enum {
 
     DebugLog(@"[TranscriptData] transcript loaded url=%@ cues=%ld", resolvedURL, (long)cues.count);
 
+    CDEpisode* loadedEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    self.transcriptLoadedEpisodeHash = loadedEpisode.objectHash;
+
     NSMutableDictionary* resolvedDescriptor = [descriptor mutableCopy];
     resolvedDescriptor[@"resolvedURL"] = resolvedURL;
     self.selectedTranscriptDescriptor = resolvedDescriptor;
     self.transcriptCues = cues;
     [self _rebuildTranscriptLines];
-    [self _setTranscriptAvailableState:YES];
     [self _updateTranscriptPickerButton];
+
+    // Restore transcript visibility if user had it visible before (BEFORE availability callback)
+    BOOL shouldRestoreVisible = [USER_DEFAULTS boolForKey:@"TranscriptVisiblePreference"];
+    if (shouldRestoreVisible && !self.transcriptVisible) {
+        self.transcriptVisible = YES;
+        DebugLog(@"[TranscriptUI] restored transcript visibility from preference");
+    }
+
+    // Fire availability callback AFTER visibility is restored so controls pick up correct state
+    [self _setTranscriptAvailableState:YES];
+
     PlaybackManager* pman = [PlaybackManager playbackManager];
     [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
     [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
@@ -1443,6 +1459,16 @@ enum {
     if (self.transcriptVisible) {
         [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:YES];
     }
+}
+
+- (void)_playbackDidUpdateForTranscriptFollow:(NSNotification*)notification
+{
+    (void)notification;
+    BOOL isPlaying = [PlaybackManager playbackManager].isPodcastPlaying;
+    if (self.transcriptWasPaused && isPlaying && self.transcriptAutoFollowSuspended && self.transcriptVisible) {
+        [self _resumeTranscriptAutoFollow];
+    }
+    self.transcriptWasPaused = !isPlaying;
 }
 
 - (void)_scheduleTranscriptAutoFollowResume
@@ -1683,25 +1709,55 @@ enum {
     CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     NSString* episodeHash = episode.objectHash;
 
-    NSData* cachedData = [self _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString];
-    if (cachedData.length > 0) {
-        DebugLog(@"[TranscriptData] cache hit episode=%@ url=%@ bytes=%lu",
-                 episodeHash ?: @"(nil)",
-                 urlString,
-                 (unsigned long)cachedData.length);
-        NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
-        descriptorForParsing[@"resolvedURL"] = urlString;
-        NSArray<NSDictionary*>* cachedCues = [self _parseTranscriptData:cachedData descriptor:descriptorForParsing response:nil];
-        if (cachedCues.count > 0) {
-            DebugLog(@"[TranscriptData] cache parse success cues=%ld url=%@", (long)cachedCues.count, urlString);
-            [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
-            return;
+    // Move cache file I/O and parsing entirely off the main thread
+    _transcriptLoadingURL = urlString;
+    NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
+    descriptorForParsing[@"resolvedURL"] = urlString;
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSData* cachedData = [strongSelf _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString];
+        NSArray<NSDictionary*>* cachedCues = nil;
+        if (cachedData.length > 0) {
+            cachedCues = [strongSelf _parseTranscriptData:cachedData descriptor:descriptorForParsing response:nil];
         }
-        DebugLog(@"[TranscriptData] cache parse failed, removing cached entry url=%@", urlString);
-        [self _removeTranscriptCacheForEpisodeHash:episodeHash resolvedURL:urlString];
-    }
-    else {
-        DebugLog(@"[TranscriptData] cache miss episode=%@ url=%@", episodeHash ?: @"(nil)", urlString);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            if (![_transcriptLoadingURL isEqualToString:urlString]) return;
+
+            if (cachedCues.count > 0) {
+                DebugLog(@"[TranscriptData] cache hit+parse success episode=%@ url=%@ cues=%ld", episodeHash ?: @"(nil)", urlString, (long)cachedCues.count);
+                [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
+                return;
+            }
+
+            if (cachedData.length > 0) {
+                DebugLog(@"[TranscriptData] cache parse failed, removing cached entry url=%@", urlString);
+                [self _removeTranscriptCacheForEpisodeHash:episodeHash resolvedURL:urlString];
+            } else {
+                DebugLog(@"[TranscriptData] cache miss episode=%@ url=%@", episodeHash ?: @"(nil)", urlString);
+            }
+
+            // No cache or cache invalid — start network load
+            [self _loadTranscriptDescriptorFromNetwork:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex episodeHash:episodeHash];
+        });
+    });
+}
+
+- (void)_loadTranscriptDescriptorFromNetwork:(NSDictionary*)descriptor
+                                   candidates:(NSArray<NSDictionary*>*)candidates
+                               candidateIndex:(NSInteger)candidateIndex
+                                     attempts:(NSArray<NSString*>*)attempts
+                                     urlIndex:(NSInteger)urlIndex
+                                  episodeHash:(NSString*)episodeHash
+{
+    NSString* urlString = attempts[urlIndex];
+    NSURL* url = [NSURL URLWithInsecureString:urlString];
+    if (!url) {
+        [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
+        return;
     }
 
     [self.transcriptTask cancel];
@@ -1710,6 +1766,7 @@ enum {
 
     NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30.0];
     [request setValue:@"text/vtt,application/x-subrip,text/plain,application/json,application/ttml+xml,text/xml;q=0.9,*/*;q=0.8" forHTTPHeaderField:@"Accept"];
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     CDFeed* feed = episode.feed;
     if (feed.username.length > 0 && feed.password.length > 0) {
         NSString* credentials = [NSString stringWithFormat:@"%@:%@", feed.username, feed.password];
@@ -1719,37 +1776,45 @@ enum {
     }
 
     __weak typeof(self) weakSelf = self;
-    NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
-        __strong typeof(weakSelf) self = weakSelf;
-        if (!self) {
+    __block NSURLSessionDataTask* task = nil;
+    task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+        // Completion handler runs on background thread — do parsing here, not on main thread
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
             return;
         }
 
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (self.transcriptTask != task) {
-                return;
-            }
-            if (![_transcriptLoadingURL isEqualToString:urlString]) {
-                return;
-            }
+        NSHTTPURLResponse* httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)response : nil;
+        NSInteger statusCode = httpResponse.statusCode;
+        BOOL statusFailed = (httpResponse && (statusCode < 200 || statusCode >= 300));
+        BOOL hasError = (error != nil || data.length == 0);
 
-            NSHTTPURLResponse* httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)response : nil;
-            NSInteger statusCode = httpResponse.statusCode;
-            if (httpResponse && (statusCode < 200 || statusCode >= 300)) {
+        // Parse on background thread
+        NSArray<NSDictionary*>* cues = nil;
+        if (!statusFailed && !hasError && data.length > 0) {
+            NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
+            descriptorForParsing[@"resolvedURL"] = urlString;
+            cues = [strongSelf _parseTranscriptData:data descriptor:descriptorForParsing response:response];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            if (self.transcriptTask != task) return;
+            if (![_transcriptLoadingURL isEqualToString:urlString]) return;
+
+            if (statusFailed) {
                 DebugLog(@"[TranscriptData] transcript request failed (%ld) url=%@", (long)statusCode, urlString);
                 [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
                 return;
             }
 
-            if (error || data.length == 0) {
+            if (hasError) {
                 DebugLog(@"[TranscriptData] transcript request error url=%@ error=%@", urlString, error.localizedDescription ?: @"no data");
                 [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
                 return;
             }
 
-            NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
-            descriptorForParsing[@"resolvedURL"] = urlString;
-            NSArray<NSDictionary*>* cues = [self _parseTranscriptData:data descriptor:descriptorForParsing response:response];
             if (cues.count == 0) {
                 DebugLog(@"[TranscriptData] transcript parse returned no cues url=%@", urlString);
                 [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
@@ -1797,6 +1862,16 @@ enum {
 - (void)_refreshTranscriptState
 {
     DebugLog(@"[TranscriptData] refresh start");
+
+    CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    if (self.transcriptCues.count > 0 &&
+        self.transcriptLoadedEpisodeHash.length > 0 &&
+        [currentEpisode.objectHash isEqualToString:self.transcriptLoadedEpisodeHash]) {
+        DebugLog(@"[TranscriptData] refresh skipped: same episode already loaded (%ld cues)", (long)self.transcriptCues.count);
+        [self _updateTranscriptSyncTimerState];
+        return;
+    }
+
     [self.transcriptTask cancel];
     [self _cancelTranscriptPrefetchTasks];
     _transcriptLoadingURL = nil;
@@ -1807,6 +1882,7 @@ enum {
     self.transcriptAutoFollowSuspended = NO;
     self.pendingTranscriptShowAfterScrollToTop = NO;
     self.transcriptVisible = NO;
+    self.transcriptLoadedEpisodeHash = nil;
 
     CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     BOOL isCached = [[CacheManager sharedCacheManager] episodeIsCached:episode];
@@ -1907,6 +1983,7 @@ enum {
         self.pendingTranscriptShowAfterScrollToTop = NO;
         self.transcriptVisible = NO;
         [self _applyTranscriptVisibility];
+        [USER_DEFAULTS setBool:NO forKey:@"TranscriptVisiblePreference"];
         DebugLog(@"[TranscriptUI] transcript hidden via control");
         return;
     }
@@ -1924,6 +2001,7 @@ enum {
     self.pendingTranscriptShowAfterScrollToTop = NO;
     self.transcriptVisible = YES;
     [self _applyTranscriptVisibility];
+    [USER_DEFAULTS setBool:YES forKey:@"TranscriptVisiblePreference"];
     PlaybackManager* pman = [PlaybackManager playbackManager];
     [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
     [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
@@ -2104,7 +2182,7 @@ enum {
         chapterViewFrame.size.height += chevronAreaHeight;
         self.chapterView.frame = chapterViewFrame;
 
-        chevronIndicatorView.hidden = !hasContent || self.transcriptVisible;
+        chevronIndicatorView.hidden = !hasContent;
         chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
         chevronIndicatorView.tintColor = ICMutedTextColor;
 
@@ -2177,7 +2255,7 @@ enum {
     chapterViewFrame.size.height += chevronAreaHeight;
     self.chapterView.frame = chapterViewFrame;
 
-    chevronIndicatorView.hidden = !hasContent || self.transcriptVisible;
+    chevronIndicatorView.hidden = !hasContent;
     chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
 
     [self.chapterImagesCollection reloadData];
@@ -3028,6 +3106,7 @@ enum {
         self.pendingTranscriptShowAfterScrollToTop = NO;
         self.transcriptVisible = YES;
         [self _applyTranscriptVisibility];
+        [USER_DEFAULTS setBool:YES forKey:@"TranscriptVisiblePreference"];
         PlaybackManager* pman = [PlaybackManager playbackManager];
         [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
         [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
