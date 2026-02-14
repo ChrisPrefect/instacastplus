@@ -507,6 +507,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     BOOL _didWillAppear;
     NSString* _transcriptLoadingURL;
     NSInteger _previousTranscriptCueIndex;
+    BOOL _pendingTranscriptTextRestore;
 }
 
 + (instancetype) viewController {
@@ -1952,41 +1953,30 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
-    // 2) Static in-memory cache has cues for this episode — instant restore with UITextView (fast)
+    // 2) Static in-memory cache has cues for this episode — set state flags only, defer all UITextView work
     if (s_transcriptCachedCues.count > 0 &&
         s_transcriptCachedEpisodeHash.length > 0 &&
         [currentEpisode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
         DebugLog(@"[TranscriptData] instant restore from in-memory cache episode=%@ cues=%ld",
                  s_transcriptCachedEpisodeHash, (long)s_transcriptCachedCues.count);
 
+        // Set state flags synchronously (no UITextView work — just data + visibility)
         self.transcriptLoadedEpisodeHash = s_transcriptCachedEpisodeHash;
         self.transcriptSources = s_transcriptCachedSources ?: @[];
         self.selectedTranscriptDescriptor = s_transcriptCachedDescriptor;
         self.transcriptCues = s_transcriptCachedCues;
-
-        // Use pre-built attributed string + ranges from cache (no rebuilding needed)
-        if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
-            _previousTranscriptCueIndex = NSNotFound;
-            self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
-            self.transcriptCueRanges = s_transcriptCachedRanges;
-        } else {
-            [self _rebuildTranscriptLines];
-        }
+        _previousTranscriptCueIndex = NSNotFound;
         [self _updateTranscriptPickerButton];
 
-        // Restore visibility from preference
         BOOL shouldRestoreVisible = [USER_DEFAULTS boolForKey:@"TranscriptVisiblePreference"];
         if (shouldRestoreVisible) {
             self.transcriptVisible = YES;
         }
-
         [self _setTranscriptAvailableState:YES];
-
-        PlaybackManager* pman = [PlaybackManager playbackManager];
-        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
-        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
         [self _applyTranscriptVisibility];
-        [self _updateTranscriptSyncTimerState];
+
+        // Defer ALL UITextView rendering to after the player window has appeared
+        _pendingTranscriptTextRestore = YES;
         return;
     }
 
@@ -2176,6 +2166,21 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [super viewDidAppear:animated];
 
     _didWillAppear = NO;
+
+    // Apply deferred UITextView rendering after player window is visible
+    if (_pendingTranscriptTextRestore) {
+        _pendingTranscriptTextRestore = NO;
+        if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
+            self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
+            self.transcriptCueRanges = s_transcriptCachedRanges;
+        } else {
+            [self _rebuildTranscriptLines];
+        }
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+    }
+
     [self _updateTranscriptSyncTimerState];
 }
 
