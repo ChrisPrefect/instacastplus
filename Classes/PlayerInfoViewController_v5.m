@@ -463,7 +463,7 @@ enum {
 @property (nonatomic, readwrite) BOOL transcriptVisible;
 @property (nonatomic) BOOL transcriptAvailable;
 @property (nonatomic, strong) UIView* transcriptContainerView;
-@property (nonatomic, strong) UIScrollView* transcriptScrollView;
+
 @property (nonatomic, strong) UITextView* transcriptTextView;
 @property (nonatomic, strong) UIButton* transcriptPickerButton;
 @property (nonatomic, strong) NSArray<NSValue*>* transcriptCueRanges;
@@ -507,7 +507,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     BOOL _didWillAppear;
     NSString* _transcriptLoadingURL;
     NSInteger _previousTranscriptCueIndex;
-    BOOL _pendingTranscriptTextRestore;
+    CGSize _lastTranscriptBoundsSize;
 }
 
 + (instancetype) viewController {
@@ -710,34 +710,24 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptContainerView.backgroundColor = [UIColor clearColor];
     self.transcriptContainerView.hidden = YES;
 
-    self.transcriptScrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
-    self.transcriptScrollView.backgroundColor = [UIColor clearColor];
-    self.transcriptScrollView.delegate = self;
-    self.transcriptScrollView.alwaysBounceVertical = YES;
-    self.transcriptScrollView.showsVerticalScrollIndicator = YES;
-    self.transcriptScrollView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.transcriptContainerView addSubview:self.transcriptScrollView];
-
     self.transcriptTextView = [[UITextView alloc] initWithFrame:CGRectZero];
     self.transcriptTextView.editable = NO;
     self.transcriptTextView.selectable = NO;
-    self.transcriptTextView.scrollEnabled = NO; // sizes to content, scrollView handles scrolling
+    self.transcriptTextView.scrollEnabled = YES; // lazy text layout — only visible text is rendered
     self.transcriptTextView.backgroundColor = [UIColor clearColor];
     self.transcriptTextView.textContainerInset = UIEdgeInsetsMake(16, 16, 16, 16);
     self.transcriptTextView.textContainer.lineFragmentPadding = 0;
+    self.transcriptTextView.alwaysBounceVertical = YES;
+    self.transcriptTextView.showsVerticalScrollIndicator = YES;
+    self.transcriptTextView.delegate = self;
     self.transcriptTextView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.transcriptScrollView addSubview:self.transcriptTextView];
+    [self.transcriptContainerView addSubview:self.transcriptTextView];
 
     [NSLayoutConstraint activateConstraints:@[
-        [self.transcriptScrollView.topAnchor constraintEqualToAnchor:self.transcriptContainerView.topAnchor],
-        [self.transcriptScrollView.leadingAnchor constraintEqualToAnchor:self.transcriptContainerView.leadingAnchor],
-        [self.transcriptScrollView.trailingAnchor constraintEqualToAnchor:self.transcriptContainerView.trailingAnchor],
-        [self.transcriptScrollView.bottomAnchor constraintEqualToAnchor:self.transcriptContainerView.bottomAnchor],
-
-        [self.transcriptTextView.topAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.topAnchor],
-        [self.transcriptTextView.leadingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.leadingAnchor],
-        [self.transcriptTextView.trailingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.trailingAnchor],
-        [self.transcriptTextView.bottomAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.bottomAnchor]
+        [self.transcriptTextView.topAnchor constraintEqualToAnchor:self.transcriptContainerView.topAnchor],
+        [self.transcriptTextView.leadingAnchor constraintEqualToAnchor:self.transcriptContainerView.leadingAnchor],
+        [self.transcriptTextView.trailingAnchor constraintEqualToAnchor:self.transcriptContainerView.trailingAnchor],
+        [self.transcriptTextView.bottomAnchor constraintEqualToAnchor:self.transcriptContainerView.bottomAnchor]
     ]];
 
     UIButton* pickerButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -1516,18 +1506,15 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     // Adjust for text container inset
     glyphRect.origin.y += self.transcriptTextView.textContainerInset.top;
 
-    // Convert to scroll view coordinates
-    CGRect rectInScrollView = [self.transcriptTextView convertRect:glyphRect toView:self.transcriptScrollView];
-
-    CGFloat targetOffsetY = CGRectGetMidY(rectInScrollView) - CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f;
-    CGFloat minOffsetY = -self.transcriptScrollView.contentInset.top;
-    CGFloat maxOffsetY = self.transcriptScrollView.contentSize.height - CGRectGetHeight(self.transcriptScrollView.bounds) + self.transcriptScrollView.contentInset.bottom;
+    CGFloat targetOffsetY = CGRectGetMidY(glyphRect) - CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f;
+    CGFloat minOffsetY = -self.transcriptTextView.contentInset.top;
+    CGFloat maxOffsetY = self.transcriptTextView.contentSize.height - CGRectGetHeight(self.transcriptTextView.bounds) + self.transcriptTextView.contentInset.bottom;
     if (maxOffsetY < minOffsetY) {
         maxOffsetY = minOffsetY;
     }
     targetOffsetY = MAX(minOffsetY, MIN(targetOffsetY, maxOffsetY));
 
-    [self.transcriptScrollView setContentOffset:CGPointMake(0, targetOffsetY) animated:animated];
+    [self.transcriptTextView setContentOffset:CGPointMake(0, targetOffsetY) animated:animated];
 }
 
 - (void)_resumeTranscriptAutoFollow
@@ -1960,12 +1947,19 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         DebugLog(@"[TranscriptData] instant restore from in-memory cache episode=%@ cues=%ld",
                  s_transcriptCachedEpisodeHash, (long)s_transcriptCachedCues.count);
 
-        // Set state flags synchronously (no UITextView work — just data + visibility)
+        // Restore everything synchronously — with scrollEnabled=YES, attributedText is instant (lazy layout)
         self.transcriptLoadedEpisodeHash = s_transcriptCachedEpisodeHash;
         self.transcriptSources = s_transcriptCachedSources ?: @[];
         self.selectedTranscriptDescriptor = s_transcriptCachedDescriptor;
         self.transcriptCues = s_transcriptCachedCues;
         _previousTranscriptCueIndex = NSNotFound;
+
+        if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
+            self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
+            self.transcriptCueRanges = s_transcriptCachedRanges;
+        } else {
+            [self _rebuildTranscriptLines];
+        }
         [self _updateTranscriptPickerButton];
 
         BOOL shouldRestoreVisible = [USER_DEFAULTS boolForKey:@"TranscriptVisiblePreference"];
@@ -1973,10 +1967,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             self.transcriptVisible = YES;
         }
         [self _setTranscriptAvailableState:YES];
-        [self _applyTranscriptVisibility];
 
-        // Defer ALL UITextView rendering to after the player window has appeared
-        _pendingTranscriptTextRestore = YES;
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+        [self _applyTranscriptVisibility];
+        [self _updateTranscriptSyncTimerState];
         return;
     }
 
@@ -2166,21 +2162,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [super viewDidAppear:animated];
 
     _didWillAppear = NO;
-
-    // Apply deferred UITextView rendering after player window is visible
-    if (_pendingTranscriptTextRestore) {
-        _pendingTranscriptTextRestore = NO;
-        if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
-            self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
-            self.transcriptCueRanges = s_transcriptCachedRanges;
-        } else {
-            [self _rebuildTranscriptLines];
-        }
-        PlaybackManager* pman = [PlaybackManager playbackManager];
-        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
-        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
-    }
-
     [self _updateTranscriptSyncTimerState];
 }
 
@@ -2215,7 +2196,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     if (self.transcriptVisible) {
-        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+        CGSize currentSize = self.transcriptTextView.bounds.size;
+        if (!CGSizeEqualToSize(currentSize, _lastTranscriptBoundsSize)) {
+            _lastTranscriptBoundsSize = currentSize;
+            [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+        }
     }
 }
 
@@ -2297,8 +2282,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                                        CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
                                                        pickerSize.width,
                                                        pickerSize.height);
-        CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f) - 36.0f, 0);
-        self.transcriptScrollView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
+        CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f) - 36.0f, 0);
+        self.transcriptTextView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
         BOOL hasContent = [self _hasContentBelowImage];
         CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
@@ -2370,8 +2355,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                                    CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
                                                    pickerSize.width,
                                                    pickerSize.height);
-    CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f) - 36.0f, 0);
-    self.transcriptScrollView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
+    CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f) - 36.0f, 0);
+    self.transcriptTextView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
     BOOL hasContent = [self _hasContentBelowImage];
     CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
@@ -3193,7 +3178,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
 {
-    if (scrollView == self.transcriptScrollView) {
+    if (scrollView == self.transcriptTextView) {
         self.transcriptAutoFollowSuspended = YES;
         [self _scheduleTranscriptAutoFollowResume];
     }
@@ -3201,7 +3186,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
 {
-    if (scrollView == self.transcriptScrollView) {
+    if (scrollView == self.transcriptTextView) {
         self.transcriptAutoFollowSuspended = YES;
         if (!decelerate) {
             [self _scheduleTranscriptAutoFollowResume];
@@ -3211,7 +3196,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 -(void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
-    if (scrollView == self.transcriptScrollView) {
+    if (scrollView == self.transcriptTextView) {
         self.transcriptAutoFollowSuspended = YES;
         [self _scheduleTranscriptAutoFollowResume];
         return;

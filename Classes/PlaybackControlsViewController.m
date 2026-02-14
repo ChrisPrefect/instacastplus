@@ -136,6 +136,8 @@
 @property (nonatomic) BOOL toolsVisible;
 @property (nonatomic, strong) VDModalInfo* scrubbingModalInfo;
 @property (nonatomic, strong) ICVolumeThumbHitView *volumeHitView;
+@property (nonatomic, strong) UIImage* transcriptImageNormal;
+@property (nonatomic, strong) UIImage* transcriptImageActive;
 @end
 
 @implementation PlaybackControlsViewController {
@@ -210,25 +212,24 @@
     transcriptButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin;
     transcriptButton.backgroundColor = [UIColor clearColor];
     UIImageSymbolConfiguration* normalConfig = [UIImageSymbolConfiguration configurationWithPointSize:23 weight:UIImageSymbolWeightRegular];
-    UIImageSymbolConfiguration* selectedConfig = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightSemibold];
-    UIImage* transcriptImage = [[UIImage systemImageNamed:@"captions.bubble" withConfiguration:normalConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    UIImage* transcriptImageSelected = [[UIImage systemImageNamed:@"captions.bubble.fill" withConfiguration:selectedConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    if (!transcriptImage || !transcriptImageSelected) {
+    UIImageSymbolConfiguration* activeConfig = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightSemibold];
+    self.transcriptImageNormal = [[UIImage systemImageNamed:@"captions.bubble" withConfiguration:normalConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    self.transcriptImageActive = [[UIImage systemImageNamed:@"captions.bubble.fill" withConfiguration:activeConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    if (!self.transcriptImageNormal || !self.transcriptImageActive) {
         ErrLog(@"[TranscriptControl] transcript symbol not found: captions.bubble");
     }
-    [transcriptButton setImage:transcriptImage forState:UIControlStateNormal];
-    [transcriptButton setImage:transcriptImageSelected forState:UIControlStateSelected];
+    [transcriptButton setImage:self.transcriptImageNormal forState:UIControlStateNormal];
     transcriptButton.contentEdgeInsets = UIEdgeInsetsMake(14, 14, 14, 14);
     [transcriptButton addTarget:self action:@selector(toggleTranscript:) forControlEvents:UIControlEventTouchUpInside];
     transcriptButton.accessibilityLabel = @"Transcript".ls;
     transcriptButton.hidden = YES;
     [self.toolsView addSubview:transcriptButton];
     self.transcriptButton = transcriptButton;
-    DebugLog(@"[TranscriptControl] created route=%@ transcript=%@ transcriptImage=%@ transcriptImageSelected=%@",
+    DebugLog(@"[TranscriptControl] created route=%@ transcript=%@ transcriptImage=%@ transcriptImageActive=%@",
              self.routeButton,
              self.transcriptButton,
-             transcriptImage,
-             transcriptImageSelected);
+             self.transcriptImageNormal,
+             self.transcriptImageActive);
     [self updateToolButtonsVisibility];
 }
 
@@ -512,8 +513,7 @@
                  _transcriptVisible ? @"YES" : @"NO",
                  transcriptVisible ? @"YES" : @"NO");
         _transcriptVisible = transcriptVisible;
-        self.transcriptButton.selected = transcriptVisible;
-        self.transcriptButton.contentEdgeInsets = transcriptVisible ? UIEdgeInsetsMake(7, 7, 7, 7) : UIEdgeInsetsMake(14, 14, 14, 14);
+        [self.transcriptButton setImage:(transcriptVisible ? self.transcriptImageActive : self.transcriptImageNormal) forState:UIControlStateNormal];
     }
 }
 
@@ -521,7 +521,7 @@
 {
     BOOL showTranscriptControl = self.shown && self.transcriptAvailable;
     self.transcriptButton.hidden = !showTranscriptControl;
-    self.transcriptButton.selected = self.transcriptVisible;
+    [self.transcriptButton setImage:(self.transcriptVisible ? self.transcriptImageActive : self.transcriptImageNormal) forState:UIControlStateNormal];
     self.routeButton.hidden = !(self.shown && !self.transcriptAvailable);
     DebugLog(@"[TranscriptControl] updateToolButtonsVisibility shown=%@ available=%@ visible=%@ transcriptHidden=%@ routeHidden=%@ transcriptFrame=%@ routeFrame=%@",
              self.shown ? @"YES" : @"NO",
@@ -548,7 +548,6 @@
     if (self.transcriptToggleHandler) {
         self.transcriptToggleHandler(self.transcriptVisible);
     }
-    sender.selected = self.transcriptVisible;
     DebugLog(@"[TranscriptControl] toggle handled visible(after)=%@", self.transcriptVisible ? @"YES" : @"NO");
 }
 
