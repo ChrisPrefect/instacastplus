@@ -471,7 +471,7 @@ enum {
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
         cell.textLabel.text = @"Pause Synchronization".ls;
-        control.on = [self.feed boolForKey:PauseFeedSynchronization];
+        control.on = self.feed.parked;
         control.tag = indexPath.row;
         [control addTarget:self action:@selector(togglePauseSynchronization:) forControlEvents:UIControlEventValueChanged];
         return cell;
@@ -769,7 +769,8 @@ enum {
 - (void) togglePauseSynchronization:(UISwitch*)sender
 {
     if (sender.tag == 0) {
-        [self.feed setBool:sender.on forKey:PauseFeedSynchronization];
+        self.feed.parked = sender.on;
+        [DMANAGER save];
     }
 
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];

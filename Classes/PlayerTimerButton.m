@@ -171,10 +171,9 @@
         [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
         [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
         [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
-        [USER_DEFAULTS setBool:NO forKey:IntelligentSleepTimerAlwaysActive];
         [USER_DEFAULTS synchronize];
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Sleep Timer disabled.".ls);
-        
+
         VDModalInfo* modalInfo = [VDModalInfo modalInfo];
         modalInfo.closableByTap = NO;
         modalInfo.animation = VDModalInfoAnimationMoveDown;
@@ -266,24 +265,21 @@
             if (lastSleepTimer > 0)
             {
                 [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
-                [USER_DEFAULTS setInteger:lastSleepTimer forKey:DefaultIntelligentSleepTimer];
             }
             else
             {
                 [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
-                [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:DefaultIntelligentSleepTimer];
+                [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
+                [USER_DEFAULTS synchronize];
             }
-            [USER_DEFAULTS synchronize];
         }
         [self IntelligentSleepTimerUpdate];
     }
     else
     {
-//        NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
-//        if (sleepTimer == PlaybackStopTimeNoValue)
-//        {
-//            [AudioSession sharedAudioSession].timerValue = PlaybackStopTimeNoValue;
-//        }
+        // Restore timer to explicitly selected value only
+        NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+        [AudioSession sharedAudioSession].timerValue = sleepTimer;
         [self IntelligentSleepTimerUpdate];
     }
 }
@@ -339,10 +335,11 @@
     UIStackView *mainStack = [[UIStackView alloc] init];
     mainStack.axis = UILayoutConstraintAxisVertical;
     mainStack.alignment = UIStackViewAlignmentCenter;
-    mainStack.spacing = 4;
+    mainStack.spacing = 2;
 
     [mainStack addArrangedSubview:intelligentStack];
     [mainStack addArrangedSubview:screenAlwaysStack];
+    [mainStack setCustomSpacing:10 afterView:intelligentStack];
     
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
@@ -354,7 +351,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
-            [USER_DEFAULTS setBool:NO forKey:IntelligentSleepTimerAlwaysActive];
             [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTimeNoValue;
             [self IntelligentSleepTimerUpdate];

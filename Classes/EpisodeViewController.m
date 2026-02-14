@@ -407,8 +407,8 @@
     //WKWebView* webview = self.sharedWebView;
     if (self.sharedWebView.superview != self.view || [ICAppearanceManager sharedManager].appearance != self.appearance)
     {
-        CGRect b = CGRectMake(10, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width-20, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));
-        self.sharedWebView.frame = b;//CGRectMake(10, self.view.bounds.origin.y + 93 + 64, self.view.bounds.size.width-20, self.view.bounds.size.height - (93 + 64));//[self.view bounds];
+        CGRect b = CGRectMake(0, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));
+        self.sharedWebView.frame = b;
         self.sharedWebView.navigationDelegate = self;
         [self.view insertSubview:self.sharedWebView belowSubview:self.headerView];
         
@@ -549,8 +549,7 @@
     
     UINavigationBar* navBar = self.navigationController.navigationBar;
     self.headerView.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), CGRectGetWidth(self.view.bounds), MAX(10+72+15, CGRectGetMaxY(self.timeLabel.frame)+12));
-    CGRect b = CGRectMake(10, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width-20, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));//self.view.bounds;
-    //b.origin.y = self.headerView.frame.origin.y + self.headerView.frame.size.height;
+    CGRect b = CGRectMake(0, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));
     self.sharedWebView.frame = b;
     [self _updateTimeDisplay];
     // Toolbar-Items verzögert setzen, um Constraint-Warnungen zu vermeiden
@@ -773,8 +772,7 @@
     
     UINavigationBar* navBar = self.navigationController.navigationBar;
     self.headerView.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), masterWidth, MAX(10+72+15, CGRectGetMaxY(self.timeLabel.frame)+12));
-    CGRect b = CGRectMake(10, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width-20, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));//self.view.bounds;
-    //b.origin.y = self.headerView.frame.origin.y + self.headerView.frame.size.height;
+    CGRect b = CGRectMake(0, self.headerView.frame.origin.y + self.headerView.frame.size.height, self.view.bounds.size.width, self.view.bounds.size.height - (self.headerView.frame.origin.y + self.headerView.frame.size.height));
     self.sharedWebView.frame = b;
     BOOL toolbarShown = (!self.navigationController.toolbarHidden || [[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
     CGFloat topOffset = CGRectGetMaxY(self.headerView.frame);

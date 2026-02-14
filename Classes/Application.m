@@ -281,7 +281,7 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                     int timeout = (int)sleepTimer * 60;
                     myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
                 }
-                else if (lastSleepTimer > 0)
+                else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
                 {
                     [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
                     int timeout = (int)lastSleepTimer * 60;
@@ -336,7 +336,7 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                                     int timeout = (int)sleepTimer * 60;
                                     myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
                                 }
-                                else if (lastSleepTimer > 0)
+                                else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
                                 {
                                     [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
                                     int timeout = (int)lastSleepTimer * 60;
@@ -384,7 +384,7 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                         int timeout = (int)sleepTimer * 60;
                         myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
                     }
-                    else if (lastSleepTimer > 0)
+                    else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
                     {
                         [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
                         int timeout = (int)lastSleepTimer * 60;

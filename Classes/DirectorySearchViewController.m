@@ -609,6 +609,23 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     }
     scroll.contentSize = CGSizeMake(menuWidth, y);
 
+    // Scroll to selected item
+    for (NSUInteger i = 0; i < items.count; i++) {
+        NSDictionary *item = items[i];
+        BOOL isAll = [item[@"type"] isEqualToString:@"all"];
+        NSString *genreId = item[@"genreId"];
+        BOOL isSelected = (isAll && !self.selectedGenreId) ||
+                          (genreId.length > 0 && [self.selectedGenreId isEqualToString:genreId]);
+        if (isSelected) {
+            CGFloat targetY = i * rowHeight;
+            CGFloat maxOffset = scroll.contentSize.height - scroll.bounds.size.height;
+            if (maxOffset > 0) {
+                [scroll setContentOffset:CGPointMake(0, MIN(targetY, maxOffset)) animated:NO];
+            }
+            break;
+        }
+    }
+
     [overlay addSubview:shadowWrap];
     [parentView addSubview:overlay];
     self.genreDropdownOverlay = overlay;

@@ -256,6 +256,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
         
         
 
+        [NSFetchedResultsController deleteCacheWithName:@"_databasemanager_feeds_"];
         _feedsController = [[NSFetchedResultsController alloc] initWithFetchRequest:feedsRequest
                                                                managedObjectContext:self.objectContext
                                                                  sectionNameKeyPath:nil
