@@ -464,9 +464,9 @@ enum {
 @property (nonatomic) BOOL transcriptAvailable;
 @property (nonatomic, strong) UIView* transcriptContainerView;
 @property (nonatomic, strong) UIScrollView* transcriptScrollView;
-@property (nonatomic, strong) UIStackView* transcriptStackView;
+@property (nonatomic, strong) UITextView* transcriptTextView;
 @property (nonatomic, strong) UIButton* transcriptPickerButton;
-@property (nonatomic, strong) NSArray<UILabel*>* transcriptLineLabels;
+@property (nonatomic, strong) NSArray<NSValue*>* transcriptCueRanges;
 @property (nonatomic, strong) NSArray<NSDictionary*>* transcriptSources;
 @property (nonatomic, strong) NSArray<NSDictionary*>* transcriptCues;
 @property (nonatomic, strong) NSDictionary* selectedTranscriptDescriptor;
@@ -495,6 +495,8 @@ static NSString* s_transcriptCachedEpisodeHash;
 static NSArray<NSDictionary*>* s_transcriptCachedCues;
 static NSDictionary* s_transcriptCachedDescriptor;
 static NSArray<NSDictionary*>* s_transcriptCachedSources;
+static NSAttributedString* s_transcriptCachedAttrString;
+static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 @implementation PlayerInfoViewController_v5 {
     BOOL _observing;
@@ -504,6 +506,7 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
     CGFloat _startY;
     BOOL _didWillAppear;
     NSString* _transcriptLoadingURL;
+    NSInteger _previousTranscriptCueIndex;
 }
 
 + (instancetype) viewController {
@@ -714,15 +717,15 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
     self.transcriptScrollView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.transcriptContainerView addSubview:self.transcriptScrollView];
 
-    self.transcriptStackView = [[UIStackView alloc] initWithFrame:CGRectZero];
-    self.transcriptStackView.axis = UILayoutConstraintAxisVertical;
-    self.transcriptStackView.spacing = 14.0;
-    self.transcriptStackView.alignment = UIStackViewAlignmentFill;
-    self.transcriptStackView.distribution = UIStackViewDistributionFill;
-    self.transcriptStackView.layoutMarginsRelativeArrangement = YES;
-    self.transcriptStackView.layoutMargins = UIEdgeInsetsMake(16.0, 16.0, 16.0, 16.0);
-    self.transcriptStackView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.transcriptScrollView addSubview:self.transcriptStackView];
+    self.transcriptTextView = [[UITextView alloc] initWithFrame:CGRectZero];
+    self.transcriptTextView.editable = NO;
+    self.transcriptTextView.selectable = NO;
+    self.transcriptTextView.scrollEnabled = NO; // sizes to content, scrollView handles scrolling
+    self.transcriptTextView.backgroundColor = [UIColor clearColor];
+    self.transcriptTextView.textContainerInset = UIEdgeInsetsMake(16, 16, 16, 16);
+    self.transcriptTextView.textContainer.lineFragmentPadding = 0;
+    self.transcriptTextView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.transcriptScrollView addSubview:self.transcriptTextView];
 
     [NSLayoutConstraint activateConstraints:@[
         [self.transcriptScrollView.topAnchor constraintEqualToAnchor:self.transcriptContainerView.topAnchor],
@@ -730,10 +733,10 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
         [self.transcriptScrollView.trailingAnchor constraintEqualToAnchor:self.transcriptContainerView.trailingAnchor],
         [self.transcriptScrollView.bottomAnchor constraintEqualToAnchor:self.transcriptContainerView.bottomAnchor],
 
-        [self.transcriptStackView.topAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.topAnchor],
-        [self.transcriptStackView.leadingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.leadingAnchor],
-        [self.transcriptStackView.trailingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.trailingAnchor],
-        [self.transcriptStackView.bottomAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.bottomAnchor]
+        [self.transcriptTextView.topAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.topAnchor],
+        [self.transcriptTextView.leadingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.leadingAnchor],
+        [self.transcriptTextView.trailingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.trailingAnchor],
+        [self.transcriptTextView.bottomAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.bottomAnchor]
     ]];
 
     UIButton* pickerButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -756,11 +759,12 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
     [self.transcriptContainerView addSubview:pickerButton];
     self.transcriptPickerButton = pickerButton;
 
-    self.transcriptLineLabels = @[];
+    self.transcriptCueRanges = @[];
     self.transcriptCues = @[];
     self.transcriptSources = @[];
     self.transcriptPrefetchTasks = [NSMutableDictionary dictionary];
     self.activeTranscriptCueIndex = NSNotFound;
+    _previousTranscriptCueIndex = NSNotFound;
     self.transcriptVisible = NO;
 
     // Chevron indicator below chapter image
@@ -1122,6 +1126,8 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
         s_transcriptCachedCues = nil;
         s_transcriptCachedDescriptor = nil;
         s_transcriptCachedSources = nil;
+        s_transcriptCachedAttrString = nil;
+        s_transcriptCachedRanges = nil;
     }
 
     NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
@@ -1149,6 +1155,8 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
     s_transcriptCachedCues = nil;
     s_transcriptCachedDescriptor = nil;
     s_transcriptCachedSources = nil;
+    s_transcriptCachedAttrString = nil;
+    s_transcriptCachedRanges = nil;
 
     NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
     if (!directoryURL) {
@@ -1161,13 +1169,6 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
 {
     if (episode.consumed) {
         [self _removeTranscriptCacheForEpisode:episode];
-        // Also clear static in-memory cache if it matches
-        if ([episode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
-            s_transcriptCachedEpisodeHash = nil;
-            s_transcriptCachedCues = nil;
-            s_transcriptCachedDescriptor = nil;
-            s_transcriptCachedSources = nil;
-        }
     }
 }
 
@@ -1400,49 +1401,78 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
 
 - (void)_clearTranscriptLines
 {
-    for (UIView* view in [self.transcriptStackView.arrangedSubviews copy]) {
-        [self.transcriptStackView removeArrangedSubview:view];
-        [view removeFromSuperview];
-    }
-    self.transcriptLineLabels = @[];
+    self.transcriptTextView.attributedText = nil;
+    self.transcriptCueRanges = @[];
     self.activeTranscriptCueIndex = NSNotFound;
 }
 
 - (void)_updateTranscriptLabelAppearance
 {
-    for (NSInteger idx = 0; idx < (NSInteger)self.transcriptLineLabels.count; idx++) {
-        UILabel* label = self.transcriptLineLabels[idx];
-        if (idx == self.activeTranscriptCueIndex) {
-            label.textColor = self.view.tintColor;
-            label.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
-        } else {
-            label.textColor = ICMutedTextColor;
-            label.font = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
-        }
+    NSTextStorage* textStorage = self.transcriptTextView.textStorage;
+    if (!textStorage || self.transcriptCueRanges.count == 0) return;
+
+    UIColor* normalColor = ICMutedTextColor;
+    UIFont* normalFont = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
+    UIColor* activeColor = self.view.tintColor ?: ICTintColor;
+    UIFont* activeFont = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+
+    [textStorage beginEditing];
+
+    // Un-highlight previous active cue (tracked via _previousTranscriptCueIndex)
+    if (_previousTranscriptCueIndex != NSNotFound &&
+        _previousTranscriptCueIndex >= 0 &&
+        _previousTranscriptCueIndex < (NSInteger)self.transcriptCueRanges.count) {
+        NSRange oldRange = [self.transcriptCueRanges[_previousTranscriptCueIndex] rangeValue];
+        [textStorage addAttribute:NSForegroundColorAttributeName value:normalColor range:oldRange];
+        [textStorage addAttribute:NSFontAttributeName value:normalFont range:oldRange];
     }
+
+    // Highlight new active cue
+    if (self.activeTranscriptCueIndex != NSNotFound &&
+        self.activeTranscriptCueIndex >= 0 &&
+        self.activeTranscriptCueIndex < (NSInteger)self.transcriptCueRanges.count) {
+        NSRange newRange = [self.transcriptCueRanges[self.activeTranscriptCueIndex] rangeValue];
+        [textStorage addAttribute:NSForegroundColorAttributeName value:activeColor range:newRange];
+        [textStorage addAttribute:NSFontAttributeName value:activeFont range:newRange];
+    }
+
+    [textStorage endEditing];
+    _previousTranscriptCueIndex = self.activeTranscriptCueIndex;
 }
 
 - (void)_rebuildTranscriptLines
 {
     [self _clearTranscriptLines];
+    _previousTranscriptCueIndex = NSNotFound;
     if (self.transcriptCues.count == 0) {
         return;
     }
 
-    NSMutableArray* labels = [NSMutableArray arrayWithCapacity:self.transcriptCues.count];
-    for (NSDictionary* cue in self.transcriptCues) {
-        UILabel* label = [[UILabel alloc] initWithFrame:CGRectZero];
-        label.numberOfLines = 0;
-        label.textAlignment = NSTextAlignmentLeft;
-        label.text = cue[@"text"];
-        label.textColor = ICMutedTextColor;
-        label.font = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
-        [self.transcriptStackView addArrangedSubview:label];
-        [labels addObject:label];
+    NSDictionary* normalAttrs = @{
+        NSForegroundColorAttributeName: ICMutedTextColor,
+        NSFontAttributeName: [UIFont systemFontOfSize:17 weight:UIFontWeightRegular]
+    };
+    NSAttributedString* separator = [[NSAttributedString alloc] initWithString:@"\n\n" attributes:normalAttrs];
+
+    NSMutableAttributedString* attrString = [[NSMutableAttributedString alloc] init];
+    NSMutableArray<NSValue*>* ranges = [NSMutableArray arrayWithCapacity:self.transcriptCues.count];
+
+    for (NSInteger i = 0; i < (NSInteger)self.transcriptCues.count; i++) {
+        NSString* text = self.transcriptCues[i][@"text"] ?: @"";
+        NSUInteger rangeStart = attrString.length;
+        [attrString appendAttributedString:[[NSAttributedString alloc] initWithString:text attributes:normalAttrs]];
+        [ranges addObject:[NSValue valueWithRange:NSMakeRange(rangeStart, text.length)]];
+        if (i < (NSInteger)self.transcriptCues.count - 1) {
+            [attrString appendAttributedString:separator];
+        }
     }
 
-    self.transcriptLineLabels = labels;
-    [self _updateTranscriptLabelAppearance];
+    self.transcriptTextView.attributedText = attrString;
+    self.transcriptCueRanges = ranges;
+
+    // Cache the built attributed string + ranges for instant restore
+    s_transcriptCachedAttrString = [attrString copy];
+    s_transcriptCachedRanges = [ranges copy];
 }
 
 - (NSInteger)_activeTranscriptCueIndexForPlaybackTime:(NSTimeInterval)time
@@ -1469,13 +1499,26 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
 
 - (void)_focusTranscriptCueAtIndex:(NSInteger)index animated:(BOOL)animated
 {
-    if (index == NSNotFound || index < 0 || index >= (NSInteger)self.transcriptLineLabels.count) {
+    if (index == NSNotFound || index < 0 || index >= (NSInteger)self.transcriptCueRanges.count) {
         return;
     }
 
-    UILabel* label = self.transcriptLineLabels[index];
-    CGRect targetRect = [label convertRect:label.bounds toView:self.transcriptScrollView];
-    CGFloat targetOffsetY = CGRectGetMidY(targetRect) - CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f;
+    NSRange cueRange = [self.transcriptCueRanges[index] rangeValue];
+    NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
+    NSTextContainer* textContainer = self.transcriptTextView.textContainer;
+
+    // Ensure layout is up to date for this range
+    [layoutManager ensureLayoutForCharacterRange:cueRange];
+    NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:cueRange actualCharacterRange:NULL];
+    CGRect glyphRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
+
+    // Adjust for text container inset
+    glyphRect.origin.y += self.transcriptTextView.textContainerInset.top;
+
+    // Convert to scroll view coordinates
+    CGRect rectInScrollView = [self.transcriptTextView convertRect:glyphRect toView:self.transcriptScrollView];
+
+    CGFloat targetOffsetY = CGRectGetMidY(rectInScrollView) - CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f;
     CGFloat minOffsetY = -self.transcriptScrollView.contentInset.top;
     CGFloat maxOffsetY = self.transcriptScrollView.contentSize.height - CGRectGetHeight(self.transcriptScrollView.bounds) + self.transcriptScrollView.contentInset.bottom;
     if (maxOffsetY < minOffsetY) {
@@ -1909,7 +1952,7 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
         return;
     }
 
-    // 2) Static in-memory cache has cues for this episode — instant state restore, deferred label creation
+    // 2) Static in-memory cache has cues for this episode — instant restore with UITextView (fast)
     if (s_transcriptCachedCues.count > 0 &&
         s_transcriptCachedEpisodeHash.length > 0 &&
         [currentEpisode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
@@ -1920,27 +1963,30 @@ static NSArray<NSDictionary*>* s_transcriptCachedSources;
         self.transcriptSources = s_transcriptCachedSources ?: @[];
         self.selectedTranscriptDescriptor = s_transcriptCachedDescriptor;
         self.transcriptCues = s_transcriptCachedCues;
+
+        // Use pre-built attributed string + ranges from cache (no rebuilding needed)
+        if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
+            _previousTranscriptCueIndex = NSNotFound;
+            self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
+            self.transcriptCueRanges = s_transcriptCachedRanges;
+        } else {
+            [self _rebuildTranscriptLines];
+        }
         [self _updateTranscriptPickerButton];
 
-        // Set visibility/availability immediately so chapter images are hidden from first frame
+        // Restore visibility from preference
         BOOL shouldRestoreVisible = [USER_DEFAULTS boolForKey:@"TranscriptVisiblePreference"];
         if (shouldRestoreVisible) {
             self.transcriptVisible = YES;
         }
-        [self _setTranscriptAvailableState:YES];
-        [self _applyTranscriptVisibility];
 
-        // Defer heavy UILabel creation to after player appears
-        __weak typeof(self) weakSelf = self;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
-            [self _rebuildTranscriptLines];
-            PlaybackManager* pman = [PlaybackManager playbackManager];
-            [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
-            [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
-            [self _updateTranscriptSyncTimerState];
-        });
+        [self _setTranscriptAvailableState:YES];
+
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+        [self _applyTranscriptVisibility];
+        [self _updateTranscriptSyncTimerState];
         return;
     }
 
