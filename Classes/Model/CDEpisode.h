@@ -24,6 +24,7 @@
 @property (nonatomic, strong) NSString * author;
 @property (nonatomic, strong) NSString * summary;
 @property (nonatomic, strong) NSString * fulltext;
+@property (nonatomic, strong) NSArray *transcripts;
 @property (nonatomic, strong) NSURL * paymentURL;
 @property (nonatomic, strong) NSURL * deeplinkURL;
 @property (nonatomic) BOOL video;

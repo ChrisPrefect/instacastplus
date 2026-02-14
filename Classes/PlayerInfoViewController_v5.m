@@ -18,16 +18,430 @@
 #import "PlayerView.h"
 #import "PlaybackViewController.h"
 #import "AudioSession.h"
+#import "CacheManager.h"
 #import "ChapterImageCell.h"
 #import "UIImage+Utils.h"
 #import "ICMetadata.h"
 #import "InstacastAppDelegate.h"
+#import "NSString+ICParser.h"
 #import <MediaPlayer/MediaPlayer.h>
 
 static NSString* kChapterCell = @"ChapterCell";
 static NSString* kBookmarkCell = @"BookmarkCell";
 static NSString* kUpNextCell = @"UpNextCell";
 static NSString* kHeaderView = @"HeaderView";
+static NSString* kFeedPropertyPreferredTranscriptLanguage = @"preferredTranscriptLanguage";
+static NSString* kFeedPropertyPreferredTranscriptURL = @"preferredTranscriptURL";
+static NSString* kTranscriptCacheFolderName = @"TranscriptCache";
+
+static NSDictionary* ICTranscriptCueMake(NSTimeInterval start, NSTimeInterval end, NSString* text)
+{
+    if (text.length == 0 || start < 0) {
+        return nil;
+    }
+    return @{ @"start": @(start), @"end": @(end), @"text": text };
+}
+
+static NSTimeInterval ICTranscriptParseTimecode(NSString* value)
+{
+    if (![value isKindOfClass:[NSString class]]) {
+        return -1;
+    }
+
+    NSString* trimmed = [[value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
+    if (trimmed.length == 0) {
+        return -1;
+    }
+
+    if ([trimmed hasSuffix:@"ms"]) {
+        return [[trimmed substringToIndex:trimmed.length - 2] doubleValue] / 1000.0;
+    }
+    if ([trimmed hasSuffix:@"s"] && ![trimmed containsString:@":"]) {
+        return [[trimmed substringToIndex:trimmed.length - 1] doubleValue];
+    }
+    if ([trimmed hasSuffix:@"m"] && ![trimmed containsString:@":"]) {
+        return [[trimmed substringToIndex:trimmed.length - 1] doubleValue] * 60.0;
+    }
+    if ([trimmed hasSuffix:@"h"] && ![trimmed containsString:@":"]) {
+        return [[trimmed substringToIndex:trimmed.length - 1] doubleValue] * 3600.0;
+    }
+
+    NSString* normalized = [trimmed stringByReplacingOccurrencesOfString:@"," withString:@"."];
+    NSArray* parts = [normalized componentsSeparatedByString:@":"];
+    if (parts.count == 1) {
+        return [parts[0] doubleValue];
+    }
+
+    double seconds = 0;
+    NSInteger factor = 1;
+    for (NSInteger idx = (NSInteger)parts.count - 1; idx >= 0; idx--) {
+        seconds += [parts[idx] doubleValue] * factor;
+        factor *= 60;
+    }
+    return seconds;
+}
+
+static NSString* ICTranscriptDecodedString(NSData* data)
+{
+    if (data.length == 0) {
+        return nil;
+    }
+
+    NSString* text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (text.length > 0) {
+        return text;
+    }
+    text = [[NSString alloc] initWithData:data encoding:NSUnicodeStringEncoding];
+    if (text.length > 0) {
+        return text;
+    }
+    text = [[NSString alloc] initWithData:data encoding:NSUTF16LittleEndianStringEncoding];
+    if (text.length > 0) {
+        return text;
+    }
+    text = [[NSString alloc] initWithData:data encoding:NSUTF16BigEndianStringEncoding];
+    if (text.length > 0) {
+        return text;
+    }
+    text = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+    return text;
+}
+
+static NSArray<NSDictionary*>* ICTranscriptNormalizeCues(NSArray<NSDictionary*>* cues)
+{
+    if (cues.count == 0) {
+        return @[];
+    }
+
+    NSArray* sorted = [cues sortedArrayUsingComparator:^NSComparisonResult(NSDictionary* cue1, NSDictionary* cue2) {
+        double s1 = [cue1[@"start"] doubleValue];
+        double s2 = [cue2[@"start"] doubleValue];
+        if (s1 < s2) {
+            return NSOrderedAscending;
+        }
+        if (s1 > s2) {
+            return NSOrderedDescending;
+        }
+        return NSOrderedSame;
+    }];
+
+    NSMutableArray* normalized = [NSMutableArray arrayWithCapacity:sorted.count];
+    for (NSInteger i = 0; i < (NSInteger)sorted.count; i++) {
+        NSDictionary* cue = sorted[i];
+        double start = [cue[@"start"] doubleValue];
+        double end = [cue[@"end"] doubleValue];
+        NSString* text = [cue[@"text"] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (text.length == 0 || start < 0) {
+            continue;
+        }
+
+        if (!(end > start)) {
+            if (i + 1 < (NSInteger)sorted.count) {
+                double nextStart = [sorted[i + 1][@"start"] doubleValue];
+                if (nextStart > start) {
+                    end = nextStart;
+                } else {
+                    end = start + 2;
+                }
+            } else {
+                end = start + 2;
+            }
+        }
+
+        NSDictionary* normalizedCue = ICTranscriptCueMake(start, end, text);
+        if (normalizedCue) {
+            [normalized addObject:normalizedCue];
+        }
+    }
+
+    return normalized;
+}
+
+static NSArray<NSDictionary*>* ICTranscriptParseArrowTimedText(NSString* text)
+{
+    if (text.length == 0) {
+        return @[];
+    }
+
+    NSCharacterSet* ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    NSArray* rawLines = [text componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    NSMutableArray* cues = [NSMutableArray array];
+    NSInteger idx = 0;
+
+    while (idx < (NSInteger)rawLines.count) {
+        NSString* line = [rawLines[idx] stringByTrimmingCharactersInSet:ws];
+        if (line.length == 0 || [line hasPrefix:@"WEBVTT"] || [line hasPrefix:@"NOTE"]) {
+            idx++;
+            continue;
+        }
+
+        if ([line rangeOfString:@"-->"].location == NSNotFound) {
+            if (idx + 1 < (NSInteger)rawLines.count) {
+                NSString* maybeTimeLine = [rawLines[idx + 1] stringByTrimmingCharactersInSet:ws];
+                if ([maybeTimeLine rangeOfString:@"-->"].location != NSNotFound) {
+                    line = maybeTimeLine;
+                    idx++;
+                } else {
+                    idx++;
+                    continue;
+                }
+            } else {
+                break;
+            }
+        }
+
+        NSArray* components = [line componentsSeparatedByString:@"-->"];
+        if (components.count < 2) {
+            idx++;
+            continue;
+        }
+
+        NSString* startString = [components[0] stringByTrimmingCharactersInSet:ws];
+        NSString* endSection = [components[1] stringByTrimmingCharactersInSet:ws];
+        NSString* endString = [[endSection componentsSeparatedByCharactersInSet:ws] firstObject];
+
+        NSTimeInterval start = ICTranscriptParseTimecode(startString);
+        NSTimeInterval end = ICTranscriptParseTimecode(endString);
+        idx++;
+
+        NSMutableArray* lineParts = [NSMutableArray array];
+        while (idx < (NSInteger)rawLines.count) {
+            NSString* cueLine = rawLines[idx];
+            NSString* trimmedCueLine = [cueLine stringByTrimmingCharactersInSet:ws];
+            if (trimmedCueLine.length == 0) {
+                idx++;
+                break;
+            }
+            [lineParts addObject:trimmedCueLine];
+            idx++;
+        }
+
+        NSString* cueText = [[lineParts componentsJoinedByString:@"\n"] stringByStrippingHTML];
+        NSDictionary* cue = ICTranscriptCueMake(start, end, cueText);
+        if (cue) {
+            [cues addObject:cue];
+        }
+    }
+
+    return ICTranscriptNormalizeCues(cues);
+}
+
+static NSArray<NSDictionary*>* ICTranscriptParseLRC(NSString* text)
+{
+    if (text.length == 0) {
+        return @[];
+    }
+
+    NSRegularExpression* timeTagRegex = [NSRegularExpression regularExpressionWithPattern:@"\\[(\\d{1,2}:\\d{2}(?:[\\.:]\\d{1,3})?)\\]"
+                                                                                   options:0
+                                                                                     error:nil];
+    NSArray* lines = [text componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    NSMutableArray* cues = [NSMutableArray array];
+    NSCharacterSet* ws = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+
+    for (NSString* line in lines) {
+        NSArray<NSTextCheckingResult*>* matches = [timeTagRegex matchesInString:line options:0 range:NSMakeRange(0, line.length)];
+        if (matches.count == 0) {
+            continue;
+        }
+
+        NSString* cueText = [timeTagRegex stringByReplacingMatchesInString:line options:0 range:NSMakeRange(0, line.length) withTemplate:@""];
+        cueText = [[cueText stringByTrimmingCharactersInSet:ws] stringByStrippingHTML];
+        if (cueText.length == 0) {
+            continue;
+        }
+
+        for (NSTextCheckingResult* match in matches) {
+            NSString* timeString = [line substringWithRange:[match rangeAtIndex:1]];
+            NSDictionary* cue = ICTranscriptCueMake(ICTranscriptParseTimecode(timeString), 0, cueText);
+            if (cue) {
+                [cues addObject:cue];
+            }
+        }
+    }
+
+    return ICTranscriptNormalizeCues(cues);
+}
+
+static NSString* ICTranscriptXMLAttribute(NSString* attributes, NSString* key)
+{
+    if (attributes.length == 0 || key.length == 0) {
+        return nil;
+    }
+
+    NSString* pattern = [NSString stringWithFormat:@"%@\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]", key];
+    NSRegularExpression* regex = [NSRegularExpression regularExpressionWithPattern:pattern
+                                                                            options:NSRegularExpressionCaseInsensitive
+                                                                              error:nil];
+    NSTextCheckingResult* match = [regex firstMatchInString:attributes options:0 range:NSMakeRange(0, attributes.length)];
+    if (!match || [match numberOfRanges] < 2) {
+        return nil;
+    }
+    return [attributes substringWithRange:[match rangeAtIndex:1]];
+}
+
+static NSArray<NSDictionary*>* ICTranscriptParseTTML(NSString* text)
+{
+    if (text.length == 0) {
+        return @[];
+    }
+
+    NSRegularExpression* pTagRegex = [NSRegularExpression regularExpressionWithPattern:@"<p\\b([^>]*)>(.*?)</p>"
+                                                                                options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators
+                                                                                  error:nil];
+    NSMutableArray* cues = [NSMutableArray array];
+    NSArray<NSTextCheckingResult*>* matches = [pTagRegex matchesInString:text options:0 range:NSMakeRange(0, text.length)];
+
+    for (NSTextCheckingResult* match in matches) {
+        if ([match numberOfRanges] < 3) {
+            continue;
+        }
+        NSString* attrs = [text substringWithRange:[match rangeAtIndex:1]];
+        NSString* inner = [text substringWithRange:[match rangeAtIndex:2]];
+        NSString* startString = ICTranscriptXMLAttribute(attrs, @"begin");
+        NSString* endString = ICTranscriptXMLAttribute(attrs, @"end");
+        NSString* durString = ICTranscriptXMLAttribute(attrs, @"dur");
+        NSTimeInterval start = ICTranscriptParseTimecode(startString);
+        NSTimeInterval end = ICTranscriptParseTimecode(endString);
+        if (!(end > start) && durString.length > 0) {
+            NSTimeInterval duration = ICTranscriptParseTimecode(durString);
+            if (duration > 0) {
+                end = start + duration;
+            }
+        }
+
+        NSString* cueText = [inner stringByReplacingOccurrencesOfString:@"<br/>" withString:@"\n"];
+        cueText = [cueText stringByReplacingOccurrencesOfString:@"<br />" withString:@"\n"];
+        cueText = [cueText stringByStrippingHTML];
+        NSDictionary* cue = ICTranscriptCueMake(start, end, cueText);
+        if (cue) {
+            [cues addObject:cue];
+        }
+    }
+
+    return ICTranscriptNormalizeCues(cues);
+}
+
+static NSTimeInterval ICTranscriptTimeFromJSONValue(id value)
+{
+    if ([value isKindOfClass:[NSNumber class]]) {
+        return [value doubleValue];
+    }
+    if ([value isKindOfClass:[NSString class]]) {
+        return ICTranscriptParseTimecode((NSString*)value);
+    }
+    return -1;
+}
+
+static NSString* ICTranscriptStringFromJSONDictionary(NSDictionary* dict)
+{
+    NSArray* keys = @[ @"text", @"value", @"line", @"cue", @"utterance", @"transcript" ];
+    for (NSString* key in keys) {
+        id value = dict[key];
+        if ([value isKindOfClass:[NSString class]] && [(NSString*)value length] > 0) {
+            return (NSString*)value;
+        }
+    }
+    return nil;
+}
+
+static void ICTranscriptCollectJSONCues(id object, NSMutableArray<NSDictionary*>* cues)
+{
+    if ([object isKindOfClass:[NSArray class]]) {
+        for (id entry in (NSArray*)object) {
+            ICTranscriptCollectJSONCues(entry, cues);
+        }
+        return;
+    }
+
+    if (![object isKindOfClass:[NSDictionary class]]) {
+        return;
+    }
+
+    NSDictionary* dict = (NSDictionary*)object;
+    NSArray* startKeys = @[ @"start", @"startTime", @"start_time", @"begin", @"from", @"t" ];
+    NSArray* endKeys = @[ @"end", @"endTime", @"end_time", @"to", @"until" ];
+    NSArray* durationKeys = @[ @"duration", @"dur", @"d" ];
+
+    NSTimeInterval start = -1;
+    NSTimeInterval end = -1;
+    NSTimeInterval duration = -1;
+
+    for (NSString* key in startKeys) {
+        start = ICTranscriptTimeFromJSONValue(dict[key]);
+        if (start >= 0) {
+            break;
+        }
+    }
+    for (NSString* key in endKeys) {
+        end = ICTranscriptTimeFromJSONValue(dict[key]);
+        if (end >= 0) {
+            break;
+        }
+    }
+    for (NSString* key in durationKeys) {
+        duration = ICTranscriptTimeFromJSONValue(dict[key]);
+        if (duration >= 0) {
+            break;
+        }
+    }
+
+    if (start >= 0 && !(end > start) && duration > 0) {
+        end = start + duration;
+    }
+
+    NSString* cueText = ICTranscriptStringFromJSONDictionary(dict);
+    NSDictionary* cue = ICTranscriptCueMake(start, end, [cueText stringByStrippingHTML]);
+    if (cue) {
+        [cues addObject:cue];
+    }
+
+    for (id value in dict.allValues) {
+        ICTranscriptCollectJSONCues(value, cues);
+    }
+}
+
+static NSArray<NSDictionary*>* ICTranscriptParseJSON(NSData* data)
+{
+    if (data.length == 0) {
+        return @[];
+    }
+
+    id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (!json) {
+        return @[];
+    }
+
+    NSMutableArray* cues = [NSMutableArray array];
+    ICTranscriptCollectJSONCues(json, cues);
+    return ICTranscriptNormalizeCues(cues);
+}
+
+static NSArray<NSDictionary*>* ICTranscriptParsePlainText(NSString* text)
+{
+    if (text.length == 0) {
+        return @[];
+    }
+
+    NSString* normalized = [text stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
+    normalized = [[normalized stringByStrippingHTML] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (normalized.length == 0) {
+        return @[];
+    }
+
+    // Static transcript fallback: no timing metadata available.
+    NSDictionary* cue = ICTranscriptCueMake(0, 3153600000.0, normalized);
+    return cue ? @[cue] : @[];
+}
+
+static BOOL ICTranscriptTypeContains(NSString* value, NSString* token)
+{
+    if (value.length == 0 || token.length == 0) {
+        return NO;
+    }
+    return ([[value lowercaseString] rangeOfString:[token lowercaseString]].location != NSNotFound);
+}
 
 enum {
     kChaptersSection = 0,
@@ -46,6 +460,31 @@ enum {
 @property (nonatomic) NSInteger	currentChapterIndex;
 @property (nonatomic, strong) NSArray* bookmarks;
 @property (nonatomic, strong) NSMutableDictionary<NSValue*, UIColor*>* averageColorCache;
+@property (nonatomic, readwrite) BOOL transcriptVisible;
+@property (nonatomic) BOOL transcriptAvailable;
+@property (nonatomic, strong) UIView* transcriptContainerView;
+@property (nonatomic, strong) UIScrollView* transcriptScrollView;
+@property (nonatomic, strong) UIStackView* transcriptStackView;
+@property (nonatomic, strong) UIButton* transcriptPickerButton;
+@property (nonatomic, strong) NSArray<UILabel*>* transcriptLineLabels;
+@property (nonatomic, strong) NSArray<NSDictionary*>* transcriptSources;
+@property (nonatomic, strong) NSArray<NSDictionary*>* transcriptCues;
+@property (nonatomic, strong) NSDictionary* selectedTranscriptDescriptor;
+@property (nonatomic) NSInteger activeTranscriptCueIndex;
+@property (nonatomic, strong) NSURLSessionDataTask* transcriptTask;
+@property (nonatomic, strong) NSMutableDictionary<NSString*, NSURLSessionDataTask*>* transcriptPrefetchTasks;
+@property (nonatomic, strong) NSTimer* transcriptFollowResumeTimer;
+@property (nonatomic, strong) NSTimer* transcriptSyncTimer;
+@property (nonatomic) BOOL transcriptAutoFollowSuspended;
+@property (nonatomic) BOOL pendingTranscriptShowAfterScrollToTop;
+@property (nonatomic, copy) NSString* transcriptDataEpisodeHash;
+
+- (NSInteger)_transcriptUtilityRankForDescriptor:(NSDictionary*)descriptor;
+- (void)_updateTranscriptSyncTimerState;
+- (void)_removeTranscriptCacheForEpisode:(CDEpisode*)episode;
+- (void)_appendTranscriptURLAttemptForRawValue:(NSString*)rawValue
+                                       episode:(CDEpisode*)episode
+                                      attempts:(NSMutableOrderedSet<NSString*>*)attempts;
 @end
 
 
@@ -56,6 +495,7 @@ enum {
     BOOL _dismissEnded;
     CGFloat _startY;
     BOOL _didWillAppear;
+    NSString* _transcriptLoadingURL;
 }
 
 + (instancetype) viewController {
@@ -64,6 +504,13 @@ enum {
 
 - (void) dealloc
 {
+    [self.transcriptTask cancel];
+    for (NSURLSessionDataTask* task in self.transcriptPrefetchTasks.allValues) {
+        [task cancel];
+    }
+    [self.transcriptPrefetchTasks removeAllObjects];
+    [self.transcriptFollowResumeTimer invalidate];
+    [self.transcriptSyncTimer invalidate];
     [self _setObserving:NO];
 }
 
@@ -115,10 +562,21 @@ enum {
             PlaybackManager* pman = [PlaybackManager playbackManager];
             weakSelf.currentChapterIndex = pman.currentChapter;
         }];
+
+        [pman addTaskObserver:self forKeyPath:@"playingEpisode.consumed" task:^(id obj, NSDictionary *change) {
+            (void)obj;
+            (void)change;
+            PlaybackManager* pman = [PlaybackManager playbackManager];
+            CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
+            if (episode.consumed) {
+                [weakSelf _removeTranscriptCacheForEpisode:episode];
+            }
+        }];
         
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
         [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
 
         _observing = YES;
     }
@@ -130,6 +588,7 @@ enum {
         [pman removeTaskObserver:self forKeyPath:@"currentArtwork"];
         [pman removeTaskObserver:self forKeyPath:@"time"];
         [pman removeTaskObserver:self forKeyPath:@"currentChapter"];
+        [pman removeTaskObserver:self forKeyPath:@"playingEpisode.consumed"];
 
         [nc removeObserver:self];
 
@@ -139,7 +598,11 @@ enum {
 
 - (void) databaseManagerDidAddBookmarkNotification:(NSNotification*)notification
 {
+    (void)notification;
     [self reloadBookmarks];
+    if (!self.isViewLoaded || self.view.window == nil) {
+        return;
+    }
     [self layoutHeaderView];
     [self.tableView reloadData];
 }
@@ -150,6 +613,9 @@ enum {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     chapterImagesArray = pman.artworks ?: @[];
     [self reloadData];
+    if (!self.isViewLoaded || self.view.window == nil) {
+        return;
+    }
     [self layoutHeaderView];
     [self.tableView reloadData];
 }
@@ -157,9 +623,37 @@ enum {
 - (void) audioSessionDidRestorePlaybackNotification:(NSNotification*)notification
 {
     (void)notification;
-    [self reloadData];
+    if (!self.isViewLoaded || self.view.window == nil) {
+        DebugLog(@"[TranscriptData] restore playback ignored (view not visible)");
+        return;
+    }
+
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    NSString* currentEpisodeHash = episode.objectHash;
+    BOOL episodeChanged = (currentEpisodeHash.length > 0 && ![currentEpisodeHash isEqualToString:self.transcriptDataEpisodeHash]);
+    DebugLog(@"[TranscriptData] restore playback episode=%@ tracked=%@ changed=%@ available=%@",
+             currentEpisodeHash ?: @"(nil)",
+             self.transcriptDataEpisodeHash ?: @"(nil)",
+             episodeChanged ? @"YES" : @"NO",
+             self.transcriptAvailable ? @"YES" : @"NO");
+    if (episodeChanged) {
+        [self reloadData];
+    } else if (self.transcriptAvailable) {
+        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+    }
     [self layoutHeaderView];
     [self.tableView reloadData];
+}
+
+- (void)cacheManagerDidClearCacheNotification:(NSNotification*)notification
+{
+    CDEpisode* clearedEpisode = [notification.userInfo[@"episode"] isKindOfClass:[CDEpisode class]] ? notification.userInfo[@"episode"] : nil;
+    if (clearedEpisode) {
+        [self _removeTranscriptCacheForEpisode:clearedEpisode];
+    } else {
+        [self _clearAllTranscriptCache];
+    }
 }
 
 - (void) viewDidLoad
@@ -199,6 +693,67 @@ enum {
     self.chapterImagesCollection.showsVerticalScrollIndicator = NO;
     [self.chapterImagesCollection setPagingEnabled:YES];
 
+    self.transcriptContainerView = [[UIView alloc] initWithFrame:CGRectZero];
+    self.transcriptContainerView.backgroundColor = [UIColor clearColor];
+    self.transcriptContainerView.hidden = YES;
+
+    self.transcriptScrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
+    self.transcriptScrollView.backgroundColor = [UIColor clearColor];
+    self.transcriptScrollView.delegate = self;
+    self.transcriptScrollView.alwaysBounceVertical = YES;
+    self.transcriptScrollView.showsVerticalScrollIndicator = YES;
+    self.transcriptScrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.transcriptContainerView addSubview:self.transcriptScrollView];
+
+    self.transcriptStackView = [[UIStackView alloc] initWithFrame:CGRectZero];
+    self.transcriptStackView.axis = UILayoutConstraintAxisVertical;
+    self.transcriptStackView.spacing = 14.0;
+    self.transcriptStackView.alignment = UIStackViewAlignmentFill;
+    self.transcriptStackView.distribution = UIStackViewDistributionFill;
+    self.transcriptStackView.layoutMarginsRelativeArrangement = YES;
+    self.transcriptStackView.layoutMargins = UIEdgeInsetsMake(16.0, 16.0, 16.0, 16.0);
+    self.transcriptStackView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.transcriptScrollView addSubview:self.transcriptStackView];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.transcriptScrollView.topAnchor constraintEqualToAnchor:self.transcriptContainerView.topAnchor],
+        [self.transcriptScrollView.leadingAnchor constraintEqualToAnchor:self.transcriptContainerView.leadingAnchor],
+        [self.transcriptScrollView.trailingAnchor constraintEqualToAnchor:self.transcriptContainerView.trailingAnchor],
+        [self.transcriptScrollView.bottomAnchor constraintEqualToAnchor:self.transcriptContainerView.bottomAnchor],
+
+        [self.transcriptStackView.topAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.topAnchor],
+        [self.transcriptStackView.leadingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.leadingAnchor],
+        [self.transcriptStackView.trailingAnchor constraintEqualToAnchor:self.transcriptScrollView.frameLayoutGuide.trailingAnchor],
+        [self.transcriptStackView.bottomAnchor constraintEqualToAnchor:self.transcriptScrollView.contentLayoutGuide.bottomAnchor]
+    ]];
+
+    UIButton* pickerButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    pickerButton.backgroundColor = [UIColor clearColor];
+    pickerButton.layer.cornerRadius = 0;
+    pickerButton.layer.masksToBounds = NO;
+    pickerButton.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
+    pickerButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    [pickerButton setTitleColor:ICMutedTextColor forState:UIControlStateNormal];
+    UIImageSymbolConfiguration* chevronConfig = [UIImageSymbolConfiguration configurationWithPointSize:11 weight:UIImageSymbolWeightSemibold];
+    UIImage* pickerChevronImage = [[UIImage systemImageNamed:@"chevron.down" withConfiguration:chevronConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    [pickerButton setImage:pickerChevronImage forState:UIControlStateNormal];
+    pickerButton.tintColor = ICMutedTextColor;
+    pickerButton.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;
+    pickerButton.imageEdgeInsets = UIEdgeInsetsMake(0, 6, 0, -6);
+    pickerButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    [pickerButton setTitle:@"Transcript".ls forState:UIControlStateNormal];
+    [pickerButton addTarget:self action:@selector(showTranscriptPicker:) forControlEvents:UIControlEventTouchUpInside];
+    pickerButton.hidden = YES;
+    [self.transcriptContainerView addSubview:pickerButton];
+    self.transcriptPickerButton = pickerButton;
+
+    self.transcriptLineLabels = @[];
+    self.transcriptCues = @[];
+    self.transcriptSources = @[];
+    self.transcriptPrefetchTasks = [NSMutableDictionary dictionary];
+    self.activeTranscriptCueIndex = NSNotFound;
+    self.transcriptVisible = NO;
+
     // Chevron indicator below chapter image
     CGFloat chevronWidth = 22.0f;
     CGFloat chevronHeight = 8.0f;
@@ -229,6 +784,1153 @@ enum {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationDidChange) name:UIDeviceOrientationDidChangeNotification object:nil];
 }
 
+- (void)_setTranscriptAvailableState:(BOOL)available
+{
+    if (_transcriptAvailable == available) {
+        return;
+    }
+
+    _transcriptAvailable = available;
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    DebugLog(@"[TranscriptData] available state changed: %@ episode=%@ sources=%ld cues=%ld visible=%@",
+             available ? @"YES" : @"NO",
+             episode.objectHash ?: @"(nil)",
+             (long)self.transcriptSources.count,
+             (long)self.transcriptCues.count,
+             self.transcriptVisible ? @"YES" : @"NO");
+    if (!available) {
+        self.pendingTranscriptShowAfterScrollToTop = NO;
+        self.transcriptVisible = NO;
+        [self _applyTranscriptVisibility];
+        [self _updateTranscriptSyncTimerState];
+    }
+    if (self.transcriptAvailabilityDidChange) {
+        self.transcriptAvailabilityDidChange(available);
+    }
+}
+
+- (void)_applyTranscriptVisibility
+{
+    self.transcriptContainerView.hidden = !self.transcriptVisible;
+    self.chapterImagesCollection.hidden = self.transcriptVisible;
+    chevronIndicatorView.hidden = self.transcriptVisible || ![self _hasContentBelowImage];
+    DebugLog(@"[TranscriptUI] apply visibility visible=%@ containerHidden=%@ chapterHidden=%@",
+             self.transcriptVisible ? @"YES" : @"NO",
+             self.transcriptContainerView.hidden ? @"YES" : @"NO",
+             self.chapterImagesCollection.hidden ? @"YES" : @"NO");
+    [self _updateTranscriptSyncTimerState];
+}
+
+- (NSArray<NSDictionary*>*)_normalizedTranscriptSourcesForEpisode:(CDEpisode*)episode
+{
+    NSMutableArray* sources = [NSMutableArray array];
+    NSArray* rawSources = [episode.transcripts isKindOfClass:[NSArray class]] ? episode.transcripts : @[];
+    DebugLog(@"[TranscriptData] normalize sources episode=%@ rawCount=%ld",
+             episode.objectHash ?: @"(nil)",
+             (long)rawSources.count);
+    for (id item in rawSources) {
+        if (![item isKindOfClass:[NSDictionary class]]) {
+            continue;
+        }
+        NSDictionary* source = (NSDictionary*)item;
+        NSString* url = [source[@"url"] isKindOfClass:[NSString class]] ? source[@"url"] : nil;
+        if (url.length == 0) {
+            continue;
+        }
+        NSMutableDictionary* normalized = [NSMutableDictionary dictionaryWithObject:url forKey:@"url"];
+        NSString* type = [source[@"type"] isKindOfClass:[NSString class]] ? [source[@"type"] lowercaseString] : nil;
+        NSString* language = [source[@"language"] isKindOfClass:[NSString class]] ? [source[@"language"] lowercaseString] : nil;
+        NSString* rel = [source[@"rel"] isKindOfClass:[NSString class]] ? [source[@"rel"] lowercaseString] : nil;
+        NSString* title = [source[@"title"] isKindOfClass:[NSString class]] ? source[@"title"] : nil;
+        NSString* fallbackURL = [source[@"fallbackURL"] isKindOfClass:[NSString class]] ? source[@"fallbackURL"] : nil;
+        NSString* href = [source[@"href"] isKindOfClass:[NSString class]] ? source[@"href"] : nil;
+        if (type.length > 0) normalized[@"type"] = type;
+        if (language.length > 0) normalized[@"language"] = language;
+        if (rel.length > 0) normalized[@"rel"] = rel;
+        if (title.length > 0) normalized[@"title"] = title;
+        if (fallbackURL.length > 0) normalized[@"fallbackURL"] = fallbackURL;
+        if (href.length > 0) normalized[@"href"] = href;
+        [sources addObject:normalized];
+    }
+    [sources sortUsingComparator:^NSComparisonResult(NSDictionary* source1, NSDictionary* source2) {
+        NSInteger rank1 = [self _transcriptUtilityRankForDescriptor:source1];
+        NSInteger rank2 = [self _transcriptUtilityRankForDescriptor:source2];
+        if (rank1 < rank2) return NSOrderedAscending;
+        if (rank1 > rank2) return NSOrderedDescending;
+
+        NSString* language1 = [source1[@"language"] isKindOfClass:[NSString class]] ? source1[@"language"] : @"";
+        NSString* language2 = [source2[@"language"] isKindOfClass:[NSString class]] ? source2[@"language"] : @"";
+        NSComparisonResult languageResult = [language1 localizedCaseInsensitiveCompare:language2];
+        if (languageResult != NSOrderedSame) {
+            return languageResult;
+        }
+
+        NSString* title1 = [source1[@"title"] isKindOfClass:[NSString class]] ? source1[@"title"] : @"";
+        NSString* title2 = [source2[@"title"] isKindOfClass:[NSString class]] ? source2[@"title"] : @"";
+        return [title1 localizedCaseInsensitiveCompare:title2];
+    }];
+    for (NSDictionary* source in sources) {
+        DebugLog(@"[TranscriptData] source url=%@ type=%@ lang=%@ rel=%@ title=%@ fallback=%@ href=%@",
+                 source[@"url"] ?: @"",
+                 source[@"type"] ?: @"",
+                 source[@"language"] ?: @"",
+                 source[@"rel"] ?: @"",
+                 source[@"title"] ?: @"",
+                 source[@"fallbackURL"] ?: @"",
+                 source[@"href"] ?: @"");
+    }
+    return sources;
+}
+
+- (NSInteger)_languageMatchScoreForPreferredLanguage:(NSString*)preferred candidate:(NSString*)candidate
+{
+    if (preferred.length == 0 || candidate.length == 0) {
+        return 0;
+    }
+
+    NSString* preferredLower = [preferred lowercaseString];
+    NSString* candidateLower = [candidate lowercaseString];
+    if ([preferredLower isEqualToString:candidateLower]) {
+        return 3;
+    }
+
+    NSArray* preferredParts = [preferredLower componentsSeparatedByString:@"-"];
+    NSString* preferredBase = preferredParts.firstObject;
+    NSArray* candidateParts = [candidateLower componentsSeparatedByString:@"-"];
+    NSString* candidateBase = candidateParts.firstObject;
+    if (preferredBase.length > 0 && [preferredBase isEqualToString:candidateBase]) {
+        return 2;
+    }
+
+    if ([preferredLower hasPrefix:candidateLower] || [candidateLower hasPrefix:preferredLower]) {
+        return 1;
+    }
+    return 0;
+}
+
+- (NSDictionary*)_preferredTranscriptDescriptorFromSources:(NSArray<NSDictionary*>*)sources
+{
+    if (sources.count == 0) {
+        return nil;
+    }
+
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    CDFeed* feed = episode.feed;
+
+    NSString* preferredURL = [feed stringForKey:kFeedPropertyPreferredTranscriptURL];
+    if (preferredURL.length > 0) {
+        for (NSDictionary* source in sources) {
+            if ([source[@"url"] isEqualToString:preferredURL]) {
+                return source;
+            }
+        }
+    }
+
+    NSString* preferredLanguage = [feed stringForKey:kFeedPropertyPreferredTranscriptLanguage];
+    if (preferredLanguage.length > 0) {
+        NSInteger bestScore = 0;
+        NSDictionary* bestSource = nil;
+        for (NSDictionary* source in sources) {
+            NSInteger score = [self _languageMatchScoreForPreferredLanguage:preferredLanguage candidate:source[@"language"]];
+            if (score > bestScore) {
+                bestScore = score;
+                bestSource = source;
+            }
+        }
+        if (bestSource) {
+            return bestSource;
+        }
+    }
+
+    for (NSString* preferredDeviceLanguage in [NSLocale preferredLanguages]) {
+        NSInteger bestScore = 0;
+        NSDictionary* bestSource = nil;
+        for (NSDictionary* source in sources) {
+            NSInteger score = [self _languageMatchScoreForPreferredLanguage:preferredDeviceLanguage candidate:source[@"language"]];
+            if (score > bestScore) {
+                bestScore = score;
+                bestSource = source;
+            }
+        }
+        if (bestSource) {
+            return bestSource;
+        }
+    }
+
+    return sources.firstObject;
+}
+
+- (NSArray<NSDictionary*>*)_orderedTranscriptCandidatesFromSources:(NSArray<NSDictionary*>*)sources preferred:(NSDictionary*)preferred
+{
+    if (sources.count == 0) {
+        return @[];
+    }
+    if (!preferred) {
+        return sources;
+    }
+
+    NSMutableArray* ordered = [NSMutableArray arrayWithObject:preferred];
+    for (NSDictionary* source in sources) {
+        if (![source[@"url"] isEqualToString:preferred[@"url"]]) {
+            [ordered addObject:source];
+        }
+    }
+    return ordered;
+}
+
+- (NSString*)_transcriptFormatNameForDescriptor:(NSDictionary*)descriptor
+{
+    NSString* type = [descriptor[@"type"] lowercaseString];
+    NSString* urlString = descriptor[@"url"];
+    NSString* ext = [[NSURL URLWithString:urlString].pathExtension lowercaseString];
+    NSString* token = (type.length > 0) ? type : ext;
+
+    if (ICTranscriptTypeContains(token, @"vtt")) return @"VTT";
+    if (ICTranscriptTypeContains(token, @"subrip") || [ext isEqualToString:@"srt"]) return @"SRT";
+    if ([ext isEqualToString:@"lrc"]) return @"LRC";
+    if (ICTranscriptTypeContains(token, @"ttml") || [ext isEqualToString:@"ttml"] || [ext isEqualToString:@"dfxp"] || ICTranscriptTypeContains(token, @"xml")) return @"TTML";
+    if (ICTranscriptTypeContains(token, @"json") || [ext isEqualToString:@"json"]) return @"JSON";
+    if (ICTranscriptTypeContains(token, @"plain") || [ext isEqualToString:@"txt"]) return @"TXT";
+    return @"";
+}
+
+- (NSInteger)_transcriptUtilityRankForDescriptor:(NSDictionary*)descriptor
+{
+    NSString* format = [self _transcriptFormatNameForDescriptor:descriptor];
+    if ([format isEqualToString:@"SRT"]) return 0;
+    if ([format isEqualToString:@"VTT"]) return 1;
+    if ([format isEqualToString:@"JSON"]) return 2;
+    if ([format isEqualToString:@"TXT"]) return 3;
+    return 4;
+}
+
+- (NSString*)_transcriptDisplayNameForDescriptor:(NSDictionary*)descriptor
+{
+    NSString* title = descriptor[@"title"];
+    NSString* language = descriptor[@"language"];
+    NSString* format = [self _transcriptFormatNameForDescriptor:descriptor];
+
+    NSString* name = nil;
+    if (title.length > 0) {
+        name = title;
+    } else if (language.length > 0) {
+        NSString* localizedLanguage = [[NSLocale currentLocale] displayNameForKey:NSLocaleIdentifier value:language];
+        name = localizedLanguage.length > 0 ? localizedLanguage : language.uppercaseString;
+    } else {
+        name = @"Transcript".ls;
+    }
+
+    if (format.length > 0) {
+        return [NSString stringWithFormat:@"%@ (%@)", name, format];
+    }
+    return name;
+}
+
+- (void)_updateTranscriptPickerButton
+{
+    NSString* title = (self.selectedTranscriptDescriptor != nil) ? [self _transcriptDisplayNameForDescriptor:self.selectedTranscriptDescriptor] : @"Transcript".ls;
+    [self.transcriptPickerButton setTitle:title forState:UIControlStateNormal];
+    self.transcriptPickerButton.hidden = (self.transcriptSources.count <= 1);
+    DebugLog(@"[TranscriptUI] picker title='%@' hidden=%@ sources=%ld selected=%@",
+             title,
+             self.transcriptPickerButton.hidden ? @"YES" : @"NO",
+             (long)self.transcriptSources.count,
+             self.selectedTranscriptDescriptor[@"url"] ?: @"");
+}
+
+- (NSURL*)_transcriptCacheDirectoryURLCreate:(BOOL)create
+{
+    NSURL* appSupportURL = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject];
+    if (!appSupportURL) {
+        return nil;
+    }
+
+    NSURL* directoryURL = [appSupportURL URLByAppendingPathComponent:kTranscriptCacheFolderName isDirectory:YES];
+    if (create) {
+        [[NSFileManager defaultManager] createDirectoryAtURL:directoryURL withIntermediateDirectories:YES attributes:nil error:nil];
+        [directoryURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+    }
+    return directoryURL;
+}
+
+- (NSURL*)_transcriptCacheFileURLForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL createDirectory:(BOOL)createDirectory
+{
+    if (episodeHash.length == 0 || resolvedURL.length == 0) {
+        return nil;
+    }
+
+    NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:createDirectory];
+    if (!directoryURL) {
+        return nil;
+    }
+
+    NSString* fileName = [NSString stringWithFormat:@"%@_%@.trcache", episodeHash, [resolvedURL MD5Hash]];
+    return [directoryURL URLByAppendingPathComponent:fileName];
+}
+
+- (NSData*)_cachedTranscriptDataForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
+{
+    NSURL* cacheFileURL = [self _transcriptCacheFileURLForEpisodeHash:episodeHash resolvedURL:resolvedURL createDirectory:NO];
+    if (!cacheFileURL) {
+        return nil;
+    }
+    return [NSData dataWithContentsOfURL:cacheFileURL];
+}
+
+- (void)_storeTranscriptData:(NSData*)data forEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
+{
+    if (data.length == 0 || episodeHash.length == 0 || resolvedURL.length == 0) {
+        return;
+    }
+
+    NSURL* cacheFileURL = [self _transcriptCacheFileURLForEpisodeHash:episodeHash resolvedURL:resolvedURL createDirectory:YES];
+    if (!cacheFileURL) {
+        return;
+    }
+
+    [data writeToURL:cacheFileURL atomically:YES];
+}
+
+- (void)_removeTranscriptCacheForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
+{
+    NSURL* cacheFileURL = [self _transcriptCacheFileURLForEpisodeHash:episodeHash resolvedURL:resolvedURL createDirectory:NO];
+    if (!cacheFileURL) {
+        return;
+    }
+    [[NSFileManager defaultManager] removeItemAtURL:cacheFileURL error:nil];
+}
+
+- (void)_removeTranscriptCacheForEpisode:(CDEpisode*)episode
+{
+    NSString* episodeHash = episode.objectHash;
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
+    if (!directoryURL) {
+        return;
+    }
+
+    NSArray<NSURL*>* fileURLs = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:directoryURL
+                                                               includingPropertiesForKeys:nil
+                                                                                  options:0
+                                                                                    error:nil];
+    NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
+    for (NSURL* fileURL in fileURLs) {
+        NSString* fileName = fileURL.lastPathComponent;
+        if ([fileName hasPrefix:prefix]) {
+            [[NSFileManager defaultManager] removeItemAtURL:fileURL error:nil];
+        }
+    }
+}
+
+- (void)_clearAllTranscriptCache
+{
+    NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
+    if (!directoryURL) {
+        return;
+    }
+    [[NSFileManager defaultManager] removeItemAtURL:directoryURL error:nil];
+}
+
+- (void)_clearTranscriptCacheIfNeededForEpisode:(CDEpisode*)episode
+{
+    if (episode.consumed) {
+        [self _removeTranscriptCacheForEpisode:episode];
+    }
+}
+
+- (NSString*)_transcriptPrefetchTaskKeyForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
+{
+    if (episodeHash.length == 0 || resolvedURL.length == 0) {
+        return nil;
+    }
+    return [NSString stringWithFormat:@"%@|%@", episodeHash, resolvedURL];
+}
+
+- (void)_cancelTranscriptPrefetchTasks
+{
+    for (NSURLSessionDataTask* task in self.transcriptPrefetchTasks.allValues) {
+        [task cancel];
+    }
+    [self.transcriptPrefetchTasks removeAllObjects];
+}
+
+- (void)_prefetchTranscriptDescriptor:(NSDictionary*)descriptor
+                              episode:(CDEpisode*)episode
+                             attempts:(NSArray<NSString*>*)attempts
+                             urlIndex:(NSInteger)urlIndex
+{
+    if (!episode || episode.consumed || urlIndex >= (NSInteger)attempts.count) {
+        return;
+    }
+
+    NSString* episodeHash = episode.objectHash;
+    NSString* urlString = attempts[urlIndex];
+    if (episodeHash.length == 0 || urlString.length == 0) {
+        [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
+        return;
+    }
+    if ([_transcriptLoadingURL isEqualToString:urlString]) {
+        return;
+    }
+    NSString* selectedResolvedURL = [self.selectedTranscriptDescriptor[@"resolvedURL"] isKindOfClass:[NSString class]] ? self.selectedTranscriptDescriptor[@"resolvedURL"] : nil;
+    if ([selectedResolvedURL isEqualToString:urlString]) {
+        return;
+    }
+
+    if ([self _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString].length > 0) {
+        return;
+    }
+
+    NSString* taskKey = [self _transcriptPrefetchTaskKeyForEpisodeHash:episodeHash resolvedURL:urlString];
+    if (taskKey.length == 0 || self.transcriptPrefetchTasks[taskKey] != nil) {
+        return;
+    }
+
+    NSURL* url = [NSURL URLWithInsecureString:urlString];
+    if (!url) {
+        [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
+        return;
+    }
+
+    NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30.0];
+    [request setValue:@"text/vtt,application/x-subrip,text/plain,application/json,application/ttml+xml,text/xml;q=0.9,*/*;q=0.8" forHTTPHeaderField:@"Accept"];
+
+    NSString* username = episode.feed.username;
+    NSString* password = episode.feed.password;
+    if (username.length > 0 && password.length > 0) {
+        NSString* credentials = [NSString stringWithFormat:@"%@:%@", username, password];
+        NSData* credentialsData = [credentials dataUsingEncoding:NSUTF8StringEncoding];
+        NSString* authHeader = [NSString stringWithFormat:@"Basic %@", [credentialsData base64EncodedStringWithOptions:0]];
+        [request setValue:authHeader forHTTPHeaderField:@"Authorization"];
+    }
+
+    __weak typeof(self) weakSelf = self;
+    NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) {
+            return;
+        }
+
+        NSHTTPURLResponse* httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)response : nil;
+        NSInteger statusCode = httpResponse.statusCode;
+        BOOL statusIsSuccess = (httpResponse == nil || (statusCode >= 200 && statusCode < 300));
+
+        NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
+        descriptorForParsing[@"resolvedURL"] = urlString;
+        NSArray<NSDictionary*>* cues = @[];
+        if (!error && statusIsSuccess && data.length > 0) {
+            cues = [self _parseTranscriptData:data descriptor:descriptorForParsing response:response];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.transcriptPrefetchTasks removeObjectForKey:taskKey];
+
+            if (cues.count > 0) {
+                [self _storeTranscriptData:data forEpisodeHash:episodeHash resolvedURL:urlString];
+                [self _prefetchTranscriptSourcesForEpisode:episode];
+                return;
+            }
+
+            [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
+            [self _prefetchTranscriptSourcesForEpisode:episode];
+        });
+    }];
+
+    self.transcriptPrefetchTasks[taskKey] = task;
+    [task resume];
+}
+
+- (void)_prefetchTranscriptSourcesForEpisode:(CDEpisode*)episode
+{
+    if (!episode || episode.consumed || self.transcriptSources.count == 0) {
+        return;
+    }
+    if (self.transcriptPrefetchTasks.count > 0) {
+        return;
+    }
+
+    NSString* selectedResolvedURL = [self.selectedTranscriptDescriptor[@"resolvedURL"] isKindOfClass:[NSString class]] ? self.selectedTranscriptDescriptor[@"resolvedURL"] : nil;
+
+    for (NSDictionary* descriptor in self.transcriptSources) {
+        NSArray<NSString*>* attempts = [self _transcriptURLAttemptsForDescriptor:descriptor episode:episode];
+        if (attempts.count == 0) {
+            continue;
+        }
+
+        NSInteger urlIndexToPrefetch = NSNotFound;
+        for (NSInteger idx = 0; idx < (NSInteger)attempts.count; idx++) {
+            NSString* urlString = attempts[idx];
+            if (urlString.length == 0) {
+                continue;
+            }
+            if ([_transcriptLoadingURL isEqualToString:urlString]) {
+                continue;
+            }
+            if ([selectedResolvedURL isEqualToString:urlString]) {
+                continue;
+            }
+            if ([self _cachedTranscriptDataForEpisodeHash:episode.objectHash resolvedURL:urlString].length > 0) {
+                continue;
+            }
+
+            NSString* taskKey = [self _transcriptPrefetchTaskKeyForEpisodeHash:episode.objectHash resolvedURL:urlString];
+            if (taskKey.length == 0 || self.transcriptPrefetchTasks[taskKey] != nil) {
+                continue;
+            }
+
+            urlIndexToPrefetch = idx;
+            break;
+        }
+
+        if (urlIndexToPrefetch != NSNotFound) {
+            [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndexToPrefetch];
+            return;
+        }
+    }
+}
+
+- (void)_applyLoadedTranscriptCues:(NSArray<NSDictionary*>*)cues descriptor:(NSDictionary*)descriptor resolvedURL:(NSString*)resolvedURL
+{
+    if (cues.count == 0 || resolvedURL.length == 0) {
+        return;
+    }
+
+    DebugLog(@"[TranscriptData] transcript loaded url=%@ cues=%ld", resolvedURL, (long)cues.count);
+
+    NSMutableDictionary* resolvedDescriptor = [descriptor mutableCopy];
+    resolvedDescriptor[@"resolvedURL"] = resolvedURL;
+    self.selectedTranscriptDescriptor = resolvedDescriptor;
+    self.transcriptCues = cues;
+    [self _rebuildTranscriptLines];
+    [self _setTranscriptAvailableState:YES];
+    [self _updateTranscriptPickerButton];
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+    [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+    [self _applyTranscriptVisibility];
+    [self _updateTranscriptSyncTimerState];
+
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    [self _prefetchTranscriptSourcesForEpisode:episode];
+}
+
+- (void)_updateTranscriptSyncTimerState
+{
+    BOOL shouldRun = (self.isViewLoaded && self.view.window != nil && self.transcriptVisible && self.transcriptCues.count > 0);
+    if (shouldRun && !self.transcriptSyncTimer) {
+        DebugLog(@"[TranscriptSync] start timer cues=%ld", (long)self.transcriptCues.count);
+        self.transcriptSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
+                                                                     target:self
+                                                                   selector:@selector(_transcriptSyncTimerFired:)
+                                                                   userInfo:nil
+                                                                    repeats:YES];
+    } else if (!shouldRun && self.transcriptSyncTimer) {
+        DebugLog(@"[TranscriptSync] stop timer visible=%@ window=%@ cues=%ld",
+                 self.transcriptVisible ? @"YES" : @"NO",
+                 self.view.window ? @"YES" : @"NO",
+                 (long)self.transcriptCues.count);
+        [self.transcriptSyncTimer invalidate];
+        self.transcriptSyncTimer = nil;
+    }
+}
+
+- (void)_transcriptSyncTimerFired:(NSTimer*)timer
+{
+    if (timer != self.transcriptSyncTimer || self.transcriptCues.count == 0) {
+        return;
+    }
+
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    [self _updateTranscriptCueForPlaybackTime:pman.time animated:YES];
+}
+
+- (void)_clearTranscriptLines
+{
+    for (UIView* view in [self.transcriptStackView.arrangedSubviews copy]) {
+        [self.transcriptStackView removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+    self.transcriptLineLabels = @[];
+    self.activeTranscriptCueIndex = NSNotFound;
+}
+
+- (void)_updateTranscriptLabelAppearance
+{
+    for (NSInteger idx = 0; idx < (NSInteger)self.transcriptLineLabels.count; idx++) {
+        UILabel* label = self.transcriptLineLabels[idx];
+        if (idx == self.activeTranscriptCueIndex) {
+            label.textColor = self.view.tintColor;
+            label.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+        } else {
+            label.textColor = ICMutedTextColor;
+            label.font = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
+        }
+    }
+}
+
+- (void)_rebuildTranscriptLines
+{
+    [self _clearTranscriptLines];
+    if (self.transcriptCues.count == 0) {
+        return;
+    }
+
+    NSMutableArray* labels = [NSMutableArray arrayWithCapacity:self.transcriptCues.count];
+    for (NSDictionary* cue in self.transcriptCues) {
+        UILabel* label = [[UILabel alloc] initWithFrame:CGRectZero];
+        label.numberOfLines = 0;
+        label.textAlignment = NSTextAlignmentLeft;
+        label.text = cue[@"text"];
+        label.textColor = ICMutedTextColor;
+        label.font = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
+        [self.transcriptStackView addArrangedSubview:label];
+        [labels addObject:label];
+    }
+
+    self.transcriptLineLabels = labels;
+    [self _updateTranscriptLabelAppearance];
+}
+
+- (NSInteger)_activeTranscriptCueIndexForPlaybackTime:(NSTimeInterval)time
+{
+    if (self.transcriptCues.count == 0) {
+        return NSNotFound;
+    }
+
+    NSInteger bestIndex = 0;
+    for (NSInteger idx = 0; idx < (NSInteger)self.transcriptCues.count; idx++) {
+        NSDictionary* cue = self.transcriptCues[idx];
+        double start = [cue[@"start"] doubleValue];
+        double end = [cue[@"end"] doubleValue];
+        if (time < start) {
+            return MAX(bestIndex, 0);
+        }
+        bestIndex = idx;
+        if (time >= start && time < end) {
+            return idx;
+        }
+    }
+    return bestIndex;
+}
+
+- (void)_focusTranscriptCueAtIndex:(NSInteger)index animated:(BOOL)animated
+{
+    if (index == NSNotFound || index < 0 || index >= (NSInteger)self.transcriptLineLabels.count) {
+        return;
+    }
+
+    UILabel* label = self.transcriptLineLabels[index];
+    CGRect targetRect = [label convertRect:label.bounds toView:self.transcriptScrollView];
+    CGFloat targetOffsetY = CGRectGetMidY(targetRect) - CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f;
+    CGFloat minOffsetY = -self.transcriptScrollView.contentInset.top;
+    CGFloat maxOffsetY = self.transcriptScrollView.contentSize.height - CGRectGetHeight(self.transcriptScrollView.bounds) + self.transcriptScrollView.contentInset.bottom;
+    if (maxOffsetY < minOffsetY) {
+        maxOffsetY = minOffsetY;
+    }
+    targetOffsetY = MAX(minOffsetY, MIN(targetOffsetY, maxOffsetY));
+
+    [self.transcriptScrollView setContentOffset:CGPointMake(0, targetOffsetY) animated:animated];
+}
+
+- (void)_resumeTranscriptAutoFollow
+{
+    self.transcriptAutoFollowSuspended = NO;
+    [self.transcriptFollowResumeTimer invalidate];
+    self.transcriptFollowResumeTimer = nil;
+    if (self.transcriptVisible) {
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:YES];
+    }
+}
+
+- (void)_scheduleTranscriptAutoFollowResume
+{
+    [self.transcriptFollowResumeTimer invalidate];
+    self.transcriptFollowResumeTimer = [NSTimer scheduledTimerWithTimeInterval:6.0
+                                                                         target:self
+                                                                       selector:@selector(_resumeTranscriptAutoFollow)
+                                                                       userInfo:nil
+                                                                        repeats:NO];
+}
+
+- (void)_updateTranscriptCueForPlaybackTime:(NSTimeInterval)time animated:(BOOL)animated
+{
+    if (self.transcriptCues.count == 0) {
+        return;
+    }
+
+    NSInteger cueIndex = [self _activeTranscriptCueIndexForPlaybackTime:time];
+    if (cueIndex == NSNotFound) {
+        return;
+    }
+
+    BOOL cueChanged = (cueIndex != self.activeTranscriptCueIndex);
+    if (cueChanged) {
+        self.activeTranscriptCueIndex = cueIndex;
+        [self _updateTranscriptLabelAppearance];
+    }
+
+    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && cueChanged) {
+        [self _focusTranscriptCueAtIndex:cueIndex animated:animated];
+    }
+}
+
+- (NSArray<NSDictionary*>*)_parseTranscriptData:(NSData*)data descriptor:(NSDictionary*)descriptor response:(NSURLResponse*)response
+{
+    NSString* descriptorType = [descriptor[@"type"] lowercaseString];
+    NSString* mimeType = [[response MIMEType] lowercaseString];
+    NSString* extensionURLString = [descriptor[@"resolvedURL"] isKindOfClass:[NSString class]] ? descriptor[@"resolvedURL"] : descriptor[@"url"];
+    NSString* urlExtension = [[NSURL URLWithString:extensionURLString].pathExtension lowercaseString];
+    DebugLog(@"[TranscriptData] parse start url=%@ type=%@ mime=%@ ext=%@ bytes=%lu",
+             extensionURLString ?: @"",
+             descriptorType ?: @"",
+             mimeType ?: @"",
+             urlExtension ?: @"",
+             (unsigned long)data.length);
+
+    BOOL maybeJSON = ICTranscriptTypeContains(descriptorType, @"json") || ICTranscriptTypeContains(mimeType, @"json") || [urlExtension isEqualToString:@"json"];
+    if (maybeJSON) {
+        NSArray* jsonCues = ICTranscriptParseJSON(data);
+        if (jsonCues.count > 0) {
+            DebugLog(@"[TranscriptData] parse success JSON cues=%ld", (long)jsonCues.count);
+            return jsonCues;
+        }
+    }
+
+    NSString* text = ICTranscriptDecodedString(data);
+    if (text.length == 0) {
+        DebugLog(@"[TranscriptData] parse failed: decoded text empty");
+        return @[];
+    }
+
+    BOOL maybeTTML = ICTranscriptTypeContains(descriptorType, @"ttml") || ICTranscriptTypeContains(mimeType, @"ttml") || [urlExtension isEqualToString:@"ttml"] || [urlExtension isEqualToString:@"dfxp"] || ICTranscriptTypeContains(descriptorType, @"xml");
+    if (maybeTTML || [text rangeOfString:@"<tt" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+        NSArray* ttmlCues = ICTranscriptParseTTML(text);
+        if (ttmlCues.count > 0) {
+            DebugLog(@"[TranscriptData] parse success TTML cues=%ld", (long)ttmlCues.count);
+            return ttmlCues;
+        }
+    }
+
+    BOOL maybeLRC = [urlExtension isEqualToString:@"lrc"];
+    if (maybeLRC) {
+        NSArray* lrcCues = ICTranscriptParseLRC(text);
+        if (lrcCues.count > 0) {
+            DebugLog(@"[TranscriptData] parse success LRC(ext) cues=%ld", (long)lrcCues.count);
+            return lrcCues;
+        }
+    }
+
+    NSArray* timedTextCues = ICTranscriptParseArrowTimedText(text);
+    if (timedTextCues.count > 0) {
+        DebugLog(@"[TranscriptData] parse success timed-text cues=%ld", (long)timedTextCues.count);
+        return timedTextCues;
+    }
+
+    NSArray* lrcCues = ICTranscriptParseLRC(text);
+    if (lrcCues.count > 0) {
+        DebugLog(@"[TranscriptData] parse success LRC(fallback) cues=%ld", (long)lrcCues.count);
+        return lrcCues;
+    }
+
+    NSArray* jsonCues = ICTranscriptParseJSON(data);
+    if (jsonCues.count > 0) {
+        DebugLog(@"[TranscriptData] parse success JSON(fallback) cues=%ld", (long)jsonCues.count);
+        return jsonCues;
+    }
+
+    BOOL maybePlain = ICTranscriptTypeContains(descriptorType, @"plain") ||
+                      ICTranscriptTypeContains(mimeType, @"plain") ||
+                      [urlExtension isEqualToString:@"txt"];
+    NSArray* plainTextCues = ICTranscriptParsePlainText(text);
+    if (maybePlain && plainTextCues.count > 0) {
+        DebugLog(@"[TranscriptData] parse success plain(ext/type) cues=%ld", (long)plainTextCues.count);
+        return plainTextCues;
+    }
+
+    if (plainTextCues.count > 0) {
+        DebugLog(@"[TranscriptData] parse success plain(fallback) cues=%ld", (long)plainTextCues.count);
+        return plainTextCues;
+    }
+
+    DebugLog(@"[TranscriptData] parse failed: no parser produced cues");
+    return @[];
+}
+
+- (void)_appendTranscriptURLAttemptForRawValue:(NSString*)rawValue
+                                       episode:(CDEpisode*)episode
+                                      attempts:(NSMutableOrderedSet<NSString*>*)attempts
+{
+    if (rawValue.length == 0 || attempts == nil) {
+        return;
+    }
+
+    NSString* trimmed = [rawValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length == 0) {
+        return;
+    }
+
+    if ([trimmed hasPrefix:@"//"]) {
+        NSMutableOrderedSet<NSString*>* schemes = [NSMutableOrderedSet orderedSet];
+        NSString* sourceScheme = episode.feed.sourceURL.scheme;
+        NSString* linkScheme = episode.feed.linkURL.scheme;
+        if (sourceScheme.length > 0) {
+            [schemes addObject:sourceScheme];
+        }
+        if (linkScheme.length > 0) {
+            [schemes addObject:linkScheme];
+        }
+        if (schemes.count == 0) {
+            [schemes addObject:@"https"];
+        }
+        if (![schemes containsObject:@"https"]) {
+            [schemes addObject:@"https"];
+        }
+        if (![schemes containsObject:@"http"]) {
+            [schemes addObject:@"http"];
+        }
+
+        for (NSString* scheme in schemes) {
+            NSString* candidate = [NSString stringWithFormat:@"%@:%@", scheme, trimmed];
+            [attempts addObject:candidate];
+            DebugLog(@"[TranscriptData] URL attempt(protocol-relative): %@", candidate);
+        }
+        return;
+    }
+
+    NSURL* directURL = [NSURL URLWithInsecureString:trimmed];
+    if (directURL.scheme.length > 0) {
+        NSString* absolute = directURL.absoluteString ?: trimmed;
+        if (absolute.length > 0) {
+            [attempts addObject:absolute];
+            DebugLog(@"[TranscriptData] URL attempt(absolute): %@", absolute);
+        }
+        return;
+    }
+
+    BOOL addedResolvedURL = NO;
+    NSURL* sourceURL = episode.feed.sourceURL;
+    if (sourceURL) {
+        NSURL* resolved = [NSURL URLWithInsecureString:trimmed relativeToURL:sourceURL];
+        if (resolved.absoluteString.length > 0) {
+            [attempts addObject:resolved.absoluteString];
+            addedResolvedURL = YES;
+            DebugLog(@"[TranscriptData] URL attempt(source relative): %@", resolved.absoluteString);
+        }
+    }
+
+    NSURL* linkURL = episode.feed.linkURL;
+    if (linkURL) {
+        NSURL* resolved = [NSURL URLWithInsecureString:trimmed relativeToURL:linkURL];
+        if (resolved.absoluteString.length > 0) {
+            [attempts addObject:resolved.absoluteString];
+            addedResolvedURL = YES;
+            DebugLog(@"[TranscriptData] URL attempt(link relative): %@", resolved.absoluteString);
+        }
+    }
+
+    if (!addedResolvedURL) {
+        [attempts addObject:trimmed];
+        DebugLog(@"[TranscriptData] URL attempt(raw fallback): %@", trimmed);
+    }
+}
+
+- (NSArray<NSString*>*)_transcriptURLAttemptsForDescriptor:(NSDictionary*)descriptor episode:(CDEpisode*)episode
+{
+    NSMutableOrderedSet<NSString*>* attempts = [NSMutableOrderedSet orderedSet];
+
+    NSString* primaryURL = [descriptor[@"url"] isKindOfClass:[NSString class]] ? descriptor[@"url"] : nil;
+    NSString* fallbackURL = [descriptor[@"fallbackURL"] isKindOfClass:[NSString class]] ? descriptor[@"fallbackURL"] : nil;
+    NSString* href = [descriptor[@"href"] isKindOfClass:[NSString class]] ? descriptor[@"href"] : nil;
+
+    [self _appendTranscriptURLAttemptForRawValue:primaryURL episode:episode attempts:attempts];
+    [self _appendTranscriptURLAttemptForRawValue:fallbackURL episode:episode attempts:attempts];
+    [self _appendTranscriptURLAttemptForRawValue:href episode:episode attempts:attempts];
+    DebugLog(@"[TranscriptData] attempts built for descriptor url=%@ attempts=%@",
+             descriptor[@"url"] ?: @"",
+             attempts.array);
+
+    return attempts.array;
+}
+
+- (void)_loadTranscriptDescriptor:(NSDictionary*)descriptor
+                        candidates:(NSArray<NSDictionary*>*)candidates
+                    candidateIndex:(NSInteger)candidateIndex
+                          attempts:(NSArray<NSString*>*)attempts
+                          urlIndex:(NSInteger)urlIndex
+{
+    DebugLog(@"[TranscriptData] load descriptor candidateIndex=%ld/%ld urlIndex=%ld/%ld descriptorURL=%@",
+             (long)candidateIndex,
+             (long)candidates.count,
+             (long)urlIndex,
+             (long)attempts.count,
+             descriptor[@"url"] ?: @"");
+    if (urlIndex >= (NSInteger)attempts.count) {
+        DebugLog(@"[TranscriptData] descriptor exhausted, moving to next candidate");
+        [self _loadTranscriptCandidates:candidates index:candidateIndex + 1];
+        return;
+    }
+
+    NSString* urlString = attempts[urlIndex];
+    NSURL* url = [NSURL URLWithInsecureString:urlString];
+    if (!url) {
+        [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
+        return;
+    }
+
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    NSString* episodeHash = episode.objectHash;
+
+    NSData* cachedData = [self _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString];
+    if (cachedData.length > 0) {
+        DebugLog(@"[TranscriptData] cache hit episode=%@ url=%@ bytes=%lu",
+                 episodeHash ?: @"(nil)",
+                 urlString,
+                 (unsigned long)cachedData.length);
+        NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
+        descriptorForParsing[@"resolvedURL"] = urlString;
+        NSArray<NSDictionary*>* cachedCues = [self _parseTranscriptData:cachedData descriptor:descriptorForParsing response:nil];
+        if (cachedCues.count > 0) {
+            DebugLog(@"[TranscriptData] cache parse success cues=%ld url=%@", (long)cachedCues.count, urlString);
+            [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
+            return;
+        }
+        DebugLog(@"[TranscriptData] cache parse failed, removing cached entry url=%@", urlString);
+        [self _removeTranscriptCacheForEpisodeHash:episodeHash resolvedURL:urlString];
+    }
+    else {
+        DebugLog(@"[TranscriptData] cache miss episode=%@ url=%@", episodeHash ?: @"(nil)", urlString);
+    }
+
+    [self.transcriptTask cancel];
+    _transcriptLoadingURL = urlString;
+    DebugLog(@"[TranscriptData] starting network transcript load url=%@", urlString);
+
+    NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30.0];
+    [request setValue:@"text/vtt,application/x-subrip,text/plain,application/json,application/ttml+xml,text/xml;q=0.9,*/*;q=0.8" forHTTPHeaderField:@"Accept"];
+    CDFeed* feed = episode.feed;
+    if (feed.username.length > 0 && feed.password.length > 0) {
+        NSString* credentials = [NSString stringWithFormat:@"%@:%@", feed.username, feed.password];
+        NSData* credentialsData = [credentials dataUsingEncoding:NSUTF8StringEncoding];
+        NSString* authHeader = [NSString stringWithFormat:@"Basic %@", [credentialsData base64EncodedStringWithOptions:0]];
+        [request setValue:authHeader forHTTPHeaderField:@"Authorization"];
+    }
+
+    __weak typeof(self) weakSelf = self;
+    NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) {
+            return;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.transcriptTask != task) {
+                return;
+            }
+            if (![_transcriptLoadingURL isEqualToString:urlString]) {
+                return;
+            }
+
+            NSHTTPURLResponse* httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)response : nil;
+            NSInteger statusCode = httpResponse.statusCode;
+            if (httpResponse && (statusCode < 200 || statusCode >= 300)) {
+                DebugLog(@"[TranscriptData] transcript request failed (%ld) url=%@", (long)statusCode, urlString);
+                [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
+                return;
+            }
+
+            if (error || data.length == 0) {
+                DebugLog(@"[TranscriptData] transcript request error url=%@ error=%@", urlString, error.localizedDescription ?: @"no data");
+                [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
+                return;
+            }
+
+            NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
+            descriptorForParsing[@"resolvedURL"] = urlString;
+            NSArray<NSDictionary*>* cues = [self _parseTranscriptData:data descriptor:descriptorForParsing response:response];
+            if (cues.count == 0) {
+                DebugLog(@"[TranscriptData] transcript parse returned no cues url=%@", urlString);
+                [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
+                return;
+            }
+
+            [self _storeTranscriptData:data forEpisodeHash:episodeHash resolvedURL:urlString];
+            [self _applyLoadedTranscriptCues:cues descriptor:descriptor resolvedURL:urlString];
+        });
+    }];
+    self.transcriptTask = task;
+    [task resume];
+}
+
+- (void)_loadTranscriptCandidates:(NSArray<NSDictionary*>*)candidates index:(NSInteger)index
+{
+    DebugLog(@"[TranscriptData] load candidates index=%ld total=%ld", (long)index, (long)candidates.count);
+    if (index >= (NSInteger)candidates.count) {
+        self.transcriptCues = @[];
+        [self _clearTranscriptLines];
+        [self _setTranscriptAvailableState:NO];
+        [self _updateTranscriptPickerButton];
+        [self _applyTranscriptVisibility];
+        [self _updateTranscriptSyncTimerState];
+        DebugLog(@"[TranscriptData] no candidate produced transcript -> available=NO");
+        return;
+    }
+
+    NSDictionary* descriptor = candidates[index];
+    DebugLog(@"[TranscriptData] trying candidate index=%ld url=%@ type=%@ lang=%@",
+             (long)index,
+             descriptor[@"url"] ?: @"",
+             descriptor[@"type"] ?: @"",
+             descriptor[@"language"] ?: @"");
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    NSArray<NSString*>* attempts = [self _transcriptURLAttemptsForDescriptor:descriptor episode:episode];
+    if (attempts.count == 0) {
+        DebugLog(@"[TranscriptData] candidate has no URL attempts -> next candidate");
+        [self _loadTranscriptCandidates:candidates index:index + 1];
+        return;
+    }
+    [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:index attempts:attempts urlIndex:0];
+}
+
+- (void)_refreshTranscriptState
+{
+    DebugLog(@"[TranscriptData] refresh start");
+    [self.transcriptTask cancel];
+    [self _cancelTranscriptPrefetchTasks];
+    _transcriptLoadingURL = nil;
+    [self.transcriptFollowResumeTimer invalidate];
+    self.transcriptFollowResumeTimer = nil;
+    [self.transcriptSyncTimer invalidate];
+    self.transcriptSyncTimer = nil;
+    self.transcriptAutoFollowSuspended = NO;
+    self.pendingTranscriptShowAfterScrollToTop = NO;
+    self.transcriptVisible = NO;
+
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    BOOL isCached = [[CacheManager sharedCacheManager] episodeIsCached:episode];
+    DebugLog(@"[TranscriptData] refresh episode=%@ title='%@' cached=%@ consumed=%@",
+             episode.objectHash ?: @"(nil)",
+             episode.title ?: @"",
+             isCached ? @"YES" : @"NO",
+             episode.consumed ? @"YES" : @"NO");
+    [self _clearTranscriptCacheIfNeededForEpisode:episode];
+    self.transcriptSources = [self _normalizedTranscriptSourcesForEpisode:episode];
+    self.selectedTranscriptDescriptor = nil;
+    self.transcriptCues = @[];
+    [self _clearTranscriptLines];
+    [self _setTranscriptAvailableState:NO];
+    [self _updateTranscriptPickerButton];
+    [self _applyTranscriptVisibility];
+    [self _updateTranscriptSyncTimerState];
+
+    NSDictionary* preferred = [self _preferredTranscriptDescriptorFromSources:self.transcriptSources];
+    NSArray* candidates = [self _orderedTranscriptCandidatesFromSources:self.transcriptSources preferred:preferred];
+    DebugLog(@"[TranscriptData] refresh sources=%ld preferred=%@ candidates=%ld",
+             (long)self.transcriptSources.count,
+             preferred[@"url"] ?: @"(nil)",
+             (long)candidates.count);
+    if (candidates.count > 0) {
+        [self _loadTranscriptCandidates:candidates index:0];
+    } else {
+        DebugLog(@"[TranscriptData] refresh ended: no transcript candidates");
+    }
+}
+
+- (void)_rememberTranscriptPreference:(NSDictionary*)descriptor
+{
+    if (!descriptor) {
+        return;
+    }
+    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    CDFeed* feed = episode.feed;
+    if (!feed) {
+        return;
+    }
+
+    NSString* language = descriptor[@"language"];
+    NSString* url = descriptor[@"url"];
+    if (language.length > 0) {
+        [feed setString:language forKey:kFeedPropertyPreferredTranscriptLanguage];
+    }
+    if (url.length > 0) {
+        [feed setString:url forKey:kFeedPropertyPreferredTranscriptURL];
+    }
+    [DMANAGER save];
+}
+
+- (void)showTranscriptPicker:(UIButton*)sender
+{
+    if (self.transcriptSources.count <= 1) {
+        return;
+    }
+
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Transcript".ls
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    for (NSDictionary* descriptor in self.transcriptSources) {
+        BOOL selected = [descriptor[@"url"] isEqualToString:self.selectedTranscriptDescriptor[@"url"]];
+        NSString* title = [self _transcriptDisplayNameForDescriptor:descriptor];
+        if (selected) {
+            title = [NSString stringWithFormat:@"✓ %@", title];
+        }
+
+        [alert addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
+            [self _rememberTranscriptPreference:descriptor];
+            NSArray* candidates = [self _orderedTranscriptCandidatesFromSources:self.transcriptSources preferred:descriptor];
+            [self _loadTranscriptCandidates:candidates index:0];
+        }]];
+    }
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+    alert.modalPresentationStyle = UIModalPresentationPopover;
+    UIPopoverPresentationController* popover = [alert popoverPresentationController];
+    popover.sourceView = sender;
+    popover.sourceRect = sender.bounds;
+    popover.permittedArrowDirections = UIPopoverArrowDirectionDown;
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)setTranscriptVisibleFromControl:(BOOL)visible
+{
+    DebugLog(@"[TranscriptUI] set visible from control requested=%@ available=%@ currentlyVisible=%@",
+             visible ? @"YES" : @"NO",
+             self.transcriptAvailable ? @"YES" : @"NO",
+             self.transcriptVisible ? @"YES" : @"NO");
+    if (visible && !self.transcriptAvailable) {
+        DebugLog(@"[TranscriptUI] reject show: transcript not available");
+        return;
+    }
+
+    if (!visible) {
+        self.pendingTranscriptShowAfterScrollToTop = NO;
+        self.transcriptVisible = NO;
+        [self _applyTranscriptVisibility];
+        DebugLog(@"[TranscriptUI] transcript hidden via control");
+        return;
+    }
+
+    CGFloat topOffsetY = -self.tableView.contentInset.top;
+    if (self.tableView.contentOffset.y > topOffsetY + 1.0) {
+        self.pendingTranscriptShowAfterScrollToTop = YES;
+        DebugLog(@"[TranscriptUI] delaying show until table scrolled to top currentOffset=%.2f target=%.2f",
+                 self.tableView.contentOffset.y,
+                 topOffsetY);
+        [self.tableView setContentOffset:CGPointMake(0, topOffsetY) animated:YES];
+        return;
+    }
+
+    self.pendingTranscriptShowAfterScrollToTop = NO;
+    self.transcriptVisible = YES;
+    [self _applyTranscriptVisibility];
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+    [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+    DebugLog(@"[TranscriptUI] transcript shown immediately cueIndex=%ld",
+             (long)self.activeTranscriptCueIndex);
+}
+
 
 - (void) viewWillAppear:(BOOL)animated
 {
@@ -238,6 +1940,8 @@ enum {
 
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
+    [self.transcriptPickerButton setTitleColor:ICMutedTextColor forState:UIControlStateNormal];
+    self.transcriptPickerButton.tintColor = ICMutedTextColor;
 
     // Refresh chapter images from PlaybackManager before layout
     PlaybackManager* pman = [PlaybackManager playbackManager];
@@ -246,7 +1950,17 @@ enum {
     }
 
     [self layoutHeaderView];
-    [self.tableView reloadData];
+    if (self.view.window != nil) {
+        [self.tableView reloadData];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.view.window != nil) {
+                [self.tableView reloadData];
+            }
+        });
+    }
+    [self _applyTranscriptVisibility];
+    [self _updateTranscriptLabelAppearance];
 
     // Scroll to current artwork after layout settles
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -265,6 +1979,7 @@ enum {
     [super viewDidAppear:animated];
 
     _didWillAppear = NO;
+    [self _updateTranscriptSyncTimerState];
 }
 
 - (void) viewDidLayoutSubviews {
@@ -295,6 +2010,10 @@ enum {
             self.tableView.scrollIndicatorInsets = edgeInsets;
             self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);
         }
+    }
+
+    if (self.transcriptVisible) {
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
     }
 }
 
@@ -366,6 +2085,18 @@ enum {
         self.chapterImagesCollection.collectionViewLayout = layout;
         self.imageView.frame = newFrameTemp;
         self.chapterImagesCollection.frame = newFrameTemp;
+        self.transcriptContainerView.frame = newFrameTemp;
+        [self.transcriptContainerView layoutIfNeeded];
+        CGFloat pickerMaxWidth = MIN(280.0, MAX(CGRectGetWidth(newFrameTemp) - 12.0, 80.0));
+        CGSize pickerSize = [self.transcriptPickerButton sizeThatFits:CGSizeMake(pickerMaxWidth, 24.0)];
+        pickerSize.width = MIN(MAX(pickerSize.width + 4.0, 56.0), pickerMaxWidth);
+        pickerSize.height = 22.0;
+        self.transcriptPickerButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - pickerSize.width - 6.0,
+                                                       CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
+                                                       pickerSize.width,
+                                                       pickerSize.height);
+        CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f) - 36.0f, 0);
+        self.transcriptScrollView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
         BOOL hasContent = [self _hasContentBelowImage];
         CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
@@ -373,15 +2104,22 @@ enum {
         chapterViewFrame.size.height += chevronAreaHeight;
         self.chapterView.frame = chapterViewFrame;
 
-        chevronIndicatorView.hidden = !hasContent;
+        chevronIndicatorView.hidden = !hasContent || self.transcriptVisible;
         chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
         chevronIndicatorView.tintColor = ICMutedTextColor;
 
-        [self.chapterView addSubview:self.chapterImagesCollection];
+        if (self.chapterImagesCollection.superview != self.chapterView) {
+            [self.chapterView addSubview:self.chapterImagesCollection];
+        }
+        if (self.transcriptContainerView.superview != self.chapterView) {
+            [self.chapterView addSubview:self.transcriptContainerView];
+        }
         self.chapterImagesCollection.delegate = self;
         self.chapterImagesCollection.dataSource = self;
         [self.chapterImagesCollection reloadData];
         [self updateCollectionsImage:0];
+        [self _applyTranscriptVisibility];
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
 
         self.tableView.tableHeaderView = self.chapterView;
     }
@@ -420,6 +2158,18 @@ enum {
     self.chapterImagesCollection.collectionViewLayout = layout;
     self.imageView.frame = newFrameTemp;
     self.chapterImagesCollection.frame = newFrameTemp;
+    self.transcriptContainerView.frame = newFrameTemp;
+    [self.transcriptContainerView layoutIfNeeded];
+    CGFloat pickerMaxWidth = MIN(280.0, MAX(CGRectGetWidth(newFrameTemp) - 12.0, 80.0));
+    CGSize pickerSize = [self.transcriptPickerButton sizeThatFits:CGSizeMake(pickerMaxWidth, 24.0)];
+    pickerSize.width = MIN(MAX(pickerSize.width + 4.0, 56.0), pickerMaxWidth);
+    pickerSize.height = 22.0;
+    self.transcriptPickerButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - pickerSize.width - 6.0,
+                                                   CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
+                                                   pickerSize.width,
+                                                   pickerSize.height);
+    CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptScrollView.bounds) * 0.5f) - 36.0f, 0);
+    self.transcriptScrollView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
     BOOL hasContent = [self _hasContentBelowImage];
     CGFloat chevronAreaHeight = hasContent ? 25.0f : 0.0f;
@@ -427,10 +2177,12 @@ enum {
     chapterViewFrame.size.height += chevronAreaHeight;
     self.chapterView.frame = chapterViewFrame;
 
-    chevronIndicatorView.hidden = !hasContent;
+    chevronIndicatorView.hidden = !hasContent || self.transcriptVisible;
     chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
 
     [self.chapterImagesCollection reloadData];
+    [self _applyTranscriptVisibility];
+    [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
 }
 
 -(UIInterfaceOrientation)getDeviceOrientation
@@ -482,17 +2234,31 @@ enum {
     [super viewWillDisappear:animated];
     
     _oldContentOffset = self.tableView.contentOffset;
+    [self.transcriptFollowResumeTimer invalidate];
+    self.transcriptFollowResumeTimer = nil;
+    self.transcriptAutoFollowSuspended = NO;
+    [self.transcriptSyncTimer invalidate];
+    self.transcriptSyncTimer = nil;
 }
 
 - (void) reloadData
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
+    BOOL isCached = [[CacheManager sharedCacheManager] episodeIsCached:episode];
+    DebugLog(@"[TranscriptData] reloadData episode=%@ title='%@' cached=%@ ready=%@ movingVideo=%@",
+             episode.objectHash ?: @"(nil)",
+             episode.title ?: @"",
+             isCached ? @"YES" : @"NO",
+             pman.ready ? @"YES" : @"NO",
+             pman.movingVideo ? @"YES" : @"NO");
+    self.transcriptDataEpisodeHash = episode.objectHash;
     self.chapters = (episode != nil) ? [episode sortedChapters] : @[];
     self.currentChapterIndex = pman.currentChapter;
     self.duration = episode.duration;
     
     [self reloadBookmarks];
+    [self _refreshTranscriptState];
 }
 
 - (void) reload
@@ -527,12 +2293,19 @@ enum {
         self.videoViewController = nil;
     }
     [self updateCollectionsImage:0];
-    [self.tableView scrollRectToVisible:CGRectMake(0, 0, 10, 10) animated:YES];
+    if (self.isViewLoaded && self.view.window != nil) {
+        [self.tableView scrollRectToVisible:CGRectMake(0, 0, 10, 10) animated:YES];
+    }
 }
 
 - (void) tintColorDidChange
 {
-    [self.tableView reloadData];
+    if (self.view.window != nil) {
+        [self.tableView reloadData];
+    }
+    [self _updateTranscriptLabelAppearance];
+    [self.transcriptPickerButton setTitleColor:ICMutedTextColor forState:UIControlStateNormal];
+    self.transcriptPickerButton.tintColor = ICMutedTextColor;
 }
 
 - (void) reloadBookmarks
@@ -556,10 +2329,10 @@ enum {
 {
     if (_chapters != chapters) {
         _chapters = chapters ?: @[];
-        if (self.isViewLoaded) {
+        if (self.isViewLoaded && self.view.window != nil) {
             [self layoutHeaderView];
+            [self.tableView reloadData];
         }
-        [self.tableView reloadData];
     }
 }
 
@@ -625,6 +2398,8 @@ enum {
             [cell.progressView setProgress:((pman.time - cell.objectValue.timecode) / cell.objectValue.duration) animated:(!hidden && !changed)];
         }
     }
+
+    [self _updateTranscriptCueForPlaybackTime:pman.time animated:YES];
 }
 
 - (BOOL) _hasChapters {
@@ -1039,6 +2814,10 @@ enum {
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
 {
+    if (scrollView != self.tableView) {
+        return;
+    }
+
     if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
         return;
     }
@@ -1210,11 +2989,49 @@ enum {
 }
 
 
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView
+{
+    if (scrollView == self.transcriptScrollView) {
+        self.transcriptAutoFollowSuspended = YES;
+        [self _scheduleTranscriptAutoFollowResume];
+    }
+}
+
+- (void)scrollViewDidEndDragging:(UIScrollView *)scrollView willDecelerate:(BOOL)decelerate
+{
+    if (scrollView == self.transcriptScrollView) {
+        self.transcriptAutoFollowSuspended = YES;
+        if (!decelerate) {
+            [self _scheduleTranscriptAutoFollowResume];
+        }
+    }
+}
+
 -(void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
 {
-    [currentImageTimer invalidate];
-    currentImageTimer = nil;
-    currentImageTimer = [NSTimer scheduledTimerWithTimeInterval: 30 target: self selector: @selector(afterTimerSetCurrentImg:) userInfo: nil repeats: NO];
+    if (scrollView == self.transcriptScrollView) {
+        self.transcriptAutoFollowSuspended = YES;
+        [self _scheduleTranscriptAutoFollowResume];
+        return;
+    }
+
+    if (scrollView == self.chapterImagesCollection) {
+        [currentImageTimer invalidate];
+        currentImageTimer = nil;
+        currentImageTimer = [NSTimer scheduledTimerWithTimeInterval: 30 target: self selector: @selector(afterTimerSetCurrentImg:) userInfo: nil repeats: NO];
+    }
+}
+
+- (void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView
+{
+    if (scrollView == self.tableView && self.pendingTranscriptShowAfterScrollToTop) {
+        self.pendingTranscriptShowAfterScrollToTop = NO;
+        self.transcriptVisible = YES;
+        [self _applyTranscriptVisibility];
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
+        [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
+    }
 }
 
 -(void)afterTimerSetCurrentImg:(NSTimer *)timer {

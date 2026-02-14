@@ -172,7 +172,19 @@ enum {
 
 - (void) playbackManagerDidUpdateNotification:(NSNotification*)notification
 {
+    (void)notification;
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    DebugLog(@"[TranscriptBridge] playbackManagerDidUpdate ready=%@ episode=%@",
+             pman.ready ? @"YES" : @"NO",
+             pman.playingEpisode.objectHash ?: @"(nil)");
     [self _stateMachine];
+    if (self.infoViewController) {
+        self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
+        self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
+        DebugLog(@"[TranscriptBridge] sync after update available=%@ visible=%@",
+                 self.controller.transcriptAvailable ? @"YES" : @"NO",
+                 self.controller.transcriptVisible ? @"YES" : @"NO");
+    }
 }
 
 - (void) playbackManagerDidEndNotification:(NSNotification*)notification
@@ -281,6 +293,8 @@ enum {
     self.image = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
 
     [self.controller updateControlsUI];
+    self.controller.transcriptAvailable = NO;
+    self.controller.transcriptVisible = NO;
 
     self.view.backgroundColor = ICBackgroundColor;
 
@@ -312,6 +326,8 @@ enum {
     }
 	else if (_state == LoadedState && pman.ready && _viewDidAppear)
 	{
+        DebugLog(@"[TranscriptBridge] stateMachine Loaded->Ready path episode=%@",
+                 pman.playingEpisode.objectHash ?: @"(nil)");
         [self.infoViewController reload];
         
         CDEpisode* episode = [AudioSession sharedAudioSession].episode;
@@ -339,6 +355,11 @@ enum {
 
         [self _updateArtworkImage];
         [self.controller updateControlsUI];
+        self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
+        self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
+        DebugLog(@"[TranscriptBridge] stateMachine set controls after reload available=%@ visible=%@",
+                 self.controller.transcriptAvailable ? @"YES" : @"NO",
+                 self.controller.transcriptVisible ? @"YES" : @"NO");
         
         if (self.loadingInfo) {
             [self.loadingInfo close];
@@ -567,6 +588,26 @@ enum {
     
     self.infoViewController = [PlayerInfoViewController_v5 viewController];
     self.infoViewController.image = self.image;
+    WEAK_SELF
+    self.controller.transcriptToggleHandler = ^(BOOL transcriptVisible) {
+        STRONG_SELF
+        DebugLog(@"[TranscriptBridge] toggle handler from controls visible=%@",
+                 transcriptVisible ? @"YES" : @"NO");
+        [self.infoViewController setTranscriptVisibleFromControl:transcriptVisible];
+    };
+    self.infoViewController.transcriptAvailabilityDidChange = ^(BOOL available) {
+        STRONG_SELF
+        DebugLog(@"[TranscriptBridge] availability callback available=%@ episode=%@",
+                 available ? @"YES" : @"NO",
+                 [PlaybackManager playbackManager].playingEpisode.objectHash ?: @"(nil)");
+        self.controller.transcriptAvailable = available;
+        if (!available) {
+            self.controller.transcriptVisible = NO;
+        }
+        DebugLog(@"[TranscriptBridge] controls state after callback available=%@ visible=%@",
+                 self.controller.transcriptAvailable ? @"YES" : @"NO",
+                 self.controller.transcriptVisible ? @"YES" : @"NO");
+    };
     
     [self addChildViewController:self.infoViewController];
     self.infoViewController.view.tintColor = self.view.tintColor;
@@ -650,6 +691,11 @@ enum {
         [self _updateNavigationTitleForEpisode:pman.playingEpisode];
         NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
         [self.infoViewController changeChapterImageIndex:collectionIndex];
+        self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
+        self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
+        DebugLog(@"[TranscriptBridge] viewWillAppear(reuse) sync available=%@ visible=%@",
+                 self.controller.transcriptAvailable ? @"YES" : @"NO",
+                 self.controller.transcriptVisible ? @"YES" : @"NO");
         return;
     }
 
@@ -716,6 +762,11 @@ enum {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
     [self.infoViewController changeChapterImageIndex:collectionIndex];
+    self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
+    self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
+    DebugLog(@"[TranscriptBridge] viewWillAppear sync available=%@ visible=%@",
+             self.controller.transcriptAvailable ? @"YES" : @"NO",
+             self.controller.transcriptVisible ? @"YES" : @"NO");
 }
 
 - (void) viewDidAppear:(BOOL)animated
@@ -725,6 +776,13 @@ enum {
     _viewDidAppear = YES;
     [self.controller updateTimeWhenLoading];
     [self _stateMachine];
+    if (self.infoViewController) {
+        self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
+        self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
+        DebugLog(@"[TranscriptBridge] viewDidAppear sync available=%@ visible=%@",
+                 self.controller.transcriptAvailable ? @"YES" : @"NO",
+                 self.controller.transcriptVisible ? @"YES" : @"NO");
+    }
 }
 
 - (void) viewWillDisappear:(BOOL)animated

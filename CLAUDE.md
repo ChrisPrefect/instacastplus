@@ -298,6 +298,124 @@ if (@available(iOS 26.0, *)) {
 
 **API-Referenz:** `UIScrollView.bottomEdgeEffect` (iOS 26+), `UIScrollEdgeEffect.hidden`, Styles: `.automaticStyle`, `.softStyle`, `.hardStyle`
 
+## Apple Podcast Charts APIs
+
+### Zwei APIs verfügbar (beide aktuell, mehrmals täglich aktualisiert)
+
+**Neue API (v2):** `https://rss.marketingtools.apple.com/api/v2/{country}/podcasts/top/{limit}/podcasts.json`
+- Max 100 Ergebnisse, KEIN Genre-Filter, kein Paging
+- JSON-Schema: `feed.results[]` mit `name`, `artistName`, `artworkUrl100`, `id`, `url`, `genres[].genreId/name`
+- Jeder Podcast hat mehrere Genres
+
+**Alte iTunes RSS API:** `https://itunes.apple.com/{country}/rss/toppodcasts/limit={limit}/genre={genreId}/json`
+- Max 200 Ergebnisse, **Genre-Filter per URL-Parameter**, kein Paging
+- JSON-Schema: `feed.entry[]` mit `im:name.label`, `im:artist.label`, `im:image[].label`, `id.attributes.im:id`, `category.attributes.im:id/label`
+- Jeder Podcast hat nur EINE Kategorie
+- Nicht offiziell dokumentiert, funktioniert aber einwandfrei
+
+**iTunes Lookup API** (Podcast-ID → Feed-URL): `https://itunes.apple.com/lookup?id={id}&entity=podcast`
+
+### Implementierung (ApplePodcastChartsClient)
+- Phase 1: 50 von neuer API (schnell, 1 Request)
+- Phase 2: 20 pro Genre von alter API (19 Requests parallel)
+- Merge mit Deduplizierung nach Podcast-ID
+- Stale-while-revalidate Caching (Memory + Disk, 30min TTL)
+
+### Genre-IDs (alle funktionieren mit alter iTunes RSS API)
+
+**Wichtig:** Sub-Kategorien haben **eigene, unabhängige Charts**. Podcasts aus Sub-Kategorien erscheinen NICHT zwingend in der Hauptkategorie. Fetching von Sub-Kategorien liefert zusätzliche, einzigartige Podcasts.
+
+| ID | Kategorie | Sub von |
+|----|-----------|---------|
+| 1301 | Arts | — |
+| 1482 | Books | Arts |
+| 1402 | Design | Arts |
+| 1459 | Fashion & Beauty | Arts |
+| 1306 | Food | Arts |
+| 1405 | Performing Arts | Arts |
+| 1303 | Comedy | — |
+| 1496 | Comedy Interviews | Comedy |
+| 1495 | Improv | Comedy |
+| 1497 | Stand-Up | Comedy |
+| 1304 | Education | — |
+| 1501 | Courses | Education |
+| 1499 | How To | Education |
+| 1498 | Language Learning | Education |
+| 1500 | Self-Improvement | Education |
+| 1305 | Kids & Family | — |
+| 1519 | Education for Kids | Kids & Family |
+| 1520 | Stories for Kids | Kids & Family |
+| 1521 | Parenting | Kids & Family |
+| 1522 | Pets & Animals | Kids & Family |
+| 1309 | TV & Film | — |
+| 1562 | After Shows | TV & Film |
+| 1564 | Film History | TV & Film |
+| 1565 | Film Interviews | TV & Film |
+| 1563 | Film Reviews | TV & Film |
+| 1561 | TV Reviews | TV & Film |
+| 1310 | Music | — |
+| 1523 | Music Commentary | Music |
+| 1524 | Music History | Music |
+| 1525 | Music Interviews | Music |
+| 1314 | Religion & Spirituality | — |
+| 1438 | Buddhism | Religion |
+| 1439 | Christianity | Religion |
+| 1463 | Hinduism | Religion |
+| 1440 | Islam | Religion |
+| 1441 | Judaism | Religion |
+| 1318 | Technology | — |
+| 1321 | Business | — |
+| 1410 | Careers | Business |
+| 1493 | Entrepreneurship | Business |
+| 1412 | Investing | Business |
+| 1491 | Management | Business |
+| 1492 | Marketing | Business |
+| 1494 | Non-Profit | Business |
+| 1324 | Society & Culture | — |
+| 1543 | Documentary | Society & Culture |
+| 1302 | Personal Journals | Society & Culture |
+| 1443 | Philosophy | Society & Culture |
+| 1320 | Places & Travel | Society & Culture |
+| 1544 | Relationships | Society & Culture |
+| 1483 | Fiction | — |
+| 1486 | Comedy Fiction | Fiction |
+| 1484 | Drama | Fiction |
+| 1485 | Science Fiction | Fiction |
+| 1487 | History | — |
+| 1488 | True Crime | — |
+| 1489 | News | — |
+| 1526 | Daily News | News |
+| 1490 | Business News | News |
+| 1531 | Entertainment News | News |
+| 1530 | News Commentary | News |
+| 1527 | Politics | News |
+| 1529 | Sports News | News |
+| 1528 | Tech News | News |
+| 1502 | Leisure | — |
+| 1510 | Animation & Manga | Leisure |
+| 1503 | Automotive | Leisure |
+| 1504 | Aviation | Leisure |
+| 1506 | Crafts | Leisure |
+| 1507 | Games | Leisure |
+| 1511 | Government | — |
+| 1512 | Health & Fitness | — |
+| 1513 | Alternative Health | Health & Fitness |
+| 1514 | Fitness | Health & Fitness |
+| 1518 | Medicine | Health & Fitness |
+| 1517 | Mental Health | Health & Fitness |
+| 1533 | Science | — |
+| 1538 | Astronomy | Science |
+| 1539 | Chemistry | Science |
+| 1540 | Earth Sciences | Science |
+| 1541 | Life Sciences | Science |
+| 1536 | Mathematics | Science |
+| 1545 | Sports | — |
+| 1547 | Football | Sports |
+| 1548 | Basketball | Sports |
+| 1546 | Soccer | Sports |
+| 1550 | Hockey | Sports |
+| 1560 | Fantasy Sports | Sports |
+
 ## Key Integrations
 
 - CloudKit (iCloud sync)

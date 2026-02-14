@@ -40,6 +40,42 @@ NSString* CacheManagerWiFiDidBecomeAvailableNotification = @"CacheManagerWiFiDid
 static CacheManager* gSharedCacheManager = nil;
 static NSString* gPathToCache = nil;
 
+static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
+{
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    NSArray* appSupportPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+    NSString* appSupportPath = appSupportPaths.firstObject;
+    if (appSupportPath.length == 0) {
+        return;
+    }
+
+    NSString* transcriptCachePath = [appSupportPath stringByAppendingPathComponent:@"TranscriptCache"];
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:nil];
+    NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
+    for (NSString* fileName in fileNames) {
+        if ([fileName hasPrefix:prefix]) {
+            NSString* filePath = [transcriptCachePath stringByAppendingPathComponent:fileName];
+            [fileManager removeItemAtPath:filePath error:nil];
+        }
+    }
+}
+
+static void ICClearAllTranscriptCache(void)
+{
+    NSArray* appSupportPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+    NSString* appSupportPath = appSupportPaths.firstObject;
+    if (appSupportPath.length == 0) {
+        return;
+    }
+
+    NSString* transcriptCachePath = [appSupportPath stringByAppendingPathComponent:@"TranscriptCache"];
+    [[NSFileManager defaultManager] removeItemAtPath:transcriptCachePath error:nil];
+}
+
 #if TARGET_OS_IPHONE
 @interface CacheManager () <CacheOperationDelegate, NSURLSessionDelegate>
 #else
@@ -534,6 +570,7 @@ static NSString* gPathToCache = nil;
 
     episode.lastDownloaded = nil;
     [DMANAGER save];
+    ICRemoveTranscriptCacheForEpisodeHash(episode.objectHash);
     
     [self willChangeValueForKey:@"cachedEpisodes"];
     [self didChangeValueForKey:@"cachedEpisodes"];
@@ -565,6 +602,7 @@ static NSString* gPathToCache = nil;
             }
 #endif
             [_cachedEpisodes removeObject:episode];
+            ICRemoveTranscriptCacheForEpisodeHash(episode.objectHash);
             cleared++;
         }
     }
@@ -1285,6 +1323,8 @@ static NSString* gPathToCache = nil;
         NSString* path = [pathToPartialDownloads stringByAppendingPathComponent:filename];
         [fman removeItemAtPath:path error:nil];
 	}
+    
+    ICClearAllTranscriptCache();
     
     
     [_cachedEpisodes removeAllObjects];

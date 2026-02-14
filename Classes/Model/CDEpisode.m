@@ -16,10 +16,35 @@
 @property (nonatomic, strong) NSString * linkURL_;
 @property (nonatomic, strong) NSString * paymentURL_;
 @property (nonatomic, strong) NSString * deeplinkURL_;
+@property (nonatomic, strong) NSString * transcriptsJSON_;
 @property (nonatomic, strong) NSArray* showLinks_;
 @end
 
 @implementation CDEpisode
+
+static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
+{
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    NSArray* appSupportPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+    NSString* appSupportPath = appSupportPaths.firstObject;
+    if (appSupportPath.length == 0) {
+        return;
+    }
+
+    NSString* transcriptCachePath = [appSupportPath stringByAppendingPathComponent:@"TranscriptCache"];
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:nil];
+    NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
+    for (NSString* fileName in fileNames) {
+        if ([fileName hasPrefix:prefix]) {
+            NSString* filePath = [transcriptCachePath stringByAppendingPathComponent:fileName];
+            [fileManager removeItemAtPath:filePath error:nil];
+        }
+    }
+}
 
 //@synthesize temporarySavedProperities;
 
@@ -52,6 +77,7 @@
 @dynamic author;
 @dynamic summary;
 @dynamic fulltext;
+@dynamic transcriptsJSON_;
 @dynamic paymentURL_;
 @dynamic deeplinkURL_;
 @dynamic video;
@@ -127,6 +153,84 @@
     self.imageURL_ = [imageURL absoluteString];
 }
 
+- (NSArray*) transcripts
+{
+    NSString* raw = self.transcriptsJSON_;
+    if (raw.length == 0) {
+        return @[];
+    }
+
+    NSData* data = [raw dataUsingEncoding:NSUTF8StringEncoding];
+    if (!data) {
+        return @[];
+    }
+
+    id object = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if ([object isKindOfClass:[NSArray class]]) {
+        return object;
+    }
+
+    return @[];
+}
+
+- (void) setTranscripts:(NSArray *)transcripts
+{
+    if (transcripts.count == 0) {
+        self.transcriptsJSON_ = nil;
+        return;
+    }
+
+    NSMutableArray* normalized = [NSMutableArray arrayWithCapacity:transcripts.count];
+    for (id item in transcripts) {
+        if (![item isKindOfClass:[NSDictionary class]]) {
+            continue;
+        }
+
+        NSDictionary* dict = (NSDictionary*)item;
+        NSString* url = [dict[@"url"] isKindOfClass:[NSString class]] ? dict[@"url"] : nil;
+        if (url.length == 0) {
+            continue;
+        }
+
+        NSMutableDictionary* entry = [NSMutableDictionary dictionaryWithObject:url forKey:@"url"];
+        NSString* type = [dict[@"type"] isKindOfClass:[NSString class]] ? dict[@"type"] : nil;
+        NSString* language = [dict[@"language"] isKindOfClass:[NSString class]] ? dict[@"language"] : nil;
+        NSString* rel = [dict[@"rel"] isKindOfClass:[NSString class]] ? dict[@"rel"] : nil;
+        NSString* title = [dict[@"title"] isKindOfClass:[NSString class]] ? dict[@"title"] : nil;
+        NSString* fallbackURL = [dict[@"fallbackURL"] isKindOfClass:[NSString class]] ? dict[@"fallbackURL"] : nil;
+        NSString* href = [dict[@"href"] isKindOfClass:[NSString class]] ? dict[@"href"] : nil;
+
+        if (type.length > 0) {
+            entry[@"type"] = type;
+        }
+        if (language.length > 0) {
+            entry[@"language"] = language;
+        }
+        if (rel.length > 0) {
+            entry[@"rel"] = rel;
+        }
+        if (title.length > 0) {
+            entry[@"title"] = title;
+        }
+        if (fallbackURL.length > 0) {
+            entry[@"fallbackURL"] = fallbackURL;
+        }
+        if (href.length > 0) {
+            entry[@"href"] = href;
+        }
+
+        [normalized addObject:entry];
+    }
+
+    if (normalized.count == 0) {
+        self.transcriptsJSON_ = nil;
+        return;
+    }
+
+    NSData* data = [NSJSONSerialization dataWithJSONObject:normalized options:0 error:nil];
+    self.transcriptsJSON_ = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+
 - (void) setArchived:(BOOL)archived
 {
     [self willChangeValueForKey:@"archived"];
@@ -138,11 +242,16 @@
 
 - (void) setConsumed:(BOOL)consumed
 {
+    BOOL wasConsumed = self.consumed;
     [self willChangeValueForKey:@"consumed"];
     [self setPrimitiveValue:@(consumed) forKey:@"consumed"];
     [self didChangeValueForKey:@"consumed"];
         
     [self.feed invalidateCounts];
+
+    if (consumed && !wasConsumed) {
+        ICRemoveTranscriptCacheForEpisodeHash(self.objectHash);
+    }
 }
 
 - (void) setStarred:(BOOL)starred

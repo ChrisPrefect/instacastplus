@@ -33,6 +33,7 @@
 // relations
 @property (nonatomic, strong) NSArray* media;
 @property (nonatomic, strong) NSArray* chapters;
+@property (nonatomic, strong) NSArray* transcripts;
 @property (nonatomic, weak) ICFeed* feed;
 
 - (BOOL) isEqualToEpisode:(ICEpisode*)episode;

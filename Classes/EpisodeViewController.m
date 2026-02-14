@@ -1281,15 +1281,25 @@
 
 - (void) shareAction:(id)sender
 {
-    UIBarButtonItem* barButton = sender;
-    
+    UIBarButtonItem* barButton = [sender isKindOfClass:[UIBarButtonItem class]] ? (UIBarButtonItem*)sender : nil;
+
     NSURL* linkURL = self.episode.linkURL;
     NSURL* deeplinkURL = self.episode.deeplinkURL;
-    NSURL* link = (deeplinkURL) ? deeplinkURL : linkURL;
-    
+    NSURL* feedLinkURL = self.episode.feed.linkURL;
+    NSURL* feedSourceURL = self.episode.feed.sourceURL;
+    NSURL* link = deeplinkURL ?: linkURL ?: feedLinkURL ?: feedSourceURL;
+    if (!link) {
+        return;
+    }
+
     UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[link] applicationActivities:nil];
     if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
-        shareController.popoverPresentationController.barButtonItem = barButton;
+        if (barButton) {
+            shareController.popoverPresentationController.barButtonItem = barButton;
+        } else {
+            shareController.popoverPresentationController.sourceView = self.view;
+            shareController.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+        }
     }
     [self presentViewController:shareController animated:YES completion:NULL];
 }

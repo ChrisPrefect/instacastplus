@@ -35,11 +35,15 @@
 @property (nonatomic, readonly, getter = isMuted) BOOL muted;
 @property (nonatomic, assign) float volume;
 @property (nonatomic, assign) BOOL shown;
+@property (nonatomic, assign) BOOL transcriptAvailable;
+@property (nonatomic, assign) BOOL transcriptVisible;
+@property (nonatomic, copy) void (^transcriptToggleHandler)(BOOL transcriptVisible);
 
 @property (nonatomic, strong) UIColor* tintColor;
 
 @property (nonatomic, strong) MPVolumeView* volumeView;
 @property (nonatomic, strong) MPVolumeView* routeButton;
+@property (nonatomic, strong) UIButton* transcriptButton;
 
 
 - (void) createVolumeViews;
@@ -66,4 +70,5 @@
 - (void) updateChapterMarkers;
 - (void) updateChapterTitle;
 - (void) resetControlUI;
+- (void) updateToolButtonsVisibility;
 @end

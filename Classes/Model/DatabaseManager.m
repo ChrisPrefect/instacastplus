@@ -887,6 +887,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     persitentEpisode.author = parserEpisode.author;
     persitentEpisode.summary = parserEpisode.summary;
     persitentEpisode.fulltext = parserEpisode.textDescription;
+    persitentEpisode.transcripts = parserEpisode.transcripts;
     persitentEpisode.paymentURL = parserEpisode.paymentURL;
     persitentEpisode.deeplinkURL = parserEpisode.deeplink;
     persitentEpisode.video = parserEpisode.video;

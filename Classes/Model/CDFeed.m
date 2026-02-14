@@ -390,7 +390,12 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
     static NSSet* internalKeys = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
+        internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete",
+                        @"loadedEpisodeCount",
+                        @"totalExpectedEpisodes",
+                        @"preferredTranscriptLanguage",
+                        @"preferredTranscriptURL",
+                        nil];
     });
 
     for (CDFeedProperty* property in self.properties) {
@@ -416,4 +421,3 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
     return keys;
 }
 @end
-

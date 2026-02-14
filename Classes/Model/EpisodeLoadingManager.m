@@ -378,6 +378,7 @@ static const NSInteger kEpisodeBatchSize = 20;
     if (episode.author) dict[@"author"] = episode.author;
     if (episode.summary) dict[@"summary"] = episode.summary;
     if (episode.textDescription) dict[@"textDescription"] = episode.textDescription;
+    if (episode.transcripts.count > 0) dict[@"transcripts"] = episode.transcripts;
 
     // Date
     if (episode.pubDate) {
@@ -446,6 +447,9 @@ static const NSInteger kEpisodeBatchSize = 20;
     episode.author = dict[@"author"];
     episode.summary = dict[@"summary"];
     episode.textDescription = dict[@"textDescription"];
+    if ([dict[@"transcripts"] isKindOfClass:[NSArray class]]) {
+        episode.transcripts = dict[@"transcripts"];
+    }
 
     // Date
     if (dict[@"pubDate"]) {

@@ -16,6 +16,7 @@
 typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     kAutomaticTimer = 0,
     kIntelligentSleep,
+    kCarPlaySection,
     kNumberOfSections,
 };
 
@@ -87,9 +88,11 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 {
     switch (section) {
         case kAutomaticTimer:
-            return 2;
+            return 1;
         case kIntelligentSleep:
             return 3;
+        case kCarPlaySection:
+            return 1;
         default:
             break;
     }
@@ -109,17 +112,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
             cell.textLabel.text = @"Sleep Timer Always Active".ls;
             control.on = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
             [control addTarget:self action:@selector(toggleSleepTimeAlwaysSettings:) forControlEvents:UIControlEventValueChanged];
-            return cell;
-        }
-        else if (indexPath.row == 1)
-        {
-            UITableViewCell* cell = [self switchCell];
-            UISwitch* control = (UISwitch*)cell.accessoryView;
-            control.tag = indexPath.row;
-
-            cell.textLabel.text = @"Disable Sleep Timer in CarPlay".ls;
-            control.on = [USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay];
-            [control addTarget:self action:@selector(toggleCarPlaySleepTimerSettings:) forControlEvents:UIControlEventValueChanged];
             return cell;
         }
     }
@@ -163,6 +155,17 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 break;
         }
     }
+    else if (indexPath.section == kCarPlaySection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        control.tag = indexPath.row;
+
+        cell.textLabel.text = @"Disable Sleep Timer in CarPlay".ls;
+        control.on = [USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay];
+        [control addTarget:self action:@selector(toggleCarPlaySleepTimerSettings:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
 
     return nil;
 }
@@ -173,7 +176,9 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
         case kAutomaticTimer:
             return @"";
         case kIntelligentSleep:
-            return @"Smart Sleep Timer".ls;
+            return @"Smart Sleep Timer reset at:".ls;
+        case kCarPlaySection:
+            return @"";
         default:
             break;
     }
@@ -198,20 +203,21 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     {
         case kAutomaticTimer:
         {
-            NSMutableArray* footerLines = [NSMutableArray array];
-            if ([USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
-            {
-                [footerLines addObject:@"If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night.".ls];
+            if ([USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive]) {
+                return @"If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night.".ls;
             }
-            if ([USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay])
-            {
-                [footerLines addObject:@"While CarPlay is active, the Sleep Timer stays disabled.".ls];
-            }
-            return ([footerLines count] > 0) ? [footerLines componentsJoinedByString:@"\n\n"] : nil;
+            return nil;
         }
         case kIntelligentSleep:
         {
             return @"The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep.".ls;
+        }
+        case kCarPlaySection:
+        {
+            if ([USER_DEFAULTS boolForKey:DisableSleepTimerInCarPlay]) {
+                return @"While CarPlay is active, the Sleep Timer stays disabled.".ls;
+            }
+            return nil;
         }
         default:
             break;
@@ -253,21 +259,16 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 - (void) toggleSleepTimeAlwaysSettings:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:ScreenTimerAlwaysActive];
+    [USER_DEFAULTS synchronize];
+
     if (sender.on)
     {
         NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
         if (sleepTimer <= 0)
         {
-            if ([USER_DEFAULTS objectForKey:LastSelectedSleepTimer] == nil)
-            {
-                if ([USER_DEFAULTS objectForKey:DefaultIntelligentSleepTimer] == PlaybackStopTimeNoValue)
-                {
-                    [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
-                }
-                else
-                {
-                    [USER_DEFAULTS setInteger:DefaultIntelligentSleepTimer forKey:LastSelectedSleepTimer];
-                }
+            NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+            if (lastSleepTimer <= 0) {
+                [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
                 [USER_DEFAULTS synchronize];
             }
         }

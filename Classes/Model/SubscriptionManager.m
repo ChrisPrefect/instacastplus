@@ -1127,6 +1127,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     persistentEpisode.author = parserEpisode.author;
     persistentEpisode.summary = parserEpisode.summary;
     persistentEpisode.fulltext = parserEpisode.textDescription;
+    persistentEpisode.transcripts = parserEpisode.transcripts;
     persistentEpisode.paymentURL = parserEpisode.paymentURL;
     persistentEpisode.deeplinkURL = parserEpisode.deeplink;
     persistentEpisode.video = parserEpisode.video;
@@ -1208,6 +1209,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 localEpisode.fulltext = remoteEpisode.textDescription;
                 localEpisode.imageURL = remoteEpisode.imageURL;
                 localEpisode.pubDate = remoteEpisode.pubDate;
+                localEpisode.transcripts = remoteEpisode.transcripts;
             }
             else {
                 if (!localEpisode.fulltext || ![localEpisode.fulltext isEqualToString:remoteEpisode.textDescription]) {
@@ -1216,6 +1218,12 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 
                 if (!localEpisode.imageURL || ![localEpisode.imageURL isEqual:remoteEpisode.imageURL]) {
                     localEpisode.imageURL = remoteEpisode.imageURL;
+                }
+
+                NSArray* localTranscripts = localEpisode.transcripts ?: @[];
+                NSArray* remoteTranscripts = remoteEpisode.transcripts ?: @[];
+                if (![localTranscripts isEqualToArray:remoteTranscripts]) {
+                    localEpisode.transcripts = remoteTranscripts;
                 }
             }
         }

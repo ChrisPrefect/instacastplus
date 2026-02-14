@@ -26,9 +26,13 @@
 @property (nonatomic) CGRect rectCollection;
 @property (nonatomic, strong) UIView* chapterView;
 @property (nonatomic, strong) UICollectionView* chapterImagesCollection;
+@property (nonatomic, readonly) BOOL transcriptVisible;
+@property (nonatomic, readonly) BOOL transcriptAvailable;
+@property (nonatomic, copy) void (^transcriptAvailabilityDidChange)(BOOL available);
 
 - (void) layoutHeaderView;
 - (void) reload;
 - (void)updateCollectionsImage:(NSArray *)images atIndex:(NSUInteger)indexNumber;
 - (void)changeChapterImageIndex:(NSUInteger)indexNumber;
+- (void)setTranscriptVisibleFromControl:(BOOL)visible;
 @end

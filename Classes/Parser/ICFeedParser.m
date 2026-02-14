@@ -631,6 +631,141 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
     return h*3600+m*60+s+ms/1000.f;
 }
 
+static NSString* ICFeedParserTranscriptAttribute(NSDictionary* attributes, NSArray<NSString*>* keys)
+{
+    for (NSString* key in keys) {
+        NSString* value = attributes[key];
+        if (value.length > 0) {
+            return value;
+        }
+    }
+
+    for (NSString* candidate in attributes) {
+        for (NSString* key in keys) {
+            if ([candidate caseInsensitiveCompare:key] == NSOrderedSame) {
+                NSString* value = attributes[candidate];
+                if (value.length > 0) {
+                    return value;
+                }
+            }
+        }
+    }
+
+    return nil;
+}
+
+static NSDictionary* ICFeedParserTranscriptDescriptorFromAttributes(NSDictionary* attributes, NSURL* feedURL, NSURL* websiteURL)
+{
+    NSString* urlString = ICFeedParserTranscriptAttribute(attributes, @[@"url", @"href"]);
+    if (urlString.length == 0) {
+        return nil;
+    }
+
+    NSString* trimmedURLString = [urlString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSURL* directURL = [NSURL URLWithInsecureString:trimmedURLString];
+
+    NSURL* primaryURL = directURL;
+    NSURL* fallbackURL = nil;
+    BOOL relativeURL = NO;
+    BOOL storeOriginalHref = NO;
+
+    if (![trimmedURLString hasPrefix:@"//"] && directURL.scheme.length == 0) {
+        relativeURL = YES;
+        storeOriginalHref = YES;
+        NSURL* preferredBase = feedURL ?: websiteURL;
+        primaryURL = [NSURL URLWithInsecureString:trimmedURLString relativeToURL:preferredBase];
+        if (websiteURL && preferredBase && ![websiteURL isEqual:preferredBase]) {
+            fallbackURL = [NSURL URLWithInsecureString:trimmedURLString relativeToURL:websiteURL];
+        }
+    } else if ([trimmedURLString hasPrefix:@"//"]) {
+        storeOriginalHref = YES;
+        NSString* scheme = feedURL.scheme ?: websiteURL.scheme ?: @"https";
+        NSString* absoluteString = [NSString stringWithFormat:@"%@:%@", scheme, trimmedURLString];
+        primaryURL = [NSURL URLWithInsecureString:absoluteString];
+
+        NSString* alternateScheme = nil;
+        if ([scheme caseInsensitiveEquals:@"https"]) {
+            alternateScheme = @"http";
+        } else if ([scheme caseInsensitiveEquals:@"http"]) {
+            alternateScheme = @"https";
+        }
+        if (alternateScheme.length > 0) {
+            NSString* alternateAbsoluteString = [NSString stringWithFormat:@"%@:%@", alternateScheme, trimmedURLString];
+            fallbackURL = [NSURL URLWithInsecureString:alternateAbsoluteString];
+        }
+    }
+
+    if (!primaryURL) {
+        return nil;
+    }
+
+    NSMutableDictionary* descriptor = [NSMutableDictionary dictionary];
+    descriptor[@"url"] = [primaryURL absoluteString];
+    if (storeOriginalHref || relativeURL) {
+        descriptor[@"href"] = trimmedURLString;
+    }
+    if (fallbackURL && ![[fallbackURL absoluteString] isEqualToString:[primaryURL absoluteString]]) {
+        descriptor[@"fallbackURL"] = [fallbackURL absoluteString];
+    }
+
+    NSString* type = ICFeedParserTranscriptAttribute(attributes, @[@"type", @"mimeType", @"mimetype"]);
+    if (type.length > 0) {
+        descriptor[@"type"] = [type lowercaseString];
+    }
+
+    NSString* language = ICFeedParserTranscriptAttribute(attributes, @[@"language", @"lang", @"xml:lang"]);
+    if (language.length > 0) {
+        descriptor[@"language"] = [language lowercaseString];
+    }
+
+    NSString* rel = ICFeedParserTranscriptAttribute(attributes, @[@"rel", @"kind"]);
+    if (rel.length > 0) {
+        descriptor[@"rel"] = [rel lowercaseString];
+    }
+
+    NSString* title = ICFeedParserTranscriptAttribute(attributes, @[@"title", @"label"]);
+    if (title.length > 0) {
+        descriptor[@"title"] = title;
+    }
+
+    return descriptor;
+}
+
+static void ICFeedParserAppendTranscriptDescriptorToEpisode(ICEpisode* episode, NSDictionary* descriptor)
+{
+    if (!episode || descriptor[@"url"] == nil) {
+        return;
+    }
+
+    NSMutableArray* transcripts = [NSMutableArray arrayWithArray:(episode.transcripts ?: @[])];
+    NSString* url = descriptor[@"url"];
+    for (NSDictionary* entry in transcripts) {
+        if ([entry[@"url"] isEqualToString:url]) {
+            return;
+        }
+    }
+
+    [transcripts addObject:descriptor];
+    episode.transcripts = transcripts;
+}
+
+static BOOL ICFeedParserTypeLooksLikeTranscript(NSString* type)
+{
+    NSString* lower = [type lowercaseString];
+    if (lower.length == 0) {
+        return NO;
+    }
+
+    return [lower containsString:@"vtt"] ||
+           [lower containsString:@"subrip"] ||
+           [lower containsString:@"srt"] ||
+           [lower containsString:@"ttml"] ||
+           [lower containsString:@"transcript"] ||
+           [lower containsString:@"caption"] ||
+           [lower containsString:@"plain"] ||
+           [lower containsString:@"json"];
+}
+
 #define TYPE_ATTRIBUTE [[attributes objectForKey:@"type"] lowercaseString]
 #define REL_ATTRIBUTE [[attributes objectForKey:@"rel"] lowercaseString]
 
@@ -710,6 +845,12 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
         if ([elementName isEqualToString:@"xhtml:body"] || ([elementName isEqualToString:@"content"] && [TYPE_ATTRIBUTE isEqualToString:@"xhtml"]))
         {
             _xhtmlBody = [[NSMutableString alloc] init];
+        }
+
+        else if ([elementName isEqualToString:@"podcast:transcript"] || [elementName isEqualToString:@"transcript"])
+        {
+            NSDictionary* descriptor = ICFeedParserTranscriptDescriptorFromAttributes(attributes, self.url, _feed.linkURL);
+            ICFeedParserAppendTranscriptDescriptorToEpisode(_episode, descriptor);
         }
         
         else if (_xhtmlBody)
@@ -984,6 +1125,10 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
                 if ([typeAttr isEqualToString:@"text/html"]) {
                     _episode.link = [NSURL URLWithInsecureString:hrefAttr];
                 }
+                else if (ICFeedParserTypeLooksLikeTranscript(typeAttr)) {
+                    NSDictionary* descriptor = ICFeedParserTranscriptDescriptorFromAttributes(attributes, self.url, _feed.linkURL);
+                    ICFeedParserAppendTranscriptDescriptorToEpisode(_episode, descriptor);
+                }
             }
             
             else if ([relAttr isEqualToString:@"payment"] && hrefAttr) {
@@ -995,6 +1140,16 @@ static NSTimeInterval ParsedPodloveTime(NSString* time)
             }
             else if ([relAttr isEqualToString:@"http://podlove.org/simple-chapters"] && hrefAttr) {
                 _episode.pscLink = [NSURL URLWithInsecureString:hrefAttr];
+            }
+            else if (([relAttr isEqualToString:@"transcript"] ||
+                      [relAttr isEqualToString:@"captions"] ||
+                      [relAttr isEqualToString:@"subtitles"]) && hrefAttr) {
+                NSDictionary* descriptor = ICFeedParserTranscriptDescriptorFromAttributes(attributes, self.url, _feed.linkURL);
+                ICFeedParserAppendTranscriptDescriptorToEpisode(_episode, descriptor);
+            }
+            else if (hrefAttr && ICFeedParserTypeLooksLikeTranscript(typeAttr)) {
+                NSDictionary* descriptor = ICFeedParserTranscriptDescriptorFromAttributes(attributes, self.url, _feed.linkURL);
+                ICFeedParserAppendTranscriptDescriptorToEpisode(_episode, descriptor);
             }
         }
         

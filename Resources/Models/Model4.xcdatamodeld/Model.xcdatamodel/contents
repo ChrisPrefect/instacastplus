@@ -40,6 +40,7 @@
         <attribute name="duration" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="NO" syncable="YES"/>
         <attribute name="explicitContent" optional="YES" attributeType="Boolean" usesScalarValueType="NO" syncable="YES"/>
         <attribute name="fulltext" optional="YES" attributeType="String" syncable="YES"/>
+        <attribute name="transcriptsJSON_" optional="YES" attributeType="String" syncable="YES"/>
         <attribute name="guid" optional="YES" attributeType="String" indexed="YES" syncable="YES"/>
         <attribute name="imageURL" optional="YES" transient="YES" attributeType="String" syncable="YES"/>
         <attribute name="imageURL_" optional="YES" attributeType="String" syncable="YES"/>

@@ -37,6 +37,10 @@ static NSInteger const kChartsGenreMinCount = 5;
 @property (nonatomic, strong) NSString* selectedGenreId;       // nil = "Alle"
 @property (nonatomic) BOOL chartsLoading;
 @property (nonatomic, strong) NSURLSessionDataTask* chartsLookupTask;
+
+// Genre dropdown
+@property (nonatomic, strong) UIView* genreDropdownOverlay;
+@property (nonatomic, strong) NSArray* genreDropdownItems;
 @end
 
 NSString* kUIPersistenceDirectorySearchSearchString = @"SearchControllerSearchString";
@@ -146,6 +150,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 	[self.searchTimer invalidate];
 	self.searchTimer = nil;
+	[self _dismissGenreDropdown];
 
 	[NSRunLoop cancelPreviousPerformRequestsWithTarget:self];
 }
@@ -243,42 +248,160 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     return [merged copy];
 }
 
+- (NSDictionary *)_subToParentGenreMapping
+{
+    static NSDictionary *mapping = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        mapping = @{
+            // Arts subs → 1301
+            @"1482": @"1301", @"1402": @"1301", @"1459": @"1301",
+            @"1306": @"1301", @"1405": @"1301",
+            // Comedy subs → 1303
+            @"1496": @"1303", @"1495": @"1303", @"1497": @"1303",
+            // Education subs → 1304
+            @"1501": @"1304", @"1499": @"1304", @"1498": @"1304", @"1500": @"1304",
+            // Kids & Family subs → 1305
+            @"1519": @"1305", @"1520": @"1305", @"1521": @"1305", @"1522": @"1305",
+            // TV & Film subs → 1309
+            @"1562": @"1309", @"1564": @"1309", @"1565": @"1309",
+            @"1563": @"1309", @"1561": @"1309",
+            // Music subs → 1310
+            @"1523": @"1310", @"1524": @"1310", @"1525": @"1310",
+            // Religion subs → 1314
+            @"1438": @"1314", @"1439": @"1314", @"1463": @"1314",
+            @"1440": @"1314", @"1441": @"1314",
+            // Business subs → 1321
+            @"1410": @"1321", @"1493": @"1321", @"1412": @"1321",
+            @"1491": @"1321", @"1492": @"1321", @"1494": @"1321",
+            // Society & Culture subs → 1324
+            @"1543": @"1324", @"1302": @"1324", @"1443": @"1324",
+            @"1320": @"1324", @"1544": @"1324",
+            // Fiction subs → 1483
+            @"1486": @"1483", @"1484": @"1483", @"1485": @"1483",
+            // News subs → 1489
+            @"1526": @"1489", @"1490": @"1489", @"1531": @"1489",
+            @"1530": @"1489", @"1527": @"1489", @"1529": @"1489", @"1528": @"1489",
+            // Leisure subs → 1502
+            @"1510": @"1502", @"1503": @"1502", @"1504": @"1502",
+            @"1506": @"1502", @"1507": @"1502",
+            // Health & Fitness subs → 1512
+            @"1513": @"1512", @"1514": @"1512", @"1518": @"1512", @"1517": @"1512",
+            // Science subs → 1533
+            @"1538": @"1533", @"1539": @"1533", @"1540": @"1533",
+            @"1541": @"1533", @"1536": @"1533",
+            // Sports subs → 1545
+            @"1547": @"1545", @"1548": @"1545", @"1546": @"1545",
+            @"1550": @"1545", @"1560": @"1545",
+        };
+    });
+    return mapping;
+}
+
+- (NSString *)_resolveToParentGenreId:(NSString *)genreId
+{
+    return [self _subToParentGenreMapping][genreId] ?: genreId;
+}
+
 - (void)_buildGenreList
 {
-    // Count podcasts per genre
-    NSMutableDictionary *genreCounts = [NSMutableDictionary dictionary]; // genreId -> count
-    NSMutableDictionary *genreNames = [NSMutableDictionary dictionary]; // genreId -> name
+    NSDictionary *subToParent = [self _subToParentGenreMapping];
+
+    // Fallback names for parent genres (English) in case no localized name found
+    static NSDictionary *fallbackNames = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        fallbackNames = @{
+            @"1301": @"Arts", @"1303": @"Comedy", @"1304": @"Education",
+            @"1305": @"Kids & Family", @"1309": @"TV & Film", @"1310": @"Music",
+            @"1314": @"Religion & Spirituality", @"1318": @"Technology",
+            @"1321": @"Business", @"1324": @"Society & Culture",
+            @"1483": @"Fiction", @"1487": @"History", @"1488": @"True Crime",
+            @"1489": @"News", @"1502": @"Leisure", @"1511": @"Government",
+            @"1512": @"Health & Fitness", @"1533": @"Science", @"1545": @"Sports",
+        };
+    });
+
+    // Count podcasts per parent AND per individual sub-genre
+    NSMutableDictionary *parentCounts = [NSMutableDictionary dictionary];
+    NSMutableDictionary *parentNames = [NSMutableDictionary dictionary];
+    NSMutableDictionary *subCounts = [NSMutableDictionary dictionary];
+    NSMutableDictionary *subNames = [NSMutableDictionary dictionary];
 
     for (NSDictionary *entry in self.chartsAllResults) {
         NSArray *genreIDs = entry[kAppleChartsGenreIDs];
         NSString *genresString = entry[kAppleChartsGenres];
         if (![genreIDs isKindOfClass:[NSArray class]]) continue;
 
-        // Parse genre names from the comma-separated string
         NSArray *names = [genresString componentsSeparatedByString:@", "];
+        NSMutableSet *countedParents = [NSMutableSet set];
 
         for (NSUInteger i = 0; i < genreIDs.count; i++) {
             NSString *genreId = genreIDs[i];
-            NSNumber *count = genreCounts[genreId] ?: @0;
-            genreCounts[genreId] = @(count.integerValue + 1);
+            NSString *parentId = subToParent[genreId] ?: genreId;
 
-            if (i < names.count && !genreNames[genreId]) {
-                genreNames[genreId] = names[i];
+            // Count each parent only once per podcast
+            if (![countedParents containsObject:parentId]) {
+                [countedParents addObject:parentId];
+                parentCounts[parentId] = @([parentCounts[parentId] integerValue] + 1);
+            }
+
+            // Track parent localized name from direct parent genre matches
+            if ([genreId isEqualToString:parentId] && i < names.count && !parentNames[parentId]) {
+                parentNames[parentId] = names[i];
+            }
+
+            // Track sub-genre count and name (if it IS a sub)
+            if (subToParent[genreId]) {
+                subCounts[genreId] = @([subCounts[genreId] integerValue] + 1);
+                if (i < names.count && !subNames[genreId]) {
+                    subNames[genreId] = names[i];
+                }
             }
         }
     }
 
-    // Build sorted genre list, only genres with >= kChartsGenreMinCount
+    // Group sub-genres by parent
+    NSMutableDictionary *subsByParent = [NSMutableDictionary dictionary];
+    for (NSString *subId in subCounts) {
+        NSString *parentId = subToParent[subId];
+        if (!parentId) continue;
+        NSInteger count = [subCounts[subId] integerValue];
+        if (count < 2) continue; // minimum threshold for subs
+
+        if (!subsByParent[parentId]) subsByParent[parentId] = [NSMutableArray array];
+        [subsByParent[parentId] addObject:@{
+            @"genreId": subId,
+            @"name": subNames[subId] ?: subId,
+            @"count": @(count)
+        }];
+    }
+
+    // Sort subs alphabetically within each parent
+    for (NSString *parentId in subsByParent) {
+        [subsByParent[parentId] sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+            return [a[@"name"] localizedCaseInsensitiveCompare:b[@"name"]];
+        }];
+    }
+
+    // Build parent genre list with subs attached
     NSMutableArray *genres = [NSMutableArray array];
-    for (NSString *genreId in genreCounts) {
-        NSInteger count = [genreCounts[genreId] integerValue];
-        if (count >= kChartsGenreMinCount) {
-            [genres addObject:@{
-                @"genreId": genreId,
-                @"name": genreNames[genreId] ?: genreId,
-                @"count": @(count)
-            }];
+    for (NSString *parentId in parentCounts) {
+        NSInteger count = [parentCounts[parentId] integerValue];
+        if (count < kChartsGenreMinCount) continue;
+
+        NSMutableDictionary *entry = [@{
+            @"genreId": parentId,
+            @"name": parentNames[parentId] ?: fallbackNames[parentId] ?: parentId,
+            @"count": @(count)
+        } mutableCopy];
+
+        NSArray *subs = subsByParent[parentId];
+        if (subs.count > 0) {
+            entry[@"subs"] = subs;
         }
+
+        [genres addObject:entry];
     }
 
     // Sort by count descending
@@ -298,17 +421,36 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     }
 
     if (self.selectedGenreId) {
+        // Check if selectedGenreId is a parent or a sub-genre
+        BOOL isSubGenre = ([self _subToParentGenreMapping][self.selectedGenreId] != nil);
+
         NSMutableArray *filtered = [NSMutableArray array];
         for (NSDictionary *entry in source) {
             NSArray *genreIDs = entry[kAppleChartsGenreIDs];
-            if ([genreIDs containsObject:self.selectedGenreId]) {
+            if (![genreIDs isKindOfClass:[NSArray class]]) continue;
+
+            BOOL matches = NO;
+            if (isSubGenre) {
+                // Match exact sub-genre ID
+                matches = [genreIDs containsObject:self.selectedGenreId];
+            } else {
+                // Match any genre that resolves to this parent
+                for (NSString *gid in genreIDs) {
+                    NSString *parentId = [self _resolveToParentGenreId:gid];
+                    if ([parentId isEqualToString:self.selectedGenreId]) {
+                        matches = YES;
+                        break;
+                    }
+                }
+            }
+            if (matches) {
                 [filtered addObject:entry];
                 if (filtered.count >= kChartsDisplayLimit) break;
             }
         }
         self.chartsFilteredResults = [filtered copy];
     } else {
-        // "Alle" — show first 50
+        // "Alle Kategorien" — show first 50
         if (source.count > kChartsDisplayLimit) {
             self.chartsFilteredResults = [source subarrayWithRange:NSMakeRange(0, kChartsDisplayLimit)];
         } else {
@@ -320,125 +462,295 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 - (NSString *)_selectedGenreName
 {
     if (!self.selectedGenreId) {
-        return @"All".ls;
+        return @"All Categories".ls;
     }
     for (NSDictionary *genre in self.chartsGenres) {
         if ([genre[@"genreId"] isEqualToString:self.selectedGenreId]) {
             return genre[@"name"];
         }
+        for (NSDictionary *sub in genre[@"subs"]) {
+            if ([sub[@"genreId"] isEqualToString:self.selectedGenreId]) {
+                return sub[@"name"];
+            }
+        }
     }
-    return @"All".ls;
+    return @"All Categories".ls;
 }
 
 #pragma mark - Genre Menu
 
-- (void)_showGenreMenu:(UIButton *)sender
+- (void)_showGenreDropdown:(UIButton *)sender
 {
-    if (@available(iOS 14.0, *)) {
-        // Menu is already attached via UIButton.menu + showsMenuAsPrimaryAction
+    if (self.genreDropdownOverlay) {
+        [self _dismissGenreDropdown];
         return;
     }
 
-    // iOS 13 fallback: UIAlertController
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Genre".ls
-                                                                  message:nil
-                                                           preferredStyle:UIAlertControllerStyleActionSheet];
-
-    // "Alle" option
-    NSString *allTitle = self.selectedGenreId == nil
-        ? [NSString stringWithFormat:@"\u2713 %@", @"All".ls]
-        : @"All".ls;
-    [alert addAction:[UIAlertAction actionWithTitle:allTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        self.selectedGenreId = nil;
-        [self _applyGenreFilter];
-        [self.tableView reloadData];
-    }]];
-
-    for (NSDictionary *genre in self.chartsGenres) {
-        NSString *genreId = genre[@"genreId"];
-        NSString *name = genre[@"name"];
-        NSString *title = [self.selectedGenreId isEqualToString:genreId]
-            ? [NSString stringWithFormat:@"\u2713 %@", name]
-            : name;
-
-        [alert addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            self.selectedGenreId = genreId;
-            [self _applyGenreFilter];
-            [self.tableView reloadData];
-        }]];
+    // Build flat items list
+    NSMutableArray *items = [NSMutableArray array];
+    [items addObject:@{@"type": @"all", @"title": @"All Categories".ls, @"genreId": @""}];
+    for (NSDictionary *parent in self.chartsGenres) {
+        [items addObject:@{@"type": @"parent", @"title": parent[@"name"], @"genreId": parent[@"genreId"]}];
+        for (NSDictionary *sub in parent[@"subs"]) {
+            [items addObject:@{@"type": @"sub", @"title": sub[@"name"], @"genreId": sub[@"genreId"]}];
+        }
     }
+    self.genreDropdownItems = items;
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+    // Layout constants
+    CGFloat rowHeight = 32;
+    CGFloat menuWidth = 250;
+    CGFloat maxHeight = 560;
+    CGFloat leftPad = 21;
+    CGFloat subLeftPad = 43;
+    CGFloat rightPad = 8;
+    CGFloat iconSize = 16;
+    CGFloat iconGap = 5;
+    CGFloat bottomScreenMargin = 64; // ~2 rows from screen bottom
 
-    if (alert.popoverPresentationController) {
-        alert.popoverPresentationController.sourceView = sender;
-        alert.popoverPresentationController.sourceRect = sender.bounds;
+    // Overlay (catches taps outside menu to dismiss)
+    UIView *parentView = self.navigationController.view ?: self.view;
+    UIControl *overlay = [[UIControl alloc] initWithFrame:parentView.bounds];
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    overlay.backgroundColor = [UIColor clearColor];
+    [overlay addTarget:self action:@selector(_dismissGenreDropdown) forControlEvents:UIControlEventTouchUpInside];
+
+    // Position: top-aligned to button, extends downward to near screen bottom
+    CGRect buttonFrame = [sender convertRect:sender.bounds toView:parentView];
+    CGFloat menuX = MAX(8, CGRectGetMaxX(buttonFrame) - menuWidth);
+    CGFloat menuY = CGRectGetMinY(buttonFrame) - 4;
+    CGFloat availableHeight = parentView.bounds.size.height - menuY - bottomScreenMargin;
+    CGFloat totalHeight = MIN(items.count * rowHeight, availableHeight);
+    UIView *shadowWrap = [[UIView alloc] initWithFrame:CGRectMake(menuX, menuY, menuWidth, totalHeight)];
+    shadowWrap.layer.shadowColor = [UIColor blackColor].CGColor;
+    shadowWrap.layer.shadowOpacity = 0.25;
+    shadowWrap.layer.shadowRadius = 16;
+    shadowWrap.layer.shadowOffset = CGSizeMake(0, 6);
+
+    // Blurred background
+    UIVisualEffectView *blur = [[UIVisualEffectView alloc] initWithEffect:
+        [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial]];
+    blur.frame = shadowWrap.bounds;
+    blur.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    blur.layer.cornerRadius = 10;
+    blur.clipsToBounds = YES;
+    [shadowWrap addSubview:blur];
+
+    // Scroll view
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:blur.contentView.bounds];
+    scroll.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    scroll.showsVerticalScrollIndicator = YES;
+    scroll.alwaysBounceVertical = NO;
+    [blur.contentView addSubview:scroll];
+
+    CGFloat y = 0;
+    for (NSUInteger i = 0; i < items.count; i++) {
+        NSDictionary *item = items[i];
+        BOOL isAll = [item[@"type"] isEqualToString:@"all"];
+        BOOL isSub = [item[@"type"] isEqualToString:@"sub"];
+        NSString *genreId = item[@"genreId"];
+        BOOL isSelected = (isAll && !self.selectedGenreId) ||
+                          (genreId.length > 0 && [self.selectedGenreId isEqualToString:genreId]);
+
+        UIControl *row = [[UIControl alloc] initWithFrame:CGRectMake(0, y, menuWidth, rowHeight)];
+        row.tag = (NSInteger)i;
+        [row addTarget:self action:@selector(_genreDropdownRowTapped:) forControlEvents:UIControlEventTouchUpInside];
+
+        if (isSelected) {
+            row.backgroundColor = [UIColor colorWithWhite:0.5 alpha:0.15];
+        }
+
+        CGFloat textX;
+        if (isSub) {
+            textX = subLeftPad;
+        } else {
+            UIImage *icon = isAll ? [UIImage systemImageNamed:@"list.bullet"] : [self _symbolForGenreId:genreId];
+            if (icon) {
+                UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:13 weight:UIImageSymbolWeightRegular];
+                UIImageView *iv = [[UIImageView alloc] initWithImage:[icon imageWithConfiguration:cfg]];
+                iv.tintColor = ICTintColor;
+                iv.contentMode = UIViewContentModeScaleAspectFit;
+                iv.frame = CGRectMake(leftPad, (rowHeight - iconSize) / 2, iconSize, iconSize);
+                [row addSubview:iv];
+            }
+            textX = leftPad + iconSize + iconGap;
+        }
+
+        // Label
+        CGFloat labelRight = isSelected ? rightPad + 20 : rightPad;
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(textX, 0, menuWidth - textX - labelRight, rowHeight)];
+        label.text = item[@"title"];
+        label.font = isSub
+            ? [UIFont systemFontOfSize:14]
+            : [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+        label.textColor = ICTextColor;
+        [row addSubview:label];
+
+        // Checkmark
+        if (isSelected) {
+            UIImageSymbolConfiguration *chkCfg = [UIImageSymbolConfiguration configurationWithPointSize:11 weight:UIImageSymbolWeightSemibold];
+            UIImageView *chk = [[UIImageView alloc] initWithImage:
+                [[UIImage systemImageNamed:@"checkmark"] imageWithConfiguration:chkCfg]];
+            chk.tintColor = ICTintColor;
+            chk.frame = CGRectMake(menuWidth - rightPad - 14, (rowHeight - 12) / 2, 14, 12);
+            [row addSubview:chk];
+        }
+
+        // Separator line
+        if (i < items.count - 1) {
+            CGFloat sepLeft = isSub ? subLeftPad : 0;
+            UIView *sep = [[UIView alloc] initWithFrame:CGRectMake(sepLeft, rowHeight - 0.5, menuWidth - sepLeft, 0.5)];
+            sep.backgroundColor = [UIColor separatorColor];
+            [row addSubview:sep];
+        }
+
+        [scroll addSubview:row];
+        y += rowHeight;
     }
+    scroll.contentSize = CGSizeMake(menuWidth, y);
 
-    [self presentViewController:alert animated:YES completion:nil];
+    [overlay addSubview:shadowWrap];
+    [parentView addSubview:overlay];
+    self.genreDropdownOverlay = overlay;
+
+    // Animate in
+    shadowWrap.alpha = 0;
+    shadowWrap.transform = CGAffineTransformMakeTranslation(0, -4);
+    [UIView animateWithDuration:0.2 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+        shadowWrap.alpha = 1;
+        shadowWrap.transform = CGAffineTransformIdentity;
+    } completion:nil];
+}
+
+- (void)_dismissGenreDropdown
+{
+    if (!self.genreDropdownOverlay) return;
+    UIView *overlay = self.genreDropdownOverlay;
+    self.genreDropdownOverlay = nil;
+    self.genreDropdownItems = nil;
+
+    [UIView animateWithDuration:0.15 animations:^{
+        overlay.alpha = 0;
+    } completion:^(BOOL finished) {
+        [overlay removeFromSuperview];
+    }];
+}
+
+- (void)_genreDropdownRowTapped:(UIControl *)sender
+{
+    NSUInteger index = (NSUInteger)sender.tag;
+    if (index >= self.genreDropdownItems.count) return;
+
+    NSDictionary *item = self.genreDropdownItems[index];
+    BOOL isAll = [item[@"type"] isEqualToString:@"all"];
+
+    self.selectedGenreId = isAll ? nil : item[@"genreId"];
+    [self _applyGenreFilter];
+    [self.tableView reloadData];
+    [self _dismissGenreDropdown];
+}
+
+- (UIImage *)_symbolForGenreId:(NSString *)genreId
+{
+    static NSDictionary *genreSymbols = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        genreSymbols = @{
+            // Arts + subs → paintpalette.fill (iOS 14)
+            @"1301": @"paintpalette.fill", @"1482": @"paintpalette.fill",
+            @"1402": @"paintpalette.fill", @"1459": @"paintpalette.fill",
+            @"1306": @"paintpalette.fill", @"1405": @"paintpalette.fill",
+            // Comedy + subs → theatermasks (iOS 15.4)
+            @"1303": @"theatermasks", @"1496": @"theatermasks",
+            @"1495": @"theatermasks", @"1497": @"theatermasks",
+            // Education + subs → graduationcap.fill (iOS 14)
+            @"1304": @"graduationcap.fill", @"1501": @"graduationcap.fill",
+            @"1499": @"graduationcap.fill", @"1498": @"graduationcap.fill",
+            @"1500": @"graduationcap.fill",
+            // Kids & Family + subs → figure.and.child.holdinghands (iOS 15)
+            @"1305": @"figure.and.child.holdinghands",
+            @"1519": @"figure.and.child.holdinghands",
+            @"1520": @"figure.and.child.holdinghands",
+            @"1521": @"figure.and.child.holdinghands",
+            @"1522": @"figure.and.child.holdinghands",
+            // TV & Film + subs → tv.fill (iOS 13)
+            @"1309": @"tv.fill", @"1562": @"tv.fill", @"1564": @"tv.fill",
+            @"1565": @"tv.fill", @"1563": @"tv.fill", @"1561": @"tv.fill",
+            // Music + subs → music.note (iOS 13)
+            @"1310": @"music.note", @"1523": @"music.note",
+            @"1524": @"music.note", @"1525": @"music.note",
+            // Religion & Spirituality + subs → sparkles (iOS 14)
+            @"1314": @"sparkles", @"1438": @"sparkles", @"1439": @"sparkles",
+            @"1463": @"sparkles", @"1440": @"sparkles", @"1441": @"sparkles",
+            // Technology → desktopcomputer (iOS 13)
+            @"1318": @"desktopcomputer",
+            // Business + subs → briefcase.fill (iOS 13)
+            @"1321": @"briefcase.fill", @"1410": @"briefcase.fill",
+            @"1493": @"briefcase.fill", @"1412": @"briefcase.fill",
+            @"1491": @"briefcase.fill", @"1492": @"briefcase.fill",
+            @"1494": @"briefcase.fill",
+            // Society & Culture + subs → person.2.fill (iOS 13)
+            @"1324": @"person.2.fill", @"1543": @"person.2.fill",
+            @"1302": @"person.2.fill", @"1443": @"person.2.fill",
+            @"1320": @"person.2.fill", @"1544": @"person.2.fill",
+            // Fiction + subs → books.vertical.fill (iOS 14)
+            @"1483": @"books.vertical.fill", @"1486": @"books.vertical.fill",
+            @"1484": @"books.vertical.fill", @"1485": @"books.vertical.fill",
+            // History → clock.arrow.circlepath (iOS 14)
+            @"1487": @"clock.arrow.circlepath",
+            // True Crime → magnifyingglass (iOS 13)
+            @"1488": @"magnifyingglass",
+            // News + subs → newspaper.fill (iOS 14)
+            @"1489": @"newspaper.fill", @"1526": @"newspaper.fill",
+            @"1490": @"newspaper.fill", @"1531": @"newspaper.fill",
+            @"1530": @"newspaper.fill", @"1527": @"newspaper.fill",
+            @"1529": @"newspaper.fill", @"1528": @"newspaper.fill",
+            // Leisure + subs → puzzlepiece.fill (iOS 14)
+            @"1502": @"puzzlepiece.fill", @"1510": @"puzzlepiece.fill",
+            @"1503": @"puzzlepiece.fill", @"1504": @"puzzlepiece.fill",
+            @"1506": @"puzzlepiece.fill", @"1507": @"puzzlepiece.fill",
+            // Government → building.columns.fill (iOS 14)
+            @"1511": @"building.columns.fill",
+            // Health & Fitness + subs → heart.fill (iOS 13)
+            @"1512": @"heart.fill", @"1513": @"heart.fill",
+            @"1514": @"heart.fill", @"1518": @"heart.fill",
+            @"1517": @"heart.fill",
+            // Science + subs → atom (iOS 15)
+            @"1533": @"atom", @"1538": @"atom", @"1539": @"atom",
+            @"1540": @"atom", @"1541": @"atom", @"1536": @"atom",
+            // Sports + subs → figure.run (iOS 15)
+            @"1545": @"figure.run", @"1547": @"figure.run",
+            @"1548": @"figure.run", @"1546": @"figure.run",
+            @"1550": @"figure.run", @"1560": @"figure.run",
+        };
+    });
+
+    NSString *symbolName = genreSymbols[genreId];
+    if (!symbolName) return nil;
+    return [UIImage systemImageNamed:symbolName];
 }
 
 - (UIButton *)_createGenreButton
 {
-    UIButton *button;
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
 
-    NSString *title = [NSString stringWithFormat:@"%@  \u25BE", [self _selectedGenreName]];
+    [button setTitle:[self _selectedGenreName] forState:UIControlStateNormal];
 
-    if (@available(iOS 14.0, *)) {
-        button = [UIButton buttonWithType:UIButtonTypeSystem];
-        button.showsMenuAsPrimaryAction = YES;
-        button.menu = [self _buildGenreUIMenu];
-    } else {
-        button = [UIButton buttonWithType:UIButtonTypeSystem];
-        [button addTarget:self action:@selector(_showGenreMenu:) forControlEvents:UIControlEventTouchUpInside];
-    }
+    // SF Symbol chevron as dropdown indicator
+    UIImageSymbolConfiguration *symbolConfig = [UIImageSymbolConfiguration configurationWithPointSize:12 weight:UIImageSymbolWeightSemibold];
+    UIImage *chevron = [[UIImage systemImageNamed:@"chevron.down"] imageWithConfiguration:symbolConfig];
+    [button setImage:chevron forState:UIControlStateNormal];
+    button.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft; // image trailing
 
-    [button setTitle:title forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont systemFontOfSize:15.f weight:UIFontWeightMedium];
+    button.titleLabel.font = [UIFont systemFontOfSize:16.f weight:UIFontWeightMedium];
     [button setTitleColor:ICTintColor forState:UIControlStateNormal];
+    button.tintColor = ICTintColor;
     button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
     button.translatesAutoresizingMaskIntoConstraints = NO;
 
+    [button addTarget:self action:@selector(_showGenreDropdown:) forControlEvents:UIControlEventTouchUpInside];
+
     return button;
-}
-
-- (UIMenu *)_buildGenreUIMenu API_AVAILABLE(ios(14.0))
-{
-    NSMutableArray *actions = [NSMutableArray array];
-
-    // "Alle" option
-    UIAction *allAction = [UIAction actionWithTitle:@"All".ls
-                                              image:nil
-                                         identifier:nil
-                                            handler:^(UIAction *action) {
-        self.selectedGenreId = nil;
-        [self _applyGenreFilter];
-        [self.tableView reloadData];
-    }];
-    if (!self.selectedGenreId) {
-        allAction.state = UIMenuElementStateOn;
-    }
-    [actions addObject:allAction];
-
-    for (NSDictionary *genre in self.chartsGenres) {
-        NSString *genreId = genre[@"genreId"];
-        NSString *name = genre[@"name"];
-
-        UIAction *action = [UIAction actionWithTitle:name
-                                               image:nil
-                                          identifier:nil
-                                             handler:^(UIAction *action) {
-            self.selectedGenreId = genreId;
-            [self _applyGenreFilter];
-            [self.tableView reloadData];
-        }];
-        if ([self.selectedGenreId isEqualToString:genreId]) {
-            action.state = UIMenuElementStateOn;
-        }
-        [actions addObject:action];
-    }
-
-    return [UIMenu menuWithTitle:@"" children:actions];
 }
 
 #pragma mark TableView Datasource
@@ -485,7 +797,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
             [label.leadingAnchor constraintEqualToAnchor:headerView.leadingAnchor constant:10],
             [label.centerYAnchor constraintEqualToAnchor:headerView.centerYAnchor],
 
-            [genreButton.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-10],
+            [genreButton.trailingAnchor constraintEqualToAnchor:headerView.trailingAnchor constant:-16],
             [genreButton.firstBaselineAnchor constraintEqualToAnchor:label.firstBaselineAnchor],
             [genreButton.leadingAnchor constraintGreaterThanOrEqualToAnchor:label.trailingAnchor constant:8]
         ]];

@@ -213,10 +213,15 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         ids = @[
+            // Main categories
             @"1301", // Arts
             @"1303", // Comedy
             @"1304", // Education
             @"1305", // Kids & Family
+            @"1519", // Education for Kids
+            @"1520", // Stories for Kids
+            @"1521", // Parenting
+            @"1522", // Pets & Animals
             @"1309", // TV & Film
             @"1310", // Music
             @"1314", // Religion & Spirituality
@@ -232,6 +237,85 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
             @"1512", // Health & Fitness
             @"1533", // Science
             @"1545", // Sports
+            // Arts subcategories
+            @"1482", // Books
+            @"1402", // Design
+            @"1459", // Fashion & Beauty
+            @"1306", // Food
+            @"1405", // Performing Arts
+            // Comedy subcategories
+            @"1496", // Comedy Interviews
+            @"1495", // Improv
+            @"1497", // Stand-Up
+            // Education subcategories
+            @"1501", // Courses
+            @"1499", // How To
+            @"1498", // Language Learning
+            @"1500", // Self-Improvement
+            // TV & Film subcategories
+            @"1562", // After Shows
+            @"1564", // Film History
+            @"1565", // Film Interviews
+            @"1563", // Film Reviews
+            @"1561", // TV Reviews
+            // Music subcategories
+            @"1523", // Music Commentary
+            @"1524", // Music History
+            @"1525", // Music Interviews
+            // Religion & Spirituality subcategories
+            @"1438", // Buddhism
+            @"1439", // Christianity
+            @"1463", // Hinduism
+            @"1440", // Islam
+            @"1441", // Judaism
+            // Business subcategories
+            @"1410", // Careers
+            @"1493", // Entrepreneurship
+            @"1412", // Investing
+            @"1491", // Management
+            @"1492", // Marketing
+            @"1494", // Non-Profit
+            // Society & Culture subcategories
+            @"1543", // Documentary
+            @"1302", // Personal Journals
+            @"1443", // Philosophy
+            @"1320", // Places & Travel
+            @"1544", // Relationships
+            // Fiction subcategories
+            @"1486", // Comedy Fiction
+            @"1484", // Drama
+            @"1485", // Science Fiction
+            // News subcategories
+            @"1526", // Daily News
+            @"1490", // Business News
+            @"1531", // Entertainment News
+            @"1530", // News Commentary
+            @"1527", // Politics
+            @"1529", // Sports News
+            @"1528", // Tech News
+            // Leisure subcategories
+            @"1510", // Animation & Manga
+            @"1503", // Automotive
+            @"1504", // Aviation
+            @"1506", // Crafts
+            @"1507", // Games
+            // Health & Fitness subcategories
+            @"1513", // Alternative Health
+            @"1514", // Fitness
+            @"1518", // Medicine
+            @"1517", // Mental Health
+            // Science subcategories
+            @"1538", // Astronomy
+            @"1539", // Chemistry
+            @"1540", // Earth Sciences
+            @"1541", // Life Sciences
+            @"1536", // Mathematics
+            // Sports subcategories
+            @"1547", // Football
+            @"1548", // Basketball
+            @"1546", // Soccer
+            @"1550", // Hockey
+            @"1560", // Fantasy Sports
         ];
     });
     return ids;
