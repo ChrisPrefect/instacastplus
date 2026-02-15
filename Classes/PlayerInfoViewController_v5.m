@@ -785,9 +785,18 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self.chapterView addSubview:chevronIndicatorView];
 
     [self reloadData];
-    
+
     [self _setObserving:YES];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationDidChange) name:UIDeviceOrientationDidChangeNotification object:nil];
+}
+
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
+{
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+
+    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        [self layoutHeaderView];
+    } completion:nil];
 }
 
 - (void)_setTranscriptAvailableState:(BOOL)available

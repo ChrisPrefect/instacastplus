@@ -80,9 +80,17 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
         self.window.backgroundColor = ICBackgroundColor;
 
 #if TARGET_OS_MACCATALYST
-        CGSize minSize = CGSizeMake(402, 874); // iPhone 16/17 Pro dimensions
+        CGSize minSize = CGSizeMake(402, 662); // iPhone 17 Pro Breite, Höhe -30% + 30px
         windowScene.sizeRestrictions.minimumSize = minSize;
         // maximumSize nicht setzen → frei vergrösserbar
+#else
+        // iPadOS: Fenster in iPhone 17 Pro Grösse starten (Stage Manager / iPadOS 26)
+        if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+            CGSize startSize = CGSizeMake(402, 874); // iPhone 17 Pro
+            CGSize minSize = CGSizeMake(402, 662);   // Höhe -30% + 30px
+            windowScene.sizeRestrictions.minimumSize = minSize;
+            windowScene.sizeRestrictions.maximumSize = startSize;
+        }
 #endif
 
         if ([DatabaseManager dataStoreNeedsMigration]) {
@@ -275,6 +283,17 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
+#if !TARGET_OS_MACCATALYST
+    // Nach erstem Fenster-Aufbau: Resizing erlauben (Fenster startet bei iPhone 17 Pro Grösse)
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+        if ([scene isKindOfClass:[UIWindowScene class]]) {
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            CGSize screenSize = UIScreen.mainScreen.bounds.size;
+            CGFloat maxDimension = MAX(screenSize.width, screenSize.height);
+            windowScene.sizeRestrictions.maximumSize = CGSizeMake(maxDimension, maxDimension);
+        }
+    }
+#endif
 }
 
 

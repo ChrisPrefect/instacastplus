@@ -608,6 +608,22 @@ enum {
     [self.infoViewController didMoveToParentViewController:self];
 }
 
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
+{
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+
+    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        // Recalculate control pane height for new window size
+        // size.height ≈ window height - statusbar - navbar (edgesForExtendedLayout = UIRectEdgeNone)
+        // Chapter art = size.width (square), controls fill the rest
+        CGFloat controllerHeight = MAX(size.height - size.width - 40, 194);
+        self.controller.view.frame = CGRectMake(0, size.height - controllerHeight, size.width, controllerHeight);
+        self.infoViewController.view.frame = CGRectMake(0, 0, size.width, size.height);
+        self.infoViewController.bottomScrollInset = controllerHeight;
+        [self.infoViewController layoutHeaderView];
+    } completion:nil];
+}
+
 -(UIInterfaceOrientation)getDeviceOrientation
 {
     UIWindowScene* windowScene = [self _activeWindowScene];

@@ -10,6 +10,7 @@
 #import "ChangeLogViewController.h"
 
 @interface OnboardScreenVC ()
+@property (nonatomic, assign) BOOL overlaySetupDone;
 @end
 
 @implementation OnboardScreenVC
@@ -19,13 +20,18 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.descLabel.text = @"to add podcasts, search the podcast directory".ls;
+    // Setup shadow overlay (full coverage, no cutout)
     self.shadowView.userInteractionEnabled = YES;
-    UITapGestureRecognizer *tapGesture1 = [[UITapGestureRecognizer alloc] initWithTarget:self  action:@selector(tapGesture:)];
+    UITapGestureRecognizer *tapGesture1 = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapGesture:)];
     tapGesture1.numberOfTapsRequired = 1;
     [self.shadowView addGestureRecognizer:tapGesture1];
     self.shadowView.backgroundColor = [UIColor blackColor];
     self.shadowView.alpha = 0.5;
+
+    // Hide XIB elements - we create new ones positioned dynamically over the real button
+    self.arrowImage.hidden = YES;
+    self.descLabel.hidden = YES;
+    self.plusBtn.hidden = YES;
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         ChangeLogViewController *changelogVC = [[ChangeLogViewController alloc] init];
@@ -35,52 +41,113 @@
     });
 }
 
-- (void) viewWillAppear:(BOOL)animated
-{
-    [super viewWillAppear:animated];
-    if ([UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark)
-    {
-        self.arrowImage.image = [UIImage imageNamed:@"onboard_arrow_wh"];
-        self.descLabel.textColor = [UIColor whiteColor];
-    }
-    else
-    {
-        self.arrowImage.image = [UIImage imageNamed:@"onboard_arrow_bl"];
-        self.descLabel.textColor = [UIColor blackColor];
-    }
-}
-
 - (void)viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
-    [self _createToolbarSpotlight];
+    if (!self.overlaySetupDone) {
+        self.overlaySetupDone = YES;
+        [self _setupOnboardOverlay];
+    }
 }
 
-#pragma mark - Spotlight Cutout
+#pragma mark - Onboard Overlay
 
-- (void)_createToolbarSpotlight
+- (void)_setupOnboardOverlay
 {
-    // Find the real toolbar plus button in the presenting VC's view hierarchy
+    // Find the real toolbar plus button position
     UIView *buttonView = [self _findToolbarPlusButton];
-    if (!buttonView) return;
 
-    // Convert button center to shadowView's coordinate system
-    CGPoint buttonCenter = [buttonView convertPoint:CGPointMake(CGRectGetMidX(buttonView.bounds),
-                                                                 CGRectGetMidY(buttonView.bounds))
-                                             toView:self.shadowView];
+    CGPoint buttonCenter;
+    if (buttonView) {
+        buttonCenter = [buttonView convertPoint:CGPointMake(CGRectGetMidX(buttonView.bounds),
+                                                             CGRectGetMidY(buttonView.bounds))
+                                         toView:self.view];
+    } else {
+        // Fallback: bottom-left toolbar area
+        CGFloat safeBottom = self.view.safeAreaInsets.bottom;
+        buttonCenter = CGPointMake(40, self.view.bounds.size.height - safeBottom - 25);
+    }
 
-    // Create mask: full overlay with circular cutout around the plus button
-    CGFloat radius = 30.0;
-    UIBezierPath *overlayPath = [UIBezierPath bezierPathWithRect:self.shadowView.bounds];
-    UIBezierPath *spotlightPath = [UIBezierPath bezierPathWithOvalInRect:
-        CGRectMake(buttonCenter.x - radius, buttonCenter.y - radius, radius * 2, radius * 2)];
-    [overlayPath appendPath:spotlightPath];
+    BOOL isDark = [UIScreen mainScreen].traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
 
-    CAShapeLayer *maskLayer = [CAShapeLayer layer];
-    maskLayer.path = overlayPath.CGPath;
-    maskLayer.fillRule = kCAFillRuleEvenOdd;
-    self.shadowView.layer.mask = maskLayer;
+    // --- 1. Fake plus button graphic (larger than real, with glow) ---
+    CGFloat size = 54.0;
+    UIView *fakeButton = [[UIView alloc] initWithFrame:CGRectMake(buttonCenter.x - size / 2,
+                                                                    buttonCenter.y - size / 2,
+                                                                    size, size)];
+    fakeButton.backgroundColor = isDark
+        ? [UIColor colorWithWhite:0.25 alpha:1.0]
+        : [UIColor colorWithWhite:0.95 alpha:1.0];
+    fakeButton.layer.cornerRadius = size / 2;
+    fakeButton.userInteractionEnabled = NO;
+
+    // Plus icon
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:24 weight:UIImageSymbolWeightMedium];
+    UIImageView *plusIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"plus" withConfiguration:config]];
+    plusIcon.tintColor = isDark ? [UIColor whiteColor] : [UIColor blackColor];
+    plusIcon.contentMode = UIViewContentModeCenter;
+    plusIcon.frame = fakeButton.bounds;
+    [fakeButton addSubview:plusIcon];
+
+    // Glow effect around the button
+    fakeButton.layer.shadowColor = (isDark
+        ? [UIColor colorWithRed:0.4 green:0.7 blue:1.0 alpha:1.0]
+        : [UIColor colorWithWhite:1.0 alpha:1.0]).CGColor;
+    fakeButton.layer.shadowOffset = CGSizeZero;
+    fakeButton.layer.shadowRadius = 15.0;
+    fakeButton.layer.shadowOpacity = 0.9;
+    fakeButton.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:CGRectInset(fakeButton.bounds, -4, -4)].CGPath;
+
+    [self.view insertSubview:fakeButton aboveSubview:self.shadowView];
+
+    // --- 2. Arrow (positioned dynamically above the fake button) ---
+    NSString *arrowName = isDark ? @"onboard_arrow_wh" : @"onboard_arrow_bl";
+    UIImageView *arrow = [[UIImageView alloc] initWithImage:[UIImage imageNamed:arrowName]];
+    arrow.contentMode = UIViewContentModeScaleAspectFit;
+
+    CGFloat arrowW = 50, arrowH = 60;
+    arrow.frame = CGRectMake(buttonCenter.x - 5,
+                              buttonCenter.y - size / 2 - arrowH - 2,
+                              arrowW, arrowH);
+
+    // White glow for readability on grey overlay
+    arrow.layer.shadowColor = [UIColor whiteColor].CGColor;
+    arrow.layer.shadowOffset = CGSizeZero;
+    arrow.layer.shadowRadius = 6.0;
+    arrow.layer.shadowOpacity = 1.0;
+
+    [self.view insertSubview:arrow aboveSubview:fakeButton];
+
+    // --- 3. Label (to the right of arrow) ---
+    UILabel *label = [[UILabel alloc] init];
+    label.text = @"to add podcasts, search the podcast directory".ls;
+    label.font = [UIFont systemFontOfSize:18 weight:UIFontWeightMedium];
+    label.textColor = isDark ? [UIColor whiteColor] : [UIColor blackColor];
+    label.numberOfLines = 0;
+
+    CGFloat labelX = CGRectGetMaxX(arrow.frame) + 10;
+    CGFloat labelMaxW = self.view.bounds.size.width - labelX - 20;
+    label.frame = CGRectMake(labelX,
+                              CGRectGetMinY(arrow.frame) - 10,
+                              labelMaxW, 100);
+    [label sizeToFit];
+
+    // White glow for readability
+    label.layer.shadowColor = [UIColor whiteColor].CGColor;
+    label.layer.shadowOffset = CGSizeZero;
+    label.layer.shadowRadius = 6.0;
+    label.layer.shadowOpacity = 1.0;
+
+    [self.view insertSubview:label aboveSubview:arrow];
+
+    // --- 4. Invisible tap button over fake plus button ---
+    UIButton *tapButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    tapButton.frame = CGRectMake(buttonCenter.x - 40, buttonCenter.y - 40, 80, 80);
+    [tapButton addTarget:self action:@selector(plusButtonPressed:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:tapButton];
 }
+
+#pragma mark - Find Toolbar Button
 
 - (UIView *)_findToolbarPlusButton
 {
@@ -142,6 +209,8 @@
     }
 }
 
+#pragma mark - Actions
+
 - (void) addAction:(id)sender
 {
     [self dismissViewControllerAnimated:NO completion:^{
@@ -154,14 +223,11 @@
     [self dismissViewControllerAnimated:NO completion:nil];
 }
 
--(IBAction)plusButtonPressed:(id)sender 
+-(IBAction)plusButtonPressed:(id)sender
 {
     [self dismissViewControllerAnimated:NO completion:^{
         [self.delegate plusButtonPressDelegateMethod:self];
     }];
-    
 }
-
-
 
 @end

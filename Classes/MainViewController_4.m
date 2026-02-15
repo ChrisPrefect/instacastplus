@@ -322,9 +322,11 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     }
     
     CGRect b = self.view.bounds;
-    // Now playing bar: 5px higher than before
-    CGRect invisbleRect = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 49+safeAreaInsets.bottom);
-    CGRect visibleRect = CGRectMake(0, CGRectGetHeight(b)-49-safeAreaInsets.bottom, CGRectGetWidth(b), 49+safeAreaInsets.bottom);
+    // Bottom padding: mindestens 21pt damit label3 (y=49, h=17 → bottom=66) sichtbar bleibt,
+    // auch wenn safeAreaInsets.bottom = 0 (iPad Stage Manager Fenster-Modus)
+    CGFloat bottomPadding = MAX(safeAreaInsets.bottom, 21);
+    CGRect invisbleRect = CGRectMake(0, CGRectGetHeight(b), CGRectGetWidth(b), 49+bottomPadding);
+    CGRect visibleRect = CGRectMake(0, CGRectGetHeight(b)-49-bottomPadding, CGRectGetWidth(b), 49+bottomPadding);
     
     if (self.activityViewController.visible && !self.activityViewController.parentViewController) {
         [self addChildViewController:self.activityViewController];
@@ -358,8 +360,9 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     }
     
     if (self.activityViewController.visible) {
-        rect.size.height -= (safeAreaInsets.bottom);
-        rect.size.height -= 49;  // Now playing bar is 5px taller (44->49)
+        CGFloat bottomPadding = MAX(safeAreaInsets.bottom, 21);
+        rect.size.height -= bottomPadding;
+        rect.size.height -= 49;
     }
     
     return rect;
