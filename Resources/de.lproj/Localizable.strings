@@ -699,6 +699,10 @@
 "Total Unplayed" = "Ungespielt";
 "Total Downloaded" = "Heruntergeladen";
 "Storage Used" = "Speicherplatz";
+"Episodes Played" = "Episoden gehört";
+"Time Listened" = "Zeit gehört";
+"Fell Asleep with Timer" = "Eingeschlafen mit Timer";
+"Donated to InstacastPlus" = "Gespendet an InstacastPlus";
 
 /* Settings Menu */
 "Sleep Timer" = "Sleeptimer";
@@ -889,4 +893,4 @@
 "Without Credentials" = "Ohne Anmeldedaten";
 
 /* SleepTimerSettingsViewController */
-"Smart Sleep Timer reset at:" = "Smart Sleep Timer zurücksetzen bei:";
+"Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";

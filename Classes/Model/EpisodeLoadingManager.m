@@ -136,7 +136,7 @@ static const NSInteger kEpisodeBatchSize = 20;
 
     [self _saveLoadingState];
 
-    NSLog(@"EpisodeLoadingManager: Cancelled all loading (%lu feeds)", (unsigned long)feedURLs.count);
+    DebugLog(@"EpisodeLoadingManager: Cancelled all loading (%lu feeds)", (unsigned long)feedURLs.count);
 }
 
 - (BOOL)isLoadingFeed:(CDFeed*)feed

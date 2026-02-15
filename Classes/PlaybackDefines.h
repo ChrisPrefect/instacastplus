@@ -30,7 +30,7 @@ enum {
     PlaybackStopTime3min    = 3,
     PlaybackStopTime5min    = 5,
     PlaybackStopTime10min   = 10,
-    //PlaybackStopTime15min   = 15,
+    PlaybackStopTime15min   = 15,
     PlaybackStopTime20min   = 20,
     PlaybackStopTime30min   = 30,
     PlaybackStopTime60min   = 60

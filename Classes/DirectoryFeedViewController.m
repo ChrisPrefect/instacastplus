@@ -18,12 +18,10 @@
 #import "UIImageView+BorderedImage.h"
 
 #import "VDModalInfo.h"
-#import "JCommand.h"
 #import "PlaybackViewController.h"
 #import "PlayerController.h"
 #import "STITunesStore.h"
 #import "UIViewController+ShowNotes.h"
-#import "JCommand.h"
 #import "ICImageCacheOperation.h"
 
 
@@ -491,7 +489,6 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void) _startParsingITunesURL:(NSURL*)url
 {
 	[App retainNetworkActivity];
-	DebugLog(@"parse iTunes URL");
 	self.scraper = [ICFeedURLScraper feedURLScraperWithURL:url];
 	self.scraper.delegate = self;
 	[[App mainQueue] addOperation:self.scraper];
@@ -500,14 +497,12 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void) _startParsingFeedURL:(NSURL*)url
 {
 	[App retainNetworkActivity];
-	DebugLog(@"parse Feed URL");
-    
+
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
     parser.didParseFeedBlock = ^(ICFeed* feed) {
         [App releaseNetworkActivity];
         
-        DebugLog(@"feed parser finished");
         self.feedParser = nil;
         
         [self _showLoadingDialog:NO];
@@ -550,8 +545,6 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 {
 	[App releaseNetworkActivity];
     self.feedURL = url;
-	DebugLog(@"scraper finished: %@", [url absoluteString]);
-    
     [self _startParsingFeedURL:url];
 }
 
@@ -739,7 +732,6 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     
     if ([[url scheme] isEqualToString:@"delegate"])
     {
-        DebugLog(@"%@", url);
         NSString* command = [url host];
         
         
@@ -765,15 +757,12 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             };
             
             parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
-                
-                DebugLog(@"a");
                 self.feed = parserFeed;
                 [self _prepareViewWhenFeedLoaded];
                 [self _showLoadingDialog:NO];
             };
             
             parser.didEndWithError = ^(NSError* error) {
-                DebugLog(@"a");
                 [self _showLoadingDialog:NO];
             };
             

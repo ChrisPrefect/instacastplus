@@ -159,7 +159,6 @@
 	NSURL *tweetbotURL = [NSURL URLWithString:[NSString stringWithFormat:@"tweetbot:///post?text=%@", escapedMessage]];
 	if ([app canOpenURL:tweetbotURL])
 	{
-        DebugLog(@"%@", [tweetbotURL description]);
 		[app openURL:tweetbotURL options:@{} completionHandler:nil];
 		return;
 	}

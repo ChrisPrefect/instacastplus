@@ -79,6 +79,7 @@ enum {
 @property (nonatomic, readwrite, strong) AVPlayer* player;
 @property (readwrite, strong) PlayerView* playerView;
 @property (nonatomic, readwrite, strong) NSDate* lastPauseDate;
+@property (nonatomic, readwrite, strong) NSDate* playStartDate;
 
 @property (nonatomic) BOOL changingEpisode;
 @property (nonatomic) BOOL changingPosition;
@@ -1051,6 +1052,9 @@ enum {
                         [weakSelf close];
 
                         self->_changingPosition = YES;
+                        if (!episode.consumed) {
+                            [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
+                        }
                         episode.consumed = YES;
                         episode.position = 0;
 
@@ -1185,6 +1189,9 @@ enum {
     [self.player pause];
     [self close];
     _changingPosition = YES;
+    if (!episode.consumed) {
+        [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
+    }
     episode.consumed = YES;
     episode.position = 0;
     [DMANAGER setEpisode:episode position:(double)dur];
@@ -1206,6 +1213,9 @@ enum {
     if (episode && [self time] > [self duration] - 10)
     {
         _changingPosition = YES;
+        if (!episode.consumed) {
+            [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
+        }
         episode.consumed = YES;
         episode.position = 0;
         _changingPosition = NO;
@@ -1486,7 +1496,8 @@ enum {
 		default:
 			break;
 	}
-    
+
+    self.playStartDate = [NSDate date];
 	SEND_UPDATE
 }
 
@@ -1496,10 +1507,20 @@ enum {
     {
         [self.player pause];
         self.lastPauseDate = [NSDate date];
-        
+
+        // Track cumulative listening time
+        if (self.playStartDate) {
+            NSTimeInterval delta = [self.lastPauseDate timeIntervalSinceDate:self.playStartDate];
+            if (delta > 0) {
+                double total = [USER_DEFAULTS doubleForKey:@"TotalListeningTime"];
+                [USER_DEFAULTS setDouble:total + delta forKey:@"TotalListeningTime"];
+            }
+            self.playStartDate = nil;
+        }
+
         // prevent starting auto-playback when playthrough available
         self.state = RunningState;
-        
+
         [self _saveCurrentPlaybackPosition];
         SEND_UPDATE
     }

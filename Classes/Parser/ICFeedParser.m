@@ -172,8 +172,6 @@ start:
 	
 
 	NSURL* requestURL = [self.url URLByDeletingUsernameAndPassword];
-    DebugLog(@"parse %@", [requestURL absoluteString]);
-    
     // make sure we have http urls
     if (![[requestURL scheme] caseInsensitiveEquals:@"http"] && ![[requestURL scheme] caseInsensitiveEquals:@"https"]) {
 		NSString* scheme = [requestURL scheme];
@@ -279,11 +277,8 @@ start:
     
 	
     NSString* dataHash = [feedData MD5Hash];
-    //DebugLog(@"%@ %@", self.dataHash, dataHash);
-    
     if (self.dataHash && [self.dataHash isEqualToString:dataHash])
     {
-        DebugLog(@"same data hash: %@", self.url);
         if (async) {
             [self performSelectorOnMainThread:@selector(_sendDidParseFeedToDelegate:) withObject:nil waitUntilDone:NO];
         }
@@ -404,8 +399,6 @@ parse:
                     NSString* rel = [alternate objectForKey:@"rel"];
                     if ([rel caseInsensitiveEquals:@"alternate"]) {
                         NSURL* alternateURL = [NSURL URLWithInsecureString:[alternate objectForKey:@"href"]];
-                        
-                        DebugLog(@"parse alternate %@", alternateURL);
                         
                         self.xmlPath = @"/";
                         [_elementAttributes removeAllObjects];

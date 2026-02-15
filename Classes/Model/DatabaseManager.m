@@ -674,7 +674,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
        
         NSError* error;
         if (![self.objectContext save:&error] ) {
-            NSLog(@"Error saving context: %@", error.localizedDescription);
+            ErrLog(@"Error saving context: %@", error.localizedDescription);
         }
         else {
             [self.persistentContainer.viewContext processPendingChanges];
@@ -1629,7 +1629,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     _persistentContainer.persistentStoreDescriptions = @[storeDescription];
     [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
         if (error) {
-            NSLog(@"Unresolved error %@, %@", error, error.userInfo);
+            ErrLog(@"Unresolved error %@, %@", error, error.userInfo);
             abort();
         }
     }];
@@ -1643,7 +1643,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     if ([self.objectContext save:&error]) {
         [self.objectContext refreshAllObjects];
     } else {
-        NSLog(@"Failed to save context: %@", error.localizedDescription);
+        ErrLog(@"Failed to save context: %@", error.localizedDescription);
     }
 }
 

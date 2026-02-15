@@ -140,8 +140,6 @@
     NSBeep();
     NSInteger result = [NSApp runModalForWindow:self.windowController.window];
     
-    DebugLog(@"auth result %ld", result);
-    
     if (result == 1) {
         if (completion) {
             completion(NO, nil, nil);

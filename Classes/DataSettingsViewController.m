@@ -8,6 +8,7 @@
 #import "MediaFilesViewController.h"
 #import "ValuesTableViewController.h"
 #import "InstacastAppDelegate.h"
+#import "DonationViewController.h"
 
 typedef NS_ENUM(NSInteger, DataSettingsSections) {
     kLimitSettingSection = 0,
@@ -119,7 +120,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case kDownloadedFilesButton:
             return 1;
         case kStatisticsSection:
-            return 5;
+            return 9;
         default:
             break;
     }
@@ -277,15 +278,60 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 break;
             }
             case 3: {
+                cell.textLabel.text = @"Episodes Played".ls;
+                NSInteger count = [USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"];
+                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                break;
+            }
+            case 4: {
+                cell.textLabel.text = @"Time Listened".ls;
+                double totalSeconds = [USER_DEFAULTS doubleForKey:@"TotalListeningTime"];
+                NSInteger hours = (NSInteger)(totalSeconds / 3600);
+                NSInteger minutes = ((NSInteger)totalSeconds % 3600) / 60;
+                if (hours > 0) {
+                    cell.detailTextLabel.text = [NSString stringWithFormat:@"%ldh %ldm", (long)hours, (long)minutes];
+                } else {
+                    cell.detailTextLabel.text = [NSString stringWithFormat:@"%ldm", (long)minutes];
+                }
+                break;
+            }
+            case 5: {
                 cell.textLabel.text = @"Total Downloaded".ls;
                 NSUInteger count = [[CacheManager sharedCacheManager].cachedEpisodes count];
                 cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
                 break;
             }
-            case 4: {
+            case 6: {
                 cell.textLabel.text = @"Storage Used".ls;
                 unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
                 cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+                break;
+            }
+            case 7: {
+                cell.textLabel.text = @"Fell Asleep with Timer".ls;
+                NSInteger count = [USER_DEFAULTS integerForKey:@"SleepTimerFellAsleepCount"];
+                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                break;
+            }
+            case 8: {
+                cell.textLabel.text = @"Donated to InstacastPlus".ls;
+                NSArray *history = [USER_DEFAULTS arrayForKey:@"DonationHistory"];
+                double totalDonated = 0;
+                NSString *currency = @"USD";
+                for (NSDictionary *entry in history) {
+                    totalDonated += [entry[@"amount"] doubleValue];
+                    if (entry[@"currency"]) currency = entry[@"currency"];
+                }
+                if (totalDonated > 0) {
+                    NSNumberFormatter *currencyFormatter = [[NSNumberFormatter alloc] init];
+                    currencyFormatter.numberStyle = NSNumberFormatterCurrencyStyle;
+                    currencyFormatter.currencyCode = currency;
+                    cell.detailTextLabel.text = [currencyFormatter stringFromNumber:@(totalDonated)];
+                } else {
+                    cell.detailTextLabel.text = @"—";
+                }
+                cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
                 break;
             }
             default:
@@ -416,6 +462,11 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     else if (indexPath.section == kDownloadedFilesButton)
     {
         MediaFilesViewController* controller = [MediaFilesViewController viewController];
+        [self.navigationController pushViewController:controller animated:YES];
+    }
+    else if (indexPath.section == kStatisticsSection && indexPath.row == 8)
+    {
+        DonationViewController* controller = [DonationViewController viewController];
         [self.navigationController pushViewController:controller animated:YES];
     }
 }

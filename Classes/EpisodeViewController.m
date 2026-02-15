@@ -394,10 +394,10 @@
                     [[UIApplication sharedApplication] openURL:fileURL options:@{} completionHandler:nil];
                 }
             } else {
-                NSLog(@"Error writing HTML to file: %@", writeError.localizedDescription);
+                ErrLog(@"Error writing HTML to file: %@", writeError.localizedDescription);
             }
         } else {
-            NSLog(@"Error getting HTML content: %@", error.localizedDescription);
+            ErrLog(@"Error getting HTML content: %@", error.localizedDescription);
         }
     }];
 }
@@ -581,6 +581,7 @@
     self.timeLabel.textColor = ICMutedTextColor;
     self.sharedWebView.backgroundColor = ICBackgroundColor;
     self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
+    self.sharedWebView.scrollView.indicatorStyle = [[ICAppearanceManager sharedManager] appearance].scrollIndicatorStyle;
 
     // Navigation bar opaque with backgroundImage (backgroundColor alone doesn't disable Liquid Glass on iOS 26)
     UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];

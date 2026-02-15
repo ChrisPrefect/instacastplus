@@ -12,6 +12,7 @@
 
 #import "FeedViewController.h"
 
+#import "ICShareItem.h"
 #import "UIViewController+ShowNotes.h"
 #import "STITunesStore.h"
 #import "VDModalInfo.h"
@@ -297,10 +298,9 @@
             components.user = self.feed.username;
             components.password = self.feed.password;
             NSURL* feedURL = components.URL;
-            NSMutableArray* items = [NSMutableArray arrayWithObject:feedURL];
             UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-            if (feedImage) [items insertObject:feedImage atIndex:0];
-            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+            ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
+            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
             if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
                 shareController.popoverPresentationController.barButtonItem = sender;
             }
@@ -309,10 +309,9 @@
         [alert addAction:[UIAlertAction actionWithTitle:@"Without Credentials".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
             STRONG_SELF
             NSURL* feedURL = [self.feed sourceURLAsPcastURL];
-            NSMutableArray* items = [NSMutableArray arrayWithObject:feedURL];
             UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-            if (feedImage) [items insertObject:feedImage atIndex:0];
-            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+            ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
+            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
             if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
                 shareController.popoverPresentationController.barButtonItem = sender;
             }
@@ -329,10 +328,9 @@
     else
     {
         NSURL* feedURL = [self.feed sourceURLAsPcastURL];
-        NSMutableArray* items = [NSMutableArray arrayWithObject:feedURL];
         UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-        if (feedImage) [items insertObject:feedImage atIndex:0];
-        UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:items applicationActivities:nil];
+        ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
+        UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
         if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
             shareController.popoverPresentationController.barButtonItem = sender;
         }

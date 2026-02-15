@@ -26,8 +26,6 @@
     [super viewDidLoad];
     
     // Register a basic cell class
-    NSLog(@"CHAPTER KEY====%@",self.chapterKey);
-    NSLog(@"FEED UID====%@",self.feed.uid);
     [self.tableView registerNib:[UINib nibWithNibName:@"SkipTimeCell" bundle:nil] forCellReuseIdentifier:@"SkipTimeCell"];
     //[self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:@"Cell"];
     self.navigationItem.title =  self.feed.title;
@@ -90,8 +88,6 @@
         [self configureStepper:cell.stepperView forStart:NO];
     }
     
-    //NSLog(@"Cell titleLabel color after configuration: %@", cell.titleLbl.textColor);
-    
     return cell;
 }
 
@@ -125,8 +121,6 @@
         [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", self.feed.uid, self.chapterKey];
 
     double newValue = sender.value;
-    //NSLog(@"Stepper value changed to: %.1f for key: %@", newValue, key);
-
     if (self.feed) {
         [[self source] setDouble:newValue forKey:key];
     }

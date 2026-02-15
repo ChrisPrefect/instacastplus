@@ -323,10 +323,10 @@ enum {
 
 - (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section {
     if (section == kOptionsSectionMain) {
-        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 120)];
+        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 170)];
         footerView.backgroundColor = [UIColor clearColor];
 
-        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 120)];
+        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 170)];
         footerLabel.numberOfLines = 0;
         footerLabel.textAlignment = NSTextAlignmentLeft;
         [footerLabel setTextColor:[UIColor grayColor]];
@@ -342,7 +342,7 @@ enum {
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
     if (section == kOptionsSectionMain) {
-        return 120;
+        return 170;
     }
     return 0.0f;
 }

@@ -11,7 +11,6 @@
 #import <UserNotifications/UserNotifications.h>
 #import <CarPlay/CarPlay.h>
 
-#import "Test.h"
 #import "InstacastAppDelegate.h"
 #import "UIManager.h"
 #import "CDEpisode+ShowNotes.h"
@@ -20,7 +19,6 @@
 
 #import "VDModalInfo.h"
 #import "ICFeedParser.h"
-#import "JCommand.h"
 #import "SubscriptionManager.h"
 #import "UtilityFunctions.h"
 #import "FeedEpisodeExtraction.h"
@@ -127,7 +125,6 @@
     [App initializeLoggers];
 
     if ([DatabaseManager dataStoreNeedsMigration]) {
-        DebugLog(@"migration needed!");
         UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
         self.window.rootViewController = migrationViewController;
         [self performSelector:@selector(_startUpApplicationWithLaunchOptions:) withObject:launchOptions afterDelay:0.1];
@@ -199,7 +196,7 @@
 
 -(void)applicationDidTimeout:(NSNotification *) notif
 {
-    NSLog (@"Intelligent Sleep Time exceeded!!");
+    DebugLog(@"Intelligent Sleep Time exceeded");
 }
 
 - (void) _startUpApplicationWithLaunchOptions:(NSDictionary *)launchOptions
@@ -256,56 +253,30 @@
     {
         self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
         [self.mInfo show];
-        
-        /*NSData* opmlData = [NSData dataWithContentsOfURL:url];
-        [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-            [self.mInfo close];
-            self.mInfo = nil;
-        }];*/ //OLD to New
-        
-        /*BOOL access = [url startAccessingSecurityScopedResource];
-        if (access) {
-            NSData* opmlData = [NSData dataWithContentsOfURL:url];
-            if (opmlData) {
-                [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                }];
-            } else {
-                NSLog(@"Failed to read OPML data from URL: %@", url);
-                [self.mInfo close];
-                self.mInfo = nil;
-            }
-            [url stopAccessingSecurityScopedResource];
-        } else {
-            NSLog(@"Failed to access security-scoped resource for URL: %@", url);
-            [self.mInfo close];
-            self.mInfo = nil;
-        }*/
-        
+
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             BOOL accessGranted = [url startAccessingSecurityScopedResource];
             if (!accessGranted) {
-                NSLog(@"Failed to access secure file");
+                ErrLog(@"Failed to access secure file");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
                     self.mInfo = nil;
                 });
                 return;
             }
-            
+
             NSData *opmlData = [NSData dataWithContentsOfURL:url];
             [url stopAccessingSecurityScopedResource];
-            
+
             if (!opmlData || opmlData.length == 0) {
-                NSLog(@"Invalid OPML data");
+                ErrLog(@"Invalid OPML data");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
                     self.mInfo = nil;
                 });
                 return;
             }
-            
+
             [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
@@ -313,17 +284,13 @@
                 });
             } progress:^(float progress) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    // Update UI here (e.g., progress bar or label)
-                    NSLog(@"Import progress: %.2f%%", progress * 100);
                     if ((progress * 100) > 3)
                     {
                         [self.mInfo setProgress:progress];
                     }
-                    //self.mInfo.textLabel.text  = [NSString stringWithFormat:@"Importing..\n%.0f%%", progress * 100];; // Example
                 });
             }];
         });
-        //New End
     }
     
     else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
@@ -338,7 +305,7 @@
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 BOOL accessGranted = [url startAccessingSecurityScopedResource];
                 if (!accessGranted) {
-                    NSLog(@"Failed to access security-scoped URL: %@", url);
+                    ErrLog(@"Failed to access security-scoped URL: %@", url);
                     return;
                 }
                 
@@ -346,13 +313,13 @@
                 [url stopAccessingSecurityScopedResource];
                 
                 if (!xpffData || xpffData.length == 0) {
-                    NSLog(@"XPFF file appears to be empty or unreadable: %@", url);
+                    ErrLog(@"XPFF file appears to be empty or unreadable: %@", url);
                     return;
                 }
                 
                 XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
                     if (error) {
-                        NSLog(@"Failed to import XPFF: %@", error.localizedDescription);
+                        ErrLog(@"Failed to import XPFF: %@", error.localizedDescription);
                         return;
                     }
                     
@@ -390,8 +357,6 @@
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
         }
 
-        //self.mainViewController.alertController = alert;
-        //[self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
         UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
         UIViewController *rootVC = keyWindow.rootViewController;
         [rootVC presentViewController:alert animated:YES completion:nil];
@@ -410,57 +375,30 @@
     {
         self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
         [self.mInfo show];
-        
-        /*NSData* opmlData = [NSData dataWithContentsOfURL:url];
-        [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-            [self.mInfo close];
-            self.mInfo = nil;
-        }];*/ //OLD to New
-        
-        /*BOOL access = [url startAccessingSecurityScopedResource];
-        if (access) {
-            NSData* opmlData = [NSData dataWithContentsOfURL:url];
-            if (opmlData) {
-                [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                }];
-            } else {
-                NSLog(@"Failed to read OPML data from URL: %@", url);
-                [self.mInfo close];
-                self.mInfo = nil;
-            }
-            [url stopAccessingSecurityScopedResource];
-        } else {
-            NSLog(@"Failed to access security-scoped resource for URL: %@", url);
-            [self.mInfo close];
-            self.mInfo = nil;
-        }*/
-        
+
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
             BOOL accessGranted = [url startAccessingSecurityScopedResource];
             if (!accessGranted) {
-                NSLog(@"Failed to access secure file");
+                ErrLog(@"Failed to access secure file");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
                     self.mInfo = nil;
                 });
                 return;
             }
-            
+
             NSData *opmlData = [NSData dataWithContentsOfURL:url];
             [url stopAccessingSecurityScopedResource];
-            
+
             if (!opmlData || opmlData.length == 0) {
-                NSLog(@"Invalid OPML data");
+                ErrLog(@"Invalid OPML data");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
                     self.mInfo = nil;
                 });
                 return;
             }
-            
-            
+
             [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
@@ -468,19 +406,15 @@
                 });
             } progress:^(float progress) {
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    // Update UI here (e.g., progress bar or label)
-                    NSLog(@"Import progress: %.2f%%", progress * 100);
                     if ((progress * 100) > 3)
                     {
                         [self.mInfo setProgress:progress];
                     }
-                    //self.mInfo.textLabel.text  = [NSString stringWithFormat:@"Importing..\n%.0f%%", progress * 100];; // Example
                 });
             }];
         });
-        //New End
     }
-    
+
     else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
     {
         NSString* filename = [[url path] lastPathComponent];
@@ -493,7 +427,7 @@
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 BOOL accessGranted = [url startAccessingSecurityScopedResource];
                 if (!accessGranted) {
-                    NSLog(@"Failed to access security-scoped URL: %@", url);
+                    ErrLog(@"Failed to access security-scoped URL: %@", url);
                     return;
                 }
                 
@@ -501,13 +435,13 @@
                 [url stopAccessingSecurityScopedResource];
                 
                 if (!xpffData || xpffData.length == 0) {
-                    NSLog(@"XPFF file appears to be empty or unreadable: %@", url);
+                    ErrLog(@"XPFF file appears to be empty or unreadable: %@", url);
                     return;
                 }
                 
                 XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
                     if (error) {
-                        NSLog(@"Failed to import XPFF: %@", error.localizedDescription);
+                        ErrLog(@"Failed to import XPFF: %@", error.localizedDescription);
                         return;
                     }
                     
@@ -545,8 +479,6 @@
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
         }
 
-        //self.mainViewController.alertController = alert;
-        //[self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
         UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
         UIViewController *rootVC = keyWindow.rootViewController;
         [rootVC presentViewController:alert animated:YES completion:nil];
@@ -618,7 +550,6 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 - (void)application:(UIApplication *)application didRegisterUserNotificationSettings:(UIUserNotificationSettings *)notificationSettings
 {
-    DebugLog(@"didRegisterUserNotificationSettings %@", notificationSettings);
     // Notification already posted in the modern requestAuthorizationWithOptions completion handler
 }
 #pragma clang diagnostic pop
@@ -657,8 +588,6 @@
 
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult result))handler
 {
-    DebugLog(@"remote notification: %@", userInfo);
-
     // Handle CloudKit notifications
     if (userInfo[@"ck"] && [USER_DEFAULTS boolForKey:iCloudSyncEnabled]) {
         [[ICCloudSyncManager sharedManager] handleRemoteNotificationWithUserInfo:userInfo];
@@ -781,7 +710,6 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         // return immediately if there's no internet
         if (App.networkAccessTechnology < kICNetworkAccessTechnlogyEDGE) {
-            DebugLog(@"no network available to fetch in background");
             completionHandler(UIBackgroundFetchResultFailed);
             return;
         }
@@ -799,8 +727,6 @@
         for(CDFeed* feed in sortedSubscriptions)
         {
             [firstSubscriptions addObject:feed];
-            DebugLog(@"'background fetch %@'", feed.title);
-            
             i++;
             if (i>=MAX_SUBSCRIPTIONS_TO_FETCH) {
                 break;

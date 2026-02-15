@@ -261,8 +261,6 @@ static void ICClearAllTranscriptCache(void)
     }
     
     
-	//NSInteger rem = [App backgroundTimeRemaining];
-	//DebugLog(@"backgroundTimeRemaining %d:%02d", rem/60, rem%60);
 	if (!_flags.supressSendUpdate) {
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidUpdateNotification object:self];
     }
@@ -378,12 +376,10 @@ static void ICClearAllTranscriptCache(void)
 {
 	// check if it is not already cached
 	if ([self episodeIsCached:episode]) {
-		//NSLog(@"episode '%@' is already cached", episode.title);
 		return NO;
 	}
 	
 	if ([self isCachingSourceOfEpisode:episode]) {
-		//NSLog(@"already caching source of episode '%@'", episode.title);
 		return NO;
 	}
 
@@ -392,8 +388,6 @@ static void ICClearAllTranscriptCache(void)
 		return NO;
 	}
     
-    //NSLog(@"download episode '%@' (url: %@)", episode, [url absoluteString]);
-	
 	CDMedium* media = [episode preferedMedium];
 	CDFeed* feed = episode.feed;
 #if TARGET_OS_IPHONE
@@ -1199,11 +1193,6 @@ static void ICClearAllTranscriptCache(void)
 			break;
 		}
 	}
-#ifdef DEBUG
-    if (removed > 0) {
-        NSLog(@"tidyup (removed %ld images)", (long)removed);
-    }
-#endif
     
     NSInteger removed_episodes = 0;
     // checking for part files that are left over (limit to 50 files per run for performance)
@@ -1225,11 +1214,6 @@ static void ICClearAllTranscriptCache(void)
             if (episodeFilesChecked >= 50) break;
         }
     }
-#ifdef DEBUG
-    if (removed_episodes > 0) {
-        NSLog(@"tidyup (removed %ld episode files)", (long)removed_episodes);
-    }
-#endif
     _downloadedBytes = 0;
 }
 
@@ -1496,8 +1480,6 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
     }
 
     [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidClearCacheNotification object:self];
-    //DebugLog(@"%@", loadedEpisodes);
-
 }
 
 #pragma mark - NSURLSession

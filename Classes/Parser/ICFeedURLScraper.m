@@ -107,7 +107,6 @@
                 gotoURLString = [gotoURLString stringByReplacingOccurrencesOfString:@"&amp;" withString:@"&"];
                 
                 if ([urlCache objectForKey:gotoURLString]) {
-                    DebugLog(@"relocation loop");
                     break;
                 }
                 
@@ -125,7 +124,6 @@
                 if (iTunesUSubscribePathURLString)
                 {                        
                     if ([urlCache objectForKey:iTunesUSubscribePathURLString]) {
-                        DebugLog(@"relocation loop");
                         break;
                     }
                     
@@ -170,7 +168,6 @@
         
 		if (feedURLString) {
 			feedURLString = [feedURLString stringByDecodingHTMLEntities];
-			DebugLog(@"result %@", feedURLString);
 			NSURL* resultURL = [NSURL URLWithString:feedURLString];
             
 			if (async) {

@@ -399,16 +399,17 @@
         } afterDelay:0.1];
     }];
     
-    /*UIAlertAction *value15Btn = [UIAlertAction actionWithTitle:@"15 Minutes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    UIAlertAction *value15Btn = [UIAlertAction actionWithTitle:@"15 Minutes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
         [self perform:^(id sender) {
+            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime15min forKey:DefaultIntelligentSleepTimer];
+            [USER_DEFAULTS setInteger:PlaybackStopTime15min forKey:LastSelectedSleepTimer];
             [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime15min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
     }];
-    [alert addAction:value15Btn];*/
     
     value20Btn = [UIAlertAction actionWithTitle:@"20 Minutes".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
@@ -448,6 +449,7 @@
     [alert addAction:value60Btn];
     [alert addAction:value30Btn];
     [alert addAction:value20Btn];
+    [alert addAction:value15Btn];
     [alert addAction:value10Btn];
     [alert addAction:value5Btn];
     [alert addAction:value3Btn];

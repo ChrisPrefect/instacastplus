@@ -733,7 +733,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     [self didChangeValueForKey:@"timerRemainingTime"];
 
     NSDate* now = [NSDate date];
-    if ([self.stopDate earlierDate:now] == self.stopDate)
+    if (self.stopDate && [self.stopDate earlierDate:now] == self.stopDate)
     {
         [self.playbackTimer invalidate];
         self.playbackTimer = nil;
@@ -762,6 +762,9 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
                 }
             }
             [[PlaybackManager playbackManager] pause];
+            // Track fell asleep count
+            NSInteger fellAsleepCount = [USER_DEFAULTS integerForKey:@"SleepTimerFellAsleepCount"];
+            [USER_DEFAULTS setInteger:fellAsleepCount + 1 forKey:@"SleepTimerFellAsleepCount"];
             [self stopSilentPlayback]; // Sleep timer stop should not keep app alive
             self.playerWasPlayingBeforeWentToBackground = NO;
             [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;

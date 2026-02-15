@@ -718,7 +718,7 @@ API_AVAILABLE(ios(14.0)){
     NSString* appIconName = [NSString stringWithFormat:@"AppIcon-%ld", (long)(indexPath.item + 1)];
     [[UIApplication sharedApplication] setAlternateIconName:appIconName completionHandler:^(NSError * _Nullable error) {
         if (error != nil) {
-            NSLog(@"Error===%@", error.localizedDescription);
+            ErrLog(@"setAlternateIconName error: %@", error.localizedDescription);
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             [collectionView reloadData];

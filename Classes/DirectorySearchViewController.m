@@ -1206,7 +1206,6 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 - (void) itunesStore:(STITunesStore*)store didFindSearchResults:(NSArray*)theSearchResults
 {
-	DebugLog(@"itunesStore end %lu", (unsigned long)[theSearchResults count]);
 	self.searchResults = theSearchResults;
 	self.store = nil;
 

@@ -654,7 +654,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     if (textField.tag == 555)
     {
-        NSLog(@"Player Color: %@", textField.text);
         [textField resignFirstResponder];
         if (textField.text.length == 6 || textField.text.length == 7)
         {
@@ -670,7 +669,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     }
     else if (textField.tag == 777)
     {
-        NSLog(@"Interface Color: %@", textField.text);
         [textField resignFirstResponder];
         if (textField.text.length == 6 || textField.text.length == 7)
         {
@@ -813,8 +811,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 
 -(void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)viewController
 API_AVAILABLE(ios(14.0)){
-    NSLog(@"COLOR PICKER DID FINISH");
-    //DEVD TO DO
     if (self->isPlayerColorSelected)
     {
         if (self->selectedPlayerColor)
@@ -1214,12 +1210,9 @@ API_AVAILABLE(ios(14.0)){
 - (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath
 {
     NSString* appIconName = [NSString stringWithFormat:@"AppIcon-%ld", (long)(indexPath.item + 1)];
-    NSLog(@"AppIconName===%@",appIconName);
     [[UIApplication sharedApplication] setAlternateIconName:appIconName completionHandler:^(NSError * _Nullable error) {
         if (error != nil){
-            NSLog(@"Error===%@",error.localizedDescription);
-        } else {
-            NSLog(@"Success! - APP ICON UPDATED");
+            ErrLog(@"setAlternateIconName error: %@", error.localizedDescription);
         }
     }];
 }

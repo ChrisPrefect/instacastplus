@@ -218,7 +218,6 @@ static CGImageRef CreateScaledCGImageFromCGImage(CGImageRef image, CGFloat maxSi
             break;
         }
         else {
-            DebugLog(@"fail");
         }
     }
 #endif

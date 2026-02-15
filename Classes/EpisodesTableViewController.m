@@ -984,6 +984,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 STRONG_SELF
                                                 [self perform:^(id sender) {
                                                     foreachSelectedEpisode(^(CDEpisode* episode){
+                                                        if (!episode.consumed) {
+                                                            [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
+                                                        }
                                                         episode.consumed = YES;
                                                     });
                                                     PlaySoundFile(@"AffirmIn", NO);
@@ -1242,7 +1245,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     // Return the number of rows in the section.
 	if (section == 0) {
-        //NSLog(@"number of rows in section==%lu", [self.episodes count]);
 		return [self.episodes count];
 	}
     
@@ -1286,8 +1288,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     cell.tintColor = self.view.tintColor;
     
     CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
-    
-    //NSLog(@"feed uid: %@ %@ %d %d", episode.feed.uid, episode.feed.sourceURL, episode.feed.subscribed, episode.feed.parked);
     
     cell.objectValue = episode;
     cell.playAccessoryButton.userInfo = episode;
@@ -1399,7 +1399,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 //-(void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath
 //{
-//    NSLog(@"willDisplayCell called for row: %ld", (long)indexPath.row);
 //    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
 //        EpisodesTableViewCell *customCell = (EpisodesTableViewCell *)cell;
 //        [customCell startProgressUpdate];

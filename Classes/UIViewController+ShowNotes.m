@@ -37,8 +37,6 @@
 	}
 
 	if ([url host] && [[url host] rangeOfString:@"twitter"].location != NSNotFound) {
-        DebugLog(@"twitter link %@", urlString);
-
         if ([TwitterHelper handleTwitterURL:url]) {
             return NO;
         }

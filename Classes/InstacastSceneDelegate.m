@@ -17,7 +17,6 @@
 #import <Accounts/Accounts.h>
 
 
-#import "Test.h"
 #import "UIManager.h"
 #import "CDEpisode+ShowNotes.h"
 
@@ -25,7 +24,6 @@
 
 #import "VDModalInfo.h"
 #import "ICFeedParser.h"
-#import "JCommand.h"
 #import "UtilityFunctions.h"
 #import "FeedEpisodeExtraction.h"
 #import "XPFF.h"
@@ -130,7 +128,6 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
     for (UIOpenURLContext *context in URLContexts) {
         NSURL *url = context.URL;
-        NSLog(@"SceneDelegate opened file: %@", url);
         NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
         
         if ([subscribeSchemes containsObject:[url scheme]]) {
@@ -140,38 +137,12 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
         {
             self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
             [self.mInfo show];
-            
-            /*NSData* opmlData = [NSData dataWithContentsOfURL:url];
-            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-                [self.mInfo close];
-                self.mInfo = nil;
-            }];*/ //OLD to New
-            
-            /*BOOL access = [url startAccessingSecurityScopedResource];
-            if (access) {
-                NSData* opmlData = [NSData dataWithContentsOfURL:url];
-                if (opmlData) {
-                    [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-                        [self.mInfo close];
-                        self.mInfo = nil;
-                    }];
-                } else {
-                    NSLog(@"Failed to read OPML data from URL: %@", url);
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                }
-                [url stopAccessingSecurityScopedResource];
-            } else {
-                NSLog(@"Failed to access security-scoped resource for URL: %@", url);
-                [self.mInfo close];
-                self.mInfo = nil;
-            }*/
-            
+
             __weak typeof(self) weakSelf = self;
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 BOOL accessGranted = [url startAccessingSecurityScopedResource];
                 if (!accessGranted) {
-                    NSLog(@"Failed to access secure file");
+                    ErrLog(@"Failed to access secure file");
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [weakSelf.mInfo close];
                         weakSelf.mInfo = nil;
@@ -183,7 +154,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
                 [url stopAccessingSecurityScopedResource];
 
                 if (!opmlData || opmlData.length == 0) {
-                    NSLog(@"Invalid OPML data");
+                    ErrLog(@"Invalid OPML data");
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [weakSelf.mInfo close];
                         weakSelf.mInfo = nil;
@@ -198,8 +169,6 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
                     });
                 } progress:^(float progress) {
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        // Update UI here (e.g., progress bar or label)
-                        NSLog(@"Import progress: %.2f%%", progress * 100);
                         if ((progress * 100) > 3)
                         {
                             [weakSelf.mInfo setProgress:progress];
@@ -207,62 +176,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
                     });
                 }];
             });
-            //New End
         }
-        
-        /*else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
-        {
-            NSString* filename = [[url path] lastPathComponent];
-            
-            WEAK_SELF
-            UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Import Bookmarks".ls message:[NSString stringWithFormat:@"Do you want to import bookmarks from '%@'?".ls, filename] preferredStyle:UIAlertControllerStyleAlert];
-            
-            [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
-                STRONG_SELF
-                [self perform:^(id sender) {
-                    
-                    NSData* xpffData = [NSData dataWithContentsOfURL:url];
-                    
-                    XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
-                        
-                        for(CDBookmark* bookmark in bookmarks) {
-                            [DMANAGER addBookmark:bookmark];
-                        }
-                        
-                        [DMANAGER save];
-                        
-                        BookmarksTableViewController* bookmarksController = (BookmarksTableViewController*)((MainViewController_4*)self.mainViewController).contentViewController;
-                        if ([bookmarksController isKindOfClass:[BookmarksTableViewController class]]) {
-                            [bookmarksController reload];
-                        }
-                    });
-                    
-                } afterDelay:0.3];
-                self.mainViewController.alertController = nil;
-            }]];
-            
-            [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
-                STRONG_SELF
-                self.mainViewController.alertController = nil;
-            }]];
-            
-            [alert setModalPresentationStyle:UIModalPresentationPopover];
-            UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-            UIViewController* rootViewController = [self getRootViewControllerDev];
-            popPresenter.sourceView = [rootViewController view];
-            popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-            popPresenter.permittedArrowDirections = 0;
-            if ([ICAppearanceManager sharedManager].nightSettingMode)
-            {
-                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-            }
-            else
-            {
-                alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-            }
-            self.mainViewController.alertController = alert;
-            [self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
-        }*/ //Old to New
         else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
         {
             NSString* filename = [[url path] lastPathComponent];
@@ -275,21 +189,21 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
                 dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                     BOOL accessGranted = [url startAccessingSecurityScopedResource];
                     if (!accessGranted) {
-                        NSLog(@"Failed to access security-scoped URL: %@", url);
+                        ErrLog(@"Failed to access security-scoped URL: %@", url);
                         return;
                     }
-                    
+
                     NSData* xpffData = [NSData dataWithContentsOfURL:url];
                     [url stopAccessingSecurityScopedResource];
-                    
+
                     if (!xpffData || xpffData.length == 0) {
-                        NSLog(@"XPFF file appears to be empty or unreadable: %@", url);
+                        ErrLog(@"XPFF file appears to be empty or unreadable: %@", url);
                         return;
                     }
-                    
+
                     XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
                         if (error) {
-                            NSLog(@"Failed to import XPFF: %@", error.localizedDescription);
+                            ErrLog(@"Failed to import XPFF: %@", error.localizedDescription);
                             return;
                         }
                         
@@ -326,8 +240,6 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
                 alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
             }
             
-            //self.mainViewController.alertController = alert;
-            //[self.mainViewController presentAlertControllerAnimated:YES completion:NULL];
             UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
             UIViewController *rootVC = keyWindow.rootViewController;
             [rootVC presentViewController:alert animated:YES completion:nil];
@@ -363,7 +275,6 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
-    [self showDonatePopupAfterDelay:300];
 }
 
 
@@ -1948,10 +1859,8 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     for (SKPaymentTransaction *transaction in transactions) {
         switch (transaction.transactionState) {
             case SKPaymentTransactionStatePurchasing:
-                NSLog(@"Purchasing===%@",transaction.payment.productIdentifier);
                 break;
             case SKPaymentTransactionStatePurchased:
-                NSLog(@"Purchased ");
                 if ([transaction.payment.productIdentifier isEqualToString:kDonate1ProductID]) {
                     [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
                 }
@@ -1967,11 +1876,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                 [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
                 break;
             case SKPaymentTransactionStateRestored:
-                NSLog(@"Restored ");
                 [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
                 break;
             case SKPaymentTransactionStateFailed:
-                NSLog(@"Purchase failed ");
                 break;
             default:
                 break;

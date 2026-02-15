@@ -111,7 +111,7 @@
     NSDictionary* sleepTimerValues = @{ @(PlaybackStopTimeNoValue) : @"Off".ls,
                                         @(PlaybackStopTime5min) : @"5 Minutes".ls,
                                         @(PlaybackStopTime10min) : @"10 Minutes".ls,
-                                        //@(PlaybackStopTime15min) : @"15 Minutes".ls,
+                                        @(PlaybackStopTime15min) : @"15 Minutes".ls,
                                         @(PlaybackStopTime20min) : @"20 Minutes".ls,
                                         @(PlaybackStopTime30min) : @"30 Minutes".ls,
                                         @(PlaybackStopTime60min) : @"60 Minutes".ls };

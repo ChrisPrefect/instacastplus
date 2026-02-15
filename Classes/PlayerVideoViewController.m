@@ -117,7 +117,6 @@ static const CGFloat kFullscreenButtonSize = 44.0;
     {
         // Check if player is available
         if (!self.playerView.player) {
-            DebugLog(@"No player available for fullscreen video");
             if (completion) {
                 completion();
             }
@@ -196,7 +195,6 @@ static const CGFloat kFullscreenButtonSize = 44.0;
     if (_fullscreen != fullscreen)
     {
         if (!self.parentViewController.view.window) {
-            DebugLog(@"no window!");
             if (completion) {
                 completion();
             }

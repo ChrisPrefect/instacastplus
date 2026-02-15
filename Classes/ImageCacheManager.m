@@ -157,7 +157,6 @@ static ImageCacheManager* gSharedCacheManager = nil;
 
 - (void) applicationDidReceiveMemoryWarningNotification:(NSNotification*)notification
 {
-	DebugLog(@"purge in-memory image cache");
 	[self.imageCache removeAllObjects];
 }
 

@@ -186,7 +186,6 @@
 		1B928D8C1647CF620055503E /* UIViewController+ShowNotes.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B928D8B1647CF620055503E /* UIViewController+ShowNotes.m */; };
 		1B97834D182175B400365797 /* ShowNotesTemplateIPhone.html in Resources */ = {isa = PBXBuildFile; fileRef = 1B97834C182175B400365797 /* ShowNotesTemplateIPhone.html */; };
 		1B97980312C23C1D00F964EC /* libsqlite3.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B97980212C23C1D00F964EC /* libsqlite3.dylib */; };
-		1B97998A12C24AB900F964EC /* JCommand.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B97998912C24AB900F964EC /* JCommand.m */; };
 		1B9A63AC17844C1A00EB52D0 /* AlertStylePopoverController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B9A63AB17844C1A00EB52D0 /* AlertStylePopoverController.m */; };
 		1B9CA94C16F9AFDE00A9A9A4 /* ICCacheHistory.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B9CA94B16F9AFDE00A9A9A4 /* ICCacheHistory.m */; };
 		1B9D82C919C31D2F00F03B69 /* LaunchScreen.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B9D82C819C31D2F00F03B69 /* LaunchScreen.xib */; };
@@ -207,6 +206,7 @@
 		1BA9948E1680638F0000309B /* Model.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 1BA994891680638F0000309B /* Model.xcdatamodeld */; };
 		1BA9948F1680638F0000309B /* Model1.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 1BA9948B1680638F0000309B /* Model1.xcdatamodeld */; };
 		1BB0D5351A09FDE000B619C8 /* OpenInSafariActivity.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D5341A09FDE000B619C8 /* OpenInSafariActivity.m */; };
+		CD00AA012D10A00100000001 /* ICShareItem.m in Sources */ = {isa = PBXBuildFile; fileRef = CD00AA002D10A00100000001 /* ICShareItem.m */; };
 		1BB0D5381A0A0AA500B619C8 /* STITunesStore.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D5371A0A0AA500B619C8 /* STITunesStore.m */; };
 		1BB0D53B1A0A0ADE00B619C8 /* SFHFKeychainUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D53A1A0A0ADE00B619C8 /* SFHFKeychainUtils.m */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
 		1BB0D53F1A0A0B0300B619C8 /* Reachability.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D53E1A0A0B0300B619C8 /* Reachability.m */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
@@ -399,7 +399,6 @@
 		1B2074B11962B76000D78400 /* ICListTitleView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICListTitleView.h; sourceTree = "<group>"; };
 		1B2074B21962B76000D78400 /* ICListTitleView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICListTitleView.m; sourceTree = "<group>"; };
 		1B2081C015A6CEE800822D66 /* InfoDescriptionTemplateIPhone.html */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.html; path = InfoDescriptionTemplateIPhone.html; sourceTree = "<group>"; };
-		1B22D549152B2ABC003E3E75 /* MainSegments.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MainSegments.h; sourceTree = "<group>"; };
 		1B22D54A152B35C3003E3E75 /* PlaylistsTableViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlaylistsTableViewController.h; sourceTree = "<group>"; };
 		1B22D54B152B35C4003E3E75 /* PlaylistsTableViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlaylistsTableViewController.m; sourceTree = "<group>"; };
 		1B22D59D153188F1003E3E75 /* ToolbarLabelsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ToolbarLabelsViewController.h; sourceTree = "<group>"; };
@@ -644,8 +643,6 @@
 		1B9797B912C239B500F964EC /* DatabaseManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DatabaseManager.h; sourceTree = "<group>"; };
 		1B9797BA12C239B500F964EC /* DatabaseManager.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = DatabaseManager.m; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
 		1B97980212C23C1D00F964EC /* libsqlite3.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libsqlite3.dylib; path = usr/lib/libsqlite3.dylib; sourceTree = SDKROOT; };
-		1B97998812C24AB900F964EC /* JCommand.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JCommand.h; sourceTree = "<group>"; };
-		1B97998912C24AB900F964EC /* JCommand.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = JCommand.m; sourceTree = "<group>"; };
 		1B9A63AA17844C1A00EB52D0 /* AlertStylePopoverController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AlertStylePopoverController.h; sourceTree = "<group>"; };
 		1B9A63AB17844C1A00EB52D0 /* AlertStylePopoverController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AlertStylePopoverController.m; sourceTree = "<group>"; };
 		1B9CA94A16F9AFDE00A9A9A4 /* ICCacheHistory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICCacheHistory.h; sourceTree = "<group>"; };
@@ -675,6 +672,8 @@
 		1BA9948C1680638F0000309B /* Model.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = Model.xcdatamodel; sourceTree = "<group>"; };
 		1BB0D5331A09FDE000B619C8 /* OpenInSafariActivity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OpenInSafariActivity.h; sourceTree = "<group>"; };
 		1BB0D5341A09FDE000B619C8 /* OpenInSafariActivity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OpenInSafariActivity.m; sourceTree = "<group>"; };
+		CD00AA002D10A00100000001 /* ICShareItem.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICShareItem.m; sourceTree = "<group>"; };
+		CD00AA012D10A00100000002 /* ICShareItem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICShareItem.h; sourceTree = "<group>"; };
 		1BB0D5361A0A0AA500B619C8 /* STITunesStore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = STITunesStore.h; sourceTree = "<group>"; };
 		1BB0D5371A0A0AA500B619C8 /* STITunesStore.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = STITunesStore.m; sourceTree = "<group>"; };
 		1BB0D5391A0A0ADE00B619C8 /* SFHFKeychainUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SFHFKeychainUtils.h; sourceTree = "<group>"; };
@@ -1336,8 +1335,6 @@
 		1B979AD412C348D000F964EC /* IO */ = {
 			isa = PBXGroup;
 			children = (
-				1B97998812C24AB900F964EC /* JCommand.h */,
-				1B97998912C24AB900F964EC /* JCommand.m */,
 				1B5ADAF7132FB66000C484FB /* HTTPAuthentication.h */,
 				1B5ADAF8132FB66000C484FB /* HTTPAuthentication.m */,
 				1B3461E51343303A003A16A9 /* OPML.h */,
@@ -1348,6 +1345,8 @@
 				1B7A634715359F750006622D /* XPFF.m */,
 				1BB0D5331A09FDE000B619C8 /* OpenInSafariActivity.h */,
 				1BB0D5341A09FDE000B619C8 /* OpenInSafariActivity.m */,
+				CD00AA012D10A00100000002 /* ICShareItem.h */,
+				CD00AA002D10A00100000001 /* ICShareItem.m */,
 			);
 			name = IO;
 			sourceTree = "<group>";
@@ -1616,7 +1615,6 @@
 				1D3623250D0F684500981E51 /* InstacastAppDelegate.m */,
 				CD0082022CD65D91001E081B /* InstacastSceneDelegate.h */,
 				CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */,
-				1B22D549152B2ABC003E3E75 /* MainSegments.h */,
 				1B642B0E1779EF3300D3AE3B /* VMSlidingViewController.h */,
 				1B642B0F1779EF3300D3AE3B /* VMSlidingViewController.m */,
 				1B642B111779EF7200D3AE3B /* MainViewController_4.h */,
@@ -2049,7 +2047,6 @@
 				1D3623260D0F684500981E51 /* InstacastAppDelegate.m in Sources */,
 				CDD17C3B2C6EB203001870FB /* ChooseThemeColorCell.m in Sources */,
 				1BDE2F5E19927D5900C42195 /* PlayerFullscreenVideoViewController.m in Sources */,
-				1B97998A12C24AB900F964EC /* JCommand.m in Sources */,
 				1B89F75112C39438005A65DF /* ImageFunctions.m in Sources */,
 				1B89FABF12C9F977005A65DF /* SubscriptionsTableViewController.m in Sources */,
 				CDD17C322C6DFEED001870FB /* OnboardScreenVC.m in Sources */,
@@ -2068,6 +2065,7 @@
 				1B8DAB9D179531EB00DD78F3 /* EpisodePlayComboButton.m in Sources */,
 				1BCDEFD912D4822E00420173 /* PlayerController.m in Sources */,
 				1BB0D5351A09FDE000B619C8 /* OpenInSafariActivity.m in Sources */,
+				CD00AA012D10A00100000001 /* ICShareItem.m in Sources */,
 				1BCDF53812D5D0F000420173 /* PlayerView.m in Sources */,
 				1B71530F12DB567900337CF0 /* FeedViewController.m in Sources */,
 				1B8C230712DDC77F00589115 /* EpisodeViewController.m in Sources */,

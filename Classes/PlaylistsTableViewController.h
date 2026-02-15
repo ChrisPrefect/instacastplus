@@ -9,8 +9,6 @@
 
 #import <UIKit/UIKit.h>
 
-#import "MainSegments.h"
-
 @class PullToRefreshView;
 
 @interface PlaylistsTableViewController : UITableViewController

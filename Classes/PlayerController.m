@@ -174,16 +174,10 @@ enum {
 {
     (void)notification;
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    DebugLog(@"[TranscriptBridge] playbackManagerDidUpdate ready=%@ episode=%@",
-             pman.ready ? @"YES" : @"NO",
-             pman.playingEpisode.objectHash ?: @"(nil)");
     [self _stateMachine];
     if (self.infoViewController) {
         self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
         self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
-        DebugLog(@"[TranscriptBridge] sync after update available=%@ visible=%@",
-                 self.controller.transcriptAvailable ? @"YES" : @"NO",
-                 self.controller.transcriptVisible ? @"YES" : @"NO");
     }
 }
 
@@ -326,8 +320,6 @@ enum {
     }
 	else if (_state == LoadedState && pman.ready && _viewDidAppear)
 	{
-        DebugLog(@"[TranscriptBridge] stateMachine Loaded->Ready path episode=%@",
-                 pman.playingEpisode.objectHash ?: @"(nil)");
         [self.infoViewController reload];
         
         CDEpisode* episode = [AudioSession sharedAudioSession].episode;
@@ -357,10 +349,7 @@ enum {
         [self.controller updateControlsUI];
         self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
         self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
-        DebugLog(@"[TranscriptBridge] stateMachine set controls after reload available=%@ visible=%@",
-                 self.controller.transcriptAvailable ? @"YES" : @"NO",
-                 self.controller.transcriptVisible ? @"YES" : @"NO");
-        
+
         if (self.loadingInfo) {
             [self.loadingInfo close];
             self.loadingInfo = nil;
@@ -580,7 +569,6 @@ enum {
     [self.controller updateControlsUI];
     [self.controller updateChapterMarkers];
     
-    //DVED TODO
     // loading image
     CDEpisode* episode = [AudioSession sharedAudioSession].episode;
     CDFeed* feed = episode.feed;
@@ -601,25 +589,16 @@ enum {
     WEAK_SELF
     self.controller.transcriptToggleHandler = ^(BOOL transcriptVisible) {
         STRONG_SELF
-        DebugLog(@"[TranscriptBridge] toggle handler from controls visible=%@",
-                 transcriptVisible ? @"YES" : @"NO");
         [self.infoViewController setTranscriptVisibleFromControl:transcriptVisible];
     };
     self.infoViewController.transcriptAvailabilityDidChange = ^(BOOL available) {
         STRONG_SELF
-        DebugLog(@"[TranscriptBridge] availability callback available=%@ episode=%@",
-                 available ? @"YES" : @"NO",
-                 [PlaybackManager playbackManager].playingEpisode.objectHash ?: @"(nil)");
         self.controller.transcriptAvailable = available;
         if (!available) {
             self.controller.transcriptVisible = NO;
         } else {
-            // Sync controls with restored transcript visibility from infoViewController
             self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
         }
-        DebugLog(@"[TranscriptBridge] controls state after callback available=%@ visible=%@",
-                 self.controller.transcriptAvailable ? @"YES" : @"NO",
-                 self.controller.transcriptVisible ? @"YES" : @"NO");
     };
     
     [self addChildViewController:self.infoViewController];
@@ -706,9 +685,6 @@ enum {
         [self.infoViewController changeChapterImageIndex:collectionIndex];
         self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
         self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
-        DebugLog(@"[TranscriptBridge] viewWillAppear(reuse) sync available=%@ visible=%@",
-                 self.controller.transcriptAvailable ? @"YES" : @"NO",
-                 self.controller.transcriptVisible ? @"YES" : @"NO");
         return;
     }
 
@@ -777,9 +753,6 @@ enum {
     [self.infoViewController changeChapterImageIndex:collectionIndex];
     self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
     self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
-    DebugLog(@"[TranscriptBridge] viewWillAppear sync available=%@ visible=%@",
-             self.controller.transcriptAvailable ? @"YES" : @"NO",
-             self.controller.transcriptVisible ? @"YES" : @"NO");
 }
 
 - (void) viewDidAppear:(BOOL)animated
@@ -792,9 +765,6 @@ enum {
     if (self.infoViewController) {
         self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
         self.controller.transcriptVisible = self.infoViewController.transcriptVisible;
-        DebugLog(@"[TranscriptBridge] viewDidAppear sync available=%@ visible=%@",
-                 self.controller.transcriptAvailable ? @"YES" : @"NO",
-                 self.controller.transcriptVisible ? @"YES" : @"NO");
     }
 }
 
@@ -863,8 +833,6 @@ enum {
         self.infoViewController.image = image;
     }
 }
-
-//DEVD TODO
 
 - (void) showMoreInfos:(id)sender
 {

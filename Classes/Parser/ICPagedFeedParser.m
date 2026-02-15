@@ -77,8 +77,6 @@
         parser.dontAskForCredentials = self.dontAskForCredentials;
         parser.allowsCellularAccess = self.allowsCellularAccess;
         
-        DebugLog(@"%@", self.url);
-        
         feed = [parser parsedFeedReturningError:&error];
         
         // bail if feed is not paged
@@ -122,8 +120,6 @@
 
             do
             {
-                DebugLog(@"%@", nextFeedURL);
-                
                 error = nil;
                 feed = [ICFeedParser parsedFeedWithURL:nextFeedURL error:&error];
                 
