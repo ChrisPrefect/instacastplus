@@ -1580,11 +1580,39 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 - (void)_playbackDidUpdateForTranscriptFollow:(NSNotification*)notification
 {
     (void)notification;
-    BOOL isPlaying = [PlaybackManager playbackManager].isPodcastPlaying;
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    BOOL isPlaying = pman.isPodcastPlaying;
     if (self.transcriptWasPaused && isPlaying && self.transcriptAutoFollowSuspended && self.transcriptVisible) {
         [self _resumeTranscriptAutoFollow];
     }
     self.transcriptWasPaused = !isPlaying;
+
+    // Force transcript sync after any playback state change (seek, play, pause).
+    // Use short delay so AVPlayer's currentTime reflects the new position.
+    if (self.transcriptVisible && self.transcriptCues.count > 0) {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_forceTranscriptSync) object:nil];
+        [self performSelector:@selector(_forceTranscriptSync) withObject:nil afterDelay:0.1];
+    }
+}
+
+- (void)_forceTranscriptSync
+{
+    if (!self.transcriptVisible || self.transcriptCues.count == 0) return;
+
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    NSTimeInterval time = pman.time;
+    NSInteger cueIndex = [self _activeTranscriptCueIndexForPlaybackTime:time];
+    if (cueIndex == NSNotFound) return;
+
+    if (cueIndex != self.activeTranscriptCueIndex) {
+        self.activeTranscriptCueIndex = cueIndex;
+        [self _updateTranscriptLabelAppearance];
+    }
+
+    self.transcriptAutoFollowSuspended = NO;
+    [self.transcriptFollowResumeTimer invalidate];
+    self.transcriptFollowResumeTimer = nil;
+    [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
 }
 
 - (void)_scheduleTranscriptAutoFollowResume
@@ -1609,27 +1637,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     BOOL cueChanged = (cueIndex != self.activeTranscriptCueIndex);
-
-    // Detect seek: cue jumped by more than 1 position
-    BOOL seekDetected = (cueChanged &&
-                         self.activeTranscriptCueIndex != NSNotFound &&
-                         labs(cueIndex - self.activeTranscriptCueIndex) > 1);
-
     if (cueChanged) {
         self.activeTranscriptCueIndex = cueIndex;
         [self _updateTranscriptLabelAppearance];
     }
 
-    if (self.transcriptVisible && cueChanged) {
-        if (seekDetected) {
-            // Seek: reset auto-follow and scroll immediately
-            self.transcriptAutoFollowSuspended = NO;
-            [self.transcriptFollowResumeTimer invalidate];
-            self.transcriptFollowResumeTimer = nil;
-            [self _focusTranscriptCueAtIndex:cueIndex animated:NO];
-        } else if (!self.transcriptAutoFollowSuspended) {
-            [self _focusTranscriptCueAtIndex:cueIndex animated:animated];
-        }
+    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && cueChanged) {
+        [self _focusTranscriptCueAtIndex:cueIndex animated:animated];
     }
 }
 
@@ -2650,7 +2664,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         }
     }
 
-    [self _updateTranscriptCueForPlaybackTime:pman.time animated:YES];
 }
 
 - (BOOL) _hasChapters {
