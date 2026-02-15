@@ -721,6 +721,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptTextView.showsVerticalScrollIndicator = YES;
     self.transcriptTextView.delegate = self;
     self.transcriptTextView.translatesAutoresizingMaskIntoConstraints = NO;
+    UITapGestureRecognizer* transcriptTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(_transcriptTextViewTapped:)];
+    [self.transcriptTextView addGestureRecognizer:transcriptTap];
     [self.transcriptContainerView addSubview:self.transcriptTextView];
 
     [NSLayoutConstraint activateConstraints:@[
@@ -1498,17 +1500,21 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
     NSTextContainer* textContainer = self.transcriptTextView.textContainer;
 
-    // Ensure layout is up to date for this range
-    [layoutManager ensureLayoutForCharacterRange:cueRange];
+    // Ensure layout from beginning to target range for accurate vertical positioning.
+    // UITextView with scrollEnabled=YES uses non-contiguous layout, which means
+    // ensureLayoutForCharacterRange: for just the cue range can return inaccurate
+    // y-positions because preceding text may only have estimated line heights.
+    [layoutManager ensureLayoutForCharacterRange:NSMakeRange(0, NSMaxRange(cueRange))];
     NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:cueRange actualCharacterRange:NULL];
     CGRect glyphRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
 
     // Adjust for text container inset
     glyphRect.origin.y += self.transcriptTextView.textContainerInset.top;
 
-    CGFloat targetOffsetY = CGRectGetMidY(glyphRect) - CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f;
+    CGFloat viewHeight = CGRectGetHeight(self.transcriptTextView.bounds);
+    CGFloat targetOffsetY = CGRectGetMidY(glyphRect) - viewHeight * 0.5f;
     CGFloat minOffsetY = -self.transcriptTextView.contentInset.top;
-    CGFloat maxOffsetY = self.transcriptTextView.contentSize.height - CGRectGetHeight(self.transcriptTextView.bounds) + self.transcriptTextView.contentInset.bottom;
+    CGFloat maxOffsetY = self.transcriptTextView.contentSize.height - viewHeight + self.transcriptTextView.contentInset.bottom;
     if (maxOffsetY < minOffsetY) {
         maxOffsetY = minOffsetY;
     }
@@ -1524,6 +1530,50 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptFollowResumeTimer = nil;
     if (self.transcriptVisible) {
         [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:YES];
+    }
+}
+
+- (void)_transcriptTextViewTapped:(UITapGestureRecognizer*)gesture
+{
+    if (gesture.state != UIGestureRecognizerStateEnded || self.transcriptCueRanges.count == 0) {
+        return;
+    }
+
+    CGPoint point = [gesture locationInView:self.transcriptTextView];
+    point.x -= self.transcriptTextView.textContainerInset.left;
+    point.y -= self.transcriptTextView.textContainerInset.top;
+
+    NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
+    NSTextContainer* textContainer = self.transcriptTextView.textContainer;
+    NSUInteger charIndex = [layoutManager characterIndexForPoint:point
+                                                inTextContainer:textContainer
+                       fractionOfDistanceBetweenInsertionPoints:NULL];
+    if (charIndex == NSNotFound) {
+        return;
+    }
+
+    // Find which cue contains this character index
+    for (NSInteger i = 0; i < (NSInteger)self.transcriptCueRanges.count; i++) {
+        NSRange cueRange = [self.transcriptCueRanges[i] rangeValue];
+        if (charIndex >= cueRange.location && charIndex < NSMaxRange(cueRange)) {
+            NSDictionary* cue = self.transcriptCues[i];
+            NSTimeInterval startTime = [cue[@"start"] doubleValue];
+
+            PlaybackManager* pman = [PlaybackManager playbackManager];
+            [pman seekToTime:startTime];
+            if (!pman.isPodcastPlaying) {
+                [pman play];
+            }
+
+            // Reset auto-follow and update immediately
+            self.transcriptAutoFollowSuspended = NO;
+            [self.transcriptFollowResumeTimer invalidate];
+            self.transcriptFollowResumeTimer = nil;
+            self.activeTranscriptCueIndex = i;
+            [self _updateTranscriptLabelAppearance];
+            [self _focusTranscriptCueAtIndex:i animated:YES];
+            return;
+        }
     }
 }
 
@@ -1559,13 +1609,27 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     BOOL cueChanged = (cueIndex != self.activeTranscriptCueIndex);
+
+    // Detect seek: cue jumped by more than 1 position
+    BOOL seekDetected = (cueChanged &&
+                         self.activeTranscriptCueIndex != NSNotFound &&
+                         labs(cueIndex - self.activeTranscriptCueIndex) > 1);
+
     if (cueChanged) {
         self.activeTranscriptCueIndex = cueIndex;
         [self _updateTranscriptLabelAppearance];
     }
 
-    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && cueChanged) {
-        [self _focusTranscriptCueAtIndex:cueIndex animated:animated];
+    if (self.transcriptVisible && cueChanged) {
+        if (seekDetected) {
+            // Seek: reset auto-follow and scroll immediately
+            self.transcriptAutoFollowSuspended = NO;
+            [self.transcriptFollowResumeTimer invalidate];
+            self.transcriptFollowResumeTimer = nil;
+            [self _focusTranscriptCueAtIndex:cueIndex animated:NO];
+        } else if (!self.transcriptAutoFollowSuspended) {
+            [self _focusTranscriptCueAtIndex:cueIndex animated:animated];
+        }
     }
 }
 

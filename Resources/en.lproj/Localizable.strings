@@ -118,6 +118,9 @@
 "The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep." = "The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep.";
 
 "If not played after" = "If not played after";
+"Keep only newest" = "Keep only newest";
+"1 Episode" = "1 Episode";
+"%d Episodes" = "%d Episodes";
 "1 Day" = "1 Day";
 "2 Days" = "2 Days";
 "3 Days" = "3 Days";

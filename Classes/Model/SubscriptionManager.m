@@ -257,6 +257,8 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
             [self _recycleOldEpisodesInNewsModeFeed:feed];
         }
 
+        [self _enforceKeepNewestLimitForFeed:feed];
+
         [DMANAGER saveAndSync:YES];
 
         if (completion) {
@@ -767,6 +769,8 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     if (shouldAutoDownload) {
         [self autoDownloadEpisodesInFeed:feed];
     }
+
+    [self _enforceKeepNewestLimitForFeed:feed];
 
     // Must always run on main thread.
     [self _finishRefreshingURL:url];
@@ -1387,6 +1391,38 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     }
 }
 
+
+- (void) _enforceKeepNewestLimitForFeed:(CDFeed*)feed
+{
+    NSInteger keepCount = [feed integerForKey:KeepNewestEpisodesCount];
+    if (keepCount <= 0) return;
+
+    // Alle heruntergeladenen Episoden dieses Feeds filtern
+    CacheManager *cman = [CacheManager sharedCacheManager];
+    NSArray *allCachedEpisodes = [cman cachedEpisodes];
+
+    NSMutableArray *feedCachedEpisodes = [NSMutableArray array];
+    for (CDEpisode *episode in allCachedEpisodes) {
+        if ([episode.feed isEqual:feed]) {
+            [feedCachedEpisodes addObject:episode];
+        }
+    }
+
+    // Nach pubDate sortieren (neueste zuerst)
+    [feedCachedEpisodes sortUsingDescriptors:@[
+        [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO]
+    ]];
+
+    // Alles über dem Limit löschen (starred überspringen)
+    if ((NSInteger)feedCachedEpisodes.count > keepCount) {
+        for (NSInteger i = keepCount; i < (NSInteger)feedCachedEpisodes.count; i++) {
+            CDEpisode *episode = feedCachedEpisodes[i];
+            if (!episode.starred) {
+                [cman removeCacheForEpisode:episode automatic:YES];
+            }
+        }
+    }
+}
 
 - (void) _recycleOldEpisodesInNewsModeFeed:(CDFeed*)feed
 {

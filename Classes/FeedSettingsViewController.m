@@ -155,7 +155,7 @@ enum {
         case kAutoDownloadSettingsSection:
             return 2;
         case kAutoDeleteSettingsSection:
-            return 3;
+            return 4;
         case kPlaybackSection:
             return 4;
         case kRestoreDeletedSection:
@@ -279,6 +279,20 @@ enum {
             NSNumber* getDeletedDays = [NSNumber numberWithInteger:[self.feed integerForKey:daysKey]];
             NSString* localizedKeyD = vTemp[@([getDeletedDays integerValue])];
             cell.detailTextLabel.text = localizedKeyD.ls;
+        }
+        else if (indexPath.row == 3)
+        {
+            cell.accessoryView = nil;
+            cell = [self detailCell];
+            cell.textLabel.text = @"Keep only newest".ls;
+            NSInteger keepCount = [self.feed integerForKey:KeepNewestEpisodesCount];
+            if (keepCount <= 0) {
+                cell.detailTextLabel.text = @"Off".ls;
+            } else if (keepCount == 1) {
+                cell.detailTextLabel.text = @"1 Episode".ls;
+            } else {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%d Episodes".ls, (int)keepCount];
+            }
         }
         else
         {
@@ -569,6 +583,28 @@ enum {
             controller.title = @"If not played after".ls;
             controller.values = @[ @(0), @(1), @(2), @(3), @(4), @(5), @(6), @(7), @(8)];
             controller.titles = @[@"Off".ls, @"1 Day".ls, @"2 Days".ls, @"3 Days".ls, @"5 Days".ls, @"7 Days".ls, @"10 Days".ls, @"20 Days".ls, @"30 Days".ls];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (indexPath.row == 3)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = KeepNewestEpisodesCount;
+            controller.title = @"Keep only newest".ls;
+            controller.values = @[ @(0), @(1), @(2), @(3), @(4), @(5), @(6), @(7), @(8), @(9), @(10), @(11), @(12) ];
+            controller.titles = @[ @"Off".ls, @"1 Episode".ls,
+                [NSString stringWithFormat:@"%d Episodes".ls, 2],
+                [NSString stringWithFormat:@"%d Episodes".ls, 3],
+                [NSString stringWithFormat:@"%d Episodes".ls, 4],
+                [NSString stringWithFormat:@"%d Episodes".ls, 5],
+                [NSString stringWithFormat:@"%d Episodes".ls, 6],
+                [NSString stringWithFormat:@"%d Episodes".ls, 7],
+                [NSString stringWithFormat:@"%d Episodes".ls, 8],
+                [NSString stringWithFormat:@"%d Episodes".ls, 9],
+                [NSString stringWithFormat:@"%d Episodes".ls, 10],
+                [NSString stringWithFormat:@"%d Episodes".ls, 11],
+                [NSString stringWithFormat:@"%d Episodes".ls, 12] ];
             [self.navigationController pushViewController:controller animated:YES];
         }
     }

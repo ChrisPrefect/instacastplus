@@ -97,6 +97,7 @@ extern NSString* SharingTwitterHandle;
 extern NSString* AutoDeleteAfterFinishedPlaying;
 extern NSString* AutoDeleteAfterMarkedAsPlayed;
 extern NSString* AutoDeleteNewsMode;
+extern NSString* KeepNewestEpisodesCount;
 extern NSString* PauseFeedSynchronization;
 extern NSString* ContinuousPlayFromFeed;
 extern NSString* AutoDownloadWhileStreaming;
