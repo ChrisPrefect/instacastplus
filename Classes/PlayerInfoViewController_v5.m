@@ -2349,6 +2349,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             CGRect wb = [[self getKeyWindow] bounds];
             CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
             CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
+            if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+                controllerHeight -= 60;
+            }
 
             CGFloat width = MAX(CGRectGetHeight(self.rectCollection), 1);
             CGFloat height = MAX(CGRectGetWidth(self.rectCollection) - controllerHeight, 1);
@@ -2422,6 +2425,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         CGRect wb = [[self getKeyWindow] bounds];
         CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
         CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
+        if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+            controllerHeight -= 60;
+        }
 
         CGFloat width = MAX(CGRectGetHeight(b), 1);
         CGFloat height = MAX(CGRectGetWidth(b) - controllerHeight, 1);
@@ -3164,6 +3170,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     CGRect wb = [[self getKeyWindow] bounds];
     CGFloat statusbarHeight = CGRectGetHeight([self getStatusBarFrame]);
     CGFloat controllerHeight = (MAX(CGRectGetHeight(wb)-statusbarHeight-44-CGRectGetWidth(wb), 184) + 96);
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+        controllerHeight -= 60;
+    }
 
     if (UIInterfaceOrientationIsPortrait([self getDeviceOrientation]))
     {

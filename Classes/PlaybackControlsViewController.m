@@ -164,10 +164,14 @@
     hitView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     hitView.backgroundColor = [UIColor clearColor];
 
-    // MPVolumeView: same size, fills container (visual position unchanged)
-    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(0, 0, sliderWidth, sliderHeight)];
+    // MPVolumeView: fills container; on iPad the track renders higher, so offset down
+    CGFloat volumeViewYOffset = 0;
+    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+        volumeViewYOffset = 20;
+    }
+    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(0, volumeViewYOffset, sliderWidth, sliderHeight)];
     volumeView.backgroundColor = [UIColor clearColor];
-    volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     volumeView.userInteractionEnabled = NO; // container handles all touches
     if (@available(iOS 16, *)) {
         for (UIView *subview in volumeView.subviews) {
