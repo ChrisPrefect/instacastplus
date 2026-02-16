@@ -116,7 +116,7 @@
 "Disable Sleep Timer in CarPlay" = "Disable Sleep Timer in CarPlay";
 "If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night." = "If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night.";
 "While CarPlay is active, the Sleep Timer stays disabled." = "While CarPlay is active, the Sleep Timer stays disabled.";
-"The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep." = "The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep.";
+"The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep." = "The Smart Sleep Timer automatically resets its countdown when it detects you are still awake, so your podcast keeps playing until you fall asleep. Tip: Place your device on the mattress to detect movements before falling asleep – the timer resets automatically until you stop moving.";
 
 "If not played after" = "If not played after";
 "Keep only newest" = "Keep only newest";

@@ -22,6 +22,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 
 @interface SleepTimerSettingsViewController ()
 @property (nonatomic, weak) UILabel* thresholdValueLabel;
+@property (nonatomic, weak) UITableViewCell* thresholdCell;
 @end
 
 @implementation SleepTimerSettingsViewController
@@ -51,6 +52,11 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(motionDetected)
+                                                 name:ApplicationDidDetectMotionNotification
                                                object:nil];
 }
 
@@ -190,6 +196,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 [controlStack sizeToFit];
                 controlStack.frame = CGRectMake(0, 0, 120, 30);
                 cell.accessoryView = controlStack;
+                self.thresholdCell = cell;
 
                 return cell;
             }
@@ -360,6 +367,20 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
         }
         [self.tableView endUpdates];
     }
+}
+
+- (void)motionDetected
+{
+    UITableViewCell *cell = self.thresholdCell;
+    if (!cell) return;
+
+    [UIView animateWithDuration:0.15 animations:^{
+        cell.backgroundColor = ICTintColor;
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.4 animations:^{
+            cell.backgroundColor = ICGroupCellBackgroundColor;
+        }];
+    }];
 }
 
 - (void)decreaseThreshold:(UIButton*)sender
