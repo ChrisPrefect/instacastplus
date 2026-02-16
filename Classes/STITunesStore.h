@@ -10,13 +10,10 @@
 
 extern NSString* kiTunesStoreKind;
 extern NSString* kiTunesStoreTitleLink;
-extern NSString* kiTunesStoreTitleAffiliateLink;
 extern NSString* kiTunesStoreTitle;
 extern NSString* kiTunesStoreAlbumLink;
-extern NSString* kiTunesStoreAlbumAffiliateLink;
 extern NSString* kiTunesStoreAlbum;
 extern NSString* kiTunesStoreArtistLink;
-extern NSString* kiTunesStoreArtistAffiliateLink;
 extern NSString* kiTunesStoreArtist;
 extern NSString* kiTunesStoreTrackPrice;
 extern NSString* kiTunesStoreTrackPriceCurrency;
@@ -44,9 +41,6 @@ extern NSString* kiTunesStoreCollectionId;
 - (NSArray*) storeSearchResultForSearchString:(NSString*)searchString;
 - (void) startStoreSearchForSearchString:(NSString*)searchString delegate:(id)delegate;
 - (void) cancelStoreSearch;
-
-- (NSString*) affiliateLinkForStoreLink:(NSString*)link;
-
 
 - (NSArray*) storeItemsForTitle:(NSString*)title artist:(NSString*)artist;
 - (NSArray*) storeItemsForArtist:(NSString*)artist;

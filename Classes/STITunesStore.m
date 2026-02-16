@@ -11,13 +11,10 @@
 
 NSString* kiTunesStoreKind = @"kiTunesStoreKind";
 NSString* kiTunesStoreTitleLink = @"kiTunesStoreTitleLink";
-NSString* kiTunesStoreTitleAffiliateLink = @"kiTunesStoreTitleAffiliateLink";
 NSString* kiTunesStoreTitle = @"kiTunesStoreTitle";
 NSString* kiTunesStoreAlbumLink = @"kiTunesStoreAlbumLink";
-NSString* kiTunesStoreAlbumAffiliateLink = @"kiTunesStoreAlbumAffiliateLink";
 NSString* kiTunesStoreAlbum = @"kiTunesStoreAlbum";
 NSString* kiTunesStoreArtistLink = @"kiTunesStoreArtistLink";
-NSString* kiTunesStoreArtistAffiliateLink = @"kiTunesStoreArtistAffiliateLink";
 NSString* kiTunesStoreArtist = @"kiTunesStoreArtist";
 NSString* kiTunesStoreTrackPrice = @"kiTunesStoreTrackPrice";
 NSString* kiTunesStoreTrackPriceCurrency = @"kiTunesStoreTrackPriceCurrency";
@@ -33,12 +30,6 @@ NSString* kiTunesStoreMusicVideoKind = @"music-video";
 
 NSString* kiTunesStoreTrackId = @"kiTunesStoreTrackId";
 NSString* kiTunesStoreCollectionId = @"kiTunesStoreCollectionId";
-
-typedef enum {
-	NoAffiliatePartnerType = 0,
-	TradeDoublerAffiliatePartnerType,
-	LinkshareAffiliatePartnerType,
-} ITunesAffiliatePartnerType;
 
 @interface STITunesStore ()
 @property (nonatomic, strong) NSMutableData* connectionData;
@@ -61,50 +52,6 @@ typedef enum {
 	return self;
 }
 
-- (ITunesAffiliatePartnerType) _affiliatePartnerType
-{
-	NSArray* tradedoublerCountryCodes = [NSArray arrayWithObjects:@"AU",@"BE",@"DK",@"FI",@"FR",@"DE",@"GR",@"IE",@"IT",@"LU",@"NL",@"NO",@"PT",@"ES",@"SE",@"CH",@"GB",nil];
-	NSArray* linkshareCountryCodes = [NSArray arrayWithObjects:@"US",nil];
-	NSString* countryCode = [self.storeLocale objectForKey:NSLocaleCountryCode];
-
-	if ([tradedoublerCountryCodes containsObject:countryCode]) {
-		return TradeDoublerAffiliatePartnerType;
-	}
-	if ([linkshareCountryCodes containsObject:countryCode]) {
-		return LinkshareAffiliatePartnerType;
-	}
-
-	return NoAffiliatePartnerType;
-}
-
-- (NSString*) affiliateLinkForStoreLink:(NSString*)link
-{
-	if (!link) {
-		return nil;
-	}
-
-	if ([self _affiliatePartnerType] == TradeDoublerAffiliatePartnerType)
-	{
-        link = [link stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-		return [NSString stringWithFormat:@"http://clk.tradedoubler.com/click?p=23761&a=1644991&url=%@%%26partnerId%%3D2003",link];
-	}
-
-	else if ([self _affiliatePartnerType] == LinkshareAffiliatePartnerType)
-	{
-		NSArray* escapeChars = [NSArray arrayWithObjects:@"!",@"$",@"&",@"'",@"(",@")",@"*",@"+",@",",@"-",@"/",@":",@";",@"=",@"?",@"@",@"_",@"~",nil];
-		for(NSString* ch in escapeChars)
-		{
-			unichar unich = [ch characterAtIndex:0];
-			link = [link stringByReplacingOccurrencesOfString:ch withString:[NSString stringWithFormat:@"%%25%02X",unich]];
-		}
-
-		return [NSString stringWithFormat:@"http://click.linksynergy.com/fs-bin/stat?id=P7HkeV4/n2E&offerid=146261&type=3&subid=0&tmpid=1826&RD_PARM1=%@%%2526partnerId%%253D30",link];
-	}
-
-
-	return link;
-}
-
 - (NSURLRequest*) _urlRequestForSearchString:(NSString*)searchString
 {
     NSString* encodedSearchString = [searchString stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
@@ -116,7 +63,7 @@ typedef enum {
 
 	NSString* countryCode = [self.storeLocale objectForKey:NSLocaleCountryCode];
 
-	NSMutableString* searchURLString = [NSMutableString stringWithFormat:@"http://itunes.apple.com/search?media=%@", self.media];
+	NSMutableString* searchURLString = [NSMutableString stringWithFormat:@"https://itunes.apple.com/search?media=%@", self.media];
 	if (self.entity) {
 		[searchURLString appendFormat:@"&entity=%@", self.entity];
 	}
@@ -167,7 +114,6 @@ typedef enum {
 		NSString* link = [result objectForKey:@"trackViewUrl"];
 		if (link && ![link isKindOfClass:[NSNull class]]) {
 			[item setObject:link forKey:kiTunesStoreTitleLink];
-			[item setObject:[self affiliateLinkForStoreLink:link] forKey:kiTunesStoreTitleAffiliateLink];
 		}
 
         if ([result objectForKey:@"collectionName"]) {
@@ -177,7 +123,6 @@ typedef enum {
 		link = [result objectForKey:@"collectionViewUrl"];
 		if (link && ![link isKindOfClass:[NSNull class]]) {
 			[item setObject:link forKey:kiTunesStoreAlbumLink];
-			[item setObject:[self affiliateLinkForStoreLink:link] forKey:kiTunesStoreAlbumAffiliateLink];
 		}
 
         if ([result objectForKey:@"artistName"]) {
@@ -187,7 +132,6 @@ typedef enum {
 		link = [result objectForKey:@"artistViewUrl"];
 		if (link && ![link isKindOfClass:[NSNull class]]) {
 			[item setObject:link forKey:kiTunesStoreArtistLink];
-			[item setObject:[self affiliateLinkForStoreLink:link] forKey:kiTunesStoreArtistAffiliateLink];
 		}
 
         if ([result objectForKey:@"artworkUrl60"]) {

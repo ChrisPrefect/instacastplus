@@ -13,7 +13,6 @@
 @interface ImageCacheManager : NSObject
 
 + (NSInteger) scalingFactor;
-+ (NSURL*) cacheURLForImageURL:(NSURL*)url size:(NSInteger)size;
 + (NSURL*) fileURLToCachedImageForImageURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale;
 + (void) loadImageForURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale completion:(void (^)(IC_IMAGE* platformImage, NSError* error))completion;
 

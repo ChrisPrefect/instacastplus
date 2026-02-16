@@ -14,7 +14,6 @@
 
 #import "ICShareItem.h"
 #import "UIViewController+ShowNotes.h"
-#import "STITunesStore.h"
 #import "VDModalInfo.h"
 #import "FeedSettingsViewController.h"
 #import "CDModel.h"

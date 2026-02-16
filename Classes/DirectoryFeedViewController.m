@@ -20,7 +20,6 @@
 #import "VDModalInfo.h"
 #import "PlaybackViewController.h"
 #import "PlayerController.h"
-#import "STITunesStore.h"
 #import "UIViewController+ShowNotes.h"
 #import "ICImageCacheOperation.h"
 
@@ -562,81 +561,6 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     [self _presentParserError:error];
 }
 
-/*
-- (void) _presentAlternateFeedInfos:(NSDictionary*)alternateFeedData
-{
-    NSMutableArray* filteredFeedData = [[NSMutableArray alloc] init];
-    
-    for(NSDictionary* feedData in [alternateFeedData allValues])
-    {
-        if (feedData[@"related:apple-itunes-app"]) {
-            [filteredFeedData addObject:feedData];
-        }
-    }
-    
-    if ([filteredFeedData count] > 0) {
-        
-        UIAlertView* alertView = [UIAlertView alertWithTitle:self.feed.title
-                                                     message:@"This podcast offers alternative media. Please select to check it out or cancel to continue.".ls];
-        
-        for(NSDictionary* alternateFeed in filteredFeedData)
-        {
-            [alertView addButtonWithTitle:alternateFeed[@"title"] handler:^{
-                
-                if (alternateFeed[@"related:apple-itunes-app"])
-                {
-                    NSMutableDictionary* argumentsDict = [NSMutableDictionary dictionaryWithCapacity:3];
-                    
-                    NSArray* arguments = [alternateFeed[@"related:apple-itunes-app"] componentsSeparatedByString:@","];
-                    for(NSString* argument in arguments) {
-                        NSString* myArgument = [argument stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                        NSArray* kvPair = [myArgument componentsSeparatedByString:@"="];
-                        NSString* key = ([kvPair count] > 0) ? kvPair[0] : nil;
-                        key = [[key stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-                        NSString* value = ([kvPair count] > 1) ? kvPair[1] : nil;
-                        value = [value stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                        
-                        if (key && value) {
-                            [argumentsDict setObject:value forKey:key];
-                        }
-                    }
-                    
-                    NSString* appArgument = argumentsDict[@"app-argument"];
-                    NSString* appId = argumentsDict[@"app-id"];
-                    
-                    NSURL* appArgumentURL = (appArgument) ? [NSURL URLWithString:appArgument] : nil;
-                    
-                    if (appArgumentURL && [App canOpenURL:appArgumentURL]) {
-                        [App openURL:appArgumentURL];
-                    }
-                    else if (appId)
-                    {
-                        STITunesStore* store = [[STITunesStore alloc] init];
-                        NSString* affiliateURLString = [store affiliateLinkForStoreLink:[NSString stringWithFormat:@"https://itunes.apple.com/app/id%@?mt=8",appId]];
-                        NSURL* affiliateURL = [NSURL URLWithString:affiliateURLString];
-                        if (affiliateURL) {
-                            [self handleShowNotesURL:affiliateURL];
-                        }
-                    }
-                }
-                else if ([alternateFeed[@"type"] isEqualToString:@"text/html"] && alternateFeed[@"href"])
-                {
-                    NSURL* url = [NSURL URLWithString:alternateFeed[@"href"]];
-                    if (url) {
-                        [App openURL:url];
-                    }
-                }
-
-            }];
-
-        }
-        
-        [alertView setCancelButtonWithTitle:@"Cancel".ls handler:^{}];
-        
-        [alertView show];
-    }
-}
-*/
 
 
 

@@ -12,7 +12,6 @@
 #import "CDPlaylist.h"
 
 #import "SubscriptionManager.h"
-#import "TwitterHelper.h"
 #import "UtilityFunctions.h"
 #import "XPFF.h"
 #import "VDModalInfo.h"

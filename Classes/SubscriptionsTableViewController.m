@@ -14,7 +14,6 @@
 #import "SubscriptionTableViewCell.h"
 #import "FeedEpisodesTableViewController.h"
 
-#import "STITunesStore.h"
 #import "ICFeedURLScraper.h"
 #import "AnimatingLabel.h"
 

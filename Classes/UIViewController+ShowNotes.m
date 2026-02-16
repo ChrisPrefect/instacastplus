@@ -8,7 +8,6 @@
 
 #import "UIViewController+ShowNotes.h"
 
-#import "TwitterHelper.h"
 #import "WebController.h"
 #import "VDModalInfo.h"
 #import "UtilityFunctions.h"
@@ -36,13 +35,9 @@
 		return NO;
 	}
 
-	if ([url host] && [[url host] rangeOfString:@"twitter"].location != NSNotFound) {
-        if ([TwitterHelper handleTwitterURL:url]) {
-            return NO;
-        }
-	}
-
     NSArray* hostToBeRedirected = @[
+    @"twitter",
+    @"x.com",
     @"youtube",
     @"maps.apple.com",
     @"phobos.apple.com",

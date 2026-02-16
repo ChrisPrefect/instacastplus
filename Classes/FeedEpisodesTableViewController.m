@@ -28,7 +28,6 @@
 #import "ICFeedHeaderViewController.h"
 #import "ImageFunctions.h"
 #import "FeedSettingsViewController.h"
-#import "STITunesStore.h"
 #import "CDFeed+Helper.h"
 #import "ICFTSController.h"
 #import "InstacastAppDelegate.h"

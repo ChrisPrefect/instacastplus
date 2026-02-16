@@ -28,13 +28,6 @@
 
 @implementation ICMetadataParser
 
-+ (NSArray*) _URLBlacklist
-{
-    return @[ @"http://zwei-schnacker.podspot.de/files/Schnack%20Nr37a.mp3",
-              @"http://feedproxy.google.com/~r/matrixmasters/iGAG/",
-              @"http://www.medienkuh.de/media/podcast/"];
-}
-
 - (id) initWithAssetURL:(NSURL*)url
 {
     if (self = [self init]) {
@@ -102,15 +95,6 @@
 
 - (void) _loadAsset:(AVAsset*)asset completionHandler:(ICMetadataCompletionHandler)completionHandler
 {
-    NSArray* blackList = [[self class] _URLBlacklist];
-    
-    for(NSString* blackListedPrefix in blackList) {
-        if ([[((AVURLAsset*)asset).URL absoluteString] hasPrefix:blackListedPrefix]) {
-            completionHandler(NO, nil);
-            return;
-        }
-    }
-    
     ICMetadataAsset* metadataAsset = [[ICMetadataAsset alloc] init];
     metadataAsset.asset = asset;
     

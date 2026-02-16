@@ -16,7 +16,6 @@
 #import "ICPlaylistsTableViewCell.h"
 #import "VDModalInfo.h"
 
-#import "STITunesStore.h"
 #import "ICFeedURLScraper.h"
 #import "AnimatingLabel.h"
 

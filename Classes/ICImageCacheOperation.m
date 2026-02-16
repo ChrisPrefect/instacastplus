@@ -173,47 +173,7 @@
     
 
     
-    // fetch image from AWS cache
-    // NOTE: AWS image cache is currently deactivated
-//    NSURL* awsURL = [ImageCacheManager cacheURLForImageURL:self.url size:self.size];
-//    
-//    //DebugLog(@"Caching image: %@", awsURLString);
-//    NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:awsURL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30.0f];
-//    [request setAllowsCellularAccess:[USER_DEFAULTS boolForKey:EnableCachingImagesOver3G]];
-//    NSHTTPURLResponse* response = nil;
-//    NSError* error = nil;
-//    NSData* imageData = [self sendSynchronousRequest:request returningResponse:&response error:&error];
-//    
-//    image = [[IC_IMAGE alloc] initWithData:imageData];
-//    if (image && [self isJPEGValid:imageData] && ![self isCancelled])
-//    {
-//        // render a greyscale image
-//        if (self.grayscale) {
-//            IC_IMAGE* gimage = [ImageCacheManager grayscaleImageForImage:image];
-//            image = gimage;
-//            
-//            [self _writeJPGImage:gimage toFile:localPath];
-//            AddSkipBackupAttributeToFile(localPath);
-//        }
-//        else {
-//            [imageData writeToFile:localPath atomically:YES];
-//            AddSkipBackupAttributeToFile(localPath);
-//        }
-//
-//        [self _cacheImage:image forKey:cacheKey];
-//        [self _sendCompletionBlockImage:image error:nil];
-//        return;
-//    }
-//    
-//    if ([self isCancelled]) {
-//        [self _sendCompletionBlockImage:nil error:error];
-//        return;
-//    }
-    
-//    DebugLog(@"no image in AWS at %@ (original: %@)", [awsURL absoluteString], [self.url absoluteString]);
-
-    
-    // if no image in AWS cache, try getting and postprocessing the original image
+    // fetch and postprocess the original image
     NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:self.url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10.0f];
     [request setAllowsCellularAccess:[USER_DEFAULTS boolForKey:EnableCachingImagesOver3G]];
     NSHTTPURLResponse* response = nil;

@@ -77,14 +77,6 @@ static ImageCacheManager* gSharedCacheManager = nil;
     return [NSString stringWithFormat:@"%@_%ld_%d", [url absoluteString], (long)scaledSize, grayscale];
 }
 
-+ (NSURL*) cacheURLForImageURL:(NSURL*)url size:(NSInteger)size
-{
-    NSInteger scaledSize = size*[ImageCacheManager scalingFactor];
-    
-    NSString* awsURLString = [NSString stringWithFormat:@"http://pcast-images.vemedio.com/image?ref=%@&size=%ld", [[url absoluteString] stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]], (long)scaledSize];
-    return [NSURL URLWithString:awsURLString];
-}
-
 + (NSURL*) fileURLToCachedImageForImageURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale
 {
 	NSInteger scaledSize = size*[ImageCacheManager scalingFactor];

@@ -246,7 +246,6 @@
 		1BDE2F5E19927D5900C42195 /* PlayerFullscreenVideoViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BDE2F5D19927D5900C42195 /* PlayerFullscreenVideoViewController.m */; };
 		1BDE2F621993AE9700C42195 /* FullscreenVideoView.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1BDE2F611993AE9700C42195 /* FullscreenVideoView.xib */; };
 		1BDE2F651993D4ED00C42195 /* PlayerVideoSlider.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BDE2F641993D4ED00C42195 /* PlayerVideoSlider.m */; };
-		1BE00AA6134B68030087FCCE /* TwitterHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BE00AA5134B68030087FCCE /* TwitterHelper.m */; };
 		1BE12AC8198CFFB900773B46 /* PlayerInfoViewController_v5.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BE12AC7198CFFB900773B46 /* PlayerInfoViewController_v5.m */; };
 		1BE14991173F9BCE0099E8A8 /* CoreText.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1BE14990173F9BCE0099E8A8 /* CoreText.framework */; };
 		1BE2C23D139530EC0072504B /* ChaptersTableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BE2C23C139530EC0072504B /* ChaptersTableViewCell.m */; };
@@ -752,8 +751,6 @@
 		1BDE2F611993AE9700C42195 /* FullscreenVideoView.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = FullscreenVideoView.xib; sourceTree = "<group>"; };
 		1BDE2F631993D4ED00C42195 /* PlayerVideoSlider.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlayerVideoSlider.h; sourceTree = "<group>"; };
 		1BDE2F641993D4ED00C42195 /* PlayerVideoSlider.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlayerVideoSlider.m; sourceTree = "<group>"; };
-		1BE00AA4134B68030087FCCE /* TwitterHelper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TwitterHelper.h; sourceTree = "<group>"; };
-		1BE00AA5134B68030087FCCE /* TwitterHelper.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TwitterHelper.m; sourceTree = "<group>"; };
 		1BE12AC6198CFFB900773B46 /* PlayerInfoViewController_v5.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlayerInfoViewController_v5.h; sourceTree = "<group>"; };
 		1BE12AC7198CFFB900773B46 /* PlayerInfoViewController_v5.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlayerInfoViewController_v5.m; sourceTree = "<group>"; };
 		1BE14990173F9BCE0099E8A8 /* CoreText.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreText.framework; path = System/Library/Frameworks/CoreText.framework; sourceTree = SDKROOT; };
@@ -1551,8 +1548,6 @@
 		1BD280A416355BA40033A01B /* Sharing */ = {
 			isa = PBXGroup;
 			children = (
-				1BE00AA4134B68030087FCCE /* TwitterHelper.h */,
-				1BE00AA5134B68030087FCCE /* TwitterHelper.m */,
 			);
 			name = Sharing;
 			sourceTree = "<group>";
@@ -2093,7 +2088,6 @@
 				1B3461E91343303A003A16A9 /* OPML.m in Sources */,
 				1B32E4F321A6EE24004E225A /* NSDictionary+VMFoundation.m in Sources */,
 				CDDE0EB12D96D8A300826379 /* ChangeLogViewController.m in Sources */,
-				1BE00AA6134B68030087FCCE /* TwitterHelper.m in Sources */,
 				1B32E4F521A6EE24004E225A /* NSURL+VMFoundation.m in Sources */,
 				1BB21625137C30B7000A1B0A /* VDModalInfo.m in Sources */,
 				1B6AE6BF19A6190E00965357 /* ICListEditorPodcastCell.m in Sources */,
