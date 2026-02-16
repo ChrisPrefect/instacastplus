@@ -56,12 +56,14 @@
             _backupData.date = [df dateFromString:dateStr];
         }
     }
-    // <podcast url="..." rank="...">
+    // <podcast url="..." rank="..." username="..." password="...">
     else if ([path isEqualToString:@"instacast/podcasts/podcast"]) {
         _currentPodcast = [[ICBackupPodcast alloc] init];
         _currentPodcast.feedURL = attrs[@"url"];
         NSString *rankStr = attrs[@"rank"];
         if (rankStr) _currentPodcast.rank = (int32_t)[rankStr integerValue];
+        _currentPodcast.username = attrs[@"username"];
+        _currentPodcast.password = attrs[@"password"];
     }
     // <episode media="..." guid="..." feedUrl="..."> inside podcast
     else if ([path isEqualToString:@"instacast/podcasts/podcast/episodes/episode"]) {

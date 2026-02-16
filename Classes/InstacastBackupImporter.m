@@ -11,6 +11,7 @@
 #import "CDBookmark.h"
 #import "AudioSession.h"
 #import "AudioSession+UpNextPlaylist.h"
+#import "CacheManager.h"
 
 // Forward-declare private method on SubscriptionManager
 @interface SubscriptionManager (BackupImport)
@@ -223,6 +224,10 @@
                 episode.duration = backupEp.duration;
                 count++;
             }
+            if (backupEp.downloaded && !episode.downloaded) {
+                [[CacheManager sharedCacheManager] cacheEpisode:episode];
+                count++;
+            }
         }
     }
 
@@ -250,13 +255,36 @@
             feed.rank = podcast.rank;
         }
 
-        if (podcast.settings) {
-            for (NSString *key in podcast.settings) {
-                // Skip internal keys
-                if ([internalKeys containsObject:key]) continue;
+        // Restore credentials
+        if (podcast.username.length > 0) {
+            feed.username = podcast.username;
+            count++;
+        }
+        if (podcast.password.length > 0) {
+            feed.password = podcast.password;
+            count++;
+        }
 
-                NSString *value = podcast.settings[key];
+        if (podcast.settings) {
+            for (NSString *originalKey in podcast.settings) {
+                // Skip internal keys
+                if ([internalKeys containsObject:originalKey]) continue;
+
+                NSString *value = podcast.settings[originalKey];
                 if (!value || value.length == 0) continue;
+
+                // Translate UID-prefixed keys: old UID → new feed's UID
+                // Keys like {UUID}_auto_skip_start_period, {UUID}_old_episode_delete_days
+                NSString *key = originalKey;
+                if (key.length > 37 && [key characterAtIndex:36] == '_') {
+                    NSString *prefix = [key substringToIndex:36];
+                    // Validate UUID format (8-4-4-4-12 hex with dashes)
+                    if ([prefix characterAtIndex:8] == '-' && [prefix characterAtIndex:13] == '-' &&
+                        [prefix characterAtIndex:18] == '-' && [prefix characterAtIndex:23] == '-') {
+                        NSString *suffix = [key substringFromIndex:36];
+                        key = [feed.uid stringByAppendingString:suffix];
+                    }
+                }
 
                 if (![feed hasCustomProperties] || ![feed stringForKey:key]) {
                     if ([value isEqualToString:@"true"] || [value isEqualToString:@"false"]) {

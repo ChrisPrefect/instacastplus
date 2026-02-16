@@ -26,6 +26,8 @@ NS_ASSUME_NONNULL_BEGIN
 @interface ICBackupPodcast : NSObject
 @property (nonatomic, strong, nullable) NSString *feedURL;
 @property (nonatomic) int32_t rank;
+@property (nonatomic, strong, nullable) NSString *username;
+@property (nonatomic, strong, nullable) NSString *password;
 @property (nonatomic, strong, nullable) NSMutableDictionary *settings;
 @property (nonatomic, strong) NSMutableArray<ICBackupEpisode *> *episodes;
 @end

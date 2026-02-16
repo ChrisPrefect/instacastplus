@@ -295,8 +295,15 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
     [xml appendString:@"  <podcasts>\n"];
     for (CDFeed* feed in feeds) {
-        [xml appendFormat:@"    <podcast url=\"%@\" rank=\"%d\">\n",
+        NSMutableString *podcastAttrs = [NSMutableString stringWithFormat:@"url=\"%@\" rank=\"%d\"",
             [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank];
+        if (feed.username.length > 0) {
+            [podcastAttrs appendFormat:@" username=\"%@\"", [self xmlEscape:feed.username]];
+        }
+        if (feed.password.length > 0) {
+            [podcastAttrs appendFormat:@" password=\"%@\"", [self xmlEscape:feed.password]];
+        }
+        [xml appendFormat:@"    <podcast %@>\n", podcastAttrs];
 
         // Custom properties (skip internal keys)
         NSArray* propertyKeys = [feed propertyKeys];

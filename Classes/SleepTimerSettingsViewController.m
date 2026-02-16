@@ -374,13 +374,26 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     UITableViewCell *cell = self.thresholdCell;
     if (!cell) return;
 
-    [UIView animateWithDuration:0.15 animations:^{
+    // Cancel any pending fade-back
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackThresholdCell) object:nil];
+
+    // Instantly show tint color (no animation delay)
+    [UIView animateWithDuration:0.05 delay:0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
         cell.backgroundColor = ICTintColor;
-    } completion:^(BOOL finished) {
-        [UIView animateWithDuration:0.4 animations:^{
-            cell.backgroundColor = ICGroupCellBackgroundColor;
-        }];
-    }];
+    } completion:nil];
+
+    // Schedule fade-back after a short pause
+    [self performSelector:@selector(fadeBackThresholdCell) withObject:nil afterDelay:0.3];
+}
+
+- (void)fadeBackThresholdCell
+{
+    UITableViewCell *cell = self.thresholdCell;
+    if (!cell) return;
+
+    [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+        cell.backgroundColor = ICGroupCellBackgroundColor;
+    } completion:nil];
 }
 
 - (void)decreaseThreshold:(UIButton*)sender
