@@ -67,3 +67,8 @@ extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 
 @interface ICNightAppearance : NSObject <ICAppearance>
 @end
+
+// Central window subclass that detects OS theme changes at the window level.
+// This fires regardless of which VC is presented (including full-screen modals).
+@interface ICWindow : UIWindow
+@end

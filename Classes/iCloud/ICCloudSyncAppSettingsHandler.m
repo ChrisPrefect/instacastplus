@@ -56,6 +56,7 @@ static NSArray *syncableSettingsKeys(void) {
             @"ScreenTouchIntelligentSleep",
             @"VolumeChangeIntelligentSleep",
             @"DeviceMovementIntelligentSleep",
+            @"DeviceMovementSensitivity",
             @"LastSelectedSleepTimer",
         ];
     });

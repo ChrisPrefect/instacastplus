@@ -240,7 +240,12 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+
     self.shown = YES;
     self.tintColor = ICTintColor;
     [self createVolumeViews];
@@ -284,28 +289,26 @@
     self.volumeMaxButton.userInteractionEnabled = NO;
 }
 
-- (void) viewWillAppear:(BOOL)animated
+- (void) updateAppearance
 {
-    [super viewWillAppear:animated];
-    
     self.view.backgroundColor = ICBackgroundColor;
-    
+
     self.elapsedTimeLabel.textColor = ICTextColor;
     self.remainingTimeLabel.textColor = ICTextColor;
     self.chapterTitleLabel.textColor = ICTextColor;
-    
-    
+
     CGFloat white;
     [ICTextColor getWhite:&white alpha:NULL];
     white = (white > 0.5f) ? 1.0f : 0.0f;
     self.timeSlider.progressColor = [UIColor colorWithWhite:white alpha:0.1f];
-    
+
     self.volumeMinButton.tintColor = [UIColor colorWithWhite:white alpha:0.2f];
     self.volumeMaxButton.tintColor = [UIColor colorWithWhite:white alpha:0.2f];
-    
-    UIImage* maxImage = ICImageFromByDrawingInContextWithScale(CGSizeMake(3, 2), NO, self.view.window.screen.scale, ^(void) {
+
+    CGFloat scale = self.view.window.screen.scale ?: [UIScreen mainScreen].scale;
+    UIImage* maxImage = ICImageFromByDrawingInContextWithScale(CGSizeMake(3, 2), NO, scale, ^(void) {
         UIBezierPath* rectanglePath = [UIBezierPath bezierPathWithRoundedRect: CGRectMake(0, 0, 3, 2) cornerRadius:1];
-        
+
         CGFloat white;
         [ICTextColor getWhite:&white alpha:NULL];
         white = (white > 0.5f) ? 1.0f : 0.0f;
@@ -314,8 +317,16 @@
     });
     maxImage = [maxImage resizableImageWithCapInsets:UIEdgeInsetsMake(0, 1, 0, 1)];
     [self.volumeView setMaximumVolumeSliderImage:maxImage forState:UIControlStateNormal];
-    
-    
+
+    self.tintColor = ICTintColor;
+}
+
+- (void) viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+
+    [self updateAppearance];
+
     if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
         CGFloat width = CGRectGetWidth(self.view.bounds);
         CGFloat offset = (self.toolsVisible) ? -width : 0;

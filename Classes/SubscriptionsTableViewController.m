@@ -406,10 +406,8 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    [self updateAppearance];
     _didRestoreScrollPosition = NO;
-    self.tableView.separatorColor = ICTableSeparatorColor;
-    self.tableView.backgroundColor = ICBackgroundColor;
-    [self.searchBar appearanceDidChange];
     
     NSString* searchTerm = [USER_DEFAULTS objectForKey:kUIPersistenceSubscriptionsSearchTerm];
     if (searchTerm) {

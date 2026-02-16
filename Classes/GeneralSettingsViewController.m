@@ -84,27 +84,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    [self _updateNavigationBarAppearance];
-
     [self.tableView reloadData];
-}
-
-- (void) _updateNavigationBarAppearance {
-    id<ICAppearance> appearance = [ICAppearanceManager sharedManager].appearance;
-    UINavigationBar *navBar = self.navigationController.navigationBar;
-
-    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
-
-    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
-    [navAppearance configureWithOpaqueBackground];
-    navAppearance.backgroundImage = backgroundImage;
-    navAppearance.shadowImage = [[UIImage alloc] init];
-    navAppearance.shadowColor = nil;
-    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
-
-    navBar.standardAppearance = navAppearance;
-    navBar.scrollEdgeAppearance = navAppearance;
-    navBar.compactAppearance = navAppearance;
 }
 
 

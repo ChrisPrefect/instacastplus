@@ -676,17 +676,6 @@ enum {
 
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
-    // Make navigation bar opaque so chapter images don't show through
-    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
-    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
-    [navAppearance configureWithOpaqueBackground];
-    navAppearance.backgroundImage = backgroundImage;
-    navAppearance.shadowImage = [[UIImage alloc] init];
-    navAppearance.shadowColor = nil;
-    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
-    self.navigationController.navigationBar.standardAppearance = navAppearance;
-    self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
-    self.navigationController.navigationBar.compactAppearance = navAppearance;
 
     if (_dismissing) {
         return;
@@ -789,17 +778,6 @@ enum {
     self.view.backgroundColor = ICBackgroundColor;
     self.feedTitleLabel.textColor = ICTextColor;
 
-    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
-    UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
-    [navAppearance configureWithOpaqueBackground];
-    navAppearance.backgroundImage = backgroundImage;
-    navAppearance.shadowImage = [[UIImage alloc] init];
-    navAppearance.shadowColor = nil;
-    navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : ICTextColor };
-    self.navigationController.navigationBar.standardAppearance = navAppearance;
-    self.navigationController.navigationBar.scrollEdgeAppearance = navAppearance;
-    self.navigationController.navigationBar.compactAppearance = navAppearance;
-
     if (self.image) {
         [self _updateDynamicTintColorWithImage:self.image];
     }
@@ -807,11 +785,6 @@ enum {
 
 - (void) viewWillDisappear:(BOOL)animated
 {
-    // Restore default navigation bar appearance
-    self.navigationController.navigationBar.standardAppearance = nil;
-    self.navigationController.navigationBar.scrollEdgeAppearance = nil;
-    self.navigationController.navigationBar.compactAppearance = nil;
-
     [super viewWillDisappear:animated];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
 }

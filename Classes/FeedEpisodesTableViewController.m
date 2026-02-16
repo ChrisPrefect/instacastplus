@@ -452,11 +452,11 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    [self updateAppearance];
     _didRestoreScrollPosition = NO;
-    
+
     CGFloat w = CGRectGetWidth(self.view.bounds);
     self.headerButtonStack.frame = CGRectMake(0, 98, w, 40);
-    self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
     
     
     if ([self.searchTerm length] > 0)
@@ -616,11 +616,12 @@
 {
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
-    // Nur layout wenn View im Window ist
+    self.tableHeaderView.backgroundColor = ICBackgroundColor;
+    self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
+    self.headerButtonStack.tintColor = ICTintColor;
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
-    self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
 }
 
 - (void) toolbarCloseButtonAction:(id)sender

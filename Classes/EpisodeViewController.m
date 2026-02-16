@@ -65,7 +65,7 @@
 
 - (void)dealloc
 {
-    
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self _releaseSharedContent];
     self.episode = nil;
     [self _setObserving:NO];
@@ -278,6 +278,12 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     //[self viewDidLoadContenLoad];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+
     self.title = @"Show Notes".ls;
     CGRect viewBounds = self.view.bounds;
 
@@ -582,18 +588,6 @@
     self.sharedWebView.backgroundColor = ICBackgroundColor;
     self.sharedWebView.scrollView.backgroundColor = ICBackgroundColor;
     self.sharedWebView.scrollView.indicatorStyle = [[ICAppearanceManager sharedManager] appearance].scrollIndicatorStyle;
-
-    // Navigation bar opaque with backgroundImage (backgroundColor alone doesn't disable Liquid Glass on iOS 26)
-    UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
-    UINavigationBarAppearance* navBarAppearance = [[UINavigationBarAppearance alloc] init];
-    [navBarAppearance configureWithOpaqueBackground];
-    navBarAppearance.backgroundImage = backgroundImage;
-    navBarAppearance.shadowImage = [[UIImage alloc] init];
-    navBarAppearance.shadowColor = nil;
-    [navBarAppearance setTitleTextAttributes:@{NSForegroundColorAttributeName: ICTextColor}];
-    self.navigationController.navigationBar.standardAppearance = navBarAppearance;
-    self.navigationController.navigationBar.scrollEdgeAppearance = navBarAppearance;
-    self.navigationController.navigationBar.compactAppearance = navBarAppearance;
 
     [self _loadWebContent];
 }
@@ -920,16 +914,15 @@
         [App addTaskObserver:self forKeyPath:@"networkAccessTechnology" task:^(id obj, NSDictionary *change) {
             [self _updateTimeDisplay];
         }];
-        
-        [nc addObserver:self
-                                                 selector:@selector(updateAppearance)
-                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
-                                                   object:nil];
-        
+
     }
     else if (!observing && _observing)
     {
-        [nc removeObserver:self];
+        [nc removeObserver:self name:PlaybackManagerDidEndNotification object:nil];
+        [nc removeObserver:self name:PlaybackManagerDidChangeEpisodeNotification object:nil];
+        [nc removeObserver:self name:CacheManagerDidStartCachingEpisodeNotification object:nil];
+        [nc removeObserver:self name:CacheManagerDidUpdateNotification object:nil];
+        [nc removeObserver:self name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
         [App removeTaskObserver:self forKeyPath:@"networkAccessTechnology"];
     }
     

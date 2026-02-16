@@ -8,7 +8,7 @@ a {
 }
 
 .label {
-    color: e0e0e0;
+    color: #e0e0e0;
     text-align: right;
 }
 
@@ -33,9 +33,9 @@ a {
 }
 
 #episodes .title_video {
-    color: e0e0e0;
+    color: #e0e0e0;
 }
 
 #episodes .title_audio {
-    color: e0e0e0;
+    color: #e0e0e0;
 }

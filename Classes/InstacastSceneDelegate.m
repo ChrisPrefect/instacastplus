@@ -76,7 +76,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
     if ([scene isKindOfClass:[UIWindowScene class]]) {
         UIWindowScene *windowScene = (UIWindowScene *)scene;
-        self.window = [[UIWindow alloc] initWithWindowScene:windowScene];
+        self.window = [[ICWindow alloc] initWithWindowScene:windowScene];
         self.window.backgroundColor = ICBackgroundColor;
 
 #if TARGET_OS_MACCATALYST

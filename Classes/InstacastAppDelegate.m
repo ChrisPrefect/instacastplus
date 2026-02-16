@@ -172,6 +172,13 @@
     {
         [USER_DEFAULTS setBool:true forKey:DeviceMovementIntelligentSleep];
     }
+    {
+        double storedSensitivity = [USER_DEFAULTS doubleForKey:DeviceMovementSensitivity];
+        if (storedSensitivity <= 0 || storedSensitivity >= 1.0)
+        {
+            [USER_DEFAULTS setDouble:0.004 forKey:DeviceMovementSensitivity];
+        }
+    }
     if ([USER_DEFAULTS valueForKey:PlayerColorPerPodcastActive] == nil)
     {
         [USER_DEFAULTS setBool:true forKey:PlayerColorPerPodcastActive];

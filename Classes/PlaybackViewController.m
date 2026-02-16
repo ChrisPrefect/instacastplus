@@ -68,17 +68,6 @@
     {
         self.view.backgroundColor = ICBackgroundColor;
         self.view.tintColor = ICTintColor;
-
-        UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
-        UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
-        [appearance configureWithOpaqueBackground];
-        appearance.backgroundImage = backgroundImage;
-        appearance.shadowImage = [[UIImage alloc] init];
-        appearance.shadowColor = nil;
-        self.navigationBar.standardAppearance = appearance;
-        self.navigationBar.scrollEdgeAppearance = appearance;
-        self.navigationBar.compactAppearance = appearance;
-
         [self setNeedsStatusBarAppearanceUpdate];
     }
 
@@ -89,17 +78,6 @@
 
         self.view.backgroundColor = ICBackgroundColor;
         self.view.tintColor = ICTintColor;
-
-        // Navigation Bar Appearance für durchgehende Farbe hinter Dynamic Island
-        UIImage *backgroundImage = [[ICAppearanceManager sharedManager] navigationBarBackgroundImage];
-        UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
-        [appearance configureWithOpaqueBackground];
-        appearance.backgroundImage = backgroundImage;
-        appearance.shadowImage = [[UIImage alloc] init];
-        appearance.shadowColor = nil;
-        self.navigationBar.standardAppearance = appearance;
-        self.navigationBar.scrollEdgeAppearance = appearance;
-        self.navigationBar.compactAppearance = appearance;
         
         // xxx: workaround for status bar issues
     //    if (!_appeared) {

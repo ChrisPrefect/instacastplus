@@ -20,6 +20,10 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     kNumberOfSections,
 };
 
+@interface SleepTimerSettingsViewController ()
+@property (nonatomic, weak) UILabel* thresholdValueLabel;
+@end
+
 @implementation SleepTimerSettingsViewController
 
 + (SleepTimerSettingsViewController*) viewController
@@ -90,7 +94,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
         case kAutomaticTimer:
             return 1;
         case kIntelligentSleep:
-            return 3;
+            return [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep] ? 4 : 3;
         case kCarPlaySection:
             return 1;
         default:
@@ -149,6 +153,44 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 cell.textLabel.text = @"Device Movement".ls;
                 control.on = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
                 [control addTarget:self action:@selector(toggleIntelligentSleepSettings:) forControlEvents:UIControlEventValueChanged];
+                return cell;
+            }
+            case 3:
+            {
+                UITableViewCell* cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+                cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                cell.backgroundColor = ICGroupCellBackgroundColor;
+                cell.textLabel.text = @"Schwellwert für Bewegung".ls;
+                cell.textLabel.textColor = ICTextColor;
+                cell.textLabel.font = [UIFont systemFontOfSize:15];
+
+                UIButton *minusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+                [minusBtn setTitle:@"−" forState:UIControlStateNormal];
+                minusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:20];
+                [minusBtn addTarget:self action:@selector(decreaseThreshold:) forControlEvents:UIControlEventTouchUpInside];
+
+                UILabel *valueLbl = [[UILabel alloc] init];
+                double currentThreshold = [USER_DEFAULTS doubleForKey:DeviceMovementSensitivity];
+                if (currentThreshold <= 0) currentThreshold = 0.004;
+                valueLbl.text = [NSString stringWithFormat:@"%.3f", currentThreshold];
+                valueLbl.textColor = ICTextColor;
+                valueLbl.font = [UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightMedium];
+                valueLbl.textAlignment = NSTextAlignmentCenter;
+                self.thresholdValueLabel = valueLbl;
+
+                UIButton *plusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+                [plusBtn setTitle:@"+" forState:UIControlStateNormal];
+                plusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:20];
+                [plusBtn addTarget:self action:@selector(increaseThreshold:) forControlEvents:UIControlEventTouchUpInside];
+
+                UIStackView *controlStack = [[UIStackView alloc] initWithArrangedSubviews:@[minusBtn, valueLbl, plusBtn]];
+                controlStack.axis = UILayoutConstraintAxisHorizontal;
+                controlStack.spacing = 12;
+                controlStack.alignment = UIStackViewAlignmentCenter;
+                [controlStack sizeToFit];
+                controlStack.frame = CGRectMake(0, 0, 120, 30);
+                cell.accessoryView = controlStack;
+
                 return cell;
             }
             default:
@@ -309,7 +351,29 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     }
     else if (sender.tag == 2) {
         [USER_DEFAULTS setBool:sender.on forKey:DeviceMovementIntelligentSleep];
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kIntelligentSleep] withRowAnimation:UITableViewRowAnimationAutomatic];
     }
+}
+
+- (void)decreaseThreshold:(UIButton*)sender
+{
+    double threshold = [USER_DEFAULTS doubleForKey:DeviceMovementSensitivity];
+    if (threshold <= 0) threshold = 0.004;
+    threshold -= 0.001;
+    if (threshold < 0.001) threshold = 0.001;
+    [USER_DEFAULTS setDouble:threshold forKey:DeviceMovementSensitivity];
+    [USER_DEFAULTS synchronize];
+    self.thresholdValueLabel.text = [NSString stringWithFormat:@"%.3f", threshold];
+}
+
+- (void)increaseThreshold:(UIButton*)sender
+{
+    double threshold = [USER_DEFAULTS doubleForKey:DeviceMovementSensitivity];
+    if (threshold <= 0) threshold = 0.004;
+    threshold += 0.001;
+    [USER_DEFAULTS setDouble:threshold forKey:DeviceMovementSensitivity];
+    [USER_DEFAULTS synchronize];
+    self.thresholdValueLabel.text = [NSString stringWithFormat:@"%.3f", threshold];
 }
 
 @end

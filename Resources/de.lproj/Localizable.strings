@@ -128,6 +128,7 @@
 "Intelligent Sleep timer (off)" = "Intelligenter Sleep-Timer (aus)";
 "Smart Sleep Timer" = "Smart Sleep-Timer";
 "Sleep Timer Always Active" = "Sleep-Timer immer aktiv";
+"Schwellwert für Bewegung" = "Schwellwert für Bewegung";
 "Disable Sleep Timer in CarPlay" = "Sleep-Timer in CarPlay deaktivieren";
 "If a podcast is playing, the sleep timer will be enabled automatically. Prevents podcasts from unintentionally playing trough the night." = "Wenn ein Podcast spielt, wird der Sleep-Timer automatisch aktiviert. Verhindert, dass ein Podcast ungewollt die ganze Nacht spielt.";
 "While CarPlay is active, the Sleep Timer stays disabled." = "Solange CarPlay aktiv ist, bleibt der Sleep-Timer deaktiviert.";

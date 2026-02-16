@@ -310,14 +310,15 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         [self.motionManager startAccelerometerUpdatesToQueue:queue withHandler:^(CMAccelerometerData *accelerometerData, NSError *error) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 CMAcceleration acc = accelerometerData.acceleration;
-                double dx = round(acc.x * 100) / 100;
-                double dy = round(acc.y * 100) / 100;
-                double dz = round(acc.z * 100) / 100;
-                if (dx != self->lastAccelX || dy != self->lastAccelY || dz != self->lastAccelZ)
+                double threshold = [USER_DEFAULTS doubleForKey:DeviceMovementSensitivity];
+                if (threshold <= 0) threshold = 0.004;
+                if (fabs(acc.x - self->lastAccelX) > threshold ||
+                    fabs(acc.y - self->lastAccelY) > threshold ||
+                    fabs(acc.z - self->lastAccelZ) > threshold)
                 {
-                    self->lastAccelX = dx;
-                    self->lastAccelY = dy;
-                    self->lastAccelZ = dz;
+                    self->lastAccelX = acc.x;
+                    self->lastAccelY = acc.y;
+                    self->lastAccelZ = acc.z;
                     [[NSNotificationCenter defaultCenter] postNotificationName:ApplicationDidDetectMotionNotification object:nil];
                     BOOL isMotionActive = [USER_DEFAULTS boolForKey:DeviceMovementIntelligentSleep];
                     BOOL isIntelligentTimerActive = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];

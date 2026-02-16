@@ -63,11 +63,7 @@ enum {
         label.numberOfLines = 2;
         label.font = [UIFont boldSystemFontOfSize: 16.0f];
         label.textAlignment = NSTextAlignmentCenter;
-        if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            label.textColor = [UIColor whiteColor];
-        } else {
-            label.textColor = [UIColor blackColor];
-        }
+        label.textColor = ICTextColor;
         label.text = [NSString stringWithFormat:@"%@\n%@", self.feed.title, @"Subscription Settings".ls];
         self.navigationItem.titleView = label;
         
@@ -113,6 +109,11 @@ enum {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+
+    UILabel *titleLabel = (UILabel *)self.navigationItem.titleView;
+    if ([titleLabel isKindOfClass:[UILabel class]]) {
+        titleLabel.textColor = ICTextColor;
+    }
 
     if (self.tableView.window && !self.transitionCoordinator) {
         [self.tableView reloadData];

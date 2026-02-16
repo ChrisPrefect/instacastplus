@@ -20,6 +20,7 @@ extern NSString* ScreenTimerAlwaysActive;
 extern NSString* ScreenTouchIntelligentSleep;
 extern NSString* VolumeChangeIntelligentSleep;
 extern NSString* DeviceMovementIntelligentSleep;
+extern NSString* DeviceMovementSensitivity;
 extern NSString* DisableSleepTimerInCarPlay;
 
 extern NSString* PlayerColorPerPodcastActive;

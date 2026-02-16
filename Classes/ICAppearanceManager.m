@@ -81,20 +81,19 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 {
     if (_appearance != appearance) {
         _appearance = appearance;
-        
+
+        // UIAppearance proxies (affect newly created views)
         [[UINavigationBar appearance] setTitleTextAttributes:@{ NSForegroundColorAttributeName : appearance.textColor }];
-        
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefault];
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 94) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefaultPrompt];
         [[UINavigationBar appearance] setShadowImage:[[UIImage alloc] init]];
-        
+
         [[UIToolbar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 44) appearance:appearance topToBottom:NO] forToolbarPosition:UIBarPositionAny barMetrics:UIBarMetricsDefault];
         [[UIToolbar appearance] setShadowImage:[[UIImage alloc] init] forToolbarPosition:UIBarPositionAny];
-    
+
         [[UIScrollView appearance] setIndicatorStyle:appearance.scrollIndicatorStyle];
 
         [[UITabBar appearance] setShadowImage:[[UIImage alloc] init]];
-
         [[UITabBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(50, 50) appearance:appearance topToBottom:NO]];
 
         [[UITextField appearance] setKeyboardAppearance:appearance.keyboardAppearance];
@@ -109,26 +108,78 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         [subview removeFromSuperview];
         [rootWindow addSubview:subview];
 
-        // workaround a bug in iOS where presented view controllers don't get appearance methods
+        // Recursively update all existing navigation bars, toolbars, and tab bars
+        if (rootWindow.rootViewController) {
+            [self _recursivelyUpdateBarsForViewController:rootWindow.rootViewController];
+        }
 
+        // workaround a bug in iOS where presented view controllers don't get appearance methods
         UIViewController* presentedViewController = rootWindow.rootViewController.presentedViewController;
-//        
-//        // xxx: iPad does not update view controller behind a form sheet
-//        if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
-//            presentedViewController = rootWindow.rootViewController;
-//        }
-        
         do {
             [presentedViewController beginAppearanceTransition:NO animated:NO];
             [presentedViewController endAppearanceTransition];
-        
+
             [presentedViewController beginAppearanceTransition:YES animated:NO];
             [presentedViewController endAppearanceTransition];
-            
+
             presentedViewController = presentedViewController.presentedViewController;
         } while (presentedViewController);
-        
+
         [[NSNotificationCenter defaultCenter] postNotificationName:ICAppearanceManagerDidUpdateAppearanceNotification object:self];
+    }
+}
+
+- (void) _recursivelyUpdateBarsForViewController:(UIViewController *)vc
+{
+    id<ICAppearance> appearance = _appearance;
+
+    // Update navigation bar
+    if ([vc isKindOfClass:[UINavigationController class]]) {
+        UINavigationController *nav = (UINavigationController *)vc;
+        UIImage *backgroundImage = [self navigationBarBackgroundImage];
+        UINavigationBarAppearance *navAppearance = [[UINavigationBarAppearance alloc] init];
+        [navAppearance configureWithOpaqueBackground];
+        navAppearance.backgroundImage = backgroundImage;
+        navAppearance.shadowImage = [[UIImage alloc] init];
+        navAppearance.shadowColor = nil;
+        navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
+        nav.navigationBar.standardAppearance = navAppearance;
+        nav.navigationBar.scrollEdgeAppearance = navAppearance;
+        nav.navigationBar.compactAppearance = navAppearance;
+
+        // Update toolbar
+        UIImage *toolbarImage = [self _navigationBarImageWithSize:CGSizeMake(44, 44) appearance:appearance topToBottom:NO];
+        UIToolbarAppearance *toolbarAppearance = [[UIToolbarAppearance alloc] init];
+        [toolbarAppearance configureWithOpaqueBackground];
+        toolbarAppearance.backgroundImage = toolbarImage;
+        toolbarAppearance.shadowImage = [[UIImage alloc] init];
+        toolbarAppearance.shadowColor = nil;
+        nav.toolbar.standardAppearance = toolbarAppearance;
+        nav.toolbar.scrollEdgeAppearance = toolbarAppearance;
+        nav.toolbar.compactAppearance = toolbarAppearance;
+    }
+
+    // Update tab bar
+    if ([vc isKindOfClass:[UITabBarController class]]) {
+        UITabBarController *tabVC = (UITabBarController *)vc;
+        UIImage *tabBarImage = [self _navigationBarImageWithSize:CGSizeMake(50, 50) appearance:appearance topToBottom:NO];
+        UITabBarAppearance *tabAppearance = [[UITabBarAppearance alloc] init];
+        [tabAppearance configureWithOpaqueBackground];
+        tabAppearance.backgroundImage = tabBarImage;
+        tabAppearance.shadowImage = [[UIImage alloc] init];
+        tabAppearance.shadowColor = nil;
+        tabVC.tabBar.standardAppearance = tabAppearance;
+        tabVC.tabBar.scrollEdgeAppearance = tabAppearance;
+    }
+
+    // Recurse into child view controllers
+    for (UIViewController *child in vc.childViewControllers) {
+        [self _recursivelyUpdateBarsForViewController:child];
+    }
+
+    // Recurse into presented view controllers
+    if (vc.presentedViewController) {
+        [self _recursivelyUpdateBarsForViewController:vc.presentedViewController];
     }
 }
 
@@ -424,6 +475,22 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (UIActivityIndicatorViewStyle) activityIndicatorStyle {
     return UIActivityIndicatorViewStyleMedium;
+}
+
+@end
+
+
+@implementation ICWindow
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+    [super traitCollectionDidChange:previousTraitCollection];
+
+    if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
+        if (self.traitCollection.userInterfaceStyle != previousTraitCollection.userInterfaceStyle) {
+            [[ICAppearanceManager sharedManager] updateAppearance];
+        }
+    }
 }
 
 @end

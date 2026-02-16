@@ -339,7 +339,6 @@
 
     [mainStack addArrangedSubview:intelligentStack];
     [mainStack addArrangedSubview:screenAlwaysStack];
-    [mainStack setCustomSpacing:10 afterView:intelligentStack];
     
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
@@ -481,7 +480,7 @@
     [alert.view.widthAnchor constraintGreaterThanOrEqualToConstant:minWidth].active = YES;
 
     // Height constraint for the alert view
-    CGFloat height = 30 + alert.actions.count * 52 + mainStack.bounds.size.height;
+    CGFloat height = 16 + alert.actions.count * 52 + mainStack.bounds.size.height;
     [alert.view.heightAnchor constraintEqualToConstant:height].active = YES;
     //
     if ([ICAppearanceManager sharedManager].nightSettingMode)
