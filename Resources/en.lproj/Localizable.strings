@@ -49,7 +49,7 @@
 /* DirectorySearchViewController.m */
 "Author" = "Author";
 "Description" = "Description";
-"Search or Enter URL" = "Search or Enter URL";
+"Search or Enter URL" = "Search or Enter Podcast URL";
 
 /* FeedSettingsViewController.m */
 "1 Minute" = "1 Minute";

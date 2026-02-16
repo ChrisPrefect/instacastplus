@@ -1535,11 +1535,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
     NSTextContainer* textContainer = self.transcriptTextView.textContainer;
 
-    // Ensure layout from beginning to target range for accurate vertical positioning.
-    // UITextView with scrollEnabled=YES uses non-contiguous layout, which means
-    // ensureLayoutForCharacterRange: for just the cue range can return inaccurate
-    // y-positions because preceding text may only have estimated line heights.
-    [layoutManager ensureLayoutForCharacterRange:NSMakeRange(0, NSMaxRange(cueRange))];
+    // Ensure layout for the ENTIRE text, not just up to the cue.
+    // When _updateTranscriptLabelAppearance changes fonts at old and new cue positions,
+    // textStorage endEditing invalidates layout for the union of both ranges.
+    // If we only ensureLayout up to the new cue (smaller range for backward seeks),
+    // the gap between new and old cue reverts to estimated line heights.
+    // UITextView then re-layouts visible content, contentSize changes, and UITextView
+    // auto-adjusts contentOffset to compensate — destroying our scroll position.
+    [layoutManager ensureLayoutForCharacterRange:NSMakeRange(0, layoutManager.textStorage.length)];
     NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:cueRange actualCharacterRange:NULL];
     CGRect glyphRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
 
