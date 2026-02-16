@@ -1391,10 +1391,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     
     
     CDEpisode* episode = (CDEpisode*)[self.episodes objectAtIndex:indexPath.row];
-    [self _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
-    
-    [USER_DEFAULTS setObject:episode.uid forKey:kDefaultEpisodesSelectedEpisodeUID];
-    [USER_DEFAULTS synchronize];
+    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+    [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 
 //-(void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath

@@ -351,6 +351,7 @@
 
 /* PlayerInfoViewController_v5.m */
 "Chapters" = "Kapitel";
+"Previous Chapters" = "Vorherige Kapitel";
 "Edit Bookmark" = "Lesezeichen bearbeiten";
 "Up Next" = "Nächste Folgen";
 

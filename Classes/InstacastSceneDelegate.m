@@ -1008,18 +1008,19 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     if (@available(iOS 14.0, *)) {
         NSInteger currentChapter = [PlaybackManager playbackManager].currentChapter;
         for (CPListSection* section in listTemplate.sections) {
-            NSInteger index = 0;
             for (id<CPListTemplateItem> listItem in section.items) {
                 if (![listItem isKindOfClass:[CPListItem class]]) {
-                    index++;
                     continue;
                 }
                 CPListItem* item = (CPListItem*)listItem;
-                BOOL isPlayingChapter = (index == currentChapter);
+                NSNumber* chapterIndex = item.userInfo;
+                if (![chapterIndex isKindOfClass:[NSNumber class]]) {
+                    continue;
+                }
+                BOOL isPlayingChapter = (chapterIndex.integerValue == currentChapter);
                 if (item.playing != isPlayingChapter) {
                     item.playing = isPlayingChapter;
                 }
-                index++;
             }
         }
     }
@@ -1576,6 +1577,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     }
 
     NSTimeInterval playerTime = [playbackManager time];
+    NSInteger currentChapterIndex = NSNotFound;
 
     for (NSInteger index = 0; index < (NSInteger)chapters.count; index++) {
         NSString* title = nil;
@@ -1620,15 +1622,20 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                       [self carPlayFormattedTimecode:endSeconds]];
         }
         CPListItem* item = [self carPlayListItemWithText:title detailText:detail image:fallbackArtwork];
+        item.userInfo = @(index);
 
         if (@available(iOS 14.0, *)) {
+            BOOL isCurrentChapter = NO;
             if (usingRuntimeChapters) {
-                item.playing = (index == playbackManager.currentChapter);
+                isCurrentChapter = (index == playbackManager.currentChapter);
             } else {
-                BOOL isCurrentStoredChapter = (playerTime >= startTime && (endTime < 0.0 || playerTime < endTime));
-                item.playing = isCurrentStoredChapter;
+                isCurrentChapter = (playerTime >= startTime && (endTime < 0.0 || playerTime < endTime));
             }
+            item.playing = isCurrentChapter;
             item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
+            if (isCurrentChapter) {
+                currentChapterIndex = index;
+            }
         }
 
         if (usingRuntimeChapters) {

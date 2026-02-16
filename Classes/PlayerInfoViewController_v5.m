@@ -1398,7 +1398,33 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    [self _updateTranscriptCueForPlaybackTime:pman.time animated:YES];
+    NSTimeInterval currentTime = pman.time;
+    NSInteger cueIndex = [self _activeTranscriptCueIndexForPlaybackTime:currentTime];
+    if (cueIndex == NSNotFound) {
+        return;
+    }
+
+    BOOL cueChanged = (cueIndex != self.activeTranscriptCueIndex);
+    if (cueChanged) {
+        // Detect seek: cue jumped by more than 1 position
+        BOOL seekDetected = (self.activeTranscriptCueIndex != NSNotFound &&
+                             labs(cueIndex - self.activeTranscriptCueIndex) > 1);
+
+        self.activeTranscriptCueIndex = cueIndex;
+        [self _updateTranscriptLabelAppearance];
+
+        // Seek overrides manual scroll suspension
+        if (seekDetected && self.transcriptAutoFollowSuspended) {
+            self.transcriptAutoFollowSuspended = NO;
+            [self.transcriptFollowResumeTimer invalidate];
+            self.transcriptFollowResumeTimer = nil;
+        }
+
+    }
+
+    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && cueChanged) {
+        [self _focusTranscriptCueAtIndex:cueIndex animated:YES];
+    }
 }
 
 - (void)_clearTranscriptLines
@@ -1416,7 +1442,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     UIColor* normalColor = ICMutedTextColor;
     UIFont* normalFont = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
     UIColor* activeColor = self.view.tintColor ?: ICTintColor;
-    UIFont* activeFont = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+    UIFont* activeFont = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
 
     [textStorage beginEditing];
 
@@ -1595,33 +1621,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [self _resumeTranscriptAutoFollow];
     }
     self.transcriptWasPaused = !isPlaying;
-
-    // Force transcript sync after any playback state change (seek, play, pause).
-    // Use short delay so AVPlayer's currentTime reflects the new position.
-    if (self.transcriptVisible && self.transcriptCues.count > 0) {
-        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_forceTranscriptSync) object:nil];
-        [self performSelector:@selector(_forceTranscriptSync) withObject:nil afterDelay:0.1];
-    }
-}
-
-- (void)_forceTranscriptSync
-{
-    if (!self.transcriptVisible || self.transcriptCues.count == 0) return;
-
-    PlaybackManager* pman = [PlaybackManager playbackManager];
-    NSTimeInterval time = pman.time;
-    NSInteger cueIndex = [self _activeTranscriptCueIndexForPlaybackTime:time];
-    if (cueIndex == NSNotFound) return;
-
-    if (cueIndex != self.activeTranscriptCueIndex) {
-        self.activeTranscriptCueIndex = cueIndex;
-        [self _updateTranscriptLabelAppearance];
-    }
-
-    self.transcriptAutoFollowSuspended = NO;
-    [self.transcriptFollowResumeTimer invalidate];
-    self.transcriptFollowResumeTimer = nil;
-    [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
 }
 
 - (void)_scheduleTranscriptAutoFollowResume
