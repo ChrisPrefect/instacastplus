@@ -73,6 +73,12 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     [self.tableView reloadData];
 }
 
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackThresholdCell) object:nil];
+}
+
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
@@ -377,13 +383,11 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     // Cancel any pending fade-back
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackThresholdCell) object:nil];
 
-    // Instantly show tint color (no animation delay)
-    [UIView animateWithDuration:0.05 delay:0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-        cell.backgroundColor = ICTintColor;
-    } completion:nil];
+    // Instantly red — no animation
+    cell.backgroundColor = ICTintColor;
 
-    // Schedule fade-back after a short pause
-    [self performSelector:@selector(fadeBackThresholdCell) withObject:nil afterDelay:0.3];
+    // Fade back only after motion stops for 0.2s
+    [self performSelector:@selector(fadeBackThresholdCell) withObject:nil afterDelay:0.2];
 }
 
 - (void)fadeBackThresholdCell

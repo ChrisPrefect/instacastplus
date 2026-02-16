@@ -313,21 +313,27 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             [xml appendString:@"      <settings>\n"];
             for (NSString* key in propertyKeys) {
                 if ([internalKeys containsObject:key]) continue;
-                if ([key isEqualToString:PauseFeedSynchronization]) {
-                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n",
-                        [self xmlEscape:key],
-                        [feed boolForKey:key] ? @"true" : @"false"];
+                NSString* escapedKey = [self xmlEscape:key];
+
+                // Check all CDFeedProperty value types (each stored in separate field)
+                NSString* stringVal = [feed stringForKey:key];
+                if (stringVal.length > 0) {
+                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", escapedKey, [self xmlEscape:stringVal]];
                     continue;
                 }
-                NSString* stringVal = [feed stringForKey:key];
-                if (stringVal) {
-                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", [self xmlEscape:key], [self xmlEscape:stringVal]];
-                } else {
-                    NSInteger intVal = [feed integerForKey:key];
-                    if (intVal != 0) {
-                        [xml appendFormat:@"        <setting key=\"%@\" value=\"%ld\"/>\n", [self xmlEscape:key], (long)intVal];
-                    }
+                double dblVal = [feed doubleForKey:key];
+                if (dblVal != 0.0) {
+                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", escapedKey, [NSString stringWithFormat:@"%.1f", dblVal]];
+                    continue;
                 }
+                NSInteger intVal = [feed integerForKey:key];
+                if (intVal != 0) {
+                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%ld\"/>\n", escapedKey, (long)intVal];
+                    continue;
+                }
+                // Bool: CDFeedProperty exists (in propertyKeys), export even if false
+                [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", escapedKey,
+                    [feed boolForKey:key] ? @"true" : @"false"];
             }
             [xml appendString:@"      </settings>\n"];
         }

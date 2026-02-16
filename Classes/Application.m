@@ -302,8 +302,8 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 -(void)deviceMotionDetection
 {
     self.motionManager = [[CMMotionManager alloc] init];
-    self.motionManager.accelerometerUpdateInterval = 1;
-    
+    self.motionManager.accelerometerUpdateInterval = 0.3;
+
     if ([self.motionManager isAccelerometerAvailable])
     {
         NSOperationQueue *queue = [[NSOperationQueue alloc] init];

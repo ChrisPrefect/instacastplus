@@ -13,9 +13,11 @@
 #import "AudioSession+UpNextPlaylist.h"
 #import "CacheManager.h"
 
-// Forward-declare private method on SubscriptionManager
+// Forward-declare private methods on SubscriptionManager
 @interface SubscriptionManager (BackupImport)
 - (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(void))completion progress:(void (^)(float))progress;
+- (BOOL)importing;
+- (void)setImporting:(BOOL)importing;
 @end
 
 @implementation InstacastBackupImporter
@@ -163,7 +165,12 @@
                 totalImported += newURLs.count;
                 currentPhase++;
 
-                [[SubscriptionManager sharedSubscriptionManager]
+                SubscriptionManager *sman = [SubscriptionManager sharedSubscriptionManager];
+                // Block refresh during import + balance retainNetworkActivity for finalizeImportWithCompletion:
+                sman.importing = YES;
+                [App retainNetworkActivity];
+
+                [sman
                  importURLs:newURLs
                  completion:^{
                      runRemainingPhases();
@@ -286,19 +293,20 @@
                     }
                 }
 
-                if (![feed hasCustomProperties] || ![feed stringForKey:key]) {
-                    if ([value isEqualToString:@"true"] || [value isEqualToString:@"false"]) {
-                        [feed setBool:[value isEqualToString:@"true"] forKey:key];
+                if ([value isEqualToString:@"true"] || [value isEqualToString:@"false"]) {
+                    [feed setBool:[value isEqualToString:@"true"] forKey:key];
+                } else if ([value rangeOfString:@"."].location != NSNotFound) {
+                    // Decimal number → store as double (auto_skip periods etc.)
+                    [feed setDouble:[value doubleValue] forKey:key];
+                } else {
+                    NSInteger intVal = [value integerValue];
+                    if (intVal != 0 || [value isEqualToString:@"0"]) {
+                        [feed setInteger:intVal forKey:key];
                     } else {
-                        NSInteger intVal = [value integerValue];
-                        if (intVal != 0 || [value isEqualToString:@"0"]) {
-                            [feed setInteger:intVal forKey:key];
-                        } else {
-                            [feed setString:value forKey:key];
-                        }
+                        [feed setString:value forKey:key];
                     }
-                    count++;
                 }
+                count++;
             }
         }
     }
