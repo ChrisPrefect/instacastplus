@@ -351,7 +351,14 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     }
     else if (sender.tag == 2) {
         [USER_DEFAULTS setBool:sender.on forKey:DeviceMovementIntelligentSleep];
-        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kIntelligentSleep] withRowAnimation:UITableViewRowAnimationAutomatic];
+        NSIndexPath *thresholdPath = [NSIndexPath indexPathForRow:3 inSection:kIntelligentSleep];
+        [self.tableView beginUpdates];
+        if (sender.on) {
+            [self.tableView insertRowsAtIndexPaths:@[thresholdPath] withRowAnimation:UITableViewRowAnimationFade];
+        } else {
+            [self.tableView deleteRowsAtIndexPaths:@[thresholdPath] withRowAnimation:UITableViewRowAnimationFade];
+        }
+        [self.tableView endUpdates];
     }
 }
 
