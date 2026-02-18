@@ -802,6 +802,8 @@
 "%ld episode updates" = "%ld episode updates";
 "%ld new bookmarks" = "%ld new bookmarks";
 "Import Complete" = "Import Complete";
+"Importing Data…" = "Importing Data…";
+"New Podcasts" = "New Podcasts";
 "Successfully imported %ld items." = "Successfully imported %ld items.";
 "Import Error" = "Import Error";
 "Could not parse backup file." = "Could not parse backup file.";
@@ -815,8 +817,27 @@
 "Importing playlists…" = "Importing playlists…";
 "Importing settings…" = "Importing settings…";
 "Importing sort order…" = "Importing sort order…";
+"Playlists" = "Playlists";
+"Re-download Episodes" = "Re-download Episodes";
+"No downloaded episodes" = "No downloaded episodes";
+"%ld downloaded episodes" = "%ld downloaded episodes";
+"1 downloaded episode" = "1 downloaded episode";
 "1 Episode" = "1 Episode";
 "Unknown" = "Unknown";
+
+/* ICBackupImportProgressView — new import flow */
+"Subscribing podcasts…" = "Subscribing podcasts…";
+"Loading episodes…" = "Loading episodes…";
+"Importing local data…" = "Importing local data…";
+"Finalizing…" = "Finalizing…";
+"Cancel Import" = "Cancel Import";
+"Skip Current Podcast" = "Skip Current Podcast";
+"Cancel Entire Import" = "Cancel Entire Import";
+"Back" = "Back";
+"Skipped" = "Skipped";
+"%ld items imported" = "%ld items imported";
+"Import was cancelled." = "Import was cancelled.";
+"Import cancelled. %ld items imported." = "Import cancelled. %ld items imported.";
 
 /* ImportExportSettingsViewController - Reset App */
 "Reset App" = "Reset App";
@@ -887,11 +908,6 @@
 
 /* PlaybackSettingsViewController */
 "These are the default settings. They can be overridden per podcast in the podcast settings." = "These are the default settings. They can be overridden per podcast in the podcast settings.";
-
-/* Share with Credentials */
-"Share podcast with login credentials?" = "Share podcast with login credentials?";
-"With Credentials" = "With Credentials";
-"Without Credentials" = "Without Credentials";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";

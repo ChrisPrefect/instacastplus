@@ -10,27 +10,59 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface ICBackupImportProgressView : UIView
 
-/// Create a progress view for the given categories.
-/// @param categories Bitmask of selected import categories
-/// @param descriptions Dictionary mapping category number → detail string (e.g. "5 new podcasts")
-- (instancetype)initWithCategories:(ICBackupImportCategory)categories
-                      descriptions:(NSDictionary<NSNumber *, NSString *> *)descriptions;
+/// Create a progress view for backup import with feed list and metadata categories.
+/// @param feedTitles Ordered list of feed titles to display
+/// @param categories Bitmask of selected metadata import categories (Phase C)
+- (instancetype)initWithFeedTitles:(NSArray<NSString *> *)feedTitles
+                        categories:(ICBackupImportCategory)categories;
 
 - (void)show;
 - (void)close;
 - (void)closeWithCompletion:(void(^)(void))completion;
 
-/// Mark a category as currently active (shows spinner)
-- (void)setCategoryActive:(ICBackupImportCategory)category;
+#pragma mark - Phase A+B: Feed Progress
 
-/// Mark a category as completed with a result detail string
-- (void)setCategoryCompleted:(ICBackupImportCategory)category detail:(NSString *)detail;
+/// Mark a feed as currently loading (shows spinner)
+- (void)setCurrentFeedAtIndex:(NSInteger)index;
 
-/// Update the subscription sub-progress (e.g. "3/10")
-- (void)setCategory:(ICBackupImportCategory)category detail:(NSString *)detail;
+/// Update feed progress (0.0–1.0) with detail text (e.g. "50/200 Episodes")
+- (void)setFeedProgress:(float)progress detail:(NSString *)detail atIndex:(NSInteger)index;
 
-/// Update title text (e.g. for "Import Complete")
-- (void)setTitleText:(NSString *)title;
+/// Mark a feed as completed with episode count
+- (void)setFeedCompletedAtIndex:(NSInteger)index episodeCount:(NSInteger)count;
+
+/// Mark a feed as failed with error message
+- (void)setFeedErrorAtIndex:(NSInteger)index message:(NSString *)message;
+
+/// Mark a feed as skipped (user cancelled this feed)
+- (void)setFeedSkippedAtIndex:(NSInteger)index;
+
+#pragma mark - Total Progress
+
+/// Set overall progress (0.0–1.0)
+- (void)setTotalProgress:(float)progress;
+
+/// Set status text below title (e.g. "Subscribing podcasts…")
+- (void)setStatusText:(NSString *)text;
+
+#pragma mark - Phase C: Metadata Categories
+
+/// Mark a metadata category as currently active (shows spinner)
+- (void)setMetadataCategoryActive:(ICBackupImportCategory)category;
+
+/// Mark a metadata category as completed with detail
+- (void)setMetadataCategoryCompleted:(ICBackupImportCategory)category detail:(NSString *)detail;
+
+#pragma mark - Completion
+
+/// Show completion state with summary text
+- (void)showCompletionWithSummary:(NSString *)summary;
+
+#pragma mark - Cancel
+
+/// Called when user taps "Cancel". Presents action sheet with skip/cancel/back options.
+@property (nonatomic, copy, nullable) void (^onCancelCurrentFeed)(void);
+@property (nonatomic, copy, nullable) void (^onCancelImport)(void);
 
 @end
 

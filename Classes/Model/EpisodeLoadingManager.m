@@ -177,6 +177,17 @@ static const NSInteger kEpisodeBatchSize = 20;
     return loading;
 }
 
+- (BOOL)suspended
+{
+    return _loadingQueue.suspended;
+}
+
+- (void)setSuspended:(BOOL)suspended
+{
+    _loadingQueue.suspended = suspended;
+    DebugLog(@"EpisodeLoadingManager: %@", suspended ? @"suspended" : @"resumed");
+}
+
 - (NSArray<NSString*>*)feedURLsWithPendingEpisodes
 {
     [_lock lock];

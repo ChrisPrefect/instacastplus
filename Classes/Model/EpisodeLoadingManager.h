@@ -52,6 +52,10 @@ extern NSString* const kFeedPropertyLoadedEpisodeCount;
 @property (nonatomic, readonly) BOOL isLoading;
 @property (nonatomic, readonly) NSArray<NSString*>* feedURLsWithPendingEpisodes;
 
+// Suspend/resume background loading (pauses the internal operation queue).
+// Use this to prevent episode loading from flooding the main queue during batch operations.
+@property (nonatomic) BOOL suspended;
+
 // Log current loading status to console (for debugging)
 - (void)logStatus;
 

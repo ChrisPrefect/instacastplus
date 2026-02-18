@@ -806,6 +806,8 @@
 "%ld episode updates" = "%ld Episoden-Aktualisierungen";
 "%ld new bookmarks" = "%ld neue Lesezeichen";
 "Import Complete" = "Import abgeschlossen";
+"Importing Data…" = "Daten importieren…";
+"New Podcasts" = "Neue Podcasts";
 "Successfully imported %ld items." = "%ld Elemente erfolgreich importiert.";
 "Import Error" = "Import-Fehler";
 "Could not parse backup file." = "Backup-Datei konnte nicht gelesen werden.";
@@ -819,8 +821,27 @@
 "Importing playlists…" = "Wiedergabelisten werden importiert…";
 "Importing settings…" = "Einstellungen werden importiert…";
 "Importing sort order…" = "Sortierung wird importiert…";
+"Playlists" = "Wiedergabelisten";
+"Re-download Episodes" = "Episoden erneut herunterladen";
+"No downloaded episodes" = "Keine heruntergeladenen Episoden";
+"%ld downloaded episodes" = "%ld heruntergeladene Episoden";
+"1 downloaded episode" = "1 heruntergeladene Episode";
 "1 Episode" = "1 Episode";
 "Unknown" = "Unbekannt";
+
+/* ICBackupImportProgressView — neuer Import-Flow */
+"Subscribing podcasts…" = "Podcasts abonnieren…";
+"Loading episodes…" = "Episoden laden…";
+"Importing local data…" = "Lokale Daten importieren…";
+"Finalizing…" = "Abschließen…";
+"Cancel Import" = "Import abbrechen";
+"Skip Current Podcast" = "Diesen Podcast überspringen";
+"Cancel Entire Import" = "Gesamten Import abbrechen";
+"Back" = "Zurück";
+"Skipped" = "Übersprungen";
+"%ld items imported" = "%ld Elemente importiert";
+"Import was cancelled." = "Import wurde abgebrochen.";
+"Import cancelled. %ld items imported." = "Import abgebrochen. %ld Elemente importiert.";
 
 /* ImportExportSettingsViewController - Reset App */
 "Reset App" = "App zurücksetzen";
@@ -891,11 +912,6 @@
 
 /* PlaybackSettingsViewController */
 "These are the default settings. They can be overridden per podcast in the podcast settings." = "Dies sind die Standard-Einstellungen. Sie können pro Podcast in den Podcast-Einstellungen überschrieben werden.";
-
-/* Share with Credentials */
-"Share podcast with login credentials?" = "Podcast mit Anmeldeinformationen teilen?";
-"With Credentials" = "Mit Anmeldedaten";
-"Without Credentials" = "Ohne Anmeldedaten";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";

@@ -13,6 +13,7 @@
 #import "InstacastAppDelegate.h"
 #import "InstacastBackupParser.h"
 #import "InstacastBackupImportViewController.h"
+#import "CacheManager.h"
 
 typedef NS_ENUM(NSInteger, ImportExportSections) {
     kExportSection = 0,
@@ -295,8 +296,11 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
     [xml appendString:@"  <podcasts>\n"];
     for (CDFeed* feed in feeds) {
-        NSMutableString *podcastAttrs = [NSMutableString stringWithFormat:@"url=\"%@\" rank=\"%d\"",
-            [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank];
+        NSMutableString *podcastAttrs = [NSMutableString stringWithFormat:@"url=\"%@\" rank=\"%d\" title=\"%@\"",
+            [self xmlEscape:[feed.sourceURL absoluteString]], feed.rank, [self xmlEscape:feed.title ?: @""]];
+        if (feed.parked) {
+            [podcastAttrs appendString:@" parked=\"true\""];
+        }
         if (feed.username.length > 0) {
             [podcastAttrs appendFormat:@" username=\"%@\"", [self xmlEscape:feed.username]];
         }
@@ -307,8 +311,8 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
         // Custom properties (skip internal keys)
         NSArray* propertyKeys = [feed propertyKeys];
-        BOOL hasPauseSyncProperty = [propertyKeys containsObject:PauseFeedSynchronization];
-        if ([feed hasCustomProperties] || hasPauseSyncProperty) {
+        BOOL hasTranscriptPrefs = [propertyKeys containsObject:@"preferredTranscriptLanguage"] || [propertyKeys containsObject:@"preferredTranscriptURL"];
+        if ([feed hasCustomProperties] || hasTranscriptPrefs) {
             NSSet* internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
             [xml appendString:@"      <settings>\n"];
             for (NSString* key in propertyKeys) {
@@ -340,8 +344,12 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
         // Episodes with state
         BOOL hasEpisodes = NO;
+        NSInteger downloadedCount = 0;
+        CacheManager *cacheManager = [CacheManager sharedCacheManager];
         for (CDEpisode* episode in feed.episodes) {
-            if (episode.consumed || episode.starred || episode.archived || episode.position > 0 || episode.downloaded) {
+            BOOL isCached = [cacheManager episodeIsCached:episode];
+            if (isCached) downloadedCount++;
+            if (episode.consumed || episode.starred || episode.archived || episode.position > 0 || isCached) {
                 if (!hasEpisodes) {
                     [xml appendString:@"      <episodes>\n"];
                     hasEpisodes = YES;
@@ -353,13 +361,14 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
                 if (episode.consumed) [xml appendString:@"          <played>true</played>\n"];
                 if (episode.starred) [xml appendString:@"          <starred>true</starred>\n"];
                 if (episode.archived) [xml appendString:@"          <archived>true</archived>\n"];
-                if (episode.downloaded) [xml appendString:@"          <downloaded>true</downloaded>\n"];
+                if (isCached) [xml appendString:@"          <downloaded>true</downloaded>\n"];
                 if (episode.position > 0) [xml appendFormat:@"          <position>%d</position>\n", episode.position];
                 if (episode.duration > 0) [xml appendFormat:@"          <duration>%d</duration>\n", episode.duration];
                 [xml appendString:@"        </episode>\n"];
             }
         }
         if (hasEpisodes) [xml appendString:@"      </episodes>\n"];
+        DebugLog(@"Export %@: %ld episodes, %ld downloaded", feed.title, (long)feed.episodes.count, (long)downloadedCount);
         [xml appendString:@"    </podcast>\n"];
     }
     [xml appendString:@"  </podcasts>\n"];
@@ -481,31 +490,48 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:PlayerReplayAfterPause]) [xml appendFormat:@"    <replayAfterPause>%ld</replayAfterPause>\n", (long)[defaults integerForKey:PlayerReplayAfterPause]];
     if ([defaults objectForKey:kDefaultPlayerControls]) [xml appendFormat:@"    <playerControls>%ld</playerControls>\n", (long)[defaults integerForKey:kDefaultPlayerControls]];
     if ([defaults objectForKey:kDefaultDontDeleteUpNextWhenChangingEpisode]) [xml appendFormat:@"    <dontDeleteUpNext>%@</dontDeleteUpNext>\n", [defaults boolForKey:kDefaultDontDeleteUpNextWhenChangingEpisode] ? @"true" : @"false"];
+    if ([defaults objectForKey:ContinuousPlayFromFeed]) [xml appendFormat:@"    <continuousPlay>%@</continuousPlay>\n", [defaults boolForKey:ContinuousPlayFromFeed] ? @"true" : @"false"];
     // Downloads
     if ([defaults objectForKey:AutoCacheNewAudioEpisodes]) [xml appendFormat:@"    <autoCacheAudio>%@</autoCacheAudio>\n", [defaults boolForKey:AutoCacheNewAudioEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoCacheNewVideoEpisodes]) [xml appendFormat:@"    <autoCacheVideo>%@</autoCacheVideo>\n", [defaults boolForKey:AutoCacheNewVideoEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoDeleteAfterFinishedPlaying]) [xml appendFormat:@"    <autoDeletePlayed>%@</autoDeletePlayed>\n", [defaults boolForKey:AutoDeleteAfterFinishedPlaying] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoDeleteAfterMarkedAsPlayed]) [xml appendFormat:@"    <autoDeleteMarkedPlayed>%@</autoDeleteMarkedPlayed>\n", [defaults boolForKey:AutoDeleteAfterMarkedAsPlayed] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoDeleteNewsMode]) [xml appendFormat:@"    <autoDeleteNews>%@</autoDeleteNews>\n", [defaults boolForKey:AutoDeleteNewsMode] ? @"true" : @"false"];
+    if ([defaults objectForKey:AutoCacheStorageLimit]) [xml appendFormat:@"    <autoCacheStorageLimit>%ld</autoCacheStorageLimit>\n", (long)[defaults integerForKey:AutoCacheStorageLimit]];
+    if ([defaults objectForKey:AutoDownloadWhileStreaming]) [xml appendFormat:@"    <autoDownloadWhileStreaming>%@</autoDownloadWhileStreaming>\n", [defaults boolForKey:AutoDownloadWhileStreaming] ? @"true" : @"false"];
     // Cellular
     if ([defaults objectForKey:EnableCachingOver3G]) [xml appendFormat:@"    <enableCachingOver3G>%@</enableCachingOver3G>\n", [defaults boolForKey:EnableCachingOver3G] ? @"true" : @"false"];
     if ([defaults objectForKey:EnableRefreshingOver3G]) [xml appendFormat:@"    <enableRefreshingOver3G>%@</enableRefreshingOver3G>\n", [defaults boolForKey:EnableRefreshingOver3G] ? @"true" : @"false"];
     if ([defaults objectForKey:EnableStreamingOver3G]) [xml appendFormat:@"    <enableStreamingOver3G>%@</enableStreamingOver3G>\n", [defaults boolForKey:EnableStreamingOver3G] ? @"true" : @"false"];
+    if ([defaults objectForKey:EnableCachingImagesOver3G]) [xml appendFormat:@"    <enableCachingImagesOver3G>%@</enableCachingImagesOver3G>\n", [defaults boolForKey:EnableCachingImagesOver3G] ? @"true" : @"false"];
     // General
     if ([defaults objectForKey:DisableAutoLock]) [xml appendFormat:@"    <disableAutoLock>%@</disableAutoLock>\n", [defaults boolForKey:DisableAutoLock] ? @"true" : @"false"];
     if ([defaults objectForKey:UISoundEnabled]) [xml appendFormat:@"    <uiSoundEnabled>%@</uiSoundEnabled>\n", [defaults boolForKey:UISoundEnabled] ? @"true" : @"false"];
     if ([defaults objectForKey:ShowApplicationBadgeForUnseen]) [xml appendFormat:@"    <showBadge>%@</showBadge>\n", [defaults boolForKey:ShowApplicationBadgeForUnseen] ? @"true" : @"false"];
     if ([defaults objectForKey:kDefaultShowUnavailableEpisodes]) [xml appendFormat:@"    <showUnavailable>%@</showUnavailable>\n", [defaults boolForKey:kDefaultShowUnavailableEpisodes] ? @"true" : @"false"];
+    if ([defaults objectForKey:OpenLinksInExternalBrowser]) [xml appendFormat:@"    <openLinksExternal>%@</openLinksExternal>\n", [defaults boolForKey:OpenLinksInExternalBrowser] ? @"true" : @"false"];
+    // Notifications
+    if ([defaults objectForKey:EnableNewEpisodeNotification]) [xml appendFormat:@"    <notifyNewEpisode>%@</notifyNewEpisode>\n", [defaults boolForKey:EnableNewEpisodeNotification] ? @"true" : @"false"];
+    if ([defaults objectForKey:EnableManualRefreshFinishedNotification]) [xml appendFormat:@"    <notifyRefreshFinished>%@</notifyRefreshFinished>\n", [defaults boolForKey:EnableManualRefreshFinishedNotification] ? @"true" : @"false"];
+    if ([defaults objectForKey:EnableManualDownloadFinishedNotification]) [xml appendFormat:@"    <notifyDownloadFinished>%@</notifyDownloadFinished>\n", [defaults boolForKey:EnableManualDownloadFinishedNotification] ? @"true" : @"false"];
     // Appearance
     if ([defaults objectForKey:kDefaultAppearanceMode]) [xml appendFormat:@"    <appearanceMode>%ld</appearanceMode>\n", (long)[defaults integerForKey:kDefaultAppearanceMode]];
     if ([defaults objectForKey:InterfaceThemeDefaultActive]) [xml appendFormat:@"    <themeDefaultActive>%@</themeDefaultActive>\n", [defaults boolForKey:InterfaceThemeDefaultActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:InterfaceThemeColorCode]) [xml appendFormat:@"    <themeColorCode>%ld</themeColorCode>\n", (long)[defaults integerForKey:InterfaceThemeColorCode]];
     if ([defaults objectForKey:InterfaceThemeColorHexCode]) [xml appendFormat:@"    <themeColorHex>%@</themeColorHex>\n", [self xmlEscape:[defaults stringForKey:InterfaceThemeColorHexCode]]];
     if ([defaults objectForKey:PlayerColorPerPodcastActive]) [xml appendFormat:@"    <playerPerPodcastColor>%@</playerPerPodcastColor>\n", [defaults boolForKey:PlayerColorPerPodcastActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:PlayerThemeColorCode]) [xml appendFormat:@"    <playerColorCode>%ld</playerColorCode>\n", (long)[defaults integerForKey:PlayerThemeColorCode]];
     if ([defaults objectForKey:PlayerThemeColorHexCode]) [xml appendFormat:@"    <playerColorHex>%@</playerColorHex>\n", [self xmlEscape:[defaults stringForKey:PlayerThemeColorHexCode]]];
     // Sleep Timer
     if ([defaults objectForKey:ScreenTimerAlwaysActive]) [xml appendFormat:@"    <sleepTimerAlways>%@</sleepTimerAlways>\n", [defaults boolForKey:ScreenTimerAlwaysActive] ? @"true" : @"false"];
+    if ([defaults objectForKey:IntelligentSleepTimerAlwaysActive]) [xml appendFormat:@"    <intelligentSleepAlways>%@</intelligentSleepAlways>\n", [defaults boolForKey:IntelligentSleepTimerAlwaysActive] ? @"true" : @"false"];
     if ([defaults objectForKey:DisableSleepTimerInCarPlay]) [xml appendFormat:@"    <disableSleepTimerCarPlay>%@</disableSleepTimerCarPlay>\n", [defaults boolForKey:DisableSleepTimerInCarPlay] ? @"true" : @"false"];
     if ([defaults objectForKey:LastSelectedSleepTimer]) [xml appendFormat:@"    <lastSleepTimer>%ld</lastSleepTimer>\n", (long)[defaults integerForKey:LastSelectedSleepTimer]];
+    // Sleep Timer Motion/Touch/Volume Detection
+    if ([defaults objectForKey:DeviceMovementIntelligentSleep]) [xml appendFormat:@"    <deviceMovementIntelligentSleep>%@</deviceMovementIntelligentSleep>\n", [defaults boolForKey:DeviceMovementIntelligentSleep] ? @"true" : @"false"];
+    if ([defaults objectForKey:DeviceMovementSensitivity]) [xml appendFormat:@"    <deviceMovementSensitivity>%.3f</deviceMovementSensitivity>\n", [defaults doubleForKey:DeviceMovementSensitivity]];
+    if ([defaults objectForKey:ScreenTouchIntelligentSleep]) [xml appendFormat:@"    <screenTouchIntelligentSleep>%@</screenTouchIntelligentSleep>\n", [defaults boolForKey:ScreenTouchIntelligentSleep] ? @"true" : @"false"];
+    if ([defaults objectForKey:VolumeChangeIntelligentSleep]) [xml appendFormat:@"    <volumeChangeIntelligentSleep>%@</volumeChangeIntelligentSleep>\n", [defaults boolForKey:VolumeChangeIntelligentSleep] ? @"true" : @"false"];
     // App Icon
     NSString *alternateIconName = [[UIApplication sharedApplication] alternateIconName];
     if (alternateIconName) {
@@ -518,6 +544,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:SmarthomeMQTTUsername]) [xml appendFormat:@"    <smarthomeMQTTUsername>%@</smarthomeMQTTUsername>\n", [self xmlEscape:[defaults stringForKey:SmarthomeMQTTUsername]]];
     if ([defaults objectForKey:SmarthomeMQTTPassword]) [xml appendFormat:@"    <smarthomeMQTTPassword>%@</smarthomeMQTTPassword>\n", [self xmlEscape:[defaults stringForKey:SmarthomeMQTTPassword]]];
     if ([defaults objectForKey:SmarthomeAllowControl]) [xml appendFormat:@"    <smarthomeAllowControl>%@</smarthomeAllowControl>\n", [defaults boolForKey:SmarthomeAllowControl] ? @"true" : @"false"];
+    if ([defaults objectForKey:SmarthomeWiFiOnly]) [xml appendFormat:@"    <smarthomeWiFiOnly>%@</smarthomeWiFiOnly>\n", [defaults boolForKey:SmarthomeWiFiOnly] ? @"true" : @"false"];
     if ([defaults objectForKey:SmarthomeDeviceName]) [xml appendFormat:@"    <smarthomeDeviceName>%@</smarthomeDeviceName>\n", [self xmlEscape:[defaults stringForKey:SmarthomeDeviceName]]];
     // MainMenuListUIDs
     NSArray* mainMenuUIDs = [defaults objectForKey:@"MainMenuListUIDs"];
@@ -530,6 +557,8 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     }
     // Sort order
     if ([defaults objectForKey:FeedListSortMode]) [xml appendFormat:@"    <feedListSortMode>%@</feedListSortMode>\n", [self xmlEscape:[defaults stringForKey:FeedListSortMode]]];
+    if ([defaults objectForKey:FeedSortOrder]) [xml appendFormat:@"    <feedSortOrder>%@</feedSortOrder>\n", [self xmlEscape:[defaults stringForKey:FeedSortOrder]]];
+    if ([defaults objectForKey:SelectedAppLanguage]) [xml appendFormat:@"    <selectedAppLanguage>%@</selectedAppLanguage>\n", [self xmlEscape:[defaults stringForKey:SelectedAppLanguage]]];
     if ([defaults objectForKey:@"ManualFeedOrder"]) {
         NSArray* manualOrder = [defaults objectForKey:@"ManualFeedOrder"];
         [xml appendString:@"    <manualFeedOrder>\n"];

@@ -6,8 +6,8 @@
 #import "InstacastBackupImportViewController.h"
 #import "InstacastBackupData.h"
 #import "InstacastBackupImporter.h"
+#import "ICBackupImportProgressView.h"
 #import "UITableViewController+Settings.h"
-#import "VDModalInfo.h"
 
 typedef NS_ENUM(NSInteger, ICBackupImportSection) {
     kBackupInfoSection = 0,
@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     kRowPlaylists,
     kRowAppSettings,
     kRowSortOrder,
+    kRowDownloads,
     kNumberOfCategoryRows,
 };
 
@@ -44,6 +45,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 @property (nonatomic) NSInteger episodeListCount;
 @property (nonatomic, strong) NSString *nowPlayingTitle;
 @property (nonatomic, strong) NSString *sortModeDescription;
+@property (nonatomic) NSInteger downloadedEpisodeCount;
 @end
 
 @implementation InstacastBackupImportViewController
@@ -210,6 +212,22 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     } else if (backup.settings.feedListSortMode) {
         self.sortModeDescription = backup.settings.feedListSortMode;
     }
+
+    // Downloaded episodes
+    self.downloadedEpisodeCount = 0;
+    for (ICBackupPodcast *podcast in backup.podcasts) {
+        NSInteger podcastDownloaded = 0;
+        for (ICBackupEpisode *ep in podcast.episodes) {
+            if (ep.downloaded) {
+                self.downloadedEpisodeCount++;
+                podcastDownloaded++;
+            }
+        }
+        if (podcastDownloaded > 0) {
+            DebugLog(@"Backup analyze %@: %ld downloaded of %ld episodes", podcast.title, (long)podcastDownloaded, (long)podcast.episodes.count);
+        }
+    }
+    DebugLog(@"Backup analyze total: %ld downloaded episodes", (long)self.downloadedEpisodeCount);
 }
 
 - (void)initializeSelectedCategories {
@@ -225,6 +243,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     if (self.playlistCount + self.episodeListCount > 0) [self.selectedCategories addObject:@(kRowPlaylists)];
     if (self.backupData.settings.values.count > 0) [self.selectedCategories addObject:@(kRowAppSettings)];
     if (self.sortModeDescription) [self.selectedCategories addObject:@(kRowSortOrder)];
+    if (self.downloadedEpisodeCount > 0) [self.selectedCategories addObject:@(kRowDownloads)];
 }
 
 - (BOOL)rowHasData:(NSInteger)row {
@@ -238,6 +257,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         case kRowPlaylists:     return (self.playlistCount + self.episodeListCount) > 0;
         case kRowAppSettings:   return self.backupData.settings.values.count > 0;
         case kRowSortOrder:     return self.sortModeDescription != nil;
+        case kRowDownloads:     return self.downloadedEpisodeCount > 0;
         default: return NO;
     }
 }
@@ -253,6 +273,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         case kRowPlaylists:     return ICBackupImportPlaylists;
         case kRowAppSettings:   return ICBackupImportSettings;
         case kRowSortOrder:     return ICBackupImportSortOrder;
+        case kRowDownloads:     return ICBackupImportDownloads;
         default: return 0;
     }
 }
@@ -411,6 +432,13 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
             cell.textLabel.text = @"Podcast Sort Order".ls;
             cell.detailTextLabel.text = self.sortModeDescription ?: @"No sort order".ls;
             break;
+
+        case kRowDownloads:
+            cell.textLabel.text = @"Re-download Episodes".ls;
+            cell.detailTextLabel.text = self.downloadedEpisodeCount > 0
+                ? [NSString stringWithFormat:@"%ld episodes".ls, (long)self.downloadedEpisodeCount]
+                : @"No downloaded episodes".ls;
+            break;
     }
 
     if (!hasData) {
@@ -486,33 +514,82 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         categories |= [self categoryForRow:row.integerValue];
     }
 
-    VDModalInfo *mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
-    [mInfo show];
+    // Build feed title list for new podcasts
+    NSMutableArray<NSString *> *feedTitles = [NSMutableArray array];
+    if (categories & ICBackupImportNewPodcasts) {
+        for (ICBackupPodcast *podcast in self.backupData.podcasts) {
+            if (!podcast.feedURL) continue;
+            NSURL *url = [NSURL URLWithString:podcast.feedURL];
+            if (url && ![DMANAGER feedWithSourceURL:url]) {
+                [feedTitles addObject:podcast.title ?: podcast.feedURL];
+            }
+        }
+    }
+
+    ICBackupImportProgressView *progressView = [[ICBackupImportProgressView alloc] initWithFeedTitles:feedTitles
+                                                                                          categories:categories];
+
+    // Cancel handlers
+    progressView.onCancelCurrentFeed = ^{
+        [InstacastBackupImporter skipCurrentFeed];
+    };
+    progressView.onCancelImport = ^{
+        [InstacastBackupImporter cancelImport];
+    };
+
+    [progressView show];
+
+    // Build callbacks that forward to progress view (all called on main thread)
+    ICBackupImportCallbacks callbacks = {
+        .setCurrentFeed = ^(NSString *title, NSInteger index, NSInteger total) {
+            [progressView setCurrentFeedAtIndex:index];
+        },
+        .setFeedProgress = ^(NSInteger index, float progress, NSString *detail) {
+            [progressView setFeedProgress:progress detail:detail atIndex:index];
+        },
+        .setFeedCompleted = ^(NSInteger index, NSInteger episodeCount) {
+            [progressView setFeedCompletedAtIndex:index episodeCount:episodeCount];
+        },
+        .setFeedError = ^(NSInteger index, NSString *message) {
+            [progressView setFeedErrorAtIndex:index message:message];
+        },
+        .setFeedSkipped = ^(NSInteger index) {
+            [progressView setFeedSkippedAtIndex:index];
+        },
+        .setTotalProgress = ^(float progress) {
+            [progressView setTotalProgress:progress];
+        },
+        .setStatusText = ^(NSString *text) {
+            [progressView setStatusText:text];
+        },
+        .setMetadataActive = ^(ICBackupImportCategory cat) {
+            [progressView setMetadataCategoryActive:cat];
+        },
+        .setMetadataCompleted = ^(ICBackupImportCategory cat, NSString *detail) {
+            [progressView setMetadataCategoryCompleted:cat detail:detail];
+        },
+    };
 
     [InstacastBackupImporter importBackup:self.backupData
                                categories:categories
-                                 progress:^(float progress, NSString *statusText) {
-        [mInfo setProgress:progress];
-    }
+                                callbacks:callbacks
                                completion:^(NSInteger importedCount, NSError *error) {
-        [mInfo close];
 
-        if (error) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
-                                                                          message:error.localizedDescription
-                                                                   preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:alert animated:YES completion:nil];
+        BOOL wasCancelled = error && [error.domain isEqualToString:@"InstacastBackupImporter"] && error.code == 1;
+
+        if (wasCancelled) {
+            NSString *summary = [NSString stringWithFormat:@"Import cancelled. %ld items imported.".ls, (long)importedCount];
+            [progressView showCompletionWithSummary:summary];
         } else {
-            NSString *message = [NSString stringWithFormat:@"Successfully imported %ld items.".ls, (long)importedCount];
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Complete".ls
-                                                                          message:message
-                                                                   preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                [self.navigationController popViewControllerAnimated:YES];
-            }]];
-            [self presentViewController:alert animated:YES completion:nil];
+            NSString *summary = [NSString stringWithFormat:@"%ld items imported".ls, (long)importedCount];
+            [progressView showCompletionWithSummary:summary];
         }
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [progressView closeWithCompletion:^{
+                [self.navigationController popToRootViewControllerAnimated:YES];
+            }];
+        });
     }];
 }
 

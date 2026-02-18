@@ -6,187 +6,538 @@
 #import "InstacastBackupImporter.h"
 #import "InstacastBackupData.h"
 #import "SubscriptionManager.h"
+#import "EpisodeLoadingManager.h"
 #import "CDPlaylist.h"
 #import "CDEpisodeList.h"
 #import "CDBookmark.h"
 #import "AudioSession.h"
 #import "AudioSession+UpNextPlaylist.h"
 #import "CacheManager.h"
+#import "NSString+VMFoundation.h"
 
-// Forward-declare private methods on SubscriptionManager
-@interface SubscriptionManager (BackupImport)
-- (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(void))completion progress:(void (^)(float))progress;
-- (BOOL)importing;
-- (void)setImporting:(BOOL)importing;
-@end
+static NSString * const kPendingBackupDownloadsKey = @"PendingBackupDownloads";
+static NSString * const kPendingNowPlayingKey = @"PendingBackupNowPlaying";
+
+// Cancel flags — accessed from main thread
+static BOOL _cancelImport = NO;
+static BOOL _skipCurrentFeed = NO;
+
+// GUID index for O(1) episode lookup
+static NSMutableDictionary<NSString *, NSDictionary<NSString *, CDEpisode *> *> *_guidIndexByFeedURL = nil;
 
 @implementation InstacastBackupImporter
 
+#pragma mark - Cancel
+
++ (void)cancelImport {
+    _cancelImport = YES;
+}
+
++ (void)skipCurrentFeed {
+    _skipCurrentFeed = YES;
+}
+
+#pragma mark - Main Entry Point
+
 + (void)importBackup:(InstacastBackupData *)backup
-           categories:(ICBackupImportCategory)categories
-             progress:(void(^)(float progress, NSString *statusText))progress
-           completion:(void(^)(NSInteger importedCount, NSError *error))completion
+          categories:(ICBackupImportCategory)categories
+           callbacks:(ICBackupImportCallbacks)callbacks
+          completion:(void(^)(NSInteger importedCount, NSError *error))completion
 {
-    // Run everything on the main queue for Core Data thread safety.
-    // Use dispatch_async to not block the caller.
+    if (categories == 0) {
+        if (completion) completion(0, nil);
+        return;
+    }
+
+    _cancelImport = NO;
+    _skipCurrentFeed = NO;
+    _guidIndexByFeedURL = nil;
+
+    // Copy all callback blocks to ensure they're on the heap (C struct doesn't auto-copy blocks)
+    ICBackupImportCallbacks cb = {
+        .setCurrentFeed   = [callbacks.setCurrentFeed copy],
+        .setFeedProgress  = [callbacks.setFeedProgress copy],
+        .setFeedCompleted = [callbacks.setFeedCompleted copy],
+        .setFeedError     = [callbacks.setFeedError copy],
+        .setFeedSkipped   = [callbacks.setFeedSkipped copy],
+        .setTotalProgress = [callbacks.setTotalProgress copy],
+        .setStatusText    = [callbacks.setStatusText copy],
+        .setMetadataActive    = [callbacks.setMetadataActive copy],
+        .setMetadataCompleted = [callbacks.setMetadataCompleted copy],
+    };
+
+    __block NSInteger totalImported = 0;
+
+    // Determine which podcasts are new (not yet subscribed)
+    NSMutableArray<ICBackupPodcast *> *newPodcasts = [NSMutableArray array];
+    NSMutableArray<NSString *> *newFeedTitles = [NSMutableArray array];
+    if (categories & ICBackupImportNewPodcasts) {
+        for (ICBackupPodcast *podcast in backup.podcasts) {
+            if (!podcast.feedURL) continue;
+            NSURL *url = [NSURL URLWithString:podcast.feedURL];
+            if (url && ![DMANAGER feedWithSourceURL:url]) {
+                [newPodcasts addObject:podcast];
+                [newFeedTitles addObject:podcast.title ?: podcast.feedURL];
+            }
+        }
+    }
+
+    // PHASE A: Subscribe feeds sequentially
     dispatch_async(dispatch_get_main_queue(), ^{
-        __block NSInteger totalImported = 0;
-        float totalPhases = 0;
-        __block float currentPhase = 0;
+        if (cb.setStatusText) cb.setStatusText(@"Subscribing podcasts…".ls);
 
-        // Count active phases
-        if (categories & ICBackupImportNewPodcasts)   totalPhases++;
-        if (categories & ICBackupImportEpisodeStatus)  totalPhases++;
-        if (categories & ICBackupImportFeedSettings)   totalPhases++;
-        if (categories & ICBackupImportBookmarks)      totalPhases++;
-        if (categories & ICBackupImportUpNext)         totalPhases++;
-        if (categories & ICBackupImportNowPlaying)     totalPhases++;
-        if (categories & ICBackupImportPlaylists)      totalPhases++;
-        if (categories & ICBackupImportSettings)       totalPhases++;
-        if (categories & ICBackupImportSortOrder)      totalPhases++;
+        // Suspend episode loading during Phase A to prevent the EpisodeLoadingManager
+        // from flooding the main queue with batch-insert blocks (which would starve
+        // Phase A's completion blocks and freeze the UI).
+        [EpisodeLoadingManager sharedManager].suspended = YES;
 
-        if (totalPhases == 0) {
-            if (completion) completion(0, nil);
-            return;
-        }
+        [self _phaseA_subscribeFeeds:newPodcasts
+                             atIndex:0
+                           callbacks:cb
+                          completion:^(NSArray<CDFeed *> *subscribedFeeds) {
+            totalImported += subscribedFeeds.count;
 
-        void (^reportProgress)(NSString *) = ^(NSString *status) {
-            if (progress) progress(currentPhase / totalPhases, status);
-        };
-
-        // We run the import phases sequentially using a block chain.
-        // Phase 1 (new podcasts) is async, all others are sync on main thread.
-
-        void (^runRemainingPhases)(void) = ^{
-            // Phase 2: Episode Status
-            if (categories & ICBackupImportEpisodeStatus) {
-                reportProgress(@"Updating episode status…".ls);
-                totalImported += [self importEpisodeStatusFromBackup:backup];
-                currentPhase++;
+            if (_cancelImport) {
+                [EpisodeLoadingManager sharedManager].suspended = NO;
+                [self _finalize:backup categories:categories totalImported:totalImported completion:completion];
+                return;
             }
 
-            // Phase 3: Feed Settings
-            if (categories & ICBackupImportFeedSettings) {
-                reportProgress(@"Importing podcast settings…".ls);
-                totalImported += [self importFeedSettingsFromBackup:backup];
-                currentPhase++;
-            }
+            // PHASE B: Wait for episode loading on all subscribed feeds
+            // Resume the EpisodeLoadingManager — all queued feeds will start loading.
+            [EpisodeLoadingManager sharedManager].suspended = NO;
+            if (cb.setStatusText) cb.setStatusText(@"Loading episodes…".ls);
 
-            // Phase 4: Bookmarks
-            if (categories & ICBackupImportBookmarks) {
-                reportProgress(@"Importing bookmarks…".ls);
-                totalImported += [self importBookmarksFromBackup:backup];
-                currentPhase++;
-            }
+            [self _phaseB_waitForEpisodeLoading:subscribedFeeds
+                                        atIndex:0
+                                  feedIndexBase:0
+                                      callbacks:cb
+                                     completion:^{
 
-            // Phase 5: Up Next
-            if (categories & ICBackupImportUpNext) {
-                reportProgress(@"Importing Up Next…".ls);
-                totalImported += [self importUpNextFromBackup:backup];
-                currentPhase++;
-            }
+                if (_cancelImport) {
+                    [self _finalize:backup categories:categories totalImported:totalImported completion:completion];
+                    return;
+                }
 
-            // Phase 6: Now Playing
-            if (categories & ICBackupImportNowPlaying) {
-                reportProgress(@"Restoring playback…".ls);
-                totalImported += [self importNowPlayingFromBackup:backup];
-                currentPhase++;
-            }
+                // Build GUID index for O(1) lookup in Phase C
+                [self _buildGuidIndex];
 
-            // Phase 7: Playlists & Episode Lists
-            if (categories & ICBackupImportPlaylists) {
-                reportProgress(@"Importing playlists…".ls);
-                totalImported += [self importPlaylistsFromBackup:backup];
-                totalImported += [self importEpisodeListsFromBackup:backup];
-                currentPhase++;
-            }
+                // PHASE C: Import local data (no network, async with UI yields)
+                if (cb.setStatusText) cb.setStatusText(@"Importing local data…".ls);
 
-            // Phase 8: App Settings
-            if (categories & ICBackupImportSettings) {
-                reportProgress(@"Importing settings…".ls);
-                totalImported += [self importSettingsFromBackup:backup];
-                currentPhase++;
-            }
+                [self _phaseC_importLocalData:backup categories:categories callbacks:cb completion:^(NSInteger localCount) {
+                    totalImported += localCount;
 
-            // Phase 9: Sort Order
-            if (categories & ICBackupImportSortOrder) {
-                reportProgress(@"Importing sort order…".ls);
-                totalImported += [self importSortOrderFromBackup:backup];
-                currentPhase++;
-            }
-
-            // Finalize
-            [DMANAGER save];
-
-            // Re-apply appearance if settings were imported
-            if (categories & ICBackupImportSettings) {
-                [[ICAppearanceManager sharedManager] updateAppearance];
-            }
-
-            if (progress) progress(1.0, @"Done".ls);
-
-            [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
-
-            // Change app icon if backup contains a different one (shows system dialog)
-            if (categories & ICBackupImportSettings) {
-                NSString *backupIcon = backup.settings.values[@"appIcon"];
-                if (backupIcon.length > 0) {
-                    NSString *currentIcon = [[UIApplication sharedApplication] alternateIconName];
-                    if (![backupIcon isEqualToString:currentIcon ?: @""]) {
-                        [[UIApplication sharedApplication] setAlternateIconName:backupIcon completionHandler:^(NSError *error) {
-                            if (error) {
-                                ErrLog(@"Failed to set app icon '%@': %@", backupIcon, error.localizedDescription);
-                            }
-                        }];
+                    if (_cancelImport) {
+                        [self _finalize:backup categories:categories totalImported:totalImported completion:completion];
+                        return;
                     }
-                }
-            }
 
-            if (completion) completion(totalImported, nil);
-        };
+                    // PHASE D: Downloads + Now Playing
+                    if (cb.setStatusText) cb.setStatusText(@"Finalizing…".ls);
+                    [self _phaseD_finishDownloadsAndNowPlaying:cb];
 
-        // Phase 1: New Podcasts (async because importURLs uses network)
-        if (categories & ICBackupImportNewPodcasts) {
-            reportProgress(@"Subscribing new podcasts…".ls);
-
-            NSMutableArray<NSURL *> *newURLs = [NSMutableArray array];
-            for (ICBackupPodcast *podcast in backup.podcasts) {
-                if (!podcast.feedURL) continue;
-                NSURL *url = [NSURL URLWithString:podcast.feedURL];
-                if (!url) continue;
-
-                CDFeed *existingFeed = [DMANAGER feedWithSourceURL:url];
-                if (!existingFeed) {
-                    [newURLs addObject:url];
-                }
-            }
-
-            if (newURLs.count > 0) {
-                totalImported += newURLs.count;
-                currentPhase++;
-
-                SubscriptionManager *sman = [SubscriptionManager sharedSubscriptionManager];
-                // Block refresh during import + balance retainNetworkActivity for finalizeImportWithCompletion:
-                sman.importing = YES;
-                [App retainNetworkActivity];
-
-                [sman
-                 importURLs:newURLs
-                 completion:^{
-                     runRemainingPhases();
-                 }
-                 progress:nil];
-            } else {
-                currentPhase++;
-                runRemainingPhases();
-            }
-        } else {
-            runRemainingPhases();
-        }
+                    // Finalize
+                    [self _finalize:backup categories:categories totalImported:totalImported completion:completion];
+                }];
+            }];
+        }];
     });
 }
 
-#pragma mark - Phase 2: Episode Status
+#pragma mark - Phase A: Subscribe Feeds (Sequential, Async)
+
++ (void)_phaseA_subscribeFeeds:(NSArray<ICBackupPodcast *> *)podcasts
+                       atIndex:(NSInteger)index
+                     callbacks:(ICBackupImportCallbacks)callbacks
+                    completion:(void(^)(NSArray<CDFeed *> *subscribedFeeds))completion
+{
+    static NSMutableArray<CDFeed *> *_subscribedFeeds = nil;
+    if (index == 0) {
+        _subscribedFeeds = [NSMutableArray array];
+    }
+
+    NSInteger total = podcasts.count;
+
+    if (_cancelImport || index >= total) {
+        NSArray *result = [_subscribedFeeds copy];
+        _subscribedFeeds = nil;
+        if (completion) completion(result);
+        return;
+    }
+
+    ICBackupPodcast *podcast = podcasts[index];
+    NSString *title = podcast.title ?: podcast.feedURL;
+    NSURL *url = [NSURL URLWithString:podcast.feedURL];
+
+    if (callbacks.setCurrentFeed) callbacks.setCurrentFeed(title, index, total);
+
+    // Update total progress
+    float progress = (float)index / (float)MAX(total, 1);
+    if (callbacks.setTotalProgress) callbacks.setTotalProgress(progress * 0.5); // Phase A = first 50%
+
+    if (!url) {
+        if (callbacks.setFeedError) callbacks.setFeedError(index, @"Invalid URL");
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _phaseA_subscribeFeeds:podcasts atIndex:index + 1 callbacks:callbacks completion:completion];
+        });
+        return;
+    }
+
+    SubscriptionManager *sm = [SubscriptionManager sharedSubscriptionManager];
+    [sm subscribeFeedWithURL:url options:kSubscribeOptionDontManageConsumedFlags completion:^(CDFeed *feed, NSError *error) {
+
+        // subscribeFeedWithURL may call completion on a background thread (on error/timeout),
+        // so we must dispatch everything to the main queue for thread safety.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (_skipCurrentFeed) {
+                _skipCurrentFeed = NO;
+                if (callbacks.setFeedSkipped) callbacks.setFeedSkipped(index);
+            } else if (error) {
+                if (callbacks.setFeedError) callbacks.setFeedError(index, error.localizedDescription);
+            } else if (feed) {
+                // Feed subscribed — apply backup metadata
+                feed.parked = podcast.parked;
+                feed.rank = podcast.rank;
+                if (podcast.username.length > 0) feed.username = podcast.username;
+                if (podcast.password.length > 0) feed.password = podcast.password;
+
+                [_subscribedFeeds addObject:feed];
+
+                // Initial episodes are already loaded by subscribeFeedWithURL
+                NSInteger episodeCount = feed.episodes.count;
+                if (callbacks.setFeedProgress) callbacks.setFeedProgress(index, 0.5, [NSString stringWithFormat:@"%ld", (long)episodeCount]);
+            }
+
+            [DMANAGER save];
+
+            // Next feed on next run loop iteration (keeps UI responsive)
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self _phaseA_subscribeFeeds:podcasts atIndex:index + 1 callbacks:callbacks completion:completion];
+            });
+        });
+    }];
+}
+
+#pragma mark - Phase B: Wait for Episode Loading
+
++ (void)_phaseB_waitForEpisodeLoading:(NSArray<CDFeed *> *)feeds
+                              atIndex:(NSInteger)index
+                        feedIndexBase:(NSInteger)feedIndexBase
+                            callbacks:(ICBackupImportCallbacks)callbacks
+                           completion:(void(^)(void))completion
+{
+    if (_cancelImport || index >= (NSInteger)feeds.count) {
+        if (completion) completion();
+        return;
+    }
+
+    CDFeed *feed = feeds[index];
+    NSInteger feedDisplayIndex = feedIndexBase + index;
+    EpisodeLoadingManager *elm = [EpisodeLoadingManager sharedManager];
+
+    if (![elm isLoadingFeed:feed]) {
+        // Already done loading
+        NSInteger episodeCount = feed.episodes.count;
+        if (callbacks.setFeedCompleted) callbacks.setFeedCompleted(feedDisplayIndex, episodeCount);
+
+        float progress = 0.5 + (0.3 * ((float)(index + 1) / (float)MAX(feeds.count, 1))); // Phase B = 50%-80%
+        if (callbacks.setTotalProgress) callbacks.setTotalProgress(progress);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _phaseB_waitForEpisodeLoading:feeds atIndex:index + 1 feedIndexBase:feedIndexBase callbacks:callbacks completion:completion];
+        });
+        return;
+    }
+
+    // Feed is still loading episodes — observe notifications
+    __block id batchObserver = nil;
+    __block id finishObserver = nil;
+    __block BOOL observerCleanedUp = NO;
+
+    void (^cleanupObservers)(void) = ^{
+        if (observerCleanedUp) return;
+        observerCleanedUp = YES;
+        if (batchObserver) [[NSNotificationCenter defaultCenter] removeObserver:batchObserver];
+        if (finishObserver) [[NSNotificationCenter defaultCenter] removeObserver:finishObserver];
+        batchObserver = nil;
+        finishObserver = nil;
+    };
+
+    batchObserver = [[NSNotificationCenter defaultCenter] addObserverForName:EpisodeLoadingManagerDidLoadBatchNotification
+                                                                      object:nil
+                                                                       queue:[NSOperationQueue mainQueue]
+                                                                  usingBlock:^(NSNotification *note) {
+        CDFeed *noteFeed = note.userInfo[@"feed"];
+        if (![noteFeed isEqual:feed]) return;
+
+        if (_skipCurrentFeed) {
+            _skipCurrentFeed = NO;
+            cleanupObservers();
+            [elm cancelLoadingForFeed:feed];
+            if (callbacks.setFeedSkipped) callbacks.setFeedSkipped(feedDisplayIndex);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self _phaseB_waitForEpisodeLoading:feeds atIndex:index + 1 feedIndexBase:feedIndexBase callbacks:callbacks completion:completion];
+            });
+            return;
+        }
+
+        double p = [elm loadingProgressForFeed:feed];
+        NSInteger loaded = feed.episodes.count;
+        NSInteger total = [feed integerForKey:kFeedPropertyTotalExpectedEpisodes];
+        NSString *detail = [NSString stringWithFormat:@"%ld/%ld", (long)loaded, (long)total];
+        if (callbacks.setFeedProgress) callbacks.setFeedProgress(feedDisplayIndex, (float)p, detail);
+    }];
+
+    finishObserver = [[NSNotificationCenter defaultCenter] addObserverForName:EpisodeLoadingManagerDidFinishLoadingNotification
+                                                                       object:nil
+                                                                        queue:[NSOperationQueue mainQueue]
+                                                                   usingBlock:^(NSNotification *note) {
+        CDFeed *noteFeed = note.userInfo[@"feed"];
+        if (![noteFeed isEqual:feed]) return;
+
+        cleanupObservers();
+
+        NSInteger episodeCount = feed.episodes.count;
+        if (callbacks.setFeedCompleted) callbacks.setFeedCompleted(feedDisplayIndex, episodeCount);
+
+        float progress = 0.5 + (0.3 * ((float)(index + 1) / (float)MAX(feeds.count, 1)));
+        if (callbacks.setTotalProgress) callbacks.setTotalProgress(progress);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _phaseB_waitForEpisodeLoading:feeds atIndex:index + 1 feedIndexBase:feedIndexBase callbacks:callbacks completion:completion];
+        });
+    }];
+
+    // Safety timeout: 120s per feed for episode loading
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(120 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (observerCleanedUp) return;
+
+        cleanupObservers();
+        [elm cancelLoadingForFeed:feed];
+
+        NSInteger episodeCount = feed.episodes.count;
+        if (callbacks.setFeedError) callbacks.setFeedError(feedDisplayIndex,
+            [NSString stringWithFormat:@"%ld Ep. (timeout)", (long)episodeCount]);
+
+        DebugLog(@"BackupImporter: Episode loading timeout for %@, loaded %ld episodes", feed.title, (long)episodeCount);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _phaseB_waitForEpisodeLoading:feeds atIndex:index + 1 feedIndexBase:feedIndexBase callbacks:callbacks completion:completion];
+        });
+    });
+}
+
+#pragma mark - Phase C: Local Data Import (async with UI yields)
+
++ (void)_phaseC_importLocalData:(InstacastBackupData *)backup
+                     categories:(ICBackupImportCategory)categories
+                      callbacks:(ICBackupImportCallbacks)callbacks
+                     completion:(void(^)(NSInteger localCount))completion
+{
+    // Build phase array — each phase runs on main thread, with a run loop pass between phases
+    NSMutableArray<dispatch_block_t> *phases = [NSMutableArray array];
+    __block NSInteger totalImported = 0;
+
+    if (categories & ICBackupImportEpisodeStatus) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportEpisodeStatus);
+            NSInteger count = [self importEpisodeStatusFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportEpisodeStatus,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    if (categories & ICBackupImportFeedSettings) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportFeedSettings);
+            NSInteger count = [self importFeedSettingsFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportFeedSettings,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    if (categories & ICBackupImportBookmarks) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportBookmarks);
+            NSInteger count = [self importBookmarksFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportBookmarks,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    if (categories & ICBackupImportUpNext) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportUpNext);
+            NSInteger count = [self importUpNextFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportUpNext,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    if (categories & ICBackupImportNowPlaying) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportNowPlaying);
+            NSInteger count = [self importNowPlayingFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportNowPlaying,
+                count > 0 ? @"1" : @"—");
+        }];
+    }
+
+    if (categories & ICBackupImportPlaylists) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportPlaylists);
+            NSInteger count = [self importPlaylistsFromBackup:backup];
+            count += [self importEpisodeListsFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportPlaylists,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    if (categories & ICBackupImportSettings) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportSettings);
+            NSInteger count = [self importSettingsFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportSettings,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    if (categories & ICBackupImportSortOrder) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportSortOrder);
+            NSInteger count = [self importSortOrderFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportSortOrder,
+                count > 0 ? @"✓" : @"—");
+        }];
+    }
+
+    if (categories & ICBackupImportDownloads) {
+        [phases addObject:^{
+            if (callbacks.setMetadataActive) callbacks.setMetadataActive(ICBackupImportDownloads);
+            NSInteger count = [self importDownloadsFromBackup:backup];
+            totalImported += count;
+            if (callbacks.setMetadataCompleted) callbacks.setMetadataCompleted(ICBackupImportDownloads,
+                [NSString stringWithFormat:@"%ld", (long)count]);
+        }];
+    }
+
+    // Run phases with run-loop yield between each (keeps UI responsive)
+    [self _runPhaseCBlocks:phases atIndex:0 totalPhases:phases.count callbacks:callbacks completion:^{
+        if (completion) completion(totalImported);
+    }];
+}
+
++ (void)_runPhaseCBlocks:(NSArray<dispatch_block_t> *)phases
+                 atIndex:(NSInteger)index
+             totalPhases:(NSInteger)total
+               callbacks:(ICBackupImportCallbacks)callbacks
+              completion:(void(^)(void))completion
+{
+    if (_cancelImport || index >= (NSInteger)phases.count) {
+        if (completion) completion();
+        return;
+    }
+
+    // Execute current phase
+    phases[index]();
+
+    // Update progress
+    float progressBase = 0.8;
+    float progressRange = 0.15;
+    float progress = progressBase + progressRange * ((float)(index + 1) / (float)MAX(total, 1));
+    if (callbacks.setTotalProgress) callbacks.setTotalProgress(progress);
+
+    // Yield to run loop, then next phase
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _runPhaseCBlocks:phases atIndex:index + 1 totalPhases:total callbacks:callbacks completion:completion];
+    });
+}
+
+#pragma mark - Phase D: Downloads + Now Playing
+
++ (void)_phaseD_finishDownloadsAndNowPlaying:(ICBackupImportCallbacks)callbacks {
+    // Restore now playing
+    [self processPendingNowPlaying];
+
+    // Queue downloads
+    [self processPendingDownloads];
+
+    if (callbacks.setTotalProgress) callbacks.setTotalProgress(0.98);
+}
+
+#pragma mark - Finalize
+
++ (void)_finalize:(InstacastBackupData *)backup
+       categories:(ICBackupImportCategory)categories
+    totalImported:(NSInteger)totalImported
+       completion:(void(^)(NSInteger importedCount, NSError *error))completion
+{
+    // Capture cancel state before resetting
+    BOOL wasCancelled = _cancelImport;
+
+    [DMANAGER save];
+
+    if (categories & ICBackupImportSettings) {
+        [[ICAppearanceManager sharedManager] updateAppearance];
+    }
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
+
+    if (!wasCancelled && (categories & ICBackupImportSettings)) {
+        NSString *backupIcon = backup.settings.values[@"appIcon"];
+        if (backupIcon.length > 0) {
+            NSString *currentIcon = [[UIApplication sharedApplication] alternateIconName];
+            if (![backupIcon isEqualToString:currentIcon ?: @""]) {
+                [[UIApplication sharedApplication] setAlternateIconName:backupIcon completionHandler:^(NSError *error) {
+                    if (error) {
+                        ErrLog(@"Failed to set app icon '%@': %@", backupIcon, error.localizedDescription);
+                    }
+                }];
+            }
+        }
+    }
+
+    // Clean up
+    _guidIndexByFeedURL = nil;
+    _cancelImport = NO;
+    _skipCurrentFeed = NO;
+    [EpisodeLoadingManager sharedManager].suspended = NO; // Safety: ensure loading is resumed
+
+    if (completion) {
+        NSError *error = wasCancelled
+            ? [NSError errorWithDomain:@"InstacastBackupImporter" code:1
+                              userInfo:@{NSLocalizedDescriptionKey: @"Import was cancelled.".ls}]
+            : nil;
+        completion(totalImported, error);
+    }
+}
+
+#pragma mark - GUID Index Cache
+
++ (void)_buildGuidIndex {
+    _guidIndexByFeedURL = [NSMutableDictionary dictionary];
+    for (CDFeed *feed in DMANAGER.feeds) {
+        if (!feed.sourceURL) continue;
+        NSString *key = [feed.sourceURL absoluteString];
+        NSMutableDictionary *index = [NSMutableDictionary dictionaryWithCapacity:feed.episodes.count];
+        for (CDEpisode *ep in feed.episodes) {
+            if (ep.guid) index[ep.guid] = ep;
+        }
+        _guidIndexByFeedURL[key] = index;
+    }
+    DebugLog(@"BackupImporter: Built GUID index for %lu feeds", (unsigned long)_guidIndexByFeedURL.count);
+}
+
+#pragma mark - Episode Status
 
 + (NSInteger)importEpisodeStatusFromBackup:(InstacastBackupData *)backup {
     NSInteger count = 0;
@@ -202,13 +553,7 @@
         for (ICBackupEpisode *backupEp in podcast.episodes) {
             if (!backupEp.guid) continue;
 
-            CDEpisode *episode = nil;
-            for (CDEpisode *ep in feed.episodes) {
-                if ([ep.guid isEqualToString:backupEp.guid]) {
-                    episode = ep;
-                    break;
-                }
-            }
+            CDEpisode *episode = [self findEpisodeWithGuid:backupEp.guid feedURL:podcast.feedURL];
             if (!episode) continue;
 
             if (backupEp.played && !episode.consumed) {
@@ -231,10 +576,6 @@
                 episode.duration = backupEp.duration;
                 count++;
             }
-            if (backupEp.downloaded && !episode.downloaded) {
-                [[CacheManager sharedCacheManager] cacheEpisode:episode];
-                count++;
-            }
         }
     }
 
@@ -242,12 +583,11 @@
     return count;
 }
 
-#pragma mark - Phase 3: Feed Settings
+#pragma mark - Feed Settings
 
 + (NSInteger)importFeedSettingsFromBackup:(InstacastBackupData *)backup {
     NSInteger count = 0;
 
-    // Internal keys that should not be imported
     NSSet *internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
 
     for (ICBackupPodcast *podcast in backup.podcasts) {
@@ -261,8 +601,8 @@
         if (podcast.rank > 0) {
             feed.rank = podcast.rank;
         }
+        feed.parked = podcast.parked;
 
-        // Restore credentials
         if (podcast.username.length > 0) {
             feed.username = podcast.username;
             count++;
@@ -274,18 +614,15 @@
 
         if (podcast.settings) {
             for (NSString *originalKey in podcast.settings) {
-                // Skip internal keys
                 if ([internalKeys containsObject:originalKey]) continue;
 
                 NSString *value = podcast.settings[originalKey];
                 if (!value || value.length == 0) continue;
 
                 // Translate UID-prefixed keys: old UID → new feed's UID
-                // Keys like {UUID}_auto_skip_start_period, {UUID}_old_episode_delete_days
                 NSString *key = originalKey;
                 if (key.length > 37 && [key characterAtIndex:36] == '_') {
                     NSString *prefix = [key substringToIndex:36];
-                    // Validate UUID format (8-4-4-4-12 hex with dashes)
                     if ([prefix characterAtIndex:8] == '-' && [prefix characterAtIndex:13] == '-' &&
                         [prefix characterAtIndex:18] == '-' && [prefix characterAtIndex:23] == '-') {
                         NSString *suffix = [key substringFromIndex:36];
@@ -296,7 +633,6 @@
                 if ([value isEqualToString:@"true"] || [value isEqualToString:@"false"]) {
                     [feed setBool:[value isEqualToString:@"true"] forKey:key];
                 } else if ([value rangeOfString:@"."].location != NSNotFound) {
-                    // Decimal number → store as double (auto_skip periods etc.)
                     [feed setDouble:[value doubleValue] forKey:key];
                 } else {
                     NSInteger intVal = [value integerValue];
@@ -315,7 +651,7 @@
     return count;
 }
 
-#pragma mark - Phase 4: Bookmarks
+#pragma mark - Bookmarks
 
 + (NSInteger)importBookmarksFromBackup:(InstacastBackupData *)backup {
     NSInteger count = 0;
@@ -337,15 +673,7 @@
 
         NSURL *feedURL = [NSURL URLWithString:backupBm.feedURL];
         CDFeed *feed = feedURL ? [DMANAGER feedWithSourceURL:feedURL] : nil;
-        CDEpisode *episode = nil;
-        if (feed && backupBm.episodeGuid) {
-            for (CDEpisode *ep in feed.episodes) {
-                if ([ep.guid isEqualToString:backupBm.episodeGuid]) {
-                    episode = ep;
-                    break;
-                }
-            }
-        }
+        CDEpisode *episode = [self findEpisodeWithGuid:backupBm.episodeGuid feedURL:backupBm.feedURL];
 
         CDBookmark *bookmark = [NSEntityDescription insertNewObjectForEntityForName:@"Bookmark"
                                                              inManagedObjectContext:DMANAGER.objectContext];
@@ -371,7 +699,7 @@
     return count;
 }
 
-#pragma mark - Phase 5: Up Next
+#pragma mark - Up Next
 
 + (NSInteger)importUpNextFromBackup:(InstacastBackupData *)backup {
     NSMutableArray<CDEpisode *> *upNextEpisodes = [NSMutableArray array];
@@ -388,20 +716,60 @@
     return upNextEpisodes.count;
 }
 
-#pragma mark - Phase 6: Now Playing
+#pragma mark - Now Playing
 
 + (NSInteger)importNowPlayingFromBackup:(InstacastBackupData *)backup {
     ICBackupEpisode *np = backup.nowPlaying;
     if (!np) return 0;
 
     CDEpisode *episode = [self findEpisodeWithGuid:np.guid feedURL:np.feedURL];
-    if (!episode) return 0;
+    if (!episode) {
+        // Episode not found — save for later (will be retried after episode loading)
+        [USER_DEFAULTS setObject:@{
+            @"guid": np.guid ?: @"",
+            @"feedURL": np.feedURL ?: @"",
+            @"position": @(np.position)
+        } forKey:kPendingNowPlayingKey];
+        [USER_DEFAULTS synchronize];
+        return 1;
+    }
 
-    [[AudioSession sharedAudioSession] playEpisode:episode queueUpCurrent:NO at:(NSTimeInterval)np.position autostart:NO];
+    if (np.position > 0) {
+        episode.position = np.position;
+    }
+
+    if (episode.preferedMedium.fileURL) {
+        [[AudioSession sharedAudioSession] playEpisode:episode queueUpCurrent:NO at:(NSTimeInterval)np.position autostart:NO];
+    } else {
+        // Stub episode — save for later, restore after feed refresh
+        [USER_DEFAULTS setObject:@{
+            @"guid": np.guid ?: @"",
+            @"feedURL": np.feedURL ?: @"",
+            @"position": @(np.position)
+        } forKey:kPendingNowPlayingKey];
+        [USER_DEFAULTS synchronize];
+    }
     return 1;
 }
 
-#pragma mark - Phase 7: Playlists
++ (void)processPendingNowPlaying {
+    NSDictionary *pending = [USER_DEFAULTS objectForKey:kPendingNowPlayingKey];
+    if (!pending) return;
+
+    NSString *guid = pending[@"guid"];
+    NSString *feedURL = pending[@"feedURL"];
+    int32_t position = [pending[@"position"] intValue];
+
+    CDEpisode *episode = [self findEpisodeWithGuid:guid feedURL:feedURL];
+    if (!episode || !episode.preferedMedium.fileURL) return;
+
+    [USER_DEFAULTS removeObjectForKey:kPendingNowPlayingKey];
+    [USER_DEFAULTS synchronize];
+
+    [[AudioSession sharedAudioSession] playEpisode:episode queueUpCurrent:NO at:(NSTimeInterval)position autostart:NO];
+}
+
+#pragma mark - Playlists
 
 + (NSInteger)importPlaylistsFromBackup:(InstacastBackupData *)backup {
     NSInteger count = 0;
@@ -441,7 +809,7 @@
     return count;
 }
 
-#pragma mark - Phase 7b: Episode Lists
+#pragma mark - Episode Lists
 
 + (NSInteger)importEpisodeListsFromBackup:(InstacastBackupData *)backup {
     NSInteger count = 0;
@@ -449,7 +817,6 @@
     for (ICBackupEpisodeList *backupList in backup.episodeLists) {
         if (!backupList.uid) continue;
 
-        // Find existing list by UID
         CDEpisodeList *existingList = nil;
         for (CDList *list in DMANAGER.lists) {
             if ([list isKindOfClass:[CDEpisodeList class]] && [list.uid isEqualToString:backupList.uid]) {
@@ -459,7 +826,6 @@
         }
 
         if (existingList) {
-            // Update settings of existing list
             existingList.audio = backupList.audio;
             existingList.video = backupList.video;
             existingList.downloaded = backupList.downloaded;
@@ -475,7 +841,6 @@
             existingList.groupByPodcast = backupList.groupByPodcast;
             existingList.continuousPlayback = backupList.continuousPlayback;
 
-            // Update included feeds
             if (backupList.includedFeedURLs.count > 0) {
                 NSMutableSet *feeds = [NSMutableSet set];
                 for (NSString *urlStr in backupList.includedFeedURLs) {
@@ -489,7 +854,6 @@
             [existingList invalidateCaches];
             count++;
         } else {
-            // Create new episode list
             CDEpisodeList *newList = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList"
                                                                   inManagedObjectContext:DMANAGER.objectContext];
             newList.uid = backupList.uid;
@@ -530,7 +894,7 @@
     return count;
 }
 
-#pragma mark - Phase 8: App Settings
+#pragma mark - App Settings
 
 + (NSInteger)importSettingsFromBackup:(InstacastBackupData *)backup {
     NSDictionary *settingsMap = @{
@@ -568,7 +932,25 @@
         @"smarthomeMQTTUsername":   SmarthomeMQTTUsername,
         @"smarthomeMQTTPassword":   SmarthomeMQTTPassword,
         @"smarthomeAllowControl":   SmarthomeAllowControl,
+        @"smarthomeWiFiOnly":       SmarthomeWiFiOnly,
         @"smarthomeDeviceName":     SmarthomeDeviceName,
+        @"deviceMovementIntelligentSleep": DeviceMovementIntelligentSleep,
+        @"deviceMovementSensitivity":      DeviceMovementSensitivity,
+        @"screenTouchIntelligentSleep":    ScreenTouchIntelligentSleep,
+        @"volumeChangeIntelligentSleep":   VolumeChangeIntelligentSleep,
+        @"continuousPlay":          ContinuousPlayFromFeed,
+        @"autoCacheStorageLimit":   AutoCacheStorageLimit,
+        @"autoDownloadWhileStreaming": AutoDownloadWhileStreaming,
+        @"enableCachingImagesOver3G": EnableCachingImagesOver3G,
+        @"openLinksExternal":       OpenLinksInExternalBrowser,
+        @"notifyNewEpisode":        EnableNewEpisodeNotification,
+        @"notifyRefreshFinished":   EnableManualRefreshFinishedNotification,
+        @"notifyDownloadFinished":  EnableManualDownloadFinishedNotification,
+        @"themeColorCode":          InterfaceThemeColorCode,
+        @"playerColorCode":         PlayerThemeColorCode,
+        @"intelligentSleepAlways":  IntelligentSleepTimerAlwaysActive,
+        @"feedSortOrder":           FeedSortOrder,
+        @"selectedAppLanguage":     SelectedAppLanguage,
     };
 
     NSSet *boolKeys = [NSSet setWithArray:@[
@@ -577,11 +959,18 @@
         @"enableCachingOver3G", @"enableRefreshingOver3G", @"enableStreamingOver3G",
         @"uiSoundEnabled", @"showBadge", @"dontDeleteUpNext", @"showUnavailable",
         @"themeDefaultActive", @"playerPerPodcastColor",
-        @"smarthomeMQTTEnabled", @"smarthomeAllowControl",
+        @"smarthomeMQTTEnabled", @"smarthomeAllowControl", @"smarthomeWiFiOnly",
+        @"deviceMovementIntelligentSleep", @"screenTouchIntelligentSleep", @"volumeChangeIntelligentSleep",
+        @"continuousPlay", @"autoDownloadWhileStreaming", @"enableCachingImagesOver3G",
+        @"openLinksExternal", @"notifyNewEpisode", @"notifyRefreshFinished", @"notifyDownloadFinished",
+        @"intelligentSleepAlways",
     ]];
 
+    NSSet *doubleKeys = [NSSet setWithArray:@[@"deviceMovementSensitivity"]];
+
     NSSet *stringKeys = [NSSet setWithArray:@[@"themeColorHex", @"playerColorHex",
-        @"smarthomeMQTTHost", @"smarthomeMQTTUsername", @"smarthomeMQTTPassword", @"smarthomeDeviceName"]];
+        @"smarthomeMQTTHost", @"smarthomeMQTTUsername", @"smarthomeMQTTPassword", @"smarthomeDeviceName",
+        @"feedSortOrder", @"selectedAppLanguage"]];
 
     NSInteger count = 0;
     NSUserDefaults *defaults = USER_DEFAULTS;
@@ -595,6 +984,8 @@
 
         if ([boolKeys containsObject:xmlKey]) {
             [defaults setBool:[value isEqualToString:@"true"] forKey:defaultsKey];
+        } else if ([doubleKeys containsObject:xmlKey]) {
+            [defaults setDouble:[value doubleValue] forKey:defaultsKey];
         } else if ([stringKeys containsObject:xmlKey]) {
             [defaults setObject:value forKey:defaultsKey];
         } else {
@@ -603,7 +994,6 @@
         count++;
     }
 
-    // MainMenuListUIDs
     if (backup.settings.mainMenuListUIDs.count > 0) {
         [defaults setObject:backup.settings.mainMenuListUIDs forKey:@"MainMenuListUIDs"];
         [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
@@ -614,7 +1004,7 @@
     return count;
 }
 
-#pragma mark - Phase 9: Sort Order
+#pragma mark - Sort Order
 
 + (NSInteger)importSortOrderFromBackup:(InstacastBackupData *)backup {
     NSInteger count = 0;
@@ -635,11 +1025,97 @@
     return count;
 }
 
+#pragma mark - Re-download Episodes (deferred)
+
++ (NSInteger)importDownloadsFromBackup:(InstacastBackupData *)backup {
+    NSMutableArray *pendingDownloads = [NSMutableArray array];
+    NSInteger count = 0;
+
+    for (ICBackupPodcast *podcast in backup.podcasts) {
+        if (!podcast.feedURL || podcast.episodes.count == 0) continue;
+
+        NSMutableArray *guids = [NSMutableArray array];
+        for (ICBackupEpisode *backupEp in podcast.episodes) {
+            if (!backupEp.downloaded || !backupEp.guid) continue;
+            [guids addObject:backupEp.guid];
+            count++;
+        }
+
+        if (guids.count > 0) {
+            [pendingDownloads addObject:@{@"feedURL": podcast.feedURL, @"guids": guids}];
+        }
+    }
+
+    if (pendingDownloads.count > 0) {
+        [USER_DEFAULTS setObject:pendingDownloads forKey:kPendingBackupDownloadsKey];
+        [USER_DEFAULTS synchronize];
+    }
+
+    DebugLog(@"BackupImporter: Saved %ld episodes for deferred download", (long)count);
+    return count;
+}
+
++ (void)processPendingDownloads {
+    NSArray *pendingDownloads = [USER_DEFAULTS objectForKey:kPendingBackupDownloadsKey];
+    if (!pendingDownloads || pendingDownloads.count == 0) return;
+
+    NSInteger queued = 0;
+    NSMutableArray *remaining = [NSMutableArray array];
+
+    for (NSDictionary *entry in pendingDownloads) {
+        NSString *feedURLString = entry[@"feedURL"];
+        NSArray *guids = entry[@"guids"];
+        if (!feedURLString || !guids) continue;
+
+        NSURL *feedURL = [NSURL URLWithString:feedURLString];
+        if (!feedURL) continue;
+
+        CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
+        if (!feed) continue;
+
+        NSMutableArray *remainingGuids = [NSMutableArray array];
+        for (NSString *guid in guids) {
+            CDEpisode *episode = [self findEpisodeWithGuid:guid feedURL:feedURLString];
+
+            if (!episode || [[CacheManager sharedCacheManager] episodeIsCached:episode]) continue;
+
+            if (episode.preferedMedium.fileURL) {
+                [[CacheManager sharedCacheManager] cacheEpisode:episode];
+                queued++;
+            } else {
+                [remainingGuids addObject:guid];
+            }
+        }
+
+        if (remainingGuids.count > 0) {
+            [remaining addObject:@{@"feedURL": feedURLString, @"guids": remainingGuids}];
+        }
+    }
+
+    if (remaining.count > 0) {
+        [USER_DEFAULTS setObject:remaining forKey:kPendingBackupDownloadsKey];
+    } else {
+        [USER_DEFAULTS removeObjectForKey:kPendingBackupDownloadsKey];
+    }
+    [USER_DEFAULTS synchronize];
+
+    if (queued > 0) {
+        DebugLog(@"BackupImporter: Queued %ld pending downloads", (long)queued);
+    }
+}
+
 #pragma mark - Helper
 
 + (CDEpisode *)findEpisodeWithGuid:(NSString *)guid feedURL:(NSString *)feedURLString {
     if (!guid || !feedURLString) return nil;
 
+    // Try GUID index first (O(1))
+    if (_guidIndexByFeedURL) {
+        NSDictionary *index = _guidIndexByFeedURL[feedURLString];
+        if (index) return index[guid];
+    }
+
+    // Fallback: linear search
     NSURL *feedURL = [NSURL URLWithString:feedURLString];
     if (!feedURL) return nil;
 
