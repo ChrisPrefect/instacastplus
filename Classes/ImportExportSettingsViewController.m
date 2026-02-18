@@ -26,6 +26,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 @property (nonatomic, strong) UIDocumentInteractionController* interactionController;
 @property (nonatomic, strong) VDModalInfo* mInfo;
 @property (nonatomic) NSInteger selectedImportRow;
+@property (nonatomic) BOOL importInProgress;
 @end
 
 @implementation ImportExportSettingsViewController
@@ -62,6 +63,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 {
     [super viewWillAppear:animated];
 
+    self.importInProgress = NO;
     [self updateAppearance];
 }
 
@@ -617,6 +619,9 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
 - (void)importFileFromURL:(NSURL *)url
 {
+    if (self.importInProgress) return;
+    self.importInProgress = YES;
+
     self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Analyzing backup…".ls];
     [self.mInfo show];
 
@@ -631,6 +636,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.mInfo close];
                 self.mInfo = nil;
+                self.importInProgress = NO;
             });
             return;
         }
@@ -656,11 +662,13 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
                                                                    preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];
+            self.importInProgress = NO;
             return;
         }
 
         InstacastBackupImportViewController *importVC = [InstacastBackupImportViewController viewControllerWithBackupData:backupData];
         [self.navigationController pushViewController:importVC animated:YES];
+        self.importInProgress = NO;
     }];
 }
 
@@ -674,6 +682,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
         [[SubscriptionManager sharedSubscriptionManager] importOPMLData:data completion:^{
             [self.mInfo close];
             self.mInfo = nil;
+            self.importInProgress = NO;
         } progress:^(float progress) {
             if (progress > 0.03) {
                 [self.mInfo setProgress:progress];

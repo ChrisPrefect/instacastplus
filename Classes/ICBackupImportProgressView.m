@@ -34,7 +34,11 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *detailLabel;
+@property (nonatomic, strong) UILabel *errorLabel;
 @property (nonatomic, strong) UIProgressView *progressBar;
+@property (nonatomic, strong) NSLayoutConstraint *bottomToTitleConstraint;
+@property (nonatomic, strong) NSLayoutConstraint *bottomToErrorConstraint;
+@property (nonatomic, strong) NSLayoutConstraint *bottomToProgressConstraint;
 @property (nonatomic) ICFeedRowState state;
 @end
 
@@ -83,6 +87,21 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         _progressBar.trackTintColor = [UIColor tertiarySystemFillColor];
         [self addSubview:_progressBar];
 
+        // Error label — multi-line, below title, hidden by default
+        _errorLabel = [[UILabel alloc] init];
+        _errorLabel.font = [UIFont systemFontOfSize:11];
+        _errorLabel.textColor = [UIColor systemRedColor];
+        _errorLabel.numberOfLines = 0; // multi-line
+        _errorLabel.lineBreakMode = NSLineBreakByWordWrapping;
+        _errorLabel.hidden = YES;
+        _errorLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        [self addSubview:_errorLabel];
+
+        _bottomToTitleConstraint = [self.bottomAnchor constraintGreaterThanOrEqualToAnchor:_titleLabel.bottomAnchor constant:4];
+        _bottomToErrorConstraint = [self.bottomAnchor constraintEqualToAnchor:_errorLabel.bottomAnchor constant:4];
+        _bottomToProgressConstraint = [self.bottomAnchor constraintGreaterThanOrEqualToAnchor:_progressBar.bottomAnchor constant:4];
+        _bottomToErrorConstraint.active = NO;
+
         [NSLayoutConstraint activateConstraints:@[
             [_statusImageView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
             [_statusImageView.topAnchor constraintEqualToAnchor:self.topAnchor constant:4],
@@ -103,8 +122,13 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
             [_progressBar.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
             [_progressBar.topAnchor constraintEqualToAnchor:_titleLabel.bottomAnchor constant:4],
 
-            [self.bottomAnchor constraintGreaterThanOrEqualToAnchor:_titleLabel.bottomAnchor constant:4],
-            [self.bottomAnchor constraintGreaterThanOrEqualToAnchor:_progressBar.bottomAnchor constant:4],
+            // Error label below title, same leading as title
+            [_errorLabel.leadingAnchor constraintEqualToAnchor:_titleLabel.leadingAnchor],
+            [_errorLabel.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+            [_errorLabel.topAnchor constraintEqualToAnchor:_titleLabel.bottomAnchor constant:2],
+
+            _bottomToTitleConstraint,
+            _bottomToProgressConstraint,
         ]];
     }
     return self;
@@ -146,9 +170,14 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
                                       withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightRegular]];
     _statusImageView.tintColor = [UIColor systemRedColor];
     _titleLabel.textColor = [UIColor secondaryLabelColor];
-    _detailLabel.textColor = [UIColor systemRedColor];
-    _detailLabel.text = message;
+    _detailLabel.text = nil;
     _progressBar.hidden = YES;
+
+    // Show error message as multi-line text below feed name
+    _errorLabel.text = message;
+    _errorLabel.hidden = NO;
+    _bottomToTitleConstraint.active = NO;
+    _bottomToErrorConstraint.active = YES;
 }
 
 - (void)setSkippedState {
@@ -591,10 +620,10 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
     NSTimeInterval elapsed = [NSDate timeIntervalSinceReferenceDate] - self.startTime;
     NSString *elapsedStr = [self _formatDuration:elapsed];
 
-    // Estimate remaining time after 2+ feeds completed
+    // Estimate total time based on average time per completed feed + ~20s for metadata/finalize
     if (self.completedFeedCount >= 2 && self.totalFeedCount > 0) {
         NSTimeInterval perFeed = elapsed / self.completedFeedCount;
-        NSTimeInterval estimated = perFeed * self.totalFeedCount;
+        NSTimeInterval estimated = perFeed * self.totalFeedCount + 20;
         NSString *estimatedStr = [self _formatDuration:estimated];
         self.timerLabel.text = [NSString stringWithFormat:@"%@ / ~%@", elapsedStr, estimatedStr];
     } else {

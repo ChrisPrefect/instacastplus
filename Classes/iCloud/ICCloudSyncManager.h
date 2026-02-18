@@ -32,6 +32,7 @@ extern NSString *ICDatabaseDidSaveWithSyncNotification;
 - (void)pushAllDataWithCompletion:(void(^)(NSError * _Nullable error))completion;
 - (void)fetchAllDataWithCompletion:(void(^)(NSError * _Nullable error))completion;
 - (void)fetchDeviceList;
+- (void)fetchCloudRecordCounts:(void(^)(NSDictionary<NSString *, NSNumber *> * _Nullable counts, NSError * _Nullable error))completion;
 
 @property (nonatomic, readonly) CKContainer *container;
 @property (nonatomic, readonly) CKDatabase *privateDatabase;

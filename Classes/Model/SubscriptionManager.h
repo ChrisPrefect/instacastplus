@@ -31,6 +31,7 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 
 - (void) reloadContentOfFeed:(CDFeed*)feed recoverArchivedEpisodes:(BOOL)recoverArchived completion:(ICSubscriptionManagerRefreshCompletionBlock)completion;
 - (void) subscribeFeedWithURL:(NSURL*)url options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion;
+- (void) subscribeFeedWithURL:(NSURL*)url username:(NSString*)username password:(NSString*)password options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion;
 
 @property (nonatomic, readonly) NSString* formattedLastRefreshDate;
 - (NSString*) formattedLastRefreshDateForFeed:(CDFeed*)feed;

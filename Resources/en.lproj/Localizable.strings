@@ -697,6 +697,25 @@
 "Feature Request & Bug Report Link – Share your ideas and issues directly through the app." = "Feature Request & Bug Report Link – Share your ideas and issues directly through the app.";
 "Donation Support – Love InstacastPlus? Now you can support development with in-app donations." = "Donation Support – Love InstacastPlus? Now you can support development with in-app donations.";
 
+/* ChangeLogViewController – new sections & items */
+"Redesigned Player" = "Redesigned Player";
+"Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage." = "Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage.";
+"Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position." = "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position.";
+"Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted." = "Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted.";
+"iCloud Sync – Seamlessly switch between devices! Podcasts, playlists, Play Next queue, settings and playback progress are automatically synchronized." = "iCloud Sync – Seamlessly switch between devices! Podcasts, playlists, Play Next queue, settings and playback progress are automatically synchronized.";
+"Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts." = "Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts.";
+"CarPlay – Take your podcasts on the road with full CarPlay support." = "CarPlay – Take your podcasts on the road with full CarPlay support.";
+"iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass." = "iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass.";
+"Podcast Charts with Genre Filter – Browse the current Apple Podcast Charts right in the directory, filterable by categories like True Crime, Comedy, News and more." = "Podcast Charts with Genre Filter – Browse the current Apple Podcast Charts right in the directory, filterable by categories like True Crime, Comedy, News and more.";
+"Episode Retention Rules – Automatically delete episodes after X days or keep only the newest Y episodes per podcast." = "Episode Retention Rules – Automatically delete episodes after X days or keep only the newest Y episodes per podcast.";
+"Pause Podcast Updates – Temporarily exclude podcasts from syncing that you're not actively listening to." = "Pause Podcast Updates – Temporarily exclude podcasts from syncing that you're not actively listening to.";
+"Blazing Fast Refresh – Up to 10 podcasts refresh simultaneously. Unreachable podcasts no longer block the rest." = "Blazing Fast Refresh – Up to 10 podcasts refresh simultaneously. Unreachable podcasts no longer block the rest.";
+"Bigger Fonts and Buttons – Better readability and easier operation throughout the entire interface." = "Bigger Fonts and Buttons – Better readability and easier operation throughout the entire interface.";
+"Faster App Start – The app launches noticeably faster." = "Faster App Start – The app launches noticeably faster.";
+"Dark Mode – Automatic (follows system), Light or Dark. Replaces the old location-based night mode." = "Dark Mode – Automatic (follows system), Light or Dark. Replaces the old location-based night mode.";
+"Download Manager – Downloads sortable by size, date or podcast. Delete all downloads of a podcast at once." = "Download Manager – Downloads sortable by size, date or podcast. Delete all downloads of a podcast at once.";
+"MQTT Smart Home – Control your podcasts via your smart home! Playback status, chapters, sleep timer and more are published to your MQTT broker. Remote control included." = "MQTT Smart Home – Control your podcasts via your smart home! Playback status, chapters, sleep timer and more are published to your MQTT broker. Remote control included.";
+
 /* DataSettingsViewController Statistics */
 "Statistics" = "Statistics";
 "Total Episodes" = "Total Episodes";
@@ -889,6 +908,28 @@
 "Syncing…" = "Syncing…";
 "No iCloud Account" = "No iCloud Account";
 "Please sign in to iCloud in Settings to use sync." = "Please sign in to iCloud in Settings to use sync.";
+
+/* ICCloudInitialSyncViewController */
+"This Device" = "This Device";
+"1 Podcast" = "1 Podcast";
+"%ld Podcasts" = "%ld Podcasts";
+"1 Episode with playback status" = "1 Episode with playback status";
+"%ld Episodes with playback status" = "%ld Episodes with playback status";
+"1 List" = "1 List";
+"%ld Lists" = "%ld Lists";
+"1 Device" = "1 Device";
+"%ld Devices" = "%ld Devices";
+"Data currently stored on this device." = "Data currently stored on this device.";
+"Data stored in your iCloud account." = "Data stored in your iCloud account.";
+"No cloud data found." = "No cloud data found.";
+"No cloud data found. Your local data will be uploaded." = "No cloud data found. Your local data will be uploaded.";
+"Loading cloud data…" = "Loading cloud data…";
+"Could not load cloud data." = "Could not load cloud data.";
+"Choose Action" = "Choose Action";
+"Upload replaces cloud data with this device's data. Download replaces local data with cloud data. Merge combines both — conflicts are resolved by most recent change." = "Upload replaces cloud data with this device's data. Download replaces local data with cloud data. Merge combines both — conflicts are resolved by most recent change.";
+"Disable Sync" = "Disable Sync";
+"iCloud contains more podcasts than this device. Uploading will replace cloud data. Other devices may lose podcasts. Are you sure?" = "iCloud contains more podcasts than this device. Uploading will replace cloud data. Other devices may lose podcasts. Are you sure?";
+"Upload" = "Upload";
 
 /* Refresh Status */
 "%ld/%ld podcasts updating" = "%ld/%ld podcasts updating";

@@ -201,7 +201,7 @@
                 DebugLog(@"status code >= 300 (%ld): %@", (long)statusCode, [request.URL absoluteString]);
             }
 
-            else if (statusCode >= 300) {
+            else if (statusCode >= 300 && statusCode != 304) {
                 NSString* content = [[NSString alloc] initWithData:self.connectionData encoding:NSUTF8StringEncoding];
                 DebugLog(@"status code >= 300 (%ld)\n%@:\n%@\n", (long)statusCode, [request.URL absoluteString], content);
             }
@@ -323,9 +323,10 @@
 {
     [super cancel];
     [self.dataTask cancel];
-    if (_connectionSemaphore) {
-    	dispatch_semaphore_signal(_connectionSemaphore);
-    }
+    // Note: don't signal _connectionSemaphore here — the polling loop in
+    // sendSynchronousRequest: checks [self isCancelled] every 0.25s and breaks.
+    // didCompleteWithError: will also signal when the cancelled task completes.
+    // Double-signalling would cause the next while-loop iteration to read stale data.
 }
 
 - (void) main

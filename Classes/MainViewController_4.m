@@ -85,7 +85,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
             for (NSArray* section in weakSelf.sidebarController.items) {
                 for (MainSidebarItem* item in section) {
                     if (item.tag == kMainSidebarItemUnplayed) {
-                        item.title = weakSelf.unplayedPlaylist.name.ls;
+                        item.title = weakSelf.unplayedPlaylist.name;
                         break;
                     }
                 }
@@ -182,6 +182,32 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         [USER_DEFAULTS setObject:uids forKey:@"MainMenuListUIDs"];
         [USER_DEFAULTS setBool:YES forKey:@"MainMenuListUIDsMigratedDefaults"];
         [USER_DEFAULTS synchronize];
+    }
+
+    // Sync list ranks to match MainMenuListUIDs order (sidebar is the source of truth)
+    {
+        NSArray* menuUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
+        if (menuUIDs.count > 1) {
+            NSArray* lists = DMANAGER.lists;
+            NSMutableArray* reordered = [NSMutableArray array];
+            // First: lists in MainMenuListUIDs order
+            for (NSString* uid in menuUIDs) {
+                for (CDList* list in lists) {
+                    if ([list.uid isEqualToString:uid]) {
+                        [reordered addObject:list];
+                        break;
+                    }
+                }
+            }
+            // Then: remaining lists not in the menu, keeping their existing rank order
+            for (CDList* list in lists) {
+                if (![reordered containsObject:list]) {
+                    [reordered addObject:list];
+                }
+            }
+            [CDList updateRanksOfLists:reordered];
+            [DMANAGER save];
+        }
     }
 
     [self _rebuildSidebarItems];
@@ -543,7 +569,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         selectedImage = image;
     }
 
-    return [MainSidebarItem itemWithTitle:list.name.ls tag:tag image:image selectedImage:selectedImage topSpacing:topSpacing];
+    return [MainSidebarItem itemWithTitle:list.name tag:tag image:image selectedImage:selectedImage topSpacing:topSpacing];
 }
 
 - (void) _rebuildSidebarItems

@@ -62,7 +62,7 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
 {
     self = [super init];
     if (self) {
-        _container = [CKContainer containerWithIdentifier:@"iCloud.com.vemedio.instacast"];
+        _container = [CKContainer containerWithIdentifier:@"iCloud.ch.iteconomy.instacastplus"];
         _privateDatabase = _container.privateCloudDatabase;
         _syncZoneID = [[CKRecordZoneID alloc] initWithZoneName:kSyncZoneName ownerName:CKCurrentUserDefaultName];
         _handlers = [NSMutableArray array];
@@ -827,6 +827,50 @@ static NSString * const kSubscriptionID = @"InstacastSyncSubscription";
             [[NSNotificationCenter defaultCenter] postNotificationName:ICCloudSyncManagerDidSyncNotification object:self];
             DebugLog(@"[iCloudSync] Fetch all complete");
             completion(nil);
+        });
+    };
+
+    [self.privateDatabase addOperation:op];
+}
+
+- (void)fetchCloudRecordCounts:(void(^)(NSDictionary<NSString *, NSNumber *> *counts, NSError *error))completion
+{
+    CKFetchRecordZoneChangesConfiguration *config = [[CKFetchRecordZoneChangesConfiguration alloc] init];
+    config.previousServerChangeToken = nil; // fetch all records
+
+    CKFetchRecordZoneChangesOperation *op = [[CKFetchRecordZoneChangesOperation alloc] initWithRecordZoneIDs:@[self.syncZoneID] configurationsByRecordZoneID:@{self.syncZoneID: config}];
+    op.qualityOfService = NSQualityOfServiceUtility;
+
+    NSMutableDictionary<NSString *, NSNumber *> *counts = [NSMutableDictionary dictionary];
+
+    op.recordChangedBlock = ^(CKRecord *record) {
+        NSString *type = record.recordType;
+        NSInteger current = [counts[type] integerValue];
+        counts[type] = @(current + 1);
+    };
+
+    // Intentionally not saving change token
+    op.recordZoneFetchCompletionBlock = ^(CKRecordZoneID *zoneID, CKServerChangeToken *token, NSData *clientData, BOOL moreComing, NSError *error) {
+        // intentionally not saving token
+    };
+
+    op.fetchRecordZoneChangesCompletionBlock = ^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                if (error.code == CKErrorPartialFailure) {
+                    NSDictionary *partialErrors = error.userInfo[CKPartialErrorsByItemIDKey];
+                    for (NSError *partialError in partialErrors.allValues) {
+                        if (partialError.code == CKErrorZoneNotFound) {
+                            completion(@{}, nil);
+                            return;
+                        }
+                    }
+                }
+                ErrLog(@"[iCloudSync] Fetch cloud record counts error: %@", error);
+                completion(nil, error);
+                return;
+            }
+            completion([counts copy], nil);
         });
     };
 

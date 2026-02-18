@@ -4,6 +4,7 @@
 <dict>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
+		<string>iCloud.ch.iteconomy.instacastplus</string>
 		<string>iCloud.com.vemedio.instacast</string>
 	</array>
 	<key>com.apple.developer.icloud-services</key>
@@ -12,6 +13,7 @@
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
+		<string>$(AppIdentifierPrefix)com.vemedio.iOSApps</string>
 		<string>6C9LTYXPS6.com.vemedio.ios.Instacast-HD</string>
 	</array>
 </dict>

@@ -5,6 +5,7 @@
 
 #import "iCloudSettingsViewController.h"
 #import "ICCloudSyncManager.h"
+#import "ICCloudInitialSyncViewController.h"
 #import "UITableViewController+Settings.h"
 
 typedef NS_ENUM(NSInteger, iCloudSettingsSections) {
@@ -12,7 +13,6 @@ typedef NS_ENUM(NSInteger, iCloudSettingsSections) {
     kICloudCategoriesSection,
     kICloudStatusSection,
     kICloudDevicesSection,
-    kICloudNumberOfSections,
 };
 
 typedef NS_ENUM(NSInteger, iCloudCategoryRows) {
@@ -157,27 +157,65 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 - (void)devicesUpdated
 {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [self loadDevices];
+        self.devices = [ICCloudSyncManager sharedManager].devices;
         [self.tableView reloadData];
     });
 }
 
 - (void)loadDevices
 {
-    if (![self masterEnabled]) {
-        self.devices = @[];
-        return;
-    }
+    // Always try to load devices, even when sync is off
     self.devices = [ICCloudSyncManager sharedManager].devices;
-    [[ICCloudSyncManager sharedManager] fetchDeviceList];
+
+    [[ICCloudSyncManager sharedManager] checkAccountStatus:^(BOOL available) {
+        if (!available) {
+            self.devices = @[];
+            [self.tableView reloadData];
+            return;
+        }
+        [[ICCloudSyncManager sharedManager] fetchDeviceList];
+    }];
 }
+
+#pragma mark - Section Mapping
+
+- (iCloudSettingsSections)typeForSection:(NSInteger)section
+{
+    BOOL enabled = [self masterEnabled];
+    if (section == 0) return kICloudMasterSection;
+    if (enabled) {
+        if (section == 1) return kICloudCategoriesSection;
+        if (section == 2) return kICloudStatusSection;
+        if (section == 3) return kICloudDevicesSection;
+    } else {
+        if (section == 1 && self.devices.count > 0) return kICloudDevicesSection;
+    }
+    return kICloudMasterSection;
+}
+
+- (NSInteger)sectionForType:(iCloudSettingsSections)type
+{
+    BOOL enabled = [self masterEnabled];
+    switch (type) {
+        case kICloudMasterSection: return 0;
+        case kICloudCategoriesSection: return enabled ? 1 : NSNotFound;
+        case kICloudStatusSection: return enabled ? 2 : NSNotFound;
+        case kICloudDevicesSection:
+            if (self.devices.count == 0) return NSNotFound;
+            return enabled ? 3 : 1;
+    }
+    return NSNotFound;
+}
+
+#pragma mark - Cell Updates
 
 - (void)updateLastSyncCell
 {
-    if (!self.tableView.window) {
-        return;
-    }
-    NSIndexPath *path = [NSIndexPath indexPathForRow:kStatusLastSync inSection:kICloudStatusSection];
+    if (!self.tableView.window) return;
+    NSInteger statusSection = [self sectionForType:kICloudStatusSection];
+    if (statusSection == NSNotFound) return;
+
+    NSIndexPath *path = [NSIndexPath indexPathForRow:kStatusLastSync inSection:statusSection];
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:path];
     if (cell) {
         cell.detailTextLabel.text = [self lastSyncText];
@@ -188,7 +226,10 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 {
     if (![self masterEnabled]) return;
     if (!self.tableView.window) return;
-    NSIndexPath *path = [NSIndexPath indexPathForRow:kStatusSyncNow inSection:kICloudStatusSection];
+    NSInteger statusSection = [self sectionForType:kICloudStatusSection];
+    if (statusSection == NSNotFound) return;
+
+    NSIndexPath *path = [NSIndexPath indexPathForRow:kStatusSyncNow inSection:statusSection];
     UITableViewCell *cell = [self.tableView cellForRowAtIndexPath:path];
     if (!cell) return;
 
@@ -258,14 +299,20 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
     BOOL enabled = [self masterEnabled];
-    if (!enabled) return 1; // only master toggle
-    if (self.devices.count == 0) return kICloudNumberOfSections - 1; // skip devices
-    return kICloudNumberOfSections;
+    if (enabled) {
+        NSInteger sections = 3; // master + categories + status
+        if (self.devices.count > 0) sections++; // + devices
+        return sections;
+    } else {
+        NSInteger sections = 1; // master only
+        if (self.devices.count > 0) sections++; // + devices even when disabled
+        return sections;
+    }
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    switch (section) {
+    switch ([self typeForSection:section]) {
         case kICloudMasterSection:
             return 1;
         case kICloudCategoriesSection:
@@ -281,7 +328,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    switch (indexPath.section) {
+    switch ([self typeForSection:indexPath.section]) {
         case kICloudMasterSection:
         {
             UITableViewCell *cell = [self switchCell];
@@ -422,7 +469,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kICloudDevicesSection) {
+    if ([self typeForSection:indexPath.section] == kICloudDevicesSection) {
         return UITableViewAutomaticDimension;
     }
     return tableView.rowHeight;
@@ -430,7 +477,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 
 - (CGFloat)tableView:(UITableView *)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kICloudDevicesSection) {
+    if ([self typeForSection:indexPath.section] == kICloudDevicesSection) {
         return 64;
     }
     return tableView.estimatedRowHeight;
@@ -438,7 +485,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 
 - (NSString*)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    switch (section) {
+    switch ([self typeForSection:section]) {
         case kICloudCategoriesSection:
             return @"Sync Categories".ls;
         case kICloudDevicesSection:
@@ -450,7 +497,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 
 - (NSString*)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    switch (section) {
+    switch ([self typeForSection:section]) {
         case kICloudMasterSection:
             return @"Syncs data between your devices via iCloud.".ls;
         case kICloudCategoriesSection:
@@ -480,7 +527,7 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-    if (indexPath.section == kICloudStatusSection) {
+    if ([self typeForSection:indexPath.section] == kICloudStatusSection) {
         if (indexPath.row == kStatusSyncNow) {
             [self syncNow];
         } else if (indexPath.row == kStatusReset) {
@@ -508,10 +555,8 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
             [[ICCloudSyncManager sharedManager] start];
             [self.tableView reloadData];
 
-            // Show initial sync dialog if not yet completed
-            if (![USER_DEFAULTS boolForKey:iCloudSyncInitialSyncCompleted]) {
-                [self showInitialSyncDialog];
-            }
+            // Always show initial sync dialog
+            [self showInitialSyncDialog];
         }];
     } else {
         [USER_DEFAULTS setBool:NO forKey:iCloudSyncEnabled];
@@ -614,39 +659,55 @@ typedef NS_ENUM(NSInteger, iCloudStatusRows) {
 
 - (void)showInitialSyncDialog
 {
+    // Compute local stats on main thread (Core Data context is main queue)
+    NSInteger localPodcastCount = DMANAGER.feeds.count;
+
+    NSFetchRequest *episodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    episodeRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES"];
+    NSInteger localEpisodeCount = [DMANAGER.objectContext countForFetchRequest:episodeRequest error:nil];
+
+    NSInteger localListCount = DMANAGER.lists.count;
+
+    // Check if cloud data exists (determines which options are shown)
     [[ICCloudSyncManager sharedManager] checkCloudDataExists:^(BOOL exists) {
         if (!exists) {
-            // No cloud data - just push local data
+            // No cloud data — just push local data directly
             [self performInitialUpload];
             return;
         }
 
-        // Cloud data exists - ask user
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Initial Sync".ls
-                                                                      message:@"Cloud data already exists. How would you like to handle the initial sync?".ls
-                                                               preferredStyle:UIAlertControllerStyleAlert];
+        // Cloud data exists — show dedicated sync screen
+        ICCloudInitialSyncViewController *syncVC = [ICCloudInitialSyncViewController viewController];
+        syncVC.cloudDataExists = exists;
+        syncVC.localPodcastCount = localPodcastCount;
+        syncVC.localEpisodeCount = localEpisodeCount;
+        syncVC.localListCount = localListCount;
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"Upload Local Data".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [self performInitialUpload];
-        }]];
+        WEAK_SELF;
+        syncVC.completionBlock = ^(ICInitialSyncAction action) {
+            STRONG_SELF;
+            [self.navigationController popViewControllerAnimated:YES];
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"Download from iCloud".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [self performInitialDownload];
-        }]];
+            switch (action) {
+                case ICInitialSyncActionCancel:
+                    [USER_DEFAULTS setBool:NO forKey:iCloudSyncEnabled];
+                    [USER_DEFAULTS synchronize];
+                    [[ICCloudSyncManager sharedManager] stop];
+                    [self.tableView reloadData];
+                    break;
+                case ICInitialSyncActionUpload:
+                    [self performInitialUpload];
+                    break;
+                case ICInitialSyncActionDownload:
+                    [self performInitialDownload];
+                    break;
+                case ICInitialSyncActionMerge:
+                    [self performInitialMerge];
+                    break;
+            }
+        };
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"Merge".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [self performInitialMerge];
-        }]];
-
-        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
-
-        if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-        } else {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-        }
-
-        [self presentViewController:alert animated:YES completion:nil];
+        [self.navigationController pushViewController:syncVC animated:YES];
     }];
 }
 

@@ -10,6 +10,7 @@
 	<true/>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
+		<string>iCloud.ch.iteconomy.instacastplus</string>
 		<string>iCloud.com.vemedio.instacast</string>
 	</array>
 	<key>com.apple.developer.icloud-services</key>

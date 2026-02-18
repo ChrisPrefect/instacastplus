@@ -400,8 +400,8 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
 
     for (CDFeedProperty* property in self.properties) {
         if (![internalKeys containsObject:property.key]) {
-            if ([property.key isEqualToString:PauseFeedSynchronization] &&
-                property.boolValue == [USER_DEFAULTS boolForKey:PauseFeedSynchronization]) {
+            // PauseFeedSynchronization is obsolete — parked attribute is used directly
+            if ([property.key isEqualToString:@"PauseFeedSynchronization"]) {
                 continue;
             }
             return YES;

@@ -70,20 +70,43 @@
 - (void) _writeJPGImage:(IC_IMAGE*)image toFile:(NSString*)path
 {
 #if TARGET_OS_IPHONE
-    [UIImageJPEGRepresentation(image, 0.8f) writeToFile:path atomically:YES];
+    NSData* jpegData = UIImageJPEGRepresentation(image, 0.8f);
 #else
-    
+    NSData* jpegData = nil;
     for(NSBitmapImageRep* imageRep in [image representations]) {
         if ([imageRep isKindOfClass:[NSBitmapImageRep class]]) {
-            NSData* jpegData = [imageRep representationUsingType:NSJPEGFileType properties:nil];
-            [jpegData writeToFile:path atomically:YES];
+            jpegData = [imageRep representationUsingType:NSJPEGFileType properties:nil];
             break;
-        }
-        else {
-            DebugLog(@"fail");
         }
     }
 #endif
+    if (!jpegData) return;
+
+    // Deduplicate: check if an existing file in the same directory has identical content
+    NSString* directory = [path stringByDeletingLastPathComponent];
+    NSString* contentHash = [jpegData MD5Hash];
+    NSFileManager* fman = [NSFileManager defaultManager];
+    NSArray* existingFiles = [fman contentsOfDirectoryAtPath:directory error:nil];
+
+    for (NSString* existingFilename in existingFiles) {
+        NSString* existingPath = [directory stringByAppendingPathComponent:existingFilename];
+        if ([existingPath isEqualToString:path]) continue;
+
+        NSDictionary* attrs = [fman attributesOfItemAtPath:existingPath error:nil];
+        if ([attrs fileSize] != jpegData.length) continue;
+
+        NSData* existingData = [NSData dataWithContentsOfFile:existingPath];
+        if (existingData && [[existingData MD5Hash] isEqualToString:contentHash]) {
+            // Identical image found — create hard link instead of writing duplicate
+            [fman removeItemAtPath:path error:nil];
+            if ([fman linkItemAtPath:existingPath toPath:path error:nil]) {
+                return;
+            }
+            break;
+        }
+    }
+
+    [jpegData writeToFile:path atomically:YES];
 }
 
 

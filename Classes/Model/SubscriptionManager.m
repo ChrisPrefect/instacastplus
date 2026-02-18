@@ -152,7 +152,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     if (!feed) {
         return NO;
     }
-    return [feed boolForKey:PauseFeedSynchronization];
+    return feed.parked;
 }
 
 - (NSArray<CDFeed*>*)_feedsEligibleForSynchronization:(NSArray<CDFeed*>*)feeds
@@ -277,17 +277,26 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
 - (void) subscribeFeedWithURL:(NSURL*)url options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion
 {
+    [self subscribeFeedWithURL:url username:nil password:nil options:options completion:completion];
+}
+
+- (void) subscribeFeedWithURL:(NSURL*)url username:(NSString*)username password:(NSString*)password options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion
+{
     if (!url) {
         return;
     }
-    
+
     [App retainNetworkActivity];
 
     DebugLog(@"subscribing with URL: %@", url);
-    
+
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
+    if (username.length > 0) parser.username = username;
+    if (password.length > 0) parser.password = password;
+    parser.dontAskForCredentials = (username.length > 0); // Don't show auth dialog if we have credentials
+
     parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
 
         CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed autodownload:YES options:options];
@@ -360,37 +369,40 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
+    parser.timeout = 8;
     parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
-        if (!url) {
-            if (completion) completion(nil, [NSError errorWithDomain:@"OPML" code:0 userInfo:@{NSLocalizedDescriptionKey: @"Invalid feed URL"}]);
+        // Core Data access must happen on main queue (DMANAGER.objectContext is main-queue context)
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!url) {
+                if (completion) completion(nil, [NSError errorWithDomain:@"OPML" code:0 userInfo:@{NSLocalizedDescriptionKey: @"Invalid feed URL"}]);
+                [App releaseNetworkActivity];
+                return;
+            }
+
+            // Check if already subscribed
+            NSFetchRequest *fetchRequest = [CDFeed fetchRequest];
+            fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", url.absoluteString];
+            fetchRequest.fetchLimit = 1;
+            NSError *fetchError = nil;
+            NSArray *existingFeeds = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:&fetchError];
+
+            CDFeed *persistentFeed = nil;
+
+            if (existingFeeds.count > 0) {
+                persistentFeed = existingFeeds.firstObject;
+                DebugLog(@"Already subscribed to feed: %@", url);
+            } else {
+                persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
+                [DMANAGER saveAndSync:YES];
+                DebugLog(@"New feed subscribed: %@", url);
+            }
+
+            if (completion) {
+                completion(persistentFeed, fetchError);
+            }
+
             [App releaseNetworkActivity];
-            return;
-        }
-
-        // 🧠 Check if already subscribed
-        NSFetchRequest *fetchRequest = [CDFeed fetchRequest];
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", url.absoluteString];
-        fetchRequest.fetchLimit = 1;
-        NSError *fetchError = nil;
-        NSArray *existingFeeds = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:&fetchError];
-
-        CDFeed *persistentFeed = nil;
-
-        if (existingFeeds.count > 0) {
-            persistentFeed = existingFeeds.firstObject;
-            DebugLog(@"Already subscribed to feed: %@", url);
-        } else {
-            //persistentFeed = [self subscribeParserFeedMetadataOnly:parserFeed];
-            persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
-            [DMANAGER saveAndSync:YES];
-            DebugLog(@"New feed subscribed: %@", url);
-        }
-
-        if (completion) {
-            completion(persistentFeed, fetchError);
-        }
-
-        [App releaseNetworkActivity];
+        });
     };
     parser.didEndWithError = ^(NSError* error) {
         if (completion) {
@@ -711,6 +723,12 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 - (void) refreshFeeds:(NSArray*)feeds etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
 {
     if (self.importing) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(YES, @[], nil);
+            }
+            [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidFinishRefreshingFeedsNotification object:self];
+        });
         return;
     }
 
@@ -1183,9 +1201,15 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 - (void) updateLocalFeedInfo:(CDFeed*)localFeed withRemoteFeed:(ICFeed*)remoteFeed force:(BOOL)force
 {
     if (!force)
-    {    
+    {
         if (remoteFeed.changedSourceURL) {
-            localFeed.sourceURL = remoteFeed.changedSourceURL;
+            // Don't override sourceURL for feeds with credentials — the redirect
+            // target is typically the public feed URL without auth path
+            if (!localFeed.username || localFeed.username.length == 0) {
+                localFeed.sourceURL = remoteFeed.changedSourceURL;
+            } else {
+                DebugLog(@"Skipping sourceURL update for feed with credentials: %@ → %@", localFeed.sourceURL, remoteFeed.changedSourceURL);
+            }
         }
         localFeed.etag = remoteFeed.etag;
         localFeed.title = remoteFeed.title;
@@ -1328,8 +1352,33 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         BOOL guidAlreadyExists = [episodeGuids containsObject:remoteEpisode.guid];
         BOOL hashAlreadyExists = (remoteEpisode.objectHash && [episodeObjectHashes containsObject:remoteEpisode.objectHash]);
 
+        // Episode exists locally — check if it's a stub from backup import (no title)
+        if (guidAlreadyExists || hashAlreadyExists) {
+            for (CDEpisode *localEp in localEpisodes) {
+                if ((localEp.guid && [localEp.guid isEqualToString:remoteEpisode.guid]) ||
+                    (localEp.objectHash && [localEp.objectHash isEqualToString:remoteEpisode.objectHash])) {
+                    if (!localEp.title || localEp.title.length == 0) {
+                        // Stub episode from backup import — fill in metadata, preserve status
+                        [self _copyEpisodeValuesFrom:remoteEpisode toPersistentEpisode:localEp];
+                        // Create media objects
+                        NSMutableSet *media = [[NSMutableSet alloc] init];
+                        for (ICMedia *parserMedia in remoteEpisode.media) {
+                            if (parserMedia.fileURL) {
+                                CDMedium *medium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
+                                                                                inManagedObjectContext:context];
+                                [self _copyMediumValuesFrom:parserMedia toPersistentMedium:medium];
+                                [media addObject:medium];
+                            }
+                        }
+                        localEp.media = media;
+                    }
+                    break;
+                }
+            }
+            continue;
+        }
+
         // local episode does not exist
-        if (!guidAlreadyExists && !hashAlreadyExists)
 		{
             // make persistent
             BOOL wasNew;
@@ -1591,25 +1640,27 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
         __weak ICFeedParser* weakFeedParser = feedParser;
         feedParser.didParseFeedBlock = ^(ICFeed* feed) {
-            
-            feed.username = weakFeedParser.username;
-            feed.password = weakFeedParser.password;
-            feed.lastUpdate = [NSDate date];
-            
-            [DMANAGER subscribeFeed:feed];
-            
-            parsedFeeds--;
-            if (parsedFeeds == 0 && completion) {
-                completion();
-            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                feed.username = weakFeedParser.username;
+                feed.password = weakFeedParser.password;
+                feed.lastUpdate = [NSDate date];
+
+                [DMANAGER subscribeFeed:feed];
+
+                parsedFeeds--;
+                if (parsedFeeds == 0 && completion) {
+                    completion();
+                }
+            });
         };
-        
+
         feedParser.didEndWithError = ^(NSError* error) {
-            
-            parsedFeeds--;
-            if (parsedFeeds == 0 && completion) {
-                completion();
-            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                parsedFeeds--;
+                if (parsedFeeds == 0 && completion) {
+                    completion();
+                }
+            });
         };
         
         [self.parserQueue addOperation:feedParser];
@@ -1873,40 +1924,25 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
 - (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(void))completion progress:(void (^)(float))progress {
     dispatch_group_t group = dispatch_group_create();
-    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
-    config.timeoutIntervalForRequest = 8.0;
-    //config.timeoutIntervalForResource = 20.0;
-    config.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData; // Avoid caching
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:nil delegateQueue:nil];
-    
+
     [DMANAGER beginInterruptSaving];
-    
+
     NSUInteger totalCount = urls.count;
     __block NSUInteger completedCount = 0;
-    
+
     for (NSURL *url in urls) {
         dispatch_group_enter(group);
-        
-        NSURLSessionDataTask *task = [session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            NSHTTPURLResponse *httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
-            BOOL shouldSkip = error || !data || (httpResponse && (httpResponse.statusCode < 200 || httpResponse.statusCode >= 300));
-            
-            if (shouldSkip) {
-                ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription ?: @"Invalid response");
-                [self updateProgress:&completedCount total:totalCount progress:progress group:group];
-                return;
-            }
 
-            [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
-                [self updateProgress:&completedCount total:totalCount progress:progress group:group];
-            }];
+        [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
+            if (error) {
+                ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
+            }
+            [self updateProgress:&completedCount total:totalCount progress:progress group:group];
         }];
-        [task resume];
     }
-    
+
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{
         [self finalizeImportWithCompletion:completion progress:progress];
-        [session finishTasksAndInvalidate];
     });
 }
 
@@ -1924,9 +1960,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         self.importing = NO;
         [DMANAGER endInterruptSaving];
         [DMANAGER save];
-        //[self autoDownloadAllFeedsAsynchronously];
         if (progress) progress(1.0);
-        // ✅ 🔔 Post notification so table view can refresh FRC
         [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
         if (completion) completion();
     });

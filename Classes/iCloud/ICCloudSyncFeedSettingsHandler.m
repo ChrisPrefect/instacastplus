@@ -23,13 +23,14 @@ static NSSet* internalFeedPropertyKeys(void) {
 
 - (void)pushChangesWithCompletion:(void(^)(NSError *error))completion
 {
-    NSArray *feeds = DMANAGER.visibleFeeds;
+    NSArray *feeds = DMANAGER.feeds;  // include parked feeds so their paused state is synced
     NSMutableArray *records = [NSMutableArray array];
 
     for (CDFeed *feed in feeds) {
         if (!feed.sourceURL) continue;
 
-        NSMutableOrderedSet *keysToSync = [NSMutableOrderedSet orderedSetWithObject:PauseFeedSynchronization];
+        // parked state is now synced via ICCloudSyncSubscriptionHandler, no longer as CDFeedProperty
+        NSMutableOrderedSet *keysToSync = [NSMutableOrderedSet orderedSet];
         NSArray *propertyKeys = [feed propertyKeys];
         for (NSString *key in propertyKeys) {
             if ([internalFeedPropertyKeys() containsObject:key]) {
@@ -106,15 +107,13 @@ static NSSet* internalFeedPropertyKeys(void) {
             continue;
         }
 
-        if ([key isEqualToString:PauseFeedSynchronization] && boolVal) {
-            BOOL incomingValue = [boolVal boolValue];
-            BOOL defaultValue = [USER_DEFAULTS boolForKey:key];
-            if (incomingValue == defaultValue) {
-                [feed resetValueForKey:key];
-            } else {
-                [feed setBool:incomingValue forKey:key];
-            }
-        } else if (doubleVal && [doubleVal doubleValue] != 0.0) {
+        // PauseFeedSynchronization is obsolete — parked is synced via ICCloudSyncSubscriptionHandler.
+        // Ignore incoming PauseFeedSynchronization records from older clients.
+        if ([key isEqualToString:@"PauseFeedSynchronization"]) {
+            continue;
+        }
+
+        if (doubleVal && [doubleVal doubleValue] != 0.0) {
             [feed setDouble:[doubleVal doubleValue] forKey:key];
         } else if (intVal && [intVal integerValue] != 0) {
             [feed setInteger:[intVal integerValue] forKey:key];

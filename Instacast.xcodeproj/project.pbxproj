@@ -206,7 +206,6 @@
 		1BA9948E1680638F0000309B /* Model.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 1BA994891680638F0000309B /* Model.xcdatamodeld */; };
 		1BA9948F1680638F0000309B /* Model1.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 1BA9948B1680638F0000309B /* Model1.xcdatamodeld */; };
 		1BB0D5351A09FDE000B619C8 /* OpenInSafariActivity.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D5341A09FDE000B619C8 /* OpenInSafariActivity.m */; };
-		CD00AA012D10A00100000001 /* ICShareItem.m in Sources */ = {isa = PBXBuildFile; fileRef = CD00AA002D10A00100000001 /* ICShareItem.m */; };
 		1BB0D5381A0A0AA500B619C8 /* STITunesStore.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D5371A0A0AA500B619C8 /* STITunesStore.m */; };
 		1BB0D53B1A0A0ADE00B619C8 /* SFHFKeychainUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D53A1A0A0ADE00B619C8 /* SFHFKeychainUtils.m */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
 		1BB0D53F1A0A0B0300B619C8 /* Reachability.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BB0D53E1A0A0B0300B619C8 /* Reachability.m */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
@@ -266,6 +265,7 @@
 		22AED23EE168E55567505A65 /* ICCloudSyncPlaybackHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 094F7924BA769BA2A224BDC8 /* ICCloudSyncPlaybackHandler.m */; };
 		248D26F8299CFFB314ED4DB8 /* ICCloudSyncDeviceInfo.m in Sources */ = {isa = PBXBuildFile; fileRef = D1B2EB9A09A60DEE7C15C25F /* ICCloudSyncDeviceInfo.m */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
+		8189C509C0C8211E6CDCD159 /* ICBackupImportProgressView.m in Sources */ = {isa = PBXBuildFile; fileRef = B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */; };
 		835A5AF02F338F7800A70766 /* ImportExportSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */; };
 		835A5B0B2F33BBC000A70766 /* SmarthomeSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0A2F33BBC000A70766 /* SmarthomeSettingsViewController.m */; };
 		835A5B0D2F33BBDA00A70766 /* SmarthomeManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0C2F33BBDA00A70766 /* SmarthomeManager.m */; };
@@ -278,6 +278,7 @@
 		9EA6F144FB33329DD4241431 /* InstacastBackupImportViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */; };
 		A09342B69F23219DCA42408C /* InstacastBackupData.m in Sources */ = {isa = PBXBuildFile; fileRef = 9B172640A841BB0E33457ED9 /* InstacastBackupData.m */; };
 		A0B881E96A221DECBBBC945E /* ICCloudSyncFeedSettingsHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 661371EEE9F9A467AB106E4B /* ICCloudSyncFeedSettingsHandler.m */; };
+		A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */; };
 		C070840DF6F1CC2F602ABC4A /* ICCloudSyncSubscriptionHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = 46C63C71A3AF8033E477EB83 /* ICCloudSyncSubscriptionHandler.m */; };
 		C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */; };
 		C6D6259CADBA597AA7A86729 /* ICCloudSyncNowPlayingHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = C422536400D398C30FCDE076 /* ICCloudSyncNowPlayingHandler.m */; };
@@ -287,6 +288,7 @@
 		CC000001AABB000000000007 /* SleepTimerSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */; };
 		CC000001AABB00000000000A /* DataSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000C /* DataSettingsViewController.m */; };
 		CD0082042CD65D91001E081B /* InstacastSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */; };
+		CD00AA012D10A00100000001 /* ICShareItem.m in Sources */ = {isa = PBXBuildFile; fileRef = CD00AA002D10A00100000001 /* ICShareItem.m */; };
 		CD0SILENCE2026020100000002 /* Silence.caf in Resources */ = {isa = PBXBuildFile; fileRef = CD0SILENCE2026020100000001 /* Silence.caf */; };
 		CD7A884E2C60C27F0033C023 /* light_dd_ic.png in Resources */ = {isa = PBXBuildFile; fileRef = CD7A884C2C60C27E0033C023 /* light_dd_ic.png */; };
 		CD7A884F2C60C27F0033C023 /* dark_dd_ic.png in Resources */ = {isa = PBXBuildFile; fileRef = CD7A884D2C60C27F0033C023 /* dark_dd_ic.png */; };
@@ -319,7 +321,7 @@
 		E7067A799038969ACBC8E024 /* ICCloudSyncDownloadHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = CE8842E4C30F0B805DA99B61 /* ICCloudSyncDownloadHandler.m */; };
 		F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */; };
 		F6A7B8C9D0E1F2A3B4C5D6E7 /* ICCloudSyncUpNextHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9D0E1F2A3B4C5 /* ICCloudSyncUpNextHandler.m */; };
-		A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */; };
+		A1C2D3E4F5A6B7C8D9E0F1A2 /* ICCloudInitialSyncViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B3D4E5F6A7B8C9D0E1F2A3B5 /* ICCloudInitialSyncViewController.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -671,8 +673,6 @@
 		1BA9948C1680638F0000309B /* Model.xcdatamodel */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodel; path = Model.xcdatamodel; sourceTree = "<group>"; };
 		1BB0D5331A09FDE000B619C8 /* OpenInSafariActivity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = OpenInSafariActivity.h; sourceTree = "<group>"; };
 		1BB0D5341A09FDE000B619C8 /* OpenInSafariActivity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = OpenInSafariActivity.m; sourceTree = "<group>"; };
-		CD00AA002D10A00100000001 /* ICShareItem.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICShareItem.m; sourceTree = "<group>"; };
-		CD00AA012D10A00100000002 /* ICShareItem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICShareItem.h; sourceTree = "<group>"; };
 		1BB0D5361A0A0AA500B619C8 /* STITunesStore.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = STITunesStore.h; sourceTree = "<group>"; };
 		1BB0D5371A0A0AA500B619C8 /* STITunesStore.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = STITunesStore.m; sourceTree = "<group>"; };
 		1BB0D5391A0A0ADE00B619C8 /* SFHFKeychainUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SFHFKeychainUtils.h; sourceTree = "<group>"; };
@@ -786,6 +786,7 @@
 		46391C2C1D1336DD2951C148 /* ICCloudSyncAppSettingsHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncAppSettingsHandler.h; sourceTree = "<group>"; };
 		46C63C71A3AF8033E477EB83 /* ICCloudSyncSubscriptionHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncSubscriptionHandler.m; sourceTree = "<group>"; };
 		661371EEE9F9A467AB106E4B /* ICCloudSyncFeedSettingsHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncFeedSettingsHandler.m; sourceTree = "<group>"; };
+		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
 		7151C9D64D31E80C30AE2762 /* InstacastBackupData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupData.h; sourceTree = "<group>"; };
 		74E0608347BE5D8CDADAC62E /* DonationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DonationViewController.h; sourceTree = "<group>"; };
 		835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImportExportSettingsViewController.m; path = Classes/ImportExportSettingsViewController.m; sourceTree = "<group>"; };
@@ -803,11 +804,16 @@
 		9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputChapterController.m; sourceTree = "<group>"; };
 		92A647082CE5A201002268B7 /* Instacast-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Instacast-Info.plist"; sourceTree = "<group>"; };
 		9B172640A841BB0E33457ED9 /* InstacastBackupData.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupData.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ApplePodcastChartsClient.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ApplePodcastChartsClient.m; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* ICCloudSyncListHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncListHandler.h; sourceTree = "<group>"; };
 		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
 		AAFAB4141348B8FBE6336AEC /* ICCloudSyncHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncHandler.h; sourceTree = "<group>"; };
 		B2C3D4E5F6A7B8C9D0E1F2A3 /* ICCloudSyncListHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncListHandler.m; sourceTree = "<group>"; };
+		B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ICBackupImportProgressView.m; sourceTree = "<group>"; };
 		BEB97CE0A4AA96E0776442F7 /* ICCloudSyncManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncManager.h; sourceTree = "<group>"; };
+		C0A1B2C3D4E5F6A7B8C9D0E1 /* ICCloudInitialSyncViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudInitialSyncViewController.h; sourceTree = "<group>"; };
+		B3D4E5F6A7B8C9D0E1F2A3B5 /* ICCloudInitialSyncViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudInitialSyncViewController.m; sourceTree = "<group>"; };
 		C127B4F42DEAD6A6686638F0 /* InstacastBackupImporter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImporter.h; sourceTree = "<group>"; };
 		C3D4E5F6A7B8C9D0E1F2A3B4 /* ICCloudSyncUpNextHandler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ICCloudSyncUpNextHandler.h; sourceTree = "<group>"; };
 		C422536400D398C30FCDE076 /* ICCloudSyncNowPlayingHandler.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ICCloudSyncNowPlayingHandler.m; sourceTree = "<group>"; };
@@ -821,6 +827,8 @@
 		CC000001AABB00000000000C /* DataSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DataSettingsViewController.m; sourceTree = "<group>"; };
 		CD0082022CD65D91001E081B /* InstacastSceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastSceneDelegate.h; sourceTree = "<group>"; };
 		CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastSceneDelegate.m; sourceTree = "<group>"; };
+		CD00AA002D10A00100000001 /* ICShareItem.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICShareItem.m; sourceTree = "<group>"; };
+		CD00AA012D10A00100000002 /* ICShareItem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICShareItem.h; sourceTree = "<group>"; };
 		CD0SILENCE2026020100000001 /* Silence.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Silence.caf; sourceTree = "<group>"; };
 		CD7A884C2C60C27E0033C023 /* light_dd_ic.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = light_dd_ic.png; sourceTree = "<group>"; };
 		CD7A884D2C60C27F0033C023 /* dark_dd_ic.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = dark_dd_ic.png; sourceTree = "<group>"; };
@@ -876,12 +884,20 @@
 		EC277288AEE288A71CA39AAA /* InstacastBackupImportViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImportViewController.h; sourceTree = "<group>"; };
 		F047AE18988303F971448133 /* InstacastBackupParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupParser.h; sourceTree = "<group>"; };
 		F169BFC4C1DC5A7320C86CCA /* InstacastBackupParser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupParser.m; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ApplePodcastChartsClient.h; sourceTree = "<group>"; };
-		A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ApplePodcastChartsClient.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		92A646EF2CE59B71002268B7 /* InstacastMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = InstacastMac; sourceTree = "<group>"; };
+		92A646EF2CE59B71002268B7 /* InstacastMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = InstacastMac;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -952,6 +968,8 @@
 				1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */,
 				A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */,
 				A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */,
+				6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */,
+				B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -1666,7 +1684,7 @@
 			name = "Value Transformer";
 			sourceTree = "<group>";
 		};
-		29B97314FDCFA39411CA2CEA /* CustomTemplate */ = {
+		29B97314FDCFA39411CA2CEA = {
 			isa = PBXGroup;
 			children = (
 				CE3EA6782AA7A952001900EB /* VemedioDatabase */,
@@ -1771,6 +1789,8 @@
 				D4E5F6A7B8C9D0E1F2A3B4C5 /* ICCloudSyncUpNextHandler.m */,
 				CDAA978C300BCF14542D5C63 /* iCloudSettingsViewController.h */,
 				DFABF2D7467B4C0B52423EFF /* iCloudSettingsViewController.m */,
+				C0A1B2C3D4E5F6A7B8C9D0E1 /* ICCloudInitialSyncViewController.h */,
+				B3D4E5F6A7B8C9D0E1F2A3B5 /* ICCloudInitialSyncViewController.m */,
 			);
 			path = iCloud;
 			sourceTree = "<group>";
@@ -1921,7 +1941,8 @@
 				lt,
 				Base,
 			);
-			mainGroup = 29B97314FDCFA39411CA2CEA /* CustomTemplate */;
+			mainGroup = 29B97314FDCFA39411CA2CEA;
+			productRefGroup = 19C28FACFE9D520D11CA2CBB /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -2265,7 +2286,9 @@
 				E5F6A7B8C9D0E1F2A3B4C5D6 /* ICCloudSyncListHandler.m in Sources */,
 				F6A7B8C9D0E1F2A3B4C5D6E7 /* ICCloudSyncUpNextHandler.m in Sources */,
 				C413B1B232F6668AC2D0C587 /* iCloudSettingsViewController.m in Sources */,
+				A1C2D3E4F5A6B7C8D9E0F1A2 /* ICCloudInitialSyncViewController.m in Sources */,
 				A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */,
+				8189C509C0C8211E6CDCD159 /* ICBackupImportProgressView.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -133,20 +133,66 @@ NS_INLINE NSString* _DataStoreFile(void) {
     return [NSString stringWithFormat:@"DataStore%d.sqlite", MODEL_VERSION];
 }
 
++ (void) _migrateRootFilesToDataFolder
+{
+    NSFileManager* fman = [NSFileManager defaultManager];
+    NSString* docs = [DatabaseManager pathToDocuments];
+    NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:docs];
+
+    // Move database files, FTS index, CacheHistory from root to Data/
+    NSArray* filesToMove = @[
+        _DataStoreFile(),
+        [_DataStoreFile() stringByAppendingString:@"-shm"],
+        [_DataStoreFile() stringByAppendingString:@"-wal"],
+        @"FTSIndex.sqlite",
+        @"CacheHistory.plist",
+        @"CustomViewFilterSets.plist",
+    ];
+
+    for (NSString* filename in filesToMove) {
+        NSString* oldPath = [docs stringByAppendingPathComponent:filename];
+        NSString* newPath = [dataPath stringByAppendingPathComponent:filename];
+        if ([fman fileExistsAtPath:oldPath] && ![fman fileExistsAtPath:newPath]) {
+            NSError* error;
+            if (![fman moveItemAtPath:oldPath toPath:newPath error:&error]) {
+                ErrLog(@"error moving %@ to Data/: %@", filename, error);
+            }
+        }
+    }
+
+    // Move FileIndex.plist from Episodes/ to Data/
+    NSString* episodesPath = [docs stringByAppendingPathComponent:@"Episodes"];
+    NSString* oldFileIndex = [episodesPath stringByAppendingPathComponent:@"FileIndex.plist"];
+    NSString* newFileIndex = [dataPath stringByAppendingPathComponent:@"FileIndex.plist"];
+    if ([fman fileExistsAtPath:oldFileIndex] && ![fman fileExistsAtPath:newFileIndex]) {
+        NSError* error;
+        if (![fman moveItemAtPath:oldFileIndex toPath:newFileIndex error:&error]) {
+            ErrLog(@"error moving FileIndex.plist to Data/: %@", error);
+        }
+    }
+}
+
 + (NSURL*) _urlOfLastDataStoreFile
 {
     NSFileManager* fman = [[NSFileManager alloc] init];
+    NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
     NSInteger version;
     for(version = MODEL_VERSION-1; version>0; version--)
     {
-        NSURL* url = [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:[NSString stringWithFormat:@"DataStore%ld.sqlite", (long)version]]];
+        // Check Data/ folder first
+        NSURL* url = [NSURL fileURLWithPath:[dataPath stringByAppendingPathComponent:[NSString stringWithFormat:@"DataStore%ld.sqlite", (long)version]]];
         if ([fman fileExistsAtPath:[url path]]) {
             return url;
         }
-        
+        // Fallback: check old location in Documents root
+        url = [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:[NSString stringWithFormat:@"DataStore%ld.sqlite", (long)version]]];
+        if ([fman fileExistsAtPath:[url path]]) {
+            return url;
+        }
     }
-    
-    return [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"DataStore.sqlite"]];;
+
+    // Fallback: old DataStore.sqlite in Documents root
+    return [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"DataStore.sqlite"]];
 }
 
 + (BOOL) dataStoreNeedsMigrationForFileAtURL:(NSURL*)storeURL
@@ -172,8 +218,8 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 + (BOOL) dataStoreNeedsMigration
 {
-    // check current file
-    NSURL* storeURL = [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:_DataStoreFile()]];
+    // check current file (in Data/ subfolder)
+    NSURL* storeURL = [NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:_DataStoreFile()]];
     NSFileManager* fman = [[NSFileManager alloc] init];
     if ([fman fileExistsAtPath:[storeURL path]]) {
         return [self dataStoreNeedsMigrationForFileAtURL:storeURL];
@@ -192,13 +238,18 @@ NS_INLINE NSString* _DataStoreFile(void) {
 {
 	if ((self = [super init]))
 	{
-        _databaseURL = [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:_DataStoreFile()]];
+        // Ensure Data subfolder exists
+        NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
+
+        _databaseURL = [NSURL fileURLWithPath:[dataPath stringByAppendingPathComponent:_DataStoreFile()]];
         DebugLog(@"%@", _databaseURL);
 
         _imageCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Images" parent:[DatabaseManager pathToDocuments]]];
         _fileCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Episodes" parent:[DatabaseManager pathToDocuments]]];
-        
-        
+
+        // Migrate: move database files from old Documents root to Data subfolder
+        [DatabaseManager _migrateRootFilesToDataFolder];
+
         // find old database file and make a copy for new database
         if (![[NSFileManager defaultManager] fileExistsAtPath:[_databaseURL path]])
         {
@@ -209,7 +260,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 if (![[NSFileManager defaultManager] copyItemAtURL:urlOfLastDataStoreFile toURL:_databaseURL error:&error]) {
                     ErrLog(@"error copying old database file to new location");
                 }
-                
+
                 NSURL* shmURL = [[urlOfLastDataStoreFile URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"];
                 NSURL* toShmURL = [[_databaseURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"];
                 if ([[NSFileManager defaultManager] fileExistsAtPath:[shmURL path]]) {
@@ -218,7 +269,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
                         ErrLog(@"error copying old database shm file to new location");
                     }
                 }
-                
+
                 NSURL* walURL = [[urlOfLastDataStoreFile URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"];
                 NSURL* toWalURL = [[_databaseURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"];
                 if ([[NSFileManager defaultManager] fileExistsAtPath:[walURL path]]) {
@@ -306,7 +357,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 #endif
         
         
-        _ftsController = [[ICFTSController alloc] initWithSearchIndexURL:[NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"FTSIndex.sqlite"]]];
+        _ftsController = [[ICFTSController alloc] initWithSearchIndexURL:[NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"FTSIndex.sqlite"]]];
         [_ftsController open];
 
         [self _migrateFTS];
@@ -324,21 +375,32 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 - (void) _createDatabase
 {
+    CDEpisodeList* favorites = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+    favorites.name = @"Favorites".ls;
+    favorites.icon = @"List Favorites";
+    favorites.rank = 0;
+    favorites.notStarred = NO;
+    favorites.orderBy = @"pubDate";
+    favorites.descending = YES;
+    favorites.groupByPodcast = NO;
+    favorites.uid = @"default.favorites";
+
+
     CDEpisodeList* unplayed = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    unplayed.name = @"Unplayed";
+    unplayed.name = @"Unplayed".ls;
     unplayed.icon = @"List Unplayed";
-    unplayed.rank = 0;
+    unplayed.rank = 1;
     unplayed.played = NO;
     unplayed.orderBy = @"pubDate";
     unplayed.descending = YES;
     unplayed.groupByPodcast = NO;
     unplayed.uid = @"default.unplayed";
-    
-    
+
+
     CDEpisodeList* started = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    started.name = @"Started";
+    started.name = @"Started".ls;
     started.icon = @"List Partially Played";
-    started.rank = 1;
+    started.rank = 2;
     started.unfinished = YES;
     started.unplayed = NO;
     started.played = NO;
@@ -349,30 +411,19 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 
     CDEpisodeList* downloaded = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    downloaded.name = @"Downloaded";
+    downloaded.name = @"Downloaded".ls;
     downloaded.icon = @"List Downloaded";
-    downloaded.rank = 2;
+    downloaded.rank = 3;
     downloaded.downloaded = YES;
     downloaded.notDownloaded = NO;
     downloaded.orderBy = @"pubDate";
     downloaded.descending = YES;
     downloaded.groupByPodcast = NO;
     downloaded.uid = @"default.downloaded";
-    
-    
-    CDEpisodeList* favorites = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    favorites.name = @"Favorites";
-    favorites.icon = @"List Favorites";
-    favorites.rank = 3;
-    favorites.notStarred = NO;
-    favorites.orderBy = @"pubDate";
-    favorites.descending = YES;
-    favorites.groupByPodcast = NO;
-    favorites.uid = @"default.favorites";
-    
-    
+
+
     CDEpisodeList* video = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    video.name = @"Videos";
+    video.name = @"Videos".ls;
     video.icon = @"List Video";
     video.rank = 4;
     video.audio = NO;
@@ -561,30 +612,33 @@ NS_INLINE NSString* _DataStoreFile(void) {
     [self _migrateOldSmartPlaylists];
     [self _migrateAddStartedList];
     [self _migrateDefaultListNamesToKeys];
+    [self _migrateRemoveDuplicateFeeds];
+    [self _migrateRemoveObsoletePauseFeedProperty];
 }
 
 - (void) _migrateDefaultListNamesToKeys
 {
-    // Default lists previously stored localized names (e.g. "ungespielt" on German devices).
-    // Now we store English keys and localize at display time so names follow device language.
-    NSDictionary* uidToKey = @{
-        @"default.unplayed"   : @"Unplayed",
-        @"default.started"    : @"Started",
-        @"default.downloaded" : @"Downloaded",
-        @"default.favorites"  : @"Favorites",
-        @"default.video"      : @"Videos",
+    // Default lists now store the localized name directly. Names are set once at creation
+    // and then treated identically to user-created lists (renameable, deletable).
+    // This migration localizes any remaining English-key names from previous migration.
+    NSDictionary* keyToLocalized = @{
+        @"Unplayed"   : @"Unplayed".ls,
+        @"Started"    : @"Started".ls,
+        @"Downloaded" : @"Downloaded".ls,
+        @"Favorites"  : @"Favorites".ls,
+        @"Videos"     : @"Videos".ls,
     };
 
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"uid IN %@", uidToKey.allKeys];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"uid BEGINSWITH %@", @"default."];
     NSArray* lists = [self.objectContext executeFetchRequest:fetchRequest error:nil];
 
     BOOL changed = NO;
     for (CDEpisodeList* list in lists) {
-        NSString* key = uidToKey[list.uid];
-        if (key && ![list.name isEqualToString:key]) {
-            list.name = key;
+        NSString* localizedName = keyToLocalized[list.name];
+        if (localizedName && ![list.name isEqualToString:localizedName]) {
+            list.name = localizedName;
             changed = YES;
         }
     }
@@ -592,6 +646,66 @@ NS_INLINE NSString* _DataStoreFile(void) {
     if (changed) {
         [self save];
     }
+}
+
+- (void) _migrateRemoveDuplicateFeeds
+{
+    // Remove ghost duplicate feeds: same sourceURL, keep the one with more episodes.
+    // Duplicates can arise from subscribeFeedMetadataOnly creating parked placeholders
+    // that never got properly merged with the real subscription.
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
+    fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
+    NSArray* allFeeds = [self.objectContext executeFetchRequest:fetchRequest error:nil];
+
+    NSMutableDictionary<NSString*, NSMutableArray<CDFeed*>*>* feedsByURL = [NSMutableDictionary dictionary];
+    for (CDFeed* feed in allFeeds) {
+        NSString* urlStr = feed.sourceURL.absoluteString;
+        if (!urlStr) continue;
+        if (!feedsByURL[urlStr]) {
+            feedsByURL[urlStr] = [NSMutableArray array];
+        }
+        [feedsByURL[urlStr] addObject:feed];
+    }
+
+    BOOL changed = NO;
+    for (NSString* urlStr in feedsByURL) {
+        NSMutableArray<CDFeed*>* feeds = feedsByURL[urlStr];
+        if (feeds.count <= 1) continue;
+
+        // Sort: prefer non-parked, then most episodes
+        [feeds sortUsingComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
+            if (a.parked != b.parked) {
+                return a.parked ? NSOrderedDescending : NSOrderedAscending;
+            }
+            return [@(b.episodes.count) compare:@(a.episodes.count)];
+        }];
+
+        CDFeed* keeper = feeds.firstObject;
+        for (NSUInteger i = 1; i < feeds.count; i++) {
+            CDFeed* duplicate = feeds[i];
+            DebugLog(@"Removing duplicate feed: '%@' sourceURL=%@ parked=%d episodes=%lu (keeping '%@' with %lu episodes)",
+                     duplicate.title, duplicate.sourceURL, duplicate.parked,
+                     (unsigned long)duplicate.episodes.count,
+                     keeper.title, (unsigned long)keeper.episodes.count);
+            [self.objectContext deleteObject:duplicate];
+            changed = YES;
+        }
+    }
+
+    if (changed) {
+        [self save];
+    }
+}
+
+- (void) _migrateRemoveObsoletePauseFeedProperty
+{
+    // PauseFeedSynchronization CDFeedProperty is obsolete — parked attribute is the sole
+    // source of truth now. Remove any leftover PauseFeedSynchronization properties.
+    for (CDFeed* feed in self.feeds) {
+        [feed resetValueForKey:@"PauseFeedSynchronization"];
+    }
+    [self save];
 }
 
 - (void) _migrateAddStartedList
@@ -604,7 +718,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
     if ([results count] == 0) {
         CDEpisodeList* started = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
-        started.name = @"Started";
+        started.name = @"Started".ls;
         started.icon = @"List Partially Played";
         started.rank = 1;
         started.unfinished = YES;
@@ -667,7 +781,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
             }
             else if ([object isKindOfClass:[CDFeed class]] && [object hasChanges]) {
-                [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
                 [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
             }
         }
@@ -943,9 +1056,43 @@ NS_INLINE NSString* _DataStoreFile(void) {
     [self beginInterruptSaving];
 
     @autoreleasepool {
+        // Batch-fetch all existing episodes by objectHash in ONE query (instead of N individual fetches)
+        NSMutableArray *hashes = [NSMutableArray arrayWithCapacity:episodes.count];
+        for (ICEpisode *ep in episodes) {
+            if (ep.objectHash) [hashes addObject:ep.objectHash];
+        }
+
+        NSMutableDictionary *existingByHash = [NSMutableDictionary dictionaryWithCapacity:hashes.count];
+        if (hashes.count > 0) {
+            NSFetchRequest *batchFetch = [[NSFetchRequest alloc] init];
+            batchFetch.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.objectContext];
+            batchFetch.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", hashes];
+            NSArray *existing = [self.objectContext executeFetchRequest:batchFetch error:nil];
+            for (CDEpisode *ep in existing) {
+                if (ep.objectHash) existingByHash[ep.objectHash] = ep;
+            }
+        }
+
+        // Now insert/update episodes using the pre-fetched lookup
         for (ICEpisode* parserEpisode in episodes) {
-            BOOL wasNew = NO;
-            CDEpisode* persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:feed wasNew:&wasNew];
+            CDEpisode *persistentEpisode = parserEpisode.objectHash ? existingByHash[parserEpisode.objectHash] : nil;
+            BOOL wasNew = (persistentEpisode == nil);
+
+            if (!persistentEpisode) {
+                persistentEpisode = [NSEntityDescription insertNewObjectForEntityForName:@"Episode" inManagedObjectContext:self.objectContext];
+            }
+            [self _copyEpisodeValuesFrom:parserEpisode to:persistentEpisode];
+
+            NSMutableSet *media = [[NSMutableSet alloc] init];
+            for (ICMedia *parserMedia in parserEpisode.media) {
+                if (parserMedia.fileURL) {
+                    CDMedium *persistentMedium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium" inManagedObjectContext:self.objectContext];
+                    [self _copyMediumValuesFrom:parserMedia to:persistentMedium];
+                    [media addObject:persistentMedium];
+                }
+            }
+            persistentEpisode.media = media;
+            [feed addEpisodesObject:persistentEpisode];
 
             if (wasNew && markConsumed) {
                 persistentEpisode.consumed = YES;
@@ -1361,9 +1508,12 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
 	CDList* list = [listsCopy objectAtIndex:fromIndex];
 	[listsCopy removeObject:list];
 	[listsCopy insertObject:list atIndex:toIndex];
-	
+
 	[CDList updateRanksOfLists:listsCopy];
     [self save];
+#if TARGET_OS_IPHONE
+    [_listsController performFetch:nil];
+#endif
 }
 
 - (void) _invalidateListCaches
@@ -1627,12 +1777,35 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     // Without this flag, CoreData forces Read Only mode on the existing store.
     [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
     _persistentContainer.persistentStoreDescriptions = @[storeDescription];
+    __block BOOL storeLoadFailed = NO;
     [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
         if (error) {
-            ErrLog(@"Unresolved error %@, %@", error, error.userInfo);
-            abort();
+            ErrLog(@"Failed to load persistent store: %@, %@", error, error.userInfo);
+            storeLoadFailed = YES;
         }
     }];
+
+    if (storeLoadFailed) {
+        // Try to recover by deleting the corrupted store and reloading
+        ErrLog(@"Attempting recovery: deleting corrupted store at %@", storeURL);
+        NSFileManager *fm = [NSFileManager defaultManager];
+        [fm removeItemAtURL:storeURL error:nil];
+        [fm removeItemAtURL:[[storeURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"] error:nil];
+        [fm removeItemAtURL:[[storeURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"] error:nil];
+
+        __block BOOL recoveryFailed = NO;
+        [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
+            if (error) {
+                ErrLog(@"Recovery failed — could not create new store: %@, %@", error, error.userInfo);
+                recoveryFailed = YES;
+            }
+        }];
+
+        if (recoveryFailed) {
+            _persistentContainer = nil;
+            return nil;
+        }
+    }
 
     self.storeCoordinator = _persistentContainer.persistentStoreCoordinator;
     return _persistentContainer;

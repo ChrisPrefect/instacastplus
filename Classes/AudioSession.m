@@ -181,15 +181,17 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) _observeEpisodeCacheBeingDeleted
 {
-    [[NSNotificationCenter defaultCenter] addObserverForName:CacheManagerDidClearCacheNotification
-                                                      object:nil
-                                                       queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *note) {
-                                                           
-                                                           if (!self.autoStopDisabled && [self.episode isEqual:note.userInfo[@"episode"]]) {
-                                                               [self stop];
-                                                           }
-                                                           
-                                                       }];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_handleEpisodeCacheCleared:)
+                                                 name:CacheManagerDidClearCacheNotification
+                                               object:nil];
+}
+
+- (void) _handleEpisodeCacheCleared:(NSNotification*)note
+{
+    if (!self.autoStopDisabled && [self.episode isEqual:note.userInfo[@"episode"]]) {
+        [self stop];
+    }
 }
 
 - (void) _observeAudioSessionForChanges

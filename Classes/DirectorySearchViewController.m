@@ -103,7 +103,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     UITextField *searchTextField = self.searchBar.searchTextField;
     searchTextField.textColor = textColor;
     searchTextField.tintColor = tintColorD;
-    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor}];
+    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search or Enter URL".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor}];
 
     UIImageView *iconView = (UIImageView *)searchTextField.leftView;
     iconView.image = [iconView.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -157,7 +157,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 
 - (void)dealloc {
-
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 	[_store cancelStoreSearch];
 	[_scraper cancel];
 	[_feedParser cancel];

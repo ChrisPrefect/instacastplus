@@ -168,7 +168,7 @@ static void ICClearAllTranscriptCache(void)
 		_cachedURLIndex = [[NSMutableDictionary alloc] init];
         _cachingEpisodes = [[NSMutableArray alloc] init];
         
-        NSString* historyFile = [[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"CacheHistory.plist"];
+        NSString* historyFile = [[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"CacheHistory.plist"];
         _cacheHistory = [[ICCacheHistory alloc] initWithContentsOfFile:historyFile];
 		
         
@@ -182,9 +182,21 @@ static void ICClearAllTranscriptCache(void)
 			{
                 NSString* filePath = [[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename];
                 AddSkipBackupAttributeToFile(filePath);
-                
-				NSString* hash = [filename stringByDeletingPathExtension];
-                [episodeHashes addObject:hash];
+
+                // Extract hash from filename
+                // New format: "Podcast - Episode - HASH.ext" → hash is last component before extension
+                // Old format: "HASH.ext" → hash is the filename without extension
+                NSString* nameWithoutExt = [filename stringByDeletingPathExtension];
+                NSString* hash = nil;
+                NSRange lastDash = [nameWithoutExt rangeOfString:@" - " options:NSBackwardsSearch];
+                if (lastDash.location != NSNotFound) {
+                    hash = [nameWithoutExt substringFromIndex:NSMaxRange(lastDash)];
+                } else {
+                    hash = nameWithoutExt;
+                }
+                if (hash.length > 0) {
+                    [episodeHashes addObject:hash];
+                }
 			}
 
             NSArray* cachedEpisodes = [DMANAGER episodesWithObjectHashes:episodeHashes];
@@ -269,62 +281,119 @@ static void ICClearAllTranscriptCache(void)
 #pragma mark -
 #pragma mark Caching
 
+static NSString* ICSanitizeFilenameComponent(NSString* string)
+{
+    if (!string || string.length == 0) return @"Untitled";
+
+    // Replace filesystem-unsafe characters with dash
+    NSMutableString* safe = [string mutableCopy];
+    NSCharacterSet* unsafeChars = [NSCharacterSet characterSetWithCharactersInString:@"/\\:*?\"<>|"];
+    NSRange r;
+    while ((r = [safe rangeOfCharacterFromSet:unsafeChars]).location != NSNotFound) {
+        [safe replaceCharactersInRange:r withString:@"-"];
+    }
+
+    // Collapse multiple dashes/spaces
+    while ([safe rangeOfString:@"--"].location != NSNotFound) {
+        [safe replaceOccurrencesOfString:@"--" withString:@"-" options:0 range:NSMakeRange(0, safe.length)];
+    }
+
+    // Trim whitespace and dashes
+    NSCharacterSet* trimSet = [NSCharacterSet characterSetWithCharactersInString:@" -"];
+    NSString* result = [safe stringByTrimmingCharactersInSet:trimSet];
+
+    // Limit length to avoid filesystem issues
+    if (result.length > 80) {
+        result = [result substringToIndex:80];
+        result = [result stringByTrimmingCharactersInSet:trimSet];
+    }
+
+    return result.length > 0 ? result : @"Untitled";
+}
+
+- (NSString*) _extensionForEpisode:(CDEpisode*)episode
+{
+    CDMedium* media = [episode preferedMedium];
+    if (!media) return @"mp3";
+
+    NSString* extension = [[media.fileURL path] pathExtension];
+
+    if (!extension) {
+        NSString* urlString = [media.fileURL absoluteString];
+        NSRange lastDotRange = [urlString rangeOfString:@"." options:NSBackwardsSearch];
+        if (lastDotRange.location != NSNotFound && lastDotRange.location < [urlString length]-1) {
+            extension = [urlString substringFromIndex:lastDotRange.location+1];
+        }
+    }
+
+    NSDictionary* mimeToExtension = @{
+        @"audio/mpeg"       : @"mp3",
+        @"audio/mpeg4"      : @"m4a",
+        @"audio/mp4a"       : @"m4a",
+        @"audio/x-m4a"      : @"m4a",
+        @"audio/mp4"        : @"mp4",
+        @"video/mpeg4"      : @"m4v",
+        @"video/x-m4v"      : @"m4v",
+        @"video/mp4"        : @"m4v",
+        @"video/quicktime"  : @"mov",
+    };
+
+    NSString* constructedExtension = mimeToExtension[[media.mimeType lowercaseString]];
+    NSArray* knownExtensions = [mimeToExtension allValues];
+    if (![knownExtensions containsObject:[extension lowercaseString]] && constructedExtension) {
+        extension = constructedExtension;
+    }
+
+    return extension ?: @"mp3";
+}
+
 - (NSURL*) URLForCachedEpisode:(CDEpisode*)episode
 {
 	if (!episode.objectHash) {
 		return nil;
 	}
-	
+
 	NSURL* cachedURL = [_cachedURLIndex objectForKey:episode.objectHash];
 	if (cachedURL) {
 		return cachedURL;
 	}
-	
-	CDMedium* media = [episode preferedMedium];
-	if (!media) {
-		return nil;
-	}
-	
-	NSString* extension = [[media.fileURL path] pathExtension];
 
-	// weird thing: possible that [media.url path] fails and return nil
-	// we get the path suffix ourself then
-	if (!extension) {
-		NSString* urlString = [media.fileURL absoluteString];
-		NSRange lastDotRange = [urlString rangeOfString:@"." options:NSBackwardsSearch];
-		if (lastDotRange.location != NSNotFound && lastDotRange.location < [urlString length]-1) {
-			extension = [urlString substringFromIndex:lastDotRange.location+1];
-		}
-	}
-    
-    // replaced no extension, .php and so on, at least I hope
-    NSDictionary* mimeToExtension = [NSDictionary dictionaryWithObjectsAndKeys:
-                                     @"mp3", @"audio/mpeg",
-                                     @"m4a", @"audio/mpeg4",
-                                     @"m4a", @"audio/mp4a",
-                                     @"m4a", @"audio/x-m4a",
-                                     @"mp4", @"audio/mp4",
-                                     @"m4v", @"video/mpeg4",
-                                     @"m4v", @"video/x-m4v",
-                                     @"m4v", @"video/mp4",
-                                     @"mov", @"video/quicktime",
-                                     nil];
-    
-    NSString* constructedExtension = [mimeToExtension objectForKey:[media.mimeType lowercaseString]];
-    NSArray* knownExtensions = [mimeToExtension allValues];
-    if (![knownExtensions containsObject:[extension lowercaseString]] && constructedExtension) {
-        extension = constructedExtension;
+    NSString* extension = [self _extensionForEpisode:episode];
+    NSString* storagePath = [CacheManager _pathToStorageLocation];
+
+    // Check for new-style filename: PodcastName - EpisodeName - UUID.ext
+    NSString* podcastName = ICSanitizeFilenameComponent(episode.feed.title);
+    NSString* episodeName = ICSanitizeFilenameComponent(episode.title);
+    NSString* newFilename = [NSString stringWithFormat:@"%@ - %@ - %@.%@", podcastName, episodeName, episode.objectHash, extension];
+    NSString* newPath = [storagePath stringByAppendingPathComponent:newFilename];
+
+    if ([[NSFileManager defaultManager] fileExistsAtPath:newPath]) {
+        NSURL* URL = [NSURL fileURLWithPath:newPath];
+        [_cachedURLIndex setObject:URL forKey:episode.objectHash];
+        return URL;
     }
-	
-	NSString* filename = [NSString stringWithFormat:@"%@.%@", episode.objectHash, extension];
-	NSString* path = [[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename];
-	NSURL* URL = [NSURL fileURLWithPath:path];
-	
-	if (URL) {
-		[_cachedURLIndex setObject:URL forKey:episode.objectHash];
-	}
-	
-	return URL;
+
+    // Fallback: check old-style filename (hash.ext)
+    NSString* oldFilename = [NSString stringWithFormat:@"%@.%@", episode.objectHash, extension];
+    NSString* oldPath = [storagePath stringByAppendingPathComponent:oldFilename];
+
+    if ([[NSFileManager defaultManager] fileExistsAtPath:oldPath]) {
+        // Migrate: rename old file to new name
+        NSError* error;
+        if ([[NSFileManager defaultManager] moveItemAtPath:oldPath toPath:newPath error:&error]) {
+            DebugLog(@"Migrated episode file: %@ → %@", oldFilename, newFilename);
+        } else {
+            // If rename fails (e.g. name collision), keep old name
+            NSURL* URL = [NSURL fileURLWithPath:oldPath];
+            [_cachedURLIndex setObject:URL forKey:episode.objectHash];
+            return URL;
+        }
+    }
+
+    // Return new-style path (for new downloads this is where the file will be created)
+    NSURL* URL = [NSURL fileURLWithPath:newPath];
+    [_cachedURLIndex setObject:URL forKey:episode.objectHash];
+    return URL;
 }
 
 - (NSURL*) tempURLForCachedEpisode:(CDEpisode*)episode
@@ -854,7 +923,7 @@ static void ICClearAllTranscriptCache(void)
         [index addObject:entry];
     }
     
-    NSString* fileIndexPath = [[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:@"FileIndex.plist"];
+    NSString* fileIndexPath = [[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"FileIndex.plist"];
     [index writeToFile:fileIndexPath atomically:YES];
 }
 
@@ -1195,18 +1264,23 @@ static void ICClearAllTranscriptCache(void)
 	}
     
     NSInteger removed_episodes = 0;
-    // checking for part files that are left over (limit to 50 files per run for performance)
+    // checking for orphaned episode files (limit to 50 files per run for performance)
     NSInteger episodeFilesChecked = 0;
     e = [fman enumeratorAtPath:[CacheManager _pathToStorageLocation]];
     for(NSString* filename in e)
 	{
         @autoreleasepool {
-            if (filename.length < 32) {
-                continue;
+            // Extract hash: new format "Podcast - Episode - HASH.ext" or old format "HASH.ext"
+            NSString* nameWithoutExt = [filename stringByDeletingPathExtension];
+            NSString* episodeHash = nil;
+            NSRange lastDash = [nameWithoutExt rangeOfString:@" - " options:NSBackwardsSearch];
+            if (lastDash.location != NSNotFound) {
+                episodeHash = [nameWithoutExt substringFromIndex:NSMaxRange(lastDash)];
+            } else if (nameWithoutExt.length >= 8) {
+                episodeHash = nameWithoutExt;
             }
 
-            NSString* episodeHash = [filename substringToIndex:32];
-            if (![DMANAGER episodeWithObjectHash:episodeHash]) {
+            if (episodeHash.length > 0 && ![DMANAGER episodeWithObjectHash:episodeHash]) {
                 [fman removeItemAtPath:[[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename] error:nil];
                 removed_episodes++;
             }

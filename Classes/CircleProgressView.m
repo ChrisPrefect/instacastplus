@@ -39,6 +39,11 @@
     return self;
 }
 
+- (void)dealloc
+{
+    [self.animationTimer invalidate];
+}
+
 - (void) startAnimation
 {
     self.animationTimer = [NSTimer scheduledTimerWithTimeInterval:0.04f target:self selector:@selector(animationTimer:) userInfo:nil repeats:YES];

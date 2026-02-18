@@ -350,10 +350,12 @@
 
     SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
     [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
+        STRONG_SELF;
         ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDateForFeed:self.feed];
     }];
 
     [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
+        STRONG_SELF;
         SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
         if (sm.refreshing) {
             ((ICRefreshControl*)self.refreshControl).refreshText = sm.refreshStatusText;
@@ -386,7 +388,9 @@
 
 - (void) subscriptionManagerDidStartRefreshingFeedsNotification:(NSNotification*)notification
 {
-    [self.refreshControl beginRefreshing];
+    if (self.isViewLoaded && self.view.window) {
+        [self.refreshControl beginRefreshing];
+    }
 }
 
 - (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures
@@ -757,57 +761,24 @@
 
 - (void) share:(id)sender
 {
-    if (self.feed.username.length > 0)
-    {
-        WEAK_SELF
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Share podcast with login credentials?".ls
-                                                                       message:nil
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"With Credentials".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
-            STRONG_SELF
-            NSURLComponents* components = [NSURLComponents componentsWithURL:self.feed.sourceURL resolvingAgainstBaseURL:NO];
-            components.scheme = @"podcast";
-            components.user = self.feed.username;
-            components.password = self.feed.password;
-            NSURL* feedURL = components.URL;
-            UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-            ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
-            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
-            if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
-                shareController.popoverPresentationController.barButtonItem = sender;
-            }
-            [self presentViewController:shareController animated:YES completion:NULL];
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Without Credentials".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
-            STRONG_SELF
-            NSURL* feedURL = [self.feed sourceURLAsPcastURL];
-            UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-            ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
-            UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
-            if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
-                shareController.popoverPresentationController.barButtonItem = sender;
-            }
-            [self presentViewController:shareController animated:YES completion:NULL];
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
-        if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-        } else {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-        }
-        [self presentViewController:alert animated:YES completion:NULL];
+    NSURL* feedURL;
+    if (self.feed.username.length > 0) {
+        NSURLComponents* components = [NSURLComponents componentsWithURL:self.feed.sourceURL resolvingAgainstBaseURL:NO];
+        components.scheme = @"podcast";
+        components.user = self.feed.username;
+        components.password = self.feed.password;
+        feedURL = components.URL;
+    } else {
+        feedURL = [self.feed sourceURLAsPcastURL];
     }
-    else
-    {
-        NSURL* feedURL = [self.feed sourceURLAsPcastURL];
-        UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-        ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
-        UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
-        if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
-            shareController.popoverPresentationController.barButtonItem = sender;
-        }
-        [self presentViewController:shareController animated:YES completion:NULL];
+
+    UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
+    ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
+    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
+    if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
+        shareController.popoverPresentationController.barButtonItem = sender;
     }
+    [self presentViewController:shareController animated:YES completion:NULL];
 }
 
 

@@ -22,10 +22,12 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 
 @interface SleepTimerSettingsViewController ()
 @property (nonatomic, weak) UILabel* thresholdValueLabel;
-@property (nonatomic, weak) UITableViewCell* thresholdCell;
+@property (nonatomic, weak) UILabel* motionIndicatorLabel;
 @end
 
-@implementation SleepTimerSettingsViewController
+@implementation SleepTimerSettingsViewController {
+    BOOL _thresholdHighlighted;
+}
 
 + (SleepTimerSettingsViewController*) viewController
 {
@@ -76,7 +78,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 - (void)viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackThresholdCell) object:nil];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackMotionIndicator) object:nil];
 }
 
 - (void) updateAppearance {
@@ -175,6 +177,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 cell.textLabel.text = @"Schwellwert für Bewegung".ls;
                 cell.textLabel.textColor = ICTextColor;
                 cell.textLabel.font = [UIFont systemFontOfSize:15];
+                self.motionIndicatorLabel = cell.textLabel;
 
                 UIButton *minusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
                 [minusBtn setTitle:@"−" forState:UIControlStateNormal];
@@ -202,7 +205,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 [controlStack sizeToFit];
                 controlStack.frame = CGRectMake(0, 0, 120, 30);
                 cell.accessoryView = controlStack;
-                self.thresholdCell = cell;
 
                 return cell;
             }
@@ -377,27 +379,40 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 
 - (void)motionDetected
 {
-    UITableViewCell *cell = self.thresholdCell;
-    if (!cell) return;
+    UILabel *label = self.motionIndicatorLabel;
+    if (!label || !label.text) return;
 
-    // Cancel any pending fade-back
-    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackThresholdCell) object:nil];
+    if (!_thresholdHighlighted) {
+        _thresholdHighlighted = YES;
+        NSString *text = label.text;
+        NSRange lastSpace = [text rangeOfString:@" " options:NSBackwardsSearch];
+        NSRange wordRange = (lastSpace.location != NSNotFound)
+            ? NSMakeRange(lastSpace.location + 1, text.length - lastSpace.location - 1)
+            : NSMakeRange(0, text.length);
 
-    // Instantly red — no animation
-    cell.backgroundColor = ICTintColor;
+        NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
+            NSFontAttributeName: label.font,
+            NSForegroundColorAttributeName: label.textColor
+        }];
+        [attr addAttribute:NSBackgroundColorAttributeName value:ICTintColor range:wordRange];
+        label.attributedText = attr;
+    }
 
-    // Fade back only after motion stops for 0.2s
-    [self performSelector:@selector(fadeBackThresholdCell) withObject:nil afterDelay:0.2];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(fadeBackMotionIndicator) object:nil];
+    [self performSelector:@selector(fadeBackMotionIndicator) withObject:nil afterDelay:0.3];
 }
 
-- (void)fadeBackThresholdCell
+- (void)fadeBackMotionIndicator
 {
-    UITableViewCell *cell = self.thresholdCell;
-    if (!cell) return;
+    _thresholdHighlighted = NO;
+    UILabel *label = self.motionIndicatorLabel;
+    if (!label || !label.text) return;
 
-    [UIView animateWithDuration:0.3 delay:0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-        cell.backgroundColor = ICGroupCellBackgroundColor;
-    } completion:nil];
+    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:label.text attributes:@{
+        NSFontAttributeName: label.font,
+        NSForegroundColorAttributeName: label.textColor
+    }];
+    label.attributedText = attr;
 }
 
 - (void)decreaseThreshold:(UIButton*)sender

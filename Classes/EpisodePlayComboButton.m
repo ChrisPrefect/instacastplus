@@ -17,6 +17,11 @@
     double _animationProgress;
 }
 
+- (void)dealloc
+{
+    [self.animationTimer invalidate];
+}
+
 + (instancetype) button
 {
     EpisodePlayComboButton* button = [EpisodePlayComboButton buttonWithType:UIButtonTypeCustom];

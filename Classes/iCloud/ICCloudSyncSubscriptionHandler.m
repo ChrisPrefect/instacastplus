@@ -14,7 +14,7 @@
 
 - (void)pushChangesWithCompletion:(void(^)(NSError *error))completion
 {
-    NSArray *feeds = DMANAGER.visibleFeeds;
+    NSArray *feeds = DMANAGER.feeds;  // include parked feeds so their status is synced
     if (feeds.count == 0) {
         completion(nil);
         return;
@@ -32,6 +32,8 @@
         record[@"rank"] = @(feed.rank);
         record[@"subscribed"] = @(feed.subscribed);
         record[@"parked"] = @(feed.parked);
+        record[@"feedUsername"] = feed.username ?: @"";
+        record[@"feedPassword"] = feed.password ?: @"";
         record[@"lastModified"] = [NSDate date];
         [records addObject:record];
     }
@@ -107,15 +109,32 @@
         BOOL subscribed = [record[@"subscribed"] boolValue];
         CDFeed *existingFeed = [DMANAGER feedWithSourceURL:feedURL];
 
+        NSString *username = record[@"feedUsername"];
+        NSString *password = record[@"feedPassword"];
+        if ([username length] == 0) username = nil;
+        if ([password length] == 0) password = nil;
+
         if (subscribed && !existingFeed) {
             // Subscribe to new feed (async)
+            // Build URL with embedded credentials so ICFeedParser can authenticate
+            NSURL *subscribeURL = feedURL;
+            if (username && password) {
+                NSURLComponents *components = [NSURLComponents componentsWithURL:feedURL resolvingAgainstBaseURL:NO];
+                components.user = username;
+                components.password = password;
+                if (components.URL) subscribeURL = components.URL;
+            }
             dispatch_group_enter(group);
-            [[SubscriptionManager sharedSubscriptionManager] subscribeFeedWithURL:feedURL options:0 completion:^(CDFeed *feed, NSError *error) {
+            [[SubscriptionManager sharedSubscriptionManager] subscribeFeedWithURL:subscribeURL options:0 completion:^(CDFeed *feed, NSError *error) {
                 if (feed) {
                     NSNumber *rank = record[@"rank"];
                     if (rank) feed.rank = [rank intValue];
                     NSNumber *parked = record[@"parked"];
                     if (parked) feed.parked = [parked boolValue];
+                    // ensure credentials are set (ICFeedParser extracts them from URL
+                    // and stores them, but verify)
+                    if (username && !feed.username) feed.username = username;
+                    if (password && !feed.password) feed.password = password;
                     [DMANAGER saveAndSync:NO];
                 }
                 dispatch_group_leave(group);
@@ -130,6 +149,9 @@
             if (rank) existingFeed.rank = [rank intValue];
             NSNumber *parked = record[@"parked"];
             if (parked) existingFeed.parked = [parked boolValue];
+            // restore credentials from iCloud if not already set locally
+            if (username && !existingFeed.username) existingFeed.username = username;
+            if (password && !existingFeed.password) existingFeed.password = password;
             [DMANAGER saveAndSync:NO];
         }
     }

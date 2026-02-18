@@ -26,12 +26,16 @@ NSString* const kFeedPropertyLoadedEpisodeCount = @"loadedEpisodeCount";
 static NSString* const kUserDefaultsEpisodeLoadingQueueKey = @"EpisodeLoadingQueueKey";
 
 // Batch size for background loading
-static const NSInteger kEpisodeBatchSize = 20;
+static const NSInteger kEpisodeBatchSize = 50;
+
+// Delay between main-queue batches to keep UI responsive
+static const NSTimeInterval kBatchDelay = 0.25;
 
 @interface EpisodeLoadingManager ()
 @property (nonatomic, strong) NSOperationQueue* loadingQueue;
 @property (nonatomic, strong) NSMutableDictionary<NSString*, NSDictionary*>* pendingLoads;
 @property (nonatomic, strong) NSLock* lock;
+@property (nonatomic, copy) NSString* activeFeedURL; // currently loading feed (sequential)
 @end
 
 @implementation EpisodeLoadingManager
@@ -93,7 +97,9 @@ static const NSInteger kEpisodeBatchSize = 20;
     _pendingLoads[feedURL] = loadInfo;
     [_lock unlock];
 
-    [self _saveLoadingState];
+    // Don't save loading state here — it would write megabytes of episode data to NSUserDefaults.
+    // State is saved when feeds finish or are cancelled, which is sufficient for crash recovery.
+    // If the app crashes mid-load, at most one batch of episodes will be re-processed (deduplication handles it).
 
     DebugLog(@"EpisodeLoadingManager: Queued %lu episodes for feed %@", (unsigned long)episodeData.count, feed.title);
 
@@ -101,7 +107,7 @@ static const NSInteger kEpisodeBatchSize = 20;
                                                         object:self
                                                       userInfo:@{@"feedURL": feedURL}];
 
-    [self _startLoadingForFeedURL:feedURL];
+    [self _startNextPendingFeed];
 }
 
 - (void)cancelLoadingForFeed:(CDFeed*)feed
@@ -116,13 +122,22 @@ static const NSInteger kEpisodeBatchSize = 20;
 
 - (void)_cancelLoadingForFeedURL:(NSString*)feedURL
 {
+    BOOL wasActive;
     [_lock lock];
     [_pendingLoads removeObjectForKey:feedURL];
+    wasActive = [_activeFeedURL isEqualToString:feedURL];
+    if (wasActive) {
+        _activeFeedURL = nil;
+    }
     [_lock unlock];
 
     [self _saveLoadingState];
 
     DebugLog(@"EpisodeLoadingManager: Cancelled loading for %@", feedURL);
+
+    if (wasActive) {
+        [self _startNextPendingFeed];
+    }
 }
 
 - (void)cancelAllLoading
@@ -132,6 +147,7 @@ static const NSInteger kEpisodeBatchSize = 20;
     [_lock lock];
     NSArray* feedURLs = [_pendingLoads allKeys];
     [_pendingLoads removeAllObjects];
+    _activeFeedURL = nil;
     [_lock unlock];
 
     [self _saveLoadingState];
@@ -186,6 +202,10 @@ static const NSInteger kEpisodeBatchSize = 20;
 {
     _loadingQueue.suspended = suspended;
     DebugLog(@"EpisodeLoadingManager: %@", suspended ? @"suspended" : @"resumed");
+
+    if (!suspended) {
+        [self _startNextPendingFeed];
+    }
 }
 
 - (NSArray<NSString*>*)feedURLsWithPendingEpisodes
@@ -229,23 +249,46 @@ static const NSInteger kEpisodeBatchSize = 20;
             continue;
         }
 
-        [_lock lock];
-        _pendingLoads[feedURL] = loadInfo;
-        [_lock unlock];
-
-        // Verify feed still exists before resuming
+        // Verify feed still exists before restoring
         CDFeed* feed = [DMANAGER feedWithSourceURL:[NSURL URLWithString:feedURL]];
         if (feed && feed.subscribed) {
-            DebugLog(@"EpisodeLoadingManager: Resuming load for %@ (%lu episodes remaining)", feed.title, (unsigned long)episodes.count);
-            [self _startLoadingForFeedURL:feedURL];
+            [_lock lock];
+            _pendingLoads[feedURL] = loadInfo;
+            [_lock unlock];
+            DebugLog(@"EpisodeLoadingManager: Restored pending load for %@ (%lu episodes remaining)", feed.title, (unsigned long)episodes.count);
         } else {
-            // Feed no longer exists or unsubscribed, clean up
-            [self _cancelLoadingForFeedURL:feedURL];
+            DebugLog(@"EpisodeLoadingManager: Skipping restored feed (deleted/unsubscribed): %@", feedURL);
         }
     }
+
+    // Start loading one feed at a time
+    [self _startNextPendingFeed];
 }
 
 #pragma mark - Private Loading Methods
+
+- (void)_startNextPendingFeed
+{
+    if (_loadingQueue.suspended) return; // suspended — will be started on resume
+
+    [_lock lock];
+    // Check _activeFeedURL inside the lock to prevent race conditions
+    // (queuePendingEpisodesForFeed: can be called from parserQueue background thread)
+    if (_activeFeedURL) {
+        [_lock unlock];
+        return; // already loading a feed
+    }
+    NSString* nextURL = [_pendingLoads.allKeys.firstObject copy];
+    if (nextURL) {
+        _activeFeedURL = nextURL;
+    }
+    [_lock unlock];
+
+    if (nextURL) {
+        DebugLog(@"EpisodeLoadingManager: Starting sequential load for %@", nextURL);
+        [self _startLoadingForFeedURL:nextURL];
+    }
+}
 
 - (void)_startLoadingForFeedURL:(NSString*)feedURL
 {
@@ -289,9 +332,6 @@ static const NSInteger kEpisodeBatchSize = 20;
     _pendingLoads[feedURL] = updatedInfo;
     [_lock unlock];
 
-    // Save state before processing (crash recovery)
-    [self _saveLoadingState];
-
     // Insert episodes on main thread (Core Data requirement)
     dispatch_async(dispatch_get_main_queue(), ^{
         @autoreleasepool {
@@ -320,9 +360,12 @@ static const NSInteger kEpisodeBatchSize = 20;
                                                                 object:self
                                                               userInfo:@{@"feed": feed, @"count": @(parserEpisodes.count)}];
 
-            // Continue or finish
+            // Continue or finish — delay next batch to keep UI responsive
             if (episodes.count > 0) {
-                [self _startLoadingForFeedURL:feedURL];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBatchDelay * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    [self _startLoadingForFeedURL:feedURL];
+                });
             } else {
                 [self _finishLoadingForFeedURL:feedURL];
             }
@@ -334,6 +377,9 @@ static const NSInteger kEpisodeBatchSize = 20;
 {
     [_lock lock];
     [_pendingLoads removeObjectForKey:feedURL];
+    if ([_activeFeedURL isEqualToString:feedURL]) {
+        _activeFeedURL = nil;
+    }
     [_lock unlock];
 
     [self _saveLoadingState];
@@ -351,6 +397,9 @@ static const NSInteger kEpisodeBatchSize = 20;
                                                                 object:self
                                                               userInfo:@{@"feed": feed}];
         }
+
+        // Start next pending feed (sequential loading)
+        [self _startNextPendingFeed];
     });
 }
 

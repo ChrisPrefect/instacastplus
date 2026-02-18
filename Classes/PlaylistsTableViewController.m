@@ -381,10 +381,6 @@
 
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
-    if (list.uid && [list.uid hasPrefix:@"default."] && ![list.uid isEqualToString:@"default.video"]) {
-        return UITableViewCellEditingStyleNone;
-    }
     return UITableViewCellEditingStyleDelete;
 }
 
@@ -425,6 +421,27 @@
     _userAction = YES;
     [DMANAGER reorderListFromIndex:fromIndexPath.row toIndex:toIndexPath.row];
     _userAction = NO;
+
+    // Sync sidebar order: re-sort MainMenuListUIDs to match the new list rank order
+    NSArray* mainMenuUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
+    if (mainMenuUIDs.count > 1) {
+        NSArray* lists = DMANAGER.lists;
+        NSMutableArray* sortedUIDs = [NSMutableArray array];
+        for (CDList* list in lists) {
+            if (list.uid && [mainMenuUIDs containsObject:list.uid]) {
+                [sortedUIDs addObject:list.uid];
+            }
+        }
+        // Append any UIDs not found in lists (shouldn't happen, but be safe)
+        for (NSString* uid in mainMenuUIDs) {
+            if (![sortedUIDs containsObject:uid]) {
+                [sortedUIDs addObject:uid];
+            }
+        }
+        [USER_DEFAULTS setObject:sortedUIDs forKey:@"MainMenuListUIDs"];
+        [USER_DEFAULTS synchronize];
+        [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
+    }
 }
 
 
@@ -493,17 +510,7 @@
 
 - (BOOL) _canEditAnyList
 {
-    NSArray* lists = DMANAGER.lists;
-    // Reorder needs 2+ lists
-    if (lists.count >= 2) return YES;
-    // Check if any list can be deleted
-    for (CDList* list in lists) {
-        if (!list.uid || list.uid.length == 0) return YES; // legacy list without uid
-        if (![list.uid hasPrefix:@"default."] || [list.uid isEqualToString:@"default.video"]) {
-            return YES;
-        }
-    }
-    return NO;
+    return (DMANAGER.lists.count > 0);
 }
 
 - (void) _updateEditButton

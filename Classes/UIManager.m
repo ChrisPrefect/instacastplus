@@ -75,7 +75,7 @@
 
 - (NSString*) _pathToCustomFilterSetsPlist
 {
-    return [[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"CustomViewFilterSets.plist"];
+    return [[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"CustomViewFilterSets.plist"];
 }
 
 - (void) _restoreCustomFilterSets

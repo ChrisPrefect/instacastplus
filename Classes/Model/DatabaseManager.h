@@ -29,6 +29,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
     
 + (DatabaseManager*) sharedDatabaseManager;
 + (NSString*) pathToDocuments;
++ (NSString*) pathToSubfolder:(NSString*)subfolder parent:(NSString*)pathToParentFolder;
 + (BOOL) dataStoreNeedsMigration;
 
 @property (nonatomic, strong, readonly) NSManagedObjectContext* objectContext;

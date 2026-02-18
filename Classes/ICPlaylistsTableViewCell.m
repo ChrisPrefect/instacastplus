@@ -58,7 +58,7 @@
         
         _objectValue = objectValue;
         
-        self.textLabel.text = objectValue.name.ls;
+        self.textLabel.text = objectValue.name;
         self.imageView.image = objectValue.image;
         
         NSInteger number = [objectValue numberOfEpisodes];
@@ -76,7 +76,7 @@
         }];
         
         [objectValue addTaskObserver:self forKeyPath:@"name" task:^(id obj, NSDictionary *change) {
-            weakSelf.textLabel.text = weakSelf.objectValue.name.ls;
+            weakSelf.textLabel.text = weakSelf.objectValue.name;
             [weakSelf setNeedsLayout];
         }];
         

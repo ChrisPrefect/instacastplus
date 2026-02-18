@@ -23,7 +23,8 @@ typedef NS_OPTIONS(NSUInteger, ICBackupImportCategory) {
     ICBackupImportAll             = 0x3FF,
 };
 
-/// Callbacks for detailed import progress reporting
+/// Callbacks for detailed import progress reporting.
+/// All callbacks are dispatched to the main thread.
 typedef struct {
     void (^ _Nullable setCurrentFeed)(NSString *title, NSInteger index, NSInteger total);
     void (^ _Nullable setFeedProgress)(NSInteger index, float progress, NSString *detail);
@@ -38,13 +39,15 @@ typedef struct {
 
 @interface InstacastBackupImporter : NSObject
 
-/// Full import with detailed callbacks — runs entirely async, never blocks main thread
+/// Full import with detailed callbacks.
+/// Runs on a dedicated background thread. All Core Data + UI work is dispatched to main.
+/// Cancel via +cancelImport immediately terminates the operation.
 + (void)importBackup:(InstacastBackupData *)backup
           categories:(ICBackupImportCategory)categories
            callbacks:(ICBackupImportCallbacks)callbacks
           completion:(void(^)(NSInteger importedCount, NSError * _Nullable error))completion;
 
-/// Cancel the entire import. Safe to call from any thread.
+/// Cancel the entire import. Safe to call from any thread. Takes effect immediately.
 + (void)cancelImport;
 
 /// Skip only the currently loading feed. Safe to call from any thread.

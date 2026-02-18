@@ -1145,7 +1145,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 - (CPListItem*)carPlayRootListItemForEpisodeList:(CDEpisodeList*)list
 {
     NSString* detail = [self carPlayEpisodeCountDetailTextForList:list];
-    CPListItem* item = [[CPListItem alloc] initWithText:list.name.ls detailText:detail];
+    CPListItem* item = [[CPListItem alloc] initWithText:list.name detailText:detail];
 
     [self carPlayAssignSelectionHandlerForItem:item handler:^{
         [self carPlayShowEpisodesForList:list];
@@ -1310,7 +1310,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayShowEpisodesForList:(CDEpisodeList*)list
 {
-    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:list.name.ls sections:[self carPlaySectionsForEpisodes:[list sortedEpisodes]]];
+    CPListTemplate* template = [[CPListTemplate alloc] initWithTitle:list.name sections:[self carPlaySectionsForEpisodes:[list sortedEpisodes]]];
     template.userInfo = [self carPlayTemplateInfoWithKind:kCarPlayTemplateKindListEpisodes source:list];
     [self carPlayConfigureLegacySelectionDelegateIfNeededForTemplate:template];
     [self carPlayPushTemplate:template animated:YES];

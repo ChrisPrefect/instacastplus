@@ -90,8 +90,6 @@
 	<true/>
 	<key>AutoDeleteAfterMarkedAsPlayed</key>
 	<true/>
-	<key>PauseFeedSynchronization</key>
-	<false/>
 	<key>PlayerAutoSkipStartPeriod</key>
 	<integer>0</integer>
 	<key>PlayerAutoSkipEndPeriod</key>

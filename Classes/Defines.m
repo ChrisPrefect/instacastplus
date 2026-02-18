@@ -96,7 +96,6 @@ NSString* AutoDeleteAfterFinishedPlaying = @"AutoDeleteAfterFinishedPlaying";
 NSString* AutoDeleteAfterMarkedAsPlayed = @"AutoDeleteAfterMarkedAsPlayed";
 NSString* AutoDeleteNewsMode = @"AutoDeleteNewsMode";
 NSString* KeepNewestEpisodesCount = @"KeepNewestEpisodesCount";
-NSString* PauseFeedSynchronization = @"PauseFeedSynchronization";
 NSString* ContinuousPlayFromFeed = @"ContinuousPlayFromFeed";
 NSString* AutoDownloadWhileStreaming = @"AutoDownloadWhileStreaming";
 

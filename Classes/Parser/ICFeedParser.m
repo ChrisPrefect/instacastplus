@@ -104,9 +104,6 @@ static ArbitraryDateParser* gDateParser = nil;
 
 - (void) start
 {
-	@autoreleasepool {
-	//DebugLog(@"parsing feed: %@ credentials: %@/%@", self.url, self.username, self.password);
-	}
 	[super start];
 }
 
@@ -160,8 +157,10 @@ static ArbitraryDateParser* gDateParser = nil;
 		[self performSelectorOnMainThread:@selector(_sendWillParseFeedToDelegate:) withObject:self.url waitUntilDone:NO];
 	}
     
+    NSInteger authRetryCount = 0;
+
 start:
-    
+
     if (!self.username && [self.url user]) {
         self.username = [self.url user];
     }
@@ -179,14 +178,14 @@ start:
 		urlString = [urlString stringByReplacingCharactersInRange:NSMakeRange(0, [scheme length]) withString:@"http"];
 		requestURL = [NSURL URLWithInsecureString:urlString];
 	}
-    
-    
-    
-    
+
+
+
+
     // create the request
     NSString* appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     NSString* appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"];
-    
+
     NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:requestURL cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData timeoutInterval:self.timeout];
 #if TARGET_OS_IPHONE
     [request setValue:[NSString stringWithFormat:@"%@/%@ (like iTunes/10.1.2)", appName, appVersion] forHTTPHeaderField:@"User-Agent"];
@@ -253,8 +252,13 @@ start:
                                                 code:authErrorCode
                                             userInfo:@{NSLocalizedDescriptionKey: @"Authentication failed.".ls, NSLocalizedRecoverySuggestionErrorKey : @"The feed could not be read because the username or password is incorrect.".ls }];
                 }
-                else {
+                else if (++authRetryCount <= 3) {
                     goto start;
+                }
+                else {
+                    error = [NSError errorWithDomain:NSURLErrorDomain
+                                                code:authErrorCode
+                                            userInfo:@{NSLocalizedDescriptionKey: @"Authentication failed.".ls, NSLocalizedRecoverySuggestionErrorKey : @"The feed could not be read because the username or password is incorrect.".ls }];
                 }
             }
             else
@@ -273,9 +277,9 @@ start:
         }
         return NO;
     }
-    
-    
-	
+
+
+
     NSString* dataHash = [feedData MD5Hash];
     if (self.dataHash && [self.dataHash isEqualToString:dataHash])
     {
@@ -298,6 +302,7 @@ start:
         
 
         BOOL convertDataToLossy = NO;
+        NSError* preLossyRetryError = nil;
         
 
 parse:
@@ -367,6 +372,7 @@ parse:
         if (!self.abortedNormally && ([_episodes count] == 0 || [error code] == NSXMLParserInvalidCharacterError) && !convertDataToLossy)
         {
             //ErrLog(@"error parsing feed. Trying again with lossy text conversion");
+            preLossyRetryError = error;
              _feed = nil;
              _category = nil;
              _episode = nil;
@@ -377,6 +383,11 @@ parse:
             [_elementContent setString:@""];
             error = nil;
             goto parse;
+        }
+
+        // After lossy retry: if still no episodes and no new error, restore original
+        if (convertDataToLossy && [_episodes count] == 0 && !error && preLossyRetryError) {
+            error = preLossyRetryError;
         }
 
         
@@ -462,16 +473,18 @@ parse:
 
         NSString *feedSourceURLString = [_feed.sourceURL absoluteString];
 
+        NSInteger episodeIndex = 0;
         for(ICEpisode* episode in _feed.episodes)
         {
             // if no guids, try to constuct some
             if ([episode.guid length] == 0) {
                 NSString* label1 = [episode.title stringByReplacingOccurrencesOfString:@" " withString:@"_"];
-                NSString* label2 = [guidDateFormatter stringFromDate:episode.pubDate];
+                NSString* label2 = [guidDateFormatter stringFromDate:episode.pubDate] ?: [NSString stringWithFormat:@"idx%ld", (long)episodeIndex];
                 NSString* constructedGuid = [NSString stringWithFormat:@"%@#%@",label1, label2];
                 episode.guid = constructedGuid;
                 episode.objectHash = [[NSString stringWithFormat:@"%@%@", feedSourceURLString, constructedGuid] MD5Hash];
             }
+            episodeIndex++;
 
             if ([episode.title length] == 0) {
                 episode.title = @"Untitled".ls;

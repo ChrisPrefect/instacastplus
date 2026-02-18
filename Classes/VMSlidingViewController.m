@@ -80,10 +80,16 @@
     return (self.sidebarShown || self.revealing) ? self.sidebarViewController : self.contentViewController;
 }
 
-- (void)didRotateFromInterfaceOrientation:(UIInterfaceOrientation)fromInterfaceOrientation
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
 {
-    CGRect b = self.view.bounds;
-    _peekWidth = CGRectGetWidth(b)-280;
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+
+    [coordinator animateAlongsideTransition:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+        self->_peekWidth = size.width - 280;
+        if (self.sidebarShown) {
+            self.contentViewController.view.frame = [self rectForContentControllerWhenShown:YES];
+        }
+    } completion:nil];
 }
 
 - (void) viewWillAppear:(BOOL)animated

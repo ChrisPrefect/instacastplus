@@ -68,7 +68,6 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     [self.tableView reloadData];
 
     [self updateRowSelectionForSelectedItemTag];
-    [self updateTableTopInset:UIInterfaceOrientationPortrait];
     [self _setupFooterViewIfNeeded];
     [self updateFooterInfo];
 }
@@ -90,6 +89,7 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
 - (void) viewDidLayoutSubviews
 {
     [super viewDidLayoutSubviews];
+    [self updateTableTopInsetForCurrentBounds];
 }
 
 - (BOOL)prefersStatusBarHidden {
@@ -109,32 +109,33 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     //return UIStatusBarStyleLightContent;
 }
 
-- (void) updateTableTopInset:(UIInterfaceOrientation)orientation
+- (void) updateTableTopInsetForCurrentBounds
 {
-    CGRect b = self.view.bounds;
-    CGFloat h = 0;
-    
-    if (UIInterfaceOrientationIsLandscape(orientation)) {
-        h = (CGRectGetHeight(b) < CGRectGetWidth(b)) ? CGRectGetHeight(b) : CGRectGetWidth(b);
-    }
-    else {
-        h = (CGRectGetHeight(b) > CGRectGetWidth(b)) ? CGRectGetHeight(b) : CGRectGetWidth(b);
-    }
-    
-    
-    NSInteger itemCount = [self.items count]-1;
-    for (NSArray* items in self.items) {
-        itemCount += [items count];
-    }
-    
-    CGFloat headerHeight = floorf((h-(itemCount*(ROW_HEIGHT+1)))/2);
-    headerHeight = MAX(headerHeight, 94+15);
-    self.tableView.contentInset = UIEdgeInsetsMake(headerHeight, 0, 0, 0);
-}
+    CGFloat h = CGRectGetHeight(self.view.bounds);
+    if (h <= 0) return;
 
-- (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation duration:(NSTimeInterval)duration
-{
-    [self updateTableTopInset:interfaceOrientation];
+    NSInteger itemCount = 0;
+    CGFloat totalTopSpacing = 0;
+    for (NSArray* sectionItems in self.items) {
+        itemCount += [sectionItems count];
+        for (MainSidebarItem* item in sectionItems) {
+            totalTopSpacing += item.topSpacing;
+        }
+    }
+
+    CGFloat totalContentHeight = itemCount * (ROW_HEIGHT + 1) + totalTopSpacing;
+    CGFloat headerHeight = floorf((h - totalContentHeight) / 2);
+    headerHeight = MAX(headerHeight, 94 + 15);
+
+    // If content doesn't fit, reduce headerHeight so items remain visible
+    if (headerHeight + totalContentHeight > h) {
+        headerHeight = MAX(h - totalContentHeight, 20);
+        self.tableView.scrollEnabled = YES;
+    } else {
+        self.tableView.scrollEnabled = NO;
+    }
+
+    self.tableView.contentInset = UIEdgeInsetsMake(headerHeight, 0, 0, 0);
 }
 
 #pragma mark - Table view data source

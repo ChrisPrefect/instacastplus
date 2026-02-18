@@ -141,7 +141,6 @@ static NSString* kFeedCell = @"FeedCell";
     NSInteger index = switchControl.tag;
     CDFeed* feed = [DMANAGER.feeds objectAtIndex:index];
     feed.parked = !switchControl.on;
-    
     [DMANAGER save];
 }
 

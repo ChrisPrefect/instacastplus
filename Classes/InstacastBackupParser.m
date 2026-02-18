@@ -60,8 +60,10 @@
     else if ([path isEqualToString:@"instacast/podcasts/podcast"]) {
         _currentPodcast = [[ICBackupPodcast alloc] init];
         _currentPodcast.feedURL = attrs[@"url"];
+        _currentPodcast.title = attrs[@"title"];
         NSString *rankStr = attrs[@"rank"];
         if (rankStr) _currentPodcast.rank = (int32_t)[rankStr integerValue];
+        _currentPodcast.parked = [attrs[@"parked"] isEqualToString:@"true"];
         _currentPodcast.username = attrs[@"username"];
         _currentPodcast.password = attrs[@"password"];
     }
