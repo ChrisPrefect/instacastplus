@@ -345,13 +345,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     else
 	{
         self.cacheItem.enabled = ([self.episodes count] > 0);
-        self.consumeAllItem.enabled = ([self.episodes count] > 0);
 
         // Toolbar-Items nur setzen wenn noch nicht im normal mode gesetzt
         NSArray* currentItems = self.toolbarItems;
-        if (currentItems.count != 3 || ![currentItems containsObject:self.consumeAllItem]) {
+        if (currentItems.count != 2 || ![currentItems containsObject:self.cacheItem]) {
             UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-            [self setToolbarItems:@[self.consumeAllItem, flexSpace, self.cacheItem] animated:animated];
+            [self setToolbarItems:@[flexSpace, self.cacheItem] animated:animated];
         }
 	}
 
@@ -941,18 +940,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     AudioSession* session = [AudioSession sharedAudioSession];
     
     CDEpisode* firstEpisode = [selectedEpisodes firstObject];
-    
-    // current episode is replaced with first item
-    // current episode is prepended to up next
+
+    // Prepend all selected episodes to Up Next (including the first)
+    [session prependToUpNext:selectedEpisodes];
+
+    // Start playback of the first episode
     PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:firstEpisode forceReload:YES];
     [playbackController presentFromParentViewController:self.navigationController];
-    
-    // prepend all other episode from the selection to up next,
-    // current episode will play after selection
-    [selectedEpisodes removeObjectAtIndex:0];
-    if ([selectedEpisodes count] > 0) {
-        [session prependToUpNext:selectedEpisodes];
-    }
     [self setEditing:NO animated:YES];
 }
 
@@ -1467,6 +1461,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void)dealloc
 {
 	[self _setObserving:NO];
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void) _setObserving:(BOOL)observing
@@ -1496,6 +1491,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     [super viewDidLoad];
 
+    self.view.backgroundColor = ICBackgroundColor;
+
     UIBarButtonItem* a = [[UIBarButtonItem alloc] initWithTitle:@"" style:UIBarButtonItemStylePlain target:nil action:nil];
     self.navigationItem.backBarButtonItem = a;
 
@@ -1511,11 +1508,22 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     self.navigationExtensionView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(b), 20+44+22)];
     self.navigationExtensionView.backgroundColor = ICTransparentBackdropColor;
     [self.view addSubview:self.navigationExtensionView];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_updateContainerAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+- (void)_updateContainerAppearance {
+    self.view.backgroundColor = ICBackgroundColor;
+    self.navigationExtensionView.backgroundColor = ICTransparentBackdropColor;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self _setObserving:YES];
+    [self _updateContainerAppearance];
 }
 
 - (void) viewDidAppear:(BOOL)animated

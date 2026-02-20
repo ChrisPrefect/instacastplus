@@ -55,6 +55,9 @@
     NSString* appearanceCssPath = [[NSBundle mainBundle] pathForResource:[ICAppearanceManager sharedManager].appearance.cssFile ofType:@"css"];
     NSString* appearanceCss = [NSString stringWithContentsOfFile:appearanceCssPath encoding:NSUTF8StringEncoding error:nil];
     [content appendString:appearanceCss];
+    if ([ICAppearanceManager sharedManager].nightSettingMode && [USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        [content appendString:@"body { background-color: #000000; } #episodes .row_even, #episodes .even { background-color: #000000; }"];
+    }
     [content appendString:@"</style>"];
     [content appendString:@"<div id=\"description\">"];
     if (description) {
@@ -182,6 +185,10 @@
         self.headerViewController.view.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), CGRectGetWidth(b), 93);
         self.headerViewController.titleLabel.text = self.feed.title;
         self.headerViewController.subtitleLabel.text = self.feed.author;
+        NSString* feedSubtitle = self.feed.subtitle;
+        if (feedSubtitle.length > 0 && ![feedSubtitle isEqualToString:self.feed.title]) {
+            self.headerViewController.feedSubtitleLabel.text = feedSubtitle;
+        }
         
         __weak FeedViewController* weakSelf = self;
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];

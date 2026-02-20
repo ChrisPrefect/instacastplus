@@ -829,7 +829,7 @@ enum {
             CDFeed* feed = episode.feed;
             
             episode.lastPlayed = [NSDate date];
-            [DMANAGER saveAndSync:NO];//DevD to do crashes            
+            [DMANAGER save];//DevD to do crashes            
             // check if we have moving video
             weakSelf.movingVideo = NO;
             
@@ -1004,7 +1004,7 @@ enum {
             
             // add duration parameter to episode if there is none
             episode.duration = (int32_t)dur;
-            [DMANAGER saveAndSync:NO];
+            [DMANAGER save];
         }
         // handle auto skip end
         /*NSInteger periodFeedEnd = [episode.feed integerForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
@@ -1025,7 +1025,7 @@ enum {
                 
                 [DMANAGER setEpisode:episode position:(double)dur];
                 _changingPosition = NO;
-                [DMANAGER saveAndSync:YES];
+                [DMANAGER save];
             }
         }*/
         
@@ -1060,7 +1060,7 @@ enum {
 
                         [DMANAGER setEpisode:episode position:dur];
                         self->_changingPosition = NO;
-                        [DMANAGER saveAndSync:YES];
+                        [DMANAGER save];
                         // Remove consumed episode from Up Next playlist
                         [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
                     }
@@ -1196,7 +1196,7 @@ enum {
     episode.position = 0;
     [DMANAGER setEpisode:episode position:(double)dur];
     _changingPosition = NO;
-    [DMANAGER saveAndSync:YES];
+    [DMANAGER save];
     // Remove consumed episode from Up Next playlist
     [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
     self.isAutoSkipping = NO;
@@ -1299,7 +1299,7 @@ enum {
         _changingPosition = YES;
         [DMANAGER setEpisode:episode position:(double)cur];
         _changingPosition = NO;
-        [DMANAGER saveAndSync:YES];//DevD to do
+        [DMANAGER save];//DevD to do
         
         [self _removeTemporarySavePosition];
     }

@@ -103,6 +103,7 @@ NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 
 NSString* kDefaultPlayerControls = @"PlayerControls";
 NSString* kDefaultAppearanceMode = @"AppearanceMode";
+NSString* kDefaultDarkModePureBlack = @"DarkModePureBlack";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 
 #if TARGET_OS_IPHONE==1
@@ -135,20 +136,6 @@ NSString* SmarthomeDeviceName = @"SmarthomeDeviceName";
 
 NSString* OpenLinksInExternalBrowser = @"OpenLinksInExternalBrowser";
 
-// iCloud Sync
-NSString* iCloudSyncEnabled = @"iCloudSyncEnabled";
-NSString* iCloudSyncPlaybackStatus = @"iCloudSyncPlaybackStatus";
-NSString* iCloudSyncNowPlaying = @"iCloudSyncNowPlaying";
-NSString* iCloudSyncSubscriptions = @"iCloudSyncSubscriptions";
-NSString* iCloudSyncFeedSettings = @"iCloudSyncFeedSettings";
-NSString* iCloudSyncAppSettings = @"iCloudSyncAppSettings";
-NSString* iCloudSyncDownloadStatus = @"iCloudSyncDownloadStatus";
-NSString* iCloudSyncLists = @"iCloudSyncLists";
-NSString* iCloudSyncUpNext = @"iCloudSyncUpNext";
-NSString* iCloudSyncDeviceID = @"iCloudSyncDeviceID";
-NSString* iCloudSyncLastSyncDate = @"iCloudSyncLastSyncDate";
-NSString* iCloudSyncServerChangeToken = @"iCloudSyncServerChangeToken";
-NSString* iCloudSyncInitialSyncCompleted = @"iCloudSyncInitialSyncCompleted";
 
 NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";
 NSString* ApplicationDidDetectMotionNotification = @"ApplicationDidDetectMotionNotification";

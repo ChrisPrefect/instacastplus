@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Instacast+ — Podcast-App für iOS/macOS in Objective-C. Feed-Parsing, Playback, Chapters, Bookmarks, Sync.
+Instacast+ — Podcast-App für iOS/macOS in Objective-C. Feed-Parsing, Playback, Chapters, Bookmarks.
 
 **Version:** 2.9 · **Min iOS:** 13.0
 
@@ -79,9 +79,18 @@ Berechnung in `Classes/PlayerController.m`: `MAX(windowHeight - statusBarHeight 
 
 ## iOS 26 Liquid Glass
 
-- Glass-Artefakte durch Content hinter NavBar → `edgesForExtendedLayout = UIRectEdgeNone` setzen
+- Glass-Artefakte durch Content hinter NavBar → `edgesForExtendedLayout = UIRectEdgeBottom` setzen (NICHT `UIRectEdgeNone`!)
 - Opake NavBar: `UINavigationBarAppearance` mit `backgroundImage` verwenden (nicht nur `backgroundColor`)
 - **NICHT** `hidesSharedBackground`, `UIButtonTypeCustom` als customView, oder opake Views hinter die Bar als Workaround
+
+## iOS 26 Floating Toolbar
+
+iOS 26 rendert `UINavigationController.toolbar` als Floating Bar über einer `FloatingBarContainerView` (SwiftUI-basiert). Wichtige Regeln:
+
+- **`edgesForExtendedLayout = UIRectEdgeNone` verursacht opake Fläche am unteren Rand!** Der Content erstreckt sich nicht unter die Toolbar, dadurch wird der Hintergrund des NavigationControllers sichtbar. Tritt nur auf dem Gerät auf, nicht im Simulator.
+- **Lösung:** `edgesForExtendedLayout = UIRectEdgeBottom` — Content erstreckt sich unter die Toolbar (kein Hintergrund sichtbar), aber NICHT unter die NavBar (keine Glass-Artefakte oben).
+- Die Fläche erscheint nach Theme-Wechsel (weil `setAppearance:` die View-Hierarchie neu aufbaut) und verschwindet nach Navigation (push/pop baut Views neu auf).
+- `SubscriptionsTableViewController` (Standard `UIRectEdgeAll`) hat das Problem nicht — nur VCs mit explizit eingeschränktem `edgesForExtendedLayout`.
 
 ## iOS 26 Scroll Edge Effect
 
@@ -140,4 +149,4 @@ if (!gShared) {
 
 ## Key Integrations
 
-CloudKit (iCloud sync), CarPlay, AVFoundation, OPML import/export, Podlove Standard Chapters
+CarPlay, AVFoundation, OPML import/export, Podlove Standard Chapters

@@ -259,7 +259,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
         [self _enforceKeepNewestLimitForFeed:feed];
 
-        [DMANAGER saveAndSync:YES];
+        [DMANAGER save];
 
         if (completion) {
             completion(YES ,newEpisodes, nil);
@@ -301,7 +301,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
         CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed autodownload:YES options:options];
 
-        [DMANAGER saveAndSync:YES];
+        [DMANAGER save];
 
         if (completion) {
             completion(persistentFeed, nil);
@@ -337,7 +337,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         
         CDFeed* persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
         
-        [DMANAGER saveAndSync:YES];
+        [DMANAGER save];
         
         if (completion) {
             completion(persistentFeed, nil);
@@ -393,7 +393,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 DebugLog(@"Already subscribed to feed: %@", url);
             } else {
                 persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
-                [DMANAGER saveAndSync:YES];
+                [DMANAGER save];
                 DebugLog(@"New feed subscribed: %@", url);
             }
 

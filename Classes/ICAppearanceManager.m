@@ -425,6 +425,9 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 }
 
 -(UIColor*) backgroundColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor blackColor];
+    }
     return [UIColor colorWithWhite:0.13f alpha:1.f];
 }
 
@@ -434,26 +437,44 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 
 -(UIColor*) lightBackgroundColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor colorWithWhite:0.1f alpha:1.f];
+    }
     return [UIColor colorWithWhite:0.3f alpha:1.f];
 }
 
 -(UIColor*) transparentBackdropColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor colorWithWhite:0.0f alpha:0.9];
+    }
     return [UIColor colorWithWhite:0.13f alpha:0.9];
 }
 
 -(UIColor*) tableSeparatorColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor colorWithWhite:0.15f alpha:1.f];
+    }
     return [UIColor colorWithWhite:0.2f alpha:1.f];
 }
 
 -(UIColor*) tableSelectedBackgroundColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor colorWithWhite:0.1f alpha:1.0f];
+    }
     return [UIColor colorWithWhite:0.2f alpha:1.0f];
 }
 
 - (UIColor*) groupCellBackgroundColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor colorWithWhite:0.1f alpha:1.0f];
+    }
     return [UIColor colorWithWhite:0.2f alpha:1.0f];
 }
 
 - (UIColor*) groupCellSelectedBackgroundColor {
+    if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        return [UIColor colorWithWhite:0.15f alpha:1.0f];
+    }
     return [UIColor colorWithWhite:0.3f alpha:1.0f];
 }
 

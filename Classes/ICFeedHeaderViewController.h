@@ -15,6 +15,7 @@
 @property (nonatomic, strong, readonly) UIImageView* imageView;
 @property (nonatomic, strong, readonly) UILabel* titleLabel;
 @property (nonatomic, strong, readonly) UILabel* subtitleLabel;
+@property (nonatomic, strong, readonly) UILabel* feedSubtitleLabel;
 
 @property (nonatomic, copy) void(^action)(void);
 

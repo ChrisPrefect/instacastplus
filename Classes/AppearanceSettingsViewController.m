@@ -14,6 +14,7 @@
 typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kLanguage = 0,
     kAppearanceThemeSection,
+    kPureBlackSection,
     kPlayerColor,
     kPInterfaceColor,
     kAppIcons,
@@ -101,6 +102,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return 1;
         case kAppearanceThemeSection:
             return 1;
+        case kPureBlackSection:
+            return [ICAppearanceManager sharedManager].nightSettingMode ? 1 : 0;
         case kPlayerColor:
             if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive])
             {
@@ -167,6 +170,15 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         cell.detailTextLabel.text = values[@([ICAppearanceManager sharedManager].appearanceMode)];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 
+        return cell;
+    }
+    else if (indexPath.section == kPureBlackSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        cell.textLabel.text = @"Pure Black".ls;
+        control.on = [USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack];
+        [control addTarget:self action:@selector(togglePureBlack:) forControlEvents:UIControlEventValueChanged];
         return cell;
     }
     else if (indexPath.section == kPlayerColor)
@@ -413,6 +425,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return @"";
         case kAppearanceThemeSection:
             return @"";
+        case kPureBlackSection:
+            return [ICAppearanceManager sharedManager].nightSettingMode ? @"" : nil;
         case kPlayerColor:
             return @"Player Color".ls;
         case kPInterfaceColor:
@@ -641,6 +655,12 @@ API_AVAILABLE(ios(14.0)){
 - (void) toggleInterfaceSounds:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:UISoundEnabled];
+}
+
+- (void) togglePureBlack:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:kDefaultDarkModePureBlack];
+    [[ICAppearanceManager sharedManager] updateAppearance];
 }
 
 - (void) toggleExternalBrowser:(UISwitch*)sender

@@ -46,9 +46,6 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 
 - (void) save;
 
-// only syncs affected changes and send out pushes
-- (void) saveAndSync:(BOOL)sync;
-
 - (void) beginInterruptSaving;
 - (void) endInterruptSaving;
 - (void) refreshAllObjects;

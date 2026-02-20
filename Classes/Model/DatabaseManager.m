@@ -367,8 +367,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:self.objectContext];
 	}
-//    [self checkingSaveCloudKit];
-//    [self checkFetchCloudKit];
 	return self;
 }
 
@@ -762,19 +760,14 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 - (void) save
 {
-    [self saveAndSync:YES];
-}
-
-- (void) saveAndSync:(BOOL)sync
-{
     if (_savingInterruption == 0)
     {
         NSMutableSet* set = [[NSMutableSet alloc] init];
         [set unionSet:[self.objectContext insertedObjects]];
         [set unionSet:[self.objectContext updatedObjects]];
         [set unionSet:[self.objectContext deletedObjects]];
-        
-        
+
+
         for(CDBase* object in set)
         {
             if ([object isKindOfClass:[CDEpisode class]] && [object hasChanges]) {
@@ -784,18 +777,15 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
             }
         }
-       
+
         NSError* error;
         if (![self.objectContext save:&error] ) {
             ErrLog(@"Error saving context: %@", error.localizedDescription);
         }
         else {
             [self.persistentContainer.viewContext processPendingChanges];
-            if (sync) {
-                [[NSNotificationCenter defaultCenter] postNotificationName:@"ICDatabaseDidSaveWithSyncNotification" object:self];
-            }
         }
-        
+
         if (error) {
             ErrLog(@"error saving database context: %@", error);
         }
@@ -1241,11 +1231,7 @@ static const NSInteger kInitialEpisodeLimit = 50;
     NSInteger totalEpisodeCount = sortedEpisodes.count;
     NSInteger initialLoadCount = MIN(kInitialEpisodeLimit, totalEpisodeCount);
 
-    ICEpisode *firstEpisode = [sortedEpisodes firstObject];
-    if (firstEpisode) {
-        NSDateComponents *firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
-                                                                       fromDate:firstEpisode.pubDate];
-
+    if (sortedEpisodes.count > 0) {
         // Only load the first batch of episodes (newest first)
         for (NSInteger i = 0; i < initialLoadCount; i++) {
             ICEpisode *parserEpisode = sortedEpisodes[i];
@@ -1253,12 +1239,7 @@ static const NSInteger kInitialEpisodeLimit = 50;
             CDEpisode *persistentEpisode = [self addNewParserEpisode:parserEpisode toFeed:persistentFeed wasNew:&wasNew];
 
             if (wasNew && (options & kSubscribeOptionDontManageConsumedFlags) == 0) {
-                NSDateComponents *comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
-                                                                          fromDate:parserEpisode.pubDate];
-
-                persistentEpisode.consumed = !([comps day] == [firstComps day] &&
-                                               [comps month] == [firstComps month] &&
-                                               [comps year] == [firstComps year]);
+                persistentEpisode.consumed = NO;
             }
         }
     }

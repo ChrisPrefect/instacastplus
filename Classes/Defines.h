@@ -113,6 +113,7 @@ typedef NS_ENUM(NSInteger, DefaultPlayerControls) {
 extern NSString* kDefaultDontDeleteUpNextWhenChangingEpisode;
 
 extern NSString* kDefaultAppearanceMode;
+extern NSString* kDefaultDarkModePureBlack;
 
 typedef NS_ENUM(NSInteger, ICAppearanceMode) {
     ICAppearanceModeAutomatic = 0,  // Default - follows system
@@ -173,20 +174,6 @@ extern NSString* SmarthomeDeviceName;
 
 extern NSString* OpenLinksInExternalBrowser;
 
-// iCloud Sync
-extern NSString* iCloudSyncEnabled;
-extern NSString* iCloudSyncPlaybackStatus;
-extern NSString* iCloudSyncNowPlaying;
-extern NSString* iCloudSyncSubscriptions;
-extern NSString* iCloudSyncFeedSettings;
-extern NSString* iCloudSyncAppSettings;
-extern NSString* iCloudSyncDownloadStatus;
-extern NSString* iCloudSyncLists;
-extern NSString* iCloudSyncUpNext;
-extern NSString* iCloudSyncDeviceID;
-extern NSString* iCloudSyncLastSyncDate;
-extern NSString* iCloudSyncServerChangeToken;
-extern NSString* iCloudSyncInitialSyncCompleted;
 
 extern NSString* AudioSessionSleepTimerDidExpireNotification;
 extern NSString* ApplicationDidDetectMotionNotification;

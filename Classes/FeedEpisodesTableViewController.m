@@ -257,14 +257,17 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.edgesForExtendedLayout = UIRectEdgeNone;
+    // UIRectEdgeNone prevents glass artifacts at top (nav bar) but causes
+    // an opaque bar artifact at the bottom on iOS 26 floating toolbars.
+    // UIRectEdgeBottom: extend under bottom bar (toolbar) but NOT under top bar (nav bar).
+    self.edgesForExtendedLayout = UIRectEdgeBottom;
 
     if (@available(iOS 26.0, *)) {
         self.tableView.bottomEdgeEffect.hidden = YES;
     }
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
-    self.title = ([self.searchTerm length] > 0) ? [NSString stringWithFormat:@"'%@'", self.searchTerm].ls : nil;
+    self.title = ([self.searchTerm length] > 0) ? [NSString stringWithFormat:@"'%@'", self.searchTerm].ls : self.feed.title;
     
     WEAK_SELF
     self.editingStyle = EpisodesTableViewEditingStyleNormal;
@@ -276,8 +279,15 @@
         
         self.headerViewController = [ICFeedHeaderViewController viewController];
         self.headerViewController.view.frame = CGRectMake(0, 0, w, 93);
-        self.headerViewController.titleLabel.text = self.feed.title;
-        self.headerViewController.subtitleLabel.text = self.feed.author;
+        // Title is shown in the navigation bar, not in the header
+        self.headerViewController.titleLabel.text = self.feed.author;
+        // Show feed subtitle below author if available and different from title
+        NSString* feedSubtitle = self.feed.subtitle;
+        if (feedSubtitle.length > 0 && ![feedSubtitle isEqualToString:self.feed.title]) {
+            self.headerViewController.subtitleLabel.text = feedSubtitle;
+        } else {
+            self.headerViewController.subtitleLabel.text = nil;
+        }
         
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
         [iman imageForURL:self.feed.imageURL size:72 grayscale:NO sender:self completion:^(UIImage *image) {

@@ -12,6 +12,7 @@
 @property (nonatomic, strong, readwrite) UIImageView* imageView;
 @property (nonatomic, strong, readwrite) UILabel* titleLabel;
 @property (nonatomic, strong, readwrite) UILabel* subtitleLabel;
+@property (nonatomic, strong, readwrite) UILabel* feedSubtitleLabel;
 @property (nonatomic, strong, readwrite) UIView* selectedBackgroundView;
 @property (nonatomic, strong, readwrite) UIImageView* triangleImageView;
 @end
@@ -52,8 +53,17 @@
     authorLabel.lineBreakMode = NSLineBreakByWordWrapping;
     [self.view addSubview:authorLabel];
     
+    // create feed subtitle label (shown below author)
+    UILabel* feedSubtitleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    feedSubtitleLabel.numberOfLines = 2;
+    feedSubtitleLabel.font = [UIFont systemFontOfSize:12.0f];
+    feedSubtitleLabel.backgroundColor = [UIColor clearColor];
+    feedSubtitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    [self.view addSubview:feedSubtitleLabel];
+
     self.titleLabel = titleLabel;
     self.subtitleLabel = authorLabel;
+    self.feedSubtitleLabel = feedSubtitleLabel;
 
     CGRect b = self.view.bounds;
     self.view.frame = CGRectMake(0, 0, CGRectGetWidth(b), 93);
@@ -83,6 +93,7 @@
     self.view.backgroundColor = ICTransparentBackdropColor;
     self.titleLabel.textColor = ICTextColor;
     self.subtitleLabel.textColor = ICMutedTextColor;
+    self.feedSubtitleLabel.textColor = ICMutedTextColor;
     self.triangleImageView.tintColor = ICMutedTextColor;
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
 }
@@ -95,19 +106,38 @@
 
 - (void) layoutContent
 {
-    CGFloat contentWidth = [[UIScreen mainScreen] bounds].size.width;//CGRectGetWidth(self.view.bounds);
-    
-    CGSize titleSize = [self.titleLabel.attributedText boundingRectWithSize:CGSizeMake(contentWidth-72-45, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
+    CGFloat contentWidth = [[UIScreen mainScreen] bounds].size.width;
+    CGFloat labelWidth = contentWidth - 72 - 45;
+    CGFloat labelX = 72 + 15 + 15;
+
+    CGSize titleSize = [self.titleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
     IC_SIZE_INTEGRAL(titleSize);
-    
-    CGSize authorSize = [self.subtitleLabel.attributedText boundingRectWithSize:CGSizeMake(contentWidth-72-45, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
+
+    CGSize authorSize = [self.subtitleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
     IC_SIZE_INTEGRAL(authorSize);
-    
+
+    BOOL hasFeedSubtitle = (self.feedSubtitleLabel.text.length > 0);
+    CGSize feedSubtitleSize = CGSizeZero;
+    if (hasFeedSubtitle) {
+        feedSubtitleSize = [self.feedSubtitleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
+        IC_SIZE_INTEGRAL(feedSubtitleSize);
+    }
+
     CGFloat labelsHeight = titleSize.height + authorSize.height + 2;
-    CGFloat yOffset = 10+floorf((72-labelsHeight)/2);
-    
-    self.titleLabel.frame = CGRectMake(72+15+15, yOffset, contentWidth-45-72-11, titleSize.height);
-    self.subtitleLabel.frame = CGRectMake(72+15+15, CGRectGetMaxY(self.titleLabel.frame)+2, contentWidth-45-72-11, authorSize.height);
+    if (hasFeedSubtitle) {
+        labelsHeight += feedSubtitleSize.height + 2;
+    }
+    CGFloat yOffset = 10 + floorf((72 - labelsHeight) / 2);
+
+    self.titleLabel.frame = CGRectMake(labelX, yOffset, labelWidth, titleSize.height);
+    self.subtitleLabel.frame = CGRectMake(labelX, CGRectGetMaxY(self.titleLabel.frame) + 2, labelWidth, authorSize.height);
+
+    if (hasFeedSubtitle) {
+        self.feedSubtitleLabel.frame = CGRectMake(labelX, CGRectGetMaxY(self.subtitleLabel.frame) + 2, labelWidth, feedSubtitleSize.height);
+        self.feedSubtitleLabel.hidden = NO;
+    } else {
+        self.feedSubtitleLabel.hidden = YES;
+    }
 }
 
 - (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation duration:(NSTimeInterval)duration

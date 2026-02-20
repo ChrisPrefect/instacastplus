@@ -23,7 +23,6 @@
 #import "DataSettingsViewController.h"
 #import "ImportExportSettingsViewController.h"
 #import "SmarthomeSettingsViewController.h"
-#import "iCloudSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #import "DonationViewController.h"
@@ -46,7 +45,6 @@ enum {
     kRowData,
     kRowSubscriptions,
     kRowNotifications,
-    kRowiCloud,
     kRowImportExport,
     kRowSmartHome,
     kRowEmailFeedback,
@@ -163,10 +161,6 @@ enum {
             cell.textLabel.text = @"Notifications".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"bell"];
             break;
-        case kRowiCloud:
-            cell.textLabel.text = @"iCloud Sync".ls;
-            cell.imageView.image = [UIImage systemImageNamed:@"icloud"];
-            break;
         case kRowImportExport:
             cell.textLabel.text = @"Import / Export".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
@@ -247,11 +241,6 @@ enum {
         }
         case kRowNotifications: {
             NotificationSettingsViewController* controller = [NotificationSettingsViewController viewController];
-            [self.navigationController pushViewController:controller animated:YES];
-            break;
-        }
-        case kRowiCloud: {
-            iCloudSettingsViewController* controller = [iCloudSettingsViewController viewController];
             [self.navigationController pushViewController:controller animated:YES];
             break;
         }

@@ -340,7 +340,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
         [[CacheManager sharedCacheManager] tidyUp];
     }
     
-    [DMANAGER saveAndSync:NO];
+    [DMANAGER save];
 }
 
 - (void)templateApplicationScene:(CPTemplateApplicationScene *)templateApplicationScene didConnectInterfaceController:(CPInterfaceController *)interfaceController {

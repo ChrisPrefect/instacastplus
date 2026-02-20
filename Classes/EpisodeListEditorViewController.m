@@ -226,7 +226,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         list.uid = [[NSUUID UUID] UUIDString];
     }
 
-    [DMANAGER saveAndSync:NO];
+    [DMANAGER save];
     [DMANAGER addList:list];
 
     // Update MainMenuListUIDs in UserDefaults

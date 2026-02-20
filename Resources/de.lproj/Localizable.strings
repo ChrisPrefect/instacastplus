@@ -248,6 +248,7 @@
 "Automatic" = "Automatisch";
 "Light" = "Hell";
 "Dark" = "Dunkel";
+"Pure Black" = "Reines Schwarz";
 "Ascending" = "Aufsteigend";
 "Audio" = "Audio";
 "Contains Keyword" = "Enthält Schlüsselworte";
@@ -255,7 +256,7 @@
 "Show in Main Menu" = "Im Hauptmenü anzeigen";
 "Deactivate attributes of episodes that should not be included in this episode list." = "Deaktivieren Sie Eigenschaften von Folgen, die nicht mit in die Liste aufgenommen werden sollen.";
 "Descending" = "Absteigend";
-"Downloaded" = "Heruntergeladen";
+"Downloaded" = "heruntergeladen";
 "Duration" = "Dauer";
 "Edit List" = "Liste bearbeiten";
 "Enable 'Continuous Playback' to copy remaining episodes to Up Next when playback starts." = "Aktivieren Sie 'Kontinuierliche Wiedergabe', um verbleibende Folgen bei Wiedergabe nach 'Nächste Folgen' zu kopieren.";
@@ -272,7 +273,7 @@
 "Not Starred" = "Kein Favorit";
 "Order By" = "Sortiert nach";
 "Order Options" = "Sortieroptionen";
-"Played" = "Gespielt";
+"Played" = "gespielt";
 "Publish Date" = "Veröffentlicht";
 "Remove" = "Entfernen";
 "Save" = "Speichern";
@@ -280,9 +281,9 @@
 "Starred" = "Favorit";
 "Time Left" = "Abspielzeit übrig";
 "Unfinished" = "angespielt";
-"Unplayed" = "Ungespielt";
-"Unplayed & Started" = "Ungespielt & Angespielt";
-"Started" = "Angespielt";
+"Unplayed" = "ungespielt";
+"Unplayed & Started" = "ungespielt & angespielt";
+"Started" = "angespielt";
 "Video" = "Video";
 
 /* SubscriptionsTableViewController.m */
@@ -703,7 +704,6 @@
 "Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage." = "Live-Transkripte – Podcasts mit Transkripten zeigen den gesprochenen Text live im Player an. Tippe auf eine Zeile, um dorthin zu springen. Der Text scrollt automatisch mit und hebt die aktuelle Stelle hervor.";
 "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position." = "Überarbeiteter Now-Playing-Bereich – Grösserer Play-Button, Kapitelname unter der Seekbar, vergrösserte Seekbar und Zeitanzeigen. Scrubbing: Tippe oder ziehe an eine beliebige Stelle der Seekbar, um dorthin zu springen.";
 "Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted." = "Kapitelmarkierungen auf der Seekbar – Kapitelgrenzen auf einen Blick erkennen. Das aktuelle Kapitel wird hervorgehoben.";
-"iCloud Sync – Seamlessly switch between devices! Podcasts, playlists, Play Next queue, settings and playback progress are automatically synchronized." = "iCloud Sync – Nahtlos zwischen Geräten wechseln! Podcasts, Playlists, Play-Next-Warteschlange, Einstellungen und Wiedergabefortschritt werden automatisch synchronisiert.";
 "Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts." = "Backup & Restore – Nie wieder Daten verlieren! Vollständiger Export aller Abonnements, Einstellungen, Playlists und Wiedergabestatus. Der neue Import-Dialog zeigt den Fortschritt live und lässt einzelne Podcasts überspringen.";
 "CarPlay – Take your podcasts on the road with full CarPlay support." = "CarPlay – Deine Podcasts jetzt auch im Auto mit voller CarPlay-Unterstützung.";
 "iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass." = "iPad- & macOS-Unterstützung – Optimiertes Erlebnis auf iPad und Mac mit eigenem Layout. Optimiert für iOS 26 Liquid Glass.";
@@ -890,51 +890,6 @@
 "Instacast lebt Podcast" = "Instacast lebt Podcast";
 "Listen to Instacast lebt Podcast" = "\"Instacast lebt\" Podcast anhören";
 
-/* iCloudSettingsViewController */
-"iCloud" = "iCloud";
-"iCloud Sync" = "iCloud-Synchronisierung";
-"Syncs data between your devices via iCloud." = "Synchronisiert Daten zwischen deinen Geräten via iCloud.";
-"Sync Categories" = "Sync-Kategorien";
-"Select which data to sync between your devices." = "Wähle aus, welche Daten zwischen deinen Geräten synchronisiert werden.";
-"Playback Status" = "Abspielstatus";
-"Download Status" = "Downloadstatus";
-"Last Synced" = "Zuletzt synchronisiert";
-"Sync Now" = "Jetzt synchronisieren";
-"Reset Sync Data" = "Sync-Daten zurücksetzen";
-"Never" = "Nie";
-"Are you sure you want to reset all sync data? This will remove all cloud data for this app." = "Möchtest du alle Sync-Daten zurücksetzen? Dies entfernt alle Cloud-Daten dieser App.";
-"Devices" = "Geräte";
-"Upload Local Data" = "Lokale Daten hochladen";
-"Download from iCloud" = "Von iCloud herunterladen";
-"Merge" = "Zusammenführen";
-"Cloud data already exists. How would you like to handle the initial sync?" = "Cloud-Daten sind bereits vorhanden. Wie möchtest du die erste Synchronisierung durchführen?";
-"Initial Sync" = "Erste Synchronisierung";
-"Syncing…" = "Synchronisieren…";
-"No iCloud Account" = "Kein iCloud-Account";
-"Please sign in to iCloud in Settings to use sync." = "Bitte melde dich in den Einstellungen bei iCloud an, um die Synchronisierung zu nutzen.";
-
-/* ICCloudInitialSyncViewController */
-"This Device" = "Dieses Gerät";
-"1 Podcast" = "1 Podcast";
-"%ld Podcasts" = "%ld Podcasts";
-"1 Episode with playback status" = "1 Folge mit Abspielstatus";
-"%ld Episodes with playback status" = "%ld Folgen mit Abspielstatus";
-"1 List" = "1 Liste";
-"%ld Lists" = "%ld Listen";
-"1 Device" = "1 Gerät";
-"%ld Devices" = "%ld Geräte";
-"Data currently stored on this device." = "Daten, die aktuell auf diesem Gerät gespeichert sind.";
-"Data stored in your iCloud account." = "Daten in deinem iCloud-Account.";
-"No cloud data found." = "Keine Cloud-Daten gefunden.";
-"No cloud data found. Your local data will be uploaded." = "Keine Cloud-Daten gefunden. Deine lokalen Daten werden hochgeladen.";
-"Loading cloud data…" = "Cloud-Daten werden geladen…";
-"Could not load cloud data." = "Cloud-Daten konnten nicht geladen werden.";
-"Choose Action" = "Aktion wählen";
-"Upload replaces cloud data with this device's data. Download replaces local data with cloud data. Merge combines both — conflicts are resolved by most recent change." = "Hochladen ersetzt die Cloud-Daten durch die Daten dieses Geräts. Herunterladen ersetzt die lokalen Daten durch die Cloud-Daten. Zusammenführen kombiniert beide — Konflikte werden durch die neueste Änderung aufgelöst.";
-"Disable Sync" = "Sync deaktivieren";
-"iCloud contains more podcasts than this device. Uploading will replace cloud data. Other devices may lose podcasts. Are you sure?" = "iCloud enthält mehr Podcasts als dieses Gerät. Das Hochladen ersetzt die Cloud-Daten. Andere Geräte könnten Podcasts verlieren. Bist du sicher?";
-"Upload" = "Hochladen";
-
 /* Refresh Status */
 "%ld/%ld podcasts updating" = "%ld/%ld Podcasts werden aktualisiert";
 "%ld/%ld podcasts updating…" = "%ld/%ld Podcasts werden aktualisiert…";
@@ -956,3 +911,4 @@
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";
+

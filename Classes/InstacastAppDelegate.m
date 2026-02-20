@@ -35,7 +35,6 @@
 #import "ICDurationValueTransformer.h"
 #import "ICPubdateValueTransformer.h"
 #import "Application.h"
-#import "ICCloudSyncManager.h"
 #import "InstacastSceneDelegate.h"
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
@@ -238,9 +237,6 @@
 
     if ([USER_DEFAULTS boolForKey:SmarthomeMQTTEnabled]) {
         [[SmarthomeManager sharedManager] start];
-    }
-    if ([USER_DEFAULTS boolForKey:iCloudSyncEnabled]) {
-        [[ICCloudSyncManager sharedManager] start];
     }
 
 }
@@ -543,7 +539,7 @@
 		[[CacheManager sharedCacheManager] tidyUp];
 	}
     
-    [DMANAGER saveAndSync:NO];
+    [DMANAGER save];
 }
 
 - (void) setNeedsStatusBarAppearanceUpdate {
@@ -595,12 +591,6 @@
 
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult result))handler
 {
-    // Handle CloudKit notifications
-    if (userInfo[@"ck"] && [USER_DEFAULTS boolForKey:iCloudSyncEnabled]) {
-        [[ICCloudSyncManager sharedManager] handleRemoteNotificationWithUserInfo:userInfo];
-        handler(UIBackgroundFetchResultNewData);
-        return;
-    }
 
     NSDictionary* notificationContent = userInfo[@"aps"];
     

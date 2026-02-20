@@ -246,6 +246,7 @@
 "Automatic" = "Automatic";
 "Light" = "Light";
 "Dark" = "Dark";
+"Pure Black" = "Pure Black";
 "Ascending" = "Ascending";
 "Audio" = "Audio";
 "Contains Keyword" = "Contains Keyword";
@@ -702,7 +703,6 @@
 "Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage." = "Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage.";
 "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position." = "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position.";
 "Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted." = "Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted.";
-"iCloud Sync – Seamlessly switch between devices! Podcasts, playlists, Play Next queue, settings and playback progress are automatically synchronized." = "iCloud Sync – Seamlessly switch between devices! Podcasts, playlists, Play Next queue, settings and playback progress are automatically synchronized.";
 "Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts." = "Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts.";
 "CarPlay – Take your podcasts on the road with full CarPlay support." = "CarPlay – Take your podcasts on the road with full CarPlay support.";
 "iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass." = "iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass.";
@@ -886,51 +886,6 @@
 "Instacast lebt Podcast" = "Instacast lebt Podcast";
 "Listen to Instacast lebt Podcast" = "Listen to \"Instacast lebt\" Podcast";
 
-/* iCloudSettingsViewController */
-"iCloud" = "iCloud";
-"iCloud Sync" = "iCloud Sync";
-"Syncs data between your devices via iCloud." = "Syncs data between your devices via iCloud.";
-"Sync Categories" = "Sync Categories";
-"Select which data to sync between your devices." = "Select which data to sync between your devices.";
-"Playback Status" = "Playback Status";
-"Download Status" = "Download Status";
-"Last Synced" = "Last Synced";
-"Sync Now" = "Sync Now";
-"Reset Sync Data" = "Reset Sync Data";
-"Never" = "Never";
-"Are you sure you want to reset all sync data? This will remove all cloud data for this app." = "Are you sure you want to reset all sync data? This will remove all cloud data for this app.";
-"Devices" = "Devices";
-"Upload Local Data" = "Upload Local Data";
-"Download from iCloud" = "Download from iCloud";
-"Merge" = "Merge";
-"Cloud data already exists. How would you like to handle the initial sync?" = "Cloud data already exists. How would you like to handle the initial sync?";
-"Initial Sync" = "Initial Sync";
-"Syncing…" = "Syncing…";
-"No iCloud Account" = "No iCloud Account";
-"Please sign in to iCloud in Settings to use sync." = "Please sign in to iCloud in Settings to use sync.";
-
-/* ICCloudInitialSyncViewController */
-"This Device" = "This Device";
-"1 Podcast" = "1 Podcast";
-"%ld Podcasts" = "%ld Podcasts";
-"1 Episode with playback status" = "1 Episode with playback status";
-"%ld Episodes with playback status" = "%ld Episodes with playback status";
-"1 List" = "1 List";
-"%ld Lists" = "%ld Lists";
-"1 Device" = "1 Device";
-"%ld Devices" = "%ld Devices";
-"Data currently stored on this device." = "Data currently stored on this device.";
-"Data stored in your iCloud account." = "Data stored in your iCloud account.";
-"No cloud data found." = "No cloud data found.";
-"No cloud data found. Your local data will be uploaded." = "No cloud data found. Your local data will be uploaded.";
-"Loading cloud data…" = "Loading cloud data…";
-"Could not load cloud data." = "Could not load cloud data.";
-"Choose Action" = "Choose Action";
-"Upload replaces cloud data with this device's data. Download replaces local data with cloud data. Merge combines both — conflicts are resolved by most recent change." = "Upload replaces cloud data with this device's data. Download replaces local data with cloud data. Merge combines both — conflicts are resolved by most recent change.";
-"Disable Sync" = "Disable Sync";
-"iCloud contains more podcasts than this device. Uploading will replace cloud data. Other devices may lose podcasts. Are you sure?" = "iCloud contains more podcasts than this device. Uploading will replace cloud data. Other devices may lose podcasts. Are you sure?";
-"Upload" = "Upload";
-
 /* Refresh Status */
 "%ld/%ld podcasts updating" = "%ld/%ld podcasts updating";
 "%ld/%ld podcasts updating…" = "%ld/%ld podcasts updating…";
@@ -952,3 +907,4 @@
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";
+
