@@ -104,10 +104,20 @@
         self.detailTextLabel.text = objectValue.author;
         
         self.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
-        ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-        [iman imageForURL:objectValue.imageURL  size:56 grayscale:NO sender:self completion:^(UIImage *image) {
-            self.imageView.image = image;
-        }];
+        NSURL* requestedImageURL = objectValue.imageURL;
+        if (requestedImageURL) {
+            ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
+            __weak SubscriptionTableViewCell* weakSelf = self;
+            [iman imageForURL:requestedImageURL size:56 grayscale:NO sender:self completion:^(UIImage *image) {
+                SubscriptionTableViewCell* strongSelf = weakSelf;
+                if (!strongSelf || strongSelf.objectValue != objectValue) {
+                    return;
+                }
+                if (image) {
+                    strongSelf.imageView.image = image;
+                }
+            }];
+        }
         
         [self _updateUnplayedCount];
         [self _updateEpisodesNumber];

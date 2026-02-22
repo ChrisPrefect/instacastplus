@@ -19,7 +19,9 @@
 @end
 
 
-@implementation ICNowPlayingActivityControl
+@implementation ICNowPlayingActivityControl {
+    UIColor* _normalBackgroundColor;
+}
 
 - (id)initWithFrame:(CGRect)frame
 {
@@ -85,32 +87,33 @@
 
 - (BOOL) beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event
 {
+    _normalBackgroundColor = self.backgroundColor;
     CGFloat white, alpha;
-    [ICDarkBackgroundColor getWhite:&white alpha:&alpha];
+    [_normalBackgroundColor getWhite:&white alpha:&alpha];
     white += 0.05f;
-    
+
     UIColor* slightlyLighterColor = [UIColor colorWithWhite:white alpha:alpha];
     self.backgroundColor = slightlyLighterColor;
-    
+
     return [super beginTrackingWithTouch:touch withEvent:event];
 }
 
 - (void)cancelTrackingWithEvent:(UIEvent *)event {
-    self.backgroundColor = ICDarkBackgroundColor;
+    self.backgroundColor = _normalBackgroundColor;
     [super cancelTrackingWithEvent:event];
 }
 
 - (void) endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    self.backgroundColor = ICDarkBackgroundColor;
+    self.backgroundColor = _normalBackgroundColor;
     [super endTrackingWithTouch:touch withEvent:event];
 }
 
 - (void)sendAction:(SEL)action to:(id)target forEvent:(UIEvent *)event
 {
     [super sendAction:action to:target forEvent:event];
-    
+
     dispatch_async(dispatch_get_main_queue(), ^{
-        self.backgroundColor = ICDarkBackgroundColor;
+        self.backgroundColor = self->_normalBackgroundColor;
     });
 }
 

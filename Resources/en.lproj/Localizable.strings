@@ -247,6 +247,7 @@
 "Light" = "Light";
 "Dark" = "Dark";
 "Pure Black" = "Pure Black";
+"Pure Black Background" = "Pure Black Background";
 "Ascending" = "Ascending";
 "Audio" = "Audio";
 "Contains Keyword" = "Contains Keyword";
@@ -862,6 +863,8 @@
 "Reset App" = "Reset App";
 "Delete all data and reset the app to factory settings." = "Delete all data and reset the app to factory settings.";
 "Are you sure you want to delete all data and reset the app? This action cannot be undone." = "Are you sure you want to delete all data and reset the app? This action cannot be undone.";
+"Create an immediate local snapshot of database and settings." = "Create an immediate local snapshot of database and settings.";
+"InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings." = "InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings.";
 "Resetting…" = "Resetting…";
 "Reset Complete" = "Reset Complete";
 "Please restart the app." = "Please restart the app.";
@@ -907,4 +910,3 @@
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";
-

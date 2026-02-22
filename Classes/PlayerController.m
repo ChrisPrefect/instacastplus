@@ -434,33 +434,46 @@ enum {
     }
 }
 
++ (UIColor*) adjustedPlayerColor:(UIColor*)rawColor
+{
+    CGFloat backgroundBrightness = -1;
+    [ICBackgroundColor getHue:NULL saturation:NULL brightness:&backgroundBrightness alpha:NULL];
+    if (backgroundBrightness < 0) {
+        [ICBackgroundColor getWhite:&backgroundBrightness alpha:NULL];
+    }
+
+    CGFloat hue, saturation, brightness, alpha;
+    [rawColor getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha];
+
+    saturation = MIN(saturation+0.3f, 1.0f);
+
+    if (backgroundBrightness > 0.5f) {
+        brightness = MIN(brightness, 0.5f);
+    } else {
+        brightness = MAX(brightness, 0.7f);
+    }
+    return [UIColor colorWithHue:hue saturation:saturation brightness:brightness alpha:alpha];
+}
+
 - (void) _updateDynamicTintColorWithImage:(UIImage*)image
 {
     UIColor* calculatedColor = ICTintColor;
-    
+
     if (image) {
-        calculatedColor = [UIColor mergedColorOfImage:image];
-        
-        CGFloat backgroundBrightness = -1;
-        [ICBackgroundColor getHue:NULL saturation:NULL brightness:&backgroundBrightness alpha:NULL];
-        if (backgroundBrightness < 0) {
-            [ICBackgroundColor getWhite:&backgroundBrightness alpha:NULL];
-        }
-        
+        UIColor* rawColor = [UIColor mergedColorOfImage:image];
 
-        CGFloat hue, saturation, brightness, alpha;
-        [calculatedColor getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha];
-        
-        saturation = MIN(saturation+0.3f, 1.0f);
-
-        if (backgroundBrightness > 0.5f) {
-            //brightness *= 0.75;
-            brightness = MIN(brightness, 0.5f);
-        } else {
-            //brightness *= 1.25;
-            brightness = MAX(brightness, 0.7f);
+        // Cache raw artwork color per feed for instant tint on player open
+        CDEpisode* episode = [AudioSession sharedAudioSession].episode;
+        CDFeed* feed = episode.feed;
+        if (feed) {
+            NSString* hexString = [rawColor hexString];
+            NSString* cachedHex = [feed stringForKey:@"cachedPlayerTintColor"];
+            if (![hexString isEqualToString:cachedHex]) {
+                [feed setString:hexString forKey:@"cachedPlayerTintColor"];
+            }
         }
-        calculatedColor = [UIColor colorWithHue:hue saturation:saturation brightness:brightness alpha:alpha];
+
+        calculatedColor = [PlayerController adjustedPlayerColor:rawColor];
     }
 
     if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive])
@@ -574,9 +587,22 @@ enum {
     // loading image
     CDEpisode* episode = [AudioSession sharedAudioSession].episode;
     CDFeed* feed = episode.feed;
+
+    // Apply cached tint color immediately (before image loads) to avoid color flash
+    if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive] && feed) {
+        NSString* cachedHex = [feed stringForKey:@"cachedPlayerTintColor"];
+        if (cachedHex.length > 0) {
+            UIColor* cachedColor = [PlayerController adjustedPlayerColor:[UIColor colorWithHexString:cachedHex]];
+            self.view.tintColor = cachedColor;
+            self.navigationController.navigationBar.tintColor = cachedColor;
+            self.navigationController.toolbar.tintColor = cachedColor;
+            self.controller.tintColor = cachedColor;
+        }
+    }
+
     NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
     UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
-    
+
     if (cachedImage) {
         [self _updateDynamicTintColorWithImage:cachedImage];
         self.image = cachedImage;

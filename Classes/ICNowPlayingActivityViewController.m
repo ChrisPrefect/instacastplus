@@ -9,6 +9,7 @@
 #import "ICNowPlayingActivityViewController.h"
 #import "ICNowPlayingActivityControl.h"
 #import "CDEpisode+ShowNotes.h"
+#import "CDChapter.h"
 #import "UpNextTableViewController.h"
 #import "ICMetadata.h"
 
@@ -129,7 +130,11 @@
 }
 
 - (void) updateAppearance {
-    self.nowPlayingControl.backgroundColor = ICDarkBackgroundColor;
+    if ([ICAppearanceManager sharedManager].nightMode && [USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        self.nowPlayingControl.backgroundColor = [UIColor colorWithWhite:0.13f alpha:1.f];
+    } else {
+        self.nowPlayingControl.backgroundColor = ICDarkBackgroundColor;
+    }
     self.nowPlayingControl.progressView.progressTintColor = ICTintColor;
     self.nowPlayingControl.progressView.trackTintColor = [UIColor clearColor];
 }
@@ -199,7 +204,24 @@
         ICMetadataChapter* chapter = pman.chapters[pman.currentChapter];
         self.nowPlayingControl.label3.text = chapter.title;
     } else {
-        self.nowPlayingControl.label3.text = nil;
+        // Fallback: use Core Data chapters when PlaybackManager has no chapters loaded (e.g. after app restart with stopped player)
+        AudioSession* session = [AudioSession sharedAudioSession];
+        CDEpisode* episode = session.episode;
+        NSArray* sortedChapters = [episode sortedChapters];
+        if (sortedChapters.count > 0) {
+            NSTimeInterval position = episode.position;
+            CDChapter* currentChapter = nil;
+            for (CDChapter* chapter in sortedChapters) {
+                if (chapter.timecode <= position) {
+                    currentChapter = chapter;
+                } else {
+                    break;
+                }
+            }
+            self.nowPlayingControl.label3.text = currentChapter.title;
+        } else {
+            self.nowPlayingControl.label3.text = nil;
+        }
     }
 }
 

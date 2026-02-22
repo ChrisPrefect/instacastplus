@@ -19,7 +19,7 @@
 #endif
 
 @interface ImageCacheManager ()
-@property (strong) NSMutableDictionary* imageCache;
+@property (strong) NSCache* imageCache;
 
 + (NSString*) cacheKeyWithURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale;
 - (IC_IMAGE*) cachedImageForKey:(NSString*)cacheKey;
@@ -60,10 +60,8 @@
 - (void) _cacheImage:(IC_IMAGE*)image forKey:(NSString*)cacheKey
 {
     ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-    @synchronized(iman.imageCache) {
-        if (image) {
-            [iman.imageCache setObject:image forKey:cacheKey];
-        }
+    if (image) {
+        [iman.imageCache setObject:image forKey:cacheKey];
     }
 }
 
@@ -80,33 +78,110 @@
         }
     }
 #endif
-    if (!jpegData) return;
+    if (!jpegData || path.length == 0) {
+        return;
+    }
 
-    // Deduplicate: check if an existing file in the same directory has identical content
-    NSString* directory = [path stringByDeletingLastPathComponent];
-    NSString* contentHash = [jpegData MD5Hash];
     NSFileManager* fman = [NSFileManager defaultManager];
-    NSArray* existingFiles = [fman contentsOfDirectoryAtPath:directory error:nil];
-
-    for (NSString* existingFilename in existingFiles) {
-        NSString* existingPath = [directory stringByAppendingPathComponent:existingFilename];
-        if ([existingPath isEqualToString:path]) continue;
-
-        NSDictionary* attrs = [fman attributesOfItemAtPath:existingPath error:nil];
-        if ([attrs fileSize] != jpegData.length) continue;
-
-        NSData* existingData = [NSData dataWithContentsOfFile:existingPath];
-        if (existingData && [[existingData MD5Hash] isEqualToString:contentHash]) {
-            // Identical image found — create hard link instead of writing duplicate
-            [fman removeItemAtPath:path error:nil];
-            if ([fman linkItemAtPath:existingPath toPath:path error:nil]) {
-                return;
-            }
-            break;
+    NSString* directory = [path stringByDeletingLastPathComponent];
+    if (directory.length > 0 && ![fman fileExistsAtPath:directory]) {
+        NSError* directoryError = nil;
+        if (![fman createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&directoryError]) {
+            ErrLog(@"image cache write failed (mkdir): %@", directoryError);
+            return;
         }
     }
 
-    [jpegData writeToFile:path atomically:YES];
+    // O(1) deduplication via content hash index (no directory scan)
+    NSString* contentHash = [jpegData MD5Hash];
+    ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
+    NSString* existingPath = [iman existingPathForContentHash:contentHash];
+
+    if (existingPath && ![existingPath isEqualToString:path]) {
+        [fman removeItemAtPath:path error:nil];
+        if ([fman linkItemAtPath:existingPath toPath:path error:nil]) {
+            return;
+        }
+    }
+
+    NSError* writeError = nil;
+    if (![jpegData writeToFile:path options:NSDataWritingAtomic error:&writeError]) {
+        ErrLog(@"image cache write failed: %@", writeError);
+        return;
+    }
+    [iman registerContentHash:contentHash forPath:path];
+}
+
+- (NSMutableOrderedSet<NSNumber*>*)_scaledVariantSizes
+{
+    NSMutableOrderedSet<NSNumber*>* scaledSizes = [NSMutableOrderedSet orderedSetWithArray:@[@(56), @(60), @(72), @(320)]];
+    NSNumber* requestedSize = @(self.size);
+    if (![scaledSizes containsObject:requestedSize]) {
+        [scaledSizes addObject:requestedSize];
+    }
+    return scaledSizes;
+}
+
+- (IC_IMAGE*)_scaledOutputImageFromImage:(IC_IMAGE*)image size:(NSInteger)size
+{
+    NSInteger imageSize = size * [ImageCacheManager scalingFactor];
+    CGImageRef scaledRef = CreateSquaredScaledCGImageFromCGImage([image CGImage], imageSize);
+    if (scaledRef) {
+        IC_IMAGE* thumb = [[IC_IMAGE alloc] initWithCGImage:scaledRef];
+        CGImageRelease(scaledRef);
+        return (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:thumb] : thumb;
+    }
+
+    return (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:image] : image;
+}
+
+- (IC_IMAGE*)_persistScaledVariantsFromSourceImage:(IC_IMAGE*)image
+{
+    if (!image) {
+        return nil;
+    }
+
+    IC_IMAGE* requestedImage = nil;
+    for (NSNumber* scaledSizeNumber in [self _scaledVariantSizes]) {
+        NSInteger size = [scaledSizeNumber integerValue];
+        NSURL* scaledFileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:size grayscale:self.grayscale];
+        NSString* scaledPath = [scaledFileURL path];
+
+        IC_IMAGE* outputImage = [self _scaledOutputImageFromImage:image size:size];
+        [self _writeJPGImage:outputImage toFile:scaledPath];
+        AddSkipBackupAttributeToFile(scaledPath);
+
+        if (size == self.size) {
+            requestedImage = outputImage;
+        }
+    }
+
+    if (!requestedImage) {
+        NSString* localPath = [[ImageCacheManager fileURLToCachedImageForImageURL:self.url size:self.size grayscale:self.grayscale] path];
+        requestedImage = [self _scaledOutputImageFromImage:image size:self.size];
+        [self _writeJPGImage:requestedImage toFile:localPath];
+        AddSkipBackupAttributeToFile(localPath);
+    }
+
+    return requestedImage;
+}
+
+- (IC_IMAGE*)_loadBestCachedVariantImage
+{
+    for (NSNumber* scaledSizeNumber in [self _scaledVariantSizes]) {
+        NSInteger size = [scaledSizeNumber integerValue];
+        NSURL* scaledFileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:size grayscale:self.grayscale];
+        NSString* scaledPath = [scaledFileURL path];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:scaledPath]) {
+            continue;
+        }
+
+        IC_IMAGE* image = [[IC_IMAGE alloc] initWithContentsOfFile:scaledPath];
+        if (image) {
+            return image;
+        }
+    }
+    return nil;
 }
 
 
@@ -145,6 +220,7 @@
         
         if (image) {
             [self _writeJPGImage:image toFile:localPath];
+            [[ImageCacheManager sharedImageCacheManager] saveContentHashIndex];
             [self _cacheImage:image forKey:cacheKey];
         }
         [self _sendCompletionBlockImage:image error:nil];
@@ -177,6 +253,7 @@
 
 - (void) _processScaledWithCacheKey:(NSString*)cacheKey scaledSize:(NSInteger)scaledSize
 {
+    (void)scaledSize;
     NSURL* fileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:self.size grayscale:self.grayscale];
     NSString* localPath = [fileURL path];
     
@@ -194,6 +271,15 @@
         return;
     }
     
+    // If the exact size is missing, reuse any already cached variant and derive all sizes locally.
+    image = [self _loadBestCachedVariantImage];
+    if (image && ![self isCancelled]) {
+        IC_IMAGE* requestedImage = [self _persistScaledVariantsFromSourceImage:image];
+        [[ImageCacheManager sharedImageCacheManager] saveContentHashIndex];
+        [self _cacheImage:requestedImage forKey:cacheKey];
+        [self _sendCompletionBlockImage:requestedImage error:nil];
+        return;
+    }
 
     
     // fetch and postprocess the original image
@@ -206,44 +292,10 @@
     image = [[IC_IMAGE alloc] initWithData:imageData];
     if (!error && image && ![self isCancelled])
     {
-        
-        NSMutableOrderedSet* scaledSizes = [NSMutableOrderedSet orderedSetWithArray:@[@(56), @(60), @(72), @(320)]];
-        NSNumber* requestedSize = @(self.size);
-        if (![scaledSizes containsObject:requestedSize]) {
-            [scaledSizes addObject:requestedSize];
-        }
+        IC_IMAGE* requestedImage = [self _persistScaledVariantsFromSourceImage:image];
 
-        IC_IMAGE* requestedImage = nil;
-        for (NSNumber* scaledSizeNumber in scaledSizes) {
-            NSInteger size = [scaledSizeNumber integerValue];
-            NSInteger imageSize = size * [ImageCacheManager scalingFactor];
-            NSURL* scaledFileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:size grayscale:self.grayscale];
-            NSString* scaledPath = [scaledFileURL path];
-
-            CGImageRef scaledRef = CreateSquaredScaledCGImageFromCGImage([image CGImage], imageSize);
-            IC_IMAGE* outputImage = nil;
-            if (scaledRef) {
-                IC_IMAGE* thumb = [[IC_IMAGE alloc] initWithCGImage:scaledRef];
-                CGImageRelease(scaledRef);
-                outputImage = (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:thumb] : thumb;
-            }
-            else {
-                outputImage = (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:image] : image;
-            }
-
-            [self _writeJPGImage:outputImage toFile:scaledPath];
-            AddSkipBackupAttributeToFile(scaledPath);
-
-            if (size == self.size) {
-                requestedImage = outputImage;
-            }
-        }
-
-        if (!requestedImage) {
-            requestedImage = (self.grayscale) ? [ImageCacheManager grayscaleImageForImage:image] : image;
-            [self _writeJPGImage:requestedImage toFile:localPath];
-            AddSkipBackupAttributeToFile(localPath);
-        }
+        // Persist content hash index after writing all sizes
+        [[ImageCacheManager sharedImageCacheManager] saveContentHashIndex];
 
         [self _cacheImage:requestedImage forKey:cacheKey];
         [self _sendCompletionBlockImage:requestedImage error:nil];
@@ -271,18 +323,13 @@
             return;
         }
         
-        ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-        
         NSInteger scaledSize = self.size*[ImageCacheManager scalingFactor];
         NSString* cacheKey = [ImageCacheManager cacheKeyWithURL:self.url size:self.size grayscale:self.grayscale];
 
-        @synchronized(iman.imageCache) {
-            IC_IMAGE* cachedImage = [[ImageCacheManager sharedImageCacheManager] cachedImageForKey:cacheKey];
-            
-            if (cachedImage) {
-                [self _sendCompletionBlockImage:cachedImage error:nil];
-                return;
-            }
+        IC_IMAGE* cachedImage = [[ImageCacheManager sharedImageCacheManager] cachedImageForKey:cacheKey];
+        if (cachedImage) {
+            [self _sendCompletionBlockImage:cachedImage error:nil];
+            return;
         }
         
         [App retainNetworkActivity];

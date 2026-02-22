@@ -170,47 +170,50 @@ static void ICClearAllTranscriptCache(void)
         
         NSString* historyFile = [[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"CacheHistory.plist"];
         _cacheHistory = [[ICCacheHistory alloc] initWithContentsOfFile:historyFile];
-		
-        
-		NSFileManager* fman = [NSFileManager defaultManager];
-		NSError* error = nil;
-		NSArray* directoryContent = [fman contentsOfDirectoryAtPath:[CacheManager _pathToStorageLocation] error:&error];
-		if (!error)
-        {
-            NSMutableArray* episodeHashes = [[NSMutableArray alloc] init];
-			for(NSString* filename in directoryContent)
-			{
-                NSString* filePath = [[CacheManager _pathToStorageLocation] stringByAppendingPathComponent:filename];
-                AddSkipBackupAttributeToFile(filePath);
 
-                // Extract hash from filename
-                // New format: "Podcast - Episode - HASH.ext" → hash is last component before extension
-                // Old format: "HASH.ext" → hash is the filename without extension
-                NSString* nameWithoutExt = [filename stringByDeletingPathExtension];
-                NSString* hash = nil;
-                NSRange lastDash = [nameWithoutExt rangeOfString:@" - " options:NSBackwardsSearch];
-                if (lastDash.location != NSNotFound) {
-                    hash = [nameWithoutExt substringFromIndex:NSMaxRange(lastDash)];
-                } else {
-                    hash = nameWithoutExt;
-                }
-                if (hash.length > 0) {
-                    [episodeHashes addObject:hash];
-                }
-			}
-
-            NSArray* cachedEpisodes = [DMANAGER episodesWithObjectHashes:episodeHashes];
-            [_cachedEpisodes addObjectsFromArray:cachedEpisodes];
-		}
-        
-        [self saveFileIndex];
-        
-        
         [App addTaskObserver:self forKeyPath:@"networkAccessTechnology" task:^(id obj, NSDictionary *change) {
             [self _handleNetworkStatusChanged];
         }];
-        
-        [self restoreCachingEpisodes];
+
+        // Build cache index on background queue to avoid blocking app startup
+        NSString* storagePath = [CacheManager _pathToStorageLocation];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSFileManager* fman = [NSFileManager defaultManager];
+            NSError* error = nil;
+            NSArray* directoryContent = [fman contentsOfDirectoryAtPath:storagePath error:&error];
+            NSMutableArray* episodeHashes = [[NSMutableArray alloc] init];
+            if (!error)
+            {
+                for(NSString* filename in directoryContent)
+                {
+                    NSString* filePath = [storagePath stringByAppendingPathComponent:filename];
+                    AddSkipBackupAttributeToFile(filePath);
+
+                    NSString* nameWithoutExt = [filename stringByDeletingPathExtension];
+                    NSString* hash = nil;
+                    NSRange lastDash = [nameWithoutExt rangeOfString:@" - " options:NSBackwardsSearch];
+                    if (lastDash.location != NSNotFound) {
+                        hash = [nameWithoutExt substringFromIndex:NSMaxRange(lastDash)];
+                    } else {
+                        hash = nameWithoutExt;
+                    }
+                    if (hash.length > 0) {
+                        [episodeHashes addObject:hash];
+                    }
+                }
+            }
+
+            // Core Data + UI updates must happen on main thread
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSArray* cachedEpisodes = [DMANAGER episodesWithObjectHashes:episodeHashes];
+                [self willChangeValueForKey:@"cachedEpisodes"];
+                [self->_cachedEpisodes addObjectsFromArray:cachedEpisodes];
+                [self didChangeValueForKey:@"cachedEpisodes"];
+
+                [self saveFileIndex];
+                [self restoreCachingEpisodes];
+            });
+        });
 	}
 	
 	return self;

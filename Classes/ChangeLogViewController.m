@@ -53,7 +53,6 @@
             @"Swipeable Chapter Images – Easily look through all chapter artwork while listening. Peek ahead or go back to the last image discussed in the podcast without losing your listening position.".ls
         ],
         @[
-            @"iCloud Sync – Seamlessly switch between devices! Podcasts, playlists, Play Next queue, settings and playback progress are automatically synchronized.".ls,
             @"Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts.".ls,
             @"CarPlay – Take your podcasts on the road with full CarPlay support.".ls,
             @"iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass.".ls

@@ -133,6 +133,11 @@ NS_INLINE NSString* _DataStoreFile(void) {
     return [NSString stringWithFormat:@"DataStore%d.sqlite", MODEL_VERSION];
 }
 
++ (NSString*) currentDataStoreFilename
+{
+    return _DataStoreFile();
+}
+
 + (void) _migrateRootFilesToDataFolder
 {
     NSFileManager* fman = [NSFileManager defaultManager];
@@ -1730,6 +1735,18 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     return _objectContext;
 }
 
+- (NSManagedObjectContext*)newBackgroundContext
+{
+    NSPersistentContainer* container = [self persistentContainer];
+    if (!container) {
+        return nil;
+    }
+
+    NSManagedObjectContext* context = [container newBackgroundContext];
+    context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
+    return context;
+}
+
 
 - (NSManagedObjectModel *) objectModel
 {
@@ -1750,43 +1767,55 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     _persistentContainer = [[NSPersistentContainer alloc] initWithName:_ModelFile()];
 
     NSURL *storeURL = self.databaseURL;
-    NSPersistentStoreDescription *storeDescription = [[NSPersistentStoreDescription alloc] initWithURL:storeURL];
-    storeDescription.type = NSSQLiteStoreType;
-    storeDescription.shouldMigrateStoreAutomatically = YES;
-    storeDescription.shouldInferMappingModelAutomatically = YES;
-    // Required: DB was previously opened with history tracking (iCloud sync).
-    // Without this flag, CoreData forces Read Only mode on the existing store.
-    [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
-    _persistentContainer.persistentStoreDescriptions = @[storeDescription];
-    __block BOOL storeLoadFailed = NO;
-    [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
-        if (error) {
-            ErrLog(@"Failed to load persistent store: %@, %@", error, error.userInfo);
-            storeLoadFailed = YES;
-        }
-    }];
+    if (!storeURL || storeURL.path.length == 0) {
+        ErrLog(@"Failed to load persistent store: database URL is invalid.");
+        _persistentContainer = nil;
+        return nil;
+    }
 
-    if (storeLoadFailed) {
-        // Try to recover by deleting the corrupted store and reloading
-        ErrLog(@"Attempting recovery: deleting corrupted store at %@", storeURL);
-        NSFileManager *fm = [NSFileManager defaultManager];
-        [fm removeItemAtURL:storeURL error:nil];
-        [fm removeItemAtURL:[[storeURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"] error:nil];
-        [fm removeItemAtURL:[[storeURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"] error:nil];
+    NSString* storeDirectory = [storeURL.path stringByDeletingLastPathComponent];
+    if (storeDirectory.length == 0) {
+        ErrLog(@"Failed to load persistent store: database directory path is invalid (%@).", storeURL.path);
+        _persistentContainer = nil;
+        return nil;
+    }
 
-        __block BOOL recoveryFailed = NO;
-        [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
-            if (error) {
-                ErrLog(@"Recovery failed — could not create new store: %@, %@", error, error.userInfo);
-                recoveryFailed = YES;
-            }
-        }];
-
-        if (recoveryFailed) {
+    NSFileManager* fman = [NSFileManager defaultManager];
+    if (![fman fileExistsAtPath:storeDirectory]) {
+        NSError* createDirectoryError = nil;
+        if (![fman createDirectoryAtPath:storeDirectory withIntermediateDirectories:YES attributes:nil error:&createDirectoryError]) {
+            ErrLog(@"Failed to create database directory %@: %@", storeDirectory, createDirectoryError);
             _persistentContainer = nil;
             return nil;
         }
     }
+
+    NSPersistentStoreDescription *storeDescription = [[NSPersistentStoreDescription alloc] initWithURL:storeURL];
+    storeDescription.type = NSSQLiteStoreType;
+    storeDescription.shouldMigrateStoreAutomatically = YES;
+    storeDescription.shouldInferMappingModelAutomatically = YES;
+    // Required: existing stores may already use persistent history tracking.
+    // Without this flag, CoreData forces Read Only mode on the existing store.
+    [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
+    _persistentContainer.persistentStoreDescriptions = @[storeDescription];
+    __block BOOL storeLoadFailed = NO;
+    __block NSError* storeLoadError = nil;
+    [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
+        if (error) {
+            ErrLog(@"Failed to load persistent store: %@, %@", error, error.userInfo);
+            storeLoadFailed = YES;
+            storeLoadError = error;
+        }
+    }];
+
+    if (storeLoadFailed) {
+        ErrLog(@"Persistent store unavailable at %@ (%@). Keeping existing files untouched.", storeURL.path, storeLoadError.localizedDescription ?: @"unknown error");
+        _persistentContainer = nil;
+        return nil;
+    }
+
+    _persistentContainer.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
+    _persistentContainer.viewContext.automaticallyMergesChangesFromParent = YES;
 
     self.storeCoordinator = _persistentContainer.persistentStoreCoordinator;
     return _persistentContainer;

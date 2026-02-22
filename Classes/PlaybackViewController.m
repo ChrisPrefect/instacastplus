@@ -50,6 +50,11 @@
         return [self playbackViewControllerWithEpisode:nil];
     }
 
+    - (void) dealloc
+    {
+        [[NSNotificationCenter defaultCenter] removeObserver:self];
+    }
+
     - (void) viewDidLoad
     {
         [super viewDidLoad];
@@ -64,10 +69,23 @@
         [self.navigationBar addGestureRecognizer:panGestureRecognizer];
     }
 
+    - (UIColor*) _cachedPlayerTintColor
+    {
+        if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive]) {
+            CDEpisode* episode = [AudioSession sharedAudioSession].episode;
+            NSString* cachedHex = [episode.feed stringForKey:@"cachedPlayerTintColor"];
+            if (cachedHex.length > 0) {
+                UIColor* rawColor = [UIColor colorWithHexString:cachedHex];
+                return [PlayerController adjustedPlayerColor:rawColor];
+            }
+        }
+        return ICTintColor;
+    }
+
     - (void) updateAppearance
     {
         self.view.backgroundColor = ICBackgroundColor;
-        self.view.tintColor = ICTintColor;
+        self.view.tintColor = [self _cachedPlayerTintColor];
         [self setNeedsStatusBarAppearanceUpdate];
     }
 
@@ -77,7 +95,7 @@
         [super viewWillAppear:animated];
 
         self.view.backgroundColor = ICBackgroundColor;
-        self.view.tintColor = ICTintColor;
+        self.view.tintColor = [self _cachedPlayerTintColor];
         
         // xxx: workaround for status bar issues
     //    if (!_appeared) {

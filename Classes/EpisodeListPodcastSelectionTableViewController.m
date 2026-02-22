@@ -19,6 +19,11 @@
     return [[self alloc] initWithStyle:UITableViewStyleGrouped];
 }
 
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
 

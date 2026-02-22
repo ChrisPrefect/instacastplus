@@ -56,6 +56,14 @@
     return [UIColor colorWithHue:hue saturation:saturation brightness:brightness alpha:alpha];
 }
 
+- (NSString*) hexString
+{
+    CGFloat r, g, b, a;
+    [self getRed:&r green:&g blue:&b alpha:&a];
+    return [NSString stringWithFormat:@"%02X%02X%02X",
+            (int)(r * 255.0f), (int)(g * 255.0f), (int)(b * 255.0f)];
+}
+
 + (UIColor*) colorWithHexString:(NSString*)hex
 {
     NSString *cString = [[hex stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] uppercaseString];

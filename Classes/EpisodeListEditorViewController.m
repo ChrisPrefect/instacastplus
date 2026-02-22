@@ -67,6 +67,11 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     return controller;
 }
 
+- (void) dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
 

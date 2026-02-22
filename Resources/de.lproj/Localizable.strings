@@ -249,6 +249,7 @@
 "Light" = "Hell";
 "Dark" = "Dunkel";
 "Pure Black" = "Reines Schwarz";
+"Pure Black Background" = "Hintergrund reines Schwarz";
 "Ascending" = "Aufsteigend";
 "Audio" = "Audio";
 "Contains Keyword" = "Enthält Schlüsselworte";
@@ -866,6 +867,8 @@
 "Reset App" = "App zurücksetzen";
 "Delete all data and reset the app to factory settings." = "Alle Daten löschen und die App auf Werkseinstellungen zurücksetzen.";
 "Are you sure you want to delete all data and reset the app? This action cannot be undone." = "Sind Sie sicher, dass Sie alle Daten löschen und die App zurücksetzen möchten? Diese Aktion kann nicht rückgängig gemacht werden.";
+"Create an immediate local snapshot of database and settings." = "Erstellt sofort einen lokalen Schnappschuss von Datenbank und Einstellungen.";
+"InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings." = "InstacastPlus erstellt und behält 7 Tage lang einen lokalen Snapshot pro Tag. Snapshots enthalten Datenbank und App-Einstellungen.";
 "Resetting…" = "Zurücksetzen…";
 "Reset Complete" = "Zurücksetzen abgeschlossen";
 "Please restart the app." = "Bitte starten Sie die App neu.";
@@ -911,4 +914,3 @@
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";
-

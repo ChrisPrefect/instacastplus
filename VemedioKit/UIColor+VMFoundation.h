@@ -12,4 +12,5 @@
 + (UIColor*) mergedColorOfImage:(UIImage*)image;
 - (UIColor*) colorByCappingBrightnessAt:(float)brightness;
 + (UIColor*) colorWithHexString:(NSString*)hex;
+- (NSString*) hexString;
 @end

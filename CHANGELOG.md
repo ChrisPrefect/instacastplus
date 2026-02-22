@@ -123,24 +123,9 @@ Alle Daten der App können jetzt vollständig gesichert und wiederhergestellt we
 
 ---
 
-### iCloud-Synchronisierung
-
-Nahtlos zwischen deinen Geräten wechseln! Deine Podcasts, Einstellungen und dein Wiedergabefortschritt werden automatisch synchronisiert.
-
-- **Abonnements:** Neuen Podcast auf dem iPhone abonniert? Erscheint sofort auf dem iPad.
-- **Wiedergabefortschritt:** Auf dem iPhone angefangen, auf dem iPad weitergehört -- genau da, wo du aufgehört hast.
-- **Listen & Playlists:** Deine manuellen Playlists, smarten Playlists und Episodenlisten werden auf allen Geräten synchron gehalten -- inklusive Filtereinstellungen und Episoden-Reihenfolge.
-- **Play Next:** Deine Warteschlange wird automatisch übertragen, damit du auf jedem Gerät nahtlos weiterhören kannst.
-- **Einstellungen:** Podcast-Einstellungen, App-Einstellungen und mehr werden übernommen.
-- **In Echtzeit:** Änderungen werden sofort an deine anderen Geräte übertragen.
-
-> **Tipp:** Die iCloud-Einstellungen findest du unter *Einstellungen > iCloud Sync*. Dort kannst du einzeln auswählen, welche Daten synchronisiert werden sollen -- darunter auch die neuen Optionen "Listen" und "Play Next".
-
----
-
 ### Podcast-Aktualisierung pausieren
 
-Du kannst einzelne Podcasts von der Aktualisierung ausschliessen. Praktisch für Podcasts, die du behalten aber gerade nicht aktiv hören möchtest. Die Einstellung wird auch im Backup gesichert und über iCloud synchronisiert.
+Du kannst einzelne Podcasts von der Aktualisierung ausschliessen. Praktisch für Podcasts, die du behalten aber gerade nicht aktiv hören möchtest. Die Einstellung wird auch im Backup gesichert.
 
 > **Tipp:** Die Option findest du in den Einstellungen des jeweiligen Podcasts unter "Synchronisieren pausieren".
 
@@ -206,7 +191,6 @@ Das Einstellungsmenü wurde komplett neu strukturiert. Statt einer langen Liste 
 | **Sleep Timer** | Timer immer aktiv, intelligente Wach-Erkennung |
 | **Daten** | Mobile Daten, Speicherlimit, Auto-Download, Auto-Löschen, Statistiken |
 | **Import / Export** | Alle Daten exportieren/importieren, OPML, Lesezeichen, App zurücksetzen |
-| **iCloud Sync** | Synchronisierung von Abonnements, Einstellungen und Wiedergabestatus |
 | **Smart Home** | MQTT-Verbindung und Fernsteuerung |
 
 ### Dark Mode
@@ -417,7 +401,7 @@ Podcast-Listen, der Player und die Einstellungen reagieren jetzt spürbar schnel
 
 ### Datenaustausch neu gedacht
 
-Die alte Instacast Cloud wurde durch die neue, schnellere iCloud-Synchronisierung ersetzt. Für den manuellen Datenaustausch steht zusätzlich die Backup/Restore-Funktion zur Verfügung.
+Für den manuellen Datenaustausch steht eine Backup/Restore-Funktion zur Verfügung.
 
 ---
 

@@ -49,9 +49,11 @@ static ImageCacheManager* gSharedCacheManager = nil;
 
 @interface ImageCacheManager ()
 @property (strong) NSMutableDictionary* cancelRequests;
-@property (strong) NSMutableDictionary* imageCache;
+@property (strong) NSCache* imageCache;
 @property (strong) NSMutableDictionary* failedImages;
 @property (nonatomic, readwrite, strong) NSOperationQueue* operationQueue;
+@property (nonatomic, strong) NSMutableDictionary* contentHashIndex;
+@property (nonatomic) BOOL contentHashIndexDirty;
 @end
 
 
@@ -124,11 +126,15 @@ static ImageCacheManager* gSharedCacheManager = nil;
 {
 	if ((self = [super init]))
 	{
-        _imageCache = [[NSMutableDictionary alloc] init];
+        _imageCache = [[NSCache alloc] init];
+        _imageCache.countLimit = 200;
         _failedImages = [[NSMutableDictionary alloc] init];
 		_cancelRequests = [[NSMutableDictionary alloc] init];
-		_queue = dispatch_queue_create("com.vemedio.instacast.image-cache", DISPATCH_QUEUE_CONCURRENT);
+        dispatch_queue_attr_t queueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_CONCURRENT, QOS_CLASS_UTILITY, 0);
+		_queue = dispatch_queue_create("com.vemedio.instacast.image-cache", queueAttributes);
         _operationQueue = [[NSOperationQueue alloc] init];
+        _operationQueue.qualityOfService = NSQualityOfServiceUtility;
+        _operationQueue.name = @"com.instacastplus.image-operations";
         [_operationQueue setMaxConcurrentOperationCount:5];
         
 #if TARGET_OS_IPHONE
@@ -152,9 +158,76 @@ static ImageCacheManager* gSharedCacheManager = nil;
 	[self.imageCache removeAllObjects];
 }
 
+#pragma mark - Content Hash Index
+
+- (NSString*) _contentHashIndexPath
+{
+    return [[DMANAGER.imageCacheURL path] stringByAppendingPathComponent:@"ContentHashIndex.plist"];
+}
+
+- (void) loadContentHashIndex
+{
+    @synchronized (self) {
+        if (self.contentHashIndex) {
+            return;
+        }
+        NSDictionary* saved = [NSDictionary dictionaryWithContentsOfFile:[self _contentHashIndexPath]];
+        self.contentHashIndex = saved ? [saved mutableCopy] : [[NSMutableDictionary alloc] init];
+    }
+}
+
+- (void) saveContentHashIndex
+{
+    @synchronized (self) {
+        if (!self.contentHashIndexDirty || !self.contentHashIndex) {
+            return;
+        }
+        [self.contentHashIndex writeToFile:[self _contentHashIndexPath] atomically:YES];
+        self.contentHashIndexDirty = NO;
+    }
+}
+
+- (NSString*) existingPathForContentHash:(NSString*)contentHash
+{
+    if (contentHash.length == 0) {
+        return nil;
+    }
+
+    @synchronized (self) {
+        [self loadContentHashIndex];
+        NSString* path = self.contentHashIndex[contentHash];
+        if (path && [[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            return path;
+        }
+        // Stale entry
+        if (path) {
+            [self.contentHashIndex removeObjectForKey:contentHash];
+            self.contentHashIndexDirty = YES;
+        }
+    }
+    return nil;
+}
+
+- (void) registerContentHash:(NSString*)contentHash forPath:(NSString*)path
+{
+    if (contentHash.length == 0 || path.length == 0) {
+        return;
+    }
+
+    @synchronized (self) {
+        [self loadContentHashIndex];
+        self.contentHashIndex[contentHash] = path;
+        self.contentHashIndexDirty = YES;
+    }
+}
+
 - (void) addImageCacheOperation:(ICImageCacheOperation*)operation sender:(id)sender
 {
+    if (!operation) {
+        return;
+    }
     operation.sender = sender;
+    operation.qualityOfService = NSQualityOfServiceUtility;
     [self.operationQueue addOperation:operation];
 }
 
@@ -175,9 +248,7 @@ static ImageCacheManager* gSharedCacheManager = nil;
 - (void) cacheImage:(IC_IMAGE*)image forURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale
 {
     NSString* cacheKey = [ImageCacheManager cacheKeyWithURL:url size:size grayscale:grayscale];
-    @synchronized(self.imageCache) {
-        [self.imageCache setObject:image forKey:cacheKey];
-    }
+    [self.imageCache setObject:image forKey:cacheKey];
 }
 
 - (IC_IMAGE*) localImageForImageURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale
@@ -200,19 +271,48 @@ static ImageCacheManager* gSharedCacheManager = nil;
 
 - (void) imageForURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale sender:(id)sender completion:(void (^)(IC_IMAGE* image))completionHandler
 {
-    IC_IMAGE* cachedImage = [self localImageForImageURL:url size:size grayscale:grayscale];
+    if (!url || !completionHandler) {
+        return;
+    }
+
+    // Fast path: memory cache check (O(1), no I/O)
+    NSString* cacheKey = [ImageCacheManager cacheKeyWithURL:url size:size grayscale:grayscale];
+    IC_IMAGE* cachedImage = [self cachedImageForKey:cacheKey];
     if (cachedImage) {
         completionHandler(cachedImage);
+        return;
     }
-    else {
-        ICImageCacheOperation* operation = [[ICImageCacheOperation alloc] initWithURL:url size:size grayscale:NO];
+
+    // Async disk cache lookup first to avoid main-thread I/O and avoid network queue starvation.
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(_queue, ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+
+        NSURL* fileURL = [ImageCacheManager fileURLToCachedImageForImageURL:url size:size grayscale:grayscale];
+        NSString* filePath = [fileURL path];
+        IC_IMAGE* diskImage = [[IC_IMAGE alloc] initWithContentsOfFile:filePath];
+        if (diskImage) {
+            [[NSFileManager defaultManager] setAttributes:@{ NSFileModificationDate : [NSDate date] }
+                                             ofItemAtPath:filePath
+                                                    error:nil];
+            [strongSelf.imageCache setObject:diskImage forKey:cacheKey];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completionHandler(diskImage);
+            });
+            return;
+        }
+
+        ICImageCacheOperation* operation = [[ICImageCacheOperation alloc] initWithURL:url size:size grayscale:grayscale];
         operation.didEndBlock = ^(IC_IMAGE* image, NSError* error) {
             if (image) {
                 completionHandler(image);
             }
         };
-        [self addImageCacheOperation:operation sender:sender];
-    }
+        [strongSelf addImageCacheOperation:operation sender:sender];
+    });
 }
 
 - (void) _clearCachedImageWithRefURL:(NSURL*)refURL size:(NSInteger)size grayscale:(BOOL)grayscale
@@ -257,6 +357,12 @@ static ImageCacheManager* gSharedCacheManager = nil;
         NSString* path = [pathToImages stringByAppendingPathComponent:filename];
         [fman removeItemAtPath:path error:nil];
 	}
+
+    @synchronized (self) {
+        [self.contentHashIndex removeAllObjects];
+        self.contentHashIndex = nil;
+        self.contentHashIndexDirty = NO;
+    }
     
     
     return YES;

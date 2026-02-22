@@ -14,7 +14,6 @@
 typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kLanguage = 0,
     kAppearanceThemeSection,
-    kPureBlackSection,
     kPlayerColor,
     kPInterfaceColor,
     kAppIcons,
@@ -101,9 +100,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kLanguage:
             return 1;
         case kAppearanceThemeSection:
-            return 1;
-        case kPureBlackSection:
-            return [ICAppearanceManager sharedManager].nightSettingMode ? 1 : 0;
+            return [ICAppearanceManager sharedManager].nightSettingMode ? 2 : 1;
         case kPlayerColor:
             if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive])
             {
@@ -159,27 +156,27 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     }
     else if (indexPath.section == kAppearanceThemeSection)
     {
-        UITableViewCell* cell = [self detailCell];
-        cell.textLabel.text = @"Appearance".ls;
+        if (indexPath.row == 0) {
+            UITableViewCell* cell = [self detailCell];
+            cell.textLabel.text = @"Appearance".ls;
 
-        NSDictionary* values = @{
-            @(ICAppearanceModeAutomatic): @"Automatic".ls,
-            @(ICAppearanceModeLight): @"Light".ls,
-            @(ICAppearanceModeDark): @"Dark".ls
-        };
-        cell.detailTextLabel.text = values[@([ICAppearanceManager sharedManager].appearanceMode)];
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            NSDictionary* values = @{
+                @(ICAppearanceModeAutomatic): @"Automatic".ls,
+                @(ICAppearanceModeLight): @"Light".ls,
+                @(ICAppearanceModeDark): @"Dark".ls
+            };
+            cell.detailTextLabel.text = values[@([ICAppearanceManager sharedManager].appearanceMode)];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 
-        return cell;
-    }
-    else if (indexPath.section == kPureBlackSection)
-    {
-        UITableViewCell* cell = [self switchCell];
-        UISwitch* control = (UISwitch*)cell.accessoryView;
-        cell.textLabel.text = @"Pure Black".ls;
-        control.on = [USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack];
-        [control addTarget:self action:@selector(togglePureBlack:) forControlEvents:UIControlEventValueChanged];
-        return cell;
+            return cell;
+        } else {
+            UITableViewCell* cell = [self switchCell];
+            UISwitch* control = (UISwitch*)cell.accessoryView;
+            cell.textLabel.text = @"Pure Black Background".ls;
+            control.on = [USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack];
+            [control addTarget:self action:@selector(togglePureBlack:) forControlEvents:UIControlEventValueChanged];
+            return cell;
+        }
     }
     else if (indexPath.section == kPlayerColor)
     {
@@ -425,8 +422,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return @"";
         case kAppearanceThemeSection:
             return @"";
-        case kPureBlackSection:
-            return [ICAppearanceManager sharedManager].nightSettingMode ? @"" : nil;
         case kPlayerColor:
             return @"Player Color".ls;
         case kPInterfaceColor:
@@ -555,7 +550,7 @@ API_AVAILABLE(ios(14.0)){
         [self suggestAppIconsAction:nil];
     }
 
-    else if (indexPath.section == kAppearanceThemeSection)
+    else if (indexPath.section == kAppearanceThemeSection && indexPath.row == 0)
     {
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
 

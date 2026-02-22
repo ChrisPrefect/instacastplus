@@ -286,6 +286,9 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
             webView.navigationDelegate = self;
             webView.hidden = YES;
+            if (@available(iOS 26.0, *)) {
+                webView.scrollView.bottomEdgeEffect.hidden = YES;
+            }
             
             UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
             if (@available(iOS 11.0, *)) {
@@ -315,8 +318,9 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             self.feedImageView.image = [UIImage imageNamed:@"Podcast Placeholder 72"];
             
             ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-            [iman imageForURL:self.feed.imageURL size:72 grayscale:NO sender:self completion:^(UIImage *image) {
-                if (image) {
+            NSURL* requestedImageURL = self.feed.imageURL;
+            [iman imageForURL:requestedImageURL size:72 grayscale:NO sender:self completion:^(UIImage *image) {
+                if (image && [requestedImageURL isEqual:self.feed.imageURL]) {
                     self.feedImageView.image = image;
                 }
             }];

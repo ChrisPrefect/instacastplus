@@ -387,8 +387,20 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
         
         NSURL* imageURL = (feed) ? feed.imageURL : [section objectForKey:kBookmarkIndexImageURL];
-        [iman imageForURL:imageURL  size:56 grayscale:NO sender:cell completion:^(UIImage *image) {
-            cell.imageView.image = image;
+        __weak BookmarksTableViewCell* weakCell = cell;
+        NSIndexPath* requestedIndexPath = [indexPath copy];
+        [iman imageForURL:imageURL size:56 grayscale:NO sender:cell completion:^(UIImage *image) {
+            BookmarksTableViewCell* strongCell = weakCell;
+            if (!strongCell || !image) {
+                return;
+            }
+
+            NSIndexPath* currentIndexPath = [tableView indexPathForCell:strongCell];
+            if (!currentIndexPath || ![currentIndexPath isEqual:requestedIndexPath]) {
+                return;
+            }
+
+            strongCell.imageView.image = image;
         }];
 
         return cell;

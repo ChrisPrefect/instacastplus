@@ -8,7 +8,6 @@
 - **CarPlay** -- Deine Podcasts jetzt auch im Auto! Durchsuchen, auswählen, abspielen -- direkt über CarPlay.
 - **Smart Home Integration** -- Steuere deine Podcasts über dein Smart Home! Wiedergabestatus, Kapitel, Sleep Timer und mehr werden an deinen MQTT-Broker gesendet. Fernsteuerung (Play/Pause, Skip, Lautstärke) inklusive.
 - **Backup & Restore** -- Nie wieder Daten verlieren! Vollständiger Export aller Abonnements, Einstellungen, Playlists und Wiedergabestatus -- inklusive Login-Daten. Neuer Import-Dialog mit Live-Fortschritt, einzelne Podcasts überspringbar.
-- **iCloud Sync** -- Nahtlos zwischen Geräten wechseln! Podcasts, Playlists, Play Next, Einstellungen und Wiedergabefortschritt werden automatisch synchronisiert.
 - **Podcast-Charts mit Genre-Filter** -- Die aktuellen Apple Podcast Charts direkt im Verzeichnis, filterbar nach Kategorien wie True Crime, Comedy, Nachrichten und mehr.
 - **Podcast-Aktualisierung pausieren** -- Podcasts, die du gerade nicht hörst, einfach von der Aktualisierung ausschliessen.
 
@@ -32,7 +31,7 @@
 
 ## Design
 
-- **Neues Einstellungsmenü** -- Übersichtlich in 7 Kategorien: Darstellung, Wiedergabe, Sleep Timer, Daten, Import/Export, iCloud Sync, Smart Home.
+ - **Neues Einstellungsmenü** -- Übersichtlich in 6 Kategorien: Darstellung, Wiedergabe, Sleep Timer, Daten, Import/Export und Smart Home.
 - **Seitenmenü optimiert** -- Podcast-Anzahl, eigene Listen im Menü, aufgeräumtes Layout.
 - **Grössere Schriften und Buttons** -- Bessere Lesbarkeit und leichtere Bedienung im ganzen Interface.
 - **Dark Mode** -- Automatisch (System), Hell oder Dunkel. Ersetzt den alten standortbasierten Nachtmodus.

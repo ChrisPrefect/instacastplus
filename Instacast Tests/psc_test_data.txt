@@ -1,7 +1,7 @@
 <psc:chapters version="1.2">
   <psc:chapter start="00:00:01.000" title="Intro" />
   <psc:chapter start="00:01:32.000" title="Software-Entwicklung für Mac und iOS" />
-  <psc:chapter start="00:21:24.000" title="iCloud und Bedienkonzepte" />
+  <psc:chapter start="00:21:24.000" title="Bedienkonzepte" />
   <psc:chapter start="00:41:02.000" title="WWDC 2013" />
   <psc:chapter start="01:06:59.000" title="Geschenke und Glaskugeling" />
   <psc:chapter start="01:53:16.000" title="Netz auf der re:publica" image="http://assets.vemedio.com/test_data/Tim-Pritlove-2009-Logo-Fullsize-300x300.jpg"/>

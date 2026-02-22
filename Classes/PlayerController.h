@@ -13,6 +13,7 @@
 @interface PlayerController : UIViewController
 
 + (PlayerController*) playerController;
++ (UIColor*) adjustedPlayerColor:(UIColor*)rawColor;
 
 @property (nonatomic, weak) id delegate;
 @property (nonatomic, assign) BOOL backgroundPlayback;

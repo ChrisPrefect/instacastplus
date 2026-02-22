@@ -31,6 +31,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 + (NSString*) pathToDocuments;
 + (NSString*) pathToSubfolder:(NSString*)subfolder parent:(NSString*)pathToParentFolder;
 + (BOOL) dataStoreNeedsMigration;
++ (NSString*) currentDataStoreFilename;
 
 @property (nonatomic, strong, readonly) NSManagedObjectContext* objectContext;
 @property (nonatomic, strong, readonly) NSPersistentStoreCoordinator* storeCoordinator;
@@ -45,6 +46,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 @property (nonatomic, readonly) BOOL ftsIndexing;
 
 - (void) save;
+- (NSManagedObjectContext*)newBackgroundContext;
 
 - (void) beginInterruptSaving;
 - (void) endInterruptSaving;

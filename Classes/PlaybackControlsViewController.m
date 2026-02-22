@@ -252,7 +252,6 @@
                                                object:nil];
 
     self.shown = YES;
-    self.tintColor = ICTintColor;
     [self createVolumeViews];
     self.timeSlider.accessibilityLabel = @"Time Value".ls;
 
@@ -323,7 +322,6 @@
     maxImage = [maxImage resizableImageWithCapInsets:UIEdgeInsetsMake(0, 1, 0, 1)];
     [self.volumeView setMaximumVolumeSliderImage:maxImage forState:UIControlStateNormal];
 
-    self.tintColor = ICTintColor;
 }
 
 - (void) viewWillAppear:(BOOL)animated

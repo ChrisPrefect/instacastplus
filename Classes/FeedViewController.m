@@ -176,6 +176,9 @@
         webView.backgroundColor = [UIColor clearColor];
         webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 		webView.navigationDelegate = self;
+        if (@available(iOS 26.0, *)) {
+            webView.scrollView.bottomEdgeEffect.hidden = YES;
+        }
 		[self.view addSubview:webView];
         self.webView = webView;
         
@@ -192,9 +195,11 @@
         
         __weak FeedViewController* weakSelf = self;
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-        [iman imageForURL:self.feed.imageURL size:72 grayscale:NO sender:self completion:^(UIImage *image) {
-            if (image) {
-                weakSelf.headerViewController.imageView.image = image;
+        NSURL* requestedImageURL = self.feed.imageURL;
+        [iman imageForURL:requestedImageURL size:72 grayscale:NO sender:self completion:^(UIImage *image) {
+            FeedViewController* strongSelf = weakSelf;
+            if (strongSelf && image && [requestedImageURL isEqual:strongSelf.feed.imageURL]) {
+                strongSelf.headerViewController.imageView.image = image;
             }
         }];
         

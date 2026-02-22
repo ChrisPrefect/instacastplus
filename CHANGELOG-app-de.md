@@ -18,7 +18,6 @@ Wir haben InstacastPlus noch intelligenter und leistungsfähiger gemacht. Entdec
 
 ## 📱 Nahtloses Erlebnis auf allen Geräten
 
-- **iCloud Sync** – Nahtlos zwischen Geräten wechseln! Podcasts, Playlists, Play-Next-Warteschlange, Einstellungen und Wiedergabefortschritt werden automatisch synchronisiert.
 - **Backup & Restore** – Nie wieder Daten verlieren! Vollständiger Export aller Abonnements, Einstellungen, Playlists und Wiedergabestatus. Der neue Import-Dialog zeigt den Fortschritt live und lässt einzelne Podcasts überspringen.
 - **CarPlay** – Deine Podcasts jetzt auch im Auto mit voller CarPlay-Unterstützung.
 - **iPad- & macOS-Unterstützung** – Optimiertes Erlebnis auf iPad und Mac mit eigenem Layout. Optimiert für iOS 26 Liquid Glass.

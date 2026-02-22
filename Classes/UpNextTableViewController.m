@@ -31,6 +31,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 }
 
 - (void) dealloc {
+    [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
     [self _setObserving:NO];
 }
 
@@ -286,6 +287,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void) viewWillDisappear:(BOOL)animated
 {
     [super viewWillDisappear:animated];
+    [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
     [self _storeScrollPosition];
     [self _setObserving:NO];
 }
@@ -382,10 +384,18 @@ static NSString* kUpNextCell = @"UpNextCell";
     NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
 
     ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
+    __weak EpisodesTableViewCell* weakCell = cell;
     [iman imageForURL:imageURL size:56 grayscale:NO sender:cell completion:^(UIImage *image) {
-        if (image) {
-            cell.iconView.image = image;
+        EpisodesTableViewCell* strongCell = weakCell;
+        if (!strongCell || !image) {
+            return;
         }
+
+        if (strongCell.objectValue != episode) {
+            return;
+        }
+
+        strongCell.iconView.image = image;
     }];
 
     return cell;

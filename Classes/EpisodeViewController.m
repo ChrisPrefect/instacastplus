@@ -81,6 +81,9 @@
     self.sharedWebView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.sharedWebView.contentMode = UIViewContentModeScaleAspectFit;
     self.sharedWebView.scrollView.showsHorizontalScrollIndicator = false;
+    if (@available(iOS 26.0, *)) {
+        self.sharedWebView.scrollView.bottomEdgeEffect.hidden = YES;
+    }
     
     NSString* templatePath = [[NSBundle mainBundle] pathForResource:@"ShowNotesTemplateIPhone" ofType:@"html"];
     NSString* infoHTMLTemplate = [NSString stringWithContentsOfFile:templatePath encoding:NSUTF8StringEncoding error:nil];
@@ -317,8 +320,11 @@
     
     NSURL* url = (self.episode.imageURL) ? self.episode.imageURL : self.episode.feed.imageURL;
     ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-    [iman imageForURL:url size:72 grayscale:NO sender:self completion:^(UIImage* image) {
-        imageView.image = image;
+    NSURL* requestedImageURL = url;
+    [iman imageForURL:requestedImageURL size:72 grayscale:NO sender:self completion:^(UIImage* image) {
+        if (image && [requestedImageURL isEqual:((self.episode.imageURL) ? self.episode.imageURL : self.episode.feed.imageURL)]) {
+            imageView.image = image;
+        }
     }];
     
     // create title label
@@ -470,8 +476,11 @@
     
     NSURL* url = (self.episode.imageURL) ? self.episode.imageURL : self.episode.feed.imageURL;
     ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-    [iman imageForURL:url size:72 grayscale:NO sender:self completion:^(UIImage* image) {
-        imageView.image = image;
+    NSURL* requestedImageURL = url;
+    [iman imageForURL:requestedImageURL size:72 grayscale:NO sender:self completion:^(UIImage* image) {
+        if (image && [requestedImageURL isEqual:((self.episode.imageURL) ? self.episode.imageURL : self.episode.feed.imageURL)]) {
+            imageView.image = image;
+        }
     }];
     
     // create title label

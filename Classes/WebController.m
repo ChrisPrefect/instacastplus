@@ -59,6 +59,9 @@
 	self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds];
     self.webView.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
 	self.webView.navigationDelegate = self;
+    if (@available(iOS 26.0, *)) {
+        self.webView.scrollView.bottomEdgeEffect.hidden = YES;
+    }
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
     self.webView.underPageBackgroundColor = ICBackgroundColor;

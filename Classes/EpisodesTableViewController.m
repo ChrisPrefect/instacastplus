@@ -1291,10 +1291,18 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
         
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
+        __weak EpisodesTableViewCell* weakCell = cell;
         [iman imageForURL:imageURL size:56 grayscale:NO sender:cell completion:^(UIImage *image) {
-            if (image) {
-                cell.iconView.image = image;
+            EpisodesTableViewCell* strongCell = weakCell;
+            if (!strongCell || !image) {
+                return;
             }
+
+            if (strongCell.objectValue != episode) {
+                return;
+            }
+
+            strongCell.iconView.image = image;
         }];
     }
     

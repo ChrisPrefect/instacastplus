@@ -14,7 +14,6 @@
 #import "SubscriptionManager.h"
 #import "UtilityFunctions.h"
 #import "XPFF.h"
-#import "VDModalInfo.h"
 #import "FeedOptionsViewController.h"
 #import "NotificationSettingsViewController.h"
 #import "AppearanceSettingsViewController.h"
@@ -27,7 +26,7 @@
 #import "InstacastAppDelegate.h"
 #import "DonationViewController.h"
 #include <sys/sysctl.h>
-#import "VDModalInfo.h"
+
 
 @interface OptionsViewController () <MFMailComposeViewControllerDelegate>
 @end
