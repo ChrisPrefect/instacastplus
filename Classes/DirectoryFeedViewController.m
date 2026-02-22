@@ -65,6 +65,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
 - (void)dealloc
 {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     _webView.navigationDelegate = nil;
     [_scraper cancel];
     [_feedParser cancel];

@@ -31,6 +31,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 }
 
 - (void) dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
     [self _setObserving:NO];
 }
