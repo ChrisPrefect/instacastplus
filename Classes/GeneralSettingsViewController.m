@@ -642,7 +642,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
             [USER_DEFAULTS setObject:textField.text forKey:PlayerThemeColorHexCode];
             [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-            [USER_DEFAULTS synchronize];
 
             [self.tableView reloadData];
         }
@@ -657,7 +656,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
             [USER_DEFAULTS setObject:textField.text forKey:InterfaceThemeColorHexCode];
             [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-            [USER_DEFAULTS synchronize];
             
             [[ICAppearanceManager sharedManager] updateThemeTintColor];
             [[ICAppearanceManager sharedManager] updateAppearance];
@@ -799,7 +797,6 @@ API_AVAILABLE(ios(14.0)){
             NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedPlayerColor requiringSecureCoding:NO error:nil];
             [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
             [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-            [USER_DEFAULTS synchronize];
 
             [self.tableView reloadData];
         }
@@ -812,7 +809,6 @@ API_AVAILABLE(ios(14.0)){
             NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedThemeColor requiringSecureCoding:NO error:nil];
             [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
             [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-            [USER_DEFAULTS synchronize];
 
             [[ICAppearanceManager sharedManager] updateThemeTintColor];
             [[ICAppearanceManager sharedManager] updateAppearance];
@@ -1137,7 +1133,6 @@ API_AVAILABLE(ios(14.0)){
                     [USER_DEFAULTS setInteger:DefaultIntelligentSleepTimer forKey:LastSelectedSleepTimer];
                 }
                 //[USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-                [USER_DEFAULTS synchronize];
             }
         }
     }
@@ -1147,14 +1142,12 @@ API_AVAILABLE(ios(14.0)){
 - (void) togglePlayerColorSettings:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:PlayerColorPerPodcastActive];
-    [USER_DEFAULTS synchronize];
     [self.tableView reloadData];
 }
 
 - (void) toggleInterfaceColorSettings:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:InterfaceThemeDefaultActive];
-    [USER_DEFAULTS synchronize];
     [[ICAppearanceManager sharedManager] updateThemeTintColor];
     [[ICAppearanceManager sharedManager] updateAppearance];
     [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];

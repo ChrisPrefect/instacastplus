@@ -258,7 +258,6 @@
     }
     else {
         [USER_DEFAULTS removeObjectForKey:kUIPersistencePlaylistsSelectedPlaylistUID];
-        [USER_DEFAULTS synchronize];
     }
     _defaultPushed = 1;
     
@@ -396,7 +395,6 @@
         if ([mainMenuUIDs containsObject:list.uid]) {
             [mainMenuUIDs removeObject:list.uid];
             [USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"];
-            [USER_DEFAULTS synchronize];
             [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
         }
     }
@@ -439,7 +437,6 @@
             }
         }
         [USER_DEFAULTS setObject:sortedUIDs forKey:@"MainMenuListUIDs"];
-        [USER_DEFAULTS synchronize];
         [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
     }
 }
@@ -472,7 +469,6 @@
         
         CDList* list = [DMANAGER.lists objectAtIndex:indexPath.row];
         [USER_DEFAULTS setObject:list.uid forKey:kUIPersistencePlaylistsSelectedPlaylistUID];
-        [USER_DEFAULTS synchronize];
     }
     else {
         [self _updateToolbarItemsAnimated:NO];

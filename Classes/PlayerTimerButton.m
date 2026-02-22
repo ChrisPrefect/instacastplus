@@ -171,7 +171,6 @@
         [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
         [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
         [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
-        [USER_DEFAULTS synchronize];
         UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Sleep Timer disabled.".ls);
 
         VDModalInfo* modalInfo = [VDModalInfo modalInfo];
@@ -249,7 +248,6 @@
 - (void) setAlwaysSleepTimer:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:ScreenTimerAlwaysActive];
-    [USER_DEFAULTS synchronize];
     [self setAlwaysSleepTimerUpdate:sender.on];
     [self updateTimerAlertButtonsCheckmarks];
 }
@@ -270,7 +268,6 @@
             {
                 [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
                 [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
-                [USER_DEFAULTS synchronize];
             }
         }
         [self IntelligentSleepTimerUpdate];
@@ -287,7 +284,6 @@
 - (void) setIntelligentTimer:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:IntelligentSleepTimerAlwaysActive];
-    [USER_DEFAULTS synchronize];
 }
 
 - (void)showIntelligentSleepTimerAlert
@@ -350,7 +346,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTimeNoValue;
             [self IntelligentSleepTimerUpdate];
 //            if ([USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
@@ -368,7 +363,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime3min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime3min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime3min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -380,7 +374,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime5min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -392,7 +385,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime10min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime10min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime10min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -404,7 +396,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime15min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime15min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime15min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -416,7 +407,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime20min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime20min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime20min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -428,7 +418,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime30min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime30min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime30min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -440,7 +429,6 @@
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             [USER_DEFAULTS setInteger:PlaybackStopTime60min forKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS setInteger:PlaybackStopTime60min forKey:LastSelectedSleepTimer];
-            [USER_DEFAULTS synchronize];
             [AudioSession sharedAudioSession].timerValue = PlaybackStopTime60min;
             [self IntelligentSleepTimerUpdate];
         } afterDelay:0.1];
@@ -618,44 +606,37 @@
         if (![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
         {
             [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
-            [USER_DEFAULTS synchronize];
             [self IntelligentSleepTimerUpdate];
         }
     }
     else if ([selItem.ls isEqualToString:@"5 Minutes".ls])
     {
         [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:DefaultIntelligentSleepTimer];
-        [USER_DEFAULTS synchronize];
         [self IntelligentSleepTimerUpdate];
     }
     else if ([selItem.ls isEqualToString:@"10 Minutes".ls])
     {
         [USER_DEFAULTS setInteger:PlaybackStopTime10min forKey:DefaultIntelligentSleepTimer];
-        [USER_DEFAULTS synchronize];
         [self IntelligentSleepTimerUpdate];
     }
     else if ([selItem.ls isEqualToString:@"15 Minutes".ls])
     {
         [USER_DEFAULTS setInteger:PlaybackStopTime15min forKey:DefaultIntelligentSleepTimer];
-        [USER_DEFAULTS synchronize];
         [self IntelligentSleepTimerUpdate];
     }
     else if ([selItem.ls isEqualToString:@"20 Minutes".ls])
     {
         [USER_DEFAULTS setInteger:PlaybackStopTime20min forKey:DefaultIntelligentSleepTimer];
-        [USER_DEFAULTS synchronize];
         [self IntelligentSleepTimerUpdate];
     }
     else if ([selItem.ls isEqualToString:@"30 Minutes".ls])
     {
         [USER_DEFAULTS setInteger:PlaybackStopTime30min forKey:DefaultIntelligentSleepTimer];
-        [USER_DEFAULTS synchronize];
         [self IntelligentSleepTimerUpdate];
     }
     else if ([selItem.ls isEqualToString:@"60 Minutes".ls])
     {
         [USER_DEFAULTS setInteger:PlaybackStopTime60min forKey:DefaultIntelligentSleepTimer];
-        [USER_DEFAULTS synchronize];
         [self IntelligentSleepTimerUpdate];
     }
 }

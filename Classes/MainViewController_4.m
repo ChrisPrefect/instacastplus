@@ -169,7 +169,6 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     NSArray* existingUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
     if (!existingUIDs) {
         [USER_DEFAULTS setObject:@[@"default.favorites", @"default.unplayed", @"default.started", @"default.downloaded"] forKey:@"MainMenuListUIDs"];
-        [USER_DEFAULTS synchronize];
     } else if (![USER_DEFAULTS boolForKey:@"MainMenuListUIDsMigratedDefaults"]) {
         // One-time migration: add default list UIDs that were previously hardcoded
         NSMutableArray* uids = [existingUIDs mutableCopy];
@@ -181,7 +180,6 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         }
         [USER_DEFAULTS setObject:uids forKey:@"MainMenuListUIDs"];
         [USER_DEFAULTS setBool:YES forKey:@"MainMenuListUIDsMigratedDefaults"];
-        [USER_DEFAULTS synchronize];
     }
 
     // Sync list ranks to match MainMenuListUIDs order (sidebar is the source of truth)
@@ -229,7 +227,6 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         if ([weakSelf _selectMainSidebarItemWithTag:item.tag])
         {
             [USER_DEFAULTS setInteger:item.tag forKey:kUIPersistenceMainSidebarItem];
-            [USER_DEFAULTS synchronize];
             [weakSelf setSidebarShown:NO animated:YES];
             
             return YES;
@@ -259,7 +256,6 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         OnboardScreenVC*onboardVC = [[OnboardScreenVC alloc] initWithNibName:@"OnboardScreenVC" bundle:nil];
         [USER_DEFAULTS setBool:true forKey:@"onboard_will_show"];
-        [USER_DEFAULTS synchronize];
         onboardVC.providesPresentationContextTransitionStyle = YES;
         onboardVC.definesPresentationContext = YES;
         onboardVC.delegate = self;

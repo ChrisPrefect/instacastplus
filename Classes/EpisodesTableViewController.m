@@ -218,7 +218,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     else {
         [USER_DEFAULTS removeObjectForKey:kDefaultEpisodesSelectedEpisodeUID];
-        [USER_DEFAULTS synchronize];
     }
     _defaultsPushed = YES;
 }

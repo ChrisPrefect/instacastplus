@@ -244,7 +244,6 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         [mainMenuUIDs removeObject:list.uid];
     }
     [USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"];
-    [USER_DEFAULTS synchronize];
 
     [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
 }

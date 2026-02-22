@@ -163,9 +163,8 @@
     if ([self.searchTerm length] > 0)
     {
         NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.searchTerm];
-        
-        NSString* t = [NSString stringWithFormat:@"*%@*", self.searchTerm];
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && (guid IN %@ || feed.title like[cd] %@ || feed.author like[cd] %@ || feed.summary like[cd] %@)", self.feed, @NO, episodeGuids, t, t, t];
+
+        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && guid IN %@", self.feed, @NO, episodeGuids];
         
     } else {
         fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@", self.feed, @NO];
@@ -934,9 +933,8 @@
     if ([self.searchTerm length] > 0)
     {
         NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.searchTerm];
-        
-        NSString* t = [NSString stringWithFormat:@"*%@*", self.searchTerm];
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && (guid IN %@ || feed.title like[cd] %@ || feed.author like[cd] %@ || feed.summary like[cd] %@)", self.feed, @NO, episodeGuids, t, t, t];
+
+        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && guid IN %@", self.feed, @NO, episodeGuids];
         
     } else {
         fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@", self.feed, @NO];

@@ -83,14 +83,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     [content appendString:appearanceCss];
     [content appendString:@"</style>"];
     
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone )
-    {
-        [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
-    }
-    else
-    {
-        [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
-    }
+    [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
         
     [content appendString:@"<div id=\"description\">"];
     if ( ([description length] > 0)) {
@@ -157,14 +150,15 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     }
     
     NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
-    NSInteger thisYear = [[[NSCalendar currentCalendar] components:NSCalendarUnitYear fromDate:[NSDate date]] year];
-    
+    NSCalendar* calendar = [NSCalendar currentCalendar];
+    NSInteger thisYear = [[calendar components:NSCalendarUnitYear fromDate:[NSDate date]] year];
+
     [sortedEpisodes enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop)
      {
          ICEpisode* episode = (ICEpisode*)obj;
          NSString* cleanTitle = [episode cleanTitleUsingFeedTitle:feed.title];
-         
-         NSInteger pubYear = [[[NSCalendar currentCalendar] components:NSCalendarUnitYear fromDate:episode.pubDate] year];
+
+         NSInteger pubYear = [[calendar components:NSCalendarUnitYear fromDate:episode.pubDate] year];
          
          if (pubYear == thisYear) {
              [formatter setDateFormat:@"MMM d".ls];
@@ -319,8 +313,10 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             
             ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
             NSURL* requestedImageURL = self.feed.imageURL;
+            WEAK_SELF;
             [iman imageForURL:requestedImageURL size:72 grayscale:NO sender:self completion:^(UIImage *image) {
-                if (image && [requestedImageURL isEqual:self.feed.imageURL]) {
+                STRONG_SELF;
+                if (image && self && [requestedImageURL isEqual:self.feed.imageURL]) {
                     self.feedImageView.image = image;
                 }
             }];
@@ -503,17 +499,20 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
+    WEAK_SELF;
     parser.didParseFeedBlock = ^(ICFeed* feed) {
         [App releaseNetworkActivity];
-        
+        STRONG_SELF;
+        if (!self) return;
+
         self.feedParser = nil;
-        
+
         [self _showLoadingDialog:NO];
-        
+
         self.feed = feed;
-        
+
         [self _prepareViewWhenFeedLoaded];
-        
+
         if (self.didLoadFeed) {
             self.didLoadFeed(YES, nil);
         }
@@ -522,16 +521,18 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     parser.didEndWithError = ^(NSError* error) {
 
         [App releaseNetworkActivity];
-        
+        STRONG_SELF;
+        if (!self) return;
+
         ErrLog(@"feed could not be parsed: %@", [error description]);
         self.feedParser = nil;
-        
+
         [self _showLoadingDialog:NO];
-        
+
         if (self.didLoadFeed) {
             self.didLoadFeed(NO, error);
         }
-        
+
         [self _presentParserError:error];
     };
     
@@ -665,35 +666,43 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
         
         if ([command isEqualToString:@"load-more-episodes"])
         {
+            WEAK_SELF;
             [self.webView evaluateJavaScript:@"scrollY" completionHandler:^(id result, NSError * _Nullable error) {
-                if (error == nil) {
+                STRONG_SELF;
+                if (self && error == nil) {
                     self.initialScrollPosition = [result integerValue];
                 }
-            
+
             }];
-            
+
             [self _showLoadingDialog:YES];
-            
+
             ICPagedFeedParser* parser = [[ICPagedFeedParser alloc] init];
             parser.url = self.feed.sourceURL;
             parser.username = self.feed.username;
             parser.password = self.feed.password;
             parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
-            
+
             parser.didParsePage = ^(NSInteger page) {
+                STRONG_SELF;
+                if (!self) return;
                 self.loadingInfo.textLabel.text = [NSString stringWithFormat:@"Page %ld".ls, page];
             };
-            
+
             parser.didParseFeedBlock = ^(ICFeed* parserFeed) {
+                STRONG_SELF;
+                if (!self) return;
                 self.feed = parserFeed;
                 [self _prepareViewWhenFeedLoaded];
                 [self _showLoadingDialog:NO];
             };
-            
+
             parser.didEndWithError = ^(NSError* error) {
+                STRONG_SELF;
+                if (!self) return;
                 [self _showLoadingDialog:NO];
             };
-            
+
             [[App mainQueue] addOperation:parser];
         }
         
@@ -701,6 +710,12 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
         {
             NSInteger index = [[[url path] lastPathComponent] integerValue];
             NSArray* sortedEpisodes = [self.feed.episodes sortedArrayUsingSelector:@selector(compare:)];
+
+            if (index < 0 || index >= (NSInteger)[sortedEpisodes count]) {
+                decisionHandler(WKNavigationActionPolicyCancel);
+                return;
+            }
+
             ICEpisode* episode = [sortedEpisodes objectAtIndex:index];
 
             CDEpisode* persistentEpisode = [DMANAGER addUnsubscribedFeed:self.feed andEpisode:episode];

@@ -316,7 +316,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 - (void) toggleSleepTimeAlwaysSettings:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:ScreenTimerAlwaysActive];
-    [USER_DEFAULTS synchronize];
 
     if (sender.on)
     {
@@ -326,7 +325,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
             NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
             if (lastSleepTimer <= 0) {
                 [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
-                [USER_DEFAULTS synchronize];
             }
         }
     }
@@ -336,7 +334,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 - (void) toggleCarPlaySleepTimerSettings:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:DisableSleepTimerInCarPlay];
-    [USER_DEFAULTS synchronize];
 
     AudioSession* session = [AudioSession sharedAudioSession];
     if (sender.on) {
@@ -422,7 +419,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     threshold -= 0.001;
     if (threshold < 0.001) threshold = 0.001;
     [USER_DEFAULTS setDouble:threshold forKey:DeviceMovementSensitivity];
-    [USER_DEFAULTS synchronize];
     self.thresholdValueLabel.text = [NSString stringWithFormat:@"%.3f", threshold];
 }
 
@@ -432,7 +428,6 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     if (threshold <= 0) threshold = 0.004;
     threshold += 0.001;
     [USER_DEFAULTS setDouble:threshold forKey:DeviceMovementSensitivity];
-    [USER_DEFAULTS synchronize];
     self.thresholdValueLabel.text = [NSString stringWithFormat:@"%.3f", threshold];
 }
 

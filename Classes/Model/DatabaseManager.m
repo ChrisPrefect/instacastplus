@@ -1397,7 +1397,6 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
         }
     }
     [USER_DEFAULTS setObject:urls forKey:kManualFeedOrderKey];
-    [USER_DEFAULTS synchronize];
 }
 
 - (BOOL) hasManualFeedOrder

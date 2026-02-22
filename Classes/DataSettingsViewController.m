@@ -486,13 +486,11 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             break;
     }
 
-    [USER_DEFAULTS synchronize];
 }
 
 - (void) toggleAutoDownloadWhileStreaming:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:AutoDownloadWhileStreaming];
-    [USER_DEFAULTS synchronize];
 }
 
 - (void) toggleAutoDeleteSettings:(UISwitch*)sender
@@ -504,7 +502,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         [USER_DEFAULTS setBool:sender.on forKey:AutoDeleteAfterMarkedAsPlayed];
     }
 
-    [USER_DEFAULTS synchronize];
 }
 
 @end

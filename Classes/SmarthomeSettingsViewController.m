@@ -284,7 +284,6 @@ enum {
 - (void)toggleEnable:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:SmarthomeMQTTEnabled];
-    [USER_DEFAULTS synchronize];
 
     if (sender.on) {
         [[SmarthomeManager sharedManager] start];
@@ -296,7 +295,6 @@ enum {
 - (void)toggleAllowControl:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:SmarthomeAllowControl];
-    [USER_DEFAULTS synchronize];
 
     // Reconnect to apply subscription changes
     SmarthomeManager *mgr = [SmarthomeManager sharedManager];
@@ -309,7 +307,6 @@ enum {
 - (void)toggleWiFiOnly:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:SmarthomeWiFiOnly];
-    [USER_DEFAULTS synchronize];
 
     SmarthomeManager *mgr = [SmarthomeManager sharedManager];
     if (sender.on) {
@@ -328,7 +325,6 @@ enum {
         [self.view endEditing:YES];
 
         [USER_DEFAULTS setBool:YES forKey:SmarthomeMQTTEnabled];
-        [USER_DEFAULTS synchronize];
         [mgr start];
 
         // Update Enable switch if needed
@@ -413,7 +409,6 @@ enum {
             [USER_DEFAULTS setObject:(textField.text ?: @"") forKey:SmarthomeDeviceName];
             break;
     }
-    [USER_DEFAULTS synchronize];
 }
 
 - (BOOL)textField:(UITextField *)textField shouldChangeCharactersInRange:(NSRange)range replacementString:(NSString *)string
@@ -422,7 +417,6 @@ enum {
     if (textField.tag == kTagDeviceName) {
         NSString *newText = [textField.text stringByReplacingCharactersInRange:range withString:string];
         [USER_DEFAULTS setObject:(newText ?: @"") forKey:SmarthomeDeviceName];
-        [USER_DEFAULTS synchronize];
         // Update footer text directly without reloading section (which would steal first responder)
         UITableViewHeaderFooterView *footer = [self.tableView footerViewForSection:kSmarthomeConnectionSection];
         if (footer) {

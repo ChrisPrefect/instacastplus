@@ -1095,7 +1095,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 		
         [self willChangeValueForKey:@"formattedLastRefreshDate"];
 		[USER_DEFAULTS setDouble:[[NSDate date] timeIntervalSince1970] forKey:LastRefreshSubscriptionDate];
-		[USER_DEFAULTS synchronize];
         [self didChangeValueForKey:@"formattedLastRefreshDate"];
         
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidFinishRefreshingFeedsNotification object:self];

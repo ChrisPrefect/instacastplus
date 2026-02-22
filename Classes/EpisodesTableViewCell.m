@@ -225,10 +225,7 @@
 
     [self.multipleSelectionBackgroundView removeFromSuperview];
     
-    NSArray* actions = [self.playAccessoryButton actionsForTarget:[[self.playAccessoryButton allTargets] anyObject] forControlEvent:UIControlEventTouchUpInside];
-    for(NSString* action in actions) {
-        [self.playAccessoryButton removeTarget:self action:NSSelectorFromString(action) forControlEvents:UIControlEventTouchUpInside];
-    }
+    [self.playAccessoryButton removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
         
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
     

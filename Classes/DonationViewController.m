@@ -260,7 +260,6 @@ enum {
     NSMutableArray *history = [[[USER_DEFAULTS arrayForKey:kDonationHistoryKey] mutableCopy] ?: [NSMutableArray array] mutableCopy];
     [history insertObject:entry atIndex:0];
     [USER_DEFAULTS setObject:history forKey:kDonationHistoryKey];
-    [USER_DEFAULTS synchronize];
 }
 
 - (NSArray *)donationHistory

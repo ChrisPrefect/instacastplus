@@ -855,7 +855,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             @"feedURL": np.feedURL ?: @"",
             @"position": @(np.position)
         } forKey:kPendingNowPlayingKey];
-        [USER_DEFAULTS synchronize];
         return 1;
     }
 
@@ -871,7 +870,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             @"feedURL": np.feedURL ?: @"",
             @"position": @(np.position)
         } forKey:kPendingNowPlayingKey];
-        [USER_DEFAULTS synchronize];
     }
     return 1;
 }
@@ -888,7 +886,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     if (!episode || !episode.preferedMedium.fileURL) return;
 
     [USER_DEFAULTS removeObjectForKey:kPendingNowPlayingKey];
-    [USER_DEFAULTS synchronize];
 
     [[AudioSession sharedAudioSession] playEpisode:episode queueUpCurrent:NO at:(NSTimeInterval)position autostart:NO];
 }
@@ -1172,7 +1169,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
 
     if (pendingDownloads.count > 0) {
         [USER_DEFAULTS setObject:pendingDownloads forKey:kPendingBackupDownloadsKey];
-        [USER_DEFAULTS synchronize];
     }
 
     DebugLog(@"BackupImporter: Saved %ld episodes for deferred download", (long)count);
@@ -1224,7 +1220,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     } else {
         [USER_DEFAULTS removeObjectForKey:kPendingBackupDownloadsKey];
     }
-    [USER_DEFAULTS synchronize];
 
     DebugLog(@"BackupImporter: processPendingDownloads DONE: %.3fs, queued=%ld, remaining=%lu",
              -[dlStart timeIntervalSinceNow], (long)queued, (unsigned long)remaining.count);

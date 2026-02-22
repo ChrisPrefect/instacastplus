@@ -192,7 +192,6 @@ void ICUpdateListScrollPositionForKey(NSString* key, CGFloat offsetY)
 
     [USER_DEFAULTS setObject:updated forKey:kUIPersistenceListScrollPositions];
     [USER_DEFAULTS setObject:[NSDate date] forKey:kUIPersistenceListScrollPositionsLastModified];
-    [USER_DEFAULTS synchronize];
 
     [[NSNotificationCenter defaultCenter] postNotificationName:ICListScrollPositionsDidChangeNotification object:nil];
 }
@@ -211,7 +210,6 @@ void ICApplySyncedListScrollPositions(NSDictionary<NSString*, NSNumber*>* positi
     NSDictionary<NSString*, NSNumber*>* validated = _validatedListScrollPositionsDictionary(positions);
     [USER_DEFAULTS setObject:validated forKey:kUIPersistenceListScrollPositions];
     [USER_DEFAULTS setObject:lastModified forKey:kUIPersistenceListScrollPositionsLastModified];
-    [USER_DEFAULTS synchronize];
 }
 
 #if TARGET_OS_IPHONE

@@ -24,7 +24,7 @@ static NSInteger const kChartsGenreMinCount = 5;
 @property (nonatomic, strong) NSString* searchTerm;
 @property (nonatomic, strong) STITunesStore* store;
 @property (nonatomic, strong) NSArray* searchResults;
-@property (nonatomic, strong) NSMutableDictionary* imageCache;
+@property (nonatomic, strong) NSCache* imageCache;
 @property (nonatomic, weak) NSTimer* searchTimer;
 @property (nonatomic, strong) ICFeedURLScraper* scraper;
 @property (nonatomic, strong) ICFeedParser* feedParser;
@@ -89,7 +89,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 
 	self.tableView.tableHeaderView = searchBar;
 
-	self.imageCache = [NSMutableDictionary dictionary];
+	self.imageCache = [[NSCache alloc] init];
 
     // Load charts: 50 from new API (fast) + 20/genre from old API (background)
     [self _loadCharts];

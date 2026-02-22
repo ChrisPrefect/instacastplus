@@ -963,16 +963,11 @@ static NSError* ICDailyBackupValidateSQLiteDatabase(NSString* path)
 
         [self updateNetworkAccessTechnology];
 
-        __weak typeof(self) weakSelf = self;
 #if !TARGET_OS_SIMULATOR
-        [NSNotificationCenter.defaultCenter addObserverForName:CTServiceRadioAccessTechnologyDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note){
-            [weakSelf updateNetworkAccessTechnology];
-        }];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(_networkAccessTechnologyDidChange:) name:CTServiceRadioAccessTechnologyDidChangeNotification object:nil];
 #endif
 
-        [NSNotificationCenter.defaultCenter addObserverForName:kReachabilityChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
-            [weakSelf updateNetworkAccessTechnology];
-        }];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(_networkAccessTechnologyDidChange:) name:kReachabilityChangedNotification object:nil];
         [self deviceMotionDetection];
         [self volumeChangeNotification];
 	}
@@ -1042,6 +1037,11 @@ static NSError* ICDailyBackupValidateSQLiteDatabase(NSString* path)
 }
 
 #pragma mark - Network Info
+
+- (void) _networkAccessTechnologyDidChange:(NSNotification*)note
+{
+    [self updateNetworkAccessTechnology];
+}
 
 - (void) updateNetworkAccessTechnology
 {
@@ -1179,7 +1179,6 @@ static NSError* ICDailyBackupValidateSQLiteDatabase(NSString* path)
             //convert the wait period into minutes rather than seconds
             NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-            [USER_DEFAULTS synchronize];
             NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
             if ([PlaybackManager playbackManager].isPodcastPlaying)
             {
@@ -1239,7 +1238,6 @@ static NSError* ICDailyBackupValidateSQLiteDatabase(NSString* path)
                                 }
                                 NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
                                 [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-                                [USER_DEFAULTS synchronize];
                                 NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
                                 
                                 if (sleepTimer > 0)
@@ -1288,7 +1286,6 @@ static NSError* ICDailyBackupValidateSQLiteDatabase(NSString* path)
                     //convert the wait period into minutes rather than seconds
                     NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
                     [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-                    [USER_DEFAULTS synchronize];
                     NSInteger lastSleepTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
                     if (sleepTimer > 0)
                     {

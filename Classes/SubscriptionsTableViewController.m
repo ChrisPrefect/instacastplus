@@ -446,7 +446,6 @@
     }
     else {
         [USER_DEFAULTS removeObjectForKey:kUIPersistenceSubscriptionsSelectedFeedUID];
-        [USER_DEFAULTS synchronize];
     }
     
     [self _setObserving:YES];

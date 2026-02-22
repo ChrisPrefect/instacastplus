@@ -2009,8 +2009,9 @@ enum {
 - (void) _findAndSetCurrentChapter:(NSTimeInterval)time
 {
     if (self.seekingChapter) {
-        self.currentChapter = [self.chapters indexOfObject:self.seekingChapter];
-        if (self.currentChapter != NSNotFound) {
+        NSUInteger idx = [self.chapters indexOfObject:self.seekingChapter];
+        if (idx != NSNotFound) {
+            self.currentChapter = idx;
             return;
         }
     }

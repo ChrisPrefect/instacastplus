@@ -197,7 +197,6 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
         }
     }
     
-    [USER_DEFAULTS synchronize];
 }
 
 

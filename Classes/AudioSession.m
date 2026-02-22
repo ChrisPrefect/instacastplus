@@ -478,7 +478,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
             if (tRem > 0)
             {
                 [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-                [USER_DEFAULTS synchronize];
             }
         }
         else if (isAlwaysTimerActive)
@@ -487,7 +486,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
             if (tRem > 0)
             {
                 [USER_DEFAULTS setInteger:round(tRem) forKey:UncompletedSleepTimeInterval];
-                [USER_DEFAULTS synchronize];
             }
         }
         [pman pause];
@@ -549,7 +547,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 		[USER_DEFAULTS removeObjectForKey:kPlaybackStatePlaylist];
 	}
 	
-	[USER_DEFAULTS synchronize];
 }
 
 - (void) _restorePlaybackStateFromUserDefaults
@@ -742,7 +739,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         if (self.timerValue != PlaybackStopTimeNoValue)
         {
             [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
-            [USER_DEFAULTS synchronize];
             if (![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
             {
                 self.timerValue = PlaybackStopTimeNoValue;
