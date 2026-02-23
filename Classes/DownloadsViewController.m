@@ -341,8 +341,8 @@
         DownloadsTableViewCell *cell = (DownloadsTableViewCell*)[tableView dequeueReusableCellWithIdentifier:CellIdentifier];
         if (cell == nil) {
             cell = [[DownloadsTableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
-            [cell.playAccessoryButton addTarget:self action:@selector(cancelCachingEpisode:) forControlEvents:UIControlEventTouchUpInside];
         }
+        [cell.playAccessoryButton addTarget:self action:@selector(cancelCachingEpisode:) forControlEvents:UIControlEventTouchUpInside];
         cell.backgroundColor = tableView.backgroundColor;
         
         NSArray* episodes = [cman cachingEpisodes];

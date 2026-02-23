@@ -868,19 +868,6 @@
     }];
     [alert addAction:defaultAction];
 
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    popPresenter.sourceView = self.filterButton;
-    popPresenter.sourceRect = self.filterButton.bounds;
-    popPresenter.permittedArrowDirections = UIPopoverArrowDirectionUp;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    else
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
     self.alertController = alert;
     [self presentAlertControllerAnimated:YES completion:NULL];
 }

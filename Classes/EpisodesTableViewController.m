@@ -873,6 +873,20 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     
     
+    UIAlertAction* showInfoAction = [UIAlertAction actionWithTitle:@"Episode Info".ls
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction * action) {
+                                                STRONG_SELF
+                                                [self perform:^(id sender) {
+                                                    [self _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
+                                                    [self cancelDelete:nil];
+                                                } afterDelay:0.3];
+                                                self.alertController = nil;
+                                            }];
+    UIImage* infoImage = [UIImage systemImageNamed:@"info.circle"];
+    [showInfoAction setValue:[infoImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
+    [alert addAction:showInfoAction];
+
     [self addAdditionalButtonsToLongPressActionSheet:alert rowIndexPath:indexPath completionBlock:^{
         STRONG_SELF
         self.alertController = nil;
@@ -884,20 +898,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 STRONG_SELF
                                                 self.alertController = nil;
                                             }]];
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0; // Kein Pfeil
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    else
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
     self.alertController = alert;
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
@@ -1275,8 +1275,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView dequeueReusableCellWithIdentifier:EpisodesCellIdentifier];
     if (!cell) {
         cell = [[EpisodesTableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:EpisodesCellIdentifier];
-        [cell.playAccessoryButton addTarget:self action:@selector(playComboButtonAction:) forControlEvents:UIControlEventTouchUpInside];
     }
+    [cell.playAccessoryButton addTarget:self action:@selector(playComboButtonAction:) forControlEvents:UIControlEventTouchUpInside];
     cell.backgroundColor = self.tableView.backgroundColor;
     cell.tintColor = self.view.tintColor;
     
@@ -1392,7 +1392,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     
     
     CDEpisode* episode = (CDEpisode*)[self.episodes objectAtIndex:indexPath.row];
-    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+    BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
+    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
     [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 
