@@ -868,6 +868,13 @@
     }];
     [alert addAction:defaultAction];
 
+    // Set sourceView for iOS 26 Liquid Glass morph animation
+    [alert setModalPresentationStyle:UIModalPresentationPopover];
+    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+    popPresenter.sourceView = self.filterButton;
+    popPresenter.sourceRect = self.filterButton.bounds;
+    popPresenter.permittedArrowDirections = UIPopoverArrowDirectionUp;
+
     self.alertController = alert;
     [self presentAlertControllerAnimated:YES completion:NULL];
 }

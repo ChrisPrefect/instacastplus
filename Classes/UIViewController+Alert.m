@@ -41,11 +41,12 @@
     if (self.navigationController && self != topViewController && !isChildViewControllerOfTopViewController) {
         return NO;
     }
-    // Action Sheets on iPhone use native sheet presentation (slide-up with Liquid Glass on iOS 26+).
-    // Only configure popover for iPad or non-action-sheet alerts.
-    if (self.alertController.preferredStyle != UIAlertControllerStyleActionSheet || UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
-        [self.alertController setModalPresentationStyle:UIModalPresentationPopover];
-        UIPopoverPresentationController *popPresenter = [self.alertController popoverPresentationController];
+    // Configure popover presentation. For action sheets, only set default sourceView
+    // if the caller hasn't already configured one (preserves caller's sourceView for
+    // iOS 26 Liquid Glass morph animation).
+    [self.alertController setModalPresentationStyle:UIModalPresentationPopover];
+    UIPopoverPresentationController *popPresenter = [self.alertController popoverPresentationController];
+    if (!popPresenter.sourceView) {
         UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
         popPresenter.sourceView = [rootViewController view];
         popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);

@@ -898,6 +898,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 STRONG_SELF
                                                 self.alertController = nil;
                                             }]];
+    // Set sourceView to the cell for iOS 26 Liquid Glass morph animation
+    [alert setModalPresentationStyle:UIModalPresentationPopover];
+    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
+    UITableViewCell* sourceCell = [self.tableView cellForRowAtIndexPath:indexPath];
+    popPresenter.sourceView = sourceCell ?: self.view;
+    popPresenter.sourceRect = sourceCell ? sourceCell.bounds : CGRectZero;
+    popPresenter.permittedArrowDirections = 0;
+
     self.alertController = alert;
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
