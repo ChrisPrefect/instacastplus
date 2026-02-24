@@ -38,13 +38,17 @@
 {
     if (newWindow && !self.clockStepsImageView)
     {
-        //[self update];
         [self IntelligentSleepTimerUpdate];
-        
+
         [[AudioSession sharedAudioSession] addTaskObserver:self forKeyPath:@"timerRemainingTime" task:^(id obj, NSDictionary *change) {
             [self IntelligentSleepTimerUpdate];
         }];
         _observing = YES;
+
+        if (@available(iOS 14.0, *)) {
+            self.menu = [self _buildSleepTimerMenu];
+            self.showsMenuAsPrimaryAction = YES;
+        }
     }
     else if (!newWindow && self.clockStepsImageView)
     {
@@ -145,10 +149,11 @@
 }
 
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    if (@available(iOS 14.0, *)) {
+        return [super beginTrackingWithTouch:touch withEvent:event];
+    }
     _trackingDate = [NSDate date];
-    
     _longTrackingTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(_longTrackingTimer:) userInfo:nil repeats:NO];
-    
     return [super beginTrackingWithTouch:touch withEvent:event];
 }
 
@@ -191,29 +196,23 @@
 - (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event
 {
     [super endTrackingWithTouch:touch withEvent:event];
-    
+
+    if (@available(iOS 14.0, *)) {
+        return;
+    }
+
     CGRect b = CGRectInset(self.bounds, -10, -10);
     if (CGRectContainsPoint(b,  [touch locationInView:self]))
     {
         if ([_trackingDate timeIntervalSinceNow] >= -0.5)
         {
-            /*if (isDropDownViewShowing)
-            {
-                [dropDown.view setHidden:true];
-                isDropDownViewShowing = false;
-            }
-            else
-            {
-                [self showTimerDropDown];
-                isDropDownViewShowing = true;
-            }*/
             [self showIntelligentSleepTimerAlert];
         }
     }
-    
+
     [_longTrackingTimer invalidate];
     _longTrackingTimer = nil;
-    
+
     _trackingDate = nil;
 }
 
@@ -284,6 +283,84 @@
 - (void) setIntelligentTimer:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:IntelligentSleepTimerAlwaysActive];
+}
+
+- (UIMenu*) _buildSleepTimerMenu API_AVAILABLE(ios(14.0))
+{
+    NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
+    BOOL isAlwaysActive = [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
+    BOOL isIntelligent = [USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
+
+    // Determine which timer value is currently selected
+    NSInteger activeValue = sleepTimer;
+    if (sleepTimer == PlaybackStopTimeNoValue && isAlwaysActive) {
+        activeValue = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+    }
+
+    WEAK_SELF
+
+    // Timer duration actions
+    UIAction* offAction = [UIAction actionWithTitle:@"Off".ls image:[UIImage systemImageNamed:@"moon.zzz"] identifier:nil handler:^(UIAction *action) {
+        __strong PlayerTimerButton* strongSelf = weakSelf;
+        [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+        [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];
+        [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
+        [AudioSession sharedAudioSession].timerValue = PlaybackStopTimeNoValue;
+        [strongSelf IntelligentSleepTimerUpdate];
+        if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+    }];
+    offAction.state = (sleepTimer == PlaybackStopTimeNoValue && !isAlwaysActive) ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    NSArray* durations = @[
+        @[@3,  @"3 Minutes".ls],
+        @[@5,  @"5 Minutes".ls],
+        @[@10, @"10 Minutes".ls],
+        @[@15, @"15 Minutes".ls],
+        @[@20, @"20 Minutes".ls],
+        @[@30, @"30 Minutes".ls],
+        @[@60, @"60 Minutes".ls],
+    ];
+
+    NSMutableArray* timerActions = [NSMutableArray arrayWithObject:offAction];
+    for (NSArray* dur in durations) {
+        NSInteger value = [dur[0] integerValue];
+        NSString* title = dur[1];
+        UIAction* action = [UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *act) {
+            __strong PlayerTimerButton* strongSelf = weakSelf;
+            [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
+            [USER_DEFAULTS setInteger:value forKey:DefaultIntelligentSleepTimer];
+            [USER_DEFAULTS setInteger:value forKey:LastSelectedSleepTimer];
+            [AudioSession sharedAudioSession].timerValue = value;
+            [strongSelf IntelligentSleepTimerUpdate];
+            if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+        }];
+        action.state = (activeValue == value) ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [timerActions addObject:action];
+    }
+
+    UIMenu* timerSection = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:timerActions];
+
+    // Toggle actions
+    UIAction* smartAction = [UIAction actionWithTitle:@"Smart Sleep Timer".ls image:[UIImage systemImageNamed:@"brain"] identifier:nil handler:^(UIAction *act) {
+        __strong PlayerTimerButton* strongSelf = weakSelf;
+        BOOL newValue = ![USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
+        [USER_DEFAULTS setBool:newValue forKey:IntelligentSleepTimerAlwaysActive];
+        if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+    }];
+    smartAction.state = isIntelligent ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* alwaysAction = [UIAction actionWithTitle:@"Sleep Timer Always Active".ls image:[UIImage systemImageNamed:@"repeat"] identifier:nil handler:^(UIAction *act) {
+        __strong PlayerTimerButton* strongSelf = weakSelf;
+        BOOL newValue = ![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
+        [USER_DEFAULTS setBool:newValue forKey:ScreenTimerAlwaysActive];
+        [strongSelf setAlwaysSleepTimerUpdate:newValue];
+        if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+    }];
+    alwaysAction.state = isAlwaysActive ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIMenu* toggleSection = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[smartAction, alwaysAction]];
+
+    return [UIMenu menuWithChildren:@[timerSection, toggleSection]];
 }
 
 - (void)showIntelligentSleepTimerAlert

@@ -733,181 +733,135 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 #pragma mark -
 #pragma mark Actions
 
-- (void) showActionSheetForRowAtIndexPath:(NSIndexPath*)indexPath
+- (UIContextMenuConfiguration *)tableView:(UITableView *)tableView contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath point:(CGPoint)point
 {
-    NSArray* lEpisodes = self.episodes;
-    
-    // swiping on an empty cell not allowed
-    if (indexPath.row >= [lEpisodes count]) {
-        return;
-    }
-    
-    CDEpisode* episode = (CDEpisode*)[lEpisodes objectAtIndex:indexPath.row];
-    
+    if (self.tableView.editing) return nil;
+    if (indexPath.row >= [self.episodes count]) return nil;
+
     WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"\n"
-                                                                   message:nil
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    return [UIContextMenuConfiguration configurationWithIdentifier:nil
+        previewProvider:nil
+        actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
+            __strong EpisodesTableViewController* strongSelf = weakSelf;
+            if (!strongSelf) return [UIMenu menuWithChildren:@[]];
+            return [strongSelf _contextMenuForIndexPath:indexPath];
+        }];
+}
 
-    // Titel fett und mit Abstand oben
-    NSMutableParagraphStyle* paragraphStyle = [[NSMutableParagraphStyle alloc] init];
-    paragraphStyle.alignment = NSTextAlignmentCenter;
-    NSAttributedString* titleAttrString = [[NSAttributedString alloc] initWithString:episode.title
-                                                                          attributes:@{
-                                                                              NSFontAttributeName: [UIFont boldSystemFontOfSize:15],
-                                                                              NSParagraphStyleAttributeName: paragraphStyle
-                                                                          }];
-    [alert setValue:titleAttrString forKey:@"attributedTitle"];
+- (UIMenu *) _contextMenuForIndexPath:(NSIndexPath *)indexPath
+{
+    CDEpisode* episode = (CDEpisode*)[self.episodes objectAtIndex:indexPath.row];
+    NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
 
-    UIAlertAction* favoriteAction = [UIAlertAction actionWithTitle:(episode.starred) ? @"Unmark Favorite".ls : @"Mark as Favorite".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    [self toggleFavoriteAtIndexPath:indexPath];
-                                                    [self cancelDelete:nil];
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }];
-    UIImage* starImage = [UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"];
-    [favoriteAction setValue:[starImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
-    [alert addAction:favoriteAction];
-    
+    // Mark as Favorite / Unmark Favorite
+    WEAK_SELF
+    UIAction* favoriteAction = [UIAction actionWithTitle:(episode.starred) ? @"Unmark Favorite".ls : @"Mark as Favorite".ls
+                                                   image:[UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"]
+                                              identifier:nil
+                                                 handler:^(UIAction *action) {
+                                                     [weakSelf toggleFavoriteAtIndexPath:indexPath];
+                                                 }];
+    [actions addObject:favoriteAction];
+
+    // Add to Play Next (only if not currently playing)
     AudioSession* session = [AudioSession sharedAudioSession];
-    
     if (![episode isEqual:session.episode]) {
-        UIAlertAction* addToPlayNextAction = [UIAlertAction actionWithTitle:@"Add to Play Next".ls
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction * action) {
-                                                    STRONG_SELF
-                                                    [self perform:^(id sender) {
-                                                        // Add directly to play next list
-                                                        [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
+        UIAction* playNextAction = [UIAction actionWithTitle:@"Add to Play Next".ls
+                                                       image:[UIImage systemImageNamed:@"list.bullet.indent"]
+                                                  identifier:nil
+                                                     handler:^(UIAction *action) {
+                                                         [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
+                                                         AudioServicesPlaySystemSound(1519);
 
-                                                        // Visual feedback - show brief toast/banner
-                                                        UILabel* toastLabel = [[UILabel alloc] init];
-                                                        toastLabel.text = @"Added to Play Next".ls;
-                                                        toastLabel.textColor = [UIColor whiteColor];
-                                                        toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-                                                        toastLabel.textAlignment = NSTextAlignmentCenter;
-                                                        toastLabel.font = [UIFont systemFontOfSize:14];
-                                                        toastLabel.layer.cornerRadius = 8;
-                                                        toastLabel.clipsToBounds = YES;
-                                                        toastLabel.alpha = 0;
+                                                         UILabel* toastLabel = [[UILabel alloc] init];
+                                                         toastLabel.text = @"Added to Play Next".ls;
+                                                         toastLabel.textColor = [UIColor whiteColor];
+                                                         toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+                                                         toastLabel.textAlignment = NSTextAlignmentCenter;
+                                                         toastLabel.font = [UIFont systemFontOfSize:14];
+                                                         toastLabel.layer.cornerRadius = 8;
+                                                         toastLabel.clipsToBounds = YES;
+                                                         toastLabel.alpha = 0;
 
-                                                        UIWindow* window = App.ic_keyWindow;
-                                                        [window addSubview:toastLabel];
-                                                        toastLabel.translatesAutoresizingMaskIntoConstraints = NO;
-                                                        [NSLayoutConstraint activateConstraints:@[
-                                                            [toastLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
-                                                            [toastLabel.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
-                                                            [toastLabel.widthAnchor constraintGreaterThanOrEqualToConstant:180],
-                                                            [toastLabel.heightAnchor constraintEqualToConstant:36]
-                                                        ]];
+                                                         UIWindow* window = App.ic_keyWindow;
+                                                         [window addSubview:toastLabel];
+                                                         toastLabel.translatesAutoresizingMaskIntoConstraints = NO;
+                                                         [NSLayoutConstraint activateConstraints:@[
+                                                             [toastLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+                                                             [toastLabel.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
+                                                             [toastLabel.widthAnchor constraintGreaterThanOrEqualToConstant:180],
+                                                             [toastLabel.heightAnchor constraintEqualToConstant:36]
+                                                         ]];
 
-                                                        // Audio feedback
-                                                        AudioServicesPlaySystemSound(1519); // Subtle tick sound
-
-                                                        // Animate toast
-                                                        [UIView animateWithDuration:0.3 animations:^{
-                                                            toastLabel.alpha = 1.0;
-                                                        } completion:^(BOOL finished) {
-                                                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                                                                [UIView animateWithDuration:0.3 animations:^{
-                                                                    toastLabel.alpha = 0;
-                                                                } completion:^(BOOL finished) {
-                                                                    [toastLabel removeFromSuperview];
-                                                                }];
-                                                            });
-                                                        }];
-
-                                                        [self cancelDelete:nil];
-                                                    } afterDelay:0.3];
-                                                    self.alertController = nil;
-                                                }];
-        UIImage* playNextImage = [UIImage systemImageNamed:@"list.bullet.indent"];
-        [addToPlayNextAction setValue:[playNextImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
-        [alert addAction:addToPlayNextAction];
+                                                         [UIView animateWithDuration:0.3 animations:^{
+                                                             toastLabel.alpha = 1.0;
+                                                         } completion:^(BOOL finished) {
+                                                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                                                                 [UIView animateWithDuration:0.3 animations:^{
+                                                                     toastLabel.alpha = 0;
+                                                                 } completion:^(BOOL finished) {
+                                                                     [toastLabel removeFromSuperview];
+                                                                 }];
+                                                             });
+                                                         }];
+                                                     }];
+        [actions addObject:playNextAction];
     }
-    
-    
-    if (![[CacheManager sharedCacheManager] episodeIsCached:episode] && ![[CacheManager sharedCacheManager] isCachingEpisode:episode])
-    {
-        UIAlertAction* downloadAction = [UIAlertAction actionWithTitle:@"Download".ls
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction * action) {
-                                                    STRONG_SELF
-                                                    [self perform:^(id sender) {
-                                                        [self _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {
-                                                            if (canDownload) {
-                                                                [[CacheManager sharedCacheManager] cacheEpisode:episode overwriteCellularLock:YES];
-                                                                EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
-                                                                [cell updatePlayComboButtonState];
 
-                                                                [self cancelDelete:nil];
-                                                            }
-                                                        }];
-                                                    } afterDelay:0.3];
-                                                    self.alertController = nil;
-                                                }];
-        UIImage* downloadImage = [UIImage systemImageNamed:@"arrow.down.circle"];
-        [downloadAction setValue:[downloadImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
-        [alert addAction:downloadAction];
+    // Download (only if not cached and not currently caching)
+    CacheManager* cman = [CacheManager sharedCacheManager];
+    if (![cman episodeIsCached:episode] && ![cman isCachingEpisode:episode]) {
+        UIAction* downloadAction = [UIAction actionWithTitle:@"Download".ls
+                                                       image:[UIImage systemImageNamed:@"arrow.down.circle"]
+                                                  identifier:nil
+                                                     handler:^(UIAction *action) {
+                                                         [weakSelf _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {
+                                                             if (canDownload) {
+                                                                 [[CacheManager sharedCacheManager] cacheEpisode:episode overwriteCellularLock:YES];
+                                                                 EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                                 [cell updatePlayComboButtonState];
+                                                             }
+                                                         }];
+                                                     }];
+        [actions addObject:downloadAction];
     }
-    
-    if ([[CacheManager sharedCacheManager] episodeIsCached:episode])
-    {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Delete File".ls
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction * action) {
-                                                    STRONG_SELF
-                                                    [self perform:^(id sender) {
-                                                        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-                                                        //[DMANAGER markEpisode:episode asDownloaded:NO];
-                                                        EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
-                                                        [cell updatePlayComboButtonState];
-                                                        [self cancelDelete:nil];
-                                                    } afterDelay:0.3];
-                                                    self.alertController = nil;
-                                                }]];
+
+    // Delete File (only if cached)
+    if ([cman episodeIsCached:episode]) {
+        UIAction* deleteFileAction = [UIAction actionWithTitle:@"Delete File".ls
+                                                         image:[UIImage systemImageNamed:@"trash"]
+                                                    identifier:nil
+                                                       handler:^(UIAction *action) {
+                                                           [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+                                                           EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                           [cell updatePlayComboButtonState];
+                                                       }];
+        [actions addObject:deleteFileAction];
     }
-    
-    
-    UIAlertAction* showInfoAction = [UIAlertAction actionWithTitle:@"Episode Info".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    [self _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
-                                                    [self cancelDelete:nil];
-                                                } afterDelay:0.3];
-                                                self.alertController = nil;
-                                            }];
-    UIImage* infoImage = [UIImage systemImageNamed:@"info.circle"];
-    [showInfoAction setValue:[infoImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forKey:@"image"];
-    [alert addAction:showInfoAction];
 
-    [self addAdditionalButtonsToLongPressActionSheet:alert rowIndexPath:indexPath completionBlock:^{
-        STRONG_SELF
-        self.alertController = nil;
-    }];
+    // Episode Info
+    UIAction* infoAction = [UIAction actionWithTitle:@"Episode Info".ls
+                                               image:[UIImage systemImageNamed:@"info.circle"]
+                                          identifier:nil
+                                             handler:^(UIAction *action) {
+                                                 [weakSelf _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
+                                             }];
+    [actions addObject:infoAction];
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                self.alertController = nil;
-                                            }]];
-    // Set sourceView to the cell for iOS 26 Liquid Glass morph animation
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UITableViewCell* sourceCell = [self.tableView cellForRowAtIndexPath:indexPath];
-    popPresenter.sourceView = sourceCell ?: self.view;
-    popPresenter.sourceRect = sourceCell ? sourceCell.bounds : CGRectZero;
-    popPresenter.permittedArrowDirections = 0;
+    // Additional actions from subclasses
+    NSArray<UIMenuElement*>* additionalActions = [self additionalContextMenuActionsForIndexPath:indexPath];
+    if (additionalActions.count > 0) {
+        // Destructive actions in a separate section
+        UIMenu* destructiveSection = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:additionalActions];
+        [actions addObject:destructiveSection];
+    }
 
-    self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
+    return [UIMenu menuWithTitle:episode.title children:actions];
+}
+
+- (NSArray<UIMenuElement*>*) additionalContextMenuActionsForIndexPath:(NSIndexPath*)indexPath
+{
+    return @[];
 }
 
 
@@ -1314,19 +1268,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     
     __weak EpisodesTableViewController* weakSelf = self;
-    cell.shouldShowMore = ^(NSIndexPath* indexPath) {
-        __strong EpisodesTableViewController* strongSelf = weakSelf;
-        
-        NSArray* lEpisodes = strongSelf.episodes;
-        
-        // long pressing on an empty cell not allowed
-        if (indexPath.row >= [lEpisodes count]) {
-            return;
-        }
-        
-        [strongSelf showActionSheetForRowAtIndexPath:indexPath];
-    };
-    
     cell.didPanRight = ^(NSIndexPath* indexPath) {
         [weakSelf didSwipeRightInCellAtIndexPath:indexPath];
     };

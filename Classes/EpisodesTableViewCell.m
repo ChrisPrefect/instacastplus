@@ -107,10 +107,7 @@
         [self.panningContentView addSubview:_playAccessoryButton];
         
         
-        UILongPressGestureRecognizer* pressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
-        pressRecognizer.delegate = self;
-        [self.panningContentView addGestureRecognizer:pressRecognizer];
-        
+        // Long-press gesture removed — UITableView's contextMenuConfigurationForRowAtIndexPath handles long-press via UIContextMenu
 
         UIPanGestureRecognizer* panRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         panRecognizer.delegate = self;

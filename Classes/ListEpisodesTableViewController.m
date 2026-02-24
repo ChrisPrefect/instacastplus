@@ -420,6 +420,20 @@
                                             }]];
 }
 
+- (NSArray<UIMenuElement*>*) additionalContextMenuActionsForIndexPath:(NSIndexPath*)indexPath
+{
+    WEAK_SELF
+    UIAction* deleteAction = [UIAction actionWithTitle:@"Delete".ls
+                                                 image:[UIImage systemImageNamed:@"trash"]
+                                            identifier:nil
+                                               handler:^(UIAction *action) {
+                                                   STRONG_SELF
+                                                   [self archiveEpisodesAtRowAtIndexPath:indexPath];
+                                               }];
+    deleteAction.attributes = UIMenuElementAttributesDestructive;
+    return @[deleteAction];
+}
+
 - (void) archiveEpisodesAtRowAtIndexPath:(NSIndexPath *)indexPath
 {
     if (!indexPath) {

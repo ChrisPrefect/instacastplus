@@ -69,6 +69,20 @@
                                             }]];
 }
 
+- (NSArray<UIMenuElement*>*) additionalContextMenuActionsForIndexPath:(NSIndexPath*)indexPath
+{
+    WEAK_SELF
+    UIAction* deleteAction = [UIAction actionWithTitle:@"Delete".ls
+                                                 image:[UIImage systemImageNamed:@"trash"]
+                                            identifier:nil
+                                               handler:^(UIAction *action) {
+                                                   STRONG_SELF
+                                                   [self showDeleteConfirmPopUp:1 rowIndexPath:indexPath selectedIndexPathes:@[]];
+                                               }];
+    deleteAction.attributes = UIMenuElementAttributesDestructive;
+    return @[deleteAction];
+}
+
 -(void)showDeleteConfirmPopUp:(NSInteger)type rowIndexPath:(NSIndexPath*)indexPathDev selectedIndexPathes:(NSArray*)selectedIndexPathes
 {
     WEAK_SELF
@@ -336,7 +350,13 @@
         UIButton* filterButton = [UIButton buttonWithType:UIButtonTypeSystem];
         [filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         filterButton.titleLabel.font = [UIFont systemFontOfSize:17];
-        [filterButton addTarget:self action:@selector(filterAction:) forControlEvents:UIControlEventTouchUpInside];
+        if (@available(iOS 14.0, *)) {
+            filterButton.menu = [self _buildFilterMenu];
+            filterButton.showsMenuAsPrimaryAction = YES;
+            DebugLog(@"[FilterMenu] menu=%@ showsMenuAsPrimaryAction=%d children=%lu", filterButton.menu, filterButton.showsMenuAsPrimaryAction, (unsigned long)filterButton.menu.children.count);
+        } else {
+            [filterButton addTarget:self action:@selector(filterActionLegacy:) forControlEvents:UIControlEventTouchUpInside];
+        }
         self.filterButton = filterButton;
 
         [buttonStack addArrangedSubview:reloadButton];
@@ -791,12 +811,86 @@
 }
 
 
-- (void) filterAction:(UIBarButtonItem*)item
+- (UIMenu*) _buildFilterMenu
 {
     WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Filter by".ls message:nil  preferredStyle:UIAlertControllerStyleActionSheet];
+    NSString* currentFilter = [[NSUserDefaults standardUserDefaults] stringForKey:_feed.uid] ?: @"All";
 
-    UIAlertAction* allAction = [UIAlertAction actionWithTitle:@"All".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    UIAction* allAction = [UIAction actionWithTitle:@"All".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->isDownloadedFilter = false;
+        [self _filterAllEpisode];
+        [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"All" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.filterButton.menu = [self _buildFilterMenu];
+    }];
+    allAction.state = [currentFilter isEqualToString:@"All"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* unplayedAction = [UIAction actionWithTitle:@"Unplayed".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->isDownloadedFilter = false;
+        [self _filterUnlistenedEpisode];
+        [self.filterButton setTitle:@"Unplayed".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Unplayed" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.filterButton.menu = [self _buildFilterMenu];
+    }];
+    unplayedAction.state = [currentFilter isEqualToString:@"Unplayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* unfinishedAction = [UIAction actionWithTitle:@"Unfinished".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->isDownloadedFilter = false;
+        [self _filterUnfinishedEpisode];
+        [self.filterButton setTitle:@"Unfinished".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Unfinished" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.filterButton.menu = [self _buildFilterMenu];
+    }];
+    unfinishedAction.state = [currentFilter isEqualToString:@"Unfinished"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* unplayedAndStartedAction = [UIAction actionWithTitle:@"Unplayed & Started".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->isDownloadedFilter = false;
+        [self _filterUnplayedAndStartedEpisode];
+        [self.filterButton setTitle:@"Unplayed & Started".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"UnplayedAndStarted" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.filterButton.menu = [self _buildFilterMenu];
+    }];
+    unplayedAndStartedAction.state = [currentFilter isEqualToString:@"UnplayedAndStarted"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* downloadedAction = [UIAction actionWithTitle:@"Downloaded".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->isDownloadedFilter = true;
+        [self _filterDownloadedEpisode];
+        [self.filterButton setTitle:@"Downloaded".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Downloaded" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.filterButton.menu = [self _buildFilterMenu];
+    }];
+    downloadedAction.state = [currentFilter isEqualToString:@"Downloaded"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* favoritesAction = [UIAction actionWithTitle:@"Favorites".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->isDownloadedFilter = false;
+        [self _filterFavoriteEpisode];
+        [self.filterButton setTitle:@"Favorites".ls forState:UIControlStateNormal];
+        [[NSUserDefaults standardUserDefaults] setValue:@"Favorites" forKey:self->_feed.uid];
+        [self reloadDataWithFilter:NO];
+        self.filterButton.menu = [self _buildFilterMenu];
+    }];
+    favoritesAction.state = [currentFilter isEqualToString:@"Favorites"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    return [UIMenu menuWithTitle:@"" children:@[allAction, unplayedAction, unfinishedAction, unplayedAndStartedAction, downloadedAction, favoritesAction]];
+}
+
+- (void) filterActionLegacy:(id)sender
+{
+    WEAK_SELF
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"All".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         STRONG_SELF
         self->isDownloadedFilter = false;
         [self _filterAllEpisode];
@@ -804,10 +898,8 @@
         [[NSUserDefaults standardUserDefaults] setValue:@"All" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
         self.alertController = nil;
-    }];
-    [alert addAction:allAction];
-
-    UIAlertAction* unlistenedAction = [UIAlertAction actionWithTitle:@"Unplayed".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Unplayed".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         STRONG_SELF
         self->isDownloadedFilter = false;
         [self _filterUnlistenedEpisode];
@@ -815,10 +907,8 @@
         [[NSUserDefaults standardUserDefaults] setValue:@"Unplayed" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
         self.alertController = nil;
-    }];
-    [alert addAction:unlistenedAction];
-
-    UIAlertAction* unFinishedAction = [UIAlertAction actionWithTitle:@"Unfinished".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Unfinished".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         STRONG_SELF
         self->isDownloadedFilter = false;
         [self _filterUnfinishedEpisode];
@@ -826,10 +916,8 @@
         [[NSUserDefaults standardUserDefaults] setValue:@"Unfinished" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
         self.alertController = nil;
-    }];
-    [alert addAction:unFinishedAction];
-
-    UIAlertAction* unplayedAndStartedAction = [UIAlertAction actionWithTitle:@"Unplayed & Started".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Unplayed & Started".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         STRONG_SELF
         self->isDownloadedFilter = false;
         [self _filterUnplayedAndStartedEpisode];
@@ -837,10 +925,8 @@
         [[NSUserDefaults standardUserDefaults] setValue:@"UnplayedAndStarted" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
         self.alertController = nil;
-    }];
-    [alert addAction:unplayedAndStartedAction];
-
-    UIAlertAction* downloadedAction = [UIAlertAction actionWithTitle:@"Downloaded".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Downloaded".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         STRONG_SELF
         self->isDownloadedFilter = true;
         [self _filterDownloadedEpisode];
@@ -848,10 +934,8 @@
         [[NSUserDefaults standardUserDefaults] setValue:@"Downloaded" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
         self.alertController = nil;
-    }];
-    [alert addAction:downloadedAction];
-
-    UIAlertAction* favoritesAction = [UIAlertAction actionWithTitle:@"Favorites".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Favorites".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         STRONG_SELF
         self->isDownloadedFilter = false;
         [self _filterFavoriteEpisode];
@@ -859,22 +943,21 @@
         [[NSUserDefaults standardUserDefaults] setValue:@"Favorites" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
         self.alertController = nil;
-    }];
-    [alert addAction:favoritesAction];
-
-    UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
         STRONG_SELF
         self.alertController = nil;
-    }];
-    [alert addAction:defaultAction];
+    }]];
 
-    // Set sourceView for iOS 26 Liquid Glass morph animation
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
     UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
     popPresenter.sourceView = self.filterButton;
     popPresenter.sourceRect = self.filterButton.bounds;
     popPresenter.permittedArrowDirections = UIPopoverArrowDirectionUp;
-
+    if ([ICAppearanceManager sharedManager].nightSettingMode) {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    } else {
+        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    }
     self.alertController = alert;
     [self presentAlertControllerAnimated:YES completion:NULL];
 }

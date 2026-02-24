@@ -392,7 +392,11 @@
         self.addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
     }
     if (!self.sortItem) {
-        self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
+        if (@available(iOS 14.0, *)) {
+            self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] menu:[self _buildSortMenu]];
+        } else {
+            self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
+        }
     }
 
     // Toolbar-Items nur setzen wenn noch nicht gesetzt
@@ -861,8 +865,100 @@
 }
 
 
+- (UIMenu*) _buildSortMenu API_AVAILABLE(ios(14.0))
+{
+    WEAK_SELF
+    NSString* currentMode = [USER_DEFAULTS stringForKey:FeedListSortMode];
+
+    UIAction* titleAction = [UIAction actionWithTitle:@"Title".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->_flags.userAction = 1;
+        [USER_DEFAULTS setObject:@"title" forKey:FeedListSortMode];
+        [DMANAGER sortFeedsByKey:@"title" ascending:YES selector:@selector(naturalCaseInsensitiveCompare:)];
+        [self.fetchController performFetch:nil];
+        [self.tableView reloadData];
+        self->_flags.userAction = 0;
+        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+    }];
+    titleAction.state = [currentMode isEqualToString:@"title"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* unplayedAction = [UIAction actionWithTitle:@"Unplayed".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->_flags.userAction = 1;
+        [USER_DEFAULTS setObject:@"unplayed" forKey:FeedListSortMode];
+        [DMANAGER sortFeedsByKey:@"unplayedCount" ascending:NO selector:nil];
+        [self.fetchController performFetch:nil];
+        [self.tableView reloadData];
+        self->_flags.userAction = 0;
+        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+    }];
+    unplayedAction.state = [currentMode isEqualToString:@"unplayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* lastPlayedAction = [UIAction actionWithTitle:@"Last Played".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->_flags.userAction = 1;
+        [USER_DEFAULTS setObject:@"lastPlayed" forKey:FeedListSortMode];
+        [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
+            NSDate* dateA = a.lastPlayed;
+            NSDate* dateB = b.lastPlayed;
+            if (!dateA && !dateB) return NSOrderedSame;
+            if (!dateA) return NSOrderedDescending;
+            if (!dateB) return NSOrderedAscending;
+            return [dateB compare:dateA];
+        }];
+        [self.fetchController performFetch:nil];
+        [self.tableView reloadData];
+        self->_flags.userAction = 0;
+        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+    }];
+    lastPlayedAction.state = [currentMode isEqualToString:@"lastPlayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    UIAction* newestAction = [UIAction actionWithTitle:@"Newest Episodes".ls image:nil identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        self->_flags.userAction = 1;
+        [USER_DEFAULTS setObject:@"newestEpisodes" forKey:FeedListSortMode];
+        [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
+            NSDate* dateA = a.lastPubDate;
+            NSDate* dateB = b.lastPubDate;
+            if (!dateA && !dateB) return NSOrderedSame;
+            if (!dateA) return NSOrderedDescending;
+            if (!dateB) return NSOrderedAscending;
+            return [dateB compare:dateA];
+        }];
+        [self.fetchController performFetch:nil];
+        [self.tableView reloadData];
+        self->_flags.userAction = 0;
+        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+    }];
+    newestAction.state = [currentMode isEqualToString:@"newestEpisodes"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+
+    NSMutableArray* actions = [NSMutableArray arrayWithObjects:titleAction, unplayedAction, lastPlayedAction, newestAction, nil];
+
+    if ([DMANAGER hasManualFeedOrder]) {
+        UIAction* manualAction = [UIAction actionWithTitle:@"Manual".ls image:nil identifier:nil handler:^(UIAction *action) {
+            STRONG_SELF
+            self->_flags.userAction = 1;
+            [USER_DEFAULTS setObject:@"manual" forKey:FeedListSortMode];
+            [DMANAGER restoreManualFeedOrder];
+            [self.fetchController performFetch:nil];
+            [self.tableView reloadData];
+            self->_flags.userAction = 0;
+            if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+        }];
+        manualAction.state = [currentMode isEqualToString:@"manual"] ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [actions addObject:manualAction];
+    }
+
+    return [UIMenu menuWithTitle:@"Sort by".ls children:actions];
+}
+
 - (void) sortAction:(UIBarButtonItem*)item
 {
+    if (@available(iOS 14.0, *)) {
+        // Menu is shown automatically via sortItem.menu
+        return;
+    }
+
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Sort by".ls
                                                                    message:nil
@@ -884,7 +980,6 @@
                                                           }];
     if ([currentMode isEqualToString:@"title"]) [titleAction setValue:@YES forKey:@"checked"];
     [alert addAction:titleAction];
-
 
     UIAlertAction* unplayedAction = [UIAlertAction actionWithTitle:@"Unplayed".ls style:UIAlertActionStyleDefault
                                                         handler:^(UIAlertAction * action) {

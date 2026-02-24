@@ -532,58 +532,42 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     [self presentAlertControllerAnimated:YES completion:NULL];
 }
 
+- (UIContextMenuConfiguration *)tableView:(UITableView *)tableView contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath point:(CGPoint)point
+{
+    if (self.editing) return nil;
+    if (!self.parentHash) return nil;
+    if (indexPath.row >= [self.sections count]) return nil;
+
+    NSDictionary* section = [self.sections objectAtIndex:indexPath.row];
+    NSArray* myBookmarks = [self.bookmarks objectForKey:self.parentHash];
+    if (indexPath.row >= (NSInteger)[myBookmarks count]) return nil;
+    CDBookmark* bookmark = [myBookmarks objectAtIndex:indexPath.row];
+
+    WEAK_SELF
+    return [UIContextMenuConfiguration configurationWithIdentifier:nil
+        previewProvider:nil
+        actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
+            __strong BookmarksTableViewController* strongSelf = weakSelf;
+            if (!strongSelf) return [UIMenu menuWithChildren:@[]];
+
+            UIAction* playAction = [UIAction actionWithTitle:@"Start Playing".ls image:[UIImage systemImageNamed:@"play"] identifier:nil handler:^(UIAction *action) {
+                [strongSelf playBookmark:bookmark section:section];
+            }];
+
+            UIAction* renameAction = [UIAction actionWithTitle:@"Rename".ls image:[UIImage systemImageNamed:@"pencil"] identifier:nil handler:^(UIAction *action) {
+                [strongSelf renameBookmark:bookmark section:section indexPath:indexPath];
+            }];
+
+            return [UIMenu menuWithChildren:@[playAction, renameAction]];
+        }];
+}
+
 - (void) selectBookmark:(CDBookmark*)bookmark section:(NSDictionary*)section indexPath:(NSIndexPath*)indexPath
 {
-    WEAK_SELF
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil
-                                                                   message:nil
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Start Playing".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    [self playBookmark:bookmark section:section];
-                                                } afterDelay:0.3];
-                                                [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:YES];
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Rename".ls
-                                              style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self perform:^(id sender) {
-                                                    [self renameBookmark:bookmark section:section indexPath:indexPath];
-                                                } afterDelay:0.3];
-                                                [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:YES];
-                                                self.alertController = nil;
-                                            }]];
-    
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:^(UIAlertAction * action) {
-                                                STRONG_SELF
-                                                [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:YES];
-                                                self.alertController = nil;
-                                            }]];
-    [alert setModalPresentationStyle:UIModalPresentationPopover];
-    UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-    UIViewController* rootViewController = [(InstacastAppDelegate*)[[UIApplication sharedApplication]delegate] getRootViewControllerDev];
-    popPresenter.sourceView = [rootViewController view];
-    popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-    popPresenter.permittedArrowDirections = 0;
-    if ([ICAppearanceManager sharedManager].nightSettingMode)
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    }
-    else
-    {
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
-    self.alertController = alert;
-    [self presentAlertControllerAnimated:YES completion:NULL];
+    // On iOS 13+, context menu handles long-press actions.
+    // Tap directly plays the bookmark.
+    [self playBookmark:bookmark section:section];
+    [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
 

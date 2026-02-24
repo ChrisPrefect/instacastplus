@@ -869,15 +869,25 @@
     UIBarButtonItem* playItem = [[UIBarButtonItem alloc] initWithCustomView:self.playButton];
     playItem.enabled = ([self.episode preferedMedium] != nil);
     
-    UIBarButtonItem* downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Download"]
-                                                                     style:UIBarButtonItemStylePlain target:self action:@selector(downloadAction:)];
+    UIBarButtonItem* downloadItem;
+    if (@available(iOS 14.0, *)) {
+        downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Download"] menu:[self _buildDownloadMenu]];
+    } else {
+        downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Download"]
+                                                        style:UIBarButtonItemStylePlain target:self action:@selector(downloadAction:)];
+    }
     downloadItem.enabled = ([self.episode preferedMedium] != nil);
 
     UIBarButtonItem* shareItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Share"]
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(shareAction:)];
 
-    UIBarButtonItem* moreItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar More"]
-                                                                 style:UIBarButtonItemStylePlain target:self action:@selector(moreAction:)];
+    UIBarButtonItem* moreItem;
+    if (@available(iOS 14.0, *)) {
+        moreItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar More"] menu:[self _buildMoreMenu]];
+    } else {
+        moreItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar More"]
+                                                    style:UIBarButtonItemStylePlain target:self action:@selector(moreAction:)];
+    }
     
     UIBarButtonItem* negativeSpaceItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
     negativeSpaceItem.width = -12;
@@ -1183,16 +1193,105 @@
     }
 }
 
+- (UIMenu*) _buildDownloadMenu API_AVAILABLE(ios(14.0))
+{
+    WEAK_SELF
+    CacheManager* cman = [CacheManager sharedCacheManager];
+    NSMutableArray* actions = [NSMutableArray array];
+
+    if (![cman episodeIsCached:self.episode]) {
+        NSString* addTitle = @"Download".ls;
+        if ([self.episode preferedMedium].byteSize > 0LL) {
+            unsigned long long bytes = [self.episode preferedMedium].byteSize - [cman numberOfDownloadedBytesForEpisode:self.episode];
+            NSString* sizeString = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+            addTitle = [NSString stringWithFormat:@"%@ (%@)", @"Download".ls, sizeString];
+        }
+        [actions addObject:[UIAction actionWithTitle:addTitle image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *action) {
+            STRONG_SELF
+            [self _downloadFile];
+        }]];
+    } else {
+        NSString* redownloadTitle = @"Re-Download".ls;
+        unsigned long long bytes = [self.episode preferedMedium].byteSize;
+        if (bytes > 0LL) {
+            NSString* sizeString = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
+            redownloadTitle = [NSString stringWithFormat:@"%@ (%@)", @"Re-Download".ls, sizeString];
+        }
+        [actions addObject:[UIAction actionWithTitle:redownloadTitle image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *action) {
+            STRONG_SELF
+            PlaybackManager* pm = [PlaybackManager playbackManager];
+            if ([pm.playingEpisode isEqual:self.episode]) {
+                [[AudioSession sharedAudioSession] stop];
+            }
+            [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
+            [self _updateTimeDisplay];
+            [self updatePlayComboButtonState];
+            [self _downloadFile];
+        }]];
+
+        UIAction* deleteAction = [UIAction actionWithTitle:@"Delete File".ls image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
+            STRONG_SELF
+            [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
+            [DMANAGER markEpisode:self.episode asDownloaded:NO];
+            [self _updateTimeDisplay];
+            [self updatePlayComboButtonState];
+        }];
+        deleteAction.attributes = UIMenuElementAttributesDestructive;
+        [actions addObject:deleteAction];
+    }
+
+    return [UIMenu menuWithChildren:actions];
+}
+
+- (UIMenu*) _buildMoreMenu API_AVAILABLE(ios(14.0))
+{
+    WEAK_SELF
+    NSMutableArray* actions = [NSMutableArray array];
+
+    NSString* playedTitle = self.episode.consumed ? @"Mark as Unplayed".ls : @"Mark as Played".ls;
+    NSString* playedIcon = self.episode.consumed ? @"circle" : @"checkmark.circle";
+    [actions addObject:[UIAction actionWithTitle:playedTitle image:[UIImage systemImageNamed:playedIcon] identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        BOOL flag = !self.episode.consumed;
+        [DMANAGER markEpisode:self.episode asConsumed:flag];
+        PlaySoundFile(flag ? @"AffirmOut" : @"AffirmIn", NO);
+        if (self.episode.consumed && [self.episode isEqual:[AudioSession sharedAudioSession].episode]) {
+            [[AudioSession sharedAudioSession] stop];
+            [self.navigationItem setRightBarButtonItem:nil animated:YES];
+        }
+        [self _updateTimeDisplay];
+        [self updatePlayComboButtonState];
+    }]];
+
+    NSString* favTitle = self.episode.starred ? @"Unmark Favorite".ls : @"Mark as Favorite".ls;
+    NSString* favIcon = self.episode.starred ? @"star.slash" : @"star";
+    [actions addObject:[UIAction actionWithTitle:favTitle image:[UIImage systemImageNamed:favIcon] identifier:nil handler:^(UIAction *action) {
+        STRONG_SELF
+        BOOL flag = !self.episode.starred;
+        [DMANAGER markEpisode:self.episode asStarred:flag];
+        PlaySoundFile(flag ? @"AffirmIn" : @"AffirmOut", NO);
+        [self _updateTimeDisplay];
+        [self updatePlayComboButtonState];
+    }]];
+
+    return [UIMenu menuWithChildren:actions];
+}
+
 - (void) downloadAction:(id)sender
 {
+    if (@available(iOS 14.0, *)) {
+        // Menu is shown automatically via barButtonItem.menu
+        return;
+    }
+
     CacheManager* cman = [CacheManager sharedCacheManager];
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    
+
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil
                                                                    message:nil
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
-    
+
     if (![cman episodeIsCached:self.episode])
     {
         NSString* addTitle = @"Download".ls;
@@ -1207,9 +1306,7 @@
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF
                                                     [self perform:^(id sender) {
-                                                        
                                                         [self _downloadFile];
-                                                        
                                                     } afterDelay:0.3];
                                                     self.alertController = nil;
                                                 }]];
@@ -1222,22 +1319,19 @@
             NSString* sizeString = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
             redownloadTitle = [NSString stringWithFormat:@"%@ (%@)", @"Re-Download".ls, sizeString];
         }
-        
+
         [alert addAction:[UIAlertAction actionWithTitle:redownloadTitle
                                                   style:UIAlertActionStyleDefault
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF
                                                     [self perform:^(id sender) {
-                                                        
                                                         if ([pman.playingEpisode isEqual:self.episode]) {
                                                             [[AudioSession sharedAudioSession] stop];
                                                         }
-                                                        
                                                         [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
                                                         [self _updateTimeDisplay];
                                                         [self updatePlayComboButtonState];
                                                         [self _downloadFile];
-                                                        
                                                     } afterDelay:0.3];
                                                     self.alertController = nil;
                                                 }]];
@@ -1247,17 +1341,15 @@
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF
                                                     [self perform:^(id sender) {
-                                                        
                                                         [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
                                                         [DMANAGER markEpisode:self.episode asDownloaded:NO];
                                                         [self _updateTimeDisplay];
                                                         [self updatePlayComboButtonState];
-                                                        
                                                     } afterDelay:0.3];
                                                     self.alertController = nil;
                                                 }]];
     }
-    
+
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
                                               style:UIAlertActionStyleCancel
                                             handler:^(UIAlertAction * action) {
@@ -1309,55 +1401,48 @@
 
 - (void) moreAction:(id)sender
 {
+    if (@available(iOS 14.0, *)) {
+        // Menu is shown automatically via barButtonItem.menu
+        return;
+    }
+
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil
                                                                    message:nil
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
-    
+
     [alert addAction:[UIAlertAction actionWithTitle:(self.episode.consumed)?@"Mark as Unplayed".ls:@"Mark as Played".ls
                                               style:UIAlertActionStyleDefault
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
                                                 [self perform:^(id sender) {
-                                                    
                                                     BOOL flag = !self.episode.consumed;
                                                     [DMANAGER markEpisode:self.episode asConsumed:flag];
-                                                    
                                                     PlaySoundFile((flag)?@"AffirmOut":@"AffirmIn", NO);
-                                                    
-                                                    // stop playback of episode
                                                     if (self.episode.consumed && [self.episode isEqual:[AudioSession sharedAudioSession].episode]) {
                                                         [[AudioSession sharedAudioSession] stop];
                                                         [self.navigationItem setRightBarButtonItem:nil animated:YES];
                                                     }
-                                                    
                                                     [self _updateTimeDisplay];
                                                     [self updatePlayComboButtonState];
-
-                                                    
                                                 } afterDelay:0.3];
                                                 self.alertController = nil;
                                             }]];
-    
+
     [alert addAction:[UIAlertAction actionWithTitle:(self.episode.starred)?@"Unmark Favorite".ls:@"Mark as Favorite".ls
                                               style:UIAlertActionStyleDefault
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
                                                 [self perform:^(id sender) {
-                                                    
                                                     BOOL flag = !self.episode.starred;
                                                     [DMANAGER markEpisode:self.episode asStarred:flag];
-                                                    
                                                     PlaySoundFile((flag)?@"AffirmIn":@"AffirmOut", NO);
-                                                    
                                                     [self _updateTimeDisplay];
                                                     [self updatePlayComboButtonState];
-
-                                                    
                                                 } afterDelay:0.3];
                                                 self.alertController = nil;
                                             }]];
-    
+
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
                                               style:UIAlertActionStyleCancel
                                             handler:^(UIAlertAction * action) {

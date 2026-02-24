@@ -63,6 +63,10 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 {
     [super viewWillAppear:animated];
 
+    // SettingsValuesTableViewController sets the UserDefault directly,
+    // so trigger appearance update when returning from Appearance mode selection.
+    [[ICAppearanceManager sharedManager] updateAppearance];
+
     [self updateAppearance];
 }
 
@@ -548,44 +552,14 @@ API_AVAILABLE(ios(14.0)){
 
     else if (indexPath.section == kAppearanceThemeSection && indexPath.row == 0)
     {
-        [tableView deselectRowAtIndexPath:indexPath animated:YES];
-
-        ICAppearanceMode currentMode = [ICAppearanceManager sharedManager].appearanceMode;
-
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil
-                                                                       message:nil
-                                                                preferredStyle:UIAlertControllerStyleActionSheet];
-
-        NSString* autoTitle = (currentMode == ICAppearanceModeAutomatic) ? [@"✓ " stringByAppendingString:@"Automatic".ls] : @"Automatic".ls;
-        [alert addAction:[UIAlertAction actionWithTitle:autoTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
-            [ICAppearanceManager sharedManager].appearanceMode = ICAppearanceModeAutomatic;
-            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        }]];
-
-        NSString* lightTitle = (currentMode == ICAppearanceModeLight) ? [@"✓ " stringByAppendingString:@"Light".ls] : @"Light".ls;
-        [alert addAction:[UIAlertAction actionWithTitle:lightTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
-            [ICAppearanceManager sharedManager].appearanceMode = ICAppearanceModeLight;
-            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        }]];
-
-        NSString* darkTitle = (currentMode == ICAppearanceModeDark) ? [@"✓ " stringByAppendingString:@"Dark".ls] : @"Dark".ls;
-        [alert addAction:[UIAlertAction actionWithTitle:darkTitle style:UIAlertActionStyleDefault handler:^(UIAlertAction* action) {
-            [ICAppearanceManager sharedManager].appearanceMode = ICAppearanceModeDark;
-            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
-        }]];
-
-        [alert setModalPresentationStyle:UIModalPresentationPopover];
-        UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-        popPresenter.sourceView = [tableView cellForRowAtIndexPath:indexPath];
-        popPresenter.sourceRect = [tableView cellForRowAtIndexPath:indexPath].bounds;
-        popPresenter.permittedArrowDirections = 0;
-        popPresenter.delegate = self;
-        if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-        } else {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-        }
-        [self presentViewController:alert animated:YES completion:nil];
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.valueType = kSettingTypeInteger;
+        controller.key = kDefaultAppearanceMode;
+        controller.title = @"Appearance".ls;
+        controller.values = @[ @(ICAppearanceModeAutomatic), @(ICAppearanceModeLight), @(ICAppearanceModeDark) ];
+        controller.titles = @[ @"Automatic".ls, @"Light".ls, @"Dark".ls ];
+        controller.footerText = @"Automatic switches between Light and Dark based on your device settings.".ls;
+        [self.navigationController pushViewController:controller animated:YES];
         return;
     }
 
