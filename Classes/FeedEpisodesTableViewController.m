@@ -353,7 +353,6 @@
         if (@available(iOS 14.0, *)) {
             filterButton.menu = [self _buildFilterMenu];
             filterButton.showsMenuAsPrimaryAction = YES;
-            DebugLog(@"[FilterMenu] menu=%@ showsMenuAsPrimaryAction=%d children=%lu", filterButton.menu, filterButton.showsMenuAsPrimaryAction, (unsigned long)filterButton.menu.children.count);
         } else {
             [filterButton addTarget:self action:@selector(filterActionLegacy:) forControlEvents:UIControlEventTouchUpInside];
         }

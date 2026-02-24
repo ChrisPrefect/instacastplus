@@ -136,7 +136,7 @@
         [self setTitleColor:ICBackgroundColor forState:UIControlStateNormal];
         //[self setTitle:[NSString stringWithFormat:@"%ld", sleepTimer] forState:UIControlStateNormal];
         
-        NSTimeInterval tRem = session.timerRemainingTime + 1;
+        NSTimeInterval tRem = ceil(session.timerRemainingTime);
         //NSLog(@"Player time remaining==%f",tRem);
         NSInteger minutes = floor(tRem/60);
         NSInteger seconds = trunc(tRem - minutes * 60);

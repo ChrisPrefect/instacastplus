@@ -611,6 +611,7 @@
     [DMANAGER reorderFeedFromIndex:srcIndex toIndex:dstIndex];
     [DMANAGER saveManualFeedOrder];
     [USER_DEFAULTS setObject:@"manual" forKey:FeedListSortMode];
+    if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
 
     _flags.userAction = 0;
 }
@@ -934,7 +935,7 @@
 
     NSMutableArray* actions = [NSMutableArray arrayWithObjects:titleAction, unplayedAction, lastPlayedAction, newestAction, nil];
 
-    if ([DMANAGER hasManualFeedOrder]) {
+    if ([DMANAGER hasManualFeedOrder] || [currentMode isEqualToString:@"manual"]) {
         UIAction* manualAction = [UIAction actionWithTitle:@"Manual".ls image:nil identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             self->_flags.userAction = 1;

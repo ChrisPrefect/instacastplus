@@ -1445,10 +1445,21 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayPlayEpisode:(CDEpisode*)episode at:(NSTimeInterval)startTime
 {
+    CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode;
+
+    if (currentEpisode == episode) {
+        PlaybackManager* pman = [PlaybackManager playbackManager];
+        if (pman.isPaused) {
+            [pman play];
+        }
+        [self carPlayUpdateNowPlayingTemplateConfiguration];
+        [self carPlayShowNowPlayingTemplate];
+        return;
+    }
+
     [[AudioSession sharedAudioSession] playEpisode:episode queueUpCurrent:NO at:MAX(0, startTime) autostart:YES];
     [self carPlayUpdateNowPlayingTemplateConfiguration];
     [self carPlayShowNowPlayingTemplate];
-    [self carPlayPresentiPhonePlayer];
 }
 
 - (void)carPlayShowNowPlayingTemplate
@@ -1478,7 +1489,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         }
 
         PlaybackViewController* playbackController = [PlaybackViewController playbackViewController];
-        [playbackController presentFromParentViewController:parentController autostart:NO completion:nil];
+        [playbackController presentFromParentViewController:parentController autostart:YES completion:nil];
     });
 }
 

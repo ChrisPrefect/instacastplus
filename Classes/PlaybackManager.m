@@ -888,7 +888,7 @@ enum {
             [weakSelf willChangeValueForKey:@"speedControl"];
             _speedControl = [feed integerForKey:DefaultPlaybackSpeed];
             [weakSelf didChangeValueForKey:@"speedControl"];
-            
+
             [weakSelf willChangeValueForKey:@"duration"];
             [weakSelf didChangeValueForKey:@"duration"];
 
