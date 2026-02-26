@@ -173,6 +173,7 @@
     if (@available(iOS 26.0, *)) {
         self.tableView.bottomEdgeEffect.hidden = YES;
     }
+    self.edgesForExtendedLayout = UIRectEdgeBottom;
 
     self.title = @"Podcasts".ls;
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]

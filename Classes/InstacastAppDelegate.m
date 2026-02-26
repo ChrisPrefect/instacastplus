@@ -26,6 +26,8 @@
 #import "BookmarksTableViewController.h"
 #import "CDModel.h"
 #import "EpisodeLoadingManager.h"
+#import "WidgetDataExporter.h"
+#import "InstacastPlus-Swift.h"
 
 #import "MainViewController_4.h"
 #import "SubscriptionsTableViewController.h"
@@ -63,6 +65,8 @@
     NSMutableDictionary* defaults = [[NSDictionary dictionaryWithContentsOfFile:defaultsPlist] mutableCopy];
 
     NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
+    defaults[WidgetThemeDefaultActive] = @YES;
+    defaults[@"LiveActivityEnabled"] = @YES;
     [defs registerDefaults:defaults];
 
     if (![defs objectForKey:FirstLaunchDate]) {
@@ -242,6 +246,10 @@
         [[SmarthomeManager sharedManager] start];
     }
 
+    // Start widget data exporter — must be in AppDelegate (not SceneDelegate)
+    // so it also receives notifications during background fetch.
+    [[WidgetDataExporter sharedExporter] startObserving];
+    [WidgetKitHelper startListeningForWidgetActions];
 }
 
 

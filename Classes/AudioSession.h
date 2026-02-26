@@ -43,6 +43,7 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 @property (nonatomic, readonly) NSTimeInterval timerRemainingTime;
 @property (nonatomic, assign) PlaybackStopTimeValue timerValue;
 @property (nonatomic, readonly, strong) NSDate *stopDate;
+- (void)setTimerWithDuration:(NSTimeInterval)seconds; // arbitrary seconds, bypasses preset enum
 
 // Silent audio playback to keep app alive when paused in background
 - (void)startSilentPlayback;

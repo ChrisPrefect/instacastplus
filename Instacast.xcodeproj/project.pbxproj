@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		0BC7C038B900D866CD820D92 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9E85E0F1B1C46AF663E6C92E /* Localizable.strings */; };
 		188B3C742E175728004D14A5 /* SkipTimeCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C722E175728004D14A5 /* SkipTimeCell.m */; };
 		188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = 188B3C732E175728004D14A5 /* SkipTimeCell.xib */; };
 		188B3C7A2E175728004D14A5 /* ChapterSkipListViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */; };
@@ -262,20 +263,42 @@
 		1D60589B0D05DD56006BFB54 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.m */; };
 		1D60589F0D05DD5A006BFB54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D30AB110D05D00D00671497 /* Foundation.framework */; };
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
+		230AD9362F6768BAECE4F8F7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
+		3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7A8B9C0D1E2F3A4B5C6D7E8F /* LockScreenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */; };
+		9F0E1D2C3B4A5968A7B6C5D4 /* PodcastGridWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */; };
+		3CCB7C121A2E030E38E79C3E /* NowPlayingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */; };
+		49D903092A323760C89F3C52 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		549252E172585DFA15883AE7 /* SmartListProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F18A9A9049D062D880172CA /* SmartListProvider.swift */; };
+		583FA5429C9AB195D2CA972F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 057F44A6199937D988246F7F /* Assets.xcassets */; };
+		5C20094B64F67BF1D6D0C4F1 /* SmartListConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */; };
+		B8C4D2E1F0A3914725C6D837 /* PodcastGridConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E0F1A2B3C4856671D82E93 /* PodcastGridConfigIntent.swift */; };
+		6F2559FE0FC9F90720C002D1 /* EpisodeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E204D7F9561339C72E9FA9B5 /* EpisodeRowView.swift */; };
 		8189C509C0C8211E6CDCD159 /* ICBackupImportProgressView.m in Sources */ = {isa = PBXBuildFile; fileRef = B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */; };
 		835A5AF02F338F7800A70766 /* ImportExportSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */; };
 		835A5B0B2F33BBC000A70766 /* SmarthomeSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0A2F33BBC000A70766 /* SmarthomeSettingsViewController.m */; };
 		835A5B0D2F33BBDA00A70766 /* SmarthomeManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0C2F33BBDA00A70766 /* SmarthomeManager.m */; };
 		835A5B102F33BBFE00A70766 /* ICMQTTClient.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */; };
 		83D65DAB2F2F6A9000A3CC18 /* EpisodeLoadingManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */; };
+		85F0D18A72FD825D7C180C98 /* WidgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */; };
 		8B7DFB35A1D5B611CA90078F /* InstacastBackupImporter.m in Sources */ = {isa = PBXBuildFile; fileRef = 1965448EF551B91A1C5B9BA5 /* InstacastBackupImporter.m */; };
 		8D2721308493583FDC2D5AF0 /* InstacastBackupParser.m in Sources */ = {isa = PBXBuildFile; fileRef = F169BFC4C1DC5A7320C86CCA /* InstacastBackupParser.m */; };
+		8F73EF0412DE74E198EE4CB4 /* InstacastWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB5A45E6C7CB1D718F47F10 /* InstacastWidgets.swift */; };
 		9259B7F32D20FA990035AA91 /* SettingInputViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B7F22D20FA990035AA91 /* SettingInputViewController.m */; };
 		9259B80D2D33B9010035AA91 /* SettingInputChapterController.m in Sources */ = {isa = PBXBuildFile; fileRef = 9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */; };
+		9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D294C45DC205F05467440EC /* SharedConstants.swift */; };
+		95A7FECEA2CCB0FFDE27A33A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; };
 		9EA6F144FB33329DD4241431 /* InstacastBackupImportViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */; };
 		A09342B69F23219DCA42408C /* InstacastBackupData.m in Sources */ = {isa = PBXBuildFile; fileRef = 9B172640A841BB0E33457ED9 /* InstacastBackupData.m */; };
 		A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */; };
+		A7DC141C75141EE73DD23778 /* StatsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35307105E5905E5F84562C64 /* StatsProvider.swift */; };
+		A89DF17ACA734175ABBDB278 /* SharedContainerReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */; };
+		AE12279A77DE7A93EEDD0DED /* WidgetControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C56C700102BB7C820DF5AC17 /* WidgetControlIntents.swift */; };
+		B11A4DA81C178356BE3E0D86 /* StatsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA31224D071849FE16A7472 /* StatsWidget.swift */; };
+		BDDA2F12D823EEED173BED3F /* SmartListWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB33E265B93207D959630A1 /* SmartListWidget.swift */; };
+		C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */; };
+		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
 		CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000006 /* PlaybackSettingsViewController.m */; };
 		CC000001AABB000000000007 /* SleepTimerSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */; };
@@ -309,8 +332,28 @@
 		CE3EA6992AA7A952001900EB /* FMStatement.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA68C2AA7A952001900EB /* FMStatement.m */; };
 		CE3EA69A2AA7A952001900EB /* FMDatabasePool.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA68F2AA7A952001900EB /* FMDatabasePool.m */; };
 		CE3EA69B2AA7A952001900EB /* FMResultSet.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA6902AA7A952001900EB /* FMResultSet.m */; };
+		D6A4823AE687A9FC8EC55A8A /* WidgetKitHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */; };
+		D6FA25A2A5E5E241244604CB /* ProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4A18A6F2FA17A9B146E331 /* ProgressBarView.swift */; };
+		DF013769E8097C30D565554B /* WidgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */; };
+		E2BF2DBFB7B6377BA63CE29E /* WidgetDataExporter.m in Sources */ = {isa = PBXBuildFile; fileRef = E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */; };
+		E6F07FC95B90C494C0ABD87A /* NowPlayingProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */; };
+		F278616A7519258ABDD48C9F /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D294C45DC205F05467440EC /* SharedConstants.swift */; };
+		A7C8D9E0F1A2B3C4D5E6F7A8 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B7C8D9E0F1A2B3C4D5E6F7 /* LiveActivityManager.swift */; };
+		B2D3E4F5A6B7C8D9E0F1A2B3 /* NowPlayingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */; };
+		C3E4F5A6B7C8D9E0F1A2B3C4 /* NowPlayingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */; };
+		E5A6B7C8D9E0F1A2B3C4D5E6 /* NowPlayingLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F5A6B7C8D9E0F1A2B3C4D5 /* NowPlayingLiveActivity.swift */; };
 		F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D43654723F24AFC7D0364635 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 29B97313FDCFA39411CA2CEA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3B6DD94FE7671D4054770663;
+			remoteInfo = InstacastWidgets;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		1BC25F1C1C6A3CBD0026CF1B /* Embed Frameworks */ = {
@@ -323,9 +366,22 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1CED292F8826F350D8F93DEF /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		057F44A6199937D988246F7F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		05DDBFFC087D9C88BF6EE0FF /* WidgetDataExporter.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = WidgetDataExporter.h; sourceTree = "<group>"; };
 		1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupImportViewController.m; sourceTree = "<group>"; };
 		188B3C712E175728004D14A5 /* SkipTimeCell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SkipTimeCell.h; sourceTree = "<group>"; };
 		188B3C722E175728004D14A5 /* SkipTimeCell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SkipTimeCell.m; sourceTree = "<group>"; };
@@ -761,12 +817,27 @@
 		1D3623250D0F684500981E51 /* InstacastAppDelegate.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = InstacastAppDelegate.m; sourceTree = "<group>"; };
 		1D6058910D05DD3D006BFB54 /* InstacastPlus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstacastPlus.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1DF5F4DF0D08C38300B7A737 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		2030BFC1217ACA7E4CF62D1A /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		27C03CE231950A5FA4157032 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		288765FC0DF74451002DB57D /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		2EB5A45E6C7CB1D718F47F10 /* InstacastWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InstacastWidgets.swift; sourceTree = "<group>"; };
 		32CA4F630368D1EE00C91783 /* Instacast_Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Instacast_Prefix.pch; sourceTree = "<group>"; };
+		35307105E5905E5F84562C64 /* StatsProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StatsProvider.swift; sourceTree = "<group>"; };
+		3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingProvider.swift; sourceTree = "<group>"; };
 		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
+		6D294C45DC205F05467440EC /* SharedConstants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
+		D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LockScreenWidgets.swift; sourceTree = "<group>"; };
+		E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PodcastGridWidget.swift; sourceTree = "<group>"; };
+		6FA31224D071849FE16A7472 /* StatsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StatsWidget.swift; sourceTree = "<group>"; };
 		7151C9D64D31E80C30AE2762 /* InstacastBackupData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupData.h; sourceTree = "<group>"; };
 		74E0608347BE5D8CDADAC62E /* DonationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DonationViewController.h; sourceTree = "<group>"; };
+		7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetKitHelper.swift; sourceTree = "<group>"; };
+		7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
+		A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingActivity.swift; sourceTree = "<group>"; };
+		D4F5A6B7C8D9E0F1A2B3C4D5 /* NowPlayingLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingLiveActivity.swift; sourceTree = "<group>"; };
+		F6B7C8D9E0F1A2B3C4D5E6F7 /* LiveActivityManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
+		80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedContainerReader.swift; sourceTree = "<group>"; };
 		835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImportExportSettingsViewController.m; path = Classes/ImportExportSettingsViewController.m; sourceTree = "<group>"; };
 		835A5B082F33BBC000A70766 /* SmarthomeManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeManager.h; sourceTree = "<group>"; };
 		835A5B092F33BBC000A70766 /* SmarthomeSettingsViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeSettingsViewController.h; sourceTree = "<group>"; };
@@ -776,17 +847,26 @@
 		835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ICMQTTClient.m; path = MQTT/ICMQTTClient.m; sourceTree = "<group>"; };
 		83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = EpisodeLoadingManager.h; path = Classes/Model/EpisodeLoadingManager.h; sourceTree = "<group>"; };
 		83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = EpisodeLoadingManager.m; path = Classes/Model/EpisodeLoadingManager.m; sourceTree = "<group>"; };
+		8F18A9A9049D062D880172CA /* SmartListProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartListProvider.swift; sourceTree = "<group>"; };
 		9259B7F12D20FA990035AA91 /* SettingInputViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputViewController.h; sourceTree = "<group>"; };
 		9259B7F22D20FA990035AA91 /* SettingInputViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputViewController.m; sourceTree = "<group>"; };
 		9259B80B2D33B9010035AA91 /* SettingInputChapterController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputChapterController.h; sourceTree = "<group>"; };
 		9259B80C2D33B9010035AA91 /* SettingInputChapterController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputChapterController.m; sourceTree = "<group>"; };
 		92A647082CE5A201002268B7 /* Instacast-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Instacast-Info.plist"; sourceTree = "<group>"; };
+		96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetEmptyStateView.swift; sourceTree = "<group>"; };
 		9B172640A841BB0E33457ED9 /* InstacastBackupData.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupData.m; sourceTree = "<group>"; };
+		9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		9D4A18A6F2FA17A9B146E331 /* ProgressBarView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProgressBarView.swift; sourceTree = "<group>"; };
+		A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartListConfigIntent.swift; sourceTree = "<group>"; };
+		D9E0F1A2B3C4856671D82E93 /* PodcastGridConfigIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PodcastGridConfigIntent.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ApplePodcastChartsClient.h; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ApplePodcastChartsClient.m; sourceTree = "<group>"; };
 		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
+		AC519BE7A07B9059ECA1F6BA /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ICBackupImportProgressView.m; sourceTree = "<group>"; };
 		C127B4F42DEAD6A6686638F0 /* InstacastBackupImporter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImporter.h; sourceTree = "<group>"; };
+		C56C700102BB7C820DF5AC17 /* WidgetControlIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetControlIntents.swift; sourceTree = "<group>"; };
+		C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetImageLoader.swift; sourceTree = "<group>"; };
 		CC000001AABB000000000002 /* AppearanceSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AppearanceSettingsViewController.h; sourceTree = "<group>"; };
 		CC000001AABB000000000003 /* AppearanceSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppearanceSettingsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB000000000005 /* PlaybackSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlaybackSettingsViewController.h; sourceTree = "<group>"; };
@@ -844,13 +924,31 @@
 		CE3EA68E2AA7A952001900EB /* FMDatabaseAdditions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FMDatabaseAdditions.h; sourceTree = "<group>"; };
 		CE3EA68F2AA7A952001900EB /* FMDatabasePool.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMDatabasePool.m; sourceTree = "<group>"; };
 		CE3EA6902AA7A952001900EB /* FMResultSet.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMResultSet.m; sourceTree = "<group>"; };
+		E204D7F9561339C72E9FA9B5 /* EpisodeRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EpisodeRowView.swift; sourceTree = "<group>"; };
+		E22B646C8956D4D87E74D52A /* de */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
+		E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = WidgetDataExporter.m; sourceTree = "<group>"; };
+		E7BDEE8025D877EC7A1EDCB4 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		E8CEAFDEB115E8592898C922 /* InstacastWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = InstacastWidgets.entitlements; sourceTree = "<group>"; };
+		EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InstacastWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EC277288AEE288A71CA39AAA /* InstacastBackupImportViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImportViewController.h; sourceTree = "<group>"; };
 		F047AE18988303F971448133 /* InstacastBackupParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupParser.h; sourceTree = "<group>"; };
 		F169BFC4C1DC5A7320C86CCA /* InstacastBackupParser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupParser.m; sourceTree = "<group>"; };
+		F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingWidget.swift; sourceTree = "<group>"; };
+		FDB33E265B93207D959630A1 /* SmartListWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartListWidget.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		92A646EF2CE59B71002268B7 /* InstacastMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = InstacastMac; sourceTree = "<group>"; };
+		92A646EF2CE59B71002268B7 /* InstacastMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = InstacastMac;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -884,12 +982,33 @@
 				1BF78D0C133F7E8F008B9C95 /* MobileCoreServices.framework in Frameworks */,
 				1BF28F4A141FA0D2002B669B /* AVFoundation.framework in Frameworks */,
 				1BD2B82A15DA732B003A6DBB /* Accounts.framework in Frameworks */,
+				49D903092A323760C89F3C52 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F05CF8F1546D2EC587DC8A5A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				95A7FECEA2CCB0FFDE27A33A /* WidgetKit.framework in Frameworks */,
+				230AD9362F6768BAECE4F8F7 /* SwiftUI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		01E55BF4D929C78A11A4B45F /* Intents */ = {
+			isa = PBXGroup;
+			children = (
+				A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */,
+				D9E0F1A2B3C4856671D82E93 /* PodcastGridConfigIntent.swift */,
+				C56C700102BB7C820DF5AC17 /* WidgetControlIntents.swift */,
+			);
+			name = Intents;
+			path = Intents;
+			sourceTree = "<group>";
+		};
 		080E96DDFE201D6D7F000001 /* Classes */ = {
 			isa = PBXGroup;
 			children = (
@@ -922,6 +1041,10 @@
 				A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */,
 				6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */,
 				B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */,
+				05DDBFFC087D9C88BF6EE0FF /* WidgetDataExporter.h */,
+				E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */,
+				7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */,
+				F6B7C8D9E0F1A2B3C4D5E6F7 /* LiveActivityManager.swift */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -930,6 +1053,7 @@
 			isa = PBXGroup;
 			children = (
 				1D6058910D05DD3D006BFB54 /* InstacastPlus.app */,
+				EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1636,7 +1760,16 @@
 			name = "Value Transformer";
 			sourceTree = "<group>";
 		};
-		29B97314FDCFA39411CA2CEA /* CustomTemplate */ = {
+		21B26958379215B4E09EE77F /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9E85E0F1B1C46AF663E6C92E /* Localizable.strings */,
+			);
+			name = Resources;
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		29B97314FDCFA39411CA2CEA = {
 			isa = PBXGroup;
 			children = (
 				CE3EA6782AA7A952001900EB /* VemedioDatabase */,
@@ -1651,6 +1784,8 @@
 				19C28FACFE9D520D11CA2CBB /* Products */,
 				83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */,
 				83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */,
+				7CDA80BE74074E20C13D11D9 /* InstacastWidgets */,
+				922FA0AF1B5AF55429F1C59D /* Shared */,
 			);
 			name = CustomTemplate;
 			sourceTree = "<group>";
@@ -1711,8 +1846,73 @@
 				1BD2B82B15DA7355003A6DBB /* libz.dylib */,
 				1BA0074212E5A48F00E18BC3 /* libicucore.dylib */,
 				1B2A4664191F9E840042C3E5 /* XCTest.framework */,
+				9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */,
+				81963C57B201BC1B4CB696A7 /* iOS */,
+				27C03CE231950A5FA4157032 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		2DEF326CE5DAAE5700473B3B /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */,
+				E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */,
+				F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */,
+				FDB33E265B93207D959630A1 /* SmartListWidget.swift */,
+				6FA31224D071849FE16A7472 /* StatsWidget.swift */,
+				D4F5A6B7C8D9E0F1A2B3C4D5 /* NowPlayingLiveActivity.swift */,
+			);
+			name = Widgets;
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		7CDA80BE74074E20C13D11D9 /* InstacastWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				2EB5A45E6C7CB1D718F47F10 /* InstacastWidgets.swift */,
+				01E55BF4D929C78A11A4B45F /* Intents */,
+				ED166DC81C938D0961E619E1 /* Providers */,
+				CF5318CD7E041F686C8190F5 /* Utilities */,
+				93DABD387D625EC1E02BF319 /* Views */,
+				2DEF326CE5DAAE5700473B3B /* Widgets */,
+				057F44A6199937D988246F7F /* Assets.xcassets */,
+				2030BFC1217ACA7E4CF62D1A /* Info.plist */,
+				E8CEAFDEB115E8592898C922 /* InstacastWidgets.entitlements */,
+				21B26958379215B4E09EE77F /* Resources */,
+			);
+			name = InstacastWidgets;
+			path = InstacastWidgets;
+			sourceTree = "<group>";
+		};
+		81963C57B201BC1B4CB696A7 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				E7BDEE8025D877EC7A1EDCB4 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		922FA0AF1B5AF55429F1C59D /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				6D294C45DC205F05467440EC /* SharedConstants.swift */,
+				7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */,
+				A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */,
+			);
+			name = Shared;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		93DABD387D625EC1E02BF319 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				E204D7F9561339C72E9FA9B5 /* EpisodeRowView.swift */,
+				9D4A18A6F2FA17A9B146E331 /* ProgressBarView.swift */,
+				96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */,
+			);
+			name = Views;
+			path = Views;
 			sourceTree = "<group>";
 		};
 		CD97E36F2D109A4200A61ED8 /* ProgressBar */ = {
@@ -1779,11 +1979,32 @@
 			path = fmdb;
 			sourceTree = "<group>";
 		};
+		CF5318CD7E041F686C8190F5 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */,
+				C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */,
+			);
+			name = Utilities;
+			path = Utilities;
+			sourceTree = "<group>";
+		};
 		E981A4C97F2F43B593944594 /* MQTT */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			path = MQTT;
+			sourceTree = "<group>";
+		};
+		ED166DC81C938D0961E619E1 /* Providers */ = {
+			isa = PBXGroup;
+			children = (
+				3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */,
+				8F18A9A9049D062D880172CA /* SmartListProvider.swift */,
+				35307105E5905E5F84562C64 /* StatsProvider.swift */,
+			);
+			name = Providers;
+			path = Providers;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1799,15 +2020,34 @@
 				1BC25F1C1C6A3CBD0026CF1B /* Embed Frameworks */,
 				1B74A19D169B2F12005D1DAF /* Strip library headers from Archive */,
 				92A6470A2CE5A788002268B7 /* ShellScript */,
+				1CED292F8826F350D8F93DEF /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F6825D14EEE384740662F1F4 /* PBXTargetDependency */,
 			);
 			name = Instacast;
 			productName = Instacast;
 			productReference = 1D6058910D05DD3D006BFB54 /* InstacastPlus.app */;
 			productType = "com.apple.product-type.application";
+		};
+		3B6DD94FE7671D4054770663 /* InstacastWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD64145AE01126D81F09E0BE /* Build configuration list for PBXNativeTarget "InstacastWidgets" */;
+			buildPhases = (
+				3CE5C7A0B3CAB454F79DAAED /* Sources */,
+				F05CF8F1546D2EC587DC8A5A /* Frameworks */,
+				CE8FA59C71C7F68D57F0B407 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InstacastWidgets;
+			productName = InstacastWidgets;
+			productReference = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -1858,13 +2098,14 @@
 				lt,
 				Base,
 			);
-			mainGroup = 29B97314FDCFA39411CA2CEA /* CustomTemplate */;
+			mainGroup = 29B97314FDCFA39411CA2CEA;
 			productRefGroup = 19C28FACFE9D520D11CA2CBB /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				1D6058900D05DD3D006BFB54 /* Instacast */,
 				1B3597321307FCCE000DD41F /* MergeLocalizations */,
+				3B6DD94FE7671D4054770663 /* InstacastWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -1919,6 +2160,15 @@
 				188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */,
 				CDA3FD942C5FF43700314B5A /* ChapterImageCell.xib in Resources */,
 				CD7A884F2C60C27F0033C023 /* dark_dd_ic.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CE8FA59C71C7F68D57F0B407 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				583FA5429C9AB195D2CA972F /* Assets.xcassets in Resources */,
+				0BC7C038B900D866CD820D92 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2194,10 +2444,53 @@
 				1BD9549D177D798600323386 /* ICPagedFeedParser.m in Sources */,
 				A1B2C3D4E5F6A7B800000003 /* ApplePodcastChartsClient.m in Sources */,
 				8189C509C0C8211E6CDCD159 /* ICBackupImportProgressView.m in Sources */,
+				E2BF2DBFB7B6377BA63CE29E /* WidgetDataExporter.m in Sources */,
+				D6A4823AE687A9FC8EC55A8A /* WidgetKitHelper.swift in Sources */,
+				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
+				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
+				A7C8D9E0F1A2B3C4D5E6F7A8 /* LiveActivityManager.swift in Sources */,
+				B2D3E4F5A6B7C8D9E0F1A2B3 /* NowPlayingActivity.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3CE5C7A0B3CAB454F79DAAED /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8F73EF0412DE74E198EE4CB4 /* InstacastWidgets.swift in Sources */,
+				5C20094B64F67BF1D6D0C4F1 /* SmartListConfigIntent.swift in Sources */,
+				B8C4D2E1F0A3914725C6D837 /* PodcastGridConfigIntent.swift in Sources */,
+				E6F07FC95B90C494C0ABD87A /* NowPlayingProvider.swift in Sources */,
+				549252E172585DFA15883AE7 /* SmartListProvider.swift in Sources */,
+				A7DC141C75141EE73DD23778 /* StatsProvider.swift in Sources */,
+				A89DF17ACA734175ABBDB278 /* SharedContainerReader.swift in Sources */,
+				C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */,
+				6F2559FE0FC9F90720C002D1 /* EpisodeRowView.swift in Sources */,
+				D6FA25A2A5E5E241244604CB /* ProgressBarView.swift in Sources */,
+				C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */,
+				7A8B9C0D1E2F3A4B5C6D7E8F /* LockScreenWidgets.swift in Sources */,
+				9F0E1D2C3B4A5968A7B6C5D4 /* PodcastGridWidget.swift in Sources */,
+				3CCB7C121A2E030E38E79C3E /* NowPlayingWidget.swift in Sources */,
+				BDDA2F12D823EEED173BED3F /* SmartListWidget.swift in Sources */,
+				B11A4DA81C178356BE3E0D86 /* StatsWidget.swift in Sources */,
+				F278616A7519258ABDD48C9F /* SharedConstants.swift in Sources */,
+				85F0D18A72FD825D7C180C98 /* WidgetModels.swift in Sources */,
+				AE12279A77DE7A93EEDD0DED /* WidgetControlIntents.swift in Sources */,
+				C3E4F5A6B7C8D9E0F1A2B3C4 /* NowPlayingActivity.swift in Sources */,
+				E5A6B7C8D9E0F1A2B3C4D5E6 /* NowPlayingLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F6825D14EEE384740662F1F4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = InstacastWidgets;
+			target = 3B6DD94FE7671D4054770663 /* InstacastWidgets */;
+			targetProxy = D43654723F24AFC7D0364635 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		1B915C97146AC5E70036E9A7 /* Localizable.strings */ = {
@@ -2205,6 +2498,15 @@
 			children = (
 				1B915C98146AC5E70036E9A7 /* en */,
 				1B66781919E81646008A318F /* de */,
+			);
+			name = Localizable.strings;
+			sourceTree = "<group>";
+		};
+		9E85E0F1B1C46AF663E6C92E /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				AC519BE7A07B9059ECA1F6BA /* en */,
+				E22B646C8956D4D87E74D52A /* de */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
@@ -2270,6 +2572,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 5;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
@@ -2351,6 +2654,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 5;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
@@ -2400,6 +2704,39 @@
 			};
 			name = Debug;
 		};
+		5DE42D1B35DFA9CFE5C1807F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEVELOPMENT_TEAM = L95F4M2LHG;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InstacastWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		C01FCF4F08A954540054247B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 1B6465D512EF0CE400657F1D /* Version.xcconfig */;
@@ -2445,6 +2782,39 @@
 			};
 			name = Debug;
 		};
+		D5C7B7FFE7E279CC579CB372 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				DEVELOPMENT_TEAM = L95F4M2LHG;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = InstacastWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 3.1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -2474,6 +2844,15 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
+		};
+		DD64145AE01126D81F09E0BE /* Build configuration list for PBXNativeTarget "InstacastWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5DE42D1B35DFA9CFE5C1807F /* Release */,
+				D5C7B7FFE7E279CC579CB372 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 

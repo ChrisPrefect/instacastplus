@@ -887,6 +887,7 @@ enum {
             // don't use the setter, otherwise the value will be stored
             [weakSelf willChangeValueForKey:@"speedControl"];
             _speedControl = [feed integerForKey:DefaultPlaybackSpeed];
+            _playbackRate = [weakSelf rateFromSpeedControl:_speedControl];
             [weakSelf didChangeValueForKey:@"speedControl"];
 
             [weakSelf willChangeValueForKey:@"duration"];
@@ -1071,29 +1072,11 @@ enum {
         
         if (weakSelf.player.rate > 0)
         {
-            if (weakSelf.speedControl == PlaybackSpeedControlNormalSpeed &&  fabs(weakSelf.player.rate-1.0) > 0.02) {
-                weakSelf.player.rate = 1.0;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlFaster11 &&  fabs(weakSelf.player.rate-1.1) > 0.02) {
-                weakSelf.player.rate = 1.1;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlFaster12 &&  fabs(weakSelf.player.rate-1.2) > 0.02) {
-                weakSelf.player.rate = 1.2;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlFaster13 &&  fabs(weakSelf.player.rate-1.3) > 0.02) {
-                weakSelf.player.rate = 1.3;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlDoubleSpeed &&  fabs(weakSelf.player.rate-2.0) > 0.02) {
-                weakSelf.player.rate = 2.0;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlPlusHalfSpeed && fabs(weakSelf.player.rate-1.5) > 0.02) {
-                weakSelf.player.rate = 1.5;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlMinusHalfSpeed &&  fabs(weakSelf.player.rate-0.5) > 0.02) {
-                weakSelf.player.rate = 0.5;
-            }
-            else if (weakSelf.speedControl == PlaybackSpeedControlTripleSpeed &&  fabs(weakSelf.player.rate-3.0) > 0.02) {
-                weakSelf.player.rate = 3.0;
+            __strong PlaybackManager* strongSelf = weakSelf;
+            float targetRate = strongSelf->_playbackRate;
+            if (targetRate <= 0) targetRate = [weakSelf rateFromSpeedControl:weakSelf.speedControl];
+            if (fabs(weakSelf.player.rate - targetRate) > 0.02) {
+                weakSelf.player.rate = targetRate;
             }
 
             NSInteger chapter = weakSelf.currentChapter;
@@ -1468,34 +1451,8 @@ enum {
 		self.lastPauseDate = nil;
 	}
 	
-	switch (self.speedControl) {
-        case PlaybackSpeedControlNormalSpeed:
-            self.player.rate = 1.0;
-            break;
-        case PlaybackSpeedControlFaster11:
-            self.player.rate = 1.1;
-            break;
-        case PlaybackSpeedControlFaster12:
-            self.player.rate = 1.2;
-            break;
-        case PlaybackSpeedControlFaster13:
-            self.player.rate = 1.3;
-            break;
-        case PlaybackSpeedControlDoubleSpeed:
-            self.player.rate = 2.0;
-            break;
-        case PlaybackSpeedControlPlusHalfSpeed:
-            self.player.rate = 1.5;
-            break;
-        case PlaybackSpeedControlMinusHalfSpeed:
-            self.player.rate = 0.5;
-            break;
-        case PlaybackSpeedControlTripleSpeed:
-            self.player.rate = 3.0;
-            break;
-		default:
-			break;
-	}
+	float targetRate = _playbackRate > 0 ? _playbackRate : [self rateFromSpeedControl:self.speedControl];
+	self.player.rate = targetRate;
 
     self.playStartDate = [NSDate date];
 	SEND_UPDATE
@@ -1742,19 +1699,18 @@ enum {
     return ([[AudioSession sharedAudioSession].playlist count] > 1);
 }
 
-/*
 - (void) nextTrack
 {
     CDEpisode* episode = self.playingEpisode;
     NSArray* playlist = [AudioSession sharedAudioSession].playlist;
     NSInteger index = [playlist indexOfObject:episode];
-    
+
     if ([playlist count] < 1 || index == NSNotFound) {
         return;
     }
-    
+
     CDEpisode* nextEpisode = nil;
-    
+
     // if not last item, play next item
     if (index < [playlist count]-1) {
         nextEpisode = [playlist objectAtIndex:index+1];
@@ -1763,8 +1719,8 @@ enum {
     else {
         nextEpisode = [playlist objectAtIndex:0];
     }
-    
-    if ([[AudioSession sharedAudioSession] canContinuePlayingEpisode:nextEpisode]) {
+
+    if (nextEpisode) {
         [[AudioSession sharedAudioSession] playEpisode:nextEpisode];
     }
 }
@@ -1774,13 +1730,13 @@ enum {
     CDEpisode* episode = self.playingEpisode;
     NSArray* playlist = [AudioSession sharedAudioSession].playlist;
     NSInteger index = [playlist indexOfObject:episode];
-    
+
     if ([playlist count] == 0 || index == NSNotFound) {
         return;
     }
-    
+
     CDEpisode* previousEpisode = nil;
-    
+
     // if not first item, play previous item
     if (index > 0) {
         previousEpisode = [playlist objectAtIndex:index-1];
@@ -1789,12 +1745,11 @@ enum {
     else {
         previousEpisode = [playlist lastObject];
     }
-    
-    if ([[AudioSession sharedAudioSession] canContinuePlayingEpisode:previousEpisode]) {
+
+    if (previousEpisode) {
         [[AudioSession sharedAudioSession] playEpisode:previousEpisode];
     }
 }
-*/
 
 - (void) nextChapter
 {
@@ -1818,45 +1773,42 @@ enum {
     }
 }
 
+- (float)rateFromSpeedControl:(PlaybackSpeedControl)control
+{
+    switch (control) {
+        case PlaybackSpeedControlMinusHalfSpeed: return 0.5f;
+        case PlaybackSpeedControlNormalSpeed:     return 1.0f;
+        case PlaybackSpeedControlFaster11:        return 1.1f;
+        case PlaybackSpeedControlFaster12:        return 1.2f;
+        case PlaybackSpeedControlFaster13:        return 1.3f;
+        case PlaybackSpeedControlPlusHalfSpeed:   return 1.5f;
+        case PlaybackSpeedControlDoubleSpeed:     return 2.0f;
+        case PlaybackSpeedControlTripleSpeed:     return 3.0f;
+        default:                                  return 1.0f;
+    }
+}
+
+- (void)setPlaybackRate:(float)rate
+{
+    rate = MAX(0.5f, MIN(3.0f, rate));
+    _playbackRate = rate;
+    if (self.player.rate > 0) {
+        self.player.rate = rate;
+    }
+}
+
 - (void) setSpeedControl:(PlaybackSpeedControl)_speed
 {
 	if (_speedControl != _speed) {
 		_speedControl = _speed;
-		
+		_playbackRate = [self rateFromSpeedControl:_speed];
+
         [USER_DEFAULTS setInteger:_speed forKey:DefaultPlaybackSpeed];
-		
-		if (self.player.rate > 0)
-        {
-            switch (_speedControl) {
-                case PlaybackSpeedControlNormalSpeed:
-                    self.player.rate = 1.0;
-                    break;
-                case PlaybackSpeedControlFaster11:
-                    self.player.rate = 1.1;
-                    break;
-                case PlaybackSpeedControlFaster12:
-                    self.player.rate = 1.2;
-                    break;
-                case PlaybackSpeedControlFaster13:
-                    self.player.rate = 1.3;
-                    break;
-                case PlaybackSpeedControlDoubleSpeed:
-                    self.player.rate = 2.0;
-                    break;
-                case PlaybackSpeedControlPlusHalfSpeed:
-                    self.player.rate = 1.5;
-                    break;
-                case PlaybackSpeedControlMinusHalfSpeed:
-                    self.player.rate = 0.5;
-                    break;
-                case PlaybackSpeedControlTripleSpeed:
-                    self.player.rate = 3.0;
-                    break;
-                default:
-                    break;
-            }
+
+		if (self.player.rate > 0) {
+            self.player.rate = _playbackRate;
         }
-		
+
 		SEND_UPDATE
 	}
 }
@@ -1865,54 +1817,10 @@ enum {
 {
     CDFeed* feed = self.playingEpisode.feed;
     _speedControl = [feed integerForKey:DefaultPlaybackSpeed];
-    
-    if (self.player.rate > 0)
-    {
-        switch (_speedControl) {
-            /*case PlaybackSpeedControlNormalSpeed:
-                self.player.rate = 1.0;
-                break;
-            case PlaybackSpeedControlDoubleSpeed:
-                self.player.rate = 1.5;
-                break;
-            case PlaybackSpeedControlPlusHalfSpeed:
-                self.player.rate = 1.2;
-                break;
-            case PlaybackSpeedControlMinusHalfSpeed:
-                self.player.rate = 0.71;
-                break;
-            case PlaybackSpeedControlTripleSpeed:
-                self.player.rate = 2.0;
-                break;
-            default:
-                break;*/ //OLD
-            case PlaybackSpeedControlNormalSpeed:
-                self.player.rate = 1.0;
-                break;
-            case PlaybackSpeedControlFaster11:
-                self.player.rate = 1.1;
-                break;
-            case PlaybackSpeedControlFaster12:
-                self.player.rate = 1.2;
-                break;
-            case PlaybackSpeedControlFaster13:
-                self.player.rate = 1.3;
-                break;
-            case PlaybackSpeedControlDoubleSpeed:
-                self.player.rate = 2.0;
-                break;
-            case PlaybackSpeedControlPlusHalfSpeed:
-                self.player.rate = 1.5;
-                break;
-            case PlaybackSpeedControlMinusHalfSpeed:
-                self.player.rate = 0.5;
-                break;
-            case PlaybackSpeedControlTripleSpeed:
-                self.player.rate = 3.0;
-                break;
-            default:
-                break;
-        }
+    _playbackRate = [self rateFromSpeedControl:_speedControl];
+
+    if (self.player.rate > 0) {
+        self.player.rate = _playbackRate;
     }
 }
 

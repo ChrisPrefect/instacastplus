@@ -1,0 +1,59 @@
+import Foundation
+
+/// Reads JSON snapshot data from the App Group shared container.
+enum SharedContainerReader {
+
+    private static var containerURL: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID)
+    }
+
+    // MARK: - Generic JSON reading
+
+    static func read<T: Decodable & Sendable>(_ type: T.Type, from filename: String) -> T? {
+        guard let container = containerURL else { return nil }
+        let fileURL = container.appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            #if DEBUG
+            print("SharedContainerReader: failed to decode \(filename): \(error)")
+            #endif
+            return nil
+        }
+    }
+
+    // MARK: - Typed accessors
+
+    static func readNowPlaying() -> WNowPlaying? {
+        read(WNowPlaying.self, from: ICWidgetConstants.nowPlayingFile)
+    }
+
+    static func readUpNext() -> WUpNext? {
+        read(WUpNext.self, from: ICWidgetConstants.upNextFile)
+    }
+
+    static func readLists() -> [WList]? {
+        read([WList].self, from: ICWidgetConstants.listsIndexFile)
+    }
+
+    static func readListEpisodes(listId: String) -> WListEpisodes? {
+        let filename = ICWidgetConstants.listEpisodesPrefix + listId + ".json"
+        return read(WListEpisodes.self, from: filename)
+    }
+
+    static func readFeeds() -> [WFeed]? {
+        read([WFeed].self, from: ICWidgetConstants.feedsFile)
+    }
+
+    static func readStats() -> WStats? {
+        read(WStats.self, from: ICWidgetConstants.statsFile)
+    }
+
+    static func readSettings() -> WSettings? {
+        read(WSettings.self, from: ICWidgetConstants.settingsFile)
+    }
+}

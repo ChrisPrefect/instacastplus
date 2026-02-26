@@ -1376,7 +1376,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     else
     {
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+        BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
         [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
     }
 }

@@ -29,6 +29,9 @@ extern NSString* PlayerThemeColorHexCode;
 extern NSString* InterfaceThemeDefaultActive;
 extern NSString* InterfaceThemeColorCode;
 extern NSString* InterfaceThemeColorHexCode;
+extern NSString* WidgetThemeDefaultActive;
+extern NSString* WidgetThemeColorCode;
+extern NSString* WidgetThemeColorHexCode;
 
 extern NSString* ShowApplicationBadgeForUnseen;
 extern NSString* LastRefreshSubscriptionDate;

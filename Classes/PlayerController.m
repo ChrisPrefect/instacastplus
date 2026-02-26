@@ -751,11 +751,13 @@ enum {
         UILabel* feedTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(tb), CGRectGetHeight(tb)-2)];
         feedTitleLabel.autoresizingMask = (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight);
         feedTitleLabel.text = feedTitle;
-        feedTitleLabel.font = [UIFont boldSystemFontOfSize:15.0f];
+        feedTitleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
         feedTitleLabel.opaque = NO;
         feedTitleLabel.backgroundColor = [UIColor clearColor];
         feedTitleLabel.numberOfLines = 2;
         feedTitleLabel.textAlignment = NSTextAlignmentCenter;
+        feedTitleLabel.adjustsFontSizeToFitWidth = YES;
+        feedTitleLabel.minimumScaleFactor = 0.7;
         [titleView addSubview:feedTitleLabel];
         self.feedTitleLabel = feedTitleLabel;
         

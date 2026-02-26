@@ -334,6 +334,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     if (client != _client) return;
 
+    DebugLog(@"[MQTT] Connected, publishing all states then subscribing");
     _reconnectDelay = 2.0;
     _connectionStatusText = @"Connected".ls;
     [self postConnectionStateChange];
@@ -348,10 +349,18 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     // Send pending events that occurred while offline
     [self sendPendingEvents];
 
-    // THEN subscribe to topics for commands (if enabled)
-    // This way our _last* values are set and incoming retained messages will be filtered
+    // THEN subscribe to control topics only (not wildcard — avoids echoes of status-only topics)
+    // _last* values are already set from publishAllStates, so retained echoes will be filtered
     if ([USER_DEFAULTS boolForKey:SmarthomeAllowControl]) {
-        [_client subscribeToTopic:[self topicWildcard]];
+        NSArray *controlTopics = @[
+            @"play", @"skip-forward", @"skip-back", @"volume",
+            @"playback-position", @"playback-speed", @"episode-progress",
+            @"sleeptimer", @"sleeptimer-remaining", @"sleeptimer-active",
+            @"next-chapter", @"prev-chapter", @"next-episode"
+        ];
+        for (NSString *name in controlTopics) {
+            [_client subscribeToTopic:[self topic:name]];
+        }
     }
 
     // Start periodic status timer (every 5 seconds for position/progress/sleeptimer)
@@ -385,6 +394,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)mqttClient:(ICMQTTClient*)client didReceiveMessage:(NSString*)message onTopic:(NSString*)topic
 {
     if (client != _client) return;
+
+    DebugLog(@"[MQTT RX] topic=%@ message=%@", topic, message);
 
     // Ignore empty/placeholder messages
     if (!message || message.length == 0 || [message isEqualToString:@"NaN"]) {
@@ -453,13 +464,12 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         [pm seekToTime:requestedPos];
     }
     else if ([topic isEqualToString:[self topic:@"playback-speed"]]) {
-        // Ignore if value matches current state (prevents echo)
-        NSString *currentSpeed = [self stringFromSpeedControl:pm.speedControl];
-        if ([currentSpeed isEqualToString:message]) return;
+        // Ignore echo of our own published value
+        if (_lastSpeed && [_lastSpeed isEqualToString:message]) return;
 
-        PlaybackSpeedControl speed = [self speedControlFromString:message];
-        if (speed >= 0) {
-            pm.speedControl = speed;
+        float rate = [message floatValue];
+        if (rate >= 0.5f && rate <= 3.0f) {
+            pm.playbackRate = rate;
         }
     }
     else if ([topic isEqualToString:[self topic:@"episode-progress"]]) {
@@ -482,35 +492,18 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         NSTimeInterval targetTime = (requestedProgress / 100.0) * pm.duration;
         [pm seekToTime:targetTime];
     }
-    else if ([topic isEqualToString:[self topic:@"episode-duration"]]) {
-        // Read-only - correct the value
-        _lastDuration = nil;
-        [self publishPositionState];
+    else if ([topic isEqualToString:[self topic:@"sleeptimer"]]) {
+        // Set sleeptimer with arbitrary seconds (0=off)
+        NSTimeInterval seconds = [message doubleValue];
+        [as setTimerWithDuration:seconds];
     }
-    else if ([topic isEqualToString:[self topic:@"sleeptimer"]] ||
-             [topic isEqualToString:[self topic:@"sleeptimer-remaining"]]) {
-        // Set sleeptimer duration in minutes (picks nearest preset)
-        NSInteger minutes = [message integerValue];
-        PlaybackStopTimeValue newValue;
-        if (minutes <= 0) {
-            newValue = PlaybackStopTimeNoValue;
-        } else if (minutes <= 3) {
-            newValue = PlaybackStopTime3min;
-        } else if (minutes <= 5) {
-            newValue = PlaybackStopTime5min;
-        } else if (minutes <= 10) {
-            newValue = PlaybackStopTime10min;
-        } else if (minutes <= 20) {
-            newValue = PlaybackStopTime20min;
-        } else if (minutes <= 30) {
-            newValue = PlaybackStopTime30min;
-        } else {
-            newValue = PlaybackStopTime60min;
-        }
-        // Only change if different (prevents echo)
-        if (as.timerValue != newValue) {
-            as.timerValue = newValue;
-        }
+    else if ([topic isEqualToString:[self topic:@"sleeptimer-remaining"]]) {
+        // Ignore echo of our own published value
+        if (_lastSleeptimerRemaining && [_lastSleeptimerRemaining isEqualToString:message]) return;
+
+        // External command: set sleeptimer with arbitrary seconds (0=off)
+        NSTimeInterval seconds = [message doubleValue];
+        [as setTimerWithDuration:seconds];
     }
     else if ([topic isEqualToString:[self topic:@"sleeptimer-active"]]) {
         // 0 = deactivate timer, 1 = ignored (use sleeptimer/sleeptimer-remaining to set duration)
@@ -534,51 +527,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
         if (nextEpisode) {
             [as playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
         }
-    }
-    // Read-only topics - correct any incoming values immediately
-    else if ([topic isEqualToString:[self topic:@"connected"]]) {
-        [_client publishMessage:@"1" toTopic:[self topic:@"connected"] retain:YES];
-    }
-    else if ([topic isEqualToString:[self topic:@"podcast-name"]] ||
-             [topic isEqualToString:[self topic:@"podcast-episode"]]) {
-        _lastPodcastName = nil;
-        _lastPodcastEpisode = nil;
-        [self publishEpisodeInfo];
-    }
-    else if ([topic isEqualToString:[self topic:@"chapter"]]) {
-        _lastChapter = nil;
-        [self publishChapterState];
-    }
-    else if ([topic isEqualToString:[self topic:@"output-device"]]) {
-        _lastOutputDevice = nil;
-        [self publishOutputDevice];
-    }
-    else if ([topic isEqualToString:[self topic:@"iphone-locked"]]) {
-        _lastLocked = nil;
-        [self publishLockState];
-    }
-    else if ([topic isEqualToString:[self topic:@"charging"]]) {
-        _lastCharging = nil;
-        [self publishChargingState];
-    }
-    else if ([topic isEqualToString:[self topic:@"battery-level"]]) {
-        _lastBatteryLevel = nil;
-        [self publishBatteryLevel];
-    }
-    else if ([topic isEqualToString:[self topic:@"app-active"]]) {
-        _lastAppActive = nil;
-        [self publishAppState];
-    }
-    else if ([topic isEqualToString:[self topic:@"fell-asleep"]]) {
-        _lastFellAsleep = nil;
-        [self publishFellAsleepState];
-    }
-    else if ([topic isEqualToString:[self topic:@"motion-detected"]]) {
-        _lastMotionDetected = nil;
-        [self publishMotionState];
-    }
-    else if ([topic isEqualToString:[self topic:@"episode-finished"]]) {
-        // Event topic - don't correct, just ignore
     }
 }
 
@@ -663,7 +611,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)publishSpeedState
 {
     PlaybackManager *pm = [PlaybackManager playbackManager];
-    NSString *speed = [self stringFromSpeedControl:pm.speedControl];
+    float rate = pm.playbackRate;
+    if (rate <= 0) rate = 1.0f;
+    NSString *speed = [NSString stringWithFormat:@"%.2g", rate];
     [self publishValue:speed toTopic:[self topic:@"playback-speed"] lastValue:&_lastSpeed retain:YES];
 }
 
@@ -763,6 +713,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     if (!self.connected) return;
     if (*lastValue && [*lastValue isEqualToString:value]) return;
 
+    DebugLog(@"[MQTT TX] topic=%@ value=%@ (last=%@)", topic, value, *lastValue ?: @"nil");
     *lastValue = [value copy];
     [_client publishMessage:value toTopic:topic retain:retain];
 }
@@ -801,6 +752,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)playbackDidEnd:(NSNotification*)note
 {
+    DebugLog(@"[MQTT] playbackDidEnd - connected=%d appState=%ld",
+             self.connected, (long)[UIApplication sharedApplication].applicationState);
     [self publishPlayState];
     [self publishEpisodeInfo];
     [self publishChapterState];
@@ -821,6 +774,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)sleepTimerDidExpire:(NSNotification*)note
 {
+    DebugLog(@"[MQTT] sleepTimerDidExpire - connected=%d", self.connected);
     [self publishSleeptimerState];
     _fellAsleepActive = YES;
     [self publishFellAsleepState];
@@ -876,10 +830,14 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)appDidBecomeActive:(NSNotification*)note
 {
-    [self publishPlayState];
-    [self publishLockState];
-    [self publishAppState];
-    [self reconnectIfNeeded];
+    if (self.connected) {
+        // Force-refresh all states so the smart home system gets current values
+        // even if we missed events while the app was in the background/suspended.
+        [self clearLastValues];
+        [self publishAllStates];
+    } else {
+        [self reconnectIfNeeded];
+    }
 }
 
 - (void)appWillResignActive:(NSNotification*)note
@@ -898,10 +856,10 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)appWillEnterForeground:(NSNotification*)note
 {
-    [self publishPlayState];
-    [self publishLockState];
-    [self publishAppState];
-    [self reconnectIfNeeded];
+    // Kick off reconnect early; the full state refresh happens in appDidBecomeActive.
+    if (!self.connected) {
+        [self reconnectIfNeeded];
+    }
 }
 
 - (void)batteryStateDidChange:(NSNotification*)note
@@ -977,36 +935,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
             break;
         }
     }
-}
-
-#pragma mark - Speed Helpers
-
-- (NSString*)stringFromSpeedControl:(PlaybackSpeedControl)control
-{
-    switch (control) {
-        case PlaybackSpeedControlMinusHalfSpeed:  return @"0.5";
-        case PlaybackSpeedControlNormalSpeed:      return @"1.0";
-        case PlaybackSpeedControlFaster11:         return @"1.1";
-        case PlaybackSpeedControlFaster12:         return @"1.2";
-        case PlaybackSpeedControlFaster13:         return @"1.3";
-        case PlaybackSpeedControlPlusHalfSpeed:    return @"1.5";
-        case PlaybackSpeedControlDoubleSpeed:      return @"2.0";
-        case PlaybackSpeedControlTripleSpeed:      return @"3.0";
-        default:                                   return @"1.0";
-    }
-}
-
-- (PlaybackSpeedControl)speedControlFromString:(NSString*)string
-{
-    float speed = [string floatValue];
-    if (speed <= 0.5f) return PlaybackSpeedControlMinusHalfSpeed;
-    if (speed <= 1.0f) return PlaybackSpeedControlNormalSpeed;
-    if (speed <= 1.1f) return PlaybackSpeedControlFaster11;
-    if (speed <= 1.2f) return PlaybackSpeedControlFaster12;
-    if (speed <= 1.3f) return PlaybackSpeedControlFaster13;
-    if (speed <= 1.5f) return PlaybackSpeedControlPlusHalfSpeed;
-    if (speed <= 2.0f) return PlaybackSpeedControlDoubleSpeed;
-    return PlaybackSpeedControlTripleSpeed;
 }
 
 #pragma mark - Helpers

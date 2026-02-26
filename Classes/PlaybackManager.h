@@ -37,6 +37,7 @@
 @property (nonatomic, readonly) CGSize viewImageSize;
 @property (nonatomic, readonly, getter=isAirPlayVideoActive) BOOL airPlayVideoActive;
 @property (nonatomic) PlaybackSpeedControl speedControl;
+@property (nonatomic) float playbackRate; // arbitrary rate (0.5-3.0), set by MQTT; overrides speedControl
 @property (nonatomic, readonly, getter=isPaused) BOOL paused;
 @property (nonatomic, assign, getter=isSeeking) BOOL seeking;
 @property (nonatomic, readonly, getter=isWaitingForLoad) BOOL waitingForLoad;
@@ -76,6 +77,9 @@
 
 - (void) nextChapter;
 - (void) previousChapter;
+
+- (void) nextTrack;
+- (void) previousTrack;
 - (void) _findAndSetCurrentArtwork;
 
 @property (readonly, strong) NSArray* chapters;

@@ -539,7 +539,7 @@
 "Deselect" = "Keine";
 "Do you still want to download the content of this episode right now?" = "Möchten Sie den Inhalt dieser Folge dennoch jetzt herunterladen?";
 "Download" = "Herunterladen";
-"Episode Info" = "Episoden-Infos";
+"Episode Info" = "Show Notes";
 "Automatic switches between Light and Dark based on your device settings." = "Automatisch wechselt zwischen Hell und Dunkel basierend auf den Geräte-Einstellungen.";
 "Downloading over cellular has been disabled in 'General' settings." = "Das Herunterladen über das Mobile Datennetzwerk wurde in den 'Allgemein'-Einstellungen deaktiviert.";
 "Mark all as Played" = "Alle als gespielt markieren";
@@ -586,6 +586,11 @@
 "Choose Custom (Hex)" = "Wählen Sie Benutzerdefiniert (Hex)";
 "Choose Custom" = "Benutzerdefiniert";
 "Use Default" = "Standard verwenden";
+"Widget Color" = "Farbe der Widgets";
+"Use Interface Color" = "Farbe der Bedienelemente verwenden";
+
+"Live Activity" = "Live Activity";
+"Shows playback controls on the Lock Screen and in the Dynamic Island while listening." = "Zeigt Wiedergabesteuerung auf dem Sperrbildschirm und in der Dynamic Island während der Wiedergabe.";
 
 "Podcast collections" = "Podcast-sammlungen";
 "Playback controls" = "Wiedergabesteuerung";

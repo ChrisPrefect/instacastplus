@@ -726,6 +726,25 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     [self didChangeValueForKey:@"timerRemainingTime"];
 }
 
+- (void)setTimerWithDuration:(NSTimeInterval)seconds
+{
+    [self.playbackTimer invalidate];
+    self.playbackTimer = nil;
+
+    if (seconds > 0) {
+        _timerValue = 1; // mark as active (non-zero)
+        self.stopDate = [NSDate dateWithTimeIntervalSinceNow:seconds];
+        self.playbackTimer = [NSTimer scheduledTimerWithTimeInterval:1 target:self selector:@selector(stopPlaybackTimer:) userInfo:nil repeats:YES];
+        [[NSRunLoop currentRunLoop] addTimer:self.playbackTimer forMode:NSRunLoopCommonModes];
+    } else {
+        _timerValue = PlaybackStopTimeNoValue;
+        self.stopDate = nil;
+    }
+
+    [self willChangeValueForKey:@"timerRemainingTime"];
+    [self didChangeValueForKey:@"timerRemainingTime"];
+}
+
 - (void)stopPlaybackTimer:(NSTimer*)timer
 {
     [self willChangeValueForKey:@"timerRemainingTime"];

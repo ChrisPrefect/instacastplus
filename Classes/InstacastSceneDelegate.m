@@ -47,6 +47,10 @@
 #import "ImageCacheManager.h"
 #import "AudioSession+UpNextPlaylist.h"
 #import "CacheManager.h"
+#import "WidgetDataExporter.h"
+#import "ListEpisodesTableViewController.h"
+#import "UpNextTableViewController.h"
+#import "FeedEpisodesTableViewController.h"
 
 extern NSString* MainMenuListUIDsDidChangeNotification;
 
@@ -138,7 +142,10 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
         NSURL *url = context.URL;
         NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
         
-        if ([subscribeSchemes containsObject:[url scheme]]) {
+        if ([[url scheme] isEqualToString:@"instacastplus"]) {
+            [self _handleWidgetDeepLink:url];
+        }
+        else if ([subscribeSchemes containsObject:[url scheme]]) {
             [self _handlePcastURL:url];
         }
         else if ([url isFileURL] && [[[url path] pathExtension] compare:@"opml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
@@ -340,6 +347,9 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
         [[CacheManager sharedCacheManager] tidyUp];
     }
     
+    // Export all widget snapshots before saving, so widgets have fresh data
+    [[WidgetDataExporter sharedExporter] exportAllSnapshots];
+
     [DMANAGER save];
 }
 
@@ -2007,6 +2017,116 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     [self.feedView startLoading];
 }
 
+#pragma mark - Widget Deep Link Handling
 
+- (void)_handleWidgetDeepLink:(NSURL *)url {
+    DebugLog(@"Widget deep link: %@", url);
+
+    if (!self.mainViewController || !self.mainViewController.contentViewController) {
+        DebugLog(@"Widget deep link ignored: mainViewController or contentViewController is nil");
+        return;
+    }
+
+    NSString *host = [url host];
+    NSString *path = [url path];
+    NSDictionary *params = [self _queryParametersFromURL:url];
+    NSString *action = params[@"action"];
+
+    DebugLog(@"Widget deep link: host=%@, path=%@, action=%@", host, path, action);
+
+    if ([host isEqualToString:@"player"]) {
+        // Player actions
+        if ([action isEqualToString:@"playpause"]) {
+            [[PlaybackManager playbackManager] playPause];
+        } else if ([action isEqualToString:@"skipforward"]) {
+            [[PlaybackManager playbackManager] seekForward];
+        } else if ([action isEqualToString:@"skipbackward"]) {
+            [[PlaybackManager playbackManager] seekBackward];
+        } else if ([action isEqualToString:@"nextchapter"]) {
+            [[PlaybackManager playbackManager] nextChapter];
+        } else if ([action isEqualToString:@"prevchapter"]) {
+            [[PlaybackManager playbackManager] previousChapter];
+        } else if ([action isEqualToString:@"nextepisode"]) {
+            [[PlaybackManager playbackManager] nextTrack];
+        } else if ([action isEqualToString:@"previousepisode"]) {
+            [[PlaybackManager playbackManager] previousTrack];
+        }
+
+        // Present player ONLY when no action specified (= user tapped widget area, not a control button)
+        if (!action && [PlaybackManager playbackManager].playingEpisode) {
+            PlaybackViewController *pvc = [PlaybackViewController playbackViewController];
+            [pvc presentFromParentViewController:self.mainViewController];
+        }
+    }
+    else if ([host isEqualToString:@"episode"]) {
+        NSString *objectHash = (path.length > 1) ? [path substringFromIndex:1] : nil;
+        DebugLog(@"Widget episode link: objectHash=%@", objectHash);
+        if (objectHash) {
+            CDEpisode *episode = [DMANAGER episodeWithObjectHash:objectHash];
+            DebugLog(@"Widget episode link: found episode=%@", episode.title);
+            if (episode) {
+                if ([action isEqualToString:@"play"]) {
+                    [[AudioSession sharedAudioSession] playEpisode:episode];
+                    PlaybackViewController *pvc = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+                    [pvc presentFromParentViewController:self.mainViewController autostart:YES completion:NULL];
+                } else {
+                    // Show episode detail / show notes
+                    [self.mainViewController showShowNotesOfEpisode:episode animated:YES];
+                }
+            }
+        }
+    }
+    else if ([host isEqualToString:@"feed"]) {
+        NSString *feedUID = (path.length > 1) ? [path substringFromIndex:1] : nil;
+        if (feedUID) {
+            // Find feed by UID
+            for (CDFeed *feed in DMANAGER.feeds) {
+                if ([feed.uid isEqualToString:feedUID]) {
+                    FeedEpisodesTableViewController *vc = [FeedEpisodesTableViewController episodesControllerWithFeed:feed];
+                    // contentViewController is a StatusBarFixingViewController wrapping the navController
+                    UINavigationController *nav = [self.mainViewController.contentViewController.childViewControllers firstObject];
+                    if ([nav isKindOfClass:[UINavigationController class]]) {
+                        [nav pushViewController:vc animated:YES];
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    else if ([host isEqualToString:@"list"]) {
+        NSString *listUID = (path.length > 1) ? [path substringFromIndex:1] : nil;
+        if (listUID) {
+            for (CDList *list in DMANAGER.lists) {
+                if ([list.uid isEqualToString:listUID]) {
+                    if (![list isKindOfClass:[CDEpisodeList class]]) continue;
+                    ListEpisodesTableViewController *vc = [ListEpisodesTableViewController viewControllerWithList:(CDEpisodeList *)list];
+                    UINavigationController *nav = [self.mainViewController.contentViewController.childViewControllers firstObject];
+                    if ([nav isKindOfClass:[UINavigationController class]]) {
+                        [nav pushViewController:vc animated:YES];
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    else if ([host isEqualToString:@"queue"]) {
+        UpNextTableViewController *vc = [UpNextTableViewController viewController];
+        UINavigationController *nav = [self.mainViewController.contentViewController.childViewControllers firstObject];
+        if ([nav isKindOfClass:[UINavigationController class]]) {
+            [nav pushViewController:vc animated:YES];
+        }
+    }
+}
+
+- (NSDictionary *)_queryParametersFromURL:(NSURL *)url {
+    NSMutableDictionary *params = [NSMutableDictionary dictionary];
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem *item in components.queryItems) {
+        if (item.name && item.value) {
+            params[item.name] = item.value;
+        }
+    }
+    return params;
+}
 
 @end

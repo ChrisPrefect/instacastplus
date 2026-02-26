@@ -9,6 +9,8 @@
 #import "InstacastAppDelegate.h"
 #import "ChapterImageCell.h"
 #import "ChooseThemeColorCell.h"
+#import "WidgetDataExporter.h"
+#import "InstacastPlus-Swift.h"
 #import <MessageUI/MessageUI.h>
 
 typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
@@ -16,6 +18,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kAppearanceThemeSection,
     kPlayerColor,
     kPInterfaceColor,
+    kWidgetColor,
+    kLiveActivity,
     kAppIcons,
     kAppIconSuggestion,
     kInterfaceSoundsSection,
@@ -123,6 +127,17 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             {
                 return 2;
             }
+        case kWidgetColor:
+            if ([USER_DEFAULTS boolForKey:WidgetThemeDefaultActive])
+            {
+                return 1;
+            }
+            else
+            {
+                return 2;
+            }
+        case kLiveActivity:
+            return 1;
         case kAppIcons:
             return 1;
         case kAppIconSuggestion:
@@ -305,6 +320,77 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         }
 
     }
+    else if (indexPath.section == kWidgetColor)
+    {
+        BOOL widgetDefault = [USER_DEFAULTS boolForKey:WidgetThemeDefaultActive];
+        switch (indexPath.row) {
+            case 0:
+            {
+                UITableViewCell* cell = [self switchCell];
+                UISwitch* control = (UISwitch*)cell.accessoryView;
+                control.tag = indexPath.row;
+
+                cell.textLabel.text = @"Use Interface Color".ls;
+                cell.textLabel.numberOfLines = 0;
+                control.on = widgetDefault;
+                [control addTarget:self action:@selector(toggleWidgetColorSettings:) forControlEvents:UIControlEventValueChanged];
+                return cell;
+            }
+            case 1:
+            {
+                ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
+                cell.textLabel.numberOfLines = 0;
+
+                if (@available(iOS 14.0, *)) {
+                    cell.textLabel.text = @"Choose Custom".ls;
+                    [cell.disclosureView setHidden:FALSE];
+                    [cell.colorView setHidden:FALSE];
+                    [cell.textField setHidden:TRUE];
+                    [cell.tfView setHidden:TRUE];
+                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                    [cell.colorView setHidden:YES];
+                    if ([USER_DEFAULTS objectForKey:WidgetThemeColorCode])
+                    {
+                        [cell.colorView setHidden:NO];
+                        cell.colorView.clipsToBounds = true;
+                        cell.colorView.layer.cornerRadius = 5;
+                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:WidgetThemeColorCode];
+                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                        cell.colorView.backgroundColor = themeColor;
+                    }
+                }
+                else
+                {
+                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
+                    [cell.disclosureView setHidden:TRUE];
+                    [cell.colorView setHidden:TRUE];
+                    [cell.textField setHidden:FALSE];
+                    [cell.tfView setHidden:FALSE];
+                    cell.textField.tag = 888;
+                    cell.textField.delegate = self;
+                    cell.textField.text = @"";
+                    if ([USER_DEFAULTS objectForKey:WidgetThemeColorHexCode])
+                    {
+                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:WidgetThemeColorHexCode]];
+                    }
+                }
+                return cell;
+            }
+            default:
+                break;
+        }
+
+    }
+    else if (indexPath.section == kLiveActivity)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        cell.textLabel.text = @"Live Activity".ls;
+        cell.textLabel.numberOfLines = 0;
+        control.on = [USER_DEFAULTS boolForKey:@"LiveActivityEnabled"];
+        [control addTarget:self action:@selector(toggleLiveActivity:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
     else if (indexPath.section == kAppIcons)
     {
         static NSString *AppIConCellIdentifier = @"AppIconCell";
@@ -414,6 +500,23 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             [self.tableView reloadData];
         }
     }
+    else if (textField.tag == 888)
+    {
+        [textField resignFirstResponder];
+        if (textField.text.length == 6 || textField.text.length == 7)
+        {
+            UIColor *customColor = [UIColor colorWithHexString:textField.text];
+            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:customColor requiringSecureCoding:NO error:nil];
+            [USER_DEFAULTS setObject:colorData forKey:WidgetThemeColorCode];
+            [USER_DEFAULTS setObject:textField.text forKey:WidgetThemeColorHexCode];
+            [USER_DEFAULTS setBool:false forKey:WidgetThemeDefaultActive];
+
+            [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
+            [WidgetKitHelper reloadAllTimelines];
+
+            [self.tableView reloadData];
+        }
+    }
     return YES;
 }
 
@@ -428,6 +531,10 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return @"Player Color".ls;
         case kPInterfaceColor:
             return @"Interface Color".ls;
+        case kWidgetColor:
+            return @"Widget Color".ls;
+        case kLiveActivity:
+            return @"Live Activity".ls;
         case kAppIcons:
             return @"App Icon".ls;
         case kAppIconSuggestion:
@@ -459,6 +566,10 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 {
     switch (section)
     {
+        case kLiveActivity:
+        {
+            return @"Shows playback controls on the Lock Screen and in the Dynamic Island while listening.".ls;
+        }
         case kAppIconSuggestion:
         {
             return @"We're looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon.".ls;
@@ -470,42 +581,61 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 }
 
 - (void)colorPickerViewController:(UIColorPickerViewController *)viewController didSelectColor:(UIColor *)color continuously:(BOOL)continuously  API_AVAILABLE(ios(14.0)){
-    if (self->isPlayerColorSelected)
-    {
-        self->selectedPlayerColor = color;
-    }
-    else
-    {
-        self->selectedThemeColor = color;
+    switch (self->colorPickerTarget) {
+        case ColorPickerTargetPlayer:
+            self->selectedPlayerColor = color;
+            break;
+        case ColorPickerTargetInterface:
+            self->selectedThemeColor = color;
+            break;
+        case ColorPickerTargetWidget:
+            self->selectedWidgetColor = color;
+            break;
     }
 }
 
 -(void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)viewController
 API_AVAILABLE(ios(14.0)){
-    if (self->isPlayerColorSelected)
-    {
-        if (self->selectedPlayerColor)
+    switch (self->colorPickerTarget) {
+        case ColorPickerTargetPlayer:
         {
-            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedPlayerColor requiringSecureCoding:NO error:nil];
-            [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
-            [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-
-            [self.tableView reloadData];
+            if (self->selectedPlayerColor)
+            {
+                NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedPlayerColor requiringSecureCoding:NO error:nil];
+                [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
+                [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
+                [self.tableView reloadData];
+            }
+            break;
         }
-    }
-    else
-    {
-        if (self->selectedThemeColor)
+        case ColorPickerTargetInterface:
         {
-            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedThemeColor requiringSecureCoding:NO error:nil];
-            [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
-            [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
+            if (self->selectedThemeColor)
+            {
+                NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedThemeColor requiringSecureCoding:NO error:nil];
+                [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
+                [USER_DEFAULTS setBool:false forKey:InterfaceThemeDefaultActive];
 
-            [[ICAppearanceManager sharedManager] updateThemeTintColor];
-            [[ICAppearanceManager sharedManager] updateAppearance];
-            [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+                [[ICAppearanceManager sharedManager] updateThemeTintColor];
+                [[ICAppearanceManager sharedManager] updateAppearance];
+                [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+                [self.tableView reloadData];
+            }
+            break;
+        }
+        case ColorPickerTargetWidget:
+        {
+            if (self->selectedWidgetColor)
+            {
+                NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedWidgetColor requiringSecureCoding:NO error:nil];
+                [USER_DEFAULTS setObject:colorData forKey:WidgetThemeColorCode];
+                [USER_DEFAULTS setBool:false forKey:WidgetThemeDefaultActive];
 
-            [self.tableView reloadData];
+                [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
+                [WidgetKitHelper reloadAllTimelines];
+                [self.tableView reloadData];
+            }
+            break;
         }
     }
 }
@@ -524,7 +654,7 @@ API_AVAILABLE(ios(14.0)){
     else if (indexPath.section == kPlayerColor) {
         if (indexPath.row == 1) {
             if (@available(iOS 14.0, *)) {
-                self->isPlayerColorSelected = true;
+                self->colorPickerTarget = ColorPickerTargetPlayer;
                 [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
                 UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
                 picker.delegate = self;
@@ -536,7 +666,19 @@ API_AVAILABLE(ios(14.0)){
     else if (indexPath.section == kPInterfaceColor) {
         if (indexPath.row == 1) {
             if (@available(iOS 14.0, *)) {
-                self->isPlayerColorSelected = false;
+                self->colorPickerTarget = ColorPickerTargetInterface;
+                [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+                UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+                picker.delegate = self;
+                [self presentViewController:picker animated:YES completion:nil];
+            }
+        }
+    }
+
+    else if (indexPath.section == kWidgetColor) {
+        if (indexPath.row == 1) {
+            if (@available(iOS 14.0, *)) {
+                self->colorPickerTarget = ColorPickerTargetWidget;
                 [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
                 UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
                 picker.delegate = self;
@@ -613,6 +755,22 @@ API_AVAILABLE(ios(14.0)){
     [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
 
     [self.tableView reloadData];
+}
+
+- (void) toggleWidgetColorSettings:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:WidgetThemeDefaultActive];
+    [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
+    [WidgetKitHelper reloadAllTimelines];
+    [self.tableView reloadData];
+}
+
+- (void) toggleLiveActivity:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:@"LiveActivityEnabled"];
+    if (!sender.on) {
+        [LiveActivityManagerCompat endActivityIfAvailable];
+    }
 }
 
 - (void) toggleInterfaceSounds:(UISwitch*)sender

@@ -300,7 +300,7 @@
     WEAK_SELF
 
     // Timer duration actions
-    UIAction* offAction = [UIAction actionWithTitle:@"Off".ls image:[UIImage systemImageNamed:@"moon.zzz"] identifier:nil handler:^(UIAction *action) {
+    UIAction* offAction = [UIAction actionWithTitle:@"Off".ls image:nil identifier:nil handler:^(UIAction *action) {
         __strong PlayerTimerButton* strongSelf = weakSelf;
         [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
         [USER_DEFAULTS setInteger:PlaybackStopTimeNoValue forKey:DefaultIntelligentSleepTimer];

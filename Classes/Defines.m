@@ -33,6 +33,9 @@ NSString* PlayerThemeColorHexCode = @"PlayerThemeColorHexCode";
 NSString* InterfaceThemeDefaultActive = @"InterfaceThemeDefaultActive";
 NSString* InterfaceThemeColorCode = @"InterfaceThemeColorCode";
 NSString* InterfaceThemeColorHexCode = @"InterfaceThemeColorHexCode";
+NSString* WidgetThemeDefaultActive = @"WidgetThemeDefaultActive";
+NSString* WidgetThemeColorCode = @"WidgetThemeColorCode";
+NSString* WidgetThemeColorHexCode = @"WidgetThemeColorHexCode";
 
 
 NSString* ShowApplicationBadgeForUnseen = @"ShowApplicationBadgeForUnseen";

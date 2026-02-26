@@ -1,0 +1,51 @@
+/* Widget Display Names */
+"widget.nowplaying.name" = "Aktuelle Wiedergabe";
+"widget.nowplaying.description" = "Zeigt die aktuelle Episode mit Steuerelementen.";
+
+"widget.upnext.name" = "Als Nächstes";
+"widget.upnext.description" = "Zeigt deine Wiedergabeliste.";
+
+"widget.smartlist.name" = "Episodenliste";
+"widget.smartlist.description" = "Zeigt Episoden einer gewählten Liste oder Warteschlange.";
+
+"widget.favorites.name" = "Abonnements";
+"widget.favorites.description" = "Schnellzugriff auf deine Podcasts.";
+
+"widget.stats.name" = "Podcast-Statistik";
+"widget.stats.description" = "Deine Hörstatistiken.";
+
+"widget.podcastgrid.name" = "Podcast-Raster";
+"widget.podcastgrid.description" = "Cover-Raster deiner abonnierten Podcasts.";
+
+"widget.lockscreen.circular.name" = "Play/Pause";
+"widget.lockscreen.circular.description" = "Play/Pause-Button mit Fortschrittsring.";
+
+"widget.lockscreen.rectangular.name" = "Aktuelle Episode";
+"widget.lockscreen.rectangular.description" = "Zeigt Titel und Fortschritt der aktuellen Episode.";
+
+"widget.lockscreen.inline.name" = "Wiedergabe";
+"widget.lockscreen.inline.description" = "Zeigt den Titel der aktuellen Episode.";
+
+/* Widget Content */
+"widget.empty.noplayback" = "Keine Wiedergabe";
+"widget.empty.noupnext" = "Nichts in der Warteschlange";
+"widget.empty.noepisodes" = "Keine Episoden";
+"widget.empty.nosubscriptions" = "Keine Abonnements";
+"widget.empty.nostats" = "Keine Statistiken";
+
+"widget.nowplaying.label" = "AKTUELLE WIEDERGABE";
+"widget.upnext.header" = "Als Nächstes";
+"widget.listened.header" = "Gehört";
+"widget.today" = "Heute";
+"widget.week" = "Woche";
+"widget.left" = "übrig";
+
+"widget.stat.unplayed" = "Ungespielt";
+"widget.stat.downloaded" = "Geladen";
+"widget.stat.subscribed" = "Abonniert";
+
+"widget.sleeptimer" = "Sleeptimer: %@";
+"widget.chapter" = "Kapitel %d / %d";
+"widget.prev" = "Vorh.";
+"widget.next" = "Nächste";
+"widget.podcastgrid.playhint" = "Neueste Folge abspielen";

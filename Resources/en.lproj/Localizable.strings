@@ -537,7 +537,7 @@
 "Deselect" = "Deselect";
 "Do you still want to download the content of this episode right now?" = "Do you still want to download the content of this episode right now?";
 "Download" = "Download";
-"Episode Info" = "Episode Info";
+"Episode Info" = "Show Notes";
 "Automatic switches between Light and Dark based on your device settings." = "Automatic switches between Light and Dark based on your device settings.";
 "Downloading over cellular has been disabled in 'General' settings." = "Downloading over cellular has been disabled in 'General' settings.";
 "Mark all as Played" = "Mark all as Played";
@@ -585,6 +585,11 @@
 "Choose Custom (Hex)" = "Choose Custom (Hex)";
 "Choose Custom" = "Choose Custom";
 "Use Default" = "Use Default";
+"Widget Color" = "Widget Color";
+"Use Interface Color" = "Use Interface Color";
+
+"Live Activity" = "Live Activity";
+"Shows playback controls on the Lock Screen and in the Dynamic Island while listening." = "Shows playback controls on the Lock Screen and in the Dynamic Island while listening.";
 
 "Podcast collections" = "Podcast collections";
 "Playback controls" = "Playback controls";
