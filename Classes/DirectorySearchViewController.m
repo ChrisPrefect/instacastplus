@@ -87,7 +87,12 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     searchBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
 	[searchBar sizeToFit];
 
-	self.tableView.tableHeaderView = searchBar;
+    // Add vertical padding around search bar
+    CGRect searchBarFrame = searchBar.frame;
+    UIView* searchBarContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, searchBarFrame.size.width, searchBarFrame.size.height + 16)];
+    searchBar.frame = CGRectMake(0, 8, searchBarFrame.size.width, searchBarFrame.size.height);
+    [searchBarContainer addSubview:searchBar];
+	self.tableView.tableHeaderView = searchBarContainer;
 
 	self.imageCache = [[NSCache alloc] init];
 

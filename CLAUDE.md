@@ -90,7 +90,7 @@ iOS 26 rendert `UINavigationController.toolbar` als Floating Bar über einer `Fl
 - **`edgesForExtendedLayout = UIRectEdgeNone` verursacht opake Fläche am unteren Rand!** Der Content erstreckt sich nicht unter die Toolbar, dadurch wird der Hintergrund des NavigationControllers sichtbar. Tritt nur auf dem Gerät auf, nicht im Simulator.
 - **Lösung:** `edgesForExtendedLayout = UIRectEdgeBottom` — Content erstreckt sich unter die Toolbar (kein Hintergrund sichtbar), aber NICHT unter die NavBar (keine Glass-Artefakte oben).
 - Die Fläche erscheint nach Theme-Wechsel (weil `setAppearance:` die View-Hierarchie neu aufbaut) und verschwindet nach Navigation (push/pop baut Views neu auf).
-- `SubscriptionsTableViewController` (Standard `UIRectEdgeAll`) hat das Problem nicht — nur VCs mit explizit eingeschränktem `edgesForExtendedLayout`.
+- **Alle VCs mit Toolbar** brauchen `edgesForExtendedLayout = UIRectEdgeBottom`, auch mit Standard `UIRectEdgeAll`. Bereits gefixt: `SubscriptionsTableViewController`, `FeedEpisodesTableViewController`, `DirectoryFeedViewController`.
 
 ## iOS 26 Scroll Edge Effect
 

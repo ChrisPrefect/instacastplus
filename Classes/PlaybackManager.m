@@ -1776,15 +1776,17 @@ enum {
 - (float)rateFromSpeedControl:(PlaybackSpeedControl)control
 {
     switch (control) {
-        case PlaybackSpeedControlMinusHalfSpeed: return 0.5f;
-        case PlaybackSpeedControlNormalSpeed:     return 1.0f;
-        case PlaybackSpeedControlFaster11:        return 1.1f;
-        case PlaybackSpeedControlFaster12:        return 1.2f;
-        case PlaybackSpeedControlFaster13:        return 1.3f;
-        case PlaybackSpeedControlPlusHalfSpeed:   return 1.5f;
-        case PlaybackSpeedControlDoubleSpeed:     return 2.0f;
-        case PlaybackSpeedControlTripleSpeed:     return 3.0f;
-        default:                                  return 1.0f;
+        case PlaybackSpeedControlMinusHalfSpeed:    return 0.5f;
+        case PlaybackSpeedControlThreeQuarterSpeed: return 0.75f;
+        case PlaybackSpeedControlNormalSpeed:        return 1.0f;
+        case PlaybackSpeedControlFaster11:           return 1.1f;
+        case PlaybackSpeedControlFaster12:           return 1.2f;
+        case PlaybackSpeedControlFaster125:          return 1.25f;
+        case PlaybackSpeedControlFaster13:           return 1.3f;
+        case PlaybackSpeedControlPlusHalfSpeed:      return 1.5f;
+        case PlaybackSpeedControlDoubleSpeed:        return 2.0f;
+        case PlaybackSpeedControlTripleSpeed:        return 3.0f;
+        default:                                     return 1.0f;
     }
 }
 

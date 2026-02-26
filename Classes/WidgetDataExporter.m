@@ -7,6 +7,7 @@
 #import "DatabaseManager.h"
 #import "PlaybackManager.h"
 #import "PlaybackDefines.h"
+#import "PlayerSpeedButton.h"
 #import "Defines.h"
 #import "AudioSession.h"
 #import "AudioSession+UpNextPlaylist.h"
@@ -71,9 +72,12 @@ static const NSInteger kMaxEpisodesPerList = 12;
     self = [super init];
     if (self) {
         _containerURL = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:kAppGroupID];
+        DebugLog(@"WidgetDataExporter init: containerURL=%@", _containerURL);
         if (_containerURL) {
             _imagesURL = [_containerURL URLByAppendingPathComponent:kImagesFolder];
             [[NSFileManager defaultManager] createDirectoryAtURL:_imagesURL withIntermediateDirectories:YES attributes:nil error:nil];
+        } else {
+            DebugLog(@"WidgetDataExporter init: WARNING — App Group container is nil! Widgets will not receive data.");
         }
     }
     return self;
@@ -267,15 +271,9 @@ static const NSInteger kMaxEpisodesPerList = 12;
         } else if ([action isEqualToString:@"previousepisode"]) {
             [pm previousTrack];
         } else if ([action isEqualToString:@"cyclespeed"]) {
-            // Cycle through common speeds: 1x → 1.2x → 1.5x → 2x → 1x
+            // Cycle through enabled speeds (uses same logic as player button)
             PlaybackSpeedControl current = pm.speedControl;
-            PlaybackSpeedControl next;
-            switch (current) {
-                case PlaybackSpeedControlNormalSpeed:   next = PlaybackSpeedControlFaster12; break;
-                case PlaybackSpeedControlFaster12:      next = PlaybackSpeedControlPlusHalfSpeed; break;
-                case PlaybackSpeedControlPlusHalfSpeed:  next = PlaybackSpeedControlDoubleSpeed; break;
-                default:                                next = PlaybackSpeedControlNormalSpeed; break;
-            }
+            PlaybackSpeedControl next = [PlayerSpeedButton nextEnabledSpeedAfter:current];
             pm.speedControl = next;
         } else if ([action isEqualToString:@"togglesleeptimer"]) {
             AudioSession *as = [AudioSession sharedAudioSession];
@@ -972,17 +970,7 @@ static const NSInteger kMaxEpisodesPerList = 12;
 #pragma mark - Playback Speed Helper
 
 - (NSString *)_playbackSpeedString:(PlaybackSpeedControl)speed {
-    switch (speed) {
-        case PlaybackSpeedControlMinusHalfSpeed: return @"0.5x";
-        case PlaybackSpeedControlNormalSpeed:    return @"1x";
-        case PlaybackSpeedControlFaster11:       return @"1.1x";
-        case PlaybackSpeedControlFaster12:       return @"1.2x";
-        case PlaybackSpeedControlFaster13:       return @"1.3x";
-        case PlaybackSpeedControlPlusHalfSpeed:  return @"1.5x";
-        case PlaybackSpeedControlDoubleSpeed:    return @"2x";
-        case PlaybackSpeedControlTripleSpeed:    return @"3x";
-        default:                                 return @"1x";
-    }
+    return [PlayerSpeedButton titleForSpeedControl:speed];
 }
 
 #pragma mark - JSON Writing
@@ -1000,7 +988,8 @@ static const NSInteger kMaxEpisodesPerList = 12;
     }
 
     NSURL *fileURL = [self.containerURL URLByAppendingPathComponent:filename];
-    [data writeToURL:fileURL atomically:YES];
+    BOOL ok = [data writeToURL:fileURL atomically:YES];
+    DebugLog(@"WidgetDataExporter: wrote %@ (%lu bytes, success=%d)", filename, (unsigned long)data.length, ok);
 }
 
 #pragma mark - ISO 8601 Helpers

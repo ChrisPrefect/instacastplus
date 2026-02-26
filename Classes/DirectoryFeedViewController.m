@@ -249,20 +249,27 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
 - (void) _prepareViewWhenFeedLoaded
 {
-    UIBarButtonItem* subscribeBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Add"]
-                                                                               style:UIBarButtonItemStylePlain
-                                                                              target:self
-                                                                              action:@selector(subscribeAction:)];
-    
-    CDFeed* feed = [DMANAGER feedWithSourceURL:self.feed.sourceURL];
-    if (!feed) {
-        feed = [DMANAGER feedWithSourceURL:self.feed.changedSourceURL];
+    CDFeed* existingFeed = [DMANAGER feedWithSourceURL:self.feed.sourceURL];
+    if (!existingFeed) {
+        existingFeed = [DMANAGER feedWithSourceURL:self.feed.changedSourceURL];
     }
-    
-	if (feed && !feed.parked)
+
+    UIBarButtonItem* subscribeBarButtonItem;
+	if (existingFeed && !existingFeed.parked)
     {
+        subscribeBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Already Subscribed".ls
+                                                                 style:UIBarButtonItemStylePlain
+                                                                target:nil
+                                                                action:nil];
         subscribeBarButtonItem.enabled = NO;
 	}
+    else
+    {
+        subscribeBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Subscribe".ls
+                                                                 style:UIBarButtonItemStylePlain
+                                                                target:self
+                                                                action:@selector(subscribeAction:)];
+    }
     [self.navigationItem setRightBarButtonItem:subscribeBarButtonItem animated:YES];
     
 	if (self.feed)
@@ -366,7 +373,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             self.view.backgroundColor = ICBackgroundColor;
             self.webView.backgroundColor = ICBackgroundColor;
             self.webView.scrollView.backgroundColor = ICBackgroundColor;
-            self.webShadowView.backgroundColor = ICTransparentBackdropColor;
+            self.webShadowView.backgroundColor = ICBackgroundColor;
             self.titleLabel.textColor = ICTextColor;
             self.authorLabel.textColor = ICMutedTextColor;
 		}
@@ -395,6 +402,8 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void)viewDidLoad {
     [super viewDidLoad];
 
+    self.edgesForExtendedLayout = UIRectEdgeBottom;
+
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
     [self.webView scrollView].delegate = self;
@@ -408,9 +417,9 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 - (void) updateAppearance
 {
     self.view.backgroundColor = ICBackgroundColor;
-    self.webView.backgroundColor = ICTransparentBackdropColor;
-    self.webView.scrollView.backgroundColor = ICTransparentBackdropColor;
-    self.webShadowView.backgroundColor = ICTransparentBackdropColor;
+    self.webView.backgroundColor = ICBackgroundColor;
+    self.webView.scrollView.backgroundColor = ICBackgroundColor;
+    self.webShadowView.backgroundColor = ICBackgroundColor;
     self.titleLabel.textColor = ICTextColor;
     self.authorLabel.textColor = ICMutedTextColor;
     [self _loadWebViewContent];
@@ -421,10 +430,10 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     [super viewWillAppear:animated];
 
     self.view.backgroundColor = ICBackgroundColor;
-    self.webView.backgroundColor = ICTransparentBackdropColor;
+    self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.bounces = NO;
-    self.webView.scrollView.backgroundColor = ICTransparentBackdropColor;
-    self.webShadowView.backgroundColor = ICTransparentBackdropColor;
+    self.webView.scrollView.backgroundColor = ICBackgroundColor;
+    self.webShadowView.backgroundColor = ICBackgroundColor;
     self.titleLabel.textColor = ICTextColor;
     self.authorLabel.textColor = ICMutedTextColor;
 

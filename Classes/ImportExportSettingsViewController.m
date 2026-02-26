@@ -14,12 +14,9 @@
 #import "InstacastBackupParser.h"
 #import "InstacastBackupImportViewController.h"
 #import "CacheManager.h"
-#import "ICDailyBackupManager.h"
-
 typedef NS_ENUM(NSInteger, ImportExportSections) {
     kExportSection = 0,
     kImportSection,
-    kDailyBackupSection,
     kResetAppSection,
     kNumberOfSections,
 };
@@ -103,8 +100,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             return 3;
         case kImportSection:
             return 2;
-        case kDailyBackupSection:
-            return 2;
         case kResetAppSection:
             return 1;
     }
@@ -170,34 +165,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             cell.imageView.image = [UIImage systemImageNamed:@"trash"];
             cell.imageView.tintColor = [UIColor redColor];
             break;
-        case kDailyBackupSection: {
-            NSDictionary* status = [[ICDailyBackupManager sharedManager] statusSnapshot];
-            NSDate* lastBackupDate = status[@"lastSuccessfulBackupDate"];
-            NSUInteger backupCount = [status[@"availableBackups"] unsignedIntegerValue];
-
-            NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
-            formatter.dateStyle = NSDateFormatterMediumStyle;
-            formatter.timeStyle = NSDateFormatterShortStyle;
-
-            if (indexPath.row == 0) {
-                cell.textLabel.text = @"Create Backup Now".ls;
-                cell.detailTextLabel.text = @"Create an immediate local snapshot of database and settings.".ls;
-                cell.imageView.image = [UIImage systemImageNamed:@"externaldrive.badge.plus"];
-            } else {
-                cell.textLabel.text = @"Restore Daily Backup".ls;
-                if ([lastBackupDate isKindOfClass:[NSDate class]]) {
-                    NSString* dateText = [formatter stringFromDate:lastBackupDate];
-                    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@ • %@ %lu",
-                                                 @"Latest:".ls,
-                                                 dateText,
-                                                 (unsigned long)backupCount];
-                } else {
-                    cell.detailTextLabel.text = @"No daily backup available yet.".ls;
-                }
-                cell.imageView.image = [UIImage systemImageNamed:@"clock.arrow.trianglehead.counterclockwise.rotate.90"];
-            }
-            break;
-        }
     }
 
     return cell;
@@ -210,8 +177,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             return @"Export".ls;
         case kImportSection:
             return @"Import".ls;
-        case kDailyBackupSection:
-            return @"Automatic Backups".ls;
     }
     return nil;
 }
@@ -220,9 +185,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 {
     if (section == kImportSection) {
         return @"You can also open .opml or .xml files from Mail or the Files app in InstacastPlus to import data.".ls;
-    }
-    if (section == kDailyBackupSection) {
-        return @"InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings.".ls;
     }
     return nil;
 }
@@ -260,13 +222,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
         case kImportSection:
             self.selectedImportRow = indexPath.row;
             [self showImportDocumentPicker];
-            break;
-        case kDailyBackupSection:
-            if (indexPath.row == 0) {
-                [self createDailyBackupNow];
-            } else {
-                [self restoreDailyBackup];
-            }
             break;
         case kResetAppSection:
             [self resetApp];
@@ -742,135 +697,13 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     self.interactionController = nil;
 }
 
-#pragma mark - Daily Backups
-
-- (void)createDailyBackupNow
-{
-    self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Creating backup…".ls];
-    [self.mInfo show];
-
-    [[ICDailyBackupManager sharedManager] createBackupNowWithReason:@"manual from settings"
-                                                         completion:^(BOOL success, NSError *error) {
-        [self.mInfo close];
-        self.mInfo = nil;
-
-        UIAlertController* alert = nil;
-        if (success) {
-            alert = [UIAlertController alertControllerWithTitle:@"Backup Created".ls
-                                                        message:@"A local backup snapshot was created successfully.".ls
-                                                 preferredStyle:UIAlertControllerStyleAlert];
-        } else {
-            alert = [UIAlertController alertControllerWithTitle:@"Backup Failed".ls
-                                                        message:(error.localizedDescription ?: @"Could not create backup.".ls)
-                                                 preferredStyle:UIAlertControllerStyleAlert];
-        }
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-        [self.tableView reloadData];
-    }];
-}
-
-- (void)restoreDailyBackup
-{
-    NSArray<NSDictionary*>* backups = [[ICDailyBackupManager sharedManager] availableBackups];
-    if (backups.count == 0) {
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"No Backup Available".ls
-                                                                       message:@"No daily backups exist yet.".ls
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
-        return;
-    }
-
-    NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
-    formatter.dateStyle = NSDateFormatterMediumStyle;
-    formatter.timeStyle = NSDateFormatterShortStyle;
-
-    UIAlertController* sheet = [UIAlertController alertControllerWithTitle:@"Restore Daily Backup".ls
-                                                                   message:@"Choose a backup snapshot to restore. The app will restart afterward.".ls
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-
-    for (NSDictionary* backup in backups) {
-        NSString* identifier = backup[@"identifier"];
-        NSDate* date = backup[@"date"];
-        if (identifier.length == 0 || ![date isKindOfClass:[NSDate class]]) {
-            continue;
-        }
-
-        NSString* title = [formatter stringFromDate:date];
-        [sheet addAction:[UIAlertAction actionWithTitle:title
-                                                  style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction * _Nonnull action) {
-            [self _confirmRestoreDailyBackupWithIdentifier:identifier displayName:title];
-        }]];
-    }
-
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:nil]];
-
-    UIPopoverPresentationController* presenter = [sheet popoverPresentationController];
-    if (presenter) {
-        NSIndexPath* indexPath = [NSIndexPath indexPathForRow:1 inSection:kDailyBackupSection];
-        UITableViewCell* sourceCell = [self.tableView cellForRowAtIndexPath:indexPath];
-        presenter.sourceView = sourceCell ?: self.view;
-        presenter.sourceRect = sourceCell ? sourceCell.bounds : CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
-    }
-
-    [self presentViewController:sheet animated:YES completion:nil];
-}
-
-- (void)_confirmRestoreDailyBackupWithIdentifier:(NSString*)identifier displayName:(NSString*)displayName
-{
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Restore Backup".ls
-                                                                   message:[NSString stringWithFormat:@"%@\n\n%@", displayName, @"Current local data will be replaced. The app will restart to apply restore.".ls]
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
-                                              style:UIAlertActionStyleCancel
-                                            handler:nil]];
-
-    [alert addAction:[UIAlertAction actionWithTitle:@"Restore".ls
-                                              style:UIAlertActionStyleDestructive
-                                            handler:^(UIAlertAction * _Nonnull action) {
-        self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Preparing restore…".ls];
-        [self.mInfo show];
-
-        [[ICDailyBackupManager sharedManager] prepareRestoreForBackupWithIdentifier:identifier
-                                                                         completion:^(BOOL success, NSError *error) {
-            [self.mInfo close];
-            self.mInfo = nil;
-
-            if (!success) {
-                UIAlertController* errorAlert = [UIAlertController alertControllerWithTitle:@"Restore Failed".ls
-                                                                                    message:(error.localizedDescription ?: @"Could not prepare backup restore.".ls)
-                                                                             preferredStyle:UIAlertControllerStyleAlert];
-                [errorAlert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:errorAlert animated:YES completion:nil];
-                return;
-            }
-
-            UIAlertController* restartAlert = [UIAlertController alertControllerWithTitle:@"Restore Ready".ls
-                                                                                   message:@"Backup restore has been prepared. The app now needs to restart.".ls
-                                                                            preferredStyle:UIAlertControllerStyleAlert];
-            [restartAlert addAction:[UIAlertAction actionWithTitle:@"Restart Now".ls
-                                                             style:UIAlertActionStyleDestructive
-                                                           handler:^(UIAlertAction * _Nonnull action) {
-                exit(0);
-            }]];
-            [self presentViewController:restartAlert animated:YES completion:nil];
-        }];
-    }]];
-
-    [self presentViewController:alert animated:YES completion:nil];
-}
 
 #pragma mark - Reset App
 
 - (void) resetApp
 {
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Reset App".ls
-                                                                   message:@"Are you sure you want to delete all data and reset the app? A safety backup is created first. This action cannot be undone.".ls
+                                                                   message:@"Are you sure you want to delete all data and reset the app? This action cannot be undone.".ls
                                                             preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls
@@ -887,29 +720,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 }
 
 - (void) performAppReset
-{
-    self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Creating safety backup…".ls];
-    [self.mInfo show];
-
-    [[ICDailyBackupManager sharedManager] createBackupNowWithReason:@"pre-reset safety snapshot"
-                                                         completion:^(BOOL success, NSError *error) {
-        [self.mInfo close];
-        self.mInfo = nil;
-
-        if (!success) {
-            UIAlertController* backupAlert = [UIAlertController alertControllerWithTitle:@"Reset Aborted".ls
-                                                                                  message:(error.localizedDescription ?: @"A safety backup could not be created.".ls)
-                                                                           preferredStyle:UIAlertControllerStyleAlert];
-            [backupAlert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:backupAlert animated:YES completion:nil];
-            return;
-        }
-
-        [self _performDestructiveResetAfterSafetyBackup];
-    }];
-}
-
-- (void)_performDestructiveResetAfterSafetyBackup
 {
     self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Resetting…".ls];
     [self.mInfo show];

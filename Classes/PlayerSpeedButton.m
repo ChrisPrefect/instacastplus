@@ -32,34 +32,8 @@
         [self setTitleColor:ICBackgroundColor forState:UIControlStateHighlighted];
     }
     
-    switch (pman.speedControl) {
-        case PlaybackSpeedControlNormalSpeed:
-            [self setTitle:@"1x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlDoubleSpeed:
-            [self setTitle:@"2x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlPlusHalfSpeed:
-            [self setTitle:@"1.5x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlMinusHalfSpeed:
-            [self setTitle:@"0.5x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlTripleSpeed:
-            [self setTitle:@"3x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlFaster11:
-            [self setTitle:@"1.1x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlFaster12:
-            [self setTitle:@"1.2x" forState:UIControlStateNormal];
-            break;
-        case PlaybackSpeedControlFaster13:
-            [self setTitle:@"1.3x" forState:UIControlStateNormal];
-            break;
-        default:
-            break;
-    }
+    NSString* title = [PlayerSpeedButton titleForSpeedControl:pman.speedControl];
+    [self setTitle:title forState:UIControlStateNormal];
     
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
     self.titleLabel.font = [UIFont boldSystemFontOfSize:18];
@@ -129,44 +103,10 @@
         if ([_trackingDate timeIntervalSinceNow] >= -0.5)
         {
             PlaybackManager* pman = [PlaybackManager playbackManager];
-            NSString* announcement = nil;
-            
-            switch (pman.speedControl) {
-                case PlaybackSpeedControlNormalSpeed:
-                    pman.speedControl = PlaybackSpeedControlFaster11;
-                    announcement = @"Playback set to 1.1x speed.".ls;
-                    break;
-                case PlaybackSpeedControlFaster11:
-                    pman.speedControl = PlaybackSpeedControlFaster12;
-                    announcement = @"Playback set to 1.2x speed.".ls;
-                    break;
-                case PlaybackSpeedControlFaster12:
-                    pman.speedControl = PlaybackSpeedControlFaster13;
-                    announcement = @"Playback set to 1.3x speed.".ls;
-                    break;
-                case PlaybackSpeedControlFaster13:
-                    pman.speedControl = PlaybackSpeedControlPlusHalfSpeed;
-                    announcement = @"Playback set to 1.5x speed.".ls;
-                    break;
-                case PlaybackSpeedControlPlusHalfSpeed:
-                    pman.speedControl = PlaybackSpeedControlDoubleSpeed;
-                    announcement = @"Playback set to double speed.".ls;
-                    break;
-                case PlaybackSpeedControlDoubleSpeed:
-                    pman.speedControl = PlaybackSpeedControlTripleSpeed;
-                    announcement = @"Playback set to triple speed.".ls;
-                    break;
-                case PlaybackSpeedControlMinusHalfSpeed:
-                    pman.speedControl = PlaybackSpeedControlNormalSpeed;
-                    announcement =  @"Playback set to original speed.".ls;
-                    break;
-                case PlaybackSpeedControlTripleSpeed:
-                    pman.speedControl = PlaybackSpeedControlMinusHalfSpeed;
-                    announcement = @"Playback set to half speed.".ls;
-                    break;
-                default:
-                    break;
-            }
+            PlaybackSpeedControl nextSpeed = [PlayerSpeedButton nextEnabledSpeedAfter:pman.speedControl];
+            pman.speedControl = nextSpeed;
+            NSString* title = [PlayerSpeedButton titleForSpeedControl:nextSpeed];
+            NSString* announcement = [NSString stringWithFormat:@"Playback set to %@ speed.".ls, title];
             UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, announcement);
         }
         
@@ -195,4 +135,78 @@
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
                       w, h);
 }
+
+#pragma mark - Speed cycling helpers
+
+// Ordered list of all speeds from slowest to fastest
++ (NSArray<NSNumber*>*) allSpeedControlsOrdered
+{
+    return @[
+        @(PlaybackSpeedControlMinusHalfSpeed),     // 0.5x
+        @(PlaybackSpeedControlThreeQuarterSpeed),   // 0.75x
+        @(PlaybackSpeedControlNormalSpeed),          // 1x
+        @(PlaybackSpeedControlFaster11),             // 1.1x
+        @(PlaybackSpeedControlFaster12),             // 1.2x
+        @(PlaybackSpeedControlFaster125),            // 1.25x
+        @(PlaybackSpeedControlFaster13),             // 1.3x
+        @(PlaybackSpeedControlPlusHalfSpeed),        // 1.5x
+        @(PlaybackSpeedControlDoubleSpeed),          // 2x
+        @(PlaybackSpeedControlTripleSpeed),          // 3x
+    ];
+}
+
++ (NSArray<NSNumber*>*) enabledSpeedControls
+{
+    NSArray* enabled = [USER_DEFAULTS arrayForKey:EnabledPlaybackSpeedsKey];
+    if (!enabled) {
+        // Default: 0.75x, 1x, 1.25x, 1.5x
+        return @[
+            @(PlaybackSpeedControlThreeQuarterSpeed),
+            @(PlaybackSpeedControlNormalSpeed),
+            @(PlaybackSpeedControlFaster125),
+            @(PlaybackSpeedControlPlusHalfSpeed),
+        ];
+    }
+    // Filter and sort by the canonical order
+    NSArray* allOrdered = [self allSpeedControlsOrdered];
+    NSMutableArray* result = [NSMutableArray array];
+    for (NSNumber* speed in allOrdered) {
+        if ([enabled containsObject:speed]) {
+            [result addObject:speed];
+        }
+    }
+    // Always include 1x
+    if (![result containsObject:@(PlaybackSpeedControlNormalSpeed)]) {
+        [result insertObject:@(PlaybackSpeedControlNormalSpeed) atIndex:0];
+    }
+    return result;
+}
+
++ (PlaybackSpeedControl) nextEnabledSpeedAfter:(PlaybackSpeedControl)current
+{
+    NSArray* enabled = [self enabledSpeedControls];
+    NSUInteger idx = [enabled indexOfObject:@(current)];
+    if (idx == NSNotFound || idx + 1 >= enabled.count) {
+        return [enabled.firstObject integerValue];
+    }
+    return [enabled[idx + 1] integerValue];
+}
+
++ (NSString*) titleForSpeedControl:(PlaybackSpeedControl)control
+{
+    switch (control) {
+        case PlaybackSpeedControlMinusHalfSpeed:    return @"0.5x";
+        case PlaybackSpeedControlThreeQuarterSpeed: return @"0.75x";
+        case PlaybackSpeedControlNormalSpeed:        return @"1x";
+        case PlaybackSpeedControlFaster11:           return @"1.1x";
+        case PlaybackSpeedControlFaster12:           return @"1.2x";
+        case PlaybackSpeedControlFaster125:          return @"1.25x";
+        case PlaybackSpeedControlFaster13:           return @"1.3x";
+        case PlaybackSpeedControlPlusHalfSpeed:      return @"1.5x";
+        case PlaybackSpeedControlDoubleSpeed:        return @"2x";
+        case PlaybackSpeedControlTripleSpeed:        return @"3x";
+        default:                                     return @"1x";
+    }
+}
+
 @end

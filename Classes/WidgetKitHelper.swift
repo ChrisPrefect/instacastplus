@@ -19,7 +19,7 @@ import Foundation
     private static let actions = [
         "playpause", "skipforward", "skipbackward",
         "nextchapter", "prevchapter", "nextepisode", "previousepisode",
-        "cyclespeed", "togglesleeptimer"
+        "cyclespeed", "togglesleeptimer", "skipchapter"
     ]
 
     @objc public static func reloadAllTimelines() {

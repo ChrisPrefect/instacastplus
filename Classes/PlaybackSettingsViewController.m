@@ -8,6 +8,7 @@
 #import "SettingsValuesTableViewController.h"
 #import "PlaybackDefines.h"
 #import "InstacastAppDelegate.h"
+#import "PlayerSpeedButton.h"
 
 typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     kPlaybackSection = 0,
@@ -82,7 +83,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 {
     switch (section) {
         case kPlaybackSection:
-            return 6;
+            return 8;
         default:
             break;
     }
@@ -98,6 +99,16 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
         switch (indexPath.row) {
             case 0:
             {
+                UITableViewCell* cell = [self detailCell];
+                cell.textLabel.text = @"Tap on Episode".ls;
+
+                NSInteger tapAction = [USER_DEFAULTS integerForKey:TapOnEpisodeAction];
+                cell.detailTextLabel.text = (tapAction == ICTapOnEpisodeActionShowNotes) ? @"Show Notes".ls : @"Play Episode Action".ls;
+
+                return cell;
+            }
+            case 1:
+            {
                 UITableViewCell* cell = [self switchCell];
                 UISwitch* control = (UISwitch*)cell.accessoryView;
 
@@ -110,7 +121,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                 [control addTarget:self action:@selector(togglePlayerSettings:) forControlEvents:UIControlEventValueChanged];
                 return cell;
             }
-            case 1:
+            case 2:
             {
                 UITableViewCell* cell = [self detailCell];
 
@@ -121,7 +132,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
                 return cell;
             }
-            case 2:
+            case 3:
             {
                 UITableViewCell* cell = [self detailCell];
 
@@ -132,7 +143,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
                 return cell;
             }
-            case 3:
+            case 4:
             {
                 UITableViewCell* cell = [self detailCell];
 
@@ -147,13 +158,30 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                                                @(PlaybackSpeedControlTripleSpeed) : @"Crazy (3x)".ls,
                                                @(PlaybackSpeedControlFaster11) : @"Faster (1.1x)".ls,
                                                @(PlaybackSpeedControlFaster12) : @"Faster (1.2x)".ls,
-                                               @(PlaybackSpeedControlFaster13) : @"Faster (1.3x)".ls };
+                                               @(PlaybackSpeedControlFaster13) : @"Faster (1.3x)".ls,
+                                               @(PlaybackSpeedControlThreeQuarterSpeed) : @"Slower (0.75x)".ls,
+                                               @(PlaybackSpeedControlFaster125) : @"Faster (1.25x)".ls };
 
                 cell.detailTextLabel.text = speedValues[@(speed)];
 
                 return cell;
             }
-            case 4:
+            case 5:
+            {
+                UITableViewCell* cell = [self detailCell];
+
+                cell.textLabel.text = @"Enabled Speed Steps".ls;
+
+                NSArray* enabled = [PlayerSpeedButton enabledSpeedControls];
+                NSMutableArray* titles = [NSMutableArray array];
+                for (NSNumber* speed in enabled) {
+                    [titles addObject:[PlayerSpeedButton titleForSpeedControl:speed.integerValue]];
+                }
+                cell.detailTextLabel.text = [titles componentsJoinedByString:@", "];
+
+                return cell;
+            }
+            case 6:
             {
                 UITableViewCell* cell = [self detailCell];
 
@@ -169,7 +197,7 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
                 return cell;
             }
-            case 5:
+            case 7:
             {
                 UITableViewCell* cell = [self switchCell];
                 UISwitch* control = (UISwitch*)cell.accessoryView;
@@ -232,30 +260,46 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     if (indexPath.section == kPlaybackSection)
     {
         switch (indexPath.row) {
-            case 1:
-            case 2:
+            case 0:
             {
                 SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
                 controller.valueType = kSettingTypeInteger;
-                controller.key = (indexPath.row == 1) ? PlayerSkipBackPeriod : PlayerSkipForwardPeriod;
-                controller.title = (indexPath.row == 1) ? @"Skipping Back".ls : @"Skipping Forward".ls;
+                controller.key = TapOnEpisodeAction;
+                controller.title = @"Tap on Episode".ls;
+                controller.values = @[ @(ICTapOnEpisodeActionPlay), @(ICTapOnEpisodeActionShowNotes) ];
+                controller.titles = @[ @"Play Episode Action".ls, @"Show Notes".ls ];
+                [self.navigationController pushViewController:controller animated:YES];
+                break;
+            }
+            case 2:
+            case 3:
+            {
+                SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+                controller.valueType = kSettingTypeInteger;
+                controller.key = (indexPath.row == 2) ? PlayerSkipBackPeriod : PlayerSkipForwardPeriod;
+                controller.title = (indexPath.row == 2) ? @"Skipping Back".ls : @"Skipping Forward".ls;
                 controller.values = @[ @5, @10, @20, @30, @60, @120, @300, @600 ];
                 controller.titles = @[ @"5 Seconds".ls, @"10 Seconds".ls, @"20 Seconds".ls, @"30 Seconds".ls, @"1 Minute".ls, @"2 Minutes".ls, @"5 Minutes".ls, @"10 Minutes".ls];
                 [self.navigationController pushViewController:controller animated:YES];
                 break;
             }
-            case 3:
+            case 4:
             {
                 SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
                 controller.valueType = kSettingTypeInteger;
                 controller.key = DefaultPlaybackSpeed;
                 controller.title = @"Speed".ls;
-                controller.values = @[ @(PlaybackSpeedControlMinusHalfSpeed), @(PlaybackSpeedControlNormalSpeed), @(PlaybackSpeedControlFaster11), @(PlaybackSpeedControlFaster12), @(PlaybackSpeedControlFaster13), @(PlaybackSpeedControlPlusHalfSpeed), @(PlaybackSpeedControlDoubleSpeed), @(PlaybackSpeedControlTripleSpeed) ];
-                controller.titles = @[ @"Slower (0.5x)".ls, @"Normal (1x)".ls, @"Faster (1.1x)".ls, @"Faster (1.2x)".ls, @"Faster (1.3x)".ls, @"Faster (1.5x)".ls, @"Fast (2x)".ls, @"Crazy (3x)".ls ];
+                controller.values = @[ @(PlaybackSpeedControlMinusHalfSpeed), @(PlaybackSpeedControlThreeQuarterSpeed), @(PlaybackSpeedControlNormalSpeed), @(PlaybackSpeedControlFaster11), @(PlaybackSpeedControlFaster12), @(PlaybackSpeedControlFaster125), @(PlaybackSpeedControlFaster13), @(PlaybackSpeedControlPlusHalfSpeed), @(PlaybackSpeedControlDoubleSpeed), @(PlaybackSpeedControlTripleSpeed) ];
+                controller.titles = @[ @"Slower (0.5x)".ls, @"Slower (0.75x)".ls, @"Normal (1x)".ls, @"Faster (1.1x)".ls, @"Faster (1.2x)".ls, @"Faster (1.25x)".ls, @"Faster (1.3x)".ls, @"Faster (1.5x)".ls, @"Fast (2x)".ls, @"Crazy (3x)".ls ];
                 [self.navigationController pushViewController:controller animated:YES];
                 break;
             }
-            case 4:
+            case 5:
+            {
+                [self _showEnabledSpeedsSettings];
+                break;
+            }
+            case 6:
             {
                 SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
                 controller.valueType = kSettingTypeInteger;
@@ -278,12 +322,73 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
 - (void) togglePlayerSettings:(UISwitch*)sender
 {
-    if (sender.tag == 0) {
+    if (sender.tag == 1) {
         [USER_DEFAULTS setBool:sender.on forKey:PlayerReplayAfterPause];
     }
-    else if (sender.tag == 5) {
+    else if (sender.tag == 7) {
         [USER_DEFAULTS setBool:sender.on forKey:DisableAutoLock];
     }
+}
+
+#pragma mark - Enabled Speed Steps
+
+- (void)_showEnabledSpeedsSettings
+{
+    UITableViewController* controller = [[UITableViewController alloc] initWithStyle:UITableViewStyleGrouped];
+    controller.title = @"Enabled Speed Steps".ls;
+
+    NSArray* allSpeeds = [PlayerSpeedButton allSpeedControlsOrdered];
+    NSArray* enabledSpeeds = [PlayerSpeedButton enabledSpeedControls];
+
+    controller.tableView.dataSource = nil;
+    controller.tableView.delegate = nil;
+
+    // Use a simple alert-based approach with switches for each speed
+    UIAlertController* sheet = [UIAlertController alertControllerWithTitle:@"Enabled Speed Steps".ls
+                                                                   message:@"Select which speed steps are available in the player. 1x is always enabled.".ls
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+
+    for (NSNumber* speed in allSpeeds) {
+        NSString* title = [PlayerSpeedButton titleForSpeedControl:speed.integerValue];
+        BOOL isEnabled = [enabledSpeeds containsObject:speed];
+        BOOL isNormal = (speed.integerValue == PlaybackSpeedControlNormalSpeed);
+
+        NSString* prefix = isEnabled ? @"\u2705 " : @"\u2B1C ";
+        if (isNormal) prefix = @"\U0001F512 ";
+
+        UIAlertAction* action = [UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@%@", prefix, title]
+                                                         style:UIAlertActionStyleDefault
+                                                       handler:^(UIAlertAction * _Nonnull act) {
+            if (isNormal) return; // 1x always enabled
+
+            NSMutableArray* current = [[PlayerSpeedButton enabledSpeedControls] mutableCopy];
+            if (isEnabled) {
+                [current removeObject:speed];
+            } else {
+                [current addObject:speed];
+            }
+            [USER_DEFAULTS setObject:current forKey:EnabledPlaybackSpeedsKey];
+            [self.tableView reloadData];
+
+            // Re-show the menu after toggling
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self _showEnabledSpeedsSettings];
+            });
+        }];
+        [sheet addAction:action];
+    }
+
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Done".ls style:UIAlertActionStyleCancel handler:nil]];
+
+    UIPopoverPresentationController* presenter = [sheet popoverPresentationController];
+    if (presenter) {
+        NSIndexPath* indexPath = [NSIndexPath indexPathForRow:5 inSection:kPlaybackSection];
+        UITableViewCell* sourceCell = [self.tableView cellForRowAtIndexPath:indexPath];
+        presenter.sourceView = sourceCell ?: self.view;
+        presenter.sourceRect = sourceCell ? sourceCell.bounds : CGRectZero;
+    }
+
+    [self presentViewController:sheet animated:YES completion:nil];
 }
 
 @end

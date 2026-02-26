@@ -15,7 +15,9 @@ enum {
     PlaybackSpeedControlTripleSpeed     = 4,
     PlaybackSpeedControlFaster11     = 5,
     PlaybackSpeedControlFaster12     = 6,
-    PlaybackSpeedControlFaster13     = 7
+    PlaybackSpeedControlFaster13     = 7,
+    PlaybackSpeedControlThreeQuarterSpeed = 8,
+    PlaybackSpeedControlFaster125    = 9
 };
 typedef NSInteger PlaybackSpeedControl;
 

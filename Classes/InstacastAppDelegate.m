@@ -38,7 +38,6 @@
 #import "ICPubdateValueTransformer.h"
 #import "Application.h"
 #import "InstacastSceneDelegate.h"
-#import "ICDailyBackupManager.h"
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
 
@@ -100,8 +99,6 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
-    [ICDailyBackupManager applyPendingRestoreIfNeededAtLaunch];
-
     if ([USER_DEFAULTS valueForKey:InterfaceThemeDefaultActive] == nil)
     {
         [USER_DEFAULTS setBool:true forKey:InterfaceThemeDefaultActive];

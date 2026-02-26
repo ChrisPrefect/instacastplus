@@ -7,6 +7,13 @@
 //
 
 #import <UIKit/UIKit.h>
+#import "PlaybackDefines.h"
 
 @interface PlayerSpeedButton : UIButton
+
++ (NSArray<NSNumber*>*) allSpeedControlsOrdered;
++ (NSArray<NSNumber*>*) enabledSpeedControls;
++ (PlaybackSpeedControl) nextEnabledSpeedAfter:(PlaybackSpeedControl)current;
++ (NSString*) titleForSpeedControl:(PlaybackSpeedControl)control;
+
 @end

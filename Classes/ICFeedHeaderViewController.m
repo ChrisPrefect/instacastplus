@@ -40,9 +40,11 @@
     // create title label
     UILabel* titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     titleLabel.numberOfLines = 2;
-    titleLabel.font = [UIFont systemFontOfSize:17.0f];
+    titleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
     titleLabel.backgroundColor = [UIColor clearColor];
     titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    titleLabel.adjustsFontSizeToFitWidth = YES;
+    titleLabel.minimumScaleFactor = 0.7;
     [self.view addSubview:titleLabel];
     
     // create author label

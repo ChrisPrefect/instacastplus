@@ -915,5 +915,20 @@
 /* PlaybackSettingsViewController */
 "These are the default settings. They can be overridden per podcast in the podcast settings." = "These are the default settings. They can be overridden per podcast in the podcast settings.";
 
+/* DirectoryFeedViewController */
+"Subscribe" = "Subscribe";
+"Already Subscribed" = "Already Subscribed";
+
+/* Tap on Episode */
+"Play Episode" = "Play Episode";
+"Tap on Episode" = "Tap on Episode";
+"Show Notes" = "Show Notes";
+"Play Episode Action" = "Play Episode";
+
+/* Speed Steps */
+"Enabled Speed Steps" = "Enabled Speed Steps";
+"Slower (0.75x)" = "Slower (0.75x)";
+"Faster (1.25x)" = "Faster (1.25x)";
+
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";

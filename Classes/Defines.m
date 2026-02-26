@@ -107,6 +107,9 @@ NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 NSString* kDefaultPlayerControls = @"PlayerControls";
 NSString* kDefaultAppearanceMode = @"AppearanceMode";
 NSString* kDefaultDarkModePureBlack = @"DarkModePureBlack";
+
+NSString* TapOnEpisodeAction = @"TapOnEpisodeAction";
+NSString* EnabledPlaybackSpeedsKey = @"EnabledPlaybackSpeeds";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 
 #if TARGET_OS_IPHONE==1

@@ -124,6 +124,14 @@ typedef NS_ENUM(NSInteger, ICAppearanceMode) {
     ICAppearanceModeDark = 2
 };
 
+extern NSString* TapOnEpisodeAction;
+typedef NS_ENUM(NSInteger, ICTapOnEpisodeAction) {
+    ICTapOnEpisodeActionPlay = 0,
+    ICTapOnEpisodeActionShowNotes = 1
+};
+
+extern NSString* EnabledPlaybackSpeedsKey;
+
 #if TARGET_OS_IPHONE==1
 #else
 extern NSString* AutoRefresh;
