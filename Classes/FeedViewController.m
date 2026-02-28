@@ -30,6 +30,14 @@
 @property (nonatomic, strong) UIBarButtonItem* actionItem;
 @property (nonatomic, strong) UIBarButtonItem* reloadItem;
 @property (nonatomic, strong) ICFeedHeaderViewController* headerViewController;
+
+// iOS 26: Floating glass buttons replace system toolbar.
+// The system floating toolbar (FloatingBarHostingView) intercepts touches in an
+// 86pt zone above the visible pill, blocking taps on web content underneath.
+// Custom floating buttons only block touches on their actual frame.
+@property (nonatomic, strong) UIButton* floatingReloadButton API_AVAILABLE(ios(26.0));
+@property (nonatomic, strong) UIButton* floatingShareButton API_AVAILABLE(ios(26.0));
+@property (nonatomic, strong) UIButton* floatingSettingsButton API_AVAILABLE(ios(26.0));
 @end
 
 
@@ -129,8 +137,78 @@
     [self.webView loadHTMLString:htmlContent baseURL:nil];
 }
 
+// iOS 26: Creates floating glass buttons (reload, share, settings) on the
+// navigationController's view. Positioned: reload left, share center, settings right.
+- (void) _setupFloatingToolbarButtons API_AVAILABLE(ios(26.0))
+{
+    WEAK_SELF
+
+    // Reload button (bottom-left)
+    UIButtonConfiguration* reloadConfig = [UIButtonConfiguration glassButtonConfiguration];
+    reloadConfig.image = [UIImage systemImageNamed:@"arrow.clockwise"];
+    reloadConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingReloadButton = [UIButton buttonWithConfiguration:reloadConfig primaryAction:
+        [UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF
+            [self reloadAction:nil];
+        }]];
+    self.floatingReloadButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Share button (bottom-center)
+    UIButtonConfiguration* shareConfig = [UIButtonConfiguration glassButtonConfiguration];
+    shareConfig.image = [UIImage systemImageNamed:@"square.and.arrow.up"];
+    shareConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingShareButton = [UIButton buttonWithConfiguration:shareConfig primaryAction:
+        [UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF
+            [self actionAction:nil];
+        }]];
+    self.floatingShareButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Settings button (bottom-right)
+    UIButtonConfiguration* settingsConfig = [UIButtonConfiguration glassButtonConfiguration];
+    settingsConfig.image = [UIImage systemImageNamed:@"gearshape"];
+    settingsConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingSettingsButton = [UIButton buttonWithConfiguration:settingsConfig primaryAction:
+        [UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF
+            [self settingsAction:nil];
+        }]];
+    self.floatingSettingsButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Match button appearance to app theme
+    UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+    self.floatingReloadButton.overrideUserInterfaceStyle = style;
+    self.floatingShareButton.overrideUserInterfaceStyle = style;
+    self.floatingSettingsButton.overrideUserInterfaceStyle = style;
+
+    UIView* container = self.navigationController.view;
+    [container addSubview:self.floatingReloadButton];
+    [container addSubview:self.floatingShareButton];
+    [container addSubview:self.floatingSettingsButton];
+
+    UILayoutGuide* safeArea = container.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        // Reload: bottom-left
+        [self.floatingReloadButton.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor constant:20],
+        [self.floatingReloadButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+        // Share: bottom-center
+        [self.floatingShareButton.centerXAnchor constraintEqualToAnchor:safeArea.centerXAnchor],
+        [self.floatingShareButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+        // Settings: bottom-right
+        [self.floatingSettingsButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-20],
+        [self.floatingSettingsButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+    ]];
+}
+
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
+    // iOS 26: floating buttons are set up in viewDidLoad, no toolbar items needed
+    if (@available(iOS 26.0, *)) {
+        return;
+    }
+
+    // iOS ≤25: system toolbar items
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
 
     // reload item
@@ -207,6 +285,14 @@
         [self.view addSubview:self.headerViewController.view];
         [self.headerViewController didMoveToParentViewController:self];
 	}
+
+    // iOS 26: use floating glass buttons instead of system toolbar to avoid
+    // touch-blocking by FloatingBarHostingView (86pt dead zone above toolbar pill).
+    // iOS ≤25: use system toolbar as before.
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = YES;
+        [self _setupFloatingToolbarButtons];
+    }
 }
 
 
@@ -224,8 +310,20 @@
 
     [self _loadContent];
 
-    [self _updateToolbarAnimated:YES];
-    [self.navigationController setToolbarHidden:NO animated:YES];
+    if (@available(iOS 26.0, *)) {
+        // iOS 26: show floating buttons, keep system toolbar hidden
+        self.navigationController.toolbarHidden = YES;
+        self.floatingReloadButton.hidden = NO;
+        self.floatingShareButton.hidden = NO;
+        self.floatingSettingsButton.hidden = NO;
+        [self.navigationController.view bringSubviewToFront:self.floatingReloadButton];
+        [self.navigationController.view bringSubviewToFront:self.floatingShareButton];
+        [self.navigationController.view bringSubviewToFront:self.floatingSettingsButton];
+    } else {
+        // iOS ≤25: use system toolbar
+        [self _updateToolbarAnimated:YES];
+        [self.navigationController setToolbarHidden:NO animated:YES];
+    }
 }
 
 -(void) updateAppearance {
@@ -233,7 +331,27 @@
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
 
+    // iOS 26: sync floating button appearance with app theme
+    if (@available(iOS 26.0, *)) {
+        UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        self.floatingReloadButton.overrideUserInterfaceStyle = style;
+        self.floatingShareButton.overrideUserInterfaceStyle = style;
+        self.floatingSettingsButton.overrideUserInterfaceStyle = style;
+    }
+
     [self _loadContent];
+}
+
+- (void) viewWillDisappear:(BOOL)animated
+{
+    // iOS 26: restore system toolbar for next VC, hide floating buttons
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = NO;
+        self.floatingReloadButton.hidden = YES;
+        self.floatingShareButton.hidden = YES;
+        self.floatingSettingsButton.hidden = YES;
+    }
+    [super viewWillDisappear:animated];
 }
 
 - (void) dealloc

@@ -120,7 +120,7 @@
 
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 45;
+    CGFloat w = 53;
     CGFloat h = 22;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
@@ -129,7 +129,7 @@
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 45;
+    CGFloat w = 53;
     CGFloat h = 22;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
@@ -139,6 +139,7 @@
 #pragma mark - Speed cycling helpers
 
 // Ordered list of all speeds from slowest to fastest
+// Ascending order (slowest to fastest) — used for cycling and sorting
 + (NSArray<NSNumber*>*) allSpeedControlsOrdered
 {
     return @[
@@ -155,15 +156,32 @@
     ];
 }
 
+// Descending order (fastest to slowest) — used for settings UI
++ (NSArray<NSNumber*>*) allSpeedControlsDescending
+{
+    return @[
+        @(PlaybackSpeedControlTripleSpeed),          // 3x
+        @(PlaybackSpeedControlDoubleSpeed),          // 2x
+        @(PlaybackSpeedControlPlusHalfSpeed),        // 1.5x
+        @(PlaybackSpeedControlFaster13),             // 1.3x
+        @(PlaybackSpeedControlFaster125),            // 1.25x
+        @(PlaybackSpeedControlFaster12),             // 1.2x
+        @(PlaybackSpeedControlFaster11),             // 1.1x
+        @(PlaybackSpeedControlNormalSpeed),          // 1x
+        @(PlaybackSpeedControlThreeQuarterSpeed),   // 0.75x
+        @(PlaybackSpeedControlMinusHalfSpeed),     // 0.5x
+    ];
+}
+
 + (NSArray<NSNumber*>*) enabledSpeedControls
 {
     NSArray* enabled = [USER_DEFAULTS arrayForKey:EnabledPlaybackSpeedsKey];
     if (!enabled) {
-        // Default: 0.75x, 1x, 1.25x, 1.5x
+        // Default: 0.75x, 1x, 1.2x, 1.5x
         return @[
             @(PlaybackSpeedControlThreeQuarterSpeed),
             @(PlaybackSpeedControlNormalSpeed),
-            @(PlaybackSpeedControlFaster125),
+            @(PlaybackSpeedControlFaster12),
             @(PlaybackSpeedControlPlusHalfSpeed),
         ];
     }

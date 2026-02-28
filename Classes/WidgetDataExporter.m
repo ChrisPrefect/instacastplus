@@ -55,11 +55,21 @@ static const NSInteger kMaxEpisodesPerList = 12;
 
 // Listening time tracking
 @property (nonatomic, strong) NSDate *lastListeningTimestamp;
+
+// Cache last played episode so widget can show it after playback ends
+@property (nonatomic, strong) NSDictionary *lastPlayedEpisodeDict;
+@property (nonatomic, strong) NSDictionary *lastPlayedExtraFields;
 @end
 
 @implementation WidgetDataExporter
 
 + (instancetype)sharedExporter {
+    // iOS widgets don't work on macOS ("Designed for iPad").
+    // Skip entirely to avoid App Group container access triggering TCC dialog.
+    if (@available(iOS 14.0, *)) {
+        if (NSProcessInfo.processInfo.isiOSAppOnMac) return nil;
+    }
+
     static WidgetDataExporter *shared = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -121,6 +131,15 @@ static const NSInteger kMaxEpisodesPerList = 12;
     [nc addObserver:self selector:@selector(_widgetControlAction:) name:@"WidgetControlActionNotification" object:nil];
 
     DebugLog(@"WidgetDataExporter: started observing notifications");
+
+    // Initial export so widget config has data immediately
+    // (exportAllSnapshots is also called in sceneDidEnterBackground)
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self exportFeedsSnapshot];
+        [self exportListsSnapshot];
+        [self exportSettingsSnapshot];
+        [self exportNowPlayingSnapshot];
+    });
 }
 
 - (void)dealloc {
@@ -143,7 +162,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
         [self exportNowPlayingSnapshot];
         [self exportUpNextSnapshot];
         [self reloadWidgetTimelines];
-        [self _startOrUpdateLiveActivity];
     });
 }
 
@@ -152,7 +170,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
         [self exportNowPlayingSnapshot];
         [self exportUpNextSnapshot];
         [self reloadWidgetTimelines];
-        [LiveActivityManagerCompat endActivityIfAvailable];
     });
 }
 
@@ -161,7 +178,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
         [self exportNowPlayingSnapshot];
         [self exportUpNextSnapshot];
         [self reloadWidgetTimelines];
-        [self _startOrUpdateLiveActivity];
     });
 }
 
@@ -176,8 +192,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
                                                                       repeats:NO];
         // Track listening time (every 10 seconds)
         [self _trackListeningTime];
-        // Update live activity
-        [self _updateLiveActivity];
     });
 }
 
@@ -188,7 +202,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
         [self _debouncedListsExport];
         [self exportStatsSnapshot];
         [self reloadWidgetTimelines];
-        [LiveActivityManagerCompat endActivityIfAvailable];
     });
 }
 
@@ -304,7 +317,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
         [self exportNowPlayingSnapshot];
         [self exportUpNextSnapshot];
         [WidgetKitHelper reloadAllTimelines];
-        [self _updateLiveActivity];
     });
 }
 
@@ -320,132 +332,6 @@ static const NSInteger kMaxEpisodesPerList = 12;
     [self exportListsSnapshot];
     [self exportFeedsSnapshot];
     [self reloadWidgetTimelines];
-}
-
-#pragma mark - Live Activity
-
-/// Returns the path to the current chapter art file in WidgetImages/, or nil if none.
-/// Writes the image data to the shared container if needed.
-- (NSString *)_currentChapterArtPath {
-    PlaybackManager *pm = [PlaybackManager playbackManager];
-    NSArray *artworks = pm.artworks;
-    NSInteger artIdx = pm.currentArtwork;
-    if (artworks.count > 0 && artIdx >= 0 && artIdx < (NSInteger)artworks.count) {
-        ICMetadataImage *art = artworks[artIdx];
-        if (art.data) {
-            NSString *artFilename = @"chapter_art_current.jpg";
-            NSURL *artDest = [self.imagesURL URLByAppendingPathComponent:artFilename];
-            [art.data writeToURL:artDest atomically:YES];
-            return artFilename;
-        }
-    }
-    return nil;
-}
-
-/// Builds a chapter list for the Live Activity: current + future chapters (no past, no nil titles).
-/// Returns an NSArray of NSDictionary [{title, startTime, absoluteIndex}] suitable for LiveActivityManagerCompat.
-- (NSArray *)_liveActivityChapterListWithCurrentIndex:(NSInteger *)outCurrentIdx {
-    PlaybackManager *pm = [PlaybackManager playbackManager];
-    NSArray *chapters = pm.chapters;
-    NSInteger currentAbsIdx = pm.currentChapter;
-    if (outCurrentIdx) *outCurrentIdx = currentAbsIdx;
-    if (chapters.count == 0) return @[];
-
-    NSTimeInterval trackDuration = (NSTimeInterval)(pm.playingEpisode.duration);
-    NSMutableArray *result = [NSMutableArray array];
-
-    for (NSInteger i = currentAbsIdx; i < (NSInteger)chapters.count; i++) {
-        ICMetadataChapter *ch = chapters[i];
-        NSString *title = ch.title;
-        if (!title.length) continue;  // Skip unnamed chapters
-        NSTimeInterval startSec = CMTimeGetSeconds(ch.start);
-        [result addObject:@{
-            @"title": title,
-            @"startTime": @((NSInteger)startSec),
-            @"absoluteIndex": @(i)
-        }];
-    }
-    return [result copy];
-}
-
-- (void)_startOrUpdateLiveActivity {
-    PlaybackManager *pm = [PlaybackManager playbackManager];
-    CDEpisode *episode = pm.playingEpisode;
-    if (!episode) {
-        [LiveActivityManagerCompat endActivityIfAvailable];
-        return;
-    }
-
-    AudioSession *as = [AudioSession sharedAudioSession];
-    NSArray *chapters = pm.chapters;
-    NSInteger currentChapterIdx = pm.currentChapter;
-    NSString *chapterTitle = nil;
-    if (chapters.count > 0 && currentChapterIdx >= 0 && currentChapterIdx < (NSInteger)chapters.count) {
-        ICMetadataChapter *ch = chapters[currentChapterIdx];
-        chapterTitle = ch.title;
-    }
-
-    // Episode (podcast) artwork for the static attributes
-    NSString *imagePath = nil;
-    NSURL *imageURL = episode.imageURL ?: episode.feed.imageURL;
-    if (imageURL) {
-        imagePath = [self _copyImageForURL:imageURL size:kImageSizeMedium];
-    }
-
-    // Chapter artwork goes into the dynamic ContentState
-    NSString *chapterArtPath = [self _currentChapterArtPath];
-
-    // Chapter list: current + future chapters for lock screen display
-    NSInteger outCurrentIdx = -1;
-    NSArray *chapterList = [self _liveActivityChapterListWithCurrentIndex:&outCurrentIdx];
-
-    CDFeed *feed = episode.feed;
-    [LiveActivityManagerCompat startActivityIfAvailableWithEpisodeTitle:episode.title ?: @""
-                                                             feedTitle:feed.displayTitle ?: feed.title ?: @""
-                                                      episodeImagePath:imagePath
-                                                              duration:episode.duration
-                                                    skipForwardSeconds:[feed integerForKey:PlayerSkipForwardPeriod]
-                                                   skipBackwardSeconds:[feed integerForKey:PlayerSkipBackPeriod]
-                                                              position:episode.position
-                                                              isPaused:pm.isPaused
-                                                         playbackSpeed:[self _playbackSpeedString:pm.speedControl]
-                                                          chapterTitle:chapterTitle
-                                                        chapterArtPath:chapterArtPath
-                                                          chapterIndex:outCurrentIdx
-                                                       chapterListData:chapterList
-                                                         hasSleepTimer:(as.timerRemainingTime > 0)
-                                                    sleepTimerStopDate:as.stopDate];
-}
-
-- (void)_updateLiveActivity {
-    PlaybackManager *pm = [PlaybackManager playbackManager];
-    CDEpisode *episode = pm.playingEpisode;
-    if (!episode) return;
-
-    AudioSession *as = [AudioSession sharedAudioSession];
-    NSArray *chapters = pm.chapters;
-    NSInteger currentChapterIdx = pm.currentChapter;
-    NSString *chapterTitle = nil;
-    if (chapters.count > 0 && currentChapterIdx >= 0 && currentChapterIdx < (NSInteger)chapters.count) {
-        ICMetadataChapter *ch = chapters[currentChapterIdx];
-        chapterTitle = ch.title;
-    }
-
-    NSString *chapterArtPath = [self _currentChapterArtPath];
-
-    NSInteger outCurrentIdx = -1;
-    NSArray *chapterList = [self _liveActivityChapterListWithCurrentIndex:&outCurrentIdx];
-
-    [LiveActivityManagerCompat updateActivityIfAvailableWithPosition:episode.position
-                                                           duration:episode.duration
-                                                           isPaused:pm.isPaused
-                                                      playbackSpeed:[self _playbackSpeedString:pm.speedControl]
-                                                       chapterTitle:chapterTitle
-                                                     chapterArtPath:chapterArtPath
-                                                       chapterIndex:outCurrentIdx
-                                                    chapterListData:chapterList
-                                                      hasSleepTimer:(as.timerRemainingTime > 0)
-                                                 sleepTimerStopDate:as.stopDate];
 }
 
 #pragma mark - Export All
@@ -477,7 +363,8 @@ static const NSInteger kMaxEpisodesPerList = 12;
     snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
 
     if (episode) {
-        snapshot[@"episode"] = [self _episodeDictForEpisode:episode withImageSize:kImageSizeMedium];
+        NSDictionary *episodeDict = [self _episodeDictForEpisode:episode withImageSize:kImageSizeMedium];
+        snapshot[@"episode"] = episodeDict;
 
         // Skip times from feed settings
         CDFeed *feed = episode.feed;
@@ -536,6 +423,25 @@ static const NSInteger kMaxEpisodesPerList = 12;
         // Next/prev episode availability
         snapshot[@"hasNextEpisode"] = @(as.playlist.count > 0);
         snapshot[@"hasPrevEpisode"] = @NO;  // No playback history tracking available
+
+        // Cache for fallback when playback ends
+        self.lastPlayedEpisodeDict = episodeDict;
+        NSMutableDictionary *extra = [NSMutableDictionary dictionary];
+        extra[@"skipForwardSeconds"] = snapshot[@"skipForwardSeconds"];
+        extra[@"skipBackwardSeconds"] = snapshot[@"skipBackwardSeconds"];
+        extra[@"playbackSpeed"] = snapshot[@"playbackSpeed"];
+        self.lastPlayedExtraFields = [extra copy];
+    } else if (self.lastPlayedEpisodeDict) {
+        // No current playback — show last played episode as paused
+        snapshot[@"isPaused"] = @YES;
+        snapshot[@"episode"] = self.lastPlayedEpisodeDict;
+        if (self.lastPlayedExtraFields) {
+            [snapshot addEntriesFromDictionary:self.lastPlayedExtraFields];
+        }
+    } else {
+        // No episode and no cache — don't overwrite existing widget data
+        // (previous session's last played info may still be in the JSON file)
+        return;
     }
 
     [self _writeJSON:snapshot toFile:kNowPlayingFile];

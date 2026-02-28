@@ -42,6 +42,7 @@
 @property (nonatomic, weak) UIButton* filterButton;
 @property (nonatomic, strong) VDModalInfo* modalInfo;
 @property (nonatomic, strong) UIView* tableHeaderView;
+@property (nonatomic, strong) UILabel* navTitleLabel;
 @end
 
 @implementation FeedEpisodesTableViewController {
@@ -280,8 +281,25 @@
     }
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
-    self.title = ([self.searchTerm length] > 0) ? [NSString stringWithFormat:@"'%@'", self.searchTerm].ls : self.feed.title;
-    
+    {
+        NSString* titleText = ([self.searchTerm length] > 0) ? [NSString stringWithFormat:@"'%@'", self.searchTerm].ls : self.feed.title;
+        // Only set titleView, NOT self.title — setting both causes a visible
+        // jump during push animation (system animates self.title first, then
+        // switches to titleView).
+        UILabel* navTitleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        navTitleLabel.text = titleText;
+        navTitleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
+        navTitleLabel.textColor = ICTextColor;
+        navTitleLabel.backgroundColor = [UIColor clearColor];
+        navTitleLabel.textAlignment = NSTextAlignmentCenter;
+        navTitleLabel.numberOfLines = 2;
+        navTitleLabel.adjustsFontSizeToFitWidth = YES;
+        navTitleLabel.minimumScaleFactor = 0.7;
+        [navTitleLabel sizeToFit];
+        self.navigationItem.titleView = navTitleLabel;
+        self.navTitleLabel = navTitleLabel;
+    }
+
     WEAK_SELF
     self.editingStyle = EpisodesTableViewEditingStyleNormal;
     
@@ -650,6 +668,7 @@
     self.tableHeaderView.backgroundColor = ICBackgroundColor;
     self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
     self.headerButtonStack.tintColor = ICTintColor;
+    self.navTitleLabel.textColor = ICTextColor;
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
@@ -659,7 +678,8 @@
 {
     self.navigationItem.rightBarButtonItem = nil;
     self.searchTerm = nil;
-    self.title = nil;
+    self.navTitleLabel.text = self.feed.title;
+    [self.navTitleLabel sizeToFit];
     [self reloadData];
 }
 

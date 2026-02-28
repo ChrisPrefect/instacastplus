@@ -109,7 +109,7 @@
 - (void) layoutContent
 {
     CGFloat contentWidth = [[UIScreen mainScreen] bounds].size.width;
-    CGFloat labelWidth = contentWidth - 72 - 45;
+    CGFloat labelWidth = contentWidth - 72 - 60;
     CGFloat labelX = 72 + 15 + 15;
 
     CGSize titleSize = [self.titleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;

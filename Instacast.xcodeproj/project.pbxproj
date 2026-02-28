@@ -32,7 +32,6 @@
 		1B02D66019AF10E20073151E /* ICSearchBar.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B02D65F19AF10E20073151E /* ICSearchBar.m */; };
 		1B02D66319AF2AB40073151E /* ICFTSController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B02D66219AF2AB40073151E /* ICFTSController.m */; };
 		1B0549E0160331C200FEEC30 /* PortraitNavigationController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B0549DF160331C200FEEC30 /* PortraitNavigationController.m */; };
-		1B09606216491B4C004D51EA /* Social.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B09606116491B4C004D51EA /* Social.framework */; };
 		1B09606916495103004D51EA /* CDEpisode+ShowNotes.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B09606816495102004D51EA /* CDEpisode+ShowNotes.m */; };
 		1B0A727E17AE483D00D30E0D /* ICRefreshControl.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B0A727D17AE483D00D30E0D /* ICRefreshControl.m */; };
 		1B0A728517AEA87700D30E0D /* AudioSession+UpNextPlaylist.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B0A728417AEA87700D30E0D /* AudioSession+UpNextPlaylist.m */; };
@@ -230,7 +229,6 @@
 		1BD1ABF517C514D0005C9023 /* ICSidebarPanGestureRecognizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD1ABF417C514D0005C9023 /* ICSidebarPanGestureRecognizer.m */; };
 		1BD242CB15457CE50044DFF9 /* ClockTicking.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1BD242CA15457CE50044DFF9 /* ClockTicking.caf */; };
 		1BD27FEC16316EC80033A01B /* RedPillNumberView.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD27FEB16316EC80033A01B /* RedPillNumberView.m */; };
-		1BD2B82A15DA732B003A6DBB /* Accounts.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1BC0960814BB45C1000FAD2F /* Accounts.framework */; };
 		1BD2B82C15DA7355003A6DBB /* libz.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = 1BD2B82B15DA7355003A6DBB /* libz.dylib */; };
 		1BD2BC9B15E38FB100E5D8AD /* UIManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD2BC9A15E38FB100E5D8AD /* UIManager.m */; };
 		1BD31EFA1667A6A700C9FDEB /* ValuesTableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BD31EF91667A6A700C9FDEB /* ValuesTableViewController.m */; };
@@ -265,7 +263,7 @@
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
 		230AD9362F6768BAECE4F8F7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
-		3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A8B9C0D1E2F3A4B5C6D7E8F /* LockScreenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */; };
 		9F0E1D2C3B4A5968A7B6C5D4 /* PodcastGridWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */; };
 		3CCB7C121A2E030E38E79C3E /* NowPlayingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */; };
@@ -301,6 +299,7 @@
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
 		CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000006 /* PlaybackSettingsViewController.m */; };
+		CC000001AABB00000000000D /* EnabledSpeedStepsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */; };
 		CC000001AABB000000000007 /* SleepTimerSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */; };
 		CC000001AABB00000000000A /* DataSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000C /* DataSettingsViewController.m */; };
 		CD0082042CD65D91001E081B /* InstacastSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */; };
@@ -338,10 +337,6 @@
 		E2BF2DBFB7B6377BA63CE29E /* WidgetDataExporter.m in Sources */ = {isa = PBXBuildFile; fileRef = E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */; };
 		E6F07FC95B90C494C0ABD87A /* NowPlayingProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */; };
 		F278616A7519258ABDD48C9F /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D294C45DC205F05467440EC /* SharedConstants.swift */; };
-		A7C8D9E0F1A2B3C4D5E6F7A8 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B7C8D9E0F1A2B3C4D5E6F7 /* LiveActivityManager.swift */; };
-		B2D3E4F5A6B7C8D9E0F1A2B3 /* NowPlayingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */; };
-		C3E4F5A6B7C8D9E0F1A2B3C4 /* NowPlayingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */; };
-		E5A6B7C8D9E0F1A2B3C4D5E6 /* NowPlayingLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4F5A6B7C8D9E0F1A2B3C4D5 /* NowPlayingLiveActivity.swift */; };
 		F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */; };
 /* End PBXBuildFile section */
 
@@ -403,7 +398,6 @@
 		1B02D66219AF2AB40073151E /* ICFTSController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICFTSController.m; sourceTree = "<group>"; };
 		1B0549DE160331C200FEEC30 /* PortraitNavigationController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PortraitNavigationController.h; sourceTree = "<group>"; };
 		1B0549DF160331C200FEEC30 /* PortraitNavigationController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PortraitNavigationController.m; sourceTree = "<group>"; };
-		1B09606116491B4C004D51EA /* Social.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Social.framework; path = System/Library/Frameworks/Social.framework; sourceTree = SDKROOT; };
 		1B09606716495102004D51EA /* CDEpisode+ShowNotes.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "CDEpisode+ShowNotes.h"; sourceTree = "<group>"; };
 		1B09606816495102004D51EA /* CDEpisode+ShowNotes.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = "CDEpisode+ShowNotes.m"; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
 		1B0A0072145315E900250125 /* DownloadsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DownloadsViewController.h; sourceTree = "<group>"; };
@@ -738,7 +732,6 @@
 		1BB64F0B1775965B00DB5748 /* UITableViewController+Settings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UITableViewController+Settings.h"; sourceTree = "<group>"; };
 		1BB64F0C1775965B00DB5748 /* UITableViewController+Settings.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UITableViewController+Settings.m"; sourceTree = "<group>"; };
 		1BBB2B981430B74F00FB0233 /* PadVideoAirPlay.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = PadVideoAirPlay.png; path = "Resources-iPad/Images/PadVideoAirPlay.png"; sourceTree = SOURCE_ROOT; };
-		1BC0960814BB45C1000FAD2F /* Accounts.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accounts.framework; path = System/Library/Frameworks/Accounts.framework; sourceTree = SDKROOT; };
 		1BC0962614BC431D000FAD2F /* PlayerSpeedButton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlayerSpeedButton.h; sourceTree = "<group>"; };
 		1BC0962714BC431E000FAD2F /* PlayerSpeedButton.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlayerSpeedButton.m; sourceTree = "<group>"; };
 		1BC0962914BC4A7C000FAD2F /* PlayerTimerButton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlayerTimerButton.h; sourceTree = "<group>"; };
@@ -834,9 +827,6 @@
 		74E0608347BE5D8CDADAC62E /* DonationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DonationViewController.h; sourceTree = "<group>"; };
 		7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetKitHelper.swift; sourceTree = "<group>"; };
 		7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
-		A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingActivity.swift; sourceTree = "<group>"; };
-		D4F5A6B7C8D9E0F1A2B3C4D5 /* NowPlayingLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingLiveActivity.swift; sourceTree = "<group>"; };
-		F6B7C8D9E0F1A2B3C4D5E6F7 /* LiveActivityManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
 		80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedContainerReader.swift; sourceTree = "<group>"; };
 		835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImportExportSettingsViewController.m; path = Classes/ImportExportSettingsViewController.m; sourceTree = "<group>"; };
 		835A5B082F33BBC000A70766 /* SmarthomeManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeManager.h; sourceTree = "<group>"; };
@@ -871,6 +861,8 @@
 		CC000001AABB000000000003 /* AppearanceSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppearanceSettingsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB000000000005 /* PlaybackSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlaybackSettingsViewController.h; sourceTree = "<group>"; };
 		CC000001AABB000000000006 /* PlaybackSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlaybackSettingsViewController.m; sourceTree = "<group>"; };
+		CC000001AABB00000000000E /* EnabledSpeedStepsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EnabledSpeedStepsViewController.h; sourceTree = "<group>"; };
+		CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EnabledSpeedStepsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB000000000008 /* SleepTimerSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SleepTimerSettingsViewController.h; sourceTree = "<group>"; };
 		CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SleepTimerSettingsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB00000000000B /* DataSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DataSettingsViewController.h; sourceTree = "<group>"; };
@@ -961,7 +953,6 @@
 				1B35B37C17A9099C00339E64 /* Accelerate.framework in Frameworks */,
 				1B88AD9F17995273006BB915 /* CoreImage.framework in Frameworks */,
 				1BE14991173F9BCE0099E8A8 /* CoreText.framework in Frameworks */,
-				1B09606216491B4C004D51EA /* Social.framework in Frameworks */,
 				CDB981F42CB59B73000E7321 /* MediaPlayer.framework in Frameworks */,
 				1BD2B82C15DA7355003A6DBB /* libz.dylib in Frameworks */,
 				1B4FD1CE15D13D3400092652 /* CoreData.framework in Frameworks */,
@@ -981,7 +972,6 @@
 				1B5AD91A132F3F3900C484FB /* CFNetwork.framework in Frameworks */,
 				1BF78D0C133F7E8F008B9C95 /* MobileCoreServices.framework in Frameworks */,
 				1BF28F4A141FA0D2002B669B /* AVFoundation.framework in Frameworks */,
-				1BD2B82A15DA732B003A6DBB /* Accounts.framework in Frameworks */,
 				49D903092A323760C89F3C52 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1044,7 +1034,6 @@
 				05DDBFFC087D9C88BF6EE0FF /* WidgetDataExporter.h */,
 				E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */,
 				7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */,
-				F6B7C8D9E0F1A2B3C4D5E6F7 /* LiveActivityManager.swift */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -1073,6 +1062,8 @@
 				CC000001AABB000000000003 /* AppearanceSettingsViewController.m */,
 				CC000001AABB000000000005 /* PlaybackSettingsViewController.h */,
 				CC000001AABB000000000006 /* PlaybackSettingsViewController.m */,
+				CC000001AABB00000000000E /* EnabledSpeedStepsViewController.h */,
+				CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */,
 				CC000001AABB000000000008 /* SleepTimerSettingsViewController.h */,
 				CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */,
 				CC000001AABB00000000000B /* DataSettingsViewController.h */,
@@ -1824,7 +1815,6 @@
 				1B35B37B17A9099C00339E64 /* Accelerate.framework */,
 				1B88AD9E17995273006BB915 /* CoreImage.framework */,
 				1BE14990173F9BCE0099E8A8 /* CoreText.framework */,
-				1B09606116491B4C004D51EA /* Social.framework */,
 				1B4FD1CD15D13D3200092652 /* CoreData.framework */,
 				1B8DBA581514E8E100F6A7CB /* StoreKit.framework */,
 				1BF28F48141FA0C6002B669B /* AVFoundation.framework */,
@@ -1840,7 +1830,6 @@
 				1B5AD5A2132E213100C484FB /* AudioToolbox.framework */,
 				1B5AD919132F3F3900C484FB /* CFNetwork.framework */,
 				1BF78D0B133F7E8F008B9C95 /* MobileCoreServices.framework */,
-				1BC0960814BB45C1000FAD2F /* Accounts.framework */,
 				1B26A77515530C900027E3D6 /* libssl.dylib */,
 				1B97980212C23C1D00F964EC /* libsqlite3.dylib */,
 				1BD2B82B15DA7355003A6DBB /* libz.dylib */,
@@ -1861,7 +1850,6 @@
 				F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */,
 				FDB33E265B93207D959630A1 /* SmartListWidget.swift */,
 				6FA31224D071849FE16A7472 /* StatsWidget.swift */,
-				D4F5A6B7C8D9E0F1A2B3C4D5 /* NowPlayingLiveActivity.swift */,
 			);
 			name = Widgets;
 			path = Widgets;
@@ -1898,7 +1886,6 @@
 			children = (
 				6D294C45DC205F05467440EC /* SharedConstants.swift */,
 				7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */,
-				A1C2D3E4F5A6B7C8D9E0F1A2 /* NowPlayingActivity.swift */,
 			);
 			name = Shared;
 			path = Shared;
@@ -2421,6 +2408,7 @@
 				1BA72EDA1774A03300FAFED1 /* GeneralSettingsViewController.m in Sources */,
 				CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */,
 				CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */,
+				CC000001AABB00000000000D /* EnabledSpeedStepsViewController.m in Sources */,
 				CC000001AABB000000000007 /* SleepTimerSettingsViewController.m in Sources */,
 				CC000001AABB00000000000A /* DataSettingsViewController.m in Sources */,
 				1B7E22EA17998E7B0083BD17 /* MainSidebarTableCell.m in Sources */,
@@ -2448,8 +2436,6 @@
 				D6A4823AE687A9FC8EC55A8A /* WidgetKitHelper.swift in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
 				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
-				A7C8D9E0F1A2B3C4D5E6F7A8 /* LiveActivityManager.swift in Sources */,
-				B2D3E4F5A6B7C8D9E0F1A2B3 /* NowPlayingActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2476,8 +2462,6 @@
 				F278616A7519258ABDD48C9F /* SharedConstants.swift in Sources */,
 				85F0D18A72FD825D7C180C98 /* WidgetModels.swift in Sources */,
 				AE12279A77DE7A93EEDD0DED /* WidgetControlIntents.swift in Sources */,
-				C3E4F5A6B7C8D9E0F1A2B3C4 /* NowPlayingActivity.swift in Sources */,
-				E5A6B7C8D9E0F1A2B3C4D5E6 /* NowPlayingLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2487,6 +2471,7 @@
 		F6825D14EEE384740662F1F4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = InstacastWidgets;
+			platformFilter = ios;
 			target = 3B6DD94FE7671D4054770663 /* InstacastWidgets */;
 			targetProxy = D43654723F24AFC7D0364635 /* PBXContainerItemProxy */;
 		};
@@ -2569,6 +2554,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = InstacastMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 5;
@@ -2650,6 +2636,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = InstacastMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;

@@ -12,6 +12,7 @@
 #import "CDCategory.h"
 #import "CDEpisode.h"
 #import "CDFeedProperty.h"
+#import "EpisodeLoadingManager.h"
 
 @interface CDFeed ()
 @property (nonatomic, strong) NSString * sourceURL_;
@@ -175,15 +176,23 @@
 
 - (NSInteger) episodesCount
 {
+    if (episodesCount >= 0) {
+        return episodesCount;
+    }
+
     NSManagedObjectContext* context = [self managedObjectContext];
-    
-    if (episodesCount == -1 && context) {
+    if (context) {
         NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
         fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
         fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", self, @NO];
         episodesCount = [context countForFetchRequest:fetchRequest error:nil];
+
+        NSInteger totalExpected = [self integerForKey:kFeedPropertyTotalExpectedEpisodes];
+        if (totalExpected > episodesCount) {
+            episodesCount = totalExpected;
+        }
     }
-    
+
     return episodesCount;
 }
 
@@ -194,15 +203,18 @@
 
 - (NSInteger) unplayedCount
 {
+    if (unplayedCount >= 0) {
+        return unplayedCount;
+    }
+
     NSManagedObjectContext* context = [self managedObjectContext];
-    
-    if (unplayedCount == -1 && context) {
+    if (context) {
         NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
         fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
         fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND consumed == %@ AND archived == %@", self, @NO, @NO];
         unplayedCount = [context countForFetchRequest:fetchRequest error:nil];
     }
-    
+
     return unplayedCount;
 }
 

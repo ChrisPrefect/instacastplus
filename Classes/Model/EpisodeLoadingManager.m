@@ -344,7 +344,7 @@ static const NSTimeInterval kBatchDelay = 0.25;
             }
 
             if (parserEpisodes.count > 0) {
-                [DMANAGER addParserEpisodes:parserEpisodes toFeed:feed markConsumed:YES];
+                [DMANAGER addParserEpisodes:parserEpisodes toFeed:feed markConsumed:NO];
 
                 // Update progress in feed properties
                 NSInteger loaded = [feed integerForKey:kFeedPropertyLoadedEpisodeCount];

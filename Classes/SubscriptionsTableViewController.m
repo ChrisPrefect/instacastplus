@@ -35,6 +35,8 @@
 @property (nonatomic, strong) UIBarButtonItem* labelsItems;
 @property (nonatomic, strong) UIBarButtonItem* addItem;
 @property (nonatomic, strong) UIBarButtonItem* sortItem;
+@property (nonatomic, strong) UIButton* floatingAddButton API_AVAILABLE(ios(26.0));
+@property (nonatomic, strong) UIButton* floatingSortButton API_AVAILABLE(ios(26.0));
 @property (nonatomic, strong) ICSearchBar* searchBar;
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
 @property (nonatomic, assign) BOOL tableViewIsUpdating;
@@ -172,6 +174,12 @@
 
     if (@available(iOS 26.0, *)) {
         self.tableView.bottomEdgeEffect.hidden = YES;
+        // Replace system toolbar with custom floating glass buttons on iOS 26.
+        // The system floating toolbar (FloatingBarHostingView) intercepts touches
+        // in an 86pt zone, blocking taps on content. Custom buttons only block
+        // touches on their actual frames.
+        self.navigationController.toolbarHidden = YES;
+        [self _setupFloatingToolbarButtons];
     }
     self.edgesForExtendedLayout = UIRectEdgeBottom;
 
@@ -337,6 +345,14 @@
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
     [self.searchBar appearanceDidChange];
+
+    // iOS 26: sync floating button appearance with app theme
+    if (@available(iOS 26.0, *)) {
+        UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        self.floatingAddButton.overrideUserInterfaceStyle = style;
+        self.floatingSortButton.overrideUserInterfaceStyle = style;
+    }
+
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
@@ -386,8 +402,70 @@
 }
 
 
+// iOS 26: Creates floating glass buttons that replace the system toolbar.
+// The system floating toolbar (FloatingBarHostingView) intercepts touches in an 86pt
+// zone above the visible pill, blocking taps on podcast cells. Custom buttons are added
+// to the navigationController's view and only block touches on their actual frames.
+// On iOS <26, the system toolbar works fine (_updateToolbarItemsAnimated: handles it).
+- (void) _setupFloatingToolbarButtons API_AVAILABLE(ios(26.0))
+{
+    WEAK_SELF
+
+    UIButtonConfiguration* addConfig = [UIButtonConfiguration glassButtonConfiguration];
+    addConfig.image = [UIImage systemImageNamed:@"plus"];
+    addConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingAddButton = [UIButton buttonWithConfiguration:addConfig primaryAction:
+        [UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF
+            [self addAction:nil];
+        }]];
+
+    UIButtonConfiguration* sortConfig = [UIButtonConfiguration glassButtonConfiguration];
+    sortConfig.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
+    sortConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingSortButton = [UIButton buttonWithConfiguration:sortConfig primaryAction:nil];
+    self.floatingSortButton.menu = [self _buildSortMenu];
+    self.floatingSortButton.showsMenuAsPrimaryAction = YES;
+
+    self.floatingAddButton.translatesAutoresizingMaskIntoConstraints = NO;
+    self.floatingSortButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Match button appearance to app theme
+    UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+    self.floatingAddButton.overrideUserInterfaceStyle = style;
+    self.floatingSortButton.overrideUserInterfaceStyle = style;
+
+    UIView* container = self.navigationController.view;
+    [container addSubview:self.floatingAddButton];
+    [container addSubview:self.floatingSortButton];
+
+    UILayoutGuide* safeArea = container.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.floatingAddButton.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor constant:20],
+        [self.floatingAddButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+        [self.floatingSortButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-20],
+        [self.floatingSortButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+    ]];
+}
+
+// Updates sort menu on both the floating glass button (iOS 26) and the
+// UIBarButtonItem (iOS <26). Called from each sort action handler after
+// changing the sort order to update the checkmark states.
+- (void) _refreshSortMenu
+{
+    if (@available(iOS 26.0, *)) {
+        self.floatingSortButton.menu = [self _buildSortMenu];
+    }
+    if (@available(iOS 14.0, *)) {
+        self.sortItem.menu = [self _buildSortMenu];
+    }
+}
+
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
+    // On iOS 26, floating buttons are used instead of system toolbar
+    if (@available(iOS 26.0, *)) { return; }
+
     // Items nur einmal erstellen
     if (!self.addItem) {
         self.addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
@@ -410,6 +488,13 @@
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = YES;
+        self.floatingAddButton.hidden = NO;
+        self.floatingSortButton.hidden = NO;
+        [self.navigationController.view bringSubviewToFront:self.floatingAddButton];
+        [self.navigationController.view bringSubviewToFront:self.floatingSortButton];
+    }
     [self updateAppearance];
     _didRestoreScrollPosition = NO;
     
@@ -461,6 +546,17 @@
 
 
 
+// iOS 26: Restore system toolbar for the next VC (e.g. FeedEpisodesTableViewController)
+// and hide floating buttons. Each VC manages its own toolbar/buttons in viewWillAppear.
+- (void)viewWillDisappear:(BOOL)animated {
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = NO;
+        self.floatingAddButton.hidden = YES;
+        self.floatingSortButton.hidden = YES;
+    }
+    [super viewWillDisappear:animated];
+}
+
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self _updateToolbarItemsAnimated:NO];
@@ -472,6 +568,7 @@
         [self.tableView reloadData];
         [self _updateToolbarLabels];
     }
+
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
@@ -612,7 +709,7 @@
     [DMANAGER reorderFeedFromIndex:srcIndex toIndex:dstIndex];
     [DMANAGER saveManualFeedOrder];
     [USER_DEFAULTS setObject:@"manual" forKey:FeedListSortMode];
-    if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+    [self _refreshSortMenu];
 
     _flags.userAction = 0;
 }
@@ -880,7 +977,7 @@
         [self.fetchController performFetch:nil];
         [self.tableView reloadData];
         self->_flags.userAction = 0;
-        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+        [self _refreshSortMenu];
     }];
     titleAction.state = [currentMode isEqualToString:@"title"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -892,7 +989,7 @@
         [self.fetchController performFetch:nil];
         [self.tableView reloadData];
         self->_flags.userAction = 0;
-        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+        [self _refreshSortMenu];
     }];
     unplayedAction.state = [currentMode isEqualToString:@"unplayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -911,7 +1008,7 @@
         [self.fetchController performFetch:nil];
         [self.tableView reloadData];
         self->_flags.userAction = 0;
-        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+        [self _refreshSortMenu];
     }];
     lastPlayedAction.state = [currentMode isEqualToString:@"lastPlayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -930,7 +1027,7 @@
         [self.fetchController performFetch:nil];
         [self.tableView reloadData];
         self->_flags.userAction = 0;
-        if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+        [self _refreshSortMenu];
     }];
     newestAction.state = [currentMode isEqualToString:@"newestEpisodes"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -945,7 +1042,7 @@
             [self.fetchController performFetch:nil];
             [self.tableView reloadData];
             self->_flags.userAction = 0;
-            if (@available(iOS 14.0, *)) { self.sortItem.menu = [self _buildSortMenu]; }
+            [self _refreshSortMenu];
         }];
         manualAction.state = [currentMode isEqualToString:@"manual"] ? UIMenuElementStateOn : UIMenuElementStateOff;
         [actions addObject:manualAction];

@@ -44,6 +44,11 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 @property (nonatomic, strong) UILabel* authorLabel;
 @property (nonatomic) NSUInteger webContentGeneration;
 
+// iOS 26: Floating glass button replaces system toolbar's action button.
+// See EpisodesTableViewController for detailed explanation of the FloatingBarHostingView
+// touch-blocking issue that requires this workaround on iOS 26.
+@property (nonatomic, strong) UIButton* floatingActionButton API_AVAILABLE(ios(26.0));
+
 @end
 
 
@@ -82,8 +87,11 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     NSString* appearanceCssPath = [[NSBundle mainBundle] pathForResource:[ICAppearanceManager sharedManager].appearance.cssFile ofType:@"css"];
     NSString* appearanceCss = [NSString stringWithContentsOfFile:appearanceCssPath encoding:NSUTF8StringEncoding error:nil];
     [content appendString:appearanceCss];
+    if ([ICAppearanceManager sharedManager].nightSettingMode && [USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+        [content appendString:@"body { background-color: #000000; } #episodes .row_even, #episodes .even { background-color: #000000; }"];
+    }
     [content appendString:@"</style>"];
-    
+
     [content appendString:@"<header><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no'></header>"];
         
     [content appendString:@"<div id=\"description\">"];
@@ -363,12 +371,16 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             self.authorLabel = authorLabel;
 
             // create toolbar items
-            UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-            UIBarButtonItem* actionItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
-                                                                                         target:self
-                                                                                         action:@selector(actionAction:)];
-
-            [self setToolbarItems:[NSArray arrayWithObjects:flexSpace, actionItem, nil] animated:NO];
+            if (@available(iOS 26.0, *)) {
+                // iOS 26: use floating glass button instead of system toolbar
+                [self _setupFloatingActionButton];
+            } else {
+                UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+                UIBarButtonItem* actionItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
+                                                                                             target:self
+                                                                                             action:@selector(actionAction:)];
+                [self setToolbarItems:[NSArray arrayWithObjects:flexSpace, actionItem, nil] animated:NO];
+            }
             
             self.view.backgroundColor = ICBackgroundColor;
             self.webView.backgroundColor = ICBackgroundColor;
@@ -399,10 +411,42 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     }
 }
 
+// iOS 26: Creates a floating glass action button, added to navigationController's view.
+- (void) _setupFloatingActionButton API_AVAILABLE(ios(26.0))
+{
+    WEAK_SELF
+    UIButtonConfiguration* config = [UIButtonConfiguration glassButtonConfiguration];
+    config.image = [UIImage systemImageNamed:@"square.and.arrow.up"];
+    config.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingActionButton = [UIButton buttonWithConfiguration:config primaryAction:
+        [UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF
+            [self actionAction:nil];
+        }]];
+    self.floatingActionButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Match button appearance to app theme
+    self.floatingActionButton.overrideUserInterfaceStyle =
+        [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+
+    UIView* container = self.navigationController.view;
+    [container addSubview:self.floatingActionButton];
+
+    UILayoutGuide* safeArea = container.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.floatingActionButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-20],
+        [self.floatingActionButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+    ]];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
 
     self.edgesForExtendedLayout = UIRectEdgeBottom;
+
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = YES;
+    }
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
@@ -422,12 +466,25 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     self.webShadowView.backgroundColor = ICBackgroundColor;
     self.titleLabel.textColor = ICTextColor;
     self.authorLabel.textColor = ICMutedTextColor;
+
+    // iOS 26: sync floating button appearance with app theme
+    if (@available(iOS 26.0, *)) {
+        self.floatingActionButton.overrideUserInterfaceStyle =
+            [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+    }
+
     [self _loadWebViewContent];
 }
 
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = YES;
+        self.floatingActionButton.hidden = NO;
+        [self.navigationController.view bringSubviewToFront:self.floatingActionButton];
+    }
 
     self.view.backgroundColor = ICBackgroundColor;
     self.webView.backgroundColor = ICBackgroundColor;
@@ -442,6 +499,10 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
 - (void) viewWillDisappear:(BOOL)animated
 {
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = NO;
+        self.floatingActionButton.hidden = YES;
+    }
 	[super viewWillDisappear:animated];
     	
 	if (self.scraper) {

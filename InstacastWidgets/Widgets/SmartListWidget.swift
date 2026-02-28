@@ -24,9 +24,17 @@ struct SmartListWidgetView: View {
     private var accentColor: Color { WidgetAccentColor.color }
 
     private var maxEpisodes: Int {
+        if entry.compact {
+            switch family {
+            case .systemSmall: return 1
+            case .systemMedium: return 4   // 2 columns × 2 rows
+            case .systemLarge: return 8    // 2 columns × 4 rows
+            default: return 4
+            }
+        }
         switch family {
         case .systemSmall: return 1
-        case .systemMedium: return 2   // 3 rows at 52pt each don't fit in ~141pt medium height
+        case .systemMedium: return 2
         case .systemLarge: return 5
         default: return 2
         }
@@ -34,7 +42,12 @@ struct SmartListWidgetView: View {
 
     /// Build the URL for tapping an episode, based on the configured tap action
     private func episodeTapURL(for episode: WEpisode) -> URL {
-        return ICWidgetConstants.episodeURL(objectHash: episode.id, action: "play")
+        switch entry.tapAction {
+        case .play:
+            return ICWidgetConstants.episodeURL(objectHash: episode.id, action: "play")
+        case .openPlayer:
+            return ICWidgetConstants.episodeURL(objectHash: episode.id, action: "show")
+        }
     }
 
     var body: some View {
@@ -46,7 +59,11 @@ struct SmartListWidgetView: View {
                 case .systemSmall:
                     smallView
                 default:
-                    listView
+                    if entry.compact {
+                        compactGridView
+                    } else {
+                        listView
+                    }
                 }
             }
         }
@@ -97,29 +114,7 @@ struct SmartListWidgetView: View {
 
     private var listView: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header — fixed height
-            Link(destination: entry.listId == ICWidgetConstants.upNextListId
-                 ? ICWidgetConstants.queueURL
-                 : ICWidgetConstants.listURL(listUID: entry.listId)) {
-                HStack {
-                    Text(entry.listName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.secondary)
-                    Spacer()
-
-                    // Show tap mode indicator
-                    if entry.tapAction == .play {
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .frame(height: 24)
+            listHeader
 
             // Episode rows — fixed height each
             let items = Array(entry.episodes.prefix(maxEpisodes))
@@ -143,5 +138,111 @@ struct SmartListWidgetView: View {
         }
         .padding(2)
         .clipped()
+    }
+
+    // MARK: - Compact Grid (2 columns)
+
+    private var compactGridView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            listHeader
+
+            let items = Array(entry.episodes.prefix(maxEpisodes))
+            let rowCount = (items.count + 1) / 2
+
+            VStack(spacing: 4) {
+                ForEach(0..<rowCount, id: \.self) { row in
+                    HStack(spacing: 8) {
+                        let leftIdx = row * 2
+                        let rightIdx = row * 2 + 1
+
+                        if leftIdx < items.count {
+                            Link(destination: episodeTapURL(for: items[leftIdx])) {
+                                compactEpisodeCell(episode: items[leftIdx])
+                            }
+                        }
+
+                        if rightIdx < items.count {
+                            Link(destination: episodeTapURL(for: items[rightIdx])) {
+                                compactEpisodeCell(episode: items[rightIdx])
+                            }
+                        } else {
+                            Spacer()
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(2)
+        .clipped()
+    }
+
+    /// Compact episode cell for 2-column layout
+    private func compactEpisodeCell(episode: WEpisode) -> some View {
+        HStack(spacing: 6) {
+            // Artwork
+            Group {
+                if let image = WidgetImageLoader.loadImage(relativePath: episode.localImagePath) {
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.gray.opacity(0.2))
+                        .overlay(
+                            Image(systemName: "mic.fill")
+                                .foregroundColor(.gray.opacity(0.5))
+                                .font(.system(size: 12))
+                        )
+                }
+            }
+            .frame(width: 34, height: 34)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(episode.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(2)
+                    .foregroundColor(.primary)
+
+                Text(episode.formattedTimeLeft)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: family == .systemLarge ? 42 : 38)
+    }
+
+    // MARK: - Shared Header
+
+    private var listHeader: some View {
+        Link(destination: entry.listId == ICWidgetConstants.upNextListId
+             ? ICWidgetConstants.queueURL
+             : ICWidgetConstants.listURL(listUID: entry.listId)) {
+            HStack {
+                Text(entry.listName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+
+                // Show tap mode indicator
+                if entry.tapAction == .play {
+                    Image(systemName: "play.circle")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(height: 24)
     }
 }

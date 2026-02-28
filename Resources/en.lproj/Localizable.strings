@@ -588,9 +588,6 @@
 "Widget Color" = "Widget Color";
 "Use Interface Color" = "Use Interface Color";
 
-"Live Activity" = "Live Activity";
-"Shows playback controls on the Lock Screen and in the Dynamic Island while listening." = "Shows playback controls on the Lock Screen and in the Dynamic Island while listening.";
-
 "Podcast collections" = "Podcast collections";
 "Playback controls" = "Playback controls";
 "Listen anytime, anywhere" = "Listen anytime, anywhere";
@@ -927,6 +924,7 @@
 
 /* Speed Steps */
 "Enabled Speed Steps" = "Enabled Speed Steps";
+"Select which speed steps are available in the player. 1x is always enabled." = "Select which speed steps are available in the player. 1x is always enabled.";
 "Slower (0.75x)" = "Slower (0.75x)";
 "Faster (1.25x)" = "Faster (1.25x)";
 

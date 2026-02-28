@@ -7,7 +7,6 @@
 //
 
 
-#import <Accounts/Accounts.h>
 #import <UserNotifications/UserNotifications.h>
 #import <CarPlay/CarPlay.h>
 
@@ -65,7 +64,6 @@
 
     NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
     defaults[WidgetThemeDefaultActive] = @YES;
-    defaults[@"LiveActivityEnabled"] = @YES;
     [defs registerDefaults:defaults];
 
     if (![defs objectForKey:FirstLaunchDate]) {
@@ -138,13 +136,21 @@
 
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
-    __weak typeof(self) weakSelf = self;
-    [center requestAuthorizationWithOptions:(UNAuthorizationOptionBadge | UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
-                          completionHandler:^(BOOL granted, NSError * _Nullable error) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[NSNotificationCenter defaultCenter] postNotificationName:@"DidRegisterUserNotificationSettings" object:weakSelf];
-        });
-    }];
+    // On macOS ("Designed for iPad"), requestAuthorization triggers the
+    // TCC dialog "wants to access data from other apps" — skip on Mac.
+    BOOL isiOSAppOnMac_notif = NO;
+    if (@available(iOS 14.0, *)) {
+        isiOSAppOnMac_notif = NSProcessInfo.processInfo.isiOSAppOnMac;
+    }
+    if (!isiOSAppOnMac_notif) {
+        __weak typeof(self) weakSelf = self;
+        [center requestAuthorizationWithOptions:(UNAuthorizationOptionBadge | UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
+                              completionHandler:^(BOOL granted, NSError * _Nullable error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"DidRegisterUserNotificationSettings" object:weakSelf];
+            });
+        }];
+    }
         
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidTimeout:) name:kApplicationDidTimeoutNotification object:nil];
    
@@ -235,6 +241,24 @@
 
     [self _updateAppContentAfterBecomingActive];
 
+    // One-time migration: fix episodes that were marked consumed by lazy loading
+    // but were never actually played (position == 0). Reset them to unconsumed.
+    if (![USER_DEFAULTS boolForKey:@"LazyLoadConsumedFixApplied"]) {
+        NSManagedObjectContext *ctx = DMANAGER.objectContext;
+        NSFetchRequest *fetch = [[NSFetchRequest alloc] init];
+        fetch.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:ctx];
+        fetch.predicate = [NSPredicate predicateWithFormat:@"consumed == YES AND position == 0 AND archived == NO"];
+        NSArray *episodes = [ctx executeFetchRequest:fetch error:nil];
+        if (episodes.count > 0) {
+            for (CDEpisode *ep in episodes) {
+                ep.consumed = NO;
+            }
+            [DMANAGER save];
+            DebugLog(@"LazyLoadConsumedFix: reset %lu episodes to unconsumed", (unsigned long)episodes.count);
+        }
+        [USER_DEFAULTS setBool:YES forKey:@"LazyLoadConsumedFixApplied"];
+    }
+
     dispatch_async(dispatch_get_main_queue(), ^{
         [[EpisodeLoadingManager sharedManager] restoreLoadingState];
     });
@@ -245,6 +269,8 @@
 
     // Start widget data exporter — must be in AppDelegate (not SceneDelegate)
     // so it also receives notifications during background fetch.
+    // On macOS ("Designed for iPad"), sharedExporter returns nil (no-op)
+    // and WidgetKitHelper skips internally — iOS widgets don't work there.
     [[WidgetDataExporter sharedExporter] startObserving];
     [WidgetKitHelper startListeningForWidgetActions];
 }

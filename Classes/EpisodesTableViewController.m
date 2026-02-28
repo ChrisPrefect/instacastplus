@@ -50,6 +50,16 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 @property (nonatomic, strong) UIBarButtonItem* cancelItem;
 @property (nonatomic, strong) NumberAccessoryView* numView;
 
+// iOS 26: Floating glass button replaces system toolbar in normal mode.
+// The system floating toolbar (FloatingBarHostingView) intercepts touches in an
+// 86pt zone above the visible pill, blocking taps on table content. Custom floating
+// buttons only block touches on their actual frame.
+// IMPORTANT: Never toggle navigationController.toolbarHidden on iOS 26! Setting it to
+// YES after NO leaves the FloatingBarContainerView in the hierarchy, permanently blocking
+// touches on the floating button. Instead, a custom UIToolbar is used for editing mode.
+@property (nonatomic, strong) UIButton* floatingCacheButton API_AVAILABLE(ios(26.0));
+@property (nonatomic, strong) UIToolbar* editingToolbar API_AVAILABLE(ios(26.0));
+
 @end
 
 @implementation EpisodesTableViewController {
@@ -184,19 +194,24 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     [super viewDidLoad];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
-    
+
     self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
 
     self.toolbarLabelsViewController = [ToolbarLabelsViewController toolbarLabelsViewController];
-    
+
     self.labelsItems = [[UIBarButtonItem alloc] initWithCustomView:self.toolbarLabelsViewController.view];
     self.labelsItems.width = CGRectGetWidth(self.toolbarLabelsViewController.view.bounds);
-    
-    
+
+
     UITapGestureRecognizer* cancelDeleteButtonTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(cancelDelete:)];
     cancelDeleteButtonTapRecognizer.delegate = self;
     [self.tableView addGestureRecognizer:cancelDeleteButtonTapRecognizer];
     self.cancelDeleteButtonTapRecognizer = cancelDeleteButtonTapRecognizer;
+
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = YES;
+        [self _setupFloatingCacheButton];
+    }
 }
 
 - (void) restoreShowNotes
@@ -226,9 +241,25 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     [super viewWillAppear:animated];
 
+    // iOS 26: toolbarHidden is ALWAYS YES — never toggle it.
+    // Normal mode: floating cache button visible.
+    // Editing mode: custom editingToolbar visible (managed by _updateToolbarItemsAnimated:).
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = YES;
+        BOOL isEditing = (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload);
+        self.floatingCacheButton.hidden = isEditing;
+        if (!isEditing) {
+            [self.navigationController.view bringSubviewToFront:self.floatingCacheButton];
+        }
+        if (isEditing && self.editingToolbar) {
+            self.editingToolbar.hidden = NO;
+            [self.navigationController.view bringSubviewToFront:self.editingToolbar];
+        }
+    }
+
     [self _setObserving:YES];
     [self updateAppearance];
-    
+
     [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:animated];
 
     [self restoreShowNotes];
@@ -237,6 +268,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void) updateAppearance {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
+
+    // iOS 26: sync floating button appearance with app theme
+    if (@available(iOS 26.0, *)) {
+        UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        self.floatingCacheButton.overrideUserInterfaceStyle = style;
+    }
+
     [self.tableView reloadData];
 }
 
@@ -246,8 +284,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 
 - (void)viewWillDisappear:(BOOL)animated {
+    // iOS 26: restore system toolbar for the next VC, hide floating button + editing toolbar
+    if (@available(iOS 26.0, *)) {
+        self.navigationController.toolbarHidden = NO;
+        self.floatingCacheButton.hidden = YES;
+        self.editingToolbar.hidden = YES;
+    }
     [super viewWillDisappear:animated];
-    
+
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
 }
 
@@ -268,6 +312,39 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     
 }
 
+
+// iOS 26: Creates a floating glass button that replaces the system toolbar's cache
+// button in normal (non-editing) mode. Added to the navigationController's view so
+// it floats above the tableView without scrolling. Only blocks touches on its own frame.
+- (void) _setupFloatingCacheButton API_AVAILABLE(ios(26.0))
+{
+    WEAK_SELF
+    UIButtonConfiguration* config = [UIButtonConfiguration glassButtonConfiguration];
+    // Use SF Symbol instead of custom "Toolbar Select" image (22×20pt raster)
+    // to match the size of SF Symbol glass buttons in other VCs.
+    config.image = [UIImage systemImageNamed:@"pencil"];
+    config.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingCacheButton = [UIButton buttonWithConfiguration:config primaryAction:
+        [UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF
+            [self editForCachingAction:nil];
+        }]];
+    self.floatingCacheButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Match button appearance to app theme (glass buttons inherit system trait,
+    // but app may override via ICAppearanceManager before window is connected)
+    self.floatingCacheButton.overrideUserInterfaceStyle =
+        [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+
+    UIView* container = self.navigationController.view;
+    [container addSubview:self.floatingCacheButton];
+
+    UILayoutGuide* safeArea = container.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.floatingCacheButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-20],
+        [self.floatingCacheButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+    ]];
+}
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
@@ -317,8 +394,29 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     [self willChangeValueForKey:@"toolbarItems"];
 
-	if (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload)
+    BOOL isEditing = (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload);
+
+	if (isEditing)
 	{
+        // iOS 26: Use custom UIToolbar for editing mode instead of navController's toolbar.
+        // NEVER toggle toolbarHidden on iOS 26 — setting it to YES after NO leaves
+        // FloatingBarContainerView in the hierarchy, permanently blocking touches.
+        if (@available(iOS 26.0, *)) {
+            self.floatingCacheButton.hidden = YES;
+
+            if (!self.editingToolbar) {
+                self.editingToolbar = [[UIToolbar alloc] init];
+                self.editingToolbar.translatesAutoresizingMaskIntoConstraints = NO;
+                UIView* container = self.navigationController.view;
+                [container addSubview:self.editingToolbar];
+                [NSLayoutConstraint activateConstraints:@[
+                    [self.editingToolbar.leadingAnchor constraintEqualToAnchor:container.leadingAnchor],
+                    [self.editingToolbar.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
+                    [self.editingToolbar.bottomAnchor constraintEqualToAnchor:container.bottomAnchor],
+                ]];
+            }
+        }
+
         NSInteger selectedCellsCount = [[self.tableView indexPathsForSelectedRows] count];
         NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
 
@@ -330,7 +428,22 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         self.playItem.enabled = (selectedCellsCount > 0);
         self.downloadItem.enabled = (selectedCellsCount > 0);
 
-        // Toolbar-Items nur setzen wenn noch nicht im editing mode gesetzt
+        if (@available(iOS 26.0, *)) {
+            // Set items on custom editing toolbar
+            if (self.editingToolbar.items.count != 9) {
+                UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+                UIBarButtonItem* flex2 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+                UIBarButtonItem* flex3 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+                UIBarButtonItem* flex4 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+                self.editingToolbar.items = @[self.editItem, flex1, self.playItem, flex2, self.downloadItem, flex3, self.selectAllItem, flex4, self.cancelItem];
+            }
+            self.editingToolbar.hidden = NO;
+            [self.navigationController.view bringSubviewToFront:self.editingToolbar];
+            [self didChangeValueForKey:@"toolbarItems"];
+            return;
+        }
+
+        // iOS ≤25: set items on system toolbar
         NSArray* currentItems = self.toolbarItems;
         if (currentItems.count != 9 || ![currentItems containsObject:self.editItem]) {
             UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
@@ -343,6 +456,17 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 	}
     else
 	{
+        // iOS 26: normal mode — show floating cache button, hide editing toolbar.
+        if (@available(iOS 26.0, *)) {
+            self.floatingCacheButton.hidden = NO;
+            self.floatingCacheButton.enabled = ([self.episodes count] > 0);
+            self.editingToolbar.hidden = YES;
+            [self.navigationController.view bringSubviewToFront:self.floatingCacheButton];
+            [self didChangeValueForKey:@"toolbarItems"];
+            return;
+        }
+
+        // iOS ≤25: system toolbar
         self.cacheItem.enabled = ([self.episodes count] > 0);
 
         // Toolbar-Items nur setzen wenn noch nicht im normal mode gesetzt

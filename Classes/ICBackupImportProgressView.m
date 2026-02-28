@@ -685,11 +685,14 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 - (void)show {
     self.parentWindow = App.ic_keyWindow;
 
+    // Use window bounds, not screen bounds (screen >> window on Mac)
+    self.frame = self.parentWindow.bounds;
+
     self.cardView.transform = CGAffineTransformMakeScale(0.85, 0.85);
     self.cardView.alpha = 0;
     self.backgroundColor = [UIColor clearColor];
 
-    [App.ic_keyWindow addSubview:self];
+    [self.parentWindow addSubview:self];
 
     [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
         self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];

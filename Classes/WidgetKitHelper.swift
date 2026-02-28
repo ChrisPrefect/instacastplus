@@ -24,6 +24,8 @@ import Foundation
 
     @objc public static func reloadAllTimelines() {
         if #available(iOS 14.0, *) {
+            // iOS widgets don't work on macOS ("Designed for iPad") — skip.
+            if ProcessInfo.processInfo.isiOSAppOnMac { return }
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
@@ -32,6 +34,8 @@ import Foundation
     /// Call this from InstacastAppDelegate.didFinishLaunchingWithOptions.
     /// Works when the app is alive in background (active audio session).
     @objc public static func startListeningForWidgetActions() {
+        // iOS widgets don't work on macOS ("Designed for iPad") — skip.
+        if #available(iOS 14.0, *), ProcessInfo.processInfo.isiOSAppOnMac { return }
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         for action in actions {
             let name = CFNotificationName((darwinPrefix + action) as CFString)

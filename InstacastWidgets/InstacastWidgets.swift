@@ -11,8 +11,5 @@ struct InstacastWidgets: WidgetBundle {
         LockScreenCircularWidget()
         LockScreenRectangularWidget()
         LockScreenInlineWidget()
-        if #available(iOS 16.2, *) {
-            NowPlayingLiveActivity()
-        }
     }
 }

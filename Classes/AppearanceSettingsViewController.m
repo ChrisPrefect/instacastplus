@@ -19,7 +19,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kPlayerColor,
     kPInterfaceColor,
     kWidgetColor,
-    kLiveActivity,
     kAppIcons,
     kAppIconSuggestion,
     kInterfaceSoundsSection,
@@ -136,8 +135,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             {
                 return 2;
             }
-        case kLiveActivity:
-            return 1;
         case kAppIcons:
             return 1;
         case kAppIconSuggestion:
@@ -381,16 +378,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         }
 
     }
-    else if (indexPath.section == kLiveActivity)
-    {
-        UITableViewCell* cell = [self switchCell];
-        UISwitch* control = (UISwitch*)cell.accessoryView;
-        cell.textLabel.text = @"Live Activity".ls;
-        cell.textLabel.numberOfLines = 0;
-        control.on = [USER_DEFAULTS boolForKey:@"LiveActivityEnabled"];
-        [control addTarget:self action:@selector(toggleLiveActivity:) forControlEvents:UIControlEventValueChanged];
-        return cell;
-    }
     else if (indexPath.section == kAppIcons)
     {
         static NSString *AppIConCellIdentifier = @"AppIconCell";
@@ -533,8 +520,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return @"Interface Color".ls;
         case kWidgetColor:
             return @"Widget Color".ls;
-        case kLiveActivity:
-            return @"Live Activity".ls;
         case kAppIcons:
             return @"App Icon".ls;
         case kAppIconSuggestion:
@@ -566,10 +551,6 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 {
     switch (section)
     {
-        case kLiveActivity:
-        {
-            return @"Shows playback controls on the Lock Screen and in the Dynamic Island while listening.".ls;
-        }
         case kAppIconSuggestion:
         {
             return @"We're looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon.".ls;
@@ -763,14 +744,6 @@ API_AVAILABLE(ios(14.0)){
     [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
     [WidgetKitHelper reloadAllTimelines];
     [self.tableView reloadData];
-}
-
-- (void) toggleLiveActivity:(UISwitch*)sender
-{
-    [USER_DEFAULTS setBool:sender.on forKey:@"LiveActivityEnabled"];
-    if (!sender.on) {
-        [LiveActivityManagerCompat endActivityIfAvailable];
-    }
 }
 
 - (void) toggleInterfaceSounds:(UISwitch*)sender

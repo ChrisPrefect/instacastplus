@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'Instacast' in project 'Instacast' (no dependencies)

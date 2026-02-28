@@ -9,6 +9,7 @@
 #import "PlaybackDefines.h"
 #import "InstacastAppDelegate.h"
 #import "PlayerSpeedButton.h"
+#import "EnabledSpeedStepsViewController.h"
 
 typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
     kPlaybackSection = 0,
@@ -334,61 +335,8 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
 
 - (void)_showEnabledSpeedsSettings
 {
-    UITableViewController* controller = [[UITableViewController alloc] initWithStyle:UITableViewStyleGrouped];
-    controller.title = @"Enabled Speed Steps".ls;
-
-    NSArray* allSpeeds = [PlayerSpeedButton allSpeedControlsOrdered];
-    NSArray* enabledSpeeds = [PlayerSpeedButton enabledSpeedControls];
-
-    controller.tableView.dataSource = nil;
-    controller.tableView.delegate = nil;
-
-    // Use a simple alert-based approach with switches for each speed
-    UIAlertController* sheet = [UIAlertController alertControllerWithTitle:@"Enabled Speed Steps".ls
-                                                                   message:@"Select which speed steps are available in the player. 1x is always enabled.".ls
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-
-    for (NSNumber* speed in allSpeeds) {
-        NSString* title = [PlayerSpeedButton titleForSpeedControl:speed.integerValue];
-        BOOL isEnabled = [enabledSpeeds containsObject:speed];
-        BOOL isNormal = (speed.integerValue == PlaybackSpeedControlNormalSpeed);
-
-        NSString* prefix = isEnabled ? @"\u2705 " : @"\u2B1C ";
-        if (isNormal) prefix = @"\U0001F512 ";
-
-        UIAlertAction* action = [UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@%@", prefix, title]
-                                                         style:UIAlertActionStyleDefault
-                                                       handler:^(UIAlertAction * _Nonnull act) {
-            if (isNormal) return; // 1x always enabled
-
-            NSMutableArray* current = [[PlayerSpeedButton enabledSpeedControls] mutableCopy];
-            if (isEnabled) {
-                [current removeObject:speed];
-            } else {
-                [current addObject:speed];
-            }
-            [USER_DEFAULTS setObject:current forKey:EnabledPlaybackSpeedsKey];
-            [self.tableView reloadData];
-
-            // Re-show the menu after toggling
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self _showEnabledSpeedsSettings];
-            });
-        }];
-        [sheet addAction:action];
-    }
-
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Done".ls style:UIAlertActionStyleCancel handler:nil]];
-
-    UIPopoverPresentationController* presenter = [sheet popoverPresentationController];
-    if (presenter) {
-        NSIndexPath* indexPath = [NSIndexPath indexPathForRow:5 inSection:kPlaybackSection];
-        UITableViewCell* sourceCell = [self.tableView cellForRowAtIndexPath:indexPath];
-        presenter.sourceView = sourceCell ?: self.view;
-        presenter.sourceRect = sourceCell ? sourceCell.bounds : CGRectZero;
-    }
-
-    [self presentViewController:sheet animated:YES completion:nil];
+    EnabledSpeedStepsViewController* controller = [EnabledSpeedStepsViewController viewController];
+    [self.navigationController pushViewController:controller animated:YES];
 }
 
 @end

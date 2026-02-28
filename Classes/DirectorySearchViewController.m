@@ -64,6 +64,8 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 {
     [super viewDidLoad];
 
+    self.edgesForExtendedLayout = UIRectEdgeBottom;
+
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
     self.title = @"Search".ls;
@@ -85,14 +87,11 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     searchBar.translucent = YES;
     searchBar.autocorrectionType = UITextAutocorrectionTypeNo;
     searchBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    // Larger search field font (set before sizeToFit so scope bar layout is correct)
+    searchBar.searchTextField.font = [UIFont systemFontOfSize:17.0f];
 	[searchBar sizeToFit];
 
-    // Add vertical padding around search bar
-    CGRect searchBarFrame = searchBar.frame;
-    UIView* searchBarContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, searchBarFrame.size.width, searchBarFrame.size.height + 16)];
-    searchBar.frame = CGRectMake(0, 8, searchBarFrame.size.width, searchBarFrame.size.height);
-    [searchBarContainer addSubview:searchBar];
-	self.tableView.tableHeaderView = searchBarContainer;
+	self.tableView.tableHeaderView = searchBar;
 
 	self.imageCache = [[NSCache alloc] init];
 

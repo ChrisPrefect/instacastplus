@@ -12,6 +12,7 @@
 @interface PlayerSpeedButton : UIButton
 
 + (NSArray<NSNumber*>*) allSpeedControlsOrdered;
++ (NSArray<NSNumber*>*) allSpeedControlsDescending;
 + (NSArray<NSNumber*>*) enabledSpeedControls;
 + (PlaybackSpeedControl) nextEnabledSpeedAfter:(PlaybackSpeedControl)current;
 + (NSString*) titleForSpeedControl:(PlaybackSpeedControl)control;

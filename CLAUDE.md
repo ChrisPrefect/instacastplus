@@ -83,18 +83,40 @@ Berechnung in `Classes/PlayerController.m`: `MAX(windowHeight - statusBarHeight 
 - Opake NavBar: `UINavigationBarAppearance` mit `backgroundImage` verwenden (nicht nur `backgroundColor`)
 - **NICHT** `hidesSharedBackground`, `UIButtonTypeCustom` als customView, oder opake Views hinter die Bar als Workaround
 
-## iOS 26 Floating Toolbar
+## iOS 26 Floating Toolbar — Touch-Blocking & Custom Floating Buttons
 
-iOS 26 rendert `UINavigationController.toolbar` als Floating Bar über einer `FloatingBarContainerView` (SwiftUI-basiert). Wichtige Regeln:
+iOS 26 rendert `UINavigationController.toolbar` als Floating Bar über einer `FloatingBarContainerView` (SwiftUI-basiert).
 
-- **`edgesForExtendedLayout = UIRectEdgeNone` verursacht opake Fläche am unteren Rand!** Der Content erstreckt sich nicht unter die Toolbar, dadurch wird der Hintergrund des NavigationControllers sichtbar. Tritt nur auf dem Gerät auf, nicht im Simulator.
-- **Lösung:** `edgesForExtendedLayout = UIRectEdgeBottom` — Content erstreckt sich unter die Toolbar (kein Hintergrund sichtbar), aber NICHT unter die NavBar (keine Glass-Artefakte oben).
-- Die Fläche erscheint nach Theme-Wechsel (weil `setAppearance:` die View-Hierarchie neu aufbaut) und verschwindet nach Navigation (push/pop baut Views neu auf).
-- **Alle VCs mit Toolbar** brauchen `edgesForExtendedLayout = UIRectEdgeBottom`, auch mit Standard `UIRectEdgeAll`. Bereits gefixt: `SubscriptionsTableViewController`, `FeedEpisodesTableViewController`, `DirectoryFeedViewController`.
+### Touch-Blocking Problem
+
+Die `FloatingBarHostingView` fängt Touches in einer **86pt Zone** über der sichtbaren Toolbar-Pill (48pt) ab. Content darunter (Tabellen-Zellen, WebView-Links, Cookie-Banner) ist nicht antippbar. Es gibt **keine öffentliche API** um die Hit-Area zu verkleinern. Runtime-Swizzling auf privaten Views (`method_setImplementation`) bricht System-Gesten — NIEMALS machen.
+
+### Lösung: Custom Floating Glass Buttons (iOS 26 only)
+
+System-Toolbar verstecken (`toolbarHidden = YES`), stattdessen eigene `UIButton`s mit `UIButtonConfiguration.glassButtonConfiguration` und `buttonSize = UIButtonConfigurationSizeLarge`. Buttons werden auf `self.navigationController.view` gelegt (über dem TableView, scrollt nicht mit). Nur der Button-Frame selbst blockiert Touches.
+
+**KRITISCH:** `toolbarHidden` auf iOS 26 **NIEMALS** von YES auf NO und zurück togglen! Das Setzen von `toolbarHidden = NO` erzeugt eine `FloatingBarContainerView` die nach `toolbarHidden = YES` im View-Hierarchy bestehen bleibt und dauerhaft Touches auf den Floating Buttons blockiert. `bringSubviewToFront` hilft NICHT. Stattdessen eigene `UIToolbar` für temporäre Toolbars (z.B. Editing-Mode) verwenden.
+
+**Zwei Code-Pfade:** iOS ≤25 nutzt weiterhin die System-Toolbar (`_updateToolbarItemsAnimated:`). iOS 26 nutzt Floating Glass Buttons. Unterscheidung via `@available(iOS 26.0, *)`.
+
+**Lifecycle-Pattern für jeden VC:**
+- `viewDidLoad`: `toolbarHidden = YES`, Floating Buttons erstellen und auf `navigationController.view` layouten
+- `viewWillAppear`: `toolbarHidden = YES`, Buttons `.hidden = NO`, `bringSubviewToFront:`
+- `viewWillDisappear`: `toolbarHidden = NO` (für nächsten VC), Buttons `.hidden = YES`
+
+**Theme-Handling:** Glass Buttons erben `overrideUserInterfaceStyle` nicht zuverlässig bei modaler Präsentation (Window noch nicht verbunden in `viewDidLoad`). Daher bei Erstellung und in `updateAppearance` explizit `overrideUserInterfaceStyle` basierend auf `[ICAppearanceManager sharedManager].nightSettingMode` setzen.
+
+**Bereits umgestellt:** `SubscriptionsTableViewController` (2 Buttons: Add+Sort), `EpisodesTableViewController` (1 Button: Edit/pencil; Editing-Mode nutzt eigene UIToolbar statt System-Toolbar), `DirectoryFeedViewController` (1 Button: Action/Share), `WebController` (3 Buttons: Back+Forward dynamisch via KVO, Safari), `FeedViewController` (3 Buttons: Reload+Share+Settings).
+
+### Layout-Regeln (weiterhin gültig)
+
+- **`edgesForExtendedLayout = UIRectEdgeBottom`** auf allen VCs mit Toolbar/Floating Buttons (NICHT `UIRectEdgeNone`!)
+- **Ausnahme:** `PlayerController` nutzt `UIRectEdgeNone` bewusst — die Höhenberechnung der Controls-Pane basiert darauf (`size.height ≈ window height - statusbar - navbar`). Der PlayerController hat keine System-Toolbar und keine Floating Buttons, sondern eigenes Custom-Layout.
+- Die Fläche erscheint nach Theme-Wechsel und verschwindet nach Navigation.
 
 ## iOS 26 Scroll Edge Effect
 
-Dunkler Verlauf am unteren ScrollView-Rand unter Floating-Toolbar → `scrollView.bottomEdgeEffect.hidden = YES` (iOS 26+). Bereits angewendet auf: `SubscriptionsTableViewController`, `FeedEpisodesTableViewController`, `DirectoryFeedViewController`, `EpisodeViewController`. Toolbar-Appearance-Änderungen haben keinen Effekt darauf.
+Dunkler Verlauf am unteren ScrollView-Rand unter Floating-Toolbar → `scrollView.bottomEdgeEffect.hidden = YES` (iOS 26+). Nur relevant für VCs mit Toolbar/Floating Buttons. Bereits angewendet auf: `SubscriptionsTableViewController`, `FeedEpisodesTableViewController`, `DirectoryFeedViewController`, `EpisodeViewController`, `WebController`, `FeedViewController`. Toolbar-Appearance-Änderungen haben keinen Effekt darauf.
 
 ## Apple Podcast Charts APIs
 
@@ -146,6 +168,45 @@ if (!gShared) {
 - **`performBlockAndWait` in `mergeQueue`:** Wird von Background-Queue aufgerufen, kein Main-Thread-Deadlock.
 - **`reloadData` in `viewDidAppear`/`viewWillAppear`:** `tableView.window` ist dort immer gesetzt. Das `if (window && !transitionCoordinator)` Pattern ist nur für `updateAppearance`-Notifications relevant.
 - **`dispatch_after` in Import-Completion:** Bewusstes UX-Pattern (User soll "Import Complete" lesen können).
+
+## macOS "Designed for iPad" — TCC Dialog & Runtime Guards
+
+Die App läuft auf macOS als "Designed for iPad" (NICHT Mac Catalyst). `#if TARGET_OS_MACCATALYST` ist daher immer `0` — stattdessen Runtime-Check: `NSProcessInfo.processInfo.isiOSAppOnMac` (ab iOS 14).
+
+### TCC Dialog "möchte auf Daten aus anderen Apps zugreifen"
+
+**Zwei unabhängige Trigger (beide beheben!):**
+
+1. **`UNUserNotificationCenter requestAuthorizationWithOptions:`** — Fix: mit `isiOSAppOnMac` gegated in `InstacastAppDelegate.m`. Push-Notifications funktionieren auf Mac ohnehin nicht sinnvoll.
+
+2. **`com.apple.security.application-groups` Entitlement** — Das Entitlement allein (ohne Code-Zugriff) löst TCC aus. Fix: SDK-spezifische Entitlements per `CODE_SIGN_ENTITLEMENTS[sdk=macosx*]`. `Instacast.entitlements` (iOS, mit `application-groups` → Widgets funktionieren) vs. `InstacastMac.entitlements` (Mac, ohne `application-groups` → kein TCC). Selbes Pattern wie bereits für `PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]` genutzt.
+
+**NICHT der Trigger:** `AVAudioSession`, `Reachability`, `registerForRemoteNotifications`.
+
+**Aufgeräumt:** `InstacastHD.entitlements` war eine tote Datei (nirgends im pbxproj referenziert, Relikt aus der Zeit separater iPad-Apps). Gelöscht.
+
+### Gegated auf Mac (via `isiOSAppOnMac`):
+
+| Wo | Was | Grund |
+|---|---|---|
+| `InstacastAppDelegate.m` | `requestAuthorizationWithOptions` | TCC-Dialog-Trigger |
+| `Application.m` | `CTTelephonyNetworkInfo` | Existiert nicht auf Mac |
+| `Application.m` | `CTServiceRadioAccessTechnologyDidChangeNotification` | Existiert nicht auf Mac |
+| `Application.m` | `CMMotionManager` (deviceMotionDetection) | Existiert nicht auf Mac |
+| `WidgetDataExporter.m` | `sharedExporter` returniert `nil` | iOS-Widgets funktionieren nicht auf Mac |
+| `WidgetKitHelper.swift` | `reloadAllTimelines`, `startListeningForWidgetActions` | iOS-Widgets funktionieren nicht auf Mac |
+| `InstacastSceneDelegate.m` | Window-Größe (402×874pt Start) | iPhone-Proportionen auf Mac |
+
+### NICHT gegated (läuft auch auf Mac):
+
+- `AVAudioSession` Volume KVO — funktioniert, kein TCC-Trigger
+- `Reachability` — funktioniert auf Mac
+- `UNUserNotificationCenter.delegate` Assignment — kein TCC-Trigger
+- `registerForRemoteNotifications` — kein TCC-Trigger
+
+### Widget-Embedding auf Mac
+
+`InstacastWidgets.appex` hat `platformFilter = ios` im pbxproj → wird nicht in Mac-Builds eingebettet (vermeidet Build-Fehler "embedded content built for iOS platform").
 
 ## Key Integrations
 

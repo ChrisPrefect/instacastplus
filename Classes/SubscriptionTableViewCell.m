@@ -14,6 +14,7 @@
 @property (nonatomic, readwrite, strong) UILabel* detailTextLabel2;
 @property (nonatomic, readwrite, strong) UILabel* numberLabel;
 @property (nonatomic, readwrite, strong) UIImageView* newsModeIndicatorImageView;
+@property (nonatomic, assign) BOOL cachedNewsMode;
 @end
 
 
@@ -102,7 +103,17 @@
 
         self.textLabel.text = objectValue.title;
         self.detailTextLabel.text = objectValue.author;
-        
+        self.cachedNewsMode = [objectValue boolForKey:AutoDeleteNewsMode];
+
+        // Set colors once per cell configuration, not in layoutSubviews
+        self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
+        self.textLabel.textColor = ICTextColor;
+        self.detailTextLabel.textColor = ICTextColor;
+        self.accessoryView.tintColor = ICMutedTextColor;
+        self.detailTextLabel2.textColor = ICMutedTextColor;
+        self.numberLabel.textColor = ICMutedTextColor;
+        self.newsModeIndicatorImageView.tintColor = ICMutedTextColor;
+
         self.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
         NSURL* requestedImageURL = objectValue.imageURL;
         if (requestedImageURL) {
@@ -148,15 +159,7 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
-    self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
-	self.textLabel.textColor = ICTextColor;
-    self.detailTextLabel.textColor = ICTextColor;
-    self.accessoryView.tintColor = ICMutedTextColor;
-    self.detailTextLabel2.textColor = ICMutedTextColor;
-    self.numberLabel.textColor = ICMutedTextColor;
-    self.newsModeIndicatorImageView.tintColor = ICMutedTextColor;
-    
+
     CGRect bounds = self.bounds;
     CGRect cframe = self.contentView.frame;
     
@@ -206,7 +209,7 @@
 	self.detailTextLabel2.frame = detailLabel2Rect;
     
     self.newsModeIndicatorImageView.frame = CGRectMake(CGRectGetMaxX(detailLabel2Rect)+5, CGRectGetMinY(detailLabel2Rect), 10, 13);
-    self.newsModeIndicatorImageView.hidden = ![self.objectValue boolForKey:AutoDeleteNewsMode];
+    self.newsModeIndicatorImageView.hidden = !self.cachedNewsMode;
     
     CGRect triangleRect = self.accessoryView.frame;
     triangleRect.origin.x += 5;

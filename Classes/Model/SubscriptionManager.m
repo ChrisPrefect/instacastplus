@@ -292,6 +292,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
+    parser.timeout = 20;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
     if (username.length > 0) parser.username = username;
     if (password.length > 0) parser.password = password;

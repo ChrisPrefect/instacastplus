@@ -589,9 +589,6 @@
 "Widget Color" = "Farbe der Widgets";
 "Use Interface Color" = "Farbe der Bedienelemente verwenden";
 
-"Live Activity" = "Live Activity";
-"Shows playback controls on the Lock Screen and in the Dynamic Island while listening." = "Zeigt Wiedergabesteuerung auf dem Sperrbildschirm und in der Dynamic Island während der Wiedergabe.";
-
 "Podcast collections" = "Podcast-sammlungen";
 "Playback controls" = "Wiedergabesteuerung";
 "Listen anytime, anywhere" = "Hören sie jederzeit und überall zu";
@@ -931,6 +928,7 @@
 
 /* Speed Steps */
 "Enabled Speed Steps" = "Aktivierte Geschwindigkeiten";
+"Select which speed steps are available in the player. 1x is always enabled." = "Wähle aus, welche Geschwindigkeiten im Player verfügbar sind. 1x ist immer aktiviert.";
 "Slower (0.75x)" = "Langsamer (0.75x)";
 "Faster (1.25x)" = "Schneller (1.25x)";
 

@@ -187,9 +187,9 @@ static void runOnMain(void (^block)(void)) {
                 }];
             });
 
-            // Wait for subscribe completion (timeout 60s, poll every 200ms for cancel)
+            // Wait for subscribe completion (timeout 25s, poll every 200ms for cancel)
             long result = -1;
-            NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:60];
+            NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:25];
             while (result != 0 && !op.isCancelled && [deadline timeIntervalSinceNow] > 0) {
                 result = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(200 * NSEC_PER_MSEC)));
             }

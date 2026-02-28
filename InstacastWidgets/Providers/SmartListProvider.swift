@@ -8,11 +8,12 @@ struct SmartListEntry: TimelineEntry, Sendable {
     let listId: String
     let episodes: [WEpisode]
     let tapAction: EpisodeTapAction
+    let compact: Bool
 }
 
 struct SmartListProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> SmartListEntry {
-        SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], tapAction: .play)
+        SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], tapAction: .play, compact: false)
     }
 
     func snapshot(for configuration: SmartListConfigIntent, in context: Context) async -> SmartListEntry {
@@ -26,6 +27,7 @@ struct SmartListProvider: AppIntentTimelineProvider {
 
     private func loadEntry(for configuration: SmartListConfigIntent) -> SmartListEntry {
         let tapAction = configuration.tapAction
+        let compact = configuration.compact
 
         if let listEntity = configuration.list {
             if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
@@ -34,10 +36,11 @@ struct SmartListProvider: AppIntentTimelineProvider {
                     listName: listData.listName,
                     listId: listData.listId,
                     episodes: listData.episodes,
-                    tapAction: tapAction
+                    tapAction: tapAction,
+                    compact: compact
                 )
             }
-            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], tapAction: tapAction)
+            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], tapAction: tapAction, compact: compact)
         }
 
         // No list configured — try to show the first available list
@@ -48,11 +51,12 @@ struct SmartListProvider: AppIntentTimelineProvider {
                     listName: listData.listName,
                     listId: listData.listId,
                     episodes: listData.episodes,
-                    tapAction: tapAction
+                    tapAction: tapAction,
+                    compact: compact
                 )
             }
         }
 
-        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], tapAction: tapAction)
+        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], tapAction: tapAction, compact: compact)
     }
 }

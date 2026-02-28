@@ -14,9 +14,6 @@
 #import <StoreKit/StoreKit.h>
 #import "SubscriptionManager.h"
 
-#import <Accounts/Accounts.h>
-
-
 #import "UIManager.h"
 #import "CDEpisode+ShowNotes.h"
 
@@ -83,15 +80,31 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
         self.window = [[ICWindow alloc] initWithWindowScene:windowScene];
         self.window.backgroundColor = ICBackgroundColor;
 
+        // Window size restrictions for macOS and iPadOS Stage Manager.
+        // iPhone 17 Pro: 402×874pt. Minimum height: -30% + 30px = 662pt.
+        BOOL isiOSAppOnMac = NO;
+        if (@available(iOS 14.0, *)) {
+            isiOSAppOnMac = NSProcessInfo.processInfo.isiOSAppOnMac;
+        }
+
+        CGSize startSize = CGSizeMake(402, 874);
+        CGSize minSize = CGSizeMake(402, 662);
+
 #if TARGET_OS_MACCATALYST
-        CGSize minSize = CGSizeMake(402, 662); // iPhone 17 Pro Breite, Höhe -30% + 30px
+        // Mac Catalyst: nur Minimum, maximumSize NICHT setzen → frei vergrösserbar
         windowScene.sizeRestrictions.minimumSize = minSize;
-        // maximumSize nicht setzen → frei vergrösserbar
+        // Startgrösse per requestGeometryUpdate setzen (nicht via maximumSize!)
+        if (@available(macCatalyst 16.0, *)) {
+            UIWindowSceneGeometryPreferencesMac *prefs = [[UIWindowSceneGeometryPreferencesMac alloc] init];
+            prefs.systemFrame = CGRectMake(0, 0, startSize.width, startSize.height);
+            [windowScene requestGeometryUpdateWithPreferences:prefs errorHandler:nil];
+        }
 #else
-        // iPadOS: Fenster in iPhone 17 Pro Grösse starten (Stage Manager / iPadOS 26)
-        if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-            CGSize startSize = CGSizeMake(402, 874); // iPhone 17 Pro
-            CGSize minSize = CGSizeMake(402, 662);   // Höhe -30% + 30px
+        if (isiOSAppOnMac) {
+            // macOS ("Designed for iPad"): nur Minimum setzen, frei resizebar
+            windowScene.sizeRestrictions.minimumSize = minSize;
+        } else if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
+            // iPadOS Stage Manager: Start bei iPhone-Grösse, in sceneDidBecomeActive freigegeben
             windowScene.sizeRestrictions.minimumSize = minSize;
             windowScene.sizeRestrictions.maximumSize = startSize;
         }
@@ -348,6 +361,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
     }
     
     // Export all widget snapshots before saving, so widgets have fresh data
+    // On macOS ("Designed for iPad"), sharedExporter returns nil (no-op).
     [[WidgetDataExporter sharedExporter] exportAllSnapshots];
 
     [DMANAGER save];
@@ -2069,6 +2083,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                     [[AudioSession sharedAudioSession] playEpisode:episode];
                     PlaybackViewController *pvc = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
                     [pvc presentFromParentViewController:self.mainViewController autostart:YES completion:NULL];
+                } else if ([action isEqualToString:@"show"]) {
+                    // Open player without auto-playing
+                    PlaybackViewController *pvc = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+                    [pvc presentFromParentViewController:self.mainViewController autostart:NO completion:NULL];
                 } else {
                     // Show episode detail / show notes
                     [self.mainViewController showShowNotesOfEpisode:episode animated:YES];
