@@ -2387,6 +2387,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
         chevronIndicatorView.tintColor = ICMutedTextColor;
 
+        // Without content below the image the table view must not be scrollable —
+        // otherwise the bottomScrollInset (controls pane height) would let the user
+        // push the artwork up even though there is nothing to scroll to.
+        self.tableView.scrollEnabled = hasContent;
+
         if (self.chapterImagesCollection.superview != self.chapterView) {
             [self.chapterView addSubview:self.chapterImagesCollection];
         }
@@ -2461,6 +2466,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     chevronIndicatorView.hidden = !hasContent;
     chevronIndicatorView.frame = CGRectMake(0, CGRectGetHeight(newFrameTemp) + 4, CGRectGetWidth(newFrameTemp), 20);
+
+    self.tableView.scrollEnabled = hasContent;
 
     [self.chapterImagesCollection reloadData];
     [self _applyTranscriptVisibility];

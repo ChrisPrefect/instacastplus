@@ -772,17 +772,26 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 	if (operation)  {
 		//BOOL executing = [operation isExecuting];
 		[operation cancel];
-        
+
         if (![operation isExecuting]) {
             [self willChangeValueForKey:@"cachingEpisodes"];
             [_cachingEpisodes removeObject:episode];
             [self didChangeValueForKey:@"cachingEpisodes"];
             _runningOps--;
-            
+
             [self coalescedPerformSelector:@selector(_postDidUpdateNotification) afterDelay:0.1];
         }
+    } else if ([_cachingEpisodes containsObject:episode]) {
+        // Operation not in queue but episode still tracked — orphaned state, force cleanup.
+        // Happens e.g. when the operation already finished but cacheOperationDidEnd: hasn't
+        // run yet, or when the download task got stuck and left _cachingEpisodes dirty.
+        [self willChangeValueForKey:@"cachingEpisodes"];
+        [_cachingEpisodes removeObject:episode];
+        [self didChangeValueForKey:@"cachingEpisodes"];
+        _runningOps = MAX(0, _runningOps - 1);
+        [self coalescedPerformSelector:@selector(_postDidUpdateNotification) afterDelay:0.1];
     }
-    
+
     if (disableAutodownload) {
         [self.cacheHistory setEpisode:episode didAutoDownload:YES];
     }

@@ -292,7 +292,10 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
                 idleCounter++;
                 if (idleCounter >= 20) {
                     self.failed = YES;
-                    [self.session invalidateAndCancel];
+                    // Cancel only the task (not the session) to avoid double-invalidation:
+                    // The session cleanup happens below via finishTasksAndInvalidate,
+                    // which fires didBecomeInvalidWithError: exactly once.
+                    [self.downloadTask cancel];
                     break;
                 }
             } else if (self.loadedContentLength > 0) {
