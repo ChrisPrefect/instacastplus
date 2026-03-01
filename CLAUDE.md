@@ -211,3 +211,8 @@ Die App läuft auf macOS als "Designed for iPad" (NICHT Mac Catalyst). `#if TARG
 ## Key Integrations
 
 CarPlay, AVFoundation, OPML import/export, Podlove Standard Chapters
+
+
+Wichtig: Jede Änderung im Code sauber dokumentieren mit problem, grund, lösung damit man bei jedem code weiss, wieso er so geschrieben wurde.
+
+keine workarounds, keine fallbacks. problem immer 100% verstehen bevor eine änderung gemacht wird. kein problieren. kein hoffen, dass es klappt. 100% testen bevor "fertig" gemeldet wird.

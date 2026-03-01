@@ -76,6 +76,7 @@
         parser.delegate = self;
         parser.dontAskForCredentials = self.dontAskForCredentials;
         parser.allowsCellularAccess = self.allowsCellularAccess;
+        parser.timeout = self.timeout;
         
         feed = [parser parsedFeedReturningError:&error];
         
@@ -121,7 +122,13 @@
             do
             {
                 error = nil;
-                feed = [ICFeedParser parsedFeedWithURL:nextFeedURL error:&error];
+                // Use instance-based parsing so the configured timeout is applied to each page request.
+                ICFeedParser* pageParser = [[ICFeedParser alloc] init];
+                pageParser.url = nextFeedURL;
+                pageParser.presentAlternateFeeds = NO;
+                pageParser.dontAskForCredentials = YES;
+                pageParser.timeout = self.timeout;
+                feed = [pageParser parsedFeedReturningError:&error];
                 
                 if (error) {
                     break;

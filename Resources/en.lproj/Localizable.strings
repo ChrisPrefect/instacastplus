@@ -777,6 +777,12 @@
 "WiFi Only" = "Only connect when on WiFi";
 "Error" = "Error";
 
+/* VMHTTPOperation / Network Errors */
+"Connection Timeout" = "Connection Timeout";
+"The server did not respond in time. Please check your internet connection or try again later." = "The server did not respond in time. Please check your internet connection or try again later.";
+"Connection Cancelled" = "Connection Cancelled";
+"The request was cancelled." = "The request was cancelled.";
+
 /* ICMQTTClient Errors */
 "Connection timeout - server not reachable" = "Connection timeout - server not reachable";
 "Topics: InstacastPlus/%@/..." = "Topics: InstacastPlus/%@/...";
@@ -915,6 +921,9 @@
 /* DirectoryFeedViewController */
 "Subscribe" = "Subscribe";
 "Already Subscribed" = "Already Subscribed";
+"Podcast Not Available" = "Podcast Not Available";
+"The server is not reachable or the feed address has changed." = "The server is not reachable or the feed address has changed.";
+"The show could not be found. Please try again." = "The show could not be found. Please try again.";
 
 /* Tap on Episode */
 "Play Episode" = "Play Episode";

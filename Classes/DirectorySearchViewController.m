@@ -1010,9 +1010,11 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     // Look up the podcast via iTunes Lookup API to get feedUrl
     NSString *lookupURLString = [NSString stringWithFormat:@"https://itunes.apple.com/lookup?id=%@&entity=podcast", podcastID];
     NSURL *lookupURL = [NSURL URLWithString:lookupURLString];
+    NSMutableURLRequest *lookupRequest = [NSMutableURLRequest requestWithURL:lookupURL];
+    lookupRequest.timeoutInterval = 8.0;
 
     __weak typeof(self) weakSelf = self;
-    self.chartsLookupTask = [[NSURLSession sharedSession] dataTaskWithURL:lookupURL completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    self.chartsLookupTask = [[NSURLSession sharedSession] dataTaskWithRequest:lookupRequest completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
@@ -1024,7 +1026,15 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
             tappedCell.accessoryView = nil;
             tappedCell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 
-            if (error) {
+            if (error && error.code != NSURLErrorCancelled) {
+                [strongSelf.tableView deselectRowAtIndexPath:indexPath animated:YES];
+                [strongSelf presentAlertControllerWithTitle:@"Podcast Not Available".ls
+                                                    message:@"The show could not be found. Please try again.".ls
+                                                     button:@"OK".ls
+                                                   animated:YES
+                                                 completion:NULL];
+                return;
+            } else if (error) {
                 [strongSelf.tableView deselectRowAtIndexPath:indexPath animated:YES];
                 return;
             }

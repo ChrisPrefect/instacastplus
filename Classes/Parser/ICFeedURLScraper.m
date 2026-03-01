@@ -57,7 +57,7 @@
 
         do
         {
-            NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:requestURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:20.0f];
+            NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:requestURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:8.0f];
             [request addValue:@"143441-1,12" forHTTPHeaderField:@"X-Apple-Store-Front"];
             [request addValue:@"iTunes/10.1.2 (Macintosh; Intel Mac OS X 10.6.6) AppleWebKit/533.19.4" forHTTPHeaderField:@"User-Agent"];
 

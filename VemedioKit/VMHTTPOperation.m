@@ -133,14 +133,14 @@
                 self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
                                                            code:kCFURLErrorTimedOut
                                                        userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                                                                 @"Connection Timeout", NSLocalizedDescriptionKey,
-                                                                 @"Connection timed out.", NSLocalizedRecoverySuggestionErrorKey, nil]];
+                                                                 @"Connection Timeout".ls, NSLocalizedDescriptionKey,
+                                                                 @"The server did not respond in time. Please check your internet connection or try again later.".ls, NSLocalizedRecoverySuggestionErrorKey, nil]];
             } else {
                 self.connectionError = [NSError errorWithDomain:NSURLErrorDomain
                                                            code:kCFURLErrorCancelled
                                                        userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                                                                 @"Connection Cancelled", NSLocalizedDescriptionKey,
-                                                                 @"The request was cancelled.", NSLocalizedRecoverySuggestionErrorKey, nil]];
+                                                                 @"Connection Cancelled".ls, NSLocalizedDescriptionKey,
+                                                                 @"The request was cancelled.".ls, NSLocalizedRecoverySuggestionErrorKey, nil]];
             }
 
             self.connectionData = nil;

@@ -20,6 +20,7 @@
 @property (strong) NSString* password;
 @property BOOL dontAskForCredentials;
 @property BOOL allowsCellularAccess;
+@property NSTimeInterval timeout;
 
 @property (strong, readonly) NSMutableDictionary* alternateFeedData;
 

@@ -570,6 +570,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
+    parser.timeout = 8;
     WEAK_SELF;
     parser.didParseFeedBlock = ^(ICFeed* feed) {
         [App releaseNetworkActivity];
@@ -753,6 +754,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             parser.username = self.feed.username;
             parser.password = self.feed.password;
             parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
+            parser.timeout = 8;
 
             parser.didParsePage = ^(NSInteger page) {
                 STRONG_SELF;
@@ -772,6 +774,13 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
                 STRONG_SELF;
                 if (!self) return;
                 [self _showLoadingDialog:NO];
+                if (error) {
+                    [self presentAlertControllerWithTitle:@"Podcast Not Available".ls
+                                                  message:@"The server is not reachable or the feed address has changed.".ls
+                                                   button:@"OK".ls
+                                                 animated:YES
+                                               completion:NULL];
+                }
             };
 
             [[App mainQueue] addOperation:parser];
