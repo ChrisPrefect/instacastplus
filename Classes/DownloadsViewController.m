@@ -59,7 +59,7 @@
                     continue;
                 }
                 
-                DownloadsTableViewCell* cell = (DownloadsTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
+                DownloadsTableViewCell* cell = (DownloadsTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
                 if ([cell isKindOfClass:[DownloadsTableViewCell class]])
                 {
                     CDEpisode* episode = [cachingEpisodes objectAtIndex:indexPath.row];
@@ -72,8 +72,9 @@
         }];
         
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
-            if (!self->_userAction) {
-                [weakSelf.tableView reloadData];
+            DownloadsViewController* strongSelf = weakSelf;
+            if (strongSelf && !strongSelf->_userAction) {
+                [strongSelf.tableView reloadData];
             }
         }];
         

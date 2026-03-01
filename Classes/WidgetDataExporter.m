@@ -503,13 +503,16 @@ static const NSInteger kMaxEpisodesPerList = 12;
 
         // Latest episode hash for tap-to-play in PodcastGridWidget
         // Prefer the newest unplayed episode; fall back to newest overall
-        NSArray *allEpisodes = [feed.episodes.allObjects sortedArrayUsingDescriptors:
-                                @[[NSSortDescriptor sortDescriptorWithKey:@"pubDate" ascending:NO]]];
-        CDEpisode *latestEpisode = nil;
-        for (CDEpisode *ep in allEpisodes) {
-            if (!ep.consumed) { latestEpisode = ep; break; }
+        NSFetchRequest *epReq = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+        epReq.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND consumed == NO", feed];
+        epReq.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"pubDate" ascending:NO]];
+        epReq.fetchLimit = 1;
+        CDEpisode *latestEpisode = [DMANAGER.objectContext executeFetchRequest:epReq error:nil].firstObject;
+        if (!latestEpisode) {
+            epReq.predicate = [NSPredicate predicateWithFormat:@"feed == %@", feed];
+            epReq.fetchLimit = 1;
+            latestEpisode = [DMANAGER.objectContext executeFetchRequest:epReq error:nil].firstObject;
         }
-        if (!latestEpisode) latestEpisode = allEpisodes.firstObject;
         if (latestEpisode.objectHash) {
             d[@"latestEpisodeHash"] = latestEpisode.objectHash;
         }

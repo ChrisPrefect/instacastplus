@@ -44,11 +44,13 @@
     if (newWindow)
     {
         [self _updateImage];
-        
-        _observing = YES;
-        [[PlaybackManager playbackManager] addTaskObserver:self forKeyPath:@"speedControl" task:^(id obj, NSDictionary *change) {
-            [self _updateImage];
-        }];
+
+        if (!_observing) {
+            _observing = YES;
+            [[PlaybackManager playbackManager] addTaskObserver:self forKeyPath:@"speedControl" task:^(id obj, NSDictionary *change) {
+                [self _updateImage];
+            }];
+        }
     }
     else
     {

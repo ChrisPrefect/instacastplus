@@ -402,6 +402,8 @@
 
 - (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event
 {
+	[self.valueChangedTimer invalidate];
+	self.valueChangedTimer = nil;
 	self.trackingStartPoint = CGPointZero;
 	self.trackingKnobRect = CGRectZero;
 	self.knobButton.highlighted = NO;
@@ -411,6 +413,8 @@
 
 - (void)cancelTrackingWithEvent:(UIEvent *)event
 {
+    [self.valueChangedTimer invalidate];
+    self.valueChangedTimer = nil;
     self.trackingStartPoint = CGPointZero;
 	self.trackingKnobRect = CGRectZero;
 	self.knobButton.highlighted = NO;

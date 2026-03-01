@@ -407,7 +407,9 @@ static NSMutableSet* gModelInfos = nil;
 
 - (void) closeWithCompletion:(void (^)(void))completion;
 {
-    
+    [self.closeTimer invalidate];
+    self.closeTimer = nil;
+
     [UIView animateWithDuration:0.2
                      animations:^{
                          self.messageView.alpha = 0.0f;
