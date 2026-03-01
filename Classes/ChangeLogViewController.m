@@ -90,9 +90,10 @@
     
     // Initialize UITableView
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
+    self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.tableView.delegate = self;
     self.tableView.dataSource = self;
-    self.tableView.tableHeaderView = [self createHeaderView]; // Set custom header
+    self.tableView.tableHeaderView = [self createHeaderView];
     [self.view addSubview:self.tableView];
 }
 
@@ -100,19 +101,21 @@
 - (UIView *)createHeaderView {
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 165)];
     
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, self.view.frame.size.width - 32, 80)];
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, headerView.bounds.size.width - 32, 80)];
+    titleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     titleLabel.text = @"InstacastPlus Changelog".ls;
     titleLabel.font = [UIFont boldSystemFontOfSize:18];
     titleLabel.numberOfLines = 0;
     titleLabel.textAlignment = NSTextAlignmentCenter;
-    
-    UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, self.view.frame.size.width - 32, 75)];
+
+    UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, headerView.bounds.size.width - 32, 75)];
+    subtitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     subtitleLabel.text = @"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!".ls;
     subtitleLabel.font = [UIFont systemFontOfSize:14];
     subtitleLabel.numberOfLines = 0;
     subtitleLabel.textAlignment = NSTextAlignmentCenter;
     subtitleLabel.textColor = [UIColor darkGrayColor];
-    
+
     [headerView addSubview:titleLabel];
     [headerView addSubview:subtitleLabel];
     

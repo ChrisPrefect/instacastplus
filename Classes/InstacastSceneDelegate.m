@@ -92,9 +92,21 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
 #if TARGET_OS_MACCATALYST
         {
-            // Mac Catalyst: Fenstergrösse aus UserDefaults lesen (Default: iPhone 17 Pro).
-            // min = max = targetSize erzwingt die exakte Grösse.
-            // Freigabe nach 0.5s — Catalyst braucht Zeit um die Grösse anzuwenden.
+            // Mac Catalyst Fenstergrösse:
+            //
+            // Catalyst startet standardmässig bei 1024x768 mit System-Minimum 668x414.
+            // Wir wollen: Erster Start = iPhone 17 Pro (402x874), danach gemerkte Grösse.
+            //
+            // Ablauf:
+            // 1. minimumSize = minSize (402x662) — einmalig, wird nie geändert.
+            //    Muss VOR dem System-Default gesetzt werden damit 402pt Breite akzeptiert wird.
+            // 2. maximumSize = gespeicherte Grösse — erzwingt exakte Startgrösse,
+            //    da das 1024x768-Fenster auf max schrumpfen muss.
+            // 3. Nach 0.5s: maximumSize auf Bildschirmgrösse erweitern → frei resizebar.
+            //    Catalyst wendet sizeRestrictions asynchron an, daher die Verzögerung.
+            // 4. sceneWillResignActive: coordinateSpace.bounds.size speichern
+            //    (gleiches Koordinatensystem wie sizeRestrictions).
+
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             CGFloat savedWidth = [defaults floatForKey:@"MacWindowWidth"];
             CGFloat savedHeight = [defaults floatForKey:@"MacWindowHeight"];
@@ -102,30 +114,13 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
                 ? CGSizeMake(savedWidth, savedHeight)
                 : startSize;
 
-            DebugLog(@"[MacWindow] willConnect: savedSize={%.0f,%.0f} targetSize={%.0f,%.0f}",
-                     savedWidth, savedHeight, windowSize.width, windowSize.height);
-
-            // minimumSize ZUERST setzen (einmalig, wird nicht mehr geändert).
-            // Muss VOR dem System-Default (668x414) gesetzt werden damit 402 akzeptiert wird.
             windowScene.sizeRestrictions.minimumSize = minSize;
-
-            // maximumSize = targetSize erzwingt die exakte Fenstergrösse.
-            // minimumSize ist kleiner → Höhe/Breite werden durch max begrenzt.
             windowScene.sizeRestrictions.maximumSize = windowSize;
 
-            DebugLog(@"[MacWindow] willConnect: set min={%.0f,%.0f} max={%.0f,%.0f}",
-                     minSize.width, minSize.height, windowSize.width, windowSize.height);
-
-            // maximumSize nach 0.5s freigeben — das Fenster hat dann die erzwungene
-            // Grösse angenommen und kann frei vergrössert werden.
-            // minimumSize bleibt unverändert bei {402, 662}.
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 CGSize screenSize = UIScreen.mainScreen.bounds.size;
                 CGFloat maxDim = MAX(screenSize.width, screenSize.height);
                 windowScene.sizeRestrictions.maximumSize = CGSizeMake(maxDim, maxDim);
-                DebugLog(@"[MacWindow] UNLOCKED: min=%@ max={%.0f,%.0f} coordinateSpace=%@",
-                         NSStringFromCGSize(windowScene.sizeRestrictions.minimumSize), maxDim, maxDim,
-                         NSStringFromCGRect(windowScene.coordinateSpace.bounds));
             });
         }
 #else
@@ -332,45 +327,31 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
+#if !TARGET_OS_MACCATALYST
+    // iPadOS Stage Manager: maximumSize freigeben (war startSize für initiale Grösse)
     if ([scene isKindOfClass:[UIWindowScene class]]) {
-#if TARGET_OS_MACCATALYST
         UIWindowScene *windowScene = (UIWindowScene *)scene;
-        DebugLog(@"[MacWindow] didBecomeActive: coordinateSpace=%@ min=%@ max=%@",
-                 NSStringFromCGRect(windowScene.coordinateSpace.bounds),
-                 NSStringFromCGSize(windowScene.sizeRestrictions.minimumSize),
-                 NSStringFromCGSize(windowScene.sizeRestrictions.maximumSize));
-#else
-        UIWindowScene *windowScene = (UIWindowScene *)scene;
-        // iPadOS: maximumSize freigeben (war startSize für initiale Grösse)
         if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
             CGSize screenSize = UIScreen.mainScreen.bounds.size;
             CGFloat maxDimension = MAX(screenSize.width, screenSize.height);
             windowScene.sizeRestrictions.maximumSize = CGSizeMake(maxDimension, maxDimension);
         }
-#endif
     }
+#endif
 }
 
 
 - (void)sceneWillResignActive:(UIScene *)scene {
 #if TARGET_OS_MACCATALYST
-    // Mac Catalyst: aktuelle Fenstergrösse speichern für nächsten Start.
-    // coordinateSpace.bounds.size verwenden — gleiches Koordinatensystem wie sizeRestrictions.
+    // Mac Catalyst: Fenstergrösse in UserDefaults speichern.
+    // coordinateSpace.bounds.size = gleiches Koordinatensystem wie sizeRestrictions.
     if ([scene isKindOfClass:[UIWindowScene class]]) {
         UIWindowScene *windowScene = (UIWindowScene *)scene;
         CGSize size = windowScene.coordinateSpace.bounds.size;
-
-        DebugLog(@"[MacWindow] willResignActive: coordinateSpace={%.0f,%.0f}", size.width, size.height);
-        if (@available(iOS 16.0, *)) {
-            DebugLog(@"[MacWindow] willResignActive: effectiveGeometry.systemFrame=%@",
-                     NSStringFromCGRect(windowScene.effectiveGeometry.systemFrame));
-        }
-
         if (size.width > 0 && size.height > 0) {
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             [defaults setFloat:size.width forKey:@"MacWindowWidth"];
             [defaults setFloat:size.height forKey:@"MacWindowHeight"];
-            DebugLog(@"[MacWindow] willResignActive: SAVED size={%.0f,%.0f}", size.width, size.height);
         }
     }
 #endif
@@ -378,19 +359,6 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
 
 - (void)sceneWillEnterForeground:(UIScene *)scene {
-#if TARGET_OS_MACCATALYST
-    if ([scene isKindOfClass:[UIWindowScene class]]) {
-        UIWindowScene *windowScene = (UIWindowScene *)scene;
-        DebugLog(@"[MacWindow] willEnterForeground: coordinateSpace=%@ sizeRestrictions min=%@ max=%@",
-                 NSStringFromCGRect(windowScene.coordinateSpace.bounds),
-                 NSStringFromCGSize(windowScene.sizeRestrictions.minimumSize),
-                 NSStringFromCGSize(windowScene.sizeRestrictions.maximumSize));
-        if (@available(iOS 16.0, *)) {
-            DebugLog(@"[MacWindow] willEnterForeground: effectiveGeometry.systemFrame=%@",
-                     NSStringFromCGRect(windowScene.effectiveGeometry.systemFrame));
-        }
-    }
-#endif
     if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
         [[ICAppearanceManager sharedManager] updateAppearance];
     }
