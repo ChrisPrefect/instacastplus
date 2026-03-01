@@ -216,6 +216,7 @@
     self.canDelete = NO;
     self.showsDeleteControl = NO;
     self.topSeparator = NO;
+    self.upNextStyle = NO;
 
     self.didPanRight = nil;
     self.shouldDelete = nil;
@@ -263,15 +264,26 @@
                 
         // make sure the feed title is not repeated in episode title
         NSString* title = [episode cleanTitleUsingFeedTitle:feed.title];
-        
-        self.titleLabel.text = title;
-        self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
-        
-        if (!self.embedded) {
-            self.summaryLabel.text = [episode.subtitle tailTruncatedStringWithMaxLength:160];
-        }
-        else {
-            self.summaryLabel.text = episode.feed.title;
+
+        if (self.upNextStyle) {
+            // Feed title above (bold, slightly larger), episode title below
+            self.titleLabel.text = feed.displayTitle ?: feed.title;
+            self.titleLabel.font = [UIFont systemFontOfSize:12.0f weight:UIFontWeightSemibold];
+            self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
+            self.summaryLabel.text = title;
+            self.summaryLabel.font = [UIFont systemFontOfSize:14.0f];
+        } else {
+            self.titleLabel.text = title;
+            self.titleLabel.font = [UIFont systemFontOfSize:15.0f];
+            self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
+
+            if (!self.embedded) {
+                self.summaryLabel.text = [episode.subtitle tailTruncatedStringWithMaxLength:160];
+            }
+            else {
+                self.summaryLabel.text = episode.feed.title;
+            }
+            self.summaryLabel.font = [UIFont systemFontOfSize:11.0f];
         }
         
         //[self _setCell:cell imageForFeed:theFeed episode:episode];
@@ -299,13 +311,26 @@
 
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing
 {
-    UIFont* textLabelFont = [UIFont systemFontOfSize:15.0f];
-    UIFont* detailLabelFont = [UIFont systemFontOfSize:11.0f];
-    
-    
+    return [self proposedHeightWithObjectValue:objectValue tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:NO];
+}
+
++ (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle
+{
+    UIFont* textLabelFont;
+    UIFont* detailLabelFont;
+
+    if (upNextStyle) {
+        textLabelFont = [UIFont systemFontOfSize:12.0f weight:UIFontWeightSemibold];
+        detailLabelFont = [UIFont systemFontOfSize:14.0f];
+    } else {
+        textLabelFont = [UIFont systemFontOfSize:15.0f];
+        detailLabelFont = [UIFont systemFontOfSize:11.0f];
+    }
+
+
     CDEpisode* episode = (CDEpisode*)objectValue;
     CDFeed* feed = episode.feed;
-    
+
     CGFloat w = tableSize.width-25-44;
     if (embedded) {
         w += 44-15;
@@ -313,42 +338,48 @@
             w -= 65;
         }
     }
-    
+
     if (imageSize.width > 0) {
         w -= imageSize.width;
         w -= 10;
     }
-    
+
     // make sure the feed title is not repeated in episode title
     NSString* title = [episode cleanTitleUsingFeedTitle:feed.title];
     if (!title) {
         title = @"No Title".ls;
     }
-    
-    NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{ NSFontAttributeName : textLabelFont }];
-    
+
+    NSString* topText;
+    NSString* bottomText;
+
+    if (upNextStyle) {
+        topText = feed.displayTitle ?: feed.title ?: @"";
+        bottomText = title;
+    } else {
+        topText = title;
+        if (!embedded) {
+            bottomText = [episode.subtitle tailTruncatedStringWithMaxLength:160];
+        } else {
+            bottomText = episode.feed.title;
+        }
+    }
+
+    NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:topText attributes:@{ NSFontAttributeName : textLabelFont }];
+
     CGSize textLabelSize = [attributedTitle boundingRectWithSize:CGSizeMake(w, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
     IC_SIZE_INTEGRAL(textLabelSize);
-    
+
     CGSize detailLabelSize = CGSizeZero;
-    
-    NSString* subtitle;
-    
-    if (!embedded) {
-        subtitle = [episode.subtitle tailTruncatedStringWithMaxLength:160];
-    }
-    else {
-        subtitle = episode.feed.title;
-    }
-    
-    if ([subtitle length] > 0)
+
+    if ([bottomText length] > 0)
     {
-        NSAttributedString* attributedSubtitle = [[NSAttributedString alloc] initWithString:subtitle attributes:@{ NSFontAttributeName : detailLabelFont }];
-        
+        NSAttributedString* attributedSubtitle = [[NSAttributedString alloc] initWithString:bottomText attributes:@{ NSFontAttributeName : detailLabelFont }];
+
         detailLabelSize = [attributedSubtitle boundingRectWithSize:CGSizeMake(w, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
         IC_SIZE_INTEGRAL(detailLabelSize);
     }
-    
+
     return MAX(MAX(44.f, 5+textLabelSize.height+detailLabelSize.height+25), imageSize.width +10);
 }
 

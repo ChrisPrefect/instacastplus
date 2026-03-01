@@ -24,6 +24,7 @@
 @property (nonatomic, readonly) BOOL showsDeleteControl;
 
 @property (nonatomic) BOOL embedded;
+@property (nonatomic) BOOL upNextStyle; // feed title above episode title, with image
 @property (nonatomic, strong, readonly) UIPanGestureRecognizer* panRecognizer;
 @property (nonatomic) BOOL topSeparator;
 
@@ -33,6 +34,7 @@
 - (void)stopProgressUpdate;
 
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
++ (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle;
 
 @property (nonatomic, copy) void (^panDidBegin)(NSIndexPath* cellIndexPath);
 @property (nonatomic, copy) void (^didPanRight)(NSIndexPath* cellIndexPath);

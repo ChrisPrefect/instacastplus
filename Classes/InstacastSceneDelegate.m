@@ -398,6 +398,8 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
     // Export all widget snapshots before saving, so widgets have fresh data
     // On macOS ("Designed for iPad"), sharedExporter returns nil (no-op).
     [[WidgetDataExporter sharedExporter] exportAllSnapshots];
+    // Immediate timeline reload (bypass 5s debounce that may not fire when suspended)
+    [WidgetKitHelper reloadAllTimelines];
 
     [DMANAGER save];
 }

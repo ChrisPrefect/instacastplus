@@ -19,7 +19,7 @@ struct UpNextProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<UpNextEntry>) -> Void) {
         let data = SharedContainerReader.readUpNext()
         let entry = UpNextEntry(date: Date(), data: data)
-        let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60)))
+        let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(10 * 60)))
         completion(timeline)
     }
 }

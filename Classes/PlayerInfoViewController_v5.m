@@ -2842,7 +2842,21 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         cell.backgroundColor = isPlaying ? ICTableSelectedBackgroundColor : self.tableView.backgroundColor;
 
         cell.embedded = YES;
+        cell.upNextStyle = YES;
         cell.panRecognizer.enabled = NO;
+
+        // Set podcast image
+        cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
+        NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
+        ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
+        __weak EpisodesTableViewCell* weakCell = cell;
+        [iman imageForURL:imageURL size:56 grayscale:NO sender:cell completion:^(UIImage *image) {
+            EpisodesTableViewCell* strongCell = weakCell;
+            if (!strongCell || !image) return;
+            if (strongCell.objectValue != episode) return;
+            strongCell.iconView.image = image;
+        }];
+
         cell.objectValue = episode;
 
         return cell;
@@ -2927,7 +2941,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     else if ([self _hasUpNext] && indexPath.section == [self _upNextSection])
     {
         CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
-        return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:CGSizeZero embedded:YES editing:self.editing];
+        return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:CGSizeMake(56, 56) embedded:YES editing:self.editing upNextStyle:YES];
     }
     return 0;
 }

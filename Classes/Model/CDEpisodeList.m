@@ -275,12 +275,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     
     DebugLog(@"stage 2: %lf, %ld", [[NSDate date] timeIntervalSinceDate:start], (long)[objectHashes count]);
     
-    // limit search results to 500
-    if ([objectHashes count] > 500) {
-        objectHashes = [objectHashes subarrayWithRange:NSMakeRange(0, 500)];
-    }
-    
-    
     NSFetchRequest* fetchRequest2 = [[NSFetchRequest alloc] init];
     fetchRequest2.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
     fetchRequest2.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", objectHashes];
