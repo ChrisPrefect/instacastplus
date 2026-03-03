@@ -6,7 +6,6 @@ enum ICWidgetConstants {
 
     // JSON filenames in the shared container
     static let nowPlayingFile      = "widget_nowplaying.json"
-    static let upNextFile          = "widget_upnext.json"
     static let listsIndexFile      = "widget_lists.json"
     static let listEpisodesPrefix  = "widget_list_"  // + listUID + ".json"
     static let feedsFile           = "widget_feeds.json"
@@ -21,10 +20,6 @@ enum ICWidgetConstants {
     static let nowPlayingWidgetKind     = "NowPlayingWidget"
     static let smartListWidgetKind      = "SmartListWidget"
     static let statsWidgetKind          = "StatsWidget"
-    static let upNextWidgetKind         = "UpNextWidget"
-
-    // Special list IDs
-    static let upNextListId = "__upnext__"
 
     // Fallback URL (should never be needed, but prevents force-unwrap crashes)
     private static let fallbackURL = URL(string: "instacastplus://")!
@@ -75,13 +70,6 @@ enum ICWidgetConstants {
         components.scheme = urlScheme
         components.host = "list"
         components.path = "/\(listUID)"
-        return components.url ?? fallbackURL
-    }
-
-    static var queueURL: URL {
-        var components = URLComponents()
-        components.scheme = urlScheme
-        components.host = "queue"
         return components.url ?? fallbackURL
     }
 }

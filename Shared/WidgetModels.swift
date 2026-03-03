@@ -63,7 +63,7 @@ struct WFeed: Codable, Identifiable, Hashable, Sendable {
 struct WList: Codable, Identifiable, Hashable, Sendable {
     let id: String              // uid
     let name: String
-    let type: String?           // "smart:unplayed", "smart:starred", "episode_list", "upnext" etc.
+    let type: String?           // "smart:unplayed", "smart:starred", "episode_list" etc.
     let episodeCount: Int
 }
 
@@ -124,15 +124,6 @@ struct WNowPlaying: Codable, Sendable {
     }
 }
 
-// MARK: - Up Next Snapshot (kept for backward compatibility, now also exported as WListEpisodes)
-
-struct WUpNext: Codable, Sendable {
-    let currentEpisode: WEpisode?
-    let queue: [WEpisode]
-    let isPaused: Bool
-    let timestamp: Date
-}
-
 // MARK: - List Episodes Snapshot
 
 struct WListEpisodes: Codable, Sendable {
@@ -154,9 +145,37 @@ struct WStats: Codable, Sendable {
     let listenedTodaySec: TimeInterval
     let listenedWeekSec: TimeInterval
     let downloadedCount: Int
+    let downloadedSizeBytes: Int64       // total size of downloaded episodes in bytes
     let subscribedCount: Int
     let unplayedCount: Int
+    let newEpisodesTodayCount: Int       // episodes published since start of today
+    let sleepTimerUsedCount: Int         // number of sleep-timer sessions ever used
     let timestamp: Date
+
+    enum CodingKeys: String, CodingKey {
+        case listenedTodaySec
+        case listenedWeekSec
+        case downloadedCount
+        case downloadedSizeBytes
+        case subscribedCount
+        case unplayedCount
+        case newEpisodesTodayCount
+        case sleepTimerUsedCount
+        case timestamp
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        listenedTodaySec = try container.decode(TimeInterval.self, forKey: .listenedTodaySec)
+        listenedWeekSec = try container.decode(TimeInterval.self, forKey: .listenedWeekSec)
+        downloadedCount = try container.decode(Int.self, forKey: .downloadedCount)
+        downloadedSizeBytes = try container.decodeIfPresent(Int64.self, forKey: .downloadedSizeBytes) ?? 0
+        subscribedCount = try container.decode(Int.self, forKey: .subscribedCount)
+        unplayedCount = try container.decode(Int.self, forKey: .unplayedCount)
+        newEpisodesTodayCount = try container.decodeIfPresent(Int.self, forKey: .newEpisodesTodayCount) ?? 0
+        sleepTimerUsedCount = try container.decodeIfPresent(Int.self, forKey: .sleepTimerUsedCount) ?? 0
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+    }
 
     var listenedTodayFormatted: String {
         formatListeningTime(listenedTodaySec)
@@ -164,6 +183,17 @@ struct WStats: Codable, Sendable {
 
     var listenedWeekFormatted: String {
         formatListeningTime(listenedWeekSec)
+    }
+
+    var downloadedSizeFormatted: String {
+        let bytes = downloadedSizeBytes
+        if bytes >= 1_073_741_824 {
+            return String(format: "%.1f GB", Double(bytes) / 1_073_741_824)
+        } else if bytes >= 1_048_576 {
+            return String(format: "%.0f MB", Double(bytes) / 1_048_576)
+        } else {
+            return "\(bytes / 1024) KB"
+        }
     }
 
     private func formatListeningTime(_ seconds: TimeInterval) -> String {

@@ -1542,23 +1542,32 @@ enum {
 - (void) seekToTime:(NSTimeInterval)time tolerance:(BOOL)tolerance
 {
 	CMTime current = CMTimeMake((int64_t)(time*1000), 1000);
-    if (!tolerance) {
-        [self.player seekToTime:current toleranceBefore:CMTimeMake(0, 1000) toleranceAfter:CMTimeMake(1000, 1000)];
-    } else {
-        [self.player seekToTime:current];
-    }
+    void (^finishSeekUpdate)(BOOL) = ^(BOOL finished) {
+        if (!finished) {
+            return;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _findAndSetCurrentChapter:-1];
+            [self _findAndSetCurrentArtwork];
+            [self coalescedPerformSelector:@selector(_setNowPlayingInfoOfEpisode:) object:self.playingEpisode afterDelay:1.0];
+            SEND_UPDATE
+
+            if (self.paused && !self.seeking) {
+                [self _saveCurrentPlaybackPosition];
+            }
+        });
+    };
 
     // Suppress auto-skip marker is handled by callers that represent deliberate position
     // choices (setPosition:, seekToChapter:) — NOT here, so skip buttons still trigger auto-skip
-
-	SEND_UPDATE
-
-    [self _findAndSetCurrentChapter:time];
-    [self _findAndSetCurrentArtwork];
-    [self coalescedPerformSelector:@selector(_setNowPlayingInfoOfEpisode:) object:self.playingEpisode afterDelay:1.0];
-
-    if (self.paused && !self.seeking) {
-        [self _saveCurrentPlaybackPosition];
+    if (!tolerance) {
+        [self.player seekToTime:current
+                toleranceBefore:CMTimeMake(0, 1000)
+                 toleranceAfter:CMTimeMake(1000, 1000)
+              completionHandler:finishSeekUpdate];
+    } else {
+        [self.player seekToTime:current completionHandler:finishSeekUpdate];
     }
 }
 
@@ -2011,6 +2020,7 @@ enum {
         [self _findAndSetCurrentArtwork];
         
         [self _setNowPlayingInfoOfEpisode:self.playingEpisode];
+        [self _sendUpdateNotification];
     }];
 }
 

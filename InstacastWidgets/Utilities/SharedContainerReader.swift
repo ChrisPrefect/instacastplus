@@ -32,10 +32,6 @@ enum SharedContainerReader {
         read(WNowPlaying.self, from: ICWidgetConstants.nowPlayingFile)
     }
 
-    static func readUpNext() -> WUpNext? {
-        read(WUpNext.self, from: ICWidgetConstants.upNextFile)
-    }
-
     static func readLists() -> [WList]? {
         read([WList].self, from: ICWidgetConstants.listsIndexFile)
     }

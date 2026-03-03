@@ -23,7 +23,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Targeted exports
 - (void)exportNowPlayingSnapshot;
-- (void)exportUpNextSnapshot;
 - (void)exportFeedsSnapshot;
 - (void)exportListsSnapshot;
 - (void)exportStatsSnapshot;

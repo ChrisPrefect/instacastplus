@@ -176,8 +176,10 @@ struct NowPlayingWidgetView: View {
                             Text(stopDate, style: .timer)
                                 .font(.system(size: 13))
                                 .monospacedDigit()
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                 }
                 .foregroundColor(data.hasSleepTimer ? accentColor : .secondary)
             }
@@ -309,8 +311,10 @@ struct NowPlayingWidgetView: View {
                             Text(stopDate, style: .timer)
                                 .font(.system(size: 14))
                                 .monospacedDigit()
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(data.hasSleepTimer ? accentColor.opacity(0.15) : Color.clear)

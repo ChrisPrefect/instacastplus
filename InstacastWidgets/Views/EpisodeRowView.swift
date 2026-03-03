@@ -5,12 +5,14 @@ import WidgetKit
 struct EpisodeRowView: View {
     let episode: WEpisode
     let showFeedTitle: Bool
+    let feedTitleAbove: Bool   // show podcast name above episode title
     let showProgress: Bool
     let widgetFamily: WidgetFamily
 
-    init(episode: WEpisode, showFeedTitle: Bool = false, showProgress: Bool = false, widgetFamily: WidgetFamily = .systemMedium) {
+    init(episode: WEpisode, showFeedTitle: Bool = false, feedTitleAbove: Bool = false, showProgress: Bool = false, widgetFamily: WidgetFamily = .systemMedium) {
         self.episode = episode
         self.showFeedTitle = showFeedTitle
+        self.feedTitleAbove = feedTitleAbove
         self.showProgress = showProgress
         self.widgetFamily = widgetFamily
     }
@@ -22,13 +24,22 @@ struct EpisodeRowView: View {
                 .frame(width: artworkSize, height: artworkSize)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
+                // Podcast name above episode title
+                if showFeedTitle && feedTitleAbove {
+                    Text(episode.feedTitle)
+                        .font(.system(size: feedTitleFontSize, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundColor(.secondary)
+                }
+
                 Text(episode.title)
-                    .font(.system(size: titleFontSize, weight: .medium))
-                    .lineLimit(widgetFamily == .systemLarge ? 2 : 1)
+                    .font(.system(size: titleFontSize, weight: .regular))
+                    .lineLimit(2)
                     .foregroundColor(.primary)
 
-                if showFeedTitle {
+                // Podcast name below episode title (legacy / non-above mode)
+                if showFeedTitle && !feedTitleAbove {
                     Text(episode.feedTitle)
                         .font(.system(size: subtitleFontSize))
                         .lineLimit(1)
@@ -36,16 +47,15 @@ struct EpisodeRowView: View {
                 }
 
                 HStack(spacing: 4) {
-                    // Status indicators
                     if !episode.consumed {
                         Circle()
                             .fill(WidgetAccentColor.color)
-                            .frame(width: 6, height: 6)
+                            .frame(width: 5, height: 5)
                     }
 
                     if episode.downloaded {
                         Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 9))
+                            .font(.system(size: 8))
                             .foregroundColor(.secondary)
                     }
 
@@ -62,8 +72,6 @@ struct EpisodeRowView: View {
 
             Spacer(minLength: 0)
         }
-        .frame(height: rowHeight)
-        .clipped()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(episode.title + ", " + episode.feedTitle)
     }
@@ -86,28 +94,24 @@ struct EpisodeRowView: View {
         }
     }
 
-    private var rowHeight: CGFloat {
-        switch widgetFamily {
-        case .systemMedium: return 48
-        case .systemLarge: return 52
-        default: return 44
-        }
-    }
-
     private var artworkSize: CGFloat {
         switch widgetFamily {
         case .systemSmall: return 40
-        case .systemMedium: return 44
-        case .systemLarge: return 44
-        default: return 44
+        case .systemMedium: return 42
+        case .systemLarge: return 40
+        default: return 42
         }
     }
 
+    private var feedTitleFontSize: CGFloat {
+        widgetFamily == .systemSmall ? 10 : 11
+    }
+
     private var titleFontSize: CGFloat {
-        widgetFamily == .systemSmall ? 14 : 16
+        widgetFamily == .systemSmall ? 13 : 14
     }
 
     private var subtitleFontSize: CGFloat {
-        widgetFamily == .systemSmall ? 12 : 13
+        widgetFamily == .systemSmall ? 11 : 11
     }
 }

@@ -45,6 +45,7 @@
 #import "AudioSession+UpNextPlaylist.h"
 #import "CacheManager.h"
 #import "WidgetDataExporter.h"
+#import "InstacastPlus-Swift.h"
 #import "ListEpisodesTableViewController.h"
 #import "UpNextTableViewController.h"
 #import "FeedEpisodesTableViewController.h"

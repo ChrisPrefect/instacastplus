@@ -35,7 +35,7 @@ struct SmartListWidgetView: View {
         switch family {
         case .systemSmall: return 1
         case .systemMedium: return 2
-        case .systemLarge: return 5
+        case .systemLarge: return 6
         default: return 2
         }
     }
@@ -122,8 +122,9 @@ struct SmartListWidgetView: View {
                 Link(destination: episodeTapURL(for: episode)) {
                     EpisodeRowView(
                         episode: episode,
-                        showFeedTitle: family == .systemLarge,
-                        showProgress: family == .systemLarge,
+                        showFeedTitle: true,
+                        feedTitleAbove: true,
+                        showProgress: false,
                         widgetFamily: family
                     )
                 }
@@ -133,8 +134,6 @@ struct SmartListWidgetView: View {
                         .padding(.leading, 54)
                 }
             }
-
-            Spacer(minLength: 0)
         }
         .padding(2)
         .clipped()
@@ -222,27 +221,19 @@ struct SmartListWidgetView: View {
     // MARK: - Shared Header
 
     private var listHeader: some View {
-        Link(destination: entry.listId == ICWidgetConstants.upNextListId
-             ? ICWidgetConstants.queueURL
-             : ICWidgetConstants.listURL(listUID: entry.listId)) {
+        Link(destination: ICWidgetConstants.listURL(listUID: entry.listId)) {
             HStack {
                 Text(entry.listName)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.secondary)
                 Spacer()
 
-                // Show tap mode indicator
-                if entry.tapAction == .play {
-                    Image(systemName: "play.circle")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
         }
-        .frame(height: 24)
+        .frame(height: 20)
+        .padding(.bottom, 2)
     }
 }

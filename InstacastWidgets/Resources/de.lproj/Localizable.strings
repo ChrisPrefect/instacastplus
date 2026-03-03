@@ -2,11 +2,8 @@
 "widget.nowplaying.name" = "Aktuelle Wiedergabe";
 "widget.nowplaying.description" = "Zeigt die aktuelle Episode mit Steuerelementen.";
 
-"widget.upnext.name" = "Als Nächstes";
-"widget.upnext.description" = "Zeigt deine Wiedergabeliste.";
-
 "widget.smartlist.name" = "Episodenliste";
-"widget.smartlist.description" = "Zeigt Episoden einer gewählten Liste oder Warteschlange.";
+"widget.smartlist.description" = "Zeigt Episoden einer gewählten Liste.";
 
 "widget.favorites.name" = "Abonnements";
 "widget.favorites.description" = "Schnellzugriff auf deine Podcasts.";
@@ -28,21 +25,21 @@
 
 /* Widget Content */
 "widget.empty.noplayback" = "Keine Wiedergabe";
-"widget.empty.noupnext" = "Nichts in der Warteschlange";
 "widget.empty.noepisodes" = "Keine Episoden";
 "widget.empty.nosubscriptions" = "Keine Abonnements";
 "widget.empty.nostats" = "Keine Statistiken";
 
 "widget.nowplaying.label" = "AKTUELLE WIEDERGABE";
-"widget.upnext.header" = "Als Nächstes";
 "widget.listened.header" = "Gehört";
 "widget.today" = "Heute";
 "widget.week" = "Woche";
 "widget.left" = "übrig";
 
+"widget.stat.newtoday" = "Neu heute";
 "widget.stat.unplayed" = "Ungespielt";
 "widget.stat.downloaded" = "Geladen";
 "widget.stat.subscribed" = "Abonniert";
+"widget.stat.sleeptimer" = "Eingeschlafen";
 
 "widget.sleeptimer" = "Sleeptimer: %@";
 "widget.chapter" = "Kapitel %d / %d";

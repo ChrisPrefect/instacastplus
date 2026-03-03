@@ -58,6 +58,15 @@ struct StatsWidgetView: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 4) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10))
+                    .foregroundColor(WidgetAccentColor.color)
+                Text(NSLocalizedString("widget.stat.newtoday", comment: "") + ": \(stats.newEpisodesTodayCount)")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 4) {
                 Image(systemName: "calendar")
                     .font(.system(size: 10))
                 Text(NSLocalizedString("widget.week", comment: "") + ": \(stats.listenedWeekFormatted)")
@@ -109,9 +118,11 @@ struct StatsWidgetView: View {
             Divider()
 
             // Right: Counts
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                statRow(icon: "sparkles", label: NSLocalizedString("widget.stat.newtoday", comment: ""), value: "\(stats.newEpisodesTodayCount)")
                 statRow(icon: "tray.full", label: NSLocalizedString("widget.stat.unplayed", comment: ""), value: "\(stats.unplayedCount)")
-                statRow(icon: "arrow.down.circle", label: NSLocalizedString("widget.stat.downloaded", comment: ""), value: "\(stats.downloadedCount)")
+                statRow(icon: "arrow.down.circle", label: NSLocalizedString("widget.stat.downloaded", comment: ""), value: "\(stats.downloadedCount) · \(stats.downloadedSizeFormatted)")
+                statRow(icon: "moon.zzz", label: NSLocalizedString("widget.stat.sleeptimer", comment: ""), value: "\(stats.sleepTimerUsedCount)")
                 statRow(icon: "antenna.radiowaves.left.and.right", label: NSLocalizedString("widget.stat.subscribed", comment: ""), value: "\(stats.subscribedCount)")
 
                 Spacer(minLength: 0)
