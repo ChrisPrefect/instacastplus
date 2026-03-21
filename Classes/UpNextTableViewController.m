@@ -156,7 +156,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     [self _updateLeftBarButtonItem];
 
     // Download all and Remove all buttons as icons
-    UIBarButtonItem* downloadAllButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.down.circle"]
+    UIBarButtonItem* downloadAllButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"square.and.arrow.down"]
                                                                           style:UIBarButtonItemStylePlain
                                                                          target:self
                                                                          action:@selector(downloadAllButtonAction:)];

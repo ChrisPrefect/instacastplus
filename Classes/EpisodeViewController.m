@@ -1219,7 +1219,7 @@
             NSString* sizeString = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
             addTitle = [NSString stringWithFormat:@"%@ (%@)", @"Download".ls, sizeString];
         }
-        [actions addObject:[UIAction actionWithTitle:addTitle image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *action) {
+        [actions addObject:[UIAction actionWithTitle:addTitle image:[UIImage systemImageNamed:@"square.and.arrow.down"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             [self _downloadFile];
         }]];
@@ -1230,7 +1230,7 @@
             NSString* sizeString = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
             redownloadTitle = [NSString stringWithFormat:@"%@ (%@)", @"Re-Download".ls, sizeString];
         }
-        [actions addObject:[UIAction actionWithTitle:redownloadTitle image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(UIAction *action) {
+        [actions addObject:[UIAction actionWithTitle:redownloadTitle image:[UIImage systemImageNamed:@"square.and.arrow.down"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             PlaybackManager* pm = [PlaybackManager playbackManager];
             if ([pm.playingEpisode isEqual:self.episode]) {

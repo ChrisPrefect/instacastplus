@@ -892,20 +892,19 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     NSString* name;
     switch (action) {
         case ICEpisodeSwipeActionTogglePlayed:
-            name = episode.consumed ? @"checkmark.circle" : @"checkmark.circle.fill";
+            // consumed → mark unplayed: full dot. !consumed → mark played: empty circle
+            name = episode.consumed ? @"circle.fill" : @"circle";
             break;
         case ICEpisodeSwipeActionToggleFavorite:
-            name = episode.starred ? @"star.slash" : @"star.fill";
+            name = episode.starred ? @"star.slash" : @"star";
             break;
         case ICEpisodeSwipeActionDownload:
         {
             CacheManager* cman = [CacheManager sharedCacheManager];
-            if ([cman episodeIsCached:episode]) {
-                name = @"trash.circle";
-            } else if ([cman isCachingEpisode:episode]) {
-                name = @"xmark.circle";
+            if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
+                name = @"trash";
             } else {
-                name = @"arrow.down.circle";
+                name = @"square.and.arrow.down";
             }
             break;
         }
@@ -916,25 +915,24 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             break;
         }
         case ICEpisodeSwipeActionDelete:
-        {
-            CacheManager* cman = [CacheManager sharedCacheManager];
-            name = [cman episodeIsCached:episode] ? @"trash.fill" : @"trash";
+            name = @"trash";
             break;
-        }
         case ICEpisodeSwipeActionEpisodeInfo:
             name = @"info.circle";
             break;
         default:
-            name = @"checkmark.circle";
+            name = @"circle";
             break;
     }
-    return [[UIImage systemImageNamed:name] imageByApplyingSymbolConfiguration:config];
+    UIImage* image = [UIImage systemImageNamed:name withConfiguration:config];
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
 - (UIColor*) _tintColorForSwipeAction:(ICEpisodeSwipeAction)action episode:(CDEpisode*)episode
 {
-    UIColor* accentColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
+    UIColor* accentColor = ICTintColor;
     UIColor* grayColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+    UIColor* deleteColor = [UIColor colorWithRed:1.f green:59/255.f blue:48/255.f alpha:1.f];
 
     switch (action) {
         case ICEpisodeSwipeActionTogglePlayed:
@@ -944,10 +942,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         case ICEpisodeSwipeActionDownload:
         {
             CacheManager* cman = [CacheManager sharedCacheManager];
-            if ([cman episodeIsCached:episode]) {
-                return [UIColor systemRedColor];
-            } else if ([cman isCachingEpisode:episode]) {
-                return [UIColor systemOrangeColor];
+            if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
+                return deleteColor;
             } else {
                 return accentColor;
             }
@@ -958,10 +954,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             return inUpNext ? grayColor : accentColor;
         }
         case ICEpisodeSwipeActionDelete:
-        {
-            CacheManager* cman = [CacheManager sharedCacheManager];
-            return [cman episodeIsCached:episode] ? [UIColor systemRedColor] : grayColor;
-        }
+            return deleteColor;
         case ICEpisodeSwipeActionEpisodeInfo:
             return accentColor;
         default:
@@ -1233,7 +1226,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     CacheManager* cman = [CacheManager sharedCacheManager];
     if (![cman episodeIsCached:episode] && ![cman isCachingEpisode:episode]) {
         UIAction* downloadAction = [UIAction actionWithTitle:@"Download".ls
-                                                       image:[UIImage systemImageNamed:@"arrow.down.circle"]
+                                                       image:[UIImage systemImageNamed:@"square.and.arrow.down"]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
                                                          [weakSelf _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {

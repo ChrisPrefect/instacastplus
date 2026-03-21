@@ -100,6 +100,28 @@ Impl: `ApplePodcastChartsClient` — Phase 1 neue(50), Phase 2 alte(20/Genre par
 
 Singleton Observer-Leaks (leben ewig). `_savingInterruption` unsync read (Main Thread only). `refreshingFeedURLs` (Main Thread only). `performBlockAndWait` in `mergeQueue` (Background-Queue). `reloadData` in `viewDidAppear` (`tableView.window` gesetzt; `window && !transitionCoordinator` nur für `updateAppearance`). `dispatch_after` Import-Completion (bewusstes UX).
 
+## Icon-Referenz (KONSISTENT halten!)
+
+Alle Stellen (Swipe-Aktionen, Context-Menüs, Popup-Menüs, Toolbars) MÜSSEN identische Icons verwenden.
+
+| Aktion | SF Symbol | Asset-Alternative | Farbe |
+|---|---|---|---|
+| Download | `square.and.arrow.down` | `Toolbar Download` / `Multitoolbar Download` | Akzentfarbe |
+| Download löschen / abbrechen | `trash` | — | Rot |
+| Datei löschen | `trash` | — | Rot |
+| Episode löschen (aus Liste) | `trash` | — | Rot |
+| Favorit markieren | `star` | — | Akzentfarbe |
+| Favorit entfernen | `star.slash` | — | Grau |
+| Als gehört markieren | `circle` | — | Grau |
+| Als ungehört markieren | `circle.fill` | — | Akzentfarbe |
+| Zur Abspielliste hinzufügen | `text.badge.plus` | — | Akzentfarbe |
+| Aus Abspielliste entfernen | `text.badge.minus` | — | Grau |
+| Episoden Info | `info.circle` | — | Akzentfarbe |
+| Play Next (Seitenmenü/Context) | `list.bullet.indent` | — | — |
+| Abspielen | `play.fill` | — | — |
+
+Stellen: `_imageForSwipeAction:episode:`, `_contextMenuForIndexPath:` (EpisodesTableViewController), Popup-Menü (EpisodeViewController), Toolbar/Glass Buttons, CarPlay (InstacastSceneDelegate).
+
 ## macOS "Designed for iPad"
 
 NICHT Mac Catalyst → `#if TARGET_OS_MACCATALYST` = 0. Runtime: `isiOSAppOnMac` (iOS 14+).

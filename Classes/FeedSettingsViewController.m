@@ -196,9 +196,8 @@ enum {
     else if (indexPath.section == kRestoreDeletedSection)
     {
         cell.accessoryView = nil;
-        cell = [self detailCell];
+        cell = [self buttonCell];
         cell.textLabel.text = @"Restore Deleted Episodes".ls;
-        cell.detailTextLabel.text = nil;
     }
     
     else if (indexPath.section == kNewsModeSection)
