@@ -5,14 +5,8 @@
 "widget.smartlist.name" = "Episodenliste";
 "widget.smartlist.description" = "Zeigt Episoden einer gewählten Liste.";
 
-"widget.favorites.name" = "Abonnements";
-"widget.favorites.description" = "Schnellzugriff auf deine Podcasts.";
-
 "widget.stats.name" = "Podcast-Statistik";
 "widget.stats.description" = "Deine Hörstatistiken.";
-
-"widget.podcastgrid.name" = "Podcast-Raster";
-"widget.podcastgrid.description" = "Cover-Raster deiner abonnierten Podcasts.";
 
 "widget.lockscreen.circular.name" = "Play/Pause";
 "widget.lockscreen.circular.description" = "Play/Pause-Button mit Fortschrittsring.";
@@ -43,6 +37,4 @@
 
 "widget.sleeptimer" = "Sleeptimer: %@";
 "widget.chapter" = "Kapitel %d / %d";
-"widget.prev" = "Vorh.";
 "widget.next" = "Nächste";
-"widget.podcastgrid.playhint" = "Neueste Folge abspielen";

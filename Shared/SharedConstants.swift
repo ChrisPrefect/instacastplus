@@ -8,7 +8,6 @@ enum ICWidgetConstants {
     static let nowPlayingFile      = "widget_nowplaying.json"
     static let listsIndexFile      = "widget_lists.json"
     static let listEpisodesPrefix  = "widget_list_"  // + listUID + ".json"
-    static let feedsFile           = "widget_feeds.json"
     static let statsFile           = "widget_stats.json"
     static let settingsFile        = "widget_settings.json"
     static let listeningLogFile    = "widget_listening_log.plist"
@@ -54,14 +53,6 @@ enum ICWidgetConstants {
         if let action {
             components.queryItems = [URLQueryItem(name: "action", value: action)]
         }
-        return components.url ?? fallbackURL
-    }
-
-    static func feedURL(feedUID: String) -> URL {
-        var components = URLComponents()
-        components.scheme = urlScheme
-        components.host = "feed"
-        components.path = "/\(feedUID)"
         return components.url ?? fallbackURL
     }
 

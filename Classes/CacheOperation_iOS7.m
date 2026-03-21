@@ -226,14 +226,14 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
             if ([downloadTasks count] > 0) {
                 self.downloadTask = [downloadTasks firstObject];
-                if (_shouldBeSuspended) {
+                if (self->_shouldBeSuspended) {
                     [self.downloadTask suspend];
                 } else if (self.downloadTask.state == NSURLSessionTaskStateSuspended) {
                     [self.downloadTask resume];
                 }
                 self.startDate = [NSDate date];
                 setupFinished = YES;
-                dispatch_semaphore_signal(_stateChangeSemaphore);
+                dispatch_semaphore_signal(self->_stateChangeSemaphore);
                 return;
             }
 
@@ -272,12 +272,12 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
                 }
             }
 
-            if (self.downloadTask && !_shouldBeSuspended) {
+            if (self.downloadTask && !self->_shouldBeSuspended) {
                 [self.downloadTask resume];
             }
             self.startDate = [NSDate date];
             setupFinished = YES;
-            dispatch_semaphore_signal(_stateChangeSemaphore);
+            dispatch_semaphore_signal(self->_stateChangeSemaphore);
         }];
 
         while (!setupFinished && ![self isCancelled]) {
@@ -309,7 +309,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
                 if (resumeData) {
                     [self _saveResumeData:resumeData];
                 }
-                dispatch_semaphore_signal(_stateChangeSemaphore);
+                dispatch_semaphore_signal(self->_stateChangeSemaphore);
             }];
 
             [self.session invalidateAndCancel];
@@ -368,7 +368,7 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 	}
     
     completionHandler(NSURLSessionAuthChallengeCancelAuthenticationChallenge, nil);
-#warning removed HTTP Authentication support
+    // Authentication challenges without stored feed credentials are intentionally cancelled.
 //	if (self.authentication) {
 //        [self.authentication dismissAnimated:NO];
 //        self.authentication = nil;

@@ -11,6 +11,7 @@
 
 #import "InstacastAppDelegate.h"
 #import "PlaybackViewController.h"
+#import "PlaybackManager.h"
 #import "VDModalInfo.h"
 
 #import "UtilityFunctions.h"
@@ -640,9 +641,13 @@
     return UIInterfaceOrientationPortrait;
 }
 
-- (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation duration:(NSTimeInterval)duration
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
 {
-    [self _updateTitleLayout];
+    (void)size;
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    [coordinator animateAlongsideTransition:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
+        [self _updateTitleLayout];
+    } completion:nil];
 }
 
 #pragma mark -
@@ -903,12 +908,20 @@
 {
     CacheManager* cman = [CacheManager sharedCacheManager];
     CDEpisode* episode = self.episode;
+    PlaybackManager* pman = [PlaybackManager playbackManager];
     
     BOOL cached = [cman episodeIsCached:episode fastLookup:YES];
     BOOL caching = [cman isCachingEpisode:episode];
+    BOOL streamingCachingCurrentEpisode = (!cached &&
+                                           pman.streamingCacheActive &&
+                                           [pman.playingEpisode.objectHash isEqualToString:episode.objectHash]);
+    double streamingProgress = streamingCachingCurrentEpisode ? pman.streamingCacheProgress : 0.0;
     
     if (cached) {
         self.playButton.comboState = kEpisodePlayButtonComboStateFilled;
+    }
+    else if (streamingCachingCurrentEpisode) {
+        self.playButton.comboState = kEpisodePlayButtonComboStateFilling;
     }
     else if (caching) {
         self.playButton.comboState = kEpisodePlayButtonComboStateFilling;
@@ -917,7 +930,7 @@
         self.playButton.comboState = kEpisodePlayButtonComboStateOutline;
     }
     
-    self.playButton.fillingProgress = [cman cacheProgressForEpisode:episode];
+    self.playButton.fillingProgress = MAX([cman cacheProgressForEpisode:episode], streamingProgress);
 }
 
 - (void) _setObserving:(BOOL)observing
@@ -1229,7 +1242,7 @@
             [self _downloadFile];
         }]];
 
-        UIAction* deleteAction = [UIAction actionWithTitle:@"Delete File".ls image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
+        UIAction* deleteAction = [UIAction actionWithTitle:@"Delete Download".ls image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
             [DMANAGER markEpisode:self.episode asDownloaded:NO];
@@ -1240,7 +1253,7 @@
         [actions addObject:deleteAction];
     }
 
-    return [UIMenu menuWithChildren:actions];
+    return [UIMenu menuWithTitle:@"" children:actions];
 }
 
 - (UIMenu*) _buildMoreMenu API_AVAILABLE(ios(14.0))
@@ -1274,7 +1287,7 @@
         [self updatePlayComboButtonState];
     }]];
 
-    return [UIMenu menuWithChildren:actions];
+    return [UIMenu menuWithTitle:@"" children:actions];
 }
 
 - (void) downloadAction:(id)sender
@@ -1336,7 +1349,7 @@
                                                     self.alertController = nil;
                                                 }]];
 
-        [alert addAction:[UIAlertAction actionWithTitle:@"Delete File".ls
+        [alert addAction:[UIAlertAction actionWithTitle:@"Delete Download".ls
                                                   style:UIAlertActionStyleDestructive
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF

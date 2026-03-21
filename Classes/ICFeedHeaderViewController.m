@@ -17,6 +17,33 @@
 @property (nonatomic, strong, readwrite) UIImageView* triangleImageView;
 @end
 
+static CGFloat ICMeasuredLabelHeight(UILabel* label, CGFloat width)
+{
+    if (width <= 0) {
+        return 0;
+    }
+
+    NSString* text = label.text;
+    if (text.length == 0) {
+        return 0;
+    }
+
+    UIFont* font = label.font ?: [UIFont systemFontOfSize:[UIFont labelFontSize]];
+    NSDictionary* attributes = @{ NSFontAttributeName : font };
+    CGRect textRect = [text boundingRectWithSize:CGSizeMake(width, CGFLOAT_MAX)
+                                         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+                                      attributes:attributes
+                                         context:nil];
+
+    CGFloat height = ceil(CGRectGetHeight(textRect));
+    if (label.numberOfLines > 0) {
+        CGFloat maxHeight = ceil(font.lineHeight * label.numberOfLines);
+        height = MIN(height, maxHeight);
+    }
+
+    return height;
+}
+
 @implementation ICFeedHeaderViewController
 
 + (instancetype) viewController {
@@ -108,43 +135,69 @@
 
 - (void) layoutContent
 {
-    CGFloat contentWidth = [[UIScreen mainScreen] bounds].size.width;
-    CGFloat labelWidth = contentWidth - 72 - 60;
+    CGFloat contentWidth = CGRectGetWidth(self.view.bounds);
+    CGFloat labelWidth = MAX(0, contentWidth - 72 - 60);
     CGFloat labelX = 72 + 15 + 15;
 
-    CGSize titleSize = [self.titleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
-    IC_SIZE_INTEGRAL(titleSize);
+    CGFloat titleHeight = ICMeasuredLabelHeight(self.titleLabel, labelWidth);
+    CGFloat authorHeight = ICMeasuredLabelHeight(self.subtitleLabel, labelWidth);
+    CGFloat feedSubtitleHeight = ICMeasuredLabelHeight(self.feedSubtitleLabel, labelWidth);
 
-    CGSize authorSize = [self.subtitleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
-    IC_SIZE_INTEGRAL(authorSize);
-
-    BOOL hasFeedSubtitle = (self.feedSubtitleLabel.text.length > 0);
-    CGSize feedSubtitleSize = CGSizeZero;
-    if (hasFeedSubtitle) {
-        feedSubtitleSize = [self.feedSubtitleLabel.attributedText boundingRectWithSize:CGSizeMake(labelWidth, 100) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
-        IC_SIZE_INTEGRAL(feedSubtitleSize);
+    CGFloat labelsHeight = 0;
+    if (titleHeight > 0) {
+        labelsHeight += titleHeight;
+    }
+    if (authorHeight > 0) {
+        if (labelsHeight > 0) {
+            labelsHeight += 2;
+        }
+        labelsHeight += authorHeight;
+    }
+    if (feedSubtitleHeight > 0) {
+        if (labelsHeight > 0) {
+            labelsHeight += 2;
+        }
+        labelsHeight += feedSubtitleHeight;
     }
 
-    CGFloat labelsHeight = titleSize.height + authorSize.height + 2;
-    if (hasFeedSubtitle) {
-        labelsHeight += feedSubtitleSize.height + 2;
-    }
     CGFloat yOffset = 10 + floorf((72 - labelsHeight) / 2);
+    yOffset = MAX(10, yOffset);
 
-    self.titleLabel.frame = CGRectMake(labelX, yOffset, labelWidth, titleSize.height);
-    self.subtitleLabel.frame = CGRectMake(labelX, CGRectGetMaxY(self.titleLabel.frame) + 2, labelWidth, authorSize.height);
+    CGFloat currentY = yOffset;
 
-    if (hasFeedSubtitle) {
-        self.feedSubtitleLabel.frame = CGRectMake(labelX, CGRectGetMaxY(self.subtitleLabel.frame) + 2, labelWidth, feedSubtitleSize.height);
+    self.titleLabel.frame = CGRectMake(labelX, currentY, labelWidth, titleHeight);
+    self.titleLabel.hidden = (titleHeight <= 0);
+    currentY = CGRectGetMaxY(self.titleLabel.frame);
+
+    if (authorHeight > 0) {
+        if (currentY > yOffset) {
+            currentY += 2;
+        }
+        self.subtitleLabel.frame = CGRectMake(labelX, currentY, labelWidth, authorHeight);
+        self.subtitleLabel.hidden = NO;
+        currentY = CGRectGetMaxY(self.subtitleLabel.frame);
+    } else {
+        self.subtitleLabel.hidden = YES;
+    }
+
+    if (feedSubtitleHeight > 0) {
+        if (currentY > yOffset) {
+            currentY += 2;
+        }
+        self.feedSubtitleLabel.frame = CGRectMake(labelX, currentY, labelWidth, feedSubtitleHeight);
         self.feedSubtitleLabel.hidden = NO;
     } else {
         self.feedSubtitleLabel.hidden = YES;
     }
 }
 
-- (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation duration:(NSTimeInterval)duration
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
 {
-    [self layoutContent];
+    (void)size;
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    [coordinator animateAlongsideTransition:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
+        [self layoutContent];
+    } completion:nil];
 }
 
 - (void) viewDidAppear:(BOOL)animated

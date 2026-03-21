@@ -525,14 +525,18 @@
 
 /* EpisodesTableViewController.m */
 "Add to Play Next" = "Zur Abspielliste hinzufügen";
+"Remove from Play Next" = "Aus Abspielliste entfernen";
 "Added to Play Next" = "Zur Abspielliste hinzugefügt";
+"Removed from Play Next" = "Aus Abspielliste entfernt";
 "Remove all episodes from the play next list?" = "Alle Folgen aus der Abspielliste entfernen?";
 "To add episodes, long-press on any episode and select 'Add to Play Next'" = "Um Folgen hinzuzufügen, tippe lange auf eine Folge und wähle 'Zur Abspielliste hinzufügen'";
 "All" = "alle";
+"None Selection" = "keine";
 "All Played" = "Alle gespielten";
 "All Unplayed" = "Alle ungespielten";
 "Clearing" = "Löschen";
-"Delete File" = "Datei löschen";
+"Delete Download" = "Download löschen";
+"Delete File" = "Download löschen";
 "Delete all Played" = "Gespielte löschen";
 "Delete played content" = "Gespielte Downloads löschen";
 "Deleting" = "Löschen";
@@ -940,6 +944,11 @@
 "Select which speed steps are available in the player. 1x is always enabled." = "Wähle aus, welche Geschwindigkeiten im Player verfügbar sind. 1x ist immer aktiviert.";
 "Slower (0.75x)" = "Langsamer (0.75x)";
 "Faster (1.25x)" = "Schneller (1.25x)";
+
+/* AppearanceSettingsViewController - Episodes */
+"Swipe Right" = "Nach rechts wischen";
+"Swipe Left" = "Nach links wischen";
+"Mark as Played / Unplayed" = "Gehört / Ungehört markieren";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";

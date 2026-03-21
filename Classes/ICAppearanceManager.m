@@ -155,8 +155,10 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         toolbarAppearance.shadowImage = [[UIImage alloc] init];
         toolbarAppearance.shadowColor = nil;
         nav.toolbar.standardAppearance = toolbarAppearance;
-        nav.toolbar.scrollEdgeAppearance = toolbarAppearance;
         nav.toolbar.compactAppearance = toolbarAppearance;
+        if (@available(iOS 15.0, *)) {
+            nav.toolbar.scrollEdgeAppearance = toolbarAppearance;
+        }
     }
 
     // Update tab bar
@@ -169,7 +171,9 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         tabAppearance.shadowImage = [[UIImage alloc] init];
         tabAppearance.shadowColor = nil;
         tabVC.tabBar.standardAppearance = tabAppearance;
-        tabVC.tabBar.scrollEdgeAppearance = tabAppearance;
+        if (@available(iOS 15.0, *)) {
+            tabVC.tabBar.scrollEdgeAppearance = tabAppearance;
+        }
     }
 
     // Recurse into child view controllers

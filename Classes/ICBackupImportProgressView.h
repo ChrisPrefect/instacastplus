@@ -18,7 +18,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)show;
 - (void)close;
-- (void)closeWithCompletion:(void(^)(void))completion;
+- (void)closeWithCompletion:(void (^ _Nullable)(void))completion;
 
 #pragma mark - Phase A+B: Feed Progress
 

@@ -64,7 +64,7 @@ NS_ASSUME_NONNULL_END
 
 #pragma mark -
 
-NS_INLINE NSString* DecodedRot9String(NSString* rot9String)
+NS_INLINE NSString* _Nonnull DecodedRot9String(NSString* _Nonnull rot9String)
 {
 	NSMutableString* string = [NSMutableString string];
 	NSUInteger i;

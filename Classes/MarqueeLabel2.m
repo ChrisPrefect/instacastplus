@@ -227,6 +227,8 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
     __weak __typeof(&*self)weakSelf = self;
     
     __block id animationObserver = nil;
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     self.orientationObserver = [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillChangeStatusBarOrientationNotification
                                                                                  object:nil
                                                                                   queue:nil
@@ -246,6 +248,7 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
                                                                                                                                                        }
                                                                                                                                                    }];
                                                                              }];
+    #pragma clang diagnostic pop
 }
 
 - (void)observedViewControllerChange:(NSNotification *)notification {
@@ -1069,6 +1072,8 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
     [super setAdjustsFontSizeToFitWidth:NO];
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)setMinimumFontSize:(CGFloat)minimumFontSize {
     [super setMinimumFontSize:0.0];
 }
@@ -1101,6 +1106,7 @@ CGPoint MLOffsetCGPoint(CGPoint point, CGFloat offset);
     // By the nature of MarqueeLabel, this is NO
     [super setAdjustsLetterSpacingToFitWidth:NO];
 }
+#pragma clang diagnostic pop
 
 - (void)setMinimumScaleFactor:(CGFloat)minimumScaleFactor {
     [super setMinimumScaleFactor:0.0f];

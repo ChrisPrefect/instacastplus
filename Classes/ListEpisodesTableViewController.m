@@ -11,6 +11,9 @@
 #import "EpisodeListEditorViewController.h"
 #import "EpisodePlayComboButton.h"
 #import "ICRefreshControl.h"
+#import "CDList.h"
+#import "CDEpisodeList.h"
+#import "CDPlaylist.h"
 
 #define EPISODE_PAGE_SIZE 25
 
@@ -57,11 +60,24 @@
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-+ (instancetype) viewControllerWithList:(CDEpisodeList*)list
++ (instancetype) viewControllerWithList:(CDList*)list
 {
     ListEpisodesTableViewController* controller = [[self alloc] initWithStyle:UITableViewStylePlain];
     controller.list = list;
     return controller;
+}
+
+- (BOOL)_showsEditorButton
+{
+    return [self.list isKindOfClass:[CDEpisodeList class]];
+}
+
+- (CDPlaylist*)_playlist
+{
+    if (![self.list isKindOfClass:[CDPlaylist class]]) {
+        return nil;
+    }
+    return (CDPlaylist*)self.list;
 }
 
 - (void) _setObserving:(BOOL)observing
@@ -139,11 +155,15 @@
     [super viewDidLoad];
     
     self.title = self.list.name;
-    
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
-                                                                                style:UIBarButtonItemStylePlain
-                                                                               target:self
-                                                                               action:@selector(editButtonAction:)];
+
+    if ([self _showsEditorButton]) {
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                                                    style:UIBarButtonItemStylePlain
+                                                                                   target:self
+                                                                                   action:@selector(editButtonAction:)];
+    } else {
+        self.navigationItem.rightBarButtonItem = nil;
+    }
 
     ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
     refreshControl.pulldownText = @"Pull to refresh…".ls;
@@ -155,7 +175,11 @@
 
 - (void) editButtonAction:(id)sender
 {
-    EpisodeListEditorViewController* controller = [EpisodeListEditorViewController episodeListEditorViewControllerWithList:self.list];
+    if (![self _showsEditorButton]) {
+        return;
+    }
+
+    EpisodeListEditorViewController* controller = [EpisodeListEditorViewController episodeListEditorViewControllerWithList:(CDEpisodeList*)self.list];
     PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
     [self presentViewController:navController animated:YES completion:NULL];
 }
@@ -164,9 +188,10 @@
 {
     [super viewWillAppear:animated];
     _didRestoreScrollPosition = NO;
-    
-    // edit button is always enabled - it opens the list editor
-    self.navigationItem.rightBarButtonItem.enabled = YES;
+
+    if (self.navigationItem.rightBarButtonItem) {
+        self.navigationItem.rightBarButtonItem.enabled = YES;
+    }
     
     [self updateEpisodes];
     [self reloadDataAndPreserveSelection];
@@ -355,8 +380,10 @@
 - (void) playComboButtonAction:(EpisodePlayComboButton*)button
 {
     [super playComboButtonAction:button];
-    
-    if ((button.comboState != kEpisodePlayButtonComboStateFilling || button.comboState != kEpisodePlayButtonComboStateHolding) && self.list.continuousPlayback)
+
+    CDEpisodeList* episodeList = [self.list isKindOfClass:[CDEpisodeList class]] ? (CDEpisodeList*)self.list : nil;
+    if ((button.comboState != kEpisodePlayButtonComboStateFilling && button.comboState != kEpisodePlayButtonComboStateHolding) &&
+        episodeList.continuousPlayback)
     {
         AudioSession* session = [AudioSession sharedAudioSession];
         [session eraseAllEpisodesFromUpNext];
@@ -366,7 +393,7 @@
         
         if (location != NSNotFound)
         {
-            if (location+1 < [self.episodes count])
+            if (location+1 < [self.allEpisodes count])
             {
                 AudioSession* session = [AudioSession sharedAudioSession];
                 
@@ -377,6 +404,47 @@
             }
         }
     }
+}
+
+- (BOOL) canArchiveEpisodes
+{
+    return ([self _playlist] == nil);
+}
+
+- (void) addAdditionalButtonsToMultiActionSheet:(UIAlertController*)sheet completionBlock:(void (^)(void))completionBlock
+{
+    CDPlaylist* playlist = [self _playlist];
+    if (!playlist) {
+        return;
+    }
+
+    __block BOOL hasPlayedEpisodes = NO;
+    [self.allEpisodes enumerateObjectsUsingBlock:^(CDEpisode* episode, NSUInteger idx, BOOL *stop) {
+        if (episode.consumed) {
+            hasPlayedEpisodes = YES;
+            *stop = YES;
+        }
+    }];
+
+    if (!hasPlayedEpisodes) {
+        return;
+    }
+
+    WEAK_SELF
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Delete all Played".ls
+                                              style:UIAlertActionStyleDestructive
+                                            handler:^(__unused UIAlertAction* action) {
+                                                STRONG_SELF
+                                                [self perform:^(id sender) {
+                                                    [playlist removeAllPlayedEpisodes];
+                                                    [DMANAGER save];
+                                                    [self updateEpisodes];
+                                                    [self.tableView reloadData];
+                                                    [self _updateToolbarItemsAnimated:NO];
+                                                    [self _updateToolbarLabels];
+                                                } afterDelay:0.3];
+                                                completionBlock();
+                                            }]];
 }
 
 #pragma mark - Editing
@@ -447,22 +515,29 @@
         return;
     }
     
+    CDPlaylist* playlist = [self _playlist];
     self.userAction = YES;
-    
-    CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
-    
-    [[self mutableArrayValueForKey:@"episodes"] removeObjectAtIndex:indexPath.row];
-    [[self mutableArrayValueForKey:@"allEpisodes"] removeObjectAtIndex:indexPath.row];
-    
-    [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-    [DMANAGER setEpisode:episode archived:YES];
-    //[DMANAGER markEpisode:episode asDownloaded:NO];
-    
-    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
-    
+
+    if (playlist) {
+        CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
+        [playlist removeEpisode:episode];
+        [DMANAGER save];
+        [self updateEpisodes];
+        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    } else {
+        CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
+
+        [[self mutableArrayValueForKey:@"episodes"] removeObjectAtIndex:indexPath.row];
+        [[self mutableArrayValueForKey:@"allEpisodes"] removeObjectAtIndex:indexPath.row];
+
+        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+        [DMANAGER setEpisode:episode archived:YES];
+        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+    }
+
     [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
-    
+
     self.userAction = NO;
 }
 @end

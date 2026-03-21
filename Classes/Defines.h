@@ -130,6 +130,17 @@ typedef NS_ENUM(NSInteger, ICTapOnEpisodeAction) {
     ICTapOnEpisodeActionShowNotes = 1
 };
 
+extern NSString* EpisodeSwipeRightAction;
+extern NSString* EpisodeSwipeLeftAction;
+typedef NS_ENUM(NSInteger, ICEpisodeSwipeAction) {
+    ICEpisodeSwipeActionTogglePlayed = 0,
+    ICEpisodeSwipeActionToggleFavorite,
+    ICEpisodeSwipeActionDownload,
+    ICEpisodeSwipeActionAddToPlayNext,
+    ICEpisodeSwipeActionDelete,
+    ICEpisodeSwipeActionEpisodeInfo
+};
+
 extern NSString* EnabledPlaybackSpeedsKey;
 
 #if TARGET_OS_IPHONE==1

@@ -8,11 +8,11 @@ struct NowPlayingEntry: TimelineEntry, Sendable {
 
 struct NowPlayingProvider: TimelineProvider {
     func placeholder(in context: Context) -> NowPlayingEntry {
-        NowPlayingEntry(date: Date(), data: nil)
+        NowPlayingEntry(date: Date(), data: WidgetSampleData.nowPlaying)
     }
 
     func getSnapshot(in context: Context, completion: @escaping @Sendable (NowPlayingEntry) -> Void) {
-        let data = SharedContainerReader.readNowPlaying()
+        let data = SharedContainerReader.readNowPlaying() ?? WidgetSampleData.nowPlaying
         completion(NowPlayingEntry(date: Date(), data: data))
     }
 
@@ -20,11 +20,12 @@ struct NowPlayingProvider: TimelineProvider {
         let data = SharedContainerReader.readNowPlaying()
 
         if let data, let episode = data.episode, !data.isPaused {
-            // Generate projected entries every 10 seconds for 5 minutes
-            // This gives the widget ~10s visual update granularity without timeline reloads
+            // Generate projected entries every second for 3 minutes.
+            // This keeps progress updates smooth while still avoiding excessive timeline work.
             var entries: [NowPlayingEntry] = []
             let now = Date()
-            let projectionCount = 60  // 60 entries × 5s = 5 minutes
+            let projectionInterval: TimeInterval = 1
+            let projectionCount = 180  // 180 entries × 1s = 3 minutes
 
             // Parse speed multiplier from speed string (e.g. "1.5x" → 1.5)
             let speedMultiplier: Double
@@ -36,7 +37,7 @@ struct NowPlayingProvider: TimelineProvider {
             }
 
             for i in 0..<projectionCount {
-                let wallOffset = TimeInterval(i * 5)
+                let wallOffset = TimeInterval(i) * projectionInterval
                 let playbackOffset = wallOffset * speedMultiplier
                 let projectedPos = min(episode.duration, episode.position + Int32(playbackOffset))
                 let projectedEp = episode.withPosition(projectedPos)
@@ -44,12 +45,13 @@ struct NowPlayingProvider: TimelineProvider {
                 entries.append(NowPlayingEntry(date: now.addingTimeInterval(wallOffset), data: projectedData))
             }
 
-            let timeline = Timeline(entries: entries, policy: .after(now.addingTimeInterval(5 * 60)))
+            let timeline = Timeline(entries: entries, policy: .after(now.addingTimeInterval(projectionInterval * TimeInterval(projectionCount))))
             completion(timeline)
         } else {
-            // Paused or no episode: single entry, refresh in 60 minutes
+            // Paused or no episode: single entry, refresh in 2 minutes so
+            // multiple widget instances stay in sync even without explicit reloads.
             let entry = NowPlayingEntry(date: Date(), data: data)
-            let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(60 * 60)))
+            let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(2 * 60)))
             completion(timeline)
         }
     }

@@ -8,11 +8,11 @@ struct StatsEntry: TimelineEntry, Sendable {
 
 struct StatsProvider: TimelineProvider {
     func placeholder(in context: Context) -> StatsEntry {
-        StatsEntry(date: Date(), stats: nil)
+        StatsEntry(date: Date(), stats: WidgetSampleData.stats)
     }
 
     func getSnapshot(in context: Context, completion: @escaping @Sendable (StatsEntry) -> Void) {
-        let stats = SharedContainerReader.readStats()
+        let stats = SharedContainerReader.readStats() ?? WidgetSampleData.stats
         completion(StatsEntry(date: Date(), stats: stats))
     }
 

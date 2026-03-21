@@ -58,6 +58,9 @@
 @property (nonatomic, readonly) NSTimeInterval time;
 @property (nonatomic, readonly) NSTimeInterval duration;
 @property (nonatomic, readonly) NSTimeInterval playableDuration;
+@property (nonatomic, readonly) BOOL streamingCacheActive;
+@property (nonatomic, readonly) double streamingCacheProgress;
+@property (nonatomic, readonly) BOOL streamingCacheComplete;
 
 @property (nonatomic) double position;
 @property (nonatomic, readonly) double playablePosition;

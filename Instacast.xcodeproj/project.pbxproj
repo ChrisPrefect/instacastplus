@@ -263,16 +263,14 @@
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
 		230AD9362F6768BAECE4F8F7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
-		3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		7A8B9C0D1E2F3A4B5C6D7E8F /* LockScreenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */; };
-		9F0E1D2C3B4A5968A7B6C5D4 /* PodcastGridWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */; };
+		3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3CCB7C121A2E030E38E79C3E /* NowPlayingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */; };
 		49D903092A323760C89F3C52 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		549252E172585DFA15883AE7 /* SmartListProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F18A9A9049D062D880172CA /* SmartListProvider.swift */; };
 		583FA5429C9AB195D2CA972F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 057F44A6199937D988246F7F /* Assets.xcassets */; };
 		5C20094B64F67BF1D6D0C4F1 /* SmartListConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */; };
-		B8C4D2E1F0A3914725C6D837 /* PodcastGridConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E0F1A2B3C4856671D82E93 /* PodcastGridConfigIntent.swift */; };
 		6F2559FE0FC9F90720C002D1 /* EpisodeRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E204D7F9561339C72E9FA9B5 /* EpisodeRowView.swift */; };
+		7A8B9C0D1E2F3A4B5C6D7E8F /* LockScreenWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */; };
 		8189C509C0C8211E6CDCD159 /* ICBackupImportProgressView.m in Sources */ = {isa = PBXBuildFile; fileRef = B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */; };
 		835A5AF02F338F7800A70766 /* ImportExportSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */; };
 		835A5B0B2F33BBC000A70766 /* SmarthomeSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 835A5B0A2F33BBC000A70766 /* SmarthomeSettingsViewController.m */; };
@@ -299,9 +297,9 @@
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
 		CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000006 /* PlaybackSettingsViewController.m */; };
-		CC000001AABB00000000000D /* EnabledSpeedStepsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */; };
 		CC000001AABB000000000007 /* SleepTimerSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */; };
 		CC000001AABB00000000000A /* DataSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000C /* DataSettingsViewController.m */; };
+		CC000001AABB00000000000D /* EnabledSpeedStepsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */; };
 		CD0082042CD65D91001E081B /* InstacastSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */; };
 		CD00AA012D10A00100000001 /* ICShareItem.m in Sources */ = {isa = PBXBuildFile; fileRef = CD00AA002D10A00100000001 /* ICShareItem.m */; };
 		CD0SILENCE2026020100000002 /* Silence.caf in Resources */ = {isa = PBXBuildFile; fileRef = CD0SILENCE2026020100000001 /* Silence.caf */; };
@@ -336,6 +334,7 @@
 		DF013769E8097C30D565554B /* WidgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */; };
 		E2BF2DBFB7B6377BA63CE29E /* WidgetDataExporter.m in Sources */ = {isa = PBXBuildFile; fileRef = E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */; };
 		E6F07FC95B90C494C0ABD87A /* NowPlayingProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */; };
+		F1A2B3C4D5E6F7890A1B2C3D /* WidgetSampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0F1A2B3C4D5E6F7890A1B2C3D /* WidgetSampleData.swift */; };
 		F278616A7519258ABDD48C9F /* SharedConstants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D294C45DC205F05467440EC /* SharedConstants.swift */; };
 		F42A9CABE2EED956E9709C52 /* DonationViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */; };
 /* End PBXBuildFile section */
@@ -361,15 +360,15 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		1CED292F8826F350D8F93DEF /* Embed App Extensions */ = {
+		1CED292F8826F350D8F93DEF /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed App Extensions */,
+				3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -820,8 +819,6 @@
 		3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingProvider.swift; sourceTree = "<group>"; };
 		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
 		6D294C45DC205F05467440EC /* SharedConstants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
-		D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LockScreenWidgets.swift; sourceTree = "<group>"; };
-		E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PodcastGridWidget.swift; sourceTree = "<group>"; };
 		6FA31224D071849FE16A7472 /* StatsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StatsWidget.swift; sourceTree = "<group>"; };
 		7151C9D64D31E80C30AE2762 /* InstacastBackupData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupData.h; sourceTree = "<group>"; };
 		74E0608347BE5D8CDADAC62E /* DonationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DonationViewController.h; sourceTree = "<group>"; };
@@ -848,7 +845,6 @@
 		9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		9D4A18A6F2FA17A9B146E331 /* ProgressBarView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProgressBarView.swift; sourceTree = "<group>"; };
 		A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartListConfigIntent.swift; sourceTree = "<group>"; };
-		D9E0F1A2B3C4856671D82E93 /* PodcastGridConfigIntent.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PodcastGridConfigIntent.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000001 /* ApplePodcastChartsClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ApplePodcastChartsClient.h; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ApplePodcastChartsClient.m; sourceTree = "<group>"; };
 		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
@@ -861,12 +857,12 @@
 		CC000001AABB000000000003 /* AppearanceSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AppearanceSettingsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB000000000005 /* PlaybackSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PlaybackSettingsViewController.h; sourceTree = "<group>"; };
 		CC000001AABB000000000006 /* PlaybackSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlaybackSettingsViewController.m; sourceTree = "<group>"; };
-		CC000001AABB00000000000E /* EnabledSpeedStepsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EnabledSpeedStepsViewController.h; sourceTree = "<group>"; };
-		CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EnabledSpeedStepsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB000000000008 /* SleepTimerSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SleepTimerSettingsViewController.h; sourceTree = "<group>"; };
 		CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SleepTimerSettingsViewController.m; sourceTree = "<group>"; };
 		CC000001AABB00000000000B /* DataSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DataSettingsViewController.h; sourceTree = "<group>"; };
 		CC000001AABB00000000000C /* DataSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DataSettingsViewController.m; sourceTree = "<group>"; };
+		CC000001AABB00000000000E /* EnabledSpeedStepsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EnabledSpeedStepsViewController.h; sourceTree = "<group>"; };
+		CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EnabledSpeedStepsViewController.m; sourceTree = "<group>"; };
 		CD0082022CD65D91001E081B /* InstacastSceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastSceneDelegate.h; sourceTree = "<group>"; };
 		CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastSceneDelegate.m; sourceTree = "<group>"; };
 		CD00AA002D10A00100000001 /* ICShareItem.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICShareItem.m; sourceTree = "<group>"; };
@@ -916,6 +912,8 @@
 		CE3EA68E2AA7A952001900EB /* FMDatabaseAdditions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FMDatabaseAdditions.h; sourceTree = "<group>"; };
 		CE3EA68F2AA7A952001900EB /* FMDatabasePool.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMDatabasePool.m; sourceTree = "<group>"; };
 		CE3EA6902AA7A952001900EB /* FMResultSet.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMResultSet.m; sourceTree = "<group>"; };
+		D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LockScreenWidgets.swift; sourceTree = "<group>"; };
+		E0F1A2B3C4D5E6F7890A1B2C3D /* WidgetSampleData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetSampleData.swift; sourceTree = "<group>"; };
 		E204D7F9561339C72E9FA9B5 /* EpisodeRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EpisodeRowView.swift; sourceTree = "<group>"; };
 		E22B646C8956D4D87E74D52A /* de */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = WidgetDataExporter.m; sourceTree = "<group>"; };
@@ -930,17 +928,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		92A646EF2CE59B71002268B7 /* InstacastMac */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = InstacastMac;
-			sourceTree = "<group>";
-		};
+		92A646EF2CE59B71002268B7 /* InstacastMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = InstacastMac; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -992,10 +980,8 @@
 			isa = PBXGroup;
 			children = (
 				A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */,
-				D9E0F1A2B3C4856671D82E93 /* PodcastGridConfigIntent.swift */,
 				C56C700102BB7C820DF5AC17 /* WidgetControlIntents.swift */,
 			);
-			name = Intents;
 			path = Intents;
 			sourceTree = "<group>";
 		};
@@ -1756,11 +1742,10 @@
 			children = (
 				9E85E0F1B1C46AF663E6C92E /* Localizable.strings */,
 			);
-			name = Resources;
 			path = Resources;
 			sourceTree = "<group>";
 		};
-		29B97314FDCFA39411CA2CEA = {
+		29B97314FDCFA39411CA2CEA /* CustomTemplate */ = {
 			isa = PBXGroup;
 			children = (
 				CE3EA6782AA7A952001900EB /* VemedioDatabase */,
@@ -1846,12 +1831,10 @@
 			isa = PBXGroup;
 			children = (
 				D4E5F6A1B2C30E8F71A94D62 /* LockScreenWidgets.swift */,
-				E2F37A8B9C0D4E5F6A1B2C3D /* PodcastGridWidget.swift */,
 				F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */,
 				FDB33E265B93207D959630A1 /* SmartListWidget.swift */,
 				6FA31224D071849FE16A7472 /* StatsWidget.swift */,
 			);
-			name = Widgets;
 			path = Widgets;
 			sourceTree = "<group>";
 		};
@@ -1869,7 +1852,6 @@
 				E8CEAFDEB115E8592898C922 /* InstacastWidgets.entitlements */,
 				21B26958379215B4E09EE77F /* Resources */,
 			);
-			name = InstacastWidgets;
 			path = InstacastWidgets;
 			sourceTree = "<group>";
 		};
@@ -1887,7 +1869,6 @@
 				6D294C45DC205F05467440EC /* SharedConstants.swift */,
 				7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */,
 			);
-			name = Shared;
 			path = Shared;
 			sourceTree = "<group>";
 		};
@@ -1898,7 +1879,6 @@
 				9D4A18A6F2FA17A9B146E331 /* ProgressBarView.swift */,
 				96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */,
 			);
-			name = Views;
 			path = Views;
 			sourceTree = "<group>";
 		};
@@ -1971,8 +1951,8 @@
 			children = (
 				80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */,
 				C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */,
+				E0F1A2B3C4D5E6F7890A1B2C3D /* WidgetSampleData.swift */,
 			);
-			name = Utilities;
 			path = Utilities;
 			sourceTree = "<group>";
 		};
@@ -1990,7 +1970,6 @@
 				8F18A9A9049D062D880172CA /* SmartListProvider.swift */,
 				35307105E5905E5F84562C64 /* StatsProvider.swift */,
 			);
-			name = Providers;
 			path = Providers;
 			sourceTree = "<group>";
 		};
@@ -2006,8 +1985,7 @@
 				1D60588F0D05DD3D006BFB54 /* Frameworks */,
 				1BC25F1C1C6A3CBD0026CF1B /* Embed Frameworks */,
 				1B74A19D169B2F12005D1DAF /* Strip library headers from Archive */,
-				92A6470A2CE5A788002268B7 /* ShellScript */,
-				1CED292F8826F350D8F93DEF /* Embed App Extensions */,
+				1CED292F8826F350D8F93DEF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -2043,7 +2021,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				ORGANIZATIONNAME = Vemedio;
 				TargetAttributes = {
 					1D6058900D05DD3D006BFB54 = {
@@ -2085,7 +2063,7 @@
 				lt,
 				Base,
 			);
-			mainGroup = 29B97314FDCFA39411CA2CEA;
+			mainGroup = 29B97314FDCFA39411CA2CEA /* CustomTemplate */;
 			productRefGroup = 19C28FACFE9D520D11CA2CBB /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -2188,23 +2166,6 @@
 			runOnlyForDeploymentPostprocessing = 1;
 			shellPath = /bin/sh;
 			shellScript = "rm -Rf \"$DSTROOT/usr\"\n";
-		};
-		92A6470A2CE5A788002268B7 /* ShellScript */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\n# VERSION_FILE=\"${TARGET_BUILD_DIR}/${EXECUTABLE_NAME}.app/svnversion\"\n# rm -f \"${VERSION_FILE}\"\n# rm -f \"${VERSION_FILE}.svn\"\n# echo $BUILDNUMBER >> \"${VERSION_FILE}.svn\"\n# sed \"s/[[:alpha:]]//g\" \"${VERSION_FILE}.svn\" > \"${VERSION_FILE}\"\n# rm -f \"${VERSION_FILE}.svn\"\n\n# BUILDNUMBER=`cat \"${VERSION_FILE}\"`\n\n\n# INFOPLIST_FULL_PATH=\"${TARGET_BUILD_DIR}/${EXECUTABLE_NAME}.app/Info.plist\"\n# plutil -convert xml1 \"${INFOPLIST_FULL_PATH}\"\n\n# sed \"s/<string>v[[:digit:]][[:digit:]]*[[:alpha:]]*/<string>${BUILDNUMBER}/\" < \"${INFOPLIST_FULL_PATH}\" > \"${INFOPLIST_FULL_PATH}.versioned\"\n# mv \"${INFOPLIST_FULL_PATH}.versioned\" \"${INFOPLIST_FULL_PATH}\"\n\n# plutil -convert binary1 \"${INFOPLIST_FULL_PATH}\" \n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -2445,17 +2406,16 @@
 			files = (
 				8F73EF0412DE74E198EE4CB4 /* InstacastWidgets.swift in Sources */,
 				5C20094B64F67BF1D6D0C4F1 /* SmartListConfigIntent.swift in Sources */,
-				B8C4D2E1F0A3914725C6D837 /* PodcastGridConfigIntent.swift in Sources */,
 				E6F07FC95B90C494C0ABD87A /* NowPlayingProvider.swift in Sources */,
 				549252E172585DFA15883AE7 /* SmartListProvider.swift in Sources */,
 				A7DC141C75141EE73DD23778 /* StatsProvider.swift in Sources */,
 				A89DF17ACA734175ABBDB278 /* SharedContainerReader.swift in Sources */,
+				F1A2B3C4D5E6F7890A1B2C3D /* WidgetSampleData.swift in Sources */,
 				C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */,
 				6F2559FE0FC9F90720C002D1 /* EpisodeRowView.swift in Sources */,
 				D6FA25A2A5E5E241244604CB /* ProgressBarView.swift in Sources */,
 				C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */,
 				7A8B9C0D1E2F3A4B5C6D7E8F /* LockScreenWidgets.swift in Sources */,
-				9F0E1D2C3B4A5968A7B6C5D4 /* PodcastGridWidget.swift in Sources */,
 				3CCB7C121A2E030E38E79C3E /* NowPlayingWidget.swift in Sources */,
 				BDDA2F12D823EEED173BED3F /* SmartListWidget.swift in Sources */,
 				B11A4DA81C178356BE3E0D86 /* StatsWidget.swift in Sources */,
@@ -2539,6 +2499,7 @@
 				OTHER_CFLAGS = "-DNS_BLOCK_ASSERTIONS=1";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
 		};
@@ -2550,7 +2511,6 @@
 				ARCHS = "$(ARCHS_STANDARD)";
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
@@ -2632,7 +2592,6 @@
 				ARCHS = "$(ARCHS_STANDARD)";
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CODE_SIGN_ENTITLEMENTS = Instacast.entitlements;
@@ -2696,7 +2655,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CLANG_ENABLE_OBJC_WEAK = NO;
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -2774,7 +2733,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
-				CLANG_ENABLE_OBJC_WEAK = NO;
+				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;

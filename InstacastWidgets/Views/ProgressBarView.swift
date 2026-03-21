@@ -37,12 +37,27 @@ extension Color {
 
 // MARK: - Accent color from widget settings
 
+@MainActor
 enum WidgetAccentColor {
     /// Default Instacast orange #FF5300
     static let defaultHex = "#FF5300"
+    private static var cachedColor = Color(hex: defaultHex)
+    private static var cachedSettingsDate: Date?
 
     static var color: Color {
-        let hex = SharedContainerReader.readSettings()?.accentColorHex ?? defaultHex
-        return Color(hex: hex)
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID
+        ) else {
+            return cachedColor
+        }
+
+        let fileURL = container.appendingPathComponent(ICWidgetConstants.settingsFile)
+        let modifiedAt = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        if cachedSettingsDate != modifiedAt {
+            cachedSettingsDate = modifiedAt
+            let hex = SharedContainerReader.readSettings()?.accentColorHex ?? defaultHex
+            cachedColor = Color(hex: hex)
+        }
+        return cachedColor
     }
 }

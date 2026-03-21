@@ -43,6 +43,7 @@
 @property (nonatomic, strong) VDModalInfo* modalInfo;
 @property (nonatomic, strong) UIView* tableHeaderView;
 @property (nonatomic, strong) UILabel* navTitleLabel;
+@property (nonatomic, strong) UIView* navTitleContainerView;
 @end
 
 @implementation FeedEpisodesTableViewController {
@@ -56,6 +57,51 @@
 	FeedEpisodesTableViewController* controller = [[self alloc] initWithStyle:UITableViewStylePlain];
     controller.feed = feed;
 	return controller;
+}
+
+- (CGFloat) _navigationTitleViewWidth
+{
+    CGFloat referenceWidth = CGRectGetWidth(self.navigationController.navigationBar.bounds);
+    if (referenceWidth <= 0) {
+        referenceWidth = CGRectGetWidth(self.view.bounds);
+    }
+    if (referenceWidth <= 0) {
+        referenceWidth = CGRectGetWidth([UIScreen mainScreen].bounds);
+    }
+
+    // Keep explicit space for left/right bar button items so title wraps
+    // consistently and never reflows after the controller is shown.
+    CGFloat width = referenceWidth - 120.0f;
+    return MAX(140.0f, MIN(320.0f, width));
+}
+
+- (void) _setupNavigationTitleViewWithText:(NSString*)titleText
+{
+    CGFloat titleWidth = [self _navigationTitleViewWidth];
+
+    UIView* navTitleContainerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, titleWidth, 44)];
+    navTitleContainerView.userInteractionEnabled = NO;
+
+    UILabel* navTitleLabel = [[UILabel alloc] initWithFrame:navTitleContainerView.bounds];
+    navTitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    navTitleLabel.text = titleText;
+    navTitleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
+    navTitleLabel.textColor = ICTextColor;
+    navTitleLabel.backgroundColor = [UIColor clearColor];
+    navTitleLabel.textAlignment = NSTextAlignmentCenter;
+    navTitleLabel.numberOfLines = 2;
+    navTitleLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    navTitleLabel.adjustsFontSizeToFitWidth = NO;
+    [navTitleContainerView addSubview:navTitleLabel];
+
+    self.navigationItem.titleView = navTitleContainerView;
+    self.navTitleContainerView = navTitleContainerView;
+    self.navTitleLabel = navTitleLabel;
+}
+
+- (void) _setNavigationTitleText:(NSString*)titleText
+{
+    self.navTitleLabel.text = titleText;
 }
 
 
@@ -286,18 +332,7 @@
         // Only set titleView, NOT self.title — setting both causes a visible
         // jump during push animation (system animates self.title first, then
         // switches to titleView).
-        UILabel* navTitleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        navTitleLabel.text = titleText;
-        navTitleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
-        navTitleLabel.textColor = ICTextColor;
-        navTitleLabel.backgroundColor = [UIColor clearColor];
-        navTitleLabel.textAlignment = NSTextAlignmentCenter;
-        navTitleLabel.numberOfLines = 2;
-        navTitleLabel.adjustsFontSizeToFitWidth = YES;
-        navTitleLabel.minimumScaleFactor = 0.7;
-        [navTitleLabel sizeToFit];
-        self.navigationItem.titleView = navTitleLabel;
-        self.navTitleLabel = navTitleLabel;
+        [self _setupNavigationTitleViewWithText:titleText];
     }
 
     WEAK_SELF
@@ -678,8 +713,7 @@
 {
     self.navigationItem.rightBarButtonItem = nil;
     self.searchTerm = nil;
-    self.navTitleLabel.text = self.feed.title;
-    [self.navTitleLabel sizeToFit];
+    [self _setNavigationTitleText:self.feed.title];
     [self reloadData];
 }
 
@@ -842,7 +876,9 @@
         [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"All" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        self.filterButton.menu = [self _buildFilterMenu];
+        if (@available(iOS 14.0, *)) {
+            self.filterButton.menu = [self _buildFilterMenu];
+        }
     }];
     allAction.state = [currentFilter isEqualToString:@"All"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -853,7 +889,9 @@
         [self.filterButton setTitle:@"Unplayed".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Unplayed" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        self.filterButton.menu = [self _buildFilterMenu];
+        if (@available(iOS 14.0, *)) {
+            self.filterButton.menu = [self _buildFilterMenu];
+        }
     }];
     unplayedAction.state = [currentFilter isEqualToString:@"Unplayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -864,7 +902,9 @@
         [self.filterButton setTitle:@"Unfinished".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Unfinished" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        self.filterButton.menu = [self _buildFilterMenu];
+        if (@available(iOS 14.0, *)) {
+            self.filterButton.menu = [self _buildFilterMenu];
+        }
     }];
     unfinishedAction.state = [currentFilter isEqualToString:@"Unfinished"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -875,7 +915,9 @@
         [self.filterButton setTitle:@"Unplayed & Started".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"UnplayedAndStarted" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        self.filterButton.menu = [self _buildFilterMenu];
+        if (@available(iOS 14.0, *)) {
+            self.filterButton.menu = [self _buildFilterMenu];
+        }
     }];
     unplayedAndStartedAction.state = [currentFilter isEqualToString:@"UnplayedAndStarted"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -886,7 +928,9 @@
         [self.filterButton setTitle:@"Downloaded".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Downloaded" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        self.filterButton.menu = [self _buildFilterMenu];
+        if (@available(iOS 14.0, *)) {
+            self.filterButton.menu = [self _buildFilterMenu];
+        }
     }];
     downloadedAction.state = [currentFilter isEqualToString:@"Downloaded"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -897,7 +941,9 @@
         [self.filterButton setTitle:@"Favorites".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Favorites" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        self.filterButton.menu = [self _buildFilterMenu];
+        if (@available(iOS 14.0, *)) {
+            self.filterButton.menu = [self _buildFilterMenu];
+        }
     }];
     favoritesAction.state = [currentFilter isEqualToString:@"Favorites"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 

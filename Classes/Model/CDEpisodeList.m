@@ -353,9 +353,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         
         NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
         fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:childContext];
-#ifdef DEBUG
-        NSDate* start = [NSDate date];
-#endif
         NSMutableArray* subPredicates = [[NSMutableArray alloc] init];
         [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived == NO"]];
         

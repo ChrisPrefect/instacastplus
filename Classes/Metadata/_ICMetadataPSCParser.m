@@ -40,11 +40,11 @@
 {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         
-        _xmlPath = @"/";
-        _elementAttributes = [[NSMutableDictionary alloc] init];
+        self->_xmlPath = @"/";
+        self->_elementAttributes = [[NSMutableDictionary alloc] init];
         
-        _elementContent = [[NSMutableString alloc] init];
-        [_elementContent setString:@""];
+        self->_elementContent = [[NSMutableString alloc] init];
+        [self->_elementContent setString:@""];
         
         NSXMLParser* parser = [[NSXMLParser alloc] initWithData:data];
         [parser setDelegate:self];
@@ -52,8 +52,8 @@
         
         dispatch_async(dispatch_get_main_queue(), ^{
             if (completionHandler) {
-                self.metadataAsset.chapters = _chapters;
-                self.metadataAsset.images = _images;
+                self.metadataAsset.chapters = self->_chapters;
+                self.metadataAsset.images = self->_images;
                 completionHandler(success, [parser parserError]);
             }
         });

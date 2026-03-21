@@ -8,10 +8,12 @@
 
 #import "EpisodesTableViewController.h"
 
+@class CDList;
+
 @interface ListEpisodesTableViewController : EpisodesTableViewController
 
-+ (instancetype) viewControllerWithList:(CDEpisodeList*)list;
++ (instancetype) viewControllerWithList:(CDList*)list;
 
-@property (nonatomic, strong) CDEpisodeList* list;
+@property (nonatomic, strong) CDList* list;
 
 @end

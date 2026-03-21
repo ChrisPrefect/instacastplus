@@ -1,3 +1,4 @@
+import Foundation
 import AppIntents
 
 // MARK: - Darwin Notification Helper
@@ -16,6 +17,38 @@ enum DarwinNotificationHelper {
     }
 }
 
+// MARK: - Pending Action Queue
+
+/// Persists a pending widget action in the shared container so the main app can
+/// consume it after launch/foreground transition when Darwin delivery is missed.
+enum PendingWidgetActionStore {
+    private static let filename = "widget_pending_action.json"
+
+    static func enqueue(action: String, chapterIndex: Int? = nil) {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID
+        ) else {
+            return
+        }
+
+        var payload: [String: Any] = [
+            "action": action,
+            "timestamp": Date().timeIntervalSince1970
+        ]
+        if let chapterIndex {
+            payload["chapterIndex"] = chapterIndex
+        }
+
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: []) else {
+            return
+        }
+
+        let fileURL = container.appendingPathComponent(filename)
+        try? data.write(to: fileURL, options: .atomic)
+    }
+}
+
 // MARK: - Playback Control Intents
 
 struct PlayPauseIntent: AppIntent {
@@ -24,6 +57,7 @@ struct PlayPauseIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "playpause")
         DarwinNotificationHelper.post("playpause")
         return .result()
     }
@@ -35,6 +69,7 @@ struct SkipForwardIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "skipforward")
         DarwinNotificationHelper.post("skipforward")
         return .result()
     }
@@ -46,6 +81,7 @@ struct SkipBackwardIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "skipbackward")
         DarwinNotificationHelper.post("skipbackward")
         return .result()
     }
@@ -57,6 +93,7 @@ struct NextChapterIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "nextchapter")
         DarwinNotificationHelper.post("nextchapter")
         return .result()
     }
@@ -68,6 +105,7 @@ struct PrevChapterIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "prevchapter")
         DarwinNotificationHelper.post("prevchapter")
         return .result()
     }
@@ -79,6 +117,7 @@ struct NextEpisodeIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "nextepisode")
         DarwinNotificationHelper.post("nextepisode")
         return .result()
     }
@@ -90,6 +129,7 @@ struct PrevEpisodeIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "previousepisode")
         DarwinNotificationHelper.post("previousepisode")
         return .result()
     }
@@ -101,6 +141,7 @@ struct CycleSpeedIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "cyclespeed")
         DarwinNotificationHelper.post("cyclespeed")
         return .result()
     }
@@ -112,6 +153,7 @@ struct ToggleSleepTimerIntent: AppIntent {
     static var openAppWhenRun: Bool { false }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "togglesleeptimer")
         DarwinNotificationHelper.post("togglesleeptimer")
         return .result()
     }
@@ -129,6 +171,8 @@ struct SkipToChapterIntent: AppIntent {
     init(chapterIndex: Int) { self.chapterIndex = chapterIndex }
 
     func perform() async throws -> some IntentResult {
+        PendingWidgetActionStore.enqueue(action: "skipchapter", chapterIndex: chapterIndex)
+
         // Write the target chapter index to the shared container so the main app can read it
         if let container = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID

@@ -13,6 +13,7 @@
 #import "ImageCacheManager.h"
 #import "ICEpisodeConsumeIndicator.h"
 #import "GradientProgressView.h"
+#import "PlaybackManager.h"
 
 
 @interface EpisodesTableViewCell ()
@@ -28,6 +29,7 @@
 @property (nonatomic, strong) ICEpisodeConsumeIndicator* consumeIndicator2;
 
 @property (nonatomic, strong, readwrite) UIImageView* leftPanImage;
+@property (nonatomic, strong, readwrite) UIImageView* rightPanImage;
 @property (nonatomic, strong, readwrite) UIButton* moreButton;
 @property (nonatomic, strong, readwrite) UIButton* deleteButton;
 
@@ -38,9 +40,6 @@
 @property (nonatomic, readwrite) BOOL showsDeleteControl;
 @property (nonatomic, strong, readwrite) UIView* topSeparatorView;
 @property (nonatomic) BOOL showsEditControl;
-
-@property (nonatomic, strong) NSTimer *timer;
-
 
 @end
 
@@ -117,9 +116,15 @@
 
         _leftPanImage = [[UIImageView alloc] initWithImage:nil];
         _leftPanImage.contentMode = UIViewContentModeCenter;
+        _leftPanImage.tintColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
         _leftPanImage.hidden = YES;
         [self.contentView insertSubview:_leftPanImage belowSubview:_panningContentView];
-        
+
+        _rightPanImage = [[UIImageView alloc] initWithImage:nil];
+        _rightPanImage.contentMode = UIViewContentModeCenter;
+        _rightPanImage.tintColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+        _rightPanImage.hidden = YES;
+        [self.contentView insertSubview:_rightPanImage belowSubview:_panningContentView];
 
         _moreButton = [[UIButton alloc] initWithFrame:CGRectZero];
         [_moreButton setBackgroundColor:self.contentView.backgroundColor];
@@ -130,8 +135,8 @@
         [_moreButton setTitleColor:[UIColor colorWithWhite:0.6f alpha:0.5f] forState:UIControlStateHighlighted];
         [_moreButton addTarget:self action:@selector(more:) forControlEvents:UIControlEventTouchUpInside];
         [self.contentView insertSubview:_moreButton belowSubview:_panningContentView];
-        
-        
+
+
         _deleteButton = [[UIButton alloc] initWithFrame:CGRectZero];
         [_deleteButton setBackgroundColor:[UIColor colorWithRed:1.f green:59/255.f blue:48/255.f alpha:1.f]];
         _deleteButton.hidden = YES;
@@ -155,50 +160,6 @@
     }
     return self;
 }
-/*
-- (void)startProgressUpdate {
-    [self stopProgressUpdate]; // Ensure no duplicate timers
-    self.timer = [NSTimer scheduledTimerWithTimeInterval:1.0 target:self selector:@selector(updateProgress) userInfo:nil repeats:YES];
-}
-
-- (void)stopProgressUpdate {
-    [self.timer invalidate];
-    self.timer = nil;
-}
-
-- (void)updateProgress {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        //DevD to do
-        CDEpisode* episode = (CDEpisode*)self.objectValue;
-        PlaybackManager* pman = [PlaybackManager playbackManager];
-        AudioSession* session = [AudioSession sharedAudioSession];
-        CDEpisode* playingEpisode = session.episode;
-        if (playingEpisode == episode)
-        {
-            if (pman.ready) {
-                [progressView setProgress:pman.position];
-            }
-            else if (playingEpisode.duration > 0) {
-                [progressView setProgress:(float)playingEpisode.position/(float)playingEpisode.duration];
-            }
-            else {
-                [progressView setProgress:0];
-            }
-        }
-        else
-        {
-            CDEpisode* episode = (CDEpisode*)self.objectValue;
-            double devideTemp = 0.0;
-            if (episode.position < episode.duration)
-            {
-                devideTemp = (double)episode.position / (double)episode.duration;
-            }
-            double progressPercentage = (episode.duration > 0) ? devideTemp : 0;
-            [progressView setProgress:progressPercentage];
-        }
-    });
-}*/
-
 - (void) dealloc
 {
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
@@ -211,6 +172,7 @@
 
     self.objectValue = nil;
     self.leftPanImage.hidden = YES;
+    self.rightPanImage.hidden = YES;
     self.moreButton.hidden = YES;
     self.deleteButton.hidden = YES;
     self.canDelete = NO;
@@ -219,7 +181,12 @@
     self.upNextStyle = NO;
 
     self.didPanRight = nil;
+    self.didPanLeft = nil;
     self.shouldDelete = nil;
+    self.leftSwipeImageProvider = nil;
+    self.leftSwipeTintProvider = nil;
+    self.rightSwipeImageProvider = nil;
+    self.rightSwipeTintProvider = nil;
 
     [self.multipleSelectionBackgroundView removeFromSuperview];
     
@@ -388,14 +355,25 @@
 {
     CacheManager* cman = [CacheManager sharedCacheManager];
     CDEpisode* episode = (CDEpisode*)self.objectValue;
+    PlaybackManager* pman = [PlaybackManager playbackManager];
     
     BOOL cached = [cman episodeIsCached:episode fastLookup:YES];
     BOOL caching = [cman isCachingEpisode:episode];
     BOOL loading = [cman isLoadingEpisode:episode];
     BOOL suspended = [cman isLoadingEpisodeSuspended:episode];
+    BOOL streamingCachingCurrentEpisode = (!cached &&
+                                           pman.streamingCacheActive &&
+                                           [pman.playingEpisode.objectHash isEqualToString:episode.objectHash]);
+    double streamingProgress = streamingCachingCurrentEpisode ? pman.streamingCacheProgress : 0.0;
     
     if (cached) {
         self.playAccessoryButton.comboState = kEpisodePlayButtonComboStateFilled;
+    }
+    else if (streamingCachingCurrentEpisode && loading) {
+        self.playAccessoryButton.comboState = kEpisodePlayButtonComboStateFilling;
+    }
+    else if (streamingCachingCurrentEpisode) {
+        self.playAccessoryButton.comboState = kEpisodePlayButtonComboStateHolding;
     }
     else if (caching && (!loading || suspended)) {
         self.playAccessoryButton.comboState = kEpisodePlayButtonComboStateHolding;
@@ -407,7 +385,7 @@
         self.playAccessoryButton.comboState = kEpisodePlayButtonComboStateOutline;
     }
     
-    self.playAccessoryButton.fillingProgress = [cman cacheProgressForEpisode:episode];
+    self.playAccessoryButton.fillingProgress = MAX([cman cacheProgressForEpisode:episode], streamingProgress);
 }
 
 - (void) updatePlayedAndStarredState
@@ -601,6 +579,7 @@
     
     
     self.leftPanImage.frame = CGRectMake(-75, 0, 75 , floorf(CGRectGetHeight(bounds)));
+    self.rightPanImage.frame = CGRectMake(CGRectGetMaxX(bounds), 0, 75, floorf(CGRectGetHeight(bounds)));
     self.moreButton.frame = CGRectMake(CGRectGetMaxX(bounds), 0, 75, CGRectGetHeight(bounds));
     self.deleteButton.frame = CGRectMake(CGRectGetMaxX(bounds)+75, 0, 75+20, CGRectGetHeight(bounds));
     
@@ -738,24 +717,21 @@
                                initialSpringVelocity:0.0
                                              options:0
                                           animations:^{
-                                              
+
                                               self.panningContentView.frame = b;
 
-                                              
                                           } completion:^(BOOL finished) {
-                                              
+
                                               self.leftPanImage.frame = CGRectMake(-75, 0, 75, h);
-                                              self.moreButton.frame = CGRectMake(w, 0, 75, h);
-                                              self.deleteButton.frame = CGRectMake(w+75, 0, 75, h);
-                                              
+                                              self.rightPanImage.frame = CGRectMake(w, 0, 75, h);
+
                                               self.leftPanImage.hidden = YES;
-                                              self.moreButton.hidden = YES;
-                                              self.deleteButton.hidden = YES;
-                                              
+                                              self.rightPanImage.hidden = YES;
+
                                               if (completion) {
                                                   completion(finished);
                                               }
-                                              
+
                                           }];
                          
                      }];
@@ -774,16 +750,25 @@
         case UIGestureRecognizerStateBegan:
         {
             self.contentView.backgroundColor = ICTableSeparatorColor;
-            
-            self.leftPanImage.image = [self _leftPanImageActive:YES];
-            self.leftPanImage.hidden = NO;
-            
-            self.moreButton.hidden = NO;
-            
-            if (self.canDelete) {
-                self.deleteButton.hidden = NO;
+
+            if (self.didPanRight) {
+                self.leftPanImage.image = self.rightSwipeImageProvider ? self.rightSwipeImageProvider() : [self _leftPanImageActive:YES];
+                self.leftPanImage.tintColor = self.rightSwipeTintProvider ? self.rightSwipeTintProvider() : [UIColor colorWithWhite:0.5f alpha:1.0f];
+                self.leftPanImage.hidden = NO;
+            } else {
+                self.leftPanImage.hidden = YES;
+                self.leftPanImage.image = nil;
             }
-            
+
+            if (self.didPanLeft) {
+                self.rightPanImage.image = self.leftSwipeImageProvider ? self.leftSwipeImageProvider() : nil;
+                self.rightPanImage.tintColor = self.leftSwipeTintProvider ? self.leftSwipeTintProvider() : [UIColor colorWithWhite:0.5f alpha:1.0f];
+                self.rightPanImage.hidden = NO;
+            } else {
+                self.rightPanImage.hidden = YES;
+                self.rightPanImage.image = nil;
+            }
+
             if (self.panDidBegin) {
                 UITableView* tableView = [self _tableView];
                 NSIndexPath* indexPath = [tableView indexPathForCell:self];
@@ -793,78 +778,56 @@
         case UIGestureRecognizerStateChanged:
         {
             self.panningContentView.frame = CGRectMake(translation.x, 0, w, h);
-            
+
             self.leftPanImage.frame = CGRectMake(MIN(-75+translation.x, 0), 0, 75, fh);
-            
-            if (self.canDelete) {
-                self.moreButton.frame = CGRectMake(w-75+MAX(translation.x+75, -75), 0, 75, h);
-            } else {
-                self.moreButton.frame = CGRectMake(w-75+MAX(translation.x+75, 0), 0, 75, h);
+            self.rightPanImage.frame = CGRectMake(MAX(w+translation.x, w-75), 0, 75, fh);
+
+            // change leftPan image depending on translation coordinate (only for legacy non-provider mode)
+            if (!self.rightSwipeImageProvider) {
+                if (translation.x >= 75 && self.leftPanImage.image != [self _leftPanImageActive:YES]) {
+                    self.leftPanImage.image = [self _leftPanImageActive:YES];
+                }
+                else if (translation.x < 75 && self.leftPanImage.image != [self _leftPanImageActive:NO]) {
+                    self.leftPanImage.image = [self _leftPanImageActive:NO];
+                }
             }
-            
-            self.deleteButton.frame = CGRectMake(w+MAX(translation.x+75, -75), 0, 75+20, h);
-            
-            
-            // change leftPan image depending on translation coordinate
-            if (translation.x >= 75 && self.leftPanImage.image != [self _leftPanImageActive:YES]) {
-                self.leftPanImage.image = [self _leftPanImageActive:YES];
-            }
-            else if (translation.x < 75 && self.leftPanImage.image != [self _leftPanImageActive:NO]) {
-                self.leftPanImage.image = [self _leftPanImageActive:NO];
-            }
-            
+
             break;
         }
         case UIGestureRecognizerStateEnded:
         {
             UITableView* tableView = [self _tableView];
             NSIndexPath* indexPath = [tableView indexPathForCell:self];
-            
-            // left pan active
-            if (translation.x >= 75)
+
+            // right swipe active
+            if (translation.x >= 75 && self.didPanRight)
             {
                 recognizer.enabled = NO;
+
+                if (self.didPanRight && indexPath) {
+                    self.didPanRight(indexPath);
+                }
+
                 [self _animateActivatePanToPoint:75 additionalAnimations:NULL completion:^(BOOL finished) {
                     recognizer.enabled = YES;
-                    
-                    if (self.didPanRight && indexPath) {
-                        self.didPanRight(indexPath);
-                    }
                 }];
-                
 
-                
                 break;
             }
-            
-            // right pan active
-            else if (translation.x <= -75)
-            {
-                self.showsDeleteControl = YES;
-                
-                recognizer.enabled = NO;
-                [UIView animateWithDuration:0.3
-                                      delay:0.0
-                     usingSpringWithDamping:0.7
-                      initialSpringVelocity:0.0
-                                    options:0
-                                 animations:^{
-                                     if (self.canDelete) {
-                                         self.panningContentView.frame = CGRectMake(-150, 0, w, h);
-                                         self.moreButton.frame = CGRectMake(w-75-75, 0, 75, h);
-                                         self.deleteButton.frame = CGRectMake(w-75, 0, 75+20, h);
-                                     }
-                                     else {
-                                         self.panningContentView.frame = CGRectMake(-75, 0, w, h);
-                                         self.moreButton.frame = CGRectMake(w-75, 0, 75, h);
-                                     }
-                                     
-                                 } completion:^(BOOL finished) {
-                                     recognizer.enabled = YES;
 
-                                 }
-                 ];
-                
+            // left swipe active
+            else if (translation.x <= -75 && self.didPanLeft)
+            {
+                recognizer.enabled = NO;
+
+                if (self.didPanLeft && indexPath) {
+                    self.didPanLeft(indexPath);
+                }
+
+                [self _animateActivatePanToPoint:-75 additionalAnimations:NULL completion:^(BOOL finished) {
+                    recognizer.enabled = YES;
+                }];
+
                 break;
             }
         }
@@ -873,7 +836,7 @@
         {
             recognizer.enabled = NO;
             self.showsDeleteControl = NO;
-            
+
             [UIView animateWithDuration:0.3
                                   delay:0.0
                  usingSpringWithDamping:1.0
@@ -882,15 +845,13 @@
                              animations:^{
                                  self.panningContentView.frame = b;
                                  self.leftPanImage.frame = CGRectMake(-75, 0, 75, fh);
-                                 self.moreButton.frame = CGRectMake(w, 0, 75, h);
-                                 self.deleteButton.frame = CGRectMake(w+75, 0, 75+20, h);
-                                 
+                                 self.rightPanImage.frame = CGRectMake(w, 0, 75, fh);
+
                              } completion:^(BOOL finished) {
                                  recognizer.enabled = YES;
 
                                  self.leftPanImage.hidden = YES;
-                                 self.moreButton.hidden = YES;
-                                 self.deleteButton.hidden = YES;
+                                 self.rightPanImage.hidden = YES;
                              }
              ];
         }
@@ -928,7 +889,7 @@
     CGFloat w = CGRectGetWidth(b);
     CGFloat h = CGRectGetHeight(b);
     CGFloat fh = floorf(h);
-    
+
     [UIView animateWithDuration:0.3
                           delay:0.0
          usingSpringWithDamping:1.0
@@ -937,18 +898,13 @@
                      animations:^{
                          self.panningContentView.frame = b;
                          self.leftPanImage.frame = CGRectMake(-75, 0, 75, fh);
-                         self.moreButton.frame = CGRectMake(w, 0, 75, h);
-                         self.deleteButton.frame = CGRectMake(w+75, 0, 75+20, h);
-                         
+                         self.rightPanImage.frame = CGRectMake(w, 0, 75, fh);
+
                      } completion:^(BOOL finished) {
-                         
-                         self.leftPanImage.frame = CGRectMake(0, 0, 75, fh);
-                         self.moreButton.frame = CGRectMake(w-75, 0, 75, h);
-                         self.deleteButton.frame = CGRectMake(w, 0, 75+20, h);
+
                          self.leftPanImage.hidden = YES;
-                         self.moreButton.hidden = YES;
-                         self.deleteButton.hidden = YES;
-                         
+                         self.rightPanImage.hidden = YES;
+
                          self.showsDeleteControl = NO;
                      }
      ];

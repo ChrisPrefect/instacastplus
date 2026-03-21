@@ -50,14 +50,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 @property (nonatomic, strong) UIBarButtonItem* cancelItem;
 @property (nonatomic, strong) NumberAccessoryView* numView;
 
-// iOS 26: Floating glass button replaces system toolbar in normal mode.
-// The system floating toolbar (FloatingBarHostingView) intercepts touches in an
-// 86pt zone above the visible pill, blocking taps on table content. Custom floating
-// buttons only block touches on their actual frame.
-// IMPORTANT: Never toggle navigationController.toolbarHidden on iOS 26! Setting it to
-// YES after NO leaves the FloatingBarContainerView in the hierarchy, permanently blocking
-// touches on the floating button. Instead, a custom UIToolbar is used for editing mode.
-@property (nonatomic, strong) UIButton* floatingCacheButton API_AVAILABLE(ios(26.0));
+// iOS 26: Floating glass buttons on navigationController.view replace system toolbar.
+// Normal mode: consumeAll (left) + edit (right) — glass buttons like FeedVC/WebController.
+// Editing mode: custom UIToolbar with glass pill — proper animations, layout, and touch handling.
+@property (nonatomic, strong) UIButton* floatingConsumeAllButton API_AVAILABLE(ios(26.0));
+@property (nonatomic, strong) UIButton* floatingEditButton API_AVAILABLE(ios(26.0));
 @property (nonatomic, strong) UIToolbar* editingToolbar API_AVAILABLE(ios(26.0));
 
 @end
@@ -66,7 +63,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 @private
     BOOL _defaultsPushed;
     BOOL _observing;
-    BOOL _editingTransitionInProgress;
     BOOL _needsPlayComboButtonUpdate;
 }
 
@@ -211,7 +207,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = YES;
-        [self _setupFloatingCacheButton];
+        [self _setupFloatingToolbarButtons];
     }
 }
 
@@ -242,20 +238,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     [super viewWillAppear:animated];
 
-    // iOS 26: toolbarHidden is ALWAYS YES — never toggle it.
-    // Normal mode: floating cache button visible.
-    // Editing mode: custom editingToolbar visible (managed by _updateToolbarItemsAnimated:).
+    // iOS 26: toolbarHidden stays YES. Show correct set of floating glass buttons.
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = YES;
-        BOOL isEditing = (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload);
-        self.floatingCacheButton.hidden = isEditing;
-        if (!isEditing) {
-            [self.navigationController.view bringSubviewToFront:self.floatingCacheButton];
-        }
-        if (isEditing && self.editingToolbar) {
-            self.editingToolbar.hidden = NO;
-            [self.navigationController.view bringSubviewToFront:self.editingToolbar];
-        }
+        [self _syncFloatingButtonVisibility];
     }
 
     [self _setObserving:YES];
@@ -273,7 +259,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     // iOS 26: sync floating button appearance with app theme
     if (@available(iOS 26.0, *)) {
         UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
-        self.floatingCacheButton.overrideUserInterfaceStyle = style;
+        self.floatingConsumeAllButton.overrideUserInterfaceStyle = style;
+        self.floatingEditButton.overrideUserInterfaceStyle = style;
+        self.editingToolbar.overrideUserInterfaceStyle = style;
     }
 
     [self.tableView reloadData];
@@ -285,11 +273,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 
 - (void)viewWillDisappear:(BOOL)animated {
-    // iOS 26: restore system toolbar for the next VC, hide floating button + editing toolbar
+    // iOS 26: restore system toolbar for the next VC, hide all floating buttons
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = NO;
-        self.floatingCacheButton.hidden = YES;
-        self.editingToolbar.hidden = YES;
+        [self _hideAllFloatingButtons];
     }
     [super viewWillDisappear:animated];
 
@@ -314,42 +301,172 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 }
 
 
-// iOS 26: Creates a floating glass button that replaces the system toolbar's cache
-// button in normal (non-editing) mode. Added to the navigationController's view so
-// it floats above the tableView without scrolling. Only blocks touches on its own frame.
-- (void) _setupFloatingCacheButton API_AVAILABLE(ios(26.0))
+// iOS 26: Creates floating glass buttons on navigationController.view.
+// Exact same pattern as WebController/FeedViewController/SubscriptionsTableVC.
+// Normal mode: consumeAll (left) + edit (right). Editing: editOptions + play + download + selectAll + done.
+- (void) _setupFloatingToolbarButtons API_AVAILABLE(ios(26.0))
 {
+    UIView* container = self.navigationController.view;
+    if (!container) return;
+
     WEAK_SELF
-    UIButtonConfiguration* config = [UIButtonConfiguration glassButtonConfiguration];
-    // Use SF Symbol instead of custom "Toolbar Select" image (22×20pt raster)
-    // to match the size of SF Symbol glass buttons in other VCs.
-    config.image = [UIImage systemImageNamed:@"pencil"];
-    config.buttonSize = UIButtonConfigurationSizeLarge;
-    self.floatingCacheButton = [UIButton buttonWithConfiguration:config primaryAction:
+    UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+
+    // --- Normal mode: 2 floating glass buttons ---
+
+    UIButtonConfiguration* consumeConfig = [UIButtonConfiguration glassButtonConfiguration];
+    consumeConfig.image = [UIImage systemImageNamed:@"checkmark.circle"];
+    consumeConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingConsumeAllButton = [UIButton buttonWithConfiguration:consumeConfig primaryAction:nil];
+    self.floatingConsumeAllButton.showsMenuAsPrimaryAction = YES;
+    self.floatingConsumeAllButton.menu = [self _buildConsumeAllMenu];
+
+    UIButtonConfiguration* editConfig = [UIButtonConfiguration glassButtonConfiguration];
+    editConfig.image = [UIImage systemImageNamed:@"pencil"];
+    editConfig.buttonSize = UIButtonConfigurationSizeLarge;
+    self.floatingEditButton = [UIButton buttonWithConfiguration:editConfig primaryAction:
         [UIAction actionWithHandler:^(__unused UIAction* action) {
             STRONG_SELF
             [self editForCachingAction:nil];
         }]];
-    self.floatingCacheButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Match button appearance to app theme (glass buttons inherit system trait,
-    // but app may override via ICAppearanceManager before window is connected)
-    self.floatingCacheButton.overrideUserInterfaceStyle =
-        [ICAppearanceManager sharedManager].nightSettingMode ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
-
-    UIView* container = self.navigationController.view;
-    [container addSubview:self.floatingCacheButton];
+    for (UIButton* btn in @[self.floatingConsumeAllButton, self.floatingEditButton]) {
+        btn.translatesAutoresizingMaskIntoConstraints = NO;
+        btn.overrideUserInterfaceStyle = style;
+        btn.hidden = YES;
+        [container addSubview:btn];
+    }
 
     UILayoutGuide* safeArea = container.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
-        [self.floatingCacheButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-20],
-        [self.floatingCacheButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+        [self.floatingConsumeAllButton.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor constant:20],
+        [self.floatingConsumeAllButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+        [self.floatingEditButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-20],
+        [self.floatingEditButton.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
     ]];
+
+    // --- Editing mode: custom UIToolbar with liquid glass ---
+    // Standalone UIToolbar gets liquid glass automatically on iOS 26.
+    // Unlike nav controller's toolbar, it doesn't create FloatingBarHostingView touch-blocking.
+
+    self.editingToolbar = [[UIToolbar alloc] init];
+    self.editingToolbar.translatesAutoresizingMaskIntoConstraints = NO;
+    self.editingToolbar.overrideUserInterfaceStyle = style;
+    self.editingToolbar.hidden = YES;
+    [container addSubview:self.editingToolbar];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.editingToolbar.leadingAnchor constraintEqualToAnchor:safeArea.leadingAnchor],
+        [self.editingToolbar.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor],
+        [self.editingToolbar.bottomAnchor constraintEqualToAnchor:safeArea.bottomAnchor constant:-14],
+    ]];
+
+    // Don't call _updateEditingToolbarItems here — UIBarButtonItems are lazily created
+    // in _updateToolbarItemsAnimated: and would be nil at this point.
+    // Items will be set when first entering editing mode.
+
+    // Show initial state (normal mode buttons)
+    [self _syncFloatingButtonVisibility];
+}
+
+// Updates the editing toolbar items (enabled state, select all title).
+// Reuses the existing UIBarButtonItem properties from the iOS ≤25 code path.
+- (void) _updateEditingToolbarItems API_AVAILABLE(ios(26.0))
+{
+    NSInteger selectedCount = [[self.tableView indexPathsForSelectedRows] count];
+    NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
+    BOOL hasSelection = (selectedCount > 0);
+
+    self.selectAllItem.title = (selectedCount < rowCount) ? @"All".ls : @"Deselect".ls;
+    self.editItem.enabled = hasSelection;
+    self.playItem.enabled = hasSelection;
+    self.downloadItem.enabled = hasSelection;
+
+    // Set items only once (9 = 5 items + 4 flex spaces)
+    if (self.editingToolbar.items.count != 9) {
+        UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        UIBarButtonItem* flex2 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        UIBarButtonItem* flex3 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        UIBarButtonItem* flex4 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+        [self.editingToolbar setItems:@[self.editItem, flex1, self.playItem, flex2, self.downloadItem, flex3, self.selectAllItem, flex4, self.cancelItem] animated:YES];
+    }
+}
+
+// Shows the correct set of floating buttons/toolbar for the current editing state.
+- (void) _syncFloatingButtonVisibility API_AVAILABLE(ios(26.0))
+{
+    BOOL isEditing = (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload);
+    UIView* container = self.navigationController.view;
+
+    // Normal mode: floating glass buttons
+    self.floatingConsumeAllButton.hidden = isEditing;
+    self.floatingEditButton.hidden = isEditing;
+    if (!isEditing) {
+        BOOL hasEpisodes = ([self.episodes count] > 0);
+        self.floatingConsumeAllButton.enabled = hasEpisodes;
+        self.floatingEditButton.enabled = hasEpisodes;
+        self.floatingConsumeAllButton.menu = [self _buildConsumeAllMenu];
+        [container bringSubviewToFront:self.floatingConsumeAllButton];
+        [container bringSubviewToFront:self.floatingEditButton];
+    }
+
+    // Editing mode: custom UIToolbar
+    self.editingToolbar.hidden = !isEditing;
+    if (isEditing) {
+        [self _updateEditingToolbarItems];
+        [container bringSubviewToFront:self.editingToolbar];
+    }
+}
+
+// Hides all floating buttons and editing toolbar (viewWillDisappear).
+- (void) _hideAllFloatingButtons API_AVAILABLE(ios(26.0))
+{
+    self.floatingConsumeAllButton.hidden = YES;
+    self.floatingEditButton.hidden = YES;
+    self.editingToolbar.hidden = YES;
+}
+
+// Builds a UIMenu for the consumeAll floating button (bulk actions).
+- (UIMenu*) _buildConsumeAllMenu API_AVAILABLE(ios(26.0))
+{
+    WEAK_SELF
+    NSMutableArray<UIMenuElement*>* items = [NSMutableArray array];
+
+    if ([self _numberOfNotPlayedDisplayEpisodes] > 0) {
+        [items addObject:[UIAction actionWithTitle:@"Mark all as Played".ls
+                                            image:[UIImage systemImageNamed:@"checkmark.circle"]
+                                       identifier:nil
+                                          handler:^(__unused UIAction* a) { STRONG_SELF [self _setAllAsConsumed:YES]; }]];
+    }
+    if ([self.episodes count] - [self _numberOfNotPlayedDisplayEpisodes] > 0) {
+        [items addObject:[UIAction actionWithTitle:@"Mark all as Unplayed".ls
+                                            image:[UIImage systemImageNamed:@"circle"]
+                                       identifier:nil
+                                          handler:^(__unused UIAction* a) { STRONG_SELF [self _setAllAsConsumed:NO]; }]];
+    }
+    if ([self _numberOfPlayedDownloadedEpisodes] > 0) {
+        UIAction* act = [UIAction actionWithTitle:@"Delete played content".ls
+                                           image:[UIImage systemImageNamed:@"trash.circle"]
+                                      identifier:nil
+                                         handler:^(__unused UIAction* a) { STRONG_SELF [self _clearCacheOfAllPlayed]; }];
+        act.attributes = UIMenuElementAttributesDestructive;
+        [items addObject:act];
+    }
+    if ([self canArchiveEpisodes] && [self _numberOfPlayedDisplayEpisodes] > 0) {
+        UIAction* act = [UIAction actionWithTitle:@"Delete all Played".ls
+                                           image:[UIImage systemImageNamed:@"trash"]
+                                      identifier:nil
+                                         handler:^(__unused UIAction* a) { STRONG_SELF [self _archiveAllPlayed]; }];
+        act.attributes = UIMenuElementAttributesDestructive;
+        [items addObject:act];
+    }
+
+    return [UIMenu menuWithTitle:@"" children:items];
 }
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
 {
-    // Items nur einmal erstellen
+    // Lazy-create UIBarButtonItems (used by both iOS ≤25 system toolbar and iOS 26 editing toolbar)
     if (!self.cacheItem) {
         self.cacheItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Select"]
                                                           style:UIBarButtonItemStylePlain
@@ -393,58 +510,27 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         self.cancelItem.tintColor = ICTintColor;
     }
 
+    // iOS 26: items are now created, use floating glass buttons + editing toolbar
+    if (@available(iOS 26.0, *)) {
+        [self _syncFloatingButtonVisibility];
+        return;
+    }
+
+    // iOS ≤25: system toolbar
     [self willChangeValueForKey:@"toolbarItems"];
 
     BOOL isEditing = (self.tableView.editing && self.editingStyle == EpisodesTableViewEditingStyleDownload);
 
 	if (isEditing)
 	{
-        // iOS 26: Use custom UIToolbar for editing mode instead of navController's toolbar.
-        // NEVER toggle toolbarHidden on iOS 26 — setting it to YES after NO leaves
-        // FloatingBarContainerView in the hierarchy, permanently blocking touches.
-        if (@available(iOS 26.0, *)) {
-            self.floatingCacheButton.hidden = YES;
-
-            if (!self.editingToolbar) {
-                self.editingToolbar = [[UIToolbar alloc] init];
-                self.editingToolbar.translatesAutoresizingMaskIntoConstraints = NO;
-                UIView* container = self.navigationController.view;
-                [container addSubview:self.editingToolbar];
-                [NSLayoutConstraint activateConstraints:@[
-                    [self.editingToolbar.leadingAnchor constraintEqualToAnchor:container.leadingAnchor],
-                    [self.editingToolbar.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
-                    [self.editingToolbar.bottomAnchor constraintEqualToAnchor:container.bottomAnchor],
-                ]];
-            }
-        }
-
         NSInteger selectedCellsCount = [[self.tableView indexPathsForSelectedRows] count];
         NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
 
-        // Update selectAllItem title
         self.selectAllItem.title = (selectedCellsCount < rowCount) ? @"All".ls : @"Deselect".ls;
-
-        // Update enabled states
         self.editItem.enabled = (selectedCellsCount > 0);
         self.playItem.enabled = (selectedCellsCount > 0);
         self.downloadItem.enabled = (selectedCellsCount > 0);
 
-        if (@available(iOS 26.0, *)) {
-            // Set items on custom editing toolbar
-            if (self.editingToolbar.items.count != 9) {
-                UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-                UIBarButtonItem* flex2 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-                UIBarButtonItem* flex3 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-                UIBarButtonItem* flex4 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-                self.editingToolbar.items = @[self.editItem, flex1, self.playItem, flex2, self.downloadItem, flex3, self.selectAllItem, flex4, self.cancelItem];
-            }
-            self.editingToolbar.hidden = NO;
-            [self.navigationController.view bringSubviewToFront:self.editingToolbar];
-            [self didChangeValueForKey:@"toolbarItems"];
-            return;
-        }
-
-        // iOS ≤25: set items on system toolbar
         NSArray* currentItems = self.toolbarItems;
         if (currentItems.count != 9 || ![currentItems containsObject:self.editItem]) {
             UIBarButtonItem* flex1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
@@ -457,24 +543,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 	}
     else
 	{
-        // iOS 26: normal mode — show floating cache button, hide editing toolbar.
-        if (@available(iOS 26.0, *)) {
-            self.floatingCacheButton.hidden = NO;
-            self.floatingCacheButton.enabled = ([self.episodes count] > 0);
-            self.editingToolbar.hidden = YES;
-            [self.navigationController.view bringSubviewToFront:self.floatingCacheButton];
-            [self didChangeValueForKey:@"toolbarItems"];
-            return;
-        }
-
-        // iOS ≤25: system toolbar
         self.cacheItem.enabled = ([self.episodes count] > 0);
+        self.consumeAllItem.enabled = ([self.episodes count] > 0);
 
-        // Toolbar-Items nur setzen wenn noch nicht im normal mode gesetzt
         NSArray* currentItems = self.toolbarItems;
-        if (currentItems.count != 2 || ![currentItems containsObject:self.cacheItem]) {
+        if (currentItems.count != 3 || ![currentItems containsObject:self.consumeAllItem]) {
             UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-            [self setToolbarItems:@[flexSpace, self.cacheItem] animated:animated];
+            [self setToolbarItems:@[self.consumeAllItem, flexSpace, self.cacheItem] animated:animated];
         }
 	}
 
@@ -811,6 +886,227 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 	}
 }
 
+- (UIImage*) _imageForSwipeAction:(ICEpisodeSwipeAction)action episode:(CDEpisode*)episode
+{
+    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
+    NSString* name;
+    switch (action) {
+        case ICEpisodeSwipeActionTogglePlayed:
+            name = episode.consumed ? @"checkmark.circle" : @"checkmark.circle.fill";
+            break;
+        case ICEpisodeSwipeActionToggleFavorite:
+            name = episode.starred ? @"star.slash" : @"star.fill";
+            break;
+        case ICEpisodeSwipeActionDownload:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            if ([cman episodeIsCached:episode]) {
+                name = @"trash.circle";
+            } else if ([cman isCachingEpisode:episode]) {
+                name = @"xmark.circle";
+            } else {
+                name = @"arrow.down.circle";
+            }
+            break;
+        }
+        case ICEpisodeSwipeActionAddToPlayNext:
+        {
+            BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
+            name = inUpNext ? @"text.badge.minus" : @"text.badge.plus";
+            break;
+        }
+        case ICEpisodeSwipeActionDelete:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            name = [cman episodeIsCached:episode] ? @"trash.fill" : @"trash";
+            break;
+        }
+        case ICEpisodeSwipeActionEpisodeInfo:
+            name = @"info.circle";
+            break;
+        default:
+            name = @"checkmark.circle";
+            break;
+    }
+    return [[UIImage systemImageNamed:name] imageByApplyingSymbolConfiguration:config];
+}
+
+- (UIColor*) _tintColorForSwipeAction:(ICEpisodeSwipeAction)action episode:(CDEpisode*)episode
+{
+    UIColor* accentColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
+    UIColor* grayColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
+
+    switch (action) {
+        case ICEpisodeSwipeActionTogglePlayed:
+            return episode.consumed ? accentColor : grayColor;
+        case ICEpisodeSwipeActionToggleFavorite:
+            return episode.starred ? grayColor : accentColor;
+        case ICEpisodeSwipeActionDownload:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            if ([cman episodeIsCached:episode]) {
+                return [UIColor systemRedColor];
+            } else if ([cman isCachingEpisode:episode]) {
+                return [UIColor systemOrangeColor];
+            } else {
+                return accentColor;
+            }
+        }
+        case ICEpisodeSwipeActionAddToPlayNext:
+        {
+            BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
+            return inUpNext ? grayColor : accentColor;
+        }
+        case ICEpisodeSwipeActionDelete:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            return [cman episodeIsCached:episode] ? [UIColor systemRedColor] : grayColor;
+        }
+        case ICEpisodeSwipeActionEpisodeInfo:
+            return accentColor;
+        default:
+            return grayColor;
+    }
+}
+
+- (void) _performSwipeAction:(ICEpisodeSwipeAction)action atIndexPath:(NSIndexPath*)indexPath
+{
+    NSArray* lEpisodes = self.episodes;
+    if (indexPath.section != 0 || indexPath.row >= [lEpisodes count]) {
+        return;
+    }
+
+    CDEpisode* episode = (CDEpisode*)[lEpisodes objectAtIndex:indexPath.row];
+    EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
+
+    switch (action) {
+        case ICEpisodeSwipeActionTogglePlayed:
+        {
+            BOOL flag = !episode.consumed;
+            self.userAction = YES;
+            [DMANAGER markEpisode:episode asConsumed:flag];
+            if (flag && [episode isEqual:[AudioSession sharedAudioSession].episode]) {
+                [[AudioSession sharedAudioSession] stop];
+            }
+            if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                [cell updatePlayedAndStarredState];
+            }
+            [self _updateToolbarItemsAnimated:NO];
+            [self _updateToolbarLabels];
+            self.userAction = NO;
+            PlaySoundFile((flag)?@"AffirmOut":@"AffirmIn", NO);
+            break;
+        }
+        case ICEpisodeSwipeActionToggleFavorite:
+        {
+            [self toggleFavoriteAtIndexPath:indexPath];
+            break;
+        }
+        case ICEpisodeSwipeActionDownload:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            if ([cman episodeIsCached:episode]) {
+                [cman removeCacheForEpisode:episode automatic:NO];
+                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                    [cell updatePlayComboButtonState];
+                }
+                PlaySoundFile(@"AffirmOut", NO);
+            } else if ([cman isCachingEpisode:episode]) {
+                [cman cancelCachingEpisode:episode disableAutoDownload:YES];
+                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                    [cell updatePlayComboButtonState];
+                }
+                PlaySoundFile(@"AffirmOut", NO);
+            } else {
+                WEAK_SELF
+                [self _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {
+                    if (canDownload) {
+                        [[CacheManager sharedCacheManager] cacheEpisode:episode overwriteCellularLock:YES];
+                        EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
+                        [cell updatePlayComboButtonState];
+                    }
+                }];
+                PlaySoundFile(@"AffirmIn", NO);
+            }
+            break;
+        }
+        case ICEpisodeSwipeActionAddToPlayNext:
+        {
+            if ([episode isEqual:[AudioSession sharedAudioSession].episode]) {
+                break;
+            }
+
+            BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
+            NSString* toastText;
+
+            if (inUpNext) {
+                [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+                toastText = @"Removed from Play Next".ls;
+            } else {
+                [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
+                toastText = @"Added to Play Next".ls;
+            }
+            AudioServicesPlaySystemSound(1519);
+
+            UILabel* toastLabel = [[UILabel alloc] init];
+            toastLabel.text = toastText;
+            toastLabel.textColor = [UIColor whiteColor];
+            toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            toastLabel.textAlignment = NSTextAlignmentCenter;
+            toastLabel.font = [UIFont systemFontOfSize:14];
+            toastLabel.layer.cornerRadius = 8;
+            toastLabel.clipsToBounds = YES;
+            toastLabel.alpha = 0;
+
+            UIWindow* window = App.ic_keyWindow;
+            [window addSubview:toastLabel];
+            toastLabel.translatesAutoresizingMaskIntoConstraints = NO;
+            [NSLayoutConstraint activateConstraints:@[
+                [toastLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+                [toastLabel.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
+                [toastLabel.widthAnchor constraintGreaterThanOrEqualToConstant:180],
+                [toastLabel.heightAnchor constraintEqualToConstant:36]
+            ]];
+
+            [UIView animateWithDuration:0.3 animations:^{
+                toastLabel.alpha = 1.0;
+            } completion:^(BOOL finished) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [UIView animateWithDuration:0.3 animations:^{
+                        toastLabel.alpha = 0;
+                    } completion:^(BOOL finished) {
+                        [toastLabel removeFromSuperview];
+                    }];
+                });
+            }];
+            break;
+        }
+        case ICEpisodeSwipeActionDelete:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            if ([cman isCachingEpisode:episode]) {
+                [cman cancelCachingEpisode:episode disableAutoDownload:YES];
+                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                    [cell updatePlayComboButtonState];
+                }
+                PlaySoundFile(@"AffirmOut", NO);
+            } else if ([cman episodeIsCached:episode]) {
+                [cman removeCacheForEpisode:episode automatic:NO];
+                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                    [cell updatePlayComboButtonState];
+                }
+                PlaySoundFile(@"AffirmOut", NO);
+            }
+            break;
+        }
+        case ICEpisodeSwipeActionEpisodeInfo:
+        {
+            [self _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
+            break;
+        }
+    }
+}
+
 - (UIView*) _separatorViewOfCell:(UITableViewCell*)cell
 {
     for(UIView* subview in cell.subviews) {
@@ -1007,16 +1303,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) editForCachingAction:(id)sender
 {
-    if (_editingTransitionInProgress) {
-        return;
-    }
-    _editingTransitionInProgress = YES;
-
-    [CATransaction begin];
-    [CATransaction setCompletionBlock:^{
-        self->_editingTransitionInProgress = NO;
-    }];
-
 	if (!self.tableView.editing) {
         self.editingStyle = EpisodesTableViewEditingStyleDownload;
 		[self setEditing:YES animated:YES];
@@ -1025,8 +1311,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         self.editingStyle = EpisodesTableViewEditingStyleNormal;
 		[self setEditing:NO animated:YES];
 	}
-
-    [CATransaction commit];
 }
 
 
@@ -1408,14 +1692,39 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     
     __weak EpisodesTableViewController* weakSelf = self;
-    cell.didPanRight = ^(NSIndexPath* indexPath) {
-        [weakSelf didSwipeRightInCellAtIndexPath:indexPath];
+
+    ICEpisodeSwipeAction rightAction = [USER_DEFAULTS integerForKey:EpisodeSwipeRightAction];
+    ICEpisodeSwipeAction leftAction = [USER_DEFAULTS integerForKey:EpisodeSwipeLeftAction];
+
+    cell.rightSwipeImageProvider = ^UIImage* {
+        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
+        return [weakSelf _imageForSwipeAction:rightAction episode:ep];
     };
-    
+    cell.rightSwipeTintProvider = ^UIColor* {
+        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
+        return [weakSelf _tintColorForSwipeAction:rightAction episode:ep];
+    };
+    cell.leftSwipeImageProvider = ^UIImage* {
+        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
+        return [weakSelf _imageForSwipeAction:leftAction episode:ep];
+    };
+    cell.leftSwipeTintProvider = ^UIColor* {
+        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
+        return [weakSelf _tintColorForSwipeAction:leftAction episode:ep];
+    };
+
+    cell.didPanRight = ^(NSIndexPath* indexPath) {
+        [weakSelf _performSwipeAction:rightAction atIndexPath:indexPath];
+    };
+
+    cell.didPanLeft = ^(NSIndexPath* indexPath) {
+        [weakSelf _performSwipeAction:leftAction atIndexPath:indexPath];
+    };
+
     cell.panDidBegin = ^(NSIndexPath* indexPath) {
 
         EpisodesTableViewCell* actionCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
-        
+
         for(NSIndexPath* indexPath2 in [self.tableView indexPathsForVisibleRows]) {
             EpisodesTableViewCell* myCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath2];
             if (myCell != actionCell && myCell.showsDeleteControl) {

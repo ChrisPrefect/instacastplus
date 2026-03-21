@@ -7,7 +7,6 @@ struct InstacastWidgets: WidgetBundle {
         NowPlayingWidget()
         SmartListWidget()
         StatsWidget()
-        PodcastGridWidget()
         LockScreenCircularWidget()
         LockScreenRectangularWidget()
         LockScreenInlineWidget()

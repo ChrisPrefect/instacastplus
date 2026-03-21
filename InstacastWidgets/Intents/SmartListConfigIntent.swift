@@ -2,8 +2,8 @@ import AppIntents
 import WidgetKit
 
 struct SmartListConfigIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Episode List"
-    static let description = IntentDescription("Choose which episode list to display.")
+    static let title: LocalizedStringResource = "List"
+    static let description = IntentDescription("Choose which list to display.")
 
     @Parameter(title: "List")
     var list: ListEntity?
@@ -24,15 +24,15 @@ enum EpisodeTapAction: String, AppEnum, Sendable {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Tap Action"
 
     static let caseDisplayRepresentations: [EpisodeTapAction: DisplayRepresentation] = [
-        .play: DisplayRepresentation(title: "Play Episode"),
-        .openPlayer: DisplayRepresentation(title: "Open Player")
+        .play: DisplayRepresentation(title: "Play Episode (Background)"),
+        .openPlayer: DisplayRepresentation(title: "Open Player & Play")
     ]
 }
 
 // MARK: - List Entity
 
 struct ListEntity: AppEntity, Sendable {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Episode List"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "List"
 
     static let defaultQuery = ListEntityQuery()
 

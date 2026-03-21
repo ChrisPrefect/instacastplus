@@ -109,6 +109,8 @@ NSString* kDefaultAppearanceMode = @"AppearanceMode";
 NSString* kDefaultDarkModePureBlack = @"DarkModePureBlack";
 
 NSString* TapOnEpisodeAction = @"TapOnEpisodeAction";
+NSString* EpisodeSwipeRightAction = @"EpisodeSwipeRightAction";
+NSString* EpisodeSwipeLeftAction = @"EpisodeSwipeLeftAction";
 NSString* EnabledPlaybackSpeedsKey = @"EnabledPlaybackSpeeds";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 

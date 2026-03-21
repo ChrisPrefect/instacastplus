@@ -21,9 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
     UIActivityIndicatorView *activityIndicatorView;
 }
 
-@property (strong, nonatomic) UIWindow *window;
-@property (nonatomic, strong) CPInterfaceController *interfaceController;
-@property (nonatomic, strong) MainViewController_4* mainViewController;
+@property (strong, nonatomic, nullable) UIWindow *window;
+@property (nonatomic, strong, nullable) CPInterfaceController *interfaceController;
+@property (nonatomic, strong, nullable) MainViewController_4* mainViewController;
 - (void)fetchAvailableProducts;
 - (BOOL)canMakePurchases;
 - (void)purchaseMyProduct:(SKProduct*)product;

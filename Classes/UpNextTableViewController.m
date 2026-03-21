@@ -30,6 +30,33 @@ static NSString* kUpNextCell = @"UpNextCell";
     return [[self alloc] initWithStyle:UITableViewStylePlain];
 }
 
+- (BOOL) _showsModalCloseButton
+{
+    if (self.presentedAsMainView) {
+        return NO;
+    }
+
+    UINavigationController* navigationController = self.navigationController;
+    if (navigationController) {
+        return navigationController.presentingViewController != nil && navigationController.viewControllers.firstObject == self;
+    }
+
+    return self.presentingViewController != nil;
+}
+
+- (void) _updateLeftBarButtonItem
+{
+    if (self.presentedAsMainView) {
+        return;
+    }
+
+    if ([self _showsModalCloseButton]) {
+        self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Player Close"] style:UIBarButtonItemStylePlain target:self action:@selector(playerCloseButtonAction:)];
+    } else {
+        self.navigationItem.leftBarButtonItem = nil;
+    }
+}
+
 - (void) dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
@@ -50,6 +77,7 @@ static NSString* kUpNextCell = @"UpNextCell";
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc addObserver:self selector:@selector(playbackManagerDidUpdateNotification:) name:PlaybackManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
 
         _observing = YES;
@@ -61,6 +89,7 @@ static NSString* kUpNextCell = @"UpNextCell";
         [nc removeObserver:self name:CacheManagerDidUpdateNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidClearCacheNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc removeObserver:self name:PlaybackManagerDidUpdateNotification object:nil];
         [nc removeObserver:self name:PlaybackManagerDidChangeEpisodeNotification object:nil];
 
         _observing = NO;
@@ -97,6 +126,11 @@ static NSString* kUpNextCell = @"UpNextCell";
     [self _setNeedsPlayComboButtonUpdate];
 }
 
+- (void) playbackManagerDidUpdateNotification:(NSNotification*)notification
+{
+    [self _setNeedsPlayComboButtonUpdate];
+}
+
 - (void) playbackManagerDidChangeEpisodeNotification:(NSNotification*)notification
 {
     // Reload to update the highlighting of currently playing episode
@@ -119,9 +153,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     self.tableView.dragDelegate = self;
     self.tableView.dropDelegate = self;
 
-    if (!self.presentedAsMainView) {
-        self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Player Close"] style:UIBarButtonItemStylePlain target:self action:@selector(playerCloseButtonAction:)];
-    }
+    [self _updateLeftBarButtonItem];
 
     // Download all and Remove all buttons as icons
     UIBarButtonItem* downloadAllButton = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.down.circle"]
@@ -148,6 +180,17 @@ static NSString* kUpNextCell = @"UpNextCell";
 
 - (void) playerCloseButtonAction:(id)sender
 {
+    UINavigationController* navigationController = self.navigationController;
+    if (navigationController && navigationController.viewControllers.count > 1 && navigationController.topViewController == self) {
+        [self.navigationController popViewControllerAnimated:YES];
+        return;
+    }
+
+    if (navigationController && navigationController.presentingViewController != nil && self.navigationController.viewControllers.firstObject == self) {
+        [navigationController dismissViewControllerAnimated:YES completion:NULL];
+        return;
+    }
+
     [self dismissViewControllerAnimated:YES completion:NULL];
 }
 
@@ -272,6 +315,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+    [self _updateLeftBarButtonItem];
     _didRestoreScrollPosition = NO;
 
     [self _setObserving:YES];
@@ -350,6 +394,30 @@ static NSString* kUpNextCell = @"UpNextCell";
     ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
+- (UIImage*) _deleteSwipeImage
+{
+    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
+    UIImage* image = [UIImage systemImageNamed:@"trash" withConfiguration:config];
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+- (void) _removeEpisodeAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (indexPath.section != 0 || indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
+        return;
+    }
+
+    CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
+    [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+
+    [self.tableView beginUpdates];
+    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+    [self.tableView endUpdates];
+
+    [self _updateEmptyState];
+    [self _updateToolbarItems];
+}
+
 #pragma mark - Table view data source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -371,7 +439,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     BOOL isPlaying = [episode isEqual:[AudioSession sharedAudioSession].episode];
     cell.backgroundColor = isPlaying ? ICTableSelectedBackgroundColor : self.tableView.backgroundColor;
     cell.embedded = NO;
-    cell.panRecognizer.enabled = NO;
+    cell.panRecognizer.enabled = YES;
     cell.objectValue = episode;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
@@ -399,6 +467,33 @@ static NSString* kUpNextCell = @"UpNextCell";
         strongCell.iconView.image = image;
     }];
 
+    __weak UpNextTableViewController* weakSelf = self;
+    cell.leftSwipeImageProvider = ^UIImage* {
+        return [weakSelf _deleteSwipeImage];
+    };
+    cell.leftSwipeTintProvider = ^UIColor* {
+        return [UIColor systemRedColor];
+    };
+    cell.rightSwipeImageProvider = ^UIImage* {
+        return nil;
+    };
+    cell.rightSwipeTintProvider = ^UIColor* {
+        return [UIColor clearColor];
+    };
+    cell.didPanRight = nil;
+    cell.didPanLeft = ^(NSIndexPath* swipedIndexPath) {
+        [weakSelf _removeEpisodeAtIndexPath:swipedIndexPath];
+    };
+    cell.panDidBegin = ^(NSIndexPath* swipedIndexPath) {
+        EpisodesTableViewCell* actionCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:swipedIndexPath];
+        for (NSIndexPath* visibleIndexPath in [weakSelf.tableView indexPathsForVisibleRows]) {
+            EpisodesTableViewCell* visibleCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:visibleIndexPath];
+            if (visibleCell != actionCell && visibleCell.showsDeleteControl) {
+                [visibleCell cancelDelete:nil];
+            }
+        }
+    };
+
     return cell;
 }
 
@@ -417,25 +512,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    // Required for swipe-to-delete
-    return YES;
-}
-
-- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    UIContextualAction* deleteAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
-                                                                               title:@"Remove".ls
-                                                                             handler:^(UIContextualAction * _Nonnull action, __kindof UIView * _Nonnull sourceView, void (^ _Nonnull completionHandler)(BOOL)) {
-        CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
-        [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
-        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
-        [self _updateEmptyState];
-        [self _updateToolbarItems];
-        completionHandler(YES);
-    }];
-    deleteAction.image = [UIImage systemImageNamed:@"trash"];
-
-    return [UISwipeActionsConfiguration configurationWithActions:@[deleteAction]];
+    return NO;
 }
 
 #pragma mark - UITableViewDragDelegate

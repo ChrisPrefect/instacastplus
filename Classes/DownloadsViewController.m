@@ -111,8 +111,6 @@
                                                                                target:self
                                                                                action:@selector(toggleEditing:)];
 
-    UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-
     UIBarButtonItem* pauseItem = [[UIBarButtonItem alloc] initWithTitle:@"Pause".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(toggleLoading:)];
     [pauseItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:14]} forState:UIControlStateNormal];

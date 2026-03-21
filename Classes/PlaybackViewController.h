@@ -36,5 +36,6 @@
 
 @interface ICPlaybackViewControllerDismissedAnimator : UIPercentDrivenInteractiveTransition <UIViewControllerAnimatedTransitioning, UIViewControllerInteractiveTransitioning, UIGestureRecognizerDelegate>
 @property (nonatomic, weak) PlaybackViewController* parent;
+- (void) handlePan:(UIPanGestureRecognizer*)recognizer;
 - (void) _driveTransitionWithTranslation:(CGPoint)translation velocity:(CGPoint)velocity recognizerState:(UIGestureRecognizerState)state;
 @end

@@ -18,9 +18,11 @@
 
 static NSInteger const kChartsDisplayLimit = 50;
 static NSInteger const kChartsGenreMinCount = 5;
+static CGFloat const kDirectorySearchBarVerticalPadding = 5.0f;
 
 @interface DirectorySearchViewController ()
 @property (nonatomic, strong) ICSearchBar* searchBar;
+@property (nonatomic, strong) UIView* searchBarContainer;
 @property (nonatomic, strong) NSString* searchTerm;
 @property (nonatomic, strong) STITunesStore* store;
 @property (nonatomic, strong) NSArray* searchResults;
@@ -64,13 +66,12 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 {
     [super viewDidLoad];
 
-    self.edgesForExtendedLayout = UIRectEdgeBottom;
-
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
     self.title = @"Search".ls;
 
     self.tableView.rowHeight = 57+10;
+    self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorInset = UIEdgeInsetsZero;
 
 	ICSearchBar* searchBar = [[ICSearchBar alloc] initWithFrame:CGRectZero];
@@ -83,20 +84,59 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 	searchBar.scopeButtonTitles = [NSArray arrayWithObjects:@"Title".ls, @"Author".ls, @"Description".ls, nil];
 	searchBar.showsScopeBar = YES;
 	searchBar.selectedScopeButtonIndex = [USER_DEFAULTS integerForKey:kUIPersistenceDirectorySearchSelectedScopeIndex];
-	searchBar.placeholder = @"Search or Enter URL".ls;
+    searchBar.placeholder = @"Search or Enter URL".ls;
     searchBar.translucent = YES;
     searchBar.autocorrectionType = UITextAutocorrectionTypeNo;
     searchBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    // Larger search field font (set before sizeToFit so scope bar layout is correct)
-    searchBar.searchTextField.font = [UIFont systemFontOfSize:17.0f];
+    searchBar.frame = CGRectMake(0, 0, CGRectGetWidth(self.tableView.bounds), CGRectGetHeight(searchBar.frame));
 	[searchBar sizeToFit];
 
-	self.tableView.tableHeaderView = searchBar;
+    CGFloat initialSearchBarHeight = CGRectGetHeight(searchBar.frame);
+    CGFloat initialSearchBarWidth = CGRectGetWidth(self.tableView.bounds);
+    searchBar.frame = CGRectMake(0, kDirectorySearchBarVerticalPadding, initialSearchBarWidth, initialSearchBarHeight);
+
+    UIView* searchBarContainer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, initialSearchBarWidth, initialSearchBarHeight + kDirectorySearchBarVerticalPadding * 2.0f)];
+    searchBarContainer.backgroundColor = ICBackgroundColor;
+    self.searchBarContainer = searchBarContainer;
+    [searchBarContainer addSubview:searchBar];
+
+	self.tableView.tableHeaderView = searchBarContainer;
 
 	self.imageCache = [[NSCache alloc] init];
 
     // Load charts: 50 from new API (fast) + 20/genre from old API (background)
     [self _loadCharts];
+}
+
+- (void) _updateSearchBarHeaderLayout
+{
+    ICSearchBar* searchBar = self.searchBar;
+    UIView* searchBarContainer = self.searchBarContainer;
+    if (!searchBar || !searchBarContainer) {
+        return;
+    }
+
+    CGFloat width = CGRectGetWidth(self.tableView.bounds);
+    if (width <= 0) {
+        return;
+    }
+
+    searchBar.frame = CGRectMake(0, 0, width, CGRectGetHeight(searchBar.frame));
+    [searchBar sizeToFit];
+    [searchBar layoutIfNeeded];
+
+    CGFloat verticalPadding = kDirectorySearchBarVerticalPadding;
+    CGFloat searchBarHeight = CGRectGetHeight(searchBar.frame);
+    CGFloat targetHeaderHeight = searchBarHeight + verticalPadding * 2.0f;
+    CGRect headerFrame = searchBarContainer.frame;
+    BOOL needsHeaderReset = (ABS(CGRectGetWidth(headerFrame) - width) > 0.5f ||
+                             ABS(CGRectGetHeight(headerFrame) - targetHeaderHeight) > 0.5f);
+
+    searchBarContainer.frame = CGRectMake(0, 0, width, targetHeaderHeight);
+    searchBar.frame = CGRectMake(0, verticalPadding, width, searchBarHeight);
+    if (needsHeaderReset) {
+        self.tableView.tableHeaderView = searchBarContainer;
+    }
 }
 
 -(void)searchBarColorUpdates
@@ -122,6 +162,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
+    self.searchBarContainer.backgroundColor = ICBackgroundColor;
     [self searchBarColorUpdates];
     [self.searchBar appearanceDidChange];
     [self.tableView reloadData];
@@ -146,6 +187,12 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
 - (void) viewDidAppear:(BOOL)animated
 {
     [super viewDidAppear:animated];
+}
+
+- (void)viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    [self _updateSearchBarHeaderLayout];
 }
 
 - (void) viewWillDisappear:(BOOL)animated
@@ -504,7 +551,6 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     // Layout constants
     CGFloat rowHeight = 32;
     CGFloat menuWidth = 250;
-    CGFloat maxHeight = 560;
     CGFloat leftPad = 21;
     CGFloat subLeftPad = 43;
     CGFloat rightPad = 8;

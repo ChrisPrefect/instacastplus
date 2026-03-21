@@ -197,23 +197,23 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 - (void) retainNetworkActivity
 {
 	dispatch_async(dispatch_get_main_queue(), ^{
-        if (_networkActivityRetainCount == 0) {
+        if (self->_networkActivityRetainCount == 0) {
             // networkActivityIndicatorVisible is deprecated in iOS 13 with no replacement
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
             self.networkActivityIndicatorVisible = YES;
 #pragma clang diagnostic pop
         }
-        _networkActivityRetainCount++;
+        self->_networkActivityRetainCount++;
     });
 }
 
 - (void) releaseNetworkActivity
 {
 	dispatch_async(dispatch_get_main_queue(), ^{
-        _networkActivityRetainCount = MAX(_networkActivityRetainCount-1,0);
+        self->_networkActivityRetainCount = MAX(self->_networkActivityRetainCount-1,0);
 
-        if (_networkActivityRetainCount == 0) {
+        if (self->_networkActivityRetainCount == 0) {
             // networkActivityIndicatorVisible is deprecated in iOS 13 with no replacement
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -353,9 +353,9 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                         if (isMotionActive){
                             if ([PlaybackManager playbackManager].isPodcastPlaying)
                             {
-                                if (myidleTimer)
+                                if (self->myidleTimer)
                                 {
-                                    [myidleTimer invalidate];
+                                    [self->myidleTimer invalidate];
                                 }
                                 NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
                                 [USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
@@ -365,13 +365,13 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
                                 {
                                     [AudioSession sharedAudioSession].timerValue = sleepTimer;
                                     int timeout = (int)sleepTimer * 60;
-                                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                                    self->myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
                                 }
                                 else if (lastSleepTimer > 0 && [USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
                                 {
                                     [AudioSession sharedAudioSession].timerValue = lastSleepTimer;
                                     int timeout = (int)lastSleepTimer * 60;
-                                    myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
+                                    self->myidleTimer = [NSTimer scheduledTimerWithTimeInterval:timeout target:self selector:@selector(idleTimerExceeded) userInfo:nil repeats:NO];
                                 }
                             }
                         }

@@ -512,11 +512,11 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     return startedList;
 }
 
-- (CDEpisodeList*) _episodeListForUID:(NSString*)uid
+- (CDList*) _listForUID:(NSString*)uid
 {
     for (CDList* list in DMANAGER.lists) {
-        if ([list isKindOfClass:[CDEpisodeList class]] && [list.uid isEqualToString:uid]) {
-            return (CDEpisodeList*)list;
+        if ([list.uid isEqualToString:uid]) {
+            return list;
         }
     }
     return nil;
@@ -540,7 +540,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
 - (MainSidebarItem*) _sidebarItemForListUID:(NSString*)uid dynamicTag:(NSInteger*)dynamicTag
 {
-    CDEpisodeList* list = [self _episodeListForUID:uid];
+    CDList* list = [self _listForUID:uid];
     if (!list) return nil;
 
     NSInteger tag = [self _tagForListUID:uid];
@@ -652,7 +652,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     return vc;
 }
 
-- (CDEpisodeList*) _episodeListForDynamicTag:(NSInteger)tag
+- (CDList*) _listForDynamicTag:(NSInteger)tag
 {
     if (tag < 100) return nil;
     NSArray* mainMenuUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
@@ -660,7 +660,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     for (NSString* uid in mainMenuUIDs) {
         if ([self _tagForListUID:uid] != -1) continue; // skip default UIDs (they have fixed tags)
         if (dynamicTag == tag) {
-            return [self _episodeListForUID:uid];
+            return [self _listForUID:uid];
         }
         dynamicTag++;
     }
@@ -671,7 +671,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 {
     // Handle dynamic list items (tag >= 100)
     if (tag >= 100) {
-        CDEpisodeList* list = [self _episodeListForDynamicTag:tag];
+        CDList* list = [self _listForDynamicTag:tag];
         if (list) {
             UIViewController* controller = [ListEpisodesTableViewController viewControllerWithList:list];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
@@ -802,9 +802,13 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 }
 
 
-- (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation duration:(NSTimeInterval)duration
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
 {
-    [self animateAdditionalSidebarViewsDuringShow:self.sidebarShown];
+    (void)size;
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    [coordinator animateAlongsideTransition:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
+        [self animateAdditionalSidebarViewsDuringShow:self.sidebarShown];
+    } completion:nil];
 }
 
 

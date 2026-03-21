@@ -448,15 +448,11 @@
 - (void) _pushControllerForListAtIndex:(NSUInteger)index animated:(BOOL)animated
 {
     CDList* list = [DMANAGER.lists objectAtIndex:index];
-    
-    if (![list isKindOfClass:[CDEpisodeList class]]) {
-        return;
-    }
-    
+
     UIBarButtonItem* a = [[UIBarButtonItem alloc] initWithTitle:@"" style:UIBarButtonItemStylePlain target:nil action:nil];
     self.navigationItem.backBarButtonItem = a;
     
-    ListEpisodesTableViewController* episodesController = [ListEpisodesTableViewController viewControllerWithList:(CDEpisodeList*)list];
+    ListEpisodesTableViewController* episodesController = [ListEpisodesTableViewController viewControllerWithList:list];
    
     [self.navigationController pushViewController:episodesController animated:YES];
 }

@@ -545,8 +545,6 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
 - (void) _presentParserError:(NSError*)error
 {
-    return;
-    
     if (error) {
         [self presentError:error];
     }
@@ -722,7 +720,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
 - (void) cancelAction:(id)sender
 {
-    [self dismissViewControllerAnimated:YES completion:NO];
+    [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 #pragma mark WebView Delegate

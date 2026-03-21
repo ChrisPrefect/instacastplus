@@ -183,10 +183,19 @@
     }
 }
 
+- (double)_effectiveLoadProgressForPlaybackManager:(PlaybackManager*)pman
+{
+    double bufferedProgress = (pman.duration > 0) ? (pman.playableDuration / pman.duration) : 0.0;
+    if (pman.streamingCacheActive || pman.streamingCacheComplete) {
+        return MAX(bufferedProgress, pman.streamingCacheProgress);
+    }
+    return bufferedProgress;
+}
+
 - (void) _updateScrubberUI
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    self.scrubber.loadValue = pman.playableDuration / pman.duration;
+    self.scrubber.loadValue = [self _effectiveLoadProgressForPlaybackManager:pman];
     self.scrubber.value = (pman.duration <= 0) ? 0 : pman.time / pman.duration;
 }
 

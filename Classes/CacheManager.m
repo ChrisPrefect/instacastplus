@@ -504,7 +504,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidStartCachingEpisodeNotification
                                                             object:self
                                                           userInfo:@{ @"episode" : episode }];
-        _flags.supressSendUpdate = NO;
+        self->_flags.supressSendUpdate = NO;
     });
 	
 	_totalOps++;
@@ -513,11 +513,11 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 	if (!_updateTimer)
 	{
         void (^startUpdateTimer)(void) = ^{
-            if (_updateTimer) {
+            if (self->_updateTimer) {
                 return;
             }
 
-            _updateTimer = [NSTimer scheduledTimerWithTimeInterval:0.5f target:self selector:@selector(_postDidUpdateNotification) userInfo:nil repeats:YES];
+            self->_updateTimer = [NSTimer scheduledTimerWithTimeInterval:0.5f target:self selector:@selector(_postDidUpdateNotification) userInfo:nil repeats:YES];
         
 #if TARGET_OS_IPHONE
 
@@ -1057,7 +1057,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
         [self saveCachingEpisodes];
         [self saveFileIndex];
         
-        _flags.supressSendUpdate = NO;
+        self->_flags.supressSendUpdate = NO;
     });
     
 	_runningOps--;
@@ -1101,7 +1101,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
         _flags.supressSendUpdate = YES;
         dispatch_async(dispatch_get_main_queue(), ^{
             [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
-            _flags.supressSendUpdate = NO;
+            self->_flags.supressSendUpdate = NO;
         });
 	}
     
@@ -1602,7 +1602,16 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
 
 - (void) importFileAtURL:(NSURL*)url forEpisode:(CDEpisode*)episode completion:(void (^)(BOOL success, NSError* error))completion
 {
-    [self removeCacheForEpisode:episode automatic:NO];
+    if (!url || !episode) {
+        if (completion) {
+            completion(NO, [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil]);
+        }
+        return;
+    }
+
+    if ([self episodeIsCached:episode] || [self isCachingEpisode:episode]) {
+        [self removeCacheForEpisode:episode automatic:NO];
+    }
     
     NSURL* cachedURL = [self URLForCachedEpisode:episode];
     
@@ -1610,13 +1619,40 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
         NSFileManager* fman = [[NSFileManager alloc] init];
         NSError* error;
         BOOL success = [fman copyItemAtURL:url toURL:cachedURL error:&error];
+        if (success) {
+            AddSkipBackupAttributeToFile(cachedURL.path);
+        }
         
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (success) {
+                self->_downloadedBytes = 0;
+                [self willChangeValueForKey:@"cachedEpisodes"];
 
-            self->_downloadedBytes = 0;
-            [self willChangeValueForKey:@"cachedEpisodes"];
-            [_cachedEpisodes addObject:episode];
-            [self didChangeValueForKey:@"cachedEpisodes"];
+                NSString* objectHash = episode.objectHash;
+                for (CDEpisode* cachedEpisode in [self->_cachedEpisodes copy]) {
+                    if ([cachedEpisode.objectHash isEqualToString:objectHash]) {
+                        [self->_cachedEpisodes removeObject:cachedEpisode];
+                    }
+                }
+                [self->_cachedEpisodes addObject:episode];
+                [self didChangeValueForKey:@"cachedEpisodes"];
+
+                @try {
+                    episode.lastDownloaded = [NSDate date];
+                    episode.downloaded = YES;
+                }
+                @catch (NSException *exception) {
+                    ErrLog(@"could not update episode download flags: %@", exception);
+                }
+
+                [self saveFileIndex];
+                [self recalculateDownloadedBytesInBackground];
+                [DMANAGER save];
+
+                [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidFinishCachingEpisodeNotification
+                                                                    object:self
+                                                                  userInfo:@{@"episode": episode}];
+            }
 
             if (completion) {
                 completion(success, error);

@@ -452,7 +452,7 @@ enum {
 
 
 
-@interface PlayerInfoViewController_v5 () <UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate>
+@interface PlayerInfoViewController_v5 () <UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, UITextViewDelegate>
 @property (nonatomic, strong, readwrite) UIImageView* imageView;
 
 @property (nonatomic) NSTimeInterval duration;
@@ -1880,7 +1880,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
-            if (![_transcriptLoadingURL isEqualToString:urlString]) return;
+            if (![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
             if (cachedCues.count > 0) {
                 DebugLog(@"[TranscriptData] cache hit+parse success episode=%@ url=%@ cues=%ld", episodeHash ?: @"(nil)", urlString, (long)cachedCues.count);
@@ -1956,7 +1956,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             __strong typeof(weakSelf) self = weakSelf;
             if (!self) return;
             if (self.transcriptTask != task) return;
-            if (![_transcriptLoadingURL isEqualToString:urlString]) return;
+            if (![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
             if (statusFailed) {
                 DebugLog(@"[TranscriptData] transcript request failed (%ld) url=%@", (long)statusCode, urlString);
@@ -2847,6 +2847,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
         // Set podcast image
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
+        cell.objectValue = episode;
         NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
         __weak EpisodesTableViewCell* weakCell = cell;
@@ -2856,8 +2857,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             if (strongCell.objectValue != episode) return;
             strongCell.iconView.image = image;
         }];
-
-        cell.objectValue = episode;
 
         return cell;
     }

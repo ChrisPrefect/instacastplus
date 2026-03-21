@@ -429,8 +429,8 @@
             chapter.label = chapterDescription;
             chapter.link = (chapterURL) ? [NSURL URLWithString:chapterURL] : nil;
             
-            if (!_chapters) {
-                _chapters = [NSMutableArray new];
+            if (!self->_chapters) {
+                self->_chapters = [NSMutableArray new];
             }
             [chapters addObject:chapter];
             
@@ -441,8 +441,8 @@
                 chapterImage.end = CMTimeMake(c_end_ms, 1000);
                 chapterImage.label = chapterTitle;
                 
-                if (!_images) {
-                    _images = [NSMutableArray new];
+                if (!self->_images) {
+                    self->_images = [NSMutableArray new];
                 }
                 [images addObject:chapterImage];
             }
@@ -612,12 +612,12 @@
 
                     if (chaptersLoaded == chaptersToLoad)
                     {
-                        _chapters = [[[chapterIndex allValues] sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
+                        self->_chapters = [[[chapterIndex allValues] sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
                         
                         // remove chapter with no title and no significant time
-                        [[_chapters copy] enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
+                        [[self->_chapters copy] enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
                             if ([chapter.title length] == 0 && [chapter durationWithTrackDuration:0] < 1) {
-                                [_chapters removeObject:chapter];
+                                [self->_chapters removeObject:chapter];
                             }
                         }];
 
@@ -625,8 +625,8 @@
                         if (imagesLoaded == imagesToLoad)
                         {
                             dispatch_async(dispatch_get_main_queue(), ^{
-                                self.metadataAsset.chapters = _chapters;
-                                self.metadataAsset.images = _images;
+                                self.metadataAsset.chapters = self->_chapters;
+                                self.metadataAsset.images = self->_images;
                                 completionHandler(YES, nil);
                             });
                         }
@@ -653,13 +653,13 @@
                 
                 if (imagesLoaded == imagesToLoad)
                 {
-                    _images = [[[imageIndex allValues] sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
+                    self->_images = [[[imageIndex allValues] sortedArrayUsingSelector:@selector(compare:)] mutableCopy];
                     
                     if (chaptersLoaded == chaptersToLoad)
                     {
                         dispatch_async(dispatch_get_main_queue(), ^{
-                            self.metadataAsset.chapters = _chapters;
-                            self.metadataAsset.images = _images;
+                            self.metadataAsset.chapters = self->_chapters;
+                            self.metadataAsset.images = self->_images;
                             completionHandler(YES, nil);
                         });
                     }

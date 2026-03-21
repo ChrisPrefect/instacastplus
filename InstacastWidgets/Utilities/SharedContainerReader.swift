@@ -41,10 +41,6 @@ enum SharedContainerReader {
         return read(WListEpisodes.self, from: filename)
     }
 
-    static func readFeeds() -> [WFeed]? {
-        read([WFeed].self, from: ICWidgetConstants.feedsFile)
-    }
-
     static func readStats() -> WStats? {
         read(WStats.self, from: ICWidgetConstants.statsFile)
     }

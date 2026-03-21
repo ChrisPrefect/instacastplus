@@ -1098,13 +1098,13 @@ API_AVAILABLE(ios(14.0)){
         {
             if ([USER_DEFAULTS objectForKey:LastSelectedSleepTimer] == nil)
             {
-                if ([USER_DEFAULTS objectForKey:DefaultIntelligentSleepTimer] == PlaybackStopTimeNoValue)
+                if ([USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer] == PlaybackStopTimeNoValue)
                 {
                     [USER_DEFAULTS setInteger:PlaybackStopTime5min forKey:LastSelectedSleepTimer];
                 }
                 else
                 {
-                    [USER_DEFAULTS setInteger:DefaultIntelligentSleepTimer forKey:LastSelectedSleepTimer];
+                    [USER_DEFAULTS setInteger:sleepTimer forKey:LastSelectedSleepTimer];
                 }
                 //[USER_DEFAULTS removeObjectForKey:UncompletedSleepTimeInterval];
             }

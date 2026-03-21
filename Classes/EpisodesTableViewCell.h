@@ -30,16 +30,19 @@
 
 - (void) updatePlayComboButtonState;
 - (void) updatePlayedAndStarredState;
-- (void)startProgressUpdate;
-- (void)stopProgressUpdate;
-
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle;
 
 @property (nonatomic, copy) void (^panDidBegin)(NSIndexPath* cellIndexPath);
 @property (nonatomic, copy) void (^didPanRight)(NSIndexPath* cellIndexPath);
+@property (nonatomic, copy) void (^didPanLeft)(NSIndexPath* cellIndexPath);
 @property (nonatomic, copy) void (^shouldDelete)(NSIndexPath* cellIndexPath);
 @property (nonatomic, copy) void (^shouldShowMore)(NSIndexPath* cellIndexPath);
+
+@property (nonatomic, copy) UIImage* (^leftSwipeImageProvider)(void);
+@property (nonatomic, copy) UIColor* (^leftSwipeTintProvider)(void);
+@property (nonatomic, copy) UIImage* (^rightSwipeImageProvider)(void);
+@property (nonatomic, copy) UIColor* (^rightSwipeTintProvider)(void);
 
 - (void) cancelDelete:(id)sender;
 

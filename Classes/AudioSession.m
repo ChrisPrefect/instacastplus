@@ -26,7 +26,7 @@ static NSString* kPlaybackStatePlaylist = @"PlaybackPlaylist";
 NSString* AudioSessionAudioRouteDidChangeNotification = @"AudioSessionAudioRouteDidChangeNotification";
 NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestorePlaybackNotification";
 
-@interface AudioSession () <AVAudioSessionDelegate>
+@interface AudioSession ()
 @property (nonatomic, readwrite, strong) CDEpisode* episode;
 
 - (void) _savePlaybackStateInUserDefaults;
@@ -817,7 +817,8 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         object:item
         queue:nil
         usingBlock:^(NSNotification* note) {
-            [weakSelf.silentPlayer seekToTime:kCMTimeZero completionHandler:nil];
+            [weakSelf.silentPlayer seekToTime:kCMTimeZero completionHandler:^(__unused BOOL finished) {
+            }];
             [weakSelf.silentPlayer play];
         }];
 

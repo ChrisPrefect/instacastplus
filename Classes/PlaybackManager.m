@@ -61,6 +61,821 @@ enum {
 	VideoPausedInBackground
 };
 
+#if TARGET_OS_IPHONE
+typedef struct {
+    int64_t start;
+    int64_t end; // exclusive
+} ICStreamByteRange;
+
+static ICStreamByteRange ICStreamByteRangeMake(int64_t start, int64_t end)
+{
+    ICStreamByteRange range;
+    range.start = start;
+    range.end = end;
+    return range;
+}
+
+static BOOL ICStreamByteRangeIsValid(ICStreamByteRange range)
+{
+    return (range.end > range.start && range.start >= 0);
+}
+
+static NSValue* ICStreamRangeValue(ICStreamByteRange range)
+{
+    return [NSValue valueWithBytes:&range objCType:@encode(ICStreamByteRange)];
+}
+
+static ICStreamByteRange ICStreamRangeFromValue(NSValue* value)
+{
+    ICStreamByteRange range = ICStreamByteRangeMake(0, 0);
+    [value getValue:&range];
+    return range;
+}
+
+static void ICStreamMergeRangeIntoArray(NSMutableArray<NSValue*>* ranges, ICStreamByteRange newRange)
+{
+    if (!ICStreamByteRangeIsValid(newRange)) {
+        return;
+    }
+
+    NSInteger insertIndex = ranges.count;
+    for (NSInteger i = 0; i < (NSInteger)ranges.count; i++) {
+        ICStreamByteRange existing = ICStreamRangeFromValue(ranges[i]);
+        if (newRange.end < existing.start) {
+            insertIndex = i;
+            break;
+        }
+        if (newRange.start > existing.end) {
+            continue;
+        }
+
+        newRange.start = MIN(newRange.start, existing.start);
+        newRange.end = MAX(newRange.end, existing.end);
+        [ranges removeObjectAtIndex:i];
+        i--;
+        insertIndex = i + 1;
+    }
+
+    [ranges insertObject:ICStreamRangeValue(newRange) atIndex:MAX(0, insertIndex)];
+}
+
+static int64_t ICStreamContiguousEndForOffset(NSArray<NSValue*>* ranges, int64_t offset)
+{
+    if (offset < 0) {
+        return 0;
+    }
+    for (NSValue* value in ranges) {
+        ICStreamByteRange range = ICStreamRangeFromValue(value);
+        if (offset < range.start) {
+            return offset;
+        }
+        if (offset >= range.start && offset < range.end) {
+            return range.end;
+        }
+    }
+    return offset;
+}
+
+static NSString* const ICStreamingCacheScheme = @"instacast-stream-cache";
+static const int64_t ICStreamingHighPriorityChunkSize = 512 * 1024;
+static const int64_t ICStreamingBackfillChunkSize = 512 * 1024;
+static const void* ICStreamingQueueSpecific = &ICStreamingQueueSpecific;
+
+@interface CacheManager (PlaybackStreamCache)
+- (NSURL*)tempURLForCachedEpisode:(CDEpisode*)episode;
+@end
+
+static NSMutableSet* ICStreamingDetachedLoaderSet(void)
+{
+    static NSMutableSet* detachedLoaders = nil;
+    static dispatch_once_t onceToken = 0;
+    dispatch_once(&onceToken, ^{
+        detachedLoaders = [[NSMutableSet alloc] init];
+    });
+    return detachedLoaders;
+}
+
+@interface ICStreamingCacheLoader : NSObject <AVAssetResourceLoaderDelegate, NSURLSessionDataDelegate, NSURLSessionTaskDelegate>
+@property (nonatomic, strong, readonly) NSURL* assetURL;
+@property (nonatomic, strong, readonly) dispatch_queue_t resourceLoaderQueue;
+@property (nonatomic, readonly, getter=isCacheComplete) BOOL cacheComplete;
+@property (nonatomic, copy) void (^progressChangeHandler)(double progress, BOOL cacheComplete);
+- (instancetype)initWithEpisode:(CDEpisode*)episode
+                      remoteURL:(NSURL*)remoteURL
+                   expectedSize:(int64_t)expectedSize
+                       mimeType:(NSString*)mimeType
+                       username:(NSString*)username
+                       password:(NSString*)password;
+- (void)detachFromPlaybackAndContinueCaching;
+- (void)stop;
+@end
+
+@interface ICStreamingCacheLoader ()
+@property (nonatomic, strong) CDEpisode* episode;
+@property (nonatomic, strong) NSURL* remoteURL;
+@property (nonatomic, strong) NSURL* tempURL;
+@property (nonatomic, strong) NSURL* readURL;
+@property (nonatomic, strong) NSString* username;
+@property (nonatomic, strong) NSString* password;
+@property (nonatomic, strong) NSString* mimeType;
+@property (nonatomic, strong) NSString* contentType;
+@property (nonatomic) int64_t contentLength;
+@property (nonatomic) int64_t hintedContentLength;
+@property (nonatomic) BOOL contentLengthConfirmed;
+@property (nonatomic) BOOL supportsByteRange;
+@property (nonatomic) BOOL stopped;
+@property (nonatomic) BOOL cacheCoverageComplete;
+@property (nonatomic) BOOL cacheImportStarted;
+@property (nonatomic) BOOL cacheImportFinished;
+@property (nonatomic, strong) NSFileHandle* writeHandle;
+@property (nonatomic, strong) NSMutableArray<NSValue*>* downloadedRanges;
+@property (nonatomic, strong) NSMutableArray<NSValue*>* highPriorityRanges;
+@property (nonatomic, strong) NSMutableArray<AVAssetResourceLoadingRequest*>* pendingRequests;
+@property (nonatomic, strong) NSURLSession* session;
+@property (nonatomic, strong) NSURLSessionDataTask* activeTask;
+@property (nonatomic) ICStreamByteRange activeRange;
+@property (nonatomic) int64_t activeWriteOffset;
+@property (nonatomic, strong) dispatch_queue_t resourceLoaderQueue;
+@property (nonatomic, strong) NSURL* assetURL;
+@property (nonatomic) double lastNotifiedProgress;
+@property (nonatomic) BOOL lastNotifiedComplete;
+@end
+
+@implementation ICStreamingCacheLoader
+
+- (instancetype)initWithEpisode:(CDEpisode*)episode
+                      remoteURL:(NSURL*)remoteURL
+                   expectedSize:(int64_t)expectedSize
+                       mimeType:(NSString*)mimeType
+                       username:(NSString*)username
+                       password:(NSString*)password
+{
+    if ((self = [super init])) {
+        _episode = episode;
+        _remoteURL = remoteURL;
+        _contentLength = 0;
+        _hintedContentLength = expectedSize;
+        _contentLengthConfirmed = NO;
+        _mimeType = mimeType;
+        _username = username;
+        _password = password;
+        _downloadedRanges = [[NSMutableArray alloc] init];
+        _highPriorityRanges = [[NSMutableArray alloc] init];
+        _pendingRequests = [[NSMutableArray alloc] init];
+
+        NSString* hash = (episode.objectHash.length > 0) ? episode.objectHash : [[NSUUID UUID] UUIDString];
+        _assetURL = [NSURL URLWithString:[NSString stringWithFormat:@"%@://%@", ICStreamingCacheScheme, hash]];
+        _resourceLoaderQueue = dispatch_queue_create([[NSString stringWithFormat:@"com.vemedio.instacast.streamcache.%@", hash] UTF8String], DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(_resourceLoaderQueue, ICStreamingQueueSpecific, (void*)ICStreamingQueueSpecific, NULL);
+
+        CacheManager* cacheManager = [CacheManager sharedCacheManager];
+        _tempURL = [cacheManager tempURLForCachedEpisode:episode];
+        _readURL = _tempURL;
+
+        [self _prepareTempFile];
+
+        NSURLSessionConfiguration* config = [NSURLSessionConfiguration defaultSessionConfiguration];
+        config.timeoutIntervalForRequest = 30.0;
+        config.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+
+        NSOperationQueue* delegateQueue = [[NSOperationQueue alloc] init];
+        delegateQueue.maxConcurrentOperationCount = 1;
+        delegateQueue.qualityOfService = NSOperationQualityOfServiceUserInitiated;
+        _session = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:delegateQueue];
+
+        _contentType = [self _contentTypeForMIMEType:mimeType];
+    }
+    return self;
+}
+
+- (void)dealloc
+{
+    [self stop];
+}
+
+- (BOOL)isCacheComplete
+{
+    return self.cacheCoverageComplete;
+}
+
+- (void)_releaseDetachedRetentionIfPossible
+{
+    if (!self.cacheImportFinished && !self.stopped) {
+        return;
+    }
+
+    NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
+    @synchronized(detachedSet) {
+        [detachedSet removeObject:self];
+    }
+}
+
+- (void)detachFromPlaybackAndContinueCaching
+{
+    dispatch_async(self.resourceLoaderQueue, ^{
+        if (self.stopped || self.cacheCoverageComplete) {
+            return;
+        }
+
+        NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
+        @synchronized(detachedSet) {
+            [detachedSet addObject:self];
+        }
+
+        NSError* cancelError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+        for (AVAssetResourceLoadingRequest* request in [self.pendingRequests copy]) {
+            [request finishLoadingWithError:cancelError];
+        }
+        [self.pendingRequests removeAllObjects];
+
+        [self _notifyProgressIfNeededForce:NO];
+        [self _pumpDownloads];
+    });
+}
+
+- (void)stop
+{
+    void (^stopBlock)(void) = ^{
+        if (self.stopped) {
+            return;
+        }
+        self.stopped = YES;
+
+        NSError* cancelError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+        for (AVAssetResourceLoadingRequest* request in [self.pendingRequests copy]) {
+            [request finishLoadingWithError:cancelError];
+        }
+        [self.pendingRequests removeAllObjects];
+        [self.highPriorityRanges removeAllObjects];
+
+        [self.activeTask cancel];
+        self.activeTask = nil;
+        [self.session invalidateAndCancel];
+        self.session = nil;
+
+        [self.writeHandle closeFile];
+        self.writeHandle = nil;
+        self.cacheImportFinished = YES;
+        self.cacheCoverageComplete = YES;
+        [self _notifyProgressIfNeededForce:YES];
+        [self _releaseDetachedRetentionIfPossible];
+    };
+
+    if (dispatch_get_specific(ICStreamingQueueSpecific)) {
+        stopBlock();
+    } else {
+        dispatch_sync(self.resourceLoaderQueue, stopBlock);
+    }
+}
+
+- (void)_prepareTempFile
+{
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSString* tempPath = self.tempURL.path;
+    NSString* tempDirectory = [tempPath stringByDeletingLastPathComponent];
+    [fileManager createDirectoryAtPath:tempDirectory withIntermediateDirectories:YES attributes:nil error:nil];
+    [fileManager removeItemAtPath:tempPath error:nil];
+    [fileManager createFileAtPath:tempPath contents:[NSData data] attributes:nil];
+    self.writeHandle = [NSFileHandle fileHandleForWritingAtPath:tempPath];
+}
+
+- (NSString*)_contentTypeForMIMEType:(NSString*)mimeType
+{
+    if (mimeType.length == 0) {
+        return nil;
+    }
+    NSString* lowerMime = [mimeType lowercaseString];
+    if ([lowerMime isEqualToString:@"audio/mpeg"]) {
+        return @"public.mp3";
+    }
+    if ([lowerMime isEqualToString:@"audio/m4a"] ||
+        [lowerMime isEqualToString:@"audio/mp4"] ||
+        [lowerMime isEqualToString:@"audio/x-m4a"] ||
+        [lowerMime isEqualToString:@"audio/mpeg4"]) {
+        return @"public.mpeg-4-audio";
+    }
+    if ([lowerMime hasPrefix:@"video/"]) {
+        return @"public.mpeg-4";
+    }
+    return nil;
+}
+
+- (double)_currentCoverageProgress
+{
+    int64_t targetLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
+    if (targetLength <= 0) {
+        return 0.0;
+    }
+
+    int64_t downloadedLength = 0;
+    for (NSValue* value in self.downloadedRanges) {
+        ICStreamByteRange range = ICStreamRangeFromValue(value);
+        if (!ICStreamByteRangeIsValid(range)) {
+            continue;
+        }
+        int64_t clippedStart = MAX((int64_t)0, range.start);
+        int64_t clippedEnd = MIN(targetLength, range.end);
+        if (clippedEnd > clippedStart) {
+            downloadedLength += (clippedEnd - clippedStart);
+        }
+    }
+
+    double progress = (double)downloadedLength / (double)targetLength;
+    return MIN(MAX(progress, 0.0), 1.0);
+}
+
+- (void)_notifyProgressIfNeededForce:(BOOL)force
+{
+    if (!self.progressChangeHandler) {
+        return;
+    }
+
+    double progress = [self _currentCoverageProgress];
+    BOOL complete = self.cacheCoverageComplete;
+    BOOL progressChanged = (fabs(progress - self.lastNotifiedProgress) >= 0.003);
+    BOOL completionChanged = (complete != self.lastNotifiedComplete);
+    if (!force && !progressChanged && !completionChanged) {
+        return;
+    }
+
+    self.lastNotifiedProgress = progress;
+    self.lastNotifiedComplete = complete;
+
+    void (^handler)(double, BOOL) = [self.progressChangeHandler copy];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        handler(progress, complete);
+    });
+}
+
+- (void)_enqueueHighPriorityRangeFrom:(int64_t)start to:(int64_t)end
+{
+    int64_t maxLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
+    if (maxLength > 0) {
+        end = MIN(end, maxLength);
+    }
+    if (end <= start) {
+        return;
+    }
+    ICStreamMergeRangeIntoArray(self.highPriorityRanges, ICStreamByteRangeMake(start, end));
+}
+
+- (ICStreamByteRange)_dequeueHighPriorityChunk
+{
+    while (self.highPriorityRanges.count > 0) {
+        ICStreamByteRange range = ICStreamRangeFromValue(self.highPriorityRanges.firstObject);
+        [self.highPriorityRanges removeObjectAtIndex:0];
+
+        int64_t current = range.start;
+        while (current < range.end) {
+            int64_t availableEnd = ICStreamContiguousEndForOffset(self.downloadedRanges, current);
+            if (availableEnd <= current) {
+                break;
+            }
+            current = availableEnd;
+        }
+
+        if (current >= range.end) {
+            continue;
+        }
+
+        int64_t chunkEnd = MIN(range.end, current + ICStreamingHighPriorityChunkSize);
+        if (chunkEnd < range.end) {
+            ICStreamMergeRangeIntoArray(self.highPriorityRanges, ICStreamByteRangeMake(chunkEnd, range.end));
+        }
+
+        return ICStreamByteRangeMake(current, chunkEnd);
+    }
+    return ICStreamByteRangeMake(0, 0);
+}
+
+- (ICStreamByteRange)_nextBackfillChunk
+{
+    int64_t targetLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
+    if (self.cacheCoverageComplete) {
+        return ICStreamByteRangeMake(0, 0);
+    }
+
+    int64_t cursor = 0;
+    for (NSValue* value in self.downloadedRanges) {
+        ICStreamByteRange range = ICStreamRangeFromValue(value);
+        if (range.start > cursor) {
+            int64_t end = MIN(range.start, cursor + ICStreamingBackfillChunkSize);
+            return ICStreamByteRangeMake(cursor, end);
+        }
+        cursor = MAX(cursor, range.end);
+        if (targetLength > 0 && cursor >= targetLength) {
+            if (!self.contentLengthConfirmed) {
+                return ICStreamByteRangeMake(cursor, cursor + ICStreamingBackfillChunkSize);
+            }
+            return ICStreamByteRangeMake(0, 0);
+        }
+    }
+
+    if (targetLength <= 0) {
+        return ICStreamByteRangeMake(cursor, cursor + ICStreamingBackfillChunkSize);
+    }
+
+    if (cursor < targetLength) {
+        int64_t end = MIN(targetLength, cursor + ICStreamingBackfillChunkSize);
+        return ICStreamByteRangeMake(cursor, end);
+    }
+
+    if (!self.contentLengthConfirmed) {
+        return ICStreamByteRangeMake(cursor, cursor + ICStreamingBackfillChunkSize);
+    }
+
+    return ICStreamByteRangeMake(0, 0);
+}
+
+- (void)_startTaskForRange:(ICStreamByteRange)range
+{
+    if (!ICStreamByteRangeIsValid(range) || self.stopped) {
+        return;
+    }
+
+    NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:self.remoteURL cachePolicy:NSURLRequestReloadIgnoringCacheData timeoutInterval:30.0];
+    request.networkServiceType = NSURLNetworkServiceTypeVoice;
+    NSString* rangeHeader = [NSString stringWithFormat:@"bytes=%lld-%lld", range.start, range.end - 1];
+    [request setValue:rangeHeader forHTTPHeaderField:@"Range"];
+    [request setValue:@"" forHTTPHeaderField:@"Accept-Encoding"];
+
+    if (self.username.length > 0) {
+        NSString* rawAuth = [NSString stringWithFormat:@"%@:%@", self.username ?: @"", self.password ?: @""];
+        NSData* authData = [rawAuth dataUsingEncoding:NSUTF8StringEncoding];
+        NSString* base64 = [authData base64EncodedStringWithOptions:0];
+        if (base64.length > 0) {
+            [request setValue:[NSString stringWithFormat:@"Basic %@", base64] forHTTPHeaderField:@"Authorization"];
+        }
+    }
+
+    self.activeRange = range;
+    self.activeWriteOffset = range.start;
+    self.activeTask = [self.session dataTaskWithRequest:request];
+    [self.activeTask resume];
+}
+
+- (void)_pumpDownloads
+{
+    if (self.stopped || self.activeTask || !self.session || self.cacheCoverageComplete) {
+        return;
+    }
+
+    ICStreamByteRange range = [self _dequeueHighPriorityChunk];
+    if (!ICStreamByteRangeIsValid(range)) {
+        range = [self _nextBackfillChunk];
+    }
+
+    if (!ICStreamByteRangeIsValid(range)) {
+        return;
+    }
+
+    [self _startTaskForRange:range];
+}
+
+- (NSData*)_readDataAtOffset:(int64_t)offset length:(NSUInteger)length
+{
+    if (length == 0 || offset < 0) {
+        return [NSData data];
+    }
+
+    NSFileHandle* handle = [NSFileHandle fileHandleForReadingAtPath:self.readURL.path];
+    if (!handle) {
+        return nil;
+    }
+
+    NSData* data = nil;
+    @try {
+        [handle seekToFileOffset:(unsigned long long)offset];
+        data = [handle readDataOfLength:length];
+    }
+    @catch (NSException* exception) {
+        ErrLog(@"stream cache read exception: %@", exception);
+    }
+    @finally {
+        [handle closeFile];
+    }
+
+    return data;
+}
+
+- (void)_fillContentInformationForLoadingRequest:(AVAssetResourceLoadingRequest*)loadingRequest
+{
+    AVAssetResourceLoadingContentInformationRequest* contentRequest = loadingRequest.contentInformationRequest;
+    if (!contentRequest) {
+        return;
+    }
+
+    if (self.contentType.length > 0) {
+        contentRequest.contentType = self.contentType;
+    }
+    int64_t advertisedLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
+    if (advertisedLength > 0) {
+        contentRequest.contentLength = advertisedLength;
+    }
+    contentRequest.byteRangeAccessSupported = YES;
+}
+
+- (void)_processPendingRequests
+{
+    for (AVAssetResourceLoadingRequest* loadingRequest in [self.pendingRequests copy]) {
+        [self _fillContentInformationForLoadingRequest:loadingRequest];
+
+        AVAssetResourceLoadingDataRequest* dataRequest = loadingRequest.dataRequest;
+        if (!dataRequest) {
+            [loadingRequest finishLoading];
+            [self.pendingRequests removeObject:loadingRequest];
+            continue;
+        }
+
+        int64_t requestedOffset = dataRequest.requestedOffset;
+        int64_t currentOffset = dataRequest.currentOffset;
+        if (currentOffset <= 0) {
+            currentOffset = requestedOffset;
+        }
+
+        int64_t streamLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
+
+        int64_t requestedEnd = 0;
+        if (dataRequest.requestsAllDataToEndOfResource && streamLength > 0) {
+            requestedEnd = streamLength;
+        } else if (dataRequest.requestedLength > 0) {
+            requestedEnd = requestedOffset + dataRequest.requestedLength;
+        } else {
+            requestedEnd = currentOffset + ICStreamingHighPriorityChunkSize;
+        }
+
+        int64_t availableEnd = ICStreamContiguousEndForOffset(self.downloadedRanges, currentOffset);
+        int64_t deliverEnd = MIN(availableEnd, requestedEnd);
+        if (deliverEnd > currentOffset) {
+            NSUInteger bytesToRead = (NSUInteger)MIN((int64_t)INT_MAX, deliverEnd - currentOffset);
+            NSData* data = [self _readDataAtOffset:currentOffset length:bytesToRead];
+            if (data.length > 0) {
+                [dataRequest respondWithData:data];
+                currentOffset += data.length;
+            }
+        }
+
+        BOOL finished = NO;
+        if (dataRequest.requestsAllDataToEndOfResource && streamLength > 0) {
+            finished = (currentOffset >= streamLength);
+        } else {
+            finished = (currentOffset >= requestedEnd);
+        }
+
+        if (finished) {
+            [loadingRequest finishLoading];
+            [self.pendingRequests removeObject:loadingRequest];
+        } else {
+            [self _enqueueHighPriorityRangeFrom:currentOffset to:requestedEnd];
+        }
+    }
+}
+
+- (void)_updateCoverageStateAndImportIfNeeded
+{
+    if (!self.contentLengthConfirmed || self.contentLength <= 0 || self.cacheCoverageComplete) {
+        return;
+    }
+
+    int64_t contiguousEnd = ICStreamContiguousEndForOffset(self.downloadedRanges, 0);
+    if (contiguousEnd < self.contentLength) {
+        return;
+    }
+
+    self.cacheCoverageComplete = YES;
+    [self _notifyProgressIfNeededForce:YES];
+
+    if (self.cacheImportStarted) {
+        return;
+    }
+    self.cacheImportStarted = YES;
+
+    [self.writeHandle closeFile];
+    self.writeHandle = nil;
+
+    __weak ICStreamingCacheLoader* weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __strong ICStreamingCacheLoader* strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.stopped) {
+            return;
+        }
+
+        [[CacheManager sharedCacheManager] importFileAtURL:strongSelf.tempURL forEpisode:strongSelf.episode completion:^(BOOL success, NSError* error) {
+            __strong ICStreamingCacheLoader* innerSelf = weakSelf;
+            if (!innerSelf) {
+                return;
+            }
+
+            dispatch_async(innerSelf.resourceLoaderQueue, ^{
+                if (!success) {
+                    ErrLog(@"stream cache import failed: %@", error);
+                    innerSelf.cacheImportFinished = YES;
+                    [innerSelf.session finishTasksAndInvalidate];
+                    innerSelf.session = nil;
+                    [innerSelf _notifyProgressIfNeededForce:YES];
+                    [innerSelf _releaseDetachedRetentionIfPossible];
+                    return;
+                }
+
+                innerSelf.cacheImportFinished = YES;
+                [innerSelf.session finishTasksAndInvalidate];
+                innerSelf.session = nil;
+                innerSelf.readURL = [[CacheManager sharedCacheManager] URLForCachedEpisode:innerSelf.episode];
+                [[NSFileManager defaultManager] removeItemAtURL:innerSelf.tempURL error:nil];
+                [innerSelf _processPendingRequests];
+                [innerSelf _notifyProgressIfNeededForce:YES];
+                [innerSelf _releaseDetachedRetentionIfPossible];
+            });
+        }];
+    });
+}
+
+- (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest
+{
+    __weak ICStreamingCacheLoader* weakSelf = self;
+    dispatch_async(self.resourceLoaderQueue, ^{
+        __strong ICStreamingCacheLoader* strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.stopped) {
+            NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+            [loadingRequest finishLoadingWithError:error];
+            return;
+        }
+
+        [strongSelf.pendingRequests addObject:loadingRequest];
+        [strongSelf _processPendingRequests];
+        [strongSelf _pumpDownloads];
+    });
+    return YES;
+}
+
+- (void)resourceLoader:(AVAssetResourceLoader *)resourceLoader didCancelLoadingRequest:(AVAssetResourceLoadingRequest *)loadingRequest
+{
+    __weak ICStreamingCacheLoader* weakSelf = self;
+    dispatch_async(self.resourceLoaderQueue, ^{
+        __strong ICStreamingCacheLoader* strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        [strongSelf.pendingRequests removeObject:loadingRequest];
+    });
+}
+
+- (void)URLSession:(NSURLSession *)session
+              task:(NSURLSessionTask *)task
+didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
+ completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential * _Nullable credential))completionHandler
+{
+    NSString* method = challenge.protectionSpace.authenticationMethod;
+    if (([method isEqualToString:NSURLAuthenticationMethodHTTPBasic] || [method isEqualToString:NSURLAuthenticationMethodHTTPDigest]) &&
+        self.username.length > 0) {
+        NSURLCredential* credential = [NSURLCredential credentialWithUser:self.username password:self.password ?: @"" persistence:NSURLCredentialPersistenceForSession];
+        completionHandler(NSURLSessionAuthChallengeUseCredential, credential);
+        return;
+    }
+
+    completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, nil);
+}
+
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
+didReceiveResponse:(NSURLResponse *)response
+ completionHandler:(void (^)(NSURLSessionResponseDisposition disposition))completionHandler
+{
+    dispatch_async(self.resourceLoaderQueue, ^{
+        if (self.stopped) {
+            completionHandler(NSURLSessionResponseCancel);
+            return;
+        }
+
+        NSInteger statusCode = 0;
+        int64_t requestedRangeLength = self.activeRange.end - self.activeRange.start;
+        if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+            NSHTTPURLResponse* httpResponse = (NSHTTPURLResponse*)response;
+            statusCode = httpResponse.statusCode;
+            NSDictionary* headers = httpResponse.allHeaderFields;
+            NSString* contentRange = headers[@"Content-Range"] ?: headers[@"content-range"];
+            if ([contentRange isKindOfClass:[NSString class]]) {
+                NSArray* slashParts = [contentRange componentsSeparatedByString:@"/"];
+                NSArray* dashParts = [slashParts.firstObject componentsSeparatedByString:@"-"];
+                if (dashParts.count == 2) {
+                    NSString* startString = [[dashParts.firstObject componentsSeparatedByString:@" "] lastObject];
+                    int64_t responseStart = [startString longLongValue];
+                    self.activeWriteOffset = responseStart;
+                }
+                if (slashParts.count == 2) {
+                    int64_t totalLength = [slashParts.lastObject longLongValue];
+                    if (totalLength > 0) {
+                        self.contentLength = totalLength;
+                        self.contentLengthConfirmed = YES;
+                    }
+                }
+                self.supportsByteRange = YES;
+            } else if (statusCode == 206) {
+                self.supportsByteRange = YES;
+            } else if (statusCode == 200) {
+                self.activeWriteOffset = 0;
+            }
+
+            NSString* acceptRanges = headers[@"Accept-Ranges"] ?: headers[@"accept-ranges"];
+            if ([acceptRanges isKindOfClass:[NSString class]] && [acceptRanges rangeOfString:@"bytes" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                self.supportsByteRange = YES;
+            }
+        }
+
+        if (response.MIMEType.length > 0) {
+            self.mimeType = response.MIMEType;
+            NSString* type = [self _contentTypeForMIMEType:response.MIMEType];
+            if (type.length > 0) {
+                self.contentType = type;
+            }
+        }
+
+        if (self.contentLength <= 0 && response.expectedContentLength > 0) {
+            if (statusCode == 206 && self.supportsByteRange) {
+                int64_t hinted = self.activeWriteOffset + response.expectedContentLength;
+                if (hinted > self.hintedContentLength) {
+                    self.hintedContentLength = hinted;
+                }
+            } else {
+                self.contentLength = (self.activeWriteOffset > 0) ? self.activeWriteOffset + response.expectedContentLength : response.expectedContentLength;
+                self.contentLengthConfirmed = YES;
+            }
+        }
+
+        if (!self.contentLengthConfirmed &&
+            statusCode == 206 &&
+            requestedRangeLength > 0 &&
+            response.expectedContentLength > 0 &&
+            response.expectedContentLength < requestedRangeLength)
+        {
+            self.contentLength = self.activeWriteOffset + response.expectedContentLength;
+            self.contentLengthConfirmed = YES;
+        }
+
+        completionHandler(NSURLSessionResponseAllow);
+        [self _processPendingRequests];
+        [self _notifyProgressIfNeededForce:NO];
+        [self _pumpDownloads];
+    });
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
+{
+    dispatch_async(self.resourceLoaderQueue, ^{
+        if (self.stopped || data.length == 0 || !self.writeHandle) {
+            return;
+        }
+
+        int64_t writeStart = self.activeWriteOffset;
+        @try {
+            [self.writeHandle seekToFileOffset:(unsigned long long)writeStart];
+            [self.writeHandle writeData:data];
+            self.activeWriteOffset += data.length;
+            ICStreamMergeRangeIntoArray(self.downloadedRanges, ICStreamByteRangeMake(writeStart, self.activeWriteOffset));
+        }
+        @catch (NSException* exception) {
+            ErrLog(@"stream cache write exception: %@", exception);
+        }
+
+        [self _processPendingRequests];
+        [self _notifyProgressIfNeededForce:NO];
+        [self _updateCoverageStateAndImportIfNeeded];
+        [self _pumpDownloads];
+    });
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
+{
+    dispatch_async(self.resourceLoaderQueue, ^{
+        if (task != self.activeTask) {
+            return;
+        }
+
+        self.activeTask = nil;
+        self.activeRange = ICStreamByteRangeMake(0, 0);
+
+        if (error && error.code != NSURLErrorCancelled && !self.stopped) {
+            ErrLog(@"stream cache download failed: %@", error);
+            for (AVAssetResourceLoadingRequest* request in [self.pendingRequests copy]) {
+                [request finishLoadingWithError:error];
+            }
+            [self.pendingRequests removeAllObjects];
+            self.cacheImportFinished = YES;
+            [self _notifyProgressIfNeededForce:YES];
+            [self _releaseDetachedRetentionIfPossible];
+            return;
+        }
+
+        [self _processPendingRequests];
+        [self _updateCoverageStateAndImportIfNeeded];
+        [self _pumpDownloads];
+    });
+}
+
+@end
+#endif
+
+@class ICStreamingCacheLoader;
 
 @interface AudioSession ()
 @property (nonatomic, readwrite, strong) CDEpisode* episode;
@@ -111,6 +926,12 @@ enum {
 @property (nonatomic, strong) NSDate *lastAutoSkipDate;
 @property (nonatomic, strong) NSArray *autoSkipMarkers;  // @[@{@"start": @(time), @"resume": @(time)}], resume == -1 → finish episode
 @property (nonatomic) NSInteger suppressedSkipMarker;    // Manual seek protection: marker index to suppress
+#if TARGET_OS_IPHONE
+@property (nonatomic, strong) ICStreamingCacheLoader* streamCacheLoader;
+#endif
+@property (nonatomic, readwrite) BOOL streamingCacheActive;
+@property (nonatomic, readwrite) double streamingCacheProgress;
+@property (nonatomic, readwrite) BOOL streamingCacheComplete;
 @end
 
 
@@ -720,10 +1541,10 @@ enum {
 	BOOL isCached = [eman episodeIsCached:anEpisode];
 	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
 
-	// auto-download while streaming
-	if (!isCached && [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming]) {
-		[eman cacheEpisode:anEpisode];
-	}
+    BOOL shouldCacheViaStream = (!isCached &&
+                                 [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] &&
+                                 media.fileURL != nil &&
+                                 anEpisode.objectHash.length > 0);
 
     // workaround for a bug in the feed parser up to version 3.0.2
     NSString* urlString = [url absoluteString];
@@ -731,11 +1552,51 @@ enum {
         urlString = [urlString stringByRemovingPercentEncoding];
         url = [NSURL URLWithString:urlString];
     }
+
+    if (!url) {
+        shouldCacheViaStream = NO;
+    }
 	
     self.playingEpisode = anEpisode;
 	self.state = InitializedState;
-	
-	self.mediaAsset = [AVURLAsset URLAssetWithURL:url options:nil];
+    self.streamingCacheActive = NO;
+    self.streamingCacheProgress = 0.0;
+    self.streamingCacheComplete = NO;
+
+#if TARGET_OS_IPHONE
+    self.streamCacheLoader = nil;
+    if (shouldCacheViaStream) {
+        self.streamCacheLoader = [[ICStreamingCacheLoader alloc] initWithEpisode:anEpisode
+                                                                        remoteURL:url
+                                                                     expectedSize:media.byteSize
+                                                                         mimeType:media.mimeType
+                                                                         username:anEpisode.feed.username
+                                                                         password:anEpisode.feed.password];
+        __weak PlaybackManager* weakSelf = self;
+        NSString* episodeHash = anEpisode.objectHash;
+        self.streamCacheLoader.progressChangeHandler = ^(double progress, BOOL cacheComplete) {
+            PlaybackManager* strongSelf = weakSelf;
+            if (!strongSelf) {
+                return;
+            }
+            CDEpisode* playingEpisode = strongSelf.playingEpisode;
+            if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
+                return;
+            }
+            strongSelf.streamingCacheActive = !cacheComplete;
+            strongSelf.streamingCacheProgress = progress;
+            strongSelf.streamingCacheComplete = cacheComplete;
+            [strongSelf _sendUpdateNotification];
+        };
+        self.streamingCacheActive = YES;
+        self.mediaAsset = [AVURLAsset URLAssetWithURL:self.streamCacheLoader.assetURL options:nil];
+        [self.mediaAsset.resourceLoader setDelegate:self.streamCacheLoader queue:self.streamCacheLoader.resourceLoaderQueue];
+    } else {
+        self.mediaAsset = [AVURLAsset URLAssetWithURL:url options:nil];
+    }
+#else
+    self.mediaAsset = [AVURLAsset URLAssetWithURL:url options:nil];
+#endif
 	
 	[self.mediaAsset loadValuesAsynchronouslyForKeys:@[@"tracks", @"duration"] completionHandler:^(void) {
 		NSError *error = nil;
@@ -885,10 +1746,15 @@ enum {
             }
 
             // don't use the setter, otherwise the value will be stored
-            [weakSelf willChangeValueForKey:@"speedControl"];
-            _speedControl = [feed integerForKey:DefaultPlaybackSpeed];
-            _playbackRate = [weakSelf rateFromSpeedControl:_speedControl];
-            [weakSelf didChangeValueForKey:@"speedControl"];
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) {
+                return;
+            }
+
+            [strongSelf willChangeValueForKey:@"speedControl"];
+            strongSelf->_speedControl = [feed integerForKey:DefaultPlaybackSpeed];
+            strongSelf->_playbackRate = [strongSelf rateFromSpeedControl:strongSelf->_speedControl];
+            [strongSelf didChangeValueForKey:@"speedControl"];
 
             [weakSelf willChangeValueForKey:@"duration"];
             [weakSelf didChangeValueForKey:@"duration"];
@@ -1306,6 +2172,21 @@ enum {
 	// stop the skipping thing in case the user holds down the buttons until the end
     self.ready = NO;
 
+#if TARGET_OS_IPHONE
+    ICStreamingCacheLoader* streamLoader = self.streamCacheLoader;
+    self.streamCacheLoader = nil;
+    self.streamingCacheActive = NO;
+    self.streamingCacheProgress = 0.0;
+    self.streamingCacheComplete = NO;
+    if (streamLoader) {
+        if ([USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] && !streamLoader.cacheComplete) {
+            [streamLoader detachFromPlaybackAndContinueCaching];
+        } else {
+            [streamLoader stop];
+        }
+    }
+#endif
+
     // Reset chapter skip protection
     self.isAutoSkipping = NO;
     self.lastAutoSkipDate = nil;
@@ -1448,9 +2329,18 @@ enum {
 			NSTimeInterval next = MAX(cur-30, 0);
 			[self seekToTime:next];
 		}
-		self.lastPauseDate = nil;
-	}
-	
+			self.lastPauseDate = nil;
+		}
+		
+    // When stream-caching finished in the background, switch to local file on the next explicit resume.
+#if TARGET_OS_IPHONE
+    if (self.paused && self.streamCacheLoader && self.playingEpisode && [[CacheManager sharedCacheManager] episodeIsCached:self.playingEpisode]) {
+        NSTimeInterval resumeTime = [self time];
+        [self openWithEpisode:self.playingEpisode at:resumeTime autostart:YES];
+        return;
+    }
+#endif
+
 	float targetRate = _playbackRate > 0 ? _playbackRate : [self rateFromSpeedControl:self.speedControl];
 	self.player.rate = targetRate;
 
@@ -1999,9 +2889,9 @@ enum {
         NSArray* chapters = parser.metadataAsset.chapters;
         
         // create chapter index for fast chapter search
-        _chapterTimesIdx = (float*)malloc(sizeof(float)*[chapters count]);
+        self->_chapterTimesIdx = (float*)malloc(sizeof(float)*[chapters count]);
         [chapters enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
-            _chapterTimesIdx[idx] = (float)CMTimeGetSeconds(chapter.start);
+            self->_chapterTimesIdx[idx] = (float)CMTimeGetSeconds(chapter.start);
         }];
         
         self.chapters = chapters;
@@ -2011,9 +2901,9 @@ enum {
 
         NSArray* images = parser.metadataAsset.images;
 
-        _artworkTimesIdx = (float*)malloc(sizeof(float)*[images count]);
+        self->_artworkTimesIdx = (float*)malloc(sizeof(float)*[images count]);
         [images enumerateObjectsUsingBlock:^(ICMetadataImage* image, NSUInteger idx, BOOL *stop) {
-            _artworkTimesIdx[idx] = (float)CMTimeGetSeconds(image.start);
+            self->_artworkTimesIdx[idx] = (float)CMTimeGetSeconds(image.start);
         }];
         
         self.artworks = images;

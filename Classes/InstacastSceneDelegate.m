@@ -49,6 +49,8 @@
 #import "ListEpisodesTableViewController.h"
 #import "UpNextTableViewController.h"
 #import "FeedEpisodesTableViewController.h"
+#import "PlayerSpeedButton.h"
+#import "Defines.h"
 
 extern NSString* MainMenuListUIDsDidChangeNotification;
 
@@ -160,6 +162,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
             // Re-apply appearance now that window exists
             [[ICAppearanceManager sharedManager] updateAppearance];
         }
+
     }
 
     [self fetchAvailableProducts];
@@ -427,27 +430,27 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
     [self carPlayDidDisconnectInterfaceController:interfaceController];
 }
 
-- (void)templateApplicationDashboardScene:(CPTemplateApplicationDashboardScene *)templateApplicationDashboardScene didConnectDashboardController:(CPDashboardController *)dashboardController toWindow:(UIWindow *)window
+- (void)templateApplicationDashboardScene:(CPTemplateApplicationDashboardScene *)templateApplicationDashboardScene didConnectDashboardController:(CPDashboardController *)dashboardController toWindow:(UIWindow *)window API_AVAILABLE(ios(13.4))
 {
     (void)templateApplicationDashboardScene;
     (void)dashboardController;
     (void)window;
 }
 
-- (void)templateApplicationDashboardScene:(CPTemplateApplicationDashboardScene *)templateApplicationDashboardScene didDisconnectDashboardController:(CPDashboardController *)dashboardController fromWindow:(UIWindow *)window
+- (void)templateApplicationDashboardScene:(CPTemplateApplicationDashboardScene *)templateApplicationDashboardScene didDisconnectDashboardController:(CPDashboardController *)dashboardController fromWindow:(UIWindow *)window API_AVAILABLE(ios(13.4))
 {
     (void)templateApplicationDashboardScene;
     (void)dashboardController;
     (void)window;
 }
 
-- (void)templateApplicationInstrumentClusterScene:(CPTemplateApplicationInstrumentClusterScene *)templateApplicationInstrumentClusterScene didConnectInstrumentClusterController:(CPInstrumentClusterController *)instrumentClusterController
+- (void)templateApplicationInstrumentClusterScene:(CPTemplateApplicationInstrumentClusterScene *)templateApplicationInstrumentClusterScene didConnectInstrumentClusterController:(CPInstrumentClusterController *)instrumentClusterController API_AVAILABLE(ios(15.4))
 {
     (void)templateApplicationInstrumentClusterScene;
     (void)instrumentClusterController;
 }
 
-- (void)templateApplicationInstrumentClusterScene:(CPTemplateApplicationInstrumentClusterScene *)templateApplicationInstrumentClusterScene didDisconnectInstrumentClusterController:(CPInstrumentClusterController *)instrumentClusterController
+- (void)templateApplicationInstrumentClusterScene:(CPTemplateApplicationInstrumentClusterScene *)templateApplicationInstrumentClusterScene didDisconnectInstrumentClusterController:(CPInstrumentClusterController *)instrumentClusterController API_AVAILABLE(ios(15.4))
 {
     (void)templateApplicationInstrumentClusterScene;
     (void)instrumentClusterController;
@@ -1048,8 +1051,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
             if (isCurrent) {
                 NSString* detailText = [self carPlayEpisodeDetailText:episode];
-                if (![(item.detailText ?: @"") isEqualToString:(detailText ?: @"")]) {
-                    [item setDetailText:detailText];
+                if (@available(iOS 14.0, *)) {
+                    if (![(item.detailText ?: @"") isEqualToString:(detailText ?: @"")]) {
+                        [item setDetailText:detailText];
+                    }
                 }
             }
 
@@ -1197,8 +1202,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     [list calculateNumberOfEpisodesCompletion:^(NSUInteger numberOfEpisodes) {
         dispatch_async(dispatch_get_main_queue(), ^{
             NSString* detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)numberOfEpisodes, @"Episodes".ls];
-            if (![(item.detailText ?: @"") isEqualToString:(detail ?: @"")]) {
-                [item setDetailText:detail];
+            if (@available(iOS 14.0, *)) {
+                if (![(item.detailText ?: @"") isEqualToString:(detail ?: @"")]) {
+                    [item setDetailText:detail];
+                }
             }
         });
     }];
@@ -1579,12 +1586,12 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     }
 }
 
-- (void)nowPlayingTemplateUpNextButtonTapped:(CPNowPlayingTemplate *)nowPlayingTemplate
+- (void)nowPlayingTemplateUpNextButtonTapped:(CPNowPlayingTemplate *)nowPlayingTemplate API_AVAILABLE(ios(14.0))
 {
     [self carPlayShowChapterList];
 }
 
-- (void)nowPlayingTemplateAlbumArtistButtonTapped:(CPNowPlayingTemplate *)nowPlayingTemplate
+- (void)nowPlayingTemplateAlbumArtistButtonTapped:(CPNowPlayingTemplate *)nowPlayingTemplate API_AVAILABLE(ios(14.0))
 {
     CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode ?: [PlaybackManager playbackManager].playingEpisode;
     CDFeed* feed = currentEpisode.feed;
@@ -1820,14 +1827,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     UIAlertAction* firstAction = [UIAlertAction actionWithTitle:title1 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        InstacastSceneDelegate* strongSelf = self;
+        NSDictionary* products = strongSelf->validProducts;
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
-        [self perform:^(id sender) {
-            if([validProducts valueForKey:@"product_first"] != nil)
+        [strongSelf perform:^(id sender) {
+            if([products valueForKey:@"product_first"] != nil)
             {
-                [self purchaseMyProduct:[validProducts valueForKey:@"product_first"]];
+                [strongSelf purchaseMyProduct:[products valueForKey:@"product_first"]];
             }
         } afterDelay:0.01];
     }];
@@ -1835,14 +1844,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     UIAlertAction* secondAction = [UIAlertAction actionWithTitle:title2 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        InstacastSceneDelegate* strongSelf = self;
+        NSDictionary* products = strongSelf->validProducts;
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
-        [self perform:^(id sender) {
-            if([validProducts valueForKey:@"product_second"] != nil)
+        [strongSelf perform:^(id sender) {
+            if([products valueForKey:@"product_second"] != nil)
             {
-                [self purchaseMyProduct:[validProducts valueForKey:@"product_second"]];
+                [strongSelf purchaseMyProduct:[products valueForKey:@"product_second"]];
             }
         } afterDelay:0.01];
     }];
@@ -1850,14 +1861,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     UIAlertAction* thirdAction = [UIAlertAction actionWithTitle:title3 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        InstacastSceneDelegate* strongSelf = self;
+        NSDictionary* products = strongSelf->validProducts;
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
-        [self perform:^(id sender) {
-            if([validProducts valueForKey:@"product_third"] != nil)
+        [strongSelf perform:^(id sender) {
+            if([products valueForKey:@"product_third"] != nil)
             {
-                [self purchaseMyProduct:[validProducts valueForKey:@"product_third"]];
+                [strongSelf purchaseMyProduct:[products valueForKey:@"product_third"]];
             }
         } afterDelay:0.01];
     }];
@@ -1865,14 +1878,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     UIAlertAction* fourthAction = [UIAlertAction actionWithTitle:title4 style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
         STRONG_SELF
+        InstacastSceneDelegate* strongSelf = self;
+        NSDictionary* products = strongSelf->validProducts;
         // Mark popup as shown
         [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
-        [self perform:^(id sender) {
-            if([validProducts valueForKey:@"product_fourth"] != nil)
+        [strongSelf perform:^(id sender) {
+            if([products valueForKey:@"product_fourth"] != nil)
             {
-                [self purchaseMyProduct:[validProducts valueForKey:@"product_fourth"]];
+                [strongSelf purchaseMyProduct:[products valueForKey:@"product_fourth"]];
             }
         } afterDelay:0.01];
     }];
@@ -2088,20 +2103,60 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     if ([host isEqualToString:@"player"]) {
         // Player actions
+        BOOL handledPlayerAction = NO;
         if ([action isEqualToString:@"playpause"]) {
             [[PlaybackManager playbackManager] playPause];
+            handledPlayerAction = YES;
         } else if ([action isEqualToString:@"skipforward"]) {
             [[PlaybackManager playbackManager] seekForward];
+            handledPlayerAction = YES;
         } else if ([action isEqualToString:@"skipbackward"]) {
             [[PlaybackManager playbackManager] seekBackward];
+            handledPlayerAction = YES;
         } else if ([action isEqualToString:@"nextchapter"]) {
             [[PlaybackManager playbackManager] nextChapter];
+            handledPlayerAction = YES;
         } else if ([action isEqualToString:@"prevchapter"]) {
             [[PlaybackManager playbackManager] previousChapter];
+            handledPlayerAction = YES;
         } else if ([action isEqualToString:@"nextepisode"]) {
-            [[PlaybackManager playbackManager] nextTrack];
+            AudioSession *audioSession = [AudioSession sharedAudioSession];
+            CDEpisode *nextEpisode = [audioSession nextPlayableEpisode];
+            if (nextEpisode) {
+                [audioSession playEpisode:nextEpisode];
+            }
+            handledPlayerAction = YES;
         } else if ([action isEqualToString:@"previousepisode"]) {
-            [[PlaybackManager playbackManager] previousTrack];
+            AudioSession *audioSession = [AudioSession sharedAudioSession];
+            NSArray *playlist = audioSession.playlist;
+            CDEpisode *currentEpisode = [PlaybackManager playbackManager].playingEpisode;
+            NSUInteger index = [playlist indexOfObject:currentEpisode];
+            if (index != NSNotFound && index > 0 && index < playlist.count) {
+                [audioSession playEpisode:playlist[index - 1]];
+            }
+            handledPlayerAction = YES;
+        } else if ([action isEqualToString:@"cyclespeed"]) {
+            PlaybackManager *pm = [PlaybackManager playbackManager];
+            PlaybackSpeedControl next = [PlayerSpeedButton nextEnabledSpeedAfter:pm.speedControl];
+            pm.speedControl = next;
+            handledPlayerAction = YES;
+        } else if ([action isEqualToString:@"togglesleeptimer"]) {
+            AudioSession *audioSession = [AudioSession sharedAudioSession];
+            if (audioSession.timerRemainingTime > 0) {
+                audioSession.timerValue = PlaybackStopTimeNoValue;
+            } else {
+                PlaybackStopTimeValue lastTimer = [USER_DEFAULTS integerForKey:LastSelectedSleepTimer];
+                if (lastTimer <= 0) lastTimer = PlaybackStopTime15min;
+                audioSession.timerValue = lastTimer;
+            }
+            handledPlayerAction = YES;
+        }
+
+        if (handledPlayerAction) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [[WidgetDataExporter sharedExporter] exportNowPlayingSnapshot];
+                [WidgetKitHelper reloadAllTimelines];
+            });
         }
 
         // Present player ONLY when no action specified (= user tapped widget area, not a control button)
@@ -2113,23 +2168,33 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     else if ([host isEqualToString:@"episode"]) {
         NSString *objectHash = (path.length > 1) ? [path substringFromIndex:1] : nil;
         DebugLog(@"Widget episode link: objectHash=%@", objectHash);
+        BOOL handledEpisodeAction = NO;
         if (objectHash) {
             CDEpisode *episode = [DMANAGER episodeWithObjectHash:objectHash];
             DebugLog(@"Widget episode link: found episode=%@", episode.title);
             if (episode) {
                 if ([action isEqualToString:@"play"]) {
+                    // Play in background without presenting the player UI.
+                    [[AudioSession sharedAudioSession] playEpisode:episode];
+                    handledEpisodeAction = YES;
+                } else if ([action isEqualToString:@"openplay"] || [action isEqualToString:@"show"]) {
+                    // Open player and autostart playback.
                     [[AudioSession sharedAudioSession] playEpisode:episode];
                     PlaybackViewController *pvc = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
                     [pvc presentFromParentViewController:self.mainViewController autostart:YES completion:NULL];
-                } else if ([action isEqualToString:@"show"]) {
-                    // Open player without auto-playing
-                    PlaybackViewController *pvc = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
-                    [pvc presentFromParentViewController:self.mainViewController autostart:NO completion:NULL];
+                    handledEpisodeAction = YES;
                 } else {
                     // Show episode detail / show notes
                     [self.mainViewController showShowNotesOfEpisode:episode animated:YES];
                 }
             }
+        }
+
+        if (handledEpisodeAction) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [[WidgetDataExporter sharedExporter] exportNowPlayingSnapshot];
+                [WidgetKitHelper reloadAllTimelines];
+            });
         }
     }
     else if ([host isEqualToString:@"feed"]) {
@@ -2154,8 +2219,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         if (listUID) {
             for (CDList *list in DMANAGER.lists) {
                 if ([list.uid isEqualToString:listUID]) {
-                    if (![list isKindOfClass:[CDEpisodeList class]]) continue;
-                    ListEpisodesTableViewController *vc = [ListEpisodesTableViewController viewControllerWithList:(CDEpisodeList *)list];
+                    ListEpisodesTableViewController *vc = [ListEpisodesTableViewController viewControllerWithList:list];
                     UINavigationController *nav = [self.mainViewController.contentViewController.childViewControllers firstObject];
                     if ([nav isKindOfClass:[UINavigationController class]]) {
                         [nav pushViewController:vc animated:YES];

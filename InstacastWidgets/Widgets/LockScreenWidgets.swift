@@ -30,11 +30,18 @@ struct LockScreenCircularView: View {
                 }
 
                 // Play/pause icon
-                Button(intent: PlayPauseIntent()) {
-                    Image(systemName: data.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 20, weight: .semibold))
+                if data.isPaused {
+                    Link(destination: ICWidgetConstants.playerURL(action: "playpause")) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                } else {
+                    Button(intent: PlayPauseIntent()) {
+                        Image(systemName: "pause.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         } else {
             // No playback
@@ -129,7 +136,7 @@ struct LockScreenInlineView: View {
             ViewThatFits {
                 // Full: icon + title + time left
                 HStack(spacing: 4) {
-                    Image(systemName: data.isPaused ? "pause.fill" : "play.fill")
+                    Image(systemName: data.isPaused ? "play.fill" : "pause.fill")
                     Text(episode.title)
                     Text("· \(episode.formattedTimeLeft)")
                         .foregroundColor(.secondary)
@@ -137,7 +144,7 @@ struct LockScreenInlineView: View {
 
                 // Shorter: icon + title
                 HStack(spacing: 4) {
-                    Image(systemName: data.isPaused ? "pause.fill" : "play.fill")
+                    Image(systemName: data.isPaused ? "play.fill" : "pause.fill")
                     Text(episode.title)
                 }
 

@@ -450,15 +450,20 @@
     self.chapterTitleLabel.frame = CGRectMake(labelX, CGRectGetMinY(self.elapsedTimeLabel.frame), labelW, CGRectGetHeight(self.elapsedTimeLabel.frame));
 }
 
-- (void) willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)toInterfaceOrientation duration:(NSTimeInterval)duration
+- (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
 {
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-        CGFloat width = CGRectGetWidth(self.view.bounds);
-        CGFloat offset = (self.toolsVisible) ? -width : 0;
-        
-        self.controllerView.frame = CGRectMake(0+offset, 0, width, 96);
-        self.toolsView.frame = CGRectMake(width+offset, 0, width, 96);
+    [super viewWillTransitionToSize:size withTransitionCoordinator:coordinator];
+    if ([[UIDevice currentDevice] userInterfaceIdiom] != UIUserInterfaceIdiomPad) {
+        return;
     }
+
+    [coordinator animateAlongsideTransition:^(__unused id<UIViewControllerTransitionCoordinatorContext> context) {
+        CGFloat width = size.width;
+        CGFloat offset = self.toolsVisible ? -width : 0;
+
+        self.controllerView.frame = CGRectMake(offset, 0, width, 96);
+        self.toolsView.frame = CGRectMake(width + offset, 0, width, 96);
+    } completion:nil];
 }
 
 - (float)volume
@@ -571,6 +576,20 @@
 
 #pragma mark -
 
+- (double)_effectiveLoadProgressForPlaybackManager:(PlaybackManager*)pman
+{
+    double bufferedProgress = 0.0;
+    if (pman.duration > 0) {
+        bufferedProgress = pman.playableDuration / pman.duration;
+    }
+
+    if (pman.streamingCacheActive || pman.streamingCacheComplete) {
+        return MAX(bufferedProgress, pman.streamingCacheProgress);
+    }
+
+    return bufferedProgress;
+}
+
 - (void) updateTimeUI
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
@@ -589,7 +608,7 @@
     self.remainingTimeLabel.text = remainingText;
 	
 	self.timeSlider.value = (double)cur / (double) dur;
-	self.timeSlider.progress = pman.playableDuration / pman.duration;
+	self.timeSlider.progress = [self _effectiveLoadProgressForPlaybackManager:pman];
 
     [self updateChapterTitle];
 }
@@ -660,7 +679,7 @@
 	}
 
     if (pman.duration > 0) {
-        self.timeSlider.progress = pman.playableDuration / pman.duration;
+        self.timeSlider.progress = [self _effectiveLoadProgressForPlaybackManager:pman];
     }
     else if (episode && episode.duration > 0) {
         // Show 0 progress while loading

@@ -360,7 +360,7 @@
 
     UIMenu* toggleSection = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[smartAction, alwaysAction]];
 
-    return [UIMenu menuWithChildren:@[timerSection, toggleSection]];
+    return [UIMenu menuWithTitle:@"" children:@[timerSection, toggleSection]];
 }
 
 - (void)showIntelligentSleepTimerAlert

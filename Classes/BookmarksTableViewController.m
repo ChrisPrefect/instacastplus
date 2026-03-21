@@ -548,7 +548,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         previewProvider:nil
         actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
             __strong BookmarksTableViewController* strongSelf = weakSelf;
-            if (!strongSelf) return [UIMenu menuWithChildren:@[]];
+            if (!strongSelf) return nil;
 
             UIAction* playAction = [UIAction actionWithTitle:@"Start Playing".ls image:[UIImage systemImageNamed:@"play"] identifier:nil handler:^(UIAction *action) {
                 [strongSelf playBookmark:bookmark section:section];
@@ -558,7 +558,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
                 [strongSelf renameBookmark:bookmark section:section indexPath:indexPath];
             }];
 
-            return [UIMenu menuWithChildren:@[playAction, renameAction]];
+            return [UIMenu menuWithTitle:@"" children:@[playAction, renameAction]];
         }];
 }
 

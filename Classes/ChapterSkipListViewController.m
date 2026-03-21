@@ -325,9 +325,6 @@
     NSInteger rowType = [self rowTypeForRow:indexPath.row keywordIndex:&keywordIndex];
     if (rowType != 0 || keywordIndex < 0 || keywordIndex >= (NSInteger)self.keywords.count) return;
 
-    NSString *keyword = self.keywords[keywordIndex];
-    BOOL wasExpanded = (keywordIndex == self.expandedIndex);
-
     [self deleteKeywordAtIndex:keywordIndex];
 }
 

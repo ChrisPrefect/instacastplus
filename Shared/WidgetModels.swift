@@ -46,18 +46,6 @@ struct WEpisode: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-// MARK: - Feed DTO
-
-struct WFeed: Codable, Identifiable, Hashable, Sendable {
-    let id: String              // uid
-    let title: String
-    let imageURL: String?
-    let localImagePath: String?
-    let unplayedCount: Int
-    let rank: Int32
-    let latestEpisodeHash: String?  // objectHash of newest episode (by pubDate) for tap-to-play
-}
-
 // MARK: - List DTO
 
 struct WList: Codable, Identifiable, Hashable, Sendable {
@@ -90,8 +78,8 @@ struct WNowPlaying: Codable, Sendable {
     let skipForwardSeconds: Int?        // from feed settings (default 30)
     let skipBackwardSeconds: Int?       // from feed settings (default 30)
     let playbackSpeed: String?          // e.g. "1x", "1.5x", "2x"
+    let hasPreviousEpisode: Bool?       // true if queue has a previous episode
     let hasNextEpisode: Bool?           // true if queue has a next episode
-    let hasPrevEpisode: Bool?           // true if a previous episode is available
     let timestamp: Date
 
     var hasSleepTimer: Bool {
@@ -119,7 +107,8 @@ struct WNowPlaying: Codable, Sendable {
                     isPaused: isPaused, sleepTimerRemaining: sleepTimerRemaining,
                     sleepTimerStopDate: sleepTimerStopDate, skipForwardSeconds: skipForwardSeconds,
                     skipBackwardSeconds: skipBackwardSeconds, playbackSpeed: playbackSpeed,
-                    hasNextEpisode: hasNextEpisode, hasPrevEpisode: hasPrevEpisode,
+                    hasPreviousEpisode: hasPreviousEpisode,
+                    hasNextEpisode: hasNextEpisode,
                     timestamp: timestamp)
     }
 }
@@ -162,6 +151,28 @@ struct WStats: Codable, Sendable {
         case newEpisodesTodayCount
         case sleepTimerUsedCount
         case timestamp
+    }
+
+    init(
+        listenedTodaySec: TimeInterval,
+        listenedWeekSec: TimeInterval,
+        downloadedCount: Int,
+        downloadedSizeBytes: Int64,
+        subscribedCount: Int,
+        unplayedCount: Int,
+        newEpisodesTodayCount: Int,
+        sleepTimerUsedCount: Int,
+        timestamp: Date
+    ) {
+        self.listenedTodaySec = listenedTodaySec
+        self.listenedWeekSec = listenedWeekSec
+        self.downloadedCount = downloadedCount
+        self.downloadedSizeBytes = downloadedSizeBytes
+        self.subscribedCount = subscribedCount
+        self.unplayedCount = unplayedCount
+        self.newEpisodesTodayCount = newEpisodesTodayCount
+        self.sleepTimerUsedCount = sleepTimerUsedCount
+        self.timestamp = timestamp
     }
 
     init(from decoder: Decoder) throws {

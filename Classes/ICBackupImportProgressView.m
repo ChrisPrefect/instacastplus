@@ -707,7 +707,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
     [self closeWithCompletion:nil];
 }
 
-- (void)closeWithCompletion:(void (^)(void))completion {
+- (void)closeWithCompletion:(void (^ _Nullable)(void))completion {
     [self.timerUpdate invalidate];
     self.timerUpdate = nil;
 

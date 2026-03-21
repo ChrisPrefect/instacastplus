@@ -100,6 +100,8 @@ struct StatsWidgetView: View {
                             .frame(width: 40, alignment: .leading)
                         Text(stats.listenedTodayFormatted)
                             .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
 
                     HStack(spacing: 6) {
@@ -109,6 +111,8 @@ struct StatsWidgetView: View {
                             .frame(width: 40, alignment: .leading)
                         Text(stats.listenedWeekFormatted)
                             .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                 }
 
@@ -146,6 +150,8 @@ struct StatsWidgetView: View {
 
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
     }
 }

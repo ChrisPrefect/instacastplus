@@ -15,6 +15,7 @@
 
 typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kLanguage = 0,
+    kEpisodesSection,
     kAppearanceThemeSection,
     kPlayerColor,
     kPInterfaceColor,
@@ -106,6 +107,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     switch (section) {
         case kLanguage:
             return 1;
+        case kEpisodesSection:
+            return 2;
         case kAppearanceThemeSection:
             return [ICAppearanceManager sharedManager].nightSettingMode ? 2 : 1;
         case kPlayerColor:
@@ -168,6 +171,20 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         NSInteger period = [USER_DEFAULTS integerForKey:SelectedAppLanguage];
         cell.detailTextLabel.text = lngValues[@(period)];
 
+        return cell;
+    }
+    else if (indexPath.section == kEpisodesSection)
+    {
+        UITableViewCell* cell = [self detailCell];
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Swipe Right".ls;
+            NSInteger action = [USER_DEFAULTS integerForKey:EpisodeSwipeRightAction];
+            cell.detailTextLabel.text = [self _titleForSwipeAction:action];
+        } else {
+            cell.textLabel.text = @"Swipe Left".ls;
+            NSInteger action = [USER_DEFAULTS integerForKey:EpisodeSwipeLeftAction];
+            cell.detailTextLabel.text = [self _titleForSwipeAction:action];
+        }
         return cell;
     }
     else if (indexPath.section == kAppearanceThemeSection)
@@ -512,6 +529,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     switch (section) {
         case kLanguage:
             return @"";
+        case kEpisodesSection:
+            return @"Episodes".ls;
         case kAppearanceThemeSection:
             return @"";
         case kPlayerColor:
@@ -632,6 +651,32 @@ API_AVAILABLE(ios(14.0)){
         [[UIApplication sharedApplication] openURL:settingsURL options:@{} completionHandler:nil];
     }
 
+    else if (indexPath.section == kEpisodesSection)
+    {
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.valueType = kSettingTypeInteger;
+        controller.key = (indexPath.row == 0) ? EpisodeSwipeRightAction : EpisodeSwipeLeftAction;
+        controller.title = (indexPath.row == 0) ? @"Swipe Right".ls : @"Swipe Left".ls;
+        controller.values = @[
+            @(ICEpisodeSwipeActionTogglePlayed),
+            @(ICEpisodeSwipeActionToggleFavorite),
+            @(ICEpisodeSwipeActionDownload),
+            @(ICEpisodeSwipeActionAddToPlayNext),
+            @(ICEpisodeSwipeActionDelete),
+            @(ICEpisodeSwipeActionEpisodeInfo)
+        ];
+        controller.titles = @[
+            @"Mark as Played / Unplayed".ls,
+            @"Mark as Favorite".ls,
+            @"Download".ls,
+            @"Add to Play Next".ls,
+            @"Delete".ls,
+            @"Episode Info".ls
+        ];
+        [self.navigationController pushViewController:controller animated:YES];
+        return;
+    }
+
     else if (indexPath.section == kPlayerColor) {
         if (indexPath.row == 1) {
             if (@available(iOS 14.0, *)) {
@@ -717,6 +762,21 @@ API_AVAILABLE(ios(14.0)){
 
     if (error) {
         [self presentError:error];
+    }
+}
+
+#pragma mark - Helpers
+
+- (NSString*) _titleForSwipeAction:(NSInteger)action
+{
+    switch (action) {
+        case ICEpisodeSwipeActionTogglePlayed: return @"Mark as Played / Unplayed".ls;
+        case ICEpisodeSwipeActionToggleFavorite: return @"Mark as Favorite".ls;
+        case ICEpisodeSwipeActionDownload: return @"Download".ls;
+        case ICEpisodeSwipeActionAddToPlayNext: return @"Add to Play Next".ls;
+        case ICEpisodeSwipeActionDelete: return @"Delete".ls;
+        case ICEpisodeSwipeActionEpisodeInfo: return @"Episode Info".ls;
+        default: return @"Mark as Played / Unplayed".ls;
     }
 }
 

@@ -21,11 +21,29 @@ struct SmartListProvider: AppIntentTimelineProvider {
     ]
 
     func placeholder(in context: Context) -> SmartListEntry {
-        SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], tapAction: .play, compact: false)
+        SmartListEntry(
+            date: Date(),
+            listName: WidgetSampleData.smartList.listName,
+            listId: WidgetSampleData.smartList.listId,
+            episodes: WidgetSampleData.smartList.episodes,
+            tapAction: .play,
+            compact: false
+        )
     }
 
     func snapshot(for configuration: SmartListConfigIntent, in context: Context) async -> SmartListEntry {
-        loadEntry(for: configuration)
+        let entry = loadEntry(for: configuration)
+        if entry.listId.isEmpty && entry.episodes.isEmpty {
+            return SmartListEntry(
+                date: Date(),
+                listName: WidgetSampleData.smartList.listName,
+                listId: WidgetSampleData.smartList.listId,
+                episodes: WidgetSampleData.smartList.episodes,
+                tapAction: configuration.tapAction,
+                compact: configuration.compact
+            )
+        }
+        return entry
     }
 
     func timeline(for configuration: SmartListConfigIntent, in context: Context) async -> Timeline<SmartListEntry> {
@@ -40,9 +58,6 @@ struct SmartListProvider: AppIntentTimelineProvider {
         if let listEntity = configuration.list {
             if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
                 return entry(from: listData, tapAction: tapAction, compact: compact)
-            }
-            if let fallback = fallbackEntry(excluding: listEntity.id, tapAction: tapAction, compact: compact) {
-                return fallback
             }
             return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], tapAction: tapAction, compact: compact)
         }

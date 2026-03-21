@@ -75,7 +75,9 @@
     }
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
-    self.webView.underPageBackgroundColor = ICBackgroundColor;
+    if (@available(iOS 15.0, *)) {
+        self.webView.underPageBackgroundColor = ICBackgroundColor;
+    }
 
 	[self.view addSubview:self.webView];
 
@@ -221,7 +223,9 @@
     self.view.backgroundColor = ICBackgroundColor;
     self.webView.backgroundColor = ICBackgroundColor;
     self.webView.scrollView.backgroundColor = ICBackgroundColor;
-    self.webView.underPageBackgroundColor = ICBackgroundColor;
+    if (@available(iOS 15.0, *)) {
+        self.webView.underPageBackgroundColor = ICBackgroundColor;
+    }
 
     // iOS 26: sync floating button appearance with app theme
     if (@available(iOS 26.0, *)) {

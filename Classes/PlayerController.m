@@ -65,10 +65,9 @@ enum {
 #define CONTROLLER_HEIGHT CGRectGetHeight(self.controller.view.frame)
 
 @implementation PlayerController {
-    BOOL            _observing;
+	BOOL            _observing;
 	NSInteger		_state;
 	BOOL			_videoWasPlaying;
-	NSTimer*		_showHideTimer;
 	BOOL			_changingProgress;
     BOOL            _dismissing;
     BOOL            _viewDidAppear;
@@ -173,7 +172,6 @@ enum {
 - (void) playbackManagerDidUpdateNotification:(NSNotification*)notification
 {
     (void)notification;
-    PlaybackManager* pman = [PlaybackManager playbackManager];
     [self _stateMachine];
     if (self.infoViewController) {
         self.controller.transcriptAvailable = self.infoViewController.transcriptAvailable;
@@ -210,16 +208,7 @@ enum {
 
 - (void) applicationDidRegisterTouchNotification:(NSNotification*)notification
 {
-    if (_showHideTimer) {
-        NSArray* userInfo = [_showHideTimer userInfo];
-        
-        [_showHideTimer invalidate];
-        _showHideTimer = [NSTimer scheduledTimerWithTimeInterval:5.0
-                                                          target:self
-                                                        selector:@selector(toggleShowControlsTimer:)
-                                                        userInfo:userInfo
-                                                         repeats:NO];
-    }
+    (void)notification;
 }
 
 - (void) deviceOrientationDidChangeNotification:(NSNotification*)notification
@@ -277,9 +266,6 @@ enum {
 - (void) _resetStateMachine
 {
     self.playingEpisode = nil;
-
-    [_showHideTimer invalidate];
-    _showHideTimer = nil;
 
     [self.controller resetControlUI];
     [self.controller updateTimeWhenLoading];
@@ -370,9 +356,6 @@ enum {
 - (void) _dismissPlayerWithCompletion:(void (^)(void))completion
 {
     _dismissing = YES;
-    
-    [_showHideTimer invalidate];
-    _showHideTimer = nil;
     
     PlaybackManager* pman = [PlaybackManager playbackManager];
     
@@ -515,8 +498,6 @@ enum {
 // Implement viewDidLoad to do additional setup after loading the view, typically from a nib.
 - (void)dealloc
 {
-    [_showHideTimer invalidate];
-    _showHideTimer = nil;
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 

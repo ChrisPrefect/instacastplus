@@ -64,6 +64,7 @@
 
     NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
     defaults[WidgetThemeDefaultActive] = @YES;
+    defaults[EpisodeSwipeLeftAction] = @(ICEpisodeSwipeActionAddToPlayNext);
     [defs registerDefaults:defaults];
 
     if (![defs objectForKey:FirstLaunchDate]) {
@@ -225,13 +226,13 @@
 
     [self.window makeKeyAndVisible];
 
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     if ([launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey]) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         UILocalNotification* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
         [self application:App didReceiveLocalNotification:notification];
-#pragma clang diagnostic pop
     }
+    #pragma clang diagnostic pop
 
     if ([launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey]) {
         NSDictionary* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey];
@@ -401,128 +402,6 @@
     return YES;
 }
 
-- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
-{    
-    NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
-    
-	if ([subscribeSchemes containsObject:[url scheme]]) {
-		[self _handlePcastURL:url];
-	}
-	else if ([url isFileURL] && [[[url path] pathExtension] compare:@"opml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
-    {
-        self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
-        [self.mInfo show];
-
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            BOOL accessGranted = [url startAccessingSecurityScopedResource];
-            if (!accessGranted) {
-                ErrLog(@"Failed to access secure file");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                });
-                return;
-            }
-
-            NSData *opmlData = [NSData dataWithContentsOfURL:url];
-            [url stopAccessingSecurityScopedResource];
-
-            if (!opmlData || opmlData.length == 0) {
-                ErrLog(@"Invalid OPML data");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                });
-                return;
-            }
-
-            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                });
-            } progress:^(float progress) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    if ((progress * 100) > 3)
-                    {
-                        [self.mInfo setProgress:progress];
-                    }
-                });
-            }];
-        });
-    }
-
-    else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
-    {
-        NSString* filename = [[url path] lastPathComponent];
-        
-        WEAK_SELF
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Import Bookmarks".ls message:[NSString stringWithFormat:@"Do you want to import bookmarks from '%@'?".ls, filename] preferredStyle:UIAlertControllerStyleAlert];
-        
-        [alert addAction:[UIAlertAction actionWithTitle:@"Import".ls style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
-            STRONG_SELF
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                BOOL accessGranted = [url startAccessingSecurityScopedResource];
-                if (!accessGranted) {
-                    ErrLog(@"Failed to access security-scoped URL: %@", url);
-                    return;
-                }
-                
-                NSData* xpffData = [NSData dataWithContentsOfURL:url];
-                [url stopAccessingSecurityScopedResource];
-                
-                if (!xpffData || xpffData.length == 0) {
-                    ErrLog(@"XPFF file appears to be empty or unreadable: %@", url);
-                    return;
-                }
-                
-                XPFFImportData(xpffData, ^(NSArray *bookmarks, NSError *error) {
-                    if (error) {
-                        ErrLog(@"Failed to import XPFF: %@", error.localizedDescription);
-                        return;
-                    }
-                    
-                    for (CDBookmark* bookmark in bookmarks) {
-                        [DMANAGER addBookmark:bookmark];
-                    }
-                    
-                    [DMANAGER save];
-                    
-                    BookmarksTableViewController* bookmarksController = (BookmarksTableViewController*)((MainViewController_4*)self.mainViewController).contentViewController;
-                    if ([bookmarksController isKindOfClass:[BookmarksTableViewController class]]) {
-                        [bookmarksController reload];
-                    }
-                });
-            });
-            
-            self.mainViewController.alertController = nil;
-        }]];
-        
-        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
-            STRONG_SELF
-            self.mainViewController.alertController = nil;
-        }]];
-        
-        [alert setModalPresentationStyle:UIModalPresentationPopover];
-        UIPopoverPresentationController *popPresenter = [alert popoverPresentationController];
-        UIViewController* rootViewController = [self getRootViewControllerDev];
-        popPresenter.sourceView = [rootViewController view];
-        popPresenter.sourceRect = CGRectMake([rootViewController view].center.x, [rootViewController view].center.y, 0, 0);
-        popPresenter.permittedArrowDirections = 0;
-
-        if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-        } else {
-            alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-        }
-
-        UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
-        UIViewController *rootVC = keyWindow.rootViewController;
-        [rootVC presentViewController:alert animated:YES completion:nil];
-    }
-	return YES;
-}
-
 - (UIViewController*)getRootViewControllerDev
 {
     UIViewController* rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
@@ -581,15 +460,6 @@
 }
 #pragma mark -
 #pragma mark Push Notifications
-
-// This delegate method is deprecated but kept for backwards compatibility
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-- (void)application:(UIApplication *)application didRegisterUserNotificationSettings:(UIUserNotificationSettings *)notificationSettings
-{
-    // Notification already posted in the modern requestAuthorizationWithOptions completion handler
-}
-#pragma clang diagnostic pop
 
 - (void)application:(UIApplication *)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData *)deviceToken
 {
@@ -699,6 +569,7 @@
 // UILocalNotification delegate methods are deprecated but kept for backwards compatibility
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification
 {
     if (!notification) {
@@ -716,6 +587,7 @@
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)localNotification completionHandler:(void (^)(void))completionHandler
 {
     if ([identifier isEqualToString:@"play"]) {
@@ -730,6 +602,8 @@
 
 #pragma mark - Background Fetch
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)application:(UIApplication *)application handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completionHandler
 {
     [[CacheManager sharedCacheManager] handleEventsForBackgroundURLSession:identifier completionHandler:completionHandler];
@@ -780,6 +654,7 @@
                                                            }];
     });
 }
+#pragma clang diagnostic pop
 
 
 #pragma mark -

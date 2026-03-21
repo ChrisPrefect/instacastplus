@@ -185,33 +185,33 @@
     [UIView animateWithDuration:self.animationDuration
                      animations:^{
 
-                         CGRect frame0 = _labels[0].frame;
-                         CGRect frame1 = _labels[1].frame;
+                         CGRect frame0 = self->_labels[0].frame;
+                         CGRect frame1 = self->_labels[1].frame;
                          
                          frame0.origin.y -= frame0.size.height;
                          frame1.origin.y -= frame1.size.height;
                          
-                         _labels[0].frame = frame0;
-                         _labels[1].frame = frame1;
+                         self->_labels[0].frame = frame0;
+                         self->_labels[1].frame = frame1;
 
                      }
                      completion:^(BOOL finished) {
                          
-                         CGRect frame0 = _labels[0].frame;
-                         CGRect frame1 = _labels[1].frame;
+                         CGRect frame0 = self->_labels[0].frame;
+                         CGRect frame1 = self->_labels[1].frame;
                          
                          if (frame0.origin.y < frame1.origin.y) {
                              frame0.origin.y = CGRectGetMaxY(frame1);
-                             _labels[0].frame = frame0;
+                             self->_labels[0].frame = frame0;
                          }
                          else {
                              frame1.origin.y = CGRectGetMaxY(frame0);
-                             _labels[1].frame = frame1;
+                             self->_labels[1].frame = frame1;
                          }
                          
                          
                          
-                         if ([_queue count] > 0) {
+                         if ([self->_queue count] > 0) {
                              [self performSelector:@selector(_scrollUp) withObject:nil afterDelay:0.1];
                          }
                          else {

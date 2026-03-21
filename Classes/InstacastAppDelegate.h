@@ -8,17 +8,20 @@
 
 #import <UIKit/UIKit.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 
 @class MainViewController_4;
 
 @interface InstacastAppDelegate : NSObject <UIApplicationDelegate>
 
-@property (nonatomic, strong) IBOutlet UIWindow *window;
-@property (nonatomic, strong) MainViewController_4* mainViewController;
+@property (nonatomic, strong, nullable) IBOutlet UIWindow *window;
+@property (nonatomic, strong, nullable) MainViewController_4* mainViewController;
 
 
 
 - (void) setNeedsStatusBarAppearanceUpdate;
-- (UIViewController*)getRootViewControllerDev;
+- (nullable UIViewController*)getRootViewControllerDev;
 @end
 
+NS_ASSUME_NONNULL_END
