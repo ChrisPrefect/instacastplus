@@ -121,8 +121,8 @@
         return;
     }
 
-    UIFont* regularFont = [UIFont systemFontOfSize:13.0f];
-    UIFont* boldFont = [UIFont boldSystemFontOfSize:13.0f];
+    UIFont* regularFont = [UIFont systemFontOfSize:ICFontSize(13.0f)];
+    UIFont* boldFont = [UIFont boldSystemFontOfSize:ICFontSize(13.0f)];
     NSMutableAttributedString* message = [[NSMutableAttributedString alloc] init];
 
     [failures enumerateObjectsUsingBlock:^(NSString* line, NSUInteger idx, BOOL *stop) {
@@ -327,7 +327,7 @@
     searchTextField.textColor = textColor;
     searchTextField.tintColor = tintColorD;
     // 1. Change placeholder text color
-    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search".ls attributes:@{NSForegroundColorAttributeName: tintColorD}];
+    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search".ls attributes:@{NSForegroundColorAttributeName: tintColorD, NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)]}];
     
     // 2. Change magnifying glass (search) icon color
     UIImageView *iconView = (UIImageView *)searchTextField.leftView;

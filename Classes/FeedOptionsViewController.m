@@ -133,6 +133,13 @@ static NSString* kFeedCell = @"FeedCell";
 {
     UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
     [header.textLabel setTextColor:[UIColor grayColor]];
+    header.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    NSString* text = [self tableView:tableView titleForFooterInSection:section];
+    return [self heightForFooterText:text];
 }
 
 

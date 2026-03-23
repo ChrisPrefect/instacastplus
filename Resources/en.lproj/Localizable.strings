@@ -248,6 +248,11 @@
 "Dark" = "Dark";
 "Pure Black" = "Pure Black";
 "Pure Black Background" = "Pure Black Background";
+"Font Size" = "Font Size";
+"Normal" = "Normal";
+"Larger" = "Larger";
+"Even Larger" = "Even Larger";
+"Largest" = "Largest";
 "Ascending" = "Ascending";
 "Audio" = "Audio";
 "Contains Keyword" = "Contains Keyword";

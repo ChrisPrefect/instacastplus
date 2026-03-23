@@ -83,7 +83,10 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         _appearance = appearance;
 
         // UIAppearance proxies (affect newly created views)
-        [[UINavigationBar appearance] setTitleTextAttributes:@{ NSForegroundColorAttributeName : appearance.textColor }];
+        [[UINavigationBar appearance] setTitleTextAttributes:@{
+            NSForegroundColorAttributeName : appearance.textColor,
+            NSFontAttributeName : [UIFont boldSystemFontOfSize:ICFontSize(17)]
+        }];
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 64) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefault];
         [[UINavigationBar appearance] setBackgroundImage:[self _navigationBarImageWithSize:CGSizeMake(44, 94) appearance:appearance topToBottom:YES] forBarMetrics:UIBarMetricsDefaultPrompt];
         [[UINavigationBar appearance] setShadowImage:[[UIImage alloc] init]];
@@ -142,7 +145,10 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         navAppearance.backgroundImage = backgroundImage;
         navAppearance.shadowImage = [[UIImage alloc] init];
         navAppearance.shadowColor = nil;
-        navAppearance.titleTextAttributes = @{ NSForegroundColorAttributeName : appearance.textColor };
+        navAppearance.titleTextAttributes = @{
+            NSForegroundColorAttributeName : appearance.textColor,
+            NSFontAttributeName : [UIFont boldSystemFontOfSize:ICFontSize(17)]
+        };
         nav.navigationBar.standardAppearance = navAppearance;
         nav.navigationBar.scrollEdgeAppearance = navAppearance;
         nav.navigationBar.compactAppearance = navAppearance;
@@ -210,6 +216,12 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (BOOL) nightMode {
     return self.nightSettingMode;
+}
+
+- (CGFloat) fontSizeScale {
+    NSInteger level = [USER_DEFAULTS integerForKey:kDefaultFontSizeLarger];
+    if (level < 0 || level > 3) level = 0;
+    return kICFontSizeScaleFactors[level];
 }
 
 - (void) setNightMode:(BOOL)nightMode {

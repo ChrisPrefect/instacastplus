@@ -88,6 +88,8 @@
     
     NSString* templatePath = [[NSBundle mainBundle] pathForResource:@"ShowNotesTemplateIPhone" ofType:@"html"];
     NSString* infoHTMLTemplate = [NSString stringWithContentsOfFile:templatePath encoding:NSUTF8StringEncoding error:nil];
+    NSString* scaledFontSize = [NSString stringWithFormat:@"%.0f", ICFontSize(15)];
+    infoHTMLTemplate = [infoHTMLTemplate stringByReplacingOccurrencesOfString:@"###FONT_SIZE###" withString:scaledFontSize];
     [self.sharedWebView loadHTMLString:infoHTMLTemplate baseURL:nil];
 //    
 //    self.sharedWebView.scrollView.contentInset = UIEdgeInsetsZero;
@@ -333,7 +335,7 @@
     titleLabel.backgroundColor = [UIColor clearColor];
     titleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
     titleLabel.text = [self.episode cleanTitleUsingFeedTitle:self.episode.feed.title];
-    titleLabel.font = [UIFont systemFontOfSize:15];
+    titleLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     titleLabel.numberOfLines = 20;
     titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
     //titleLabel.backgroundColor = [UIColor redColor];
@@ -349,7 +351,7 @@
     feedTitleLabel.backgroundColor = [UIColor clearColor];
     feedTitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
     feedTitleLabel.text = self.episode.feed.title;
-    feedTitleLabel.font = [UIFont systemFontOfSize:15];
+    feedTitleLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     feedTitleLabel.numberOfLines = 1;
     feedTitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     //feedTitleLabel.backgroundColor = [UIColor blueColor];
@@ -362,7 +364,7 @@
     
     UILabel* timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     timeLabel.backgroundColor = [UIColor clearColor];
-    timeLabel.font = [UIFont systemFontOfSize:15.0f];
+    timeLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
     [headerView addSubview:timeLabel];
     self.timeLabel = timeLabel;
 
@@ -489,7 +491,7 @@
     titleLabel.backgroundColor = [UIColor clearColor];
     titleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
     titleLabel.text = [self.episode cleanTitleUsingFeedTitle:self.episode.feed.title];
-    titleLabel.font = [UIFont systemFontOfSize:15];
+    titleLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     titleLabel.numberOfLines = 20;
     titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
     //titleLabel.backgroundColor = [UIColor redColor];
@@ -505,7 +507,7 @@
     feedTitleLabel.backgroundColor = [UIColor clearColor];
     feedTitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
     feedTitleLabel.text = self.episode.feed.title;
-    feedTitleLabel.font = [UIFont systemFontOfSize:15];
+    feedTitleLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     feedTitleLabel.numberOfLines = 1;
     feedTitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     //feedTitleLabel.backgroundColor = [UIColor blueColor];
@@ -518,7 +520,7 @@
     
     UILabel* timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     timeLabel.backgroundColor = [UIColor clearColor];
-    timeLabel.font = [UIFont systemFontOfSize:11.0f];
+    timeLabel.font = [UIFont systemFontOfSize:ICFontSize(11.0f)];
     [headerView addSubview:timeLabel];
     self.timeLabel = timeLabel;
     

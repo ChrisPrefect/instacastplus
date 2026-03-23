@@ -339,7 +339,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 		cell.backgroundColor = self.tableView.backgroundColor;
 		
 		cell.textLabel.text = @"No bookmarks yet.".ls;
-		cell.textLabel.font = [UIFont systemFontOfSize:15.0f];
+		cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
 		cell.textLabel.textColor = ICMutedTextColor;
 		cell.textLabel.textAlignment = NSTextAlignmentCenter;
 		cell.selectionStyle = UITableViewCellSelectionStyleNone;

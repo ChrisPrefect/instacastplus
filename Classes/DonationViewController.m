@@ -453,6 +453,7 @@ enum {
     if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
         UITableViewHeaderFooterView *footer = (UITableViewHeaderFooterView *)view;
         footer.textLabel.textColor = [UIColor grayColor];
+        footer.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
     }
 }
 
@@ -577,7 +578,7 @@ enum {
     // Thank you label with shadow
     UILabel *thankYouLabel = [[UILabel alloc] init];
     thankYouLabel.text = @"Thank you! Your donation is appreciated!.".ls;
-    thankYouLabel.font = [UIFont systemFontOfSize:28 weight:UIFontWeightHeavy];
+    thankYouLabel.font = [UIFont systemFontOfSize:ICFontSize(28) weight:UIFontWeightHeavy];
     thankYouLabel.textColor = [UIColor whiteColor];
     thankYouLabel.textAlignment = NSTextAlignmentCenter;
     thankYouLabel.numberOfLines = 0;

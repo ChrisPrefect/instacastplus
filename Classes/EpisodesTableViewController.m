@@ -446,7 +446,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     if ([self _numberOfPlayedDownloadedEpisodes] > 0) {
         UIAction* act = [UIAction actionWithTitle:@"Delete played content".ls
-                                           image:[UIImage systemImageNamed:@"trash.circle"]
+                                           image:[UIImage systemImageNamed:@"trash"]
                                       identifier:nil
                                          handler:^(__unused UIAction* a) { STRONG_SELF [self _clearCacheOfAllPlayed]; }];
         act.attributes = UIMenuElementAttributesDestructive;
@@ -932,7 +932,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 {
     UIColor* accentColor = ICTintColor;
     UIColor* grayColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
-    UIColor* deleteColor = [UIColor colorWithRed:1.f green:59/255.f blue:48/255.f alpha:1.f];
+    UIColor* deleteColor = [UIColor systemRedColor];
 
     switch (action) {
         case ICEpisodeSwipeActionTogglePlayed:
@@ -1046,7 +1046,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             toastLabel.textColor = [UIColor whiteColor];
             toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
             toastLabel.textAlignment = NSTextAlignmentCenter;
-            toastLabel.font = [UIFont systemFontOfSize:14];
+            toastLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
             toastLabel.layer.cornerRadius = 8;
             toastLabel.clipsToBounds = YES;
             toastLabel.alpha = 0;
@@ -1076,20 +1076,22 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         }
         case ICEpisodeSwipeActionDelete:
         {
-            CacheManager* cman = [CacheManager sharedCacheManager];
-            if ([cman isCachingEpisode:episode]) {
-                [cman cancelCachingEpisode:episode disableAutoDownload:YES];
-                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-                    [cell updatePlayComboButtonState];
-                }
-                PlaySoundFile(@"AffirmOut", NO);
-            } else if ([cman episodeIsCached:episode]) {
-                [cman removeCacheForEpisode:episode automatic:NO];
-                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-                    [cell updatePlayComboButtonState];
-                }
-                PlaySoundFile(@"AffirmOut", NO);
-            }
+            self.userAction = YES;
+
+            // Remove episode from data source array before table update
+            NSMutableArray* mutableEpisodes = [self.episodes mutableCopy];
+            [mutableEpisodes removeObjectAtIndex:indexPath.row];
+            self.episodes = [mutableEpisodes copy];
+
+            [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+            [DMANAGER setEpisode:episode archived:YES];
+
+            [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+
+            [self _updateToolbarItemsAnimated:NO];
+            [self _updateToolbarLabels];
+            self.userAction = NO;
+            PlaySoundFile(@"AffirmOut", NO);
             break;
         }
         case ICEpisodeSwipeActionEpisodeInfo:
@@ -1192,7 +1194,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                          toastLabel.textColor = [UIColor whiteColor];
                                                          toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
                                                          toastLabel.textAlignment = NSTextAlignmentCenter;
-                                                         toastLabel.font = [UIFont systemFontOfSize:14];
+                                                         toastLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
                                                          toastLabel.layer.cornerRadius = 8;
                                                          toastLabel.clipsToBounds = YES;
                                                          toastLabel.alpha = 0;

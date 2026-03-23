@@ -104,14 +104,14 @@
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, headerView.bounds.size.width - 32, 80)];
     titleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     titleLabel.text = @"InstacastPlus Changelog".ls;
-    titleLabel.font = [UIFont boldSystemFontOfSize:18];
+    titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
     titleLabel.numberOfLines = 0;
     titleLabel.textAlignment = NSTextAlignmentCenter;
 
     UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, headerView.bounds.size.width - 32, 75)];
     subtitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     subtitleLabel.text = @"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!".ls;
-    subtitleLabel.font = [UIFont systemFontOfSize:14];
+    subtitleLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
     subtitleLabel.numberOfLines = 0;
     subtitleLabel.textAlignment = NSTextAlignmentCenter;
     subtitleLabel.textColor = [UIColor darkGrayColor];
@@ -148,7 +148,7 @@
     if (!cell) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cellIdentifier];
         cell.textLabel.numberOfLines = 0;
-        cell.textLabel.font = [UIFont systemFontOfSize:14];
+        cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
     }
     
     cell.textLabel.text = self.changelogItems[indexPath.section][indexPath.row];

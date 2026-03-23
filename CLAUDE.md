@@ -106,10 +106,9 @@ Alle Stellen (Swipe-Aktionen, Context-Menüs, Popup-Menüs, Toolbars) MÜSSEN id
 
 | Aktion | SF Symbol | Asset-Alternative | Farbe |
 |---|---|---|---|
-| Download | `square.and.arrow.down` | `Toolbar Download` / `Multitoolbar Download` | Akzentfarbe |
-| Download löschen / abbrechen | `trash` | — | Rot |
-| Datei löschen | `trash` | — | Rot |
-| Episode löschen (aus Liste) | `trash` | — | Rot |
+| Download | `square.and.arrow.down` | `Toolbar Download` / `Multitoolbar Download` | Akzentfarbe (`ICTintColor`) |
+| Download löschen / abbrechen | `trash` | — | Rot (`systemRedColor`) |
+| Episode löschen (aus Liste) | `trash` | — | Rot (`systemRedColor`) |
 | Favorit markieren | `star` | — | Akzentfarbe |
 | Favorit entfernen | `star.slash` | — | Grau |
 | Als gehört markieren | `circle` | — | Grau |
@@ -117,10 +116,22 @@ Alle Stellen (Swipe-Aktionen, Context-Menüs, Popup-Menüs, Toolbars) MÜSSEN id
 | Zur Abspielliste hinzufügen | `text.badge.plus` | — | Akzentfarbe |
 | Aus Abspielliste entfernen | `text.badge.minus` | — | Grau |
 | Episoden Info | `info.circle` | — | Akzentfarbe |
-| Play Next (Seitenmenü/Context) | `list.bullet.indent` | — | — |
+| Play Next (Seitenmenü/Tab) | `list.bullet.indent` | — | — |
 | Abspielen | `play.fill` | — | — |
 
-Stellen: `_imageForSwipeAction:episode:`, `_contextMenuForIndexPath:` (EpisodesTableViewController), Popup-Menü (EpisodeViewController), Toolbar/Glass Buttons, CarPlay (InstacastSceneDelegate).
+Stellen die IDENTISCH sein müssen:
+- `_imageForSwipeAction:episode:` + `_tintColorForSwipeAction:episode:` (EpisodesTableViewController — Swipe-Aktionen)
+- `_contextMenuForIndexPath:` (EpisodesTableViewController — Long-Press Menü)
+- Popup-Menü (EpisodeViewController — More-Button)
+- Toolbar/Glass Buttons (EpisodesTableViewController)
+- CarPlay (InstacastSceneDelegate)
+- Seitenmenü-Tab-Icons (MainViewController_4)
+
+Farben: Immer `ICTintColor` für Akzentfarbe (passt sich an Appearance an), `[UIColor systemRedColor]` für destruktive Aktionen, `[UIColor colorWithWhite:0.5f alpha:1.0f]` für Grau. NIEMALS hardcodierte RGB-Werte für Rot.
+
+## Auto-Refresh
+
+`_autoRefreshFeedsIfNeeded` in SceneDelegate: Beim App-Start und Foreground-Wechsel werden alle Feeds refreshed, wenn der letzte Refresh > 30 Minuten her ist. Non-blocking, kein UI-Feedback. Statische `_lastAutoRefreshDate` als Cooldown. `refreshAllFeedsForce:NO` respektiert individuelle Feed-AutoRefresh-Einstellungen.
 
 ## macOS "Designed for iPad"
 

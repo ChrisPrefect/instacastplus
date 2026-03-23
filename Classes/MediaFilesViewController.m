@@ -184,7 +184,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
     UILabel *hintLabel = [[UILabel alloc] init];
     hintLabel.text = @"Swipe left to delete.".ls;
-    hintLabel.font = [UIFont systemFontOfSize:12];
+    hintLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
     hintLabel.textColor = ICMutedTextColor;
     hintLabel.textAlignment = NSTextAlignmentCenter;
     hintLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -343,14 +343,14 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
             cell.backgroundColor = ICGroupCellBackgroundColor;
             cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
-            cell.textLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+            cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15) weight:UIFontWeightSemibold];
             cell.textLabel.textColor = ICTextColor;
             cell.textLabel.text = ([feed isKindOfClass:[NSNull class]]) ? @"" : feed.title;
 
             UILabel *sizeLabel = (UILabel*)cell.accessoryView;
             if (!sizeLabel) {
                 sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
-                sizeLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+                sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(14) weight:UIFontWeightSemibold];
                 sizeLabel.textAlignment = NSTextAlignmentRight;
                 sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
                 cell.accessoryView = sizeLabel;
@@ -377,8 +377,8 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         if (cell == nil) {
             cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
             cell.selectedBackgroundView = [[UIView alloc] init];
-            cell.textLabel.font = [UIFont systemFontOfSize:13];
-            cell.detailTextLabel.font = [UIFont systemFontOfSize:11];
+            cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+            cell.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
         }
 
         cell.backgroundColor = ICGroupCellBackgroundColor;
@@ -388,7 +388,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         UILabel* sizeLabel = (UILabel*)cell.accessoryView;
         if (!sizeLabel) {
             sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
-            sizeLabel.font = [UIFont systemFontOfSize:14];
+            sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
             sizeLabel.textAlignment = NSTextAlignmentRight;
             sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
             cell.accessoryView = sizeLabel;
@@ -426,7 +426,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         cell.accessoryView = nil;
         cell.textLabel.text = @"Nothing downloaded yet.".ls;
         cell.textLabel.textAlignment = NSTextAlignmentCenter;
-        cell.textLabel.font = [UIFont italicSystemFontOfSize:15];
+        cell.textLabel.font = [UIFont italicSystemFontOfSize:ICFontSize(15)];
         cell.textLabel.textColor = ICMutedTextColor;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
@@ -438,8 +438,8 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     if (cell == nil) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
         cell.selectedBackgroundView = [[UIView alloc] init];
-        cell.textLabel.font = [UIFont systemFontOfSize:13];
-        cell.detailTextLabel.font = [UIFont systemFontOfSize:11];
+        cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
     }
 
     cell.backgroundColor = ICGroupCellBackgroundColor;
@@ -449,7 +449,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     UILabel* sizeLabel = (UILabel*)cell.accessoryView;
     if (!sizeLabel) {
         sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
-        sizeLabel.font = [UIFont systemFontOfSize:14];
+        sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
         sizeLabel.textAlignment = NSTextAlignmentRight;
         sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
         cell.accessoryView = sizeLabel;
@@ -508,6 +508,13 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 {
     UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
     [header.textLabel setTextColor:[UIColor grayColor]];
+    header.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    NSString* text = [self tableView:tableView titleForFooterInSection:section];
+    return [self heightForFooterText:text];
 }
 
 #pragma mark - Editing

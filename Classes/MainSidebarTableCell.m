@@ -47,7 +47,7 @@
         
         self.textLabel.textColor = [UIColor colorWithWhite:0.57f alpha:1.f];
         self.textLabel.highlightedTextColor = [UIColor whiteColor];
-        self.textLabel.font = [UIFont systemFontOfSize:18.0f];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(18.0f)];
         
         self.imageView.contentMode = UIViewContentModeCenter;
         
@@ -56,7 +56,7 @@
         
         
         _badgeButton = [[UIButton alloc] initWithFrame:CGRectZero];
-        _badgeButton.titleLabel.font = [UIFont boldSystemFontOfSize:11];
+        _badgeButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(11)];
         [_badgeButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         _badgeButton.titleEdgeInsets = UIEdgeInsetsMake(1, 0.5, 0, -0.5);
         _badgeButton.userInteractionEnabled = NO;
@@ -75,7 +75,7 @@
         [self.contentView addSubview:_badgeButton];
 
         _subtitleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _subtitleLabel.font = [UIFont systemFontOfSize:14];
+        _subtitleLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
         _subtitleLabel.textColor = [UIColor colorWithWhite:0.45f alpha:1.f];
         _subtitleLabel.textAlignment = NSTextAlignmentRight;
         _subtitleLabel.hidden = YES;
@@ -118,6 +118,11 @@
 - (void) layoutSubviews
 {
     [super layoutSubviews];
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(18.0f)];
+    self.badgeButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(11)];
+    self.subtitleLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
 
     self.backgroundColor = ICDarkBackgroundColor;
 

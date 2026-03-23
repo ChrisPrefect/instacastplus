@@ -41,6 +41,7 @@ extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 @property (nonatomic) ICAppearanceMode appearanceMode;
 @property (nonatomic, readonly) BOOL nightSettingMode;  // Returns current dark mode state
 @property (nonatomic, readonly) BOOL nightMode;         // Alias for nightSettingMode
+@property (nonatomic, readonly) CGFloat fontSizeScale;  // 1.0 normal, 1.2 larger
 
 - (void) updateAppearance;
 - (void) updateThemeTintColor;
@@ -60,6 +61,10 @@ extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 #define ICDarkBackgroundColor               ([ICAppearanceManager sharedManager].appearance.darkBackgroundColor)
 #define ICGroupCellBackgroundColor          ([ICAppearanceManager sharedManager].appearance.groupCellBackgroundColor)
 #define ICGroupCellSelectedBackgroundColor  ([ICAppearanceManager sharedManager].appearance.groupCellSelectedBackgroundColor)
+
+// Font size scaling — central scale factors per level
+static const CGFloat kICFontSizeScaleFactors[] = { 1.0, 1.1, 1.2, 1.3 };
+#define ICFontSize(baseSize) ((baseSize) * [ICAppearanceManager sharedManager].fontSizeScale)
 
 @interface ICDaylightAppearance : NSObject <ICAppearance>
 @end

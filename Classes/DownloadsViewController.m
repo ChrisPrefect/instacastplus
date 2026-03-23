@@ -113,16 +113,16 @@
 
     UIBarButtonItem* pauseItem = [[UIBarButtonItem alloc] initWithTitle:@"Pause".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(toggleLoading:)];
-    [pauseItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:14]} forState:UIControlStateNormal];
+    [pauseItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)]} forState:UIControlStateNormal];
 
     UIBarButtonItem* cancelItem = [[UIBarButtonItem alloc] initWithTitle:@"Cancel All".ls
                                                                   style:UIBarButtonItemStylePlain target:self action:@selector(cancelAllDownloads:)];
-    [cancelItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:14]} forState:UIControlStateNormal];
+    [cancelItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)]} forState:UIControlStateNormal];
 
     // Caption Label in der Mitte (schwebendes Label)
     UILabel* captionLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 150, 44)];
     captionLabel.tag = 100;
-    captionLabel.font = [UIFont systemFontOfSize:15];
+    captionLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     captionLabel.textColor = ICMutedTextColor;
     captionLabel.textAlignment = NSTextAlignmentCenter;
     self.captionLabel = captionLabel;

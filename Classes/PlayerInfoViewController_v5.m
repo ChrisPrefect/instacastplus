@@ -737,7 +737,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     pickerButton.layer.cornerRadius = 0;
     pickerButton.layer.masksToBounds = NO;
     pickerButton.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
-    pickerButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    pickerButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(12) weight:UIFontWeightSemibold];
     [pickerButton setTitleColor:ICMutedTextColor forState:UIControlStateNormal];
     UIImageSymbolConfiguration* chevronConfig = [UIImageSymbolConfiguration configurationWithPointSize:11 weight:UIImageSymbolWeightSemibold];
     UIImage* pickerChevronImage = [[UIImage systemImageNamed:@"chevron.down" withConfiguration:chevronConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -1440,9 +1440,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (!textStorage || self.transcriptCueRanges.count == 0) return;
 
     UIColor* normalColor = ICMutedTextColor;
-    UIFont* normalFont = [UIFont systemFontOfSize:17 weight:UIFontWeightRegular];
+    UIFont* normalFont = [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightRegular];
     UIColor* activeColor = self.view.tintColor ?: ICTintColor;
-    UIFont* activeFont = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+    UIFont* activeFont = [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightSemibold];
 
     [textStorage beginEditing];
 
@@ -1478,7 +1478,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     NSDictionary* normalAttrs = @{
         NSForegroundColorAttributeName: ICMutedTextColor,
-        NSFontAttributeName: [UIFont systemFontOfSize:17 weight:UIFontWeightRegular]
+        NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightRegular]
     };
     NSAttributedString* separator = [[NSAttributedString alloc] initWithString:@"\n\n" attributes:normalAttrs];
 

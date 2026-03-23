@@ -257,7 +257,7 @@
 
     // Chapter title label between time labels
     UILabel* chapterLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    chapterLabel.font = [UIFont systemFontOfSize:16];
+    chapterLabel.font = [UIFont systemFontOfSize:ICFontSize(16)];
     chapterLabel.textAlignment = NSTextAlignmentCenter;
     chapterLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     chapterLabel.backgroundColor = [UIColor clearColor];
@@ -298,8 +298,11 @@
     self.view.backgroundColor = ICBackgroundColor;
 
     self.elapsedTimeLabel.textColor = ICTextColor;
+    self.elapsedTimeLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(14) weight:UIFontWeightRegular];
     self.remainingTimeLabel.textColor = ICTextColor;
+    self.remainingTimeLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(14) weight:UIFontWeightRegular];
     self.chapterTitleLabel.textColor = ICTextColor;
+    self.chapterTitleLabel.font = [UIFont systemFontOfSize:ICFontSize(16)];
 
     CGFloat white;
     [ICTextColor getWhite:&white alpha:NULL];

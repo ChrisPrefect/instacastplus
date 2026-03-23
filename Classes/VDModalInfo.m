@@ -94,7 +94,7 @@ static NSMutableSet* gModelInfos = nil;
 		_textLabel.backgroundColor = [UIColor clearColor];
 		_textLabel.adjustsFontSizeToFitWidth = YES;
 		_textLabel.opaque = NO;
-		_textLabel.font = [UIFont systemFontOfSize:17.0f];
+		_textLabel.font = [UIFont systemFontOfSize:ICFontSize(17.0f)];
 		_textLabel.textAlignment = NSTextAlignmentCenter;
 		[_messageView addSubview:_textLabel];
 		

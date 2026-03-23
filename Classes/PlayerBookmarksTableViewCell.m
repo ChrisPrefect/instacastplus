@@ -21,13 +21,13 @@
     {
         self.selectedBackgroundView = [[UIView alloc] init];
         
-        self.textLabel.font = [UIFont systemFontOfSize:15.f];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
         self.textLabel.lineBreakMode = NSLineBreakByWordWrapping;
         self.textLabel.numberOfLines = 20;
         
         // Initialization code.
 		_timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_timeLabel.font = [UIFont systemFontOfSize:13.f];
+		_timeLabel.font = [UIFont systemFontOfSize:ICFontSize(13.f)];
 		_timeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
 		_timeLabel.textAlignment = NSTextAlignmentRight;
 		[self.contentView addSubview:_timeLabel];
@@ -39,7 +39,11 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
+    self.timeLabel.font = [UIFont systemFontOfSize:ICFontSize(13.f)];
+
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
     self.textLabel.textColor = ICTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
@@ -69,7 +73,7 @@
     }
     
     CGFloat width = CGRectGetWidth(tableBounds);
-    UIFont* font = [UIFont systemFontOfSize:15.f];
+    UIFont* font = [UIFont systemFontOfSize:ICFontSize(15.f)];
     
     NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{NSFontAttributeName : font}];
     

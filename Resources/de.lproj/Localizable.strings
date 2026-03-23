@@ -250,6 +250,11 @@
 "Dark" = "Dunkel";
 "Pure Black" = "Reines Schwarz";
 "Pure Black Background" = "Hintergrund reines Schwarz";
+"Font Size" = "Schriftgrösse";
+"Normal" = "Normal";
+"Larger" = "Grösser";
+"Even Larger" = "Noch grösser";
+"Largest" = "Am grössten";
 "Ascending" = "Aufsteigend";
 "Audio" = "Audio";
 "Contains Keyword" = "Enthält Schlüsselworte";

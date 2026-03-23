@@ -85,7 +85,7 @@
     UILabel* navTitleLabel = [[UILabel alloc] initWithFrame:navTitleContainerView.bounds];
     navTitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     navTitleLabel.text = titleText;
-    navTitleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
+    navTitleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18.0f)];
     navTitleLabel.textColor = ICTextColor;
     navTitleLabel.backgroundColor = [UIColor clearColor];
     navTitleLabel.textAlignment = NSTextAlignmentCenter;
@@ -402,7 +402,7 @@
 
         UIButton* filterButton = [UIButton buttonWithType:UIButtonTypeSystem];
         [filterButton setTitle:@"All".ls forState:UIControlStateNormal];
-        filterButton.titleLabel.font = [UIFont systemFontOfSize:17];
+        filterButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
         if (@available(iOS 14.0, *)) {
             filterButton.menu = [self _buildFilterMenu];
             filterButton.showsMenuAsPrimaryAction = YES;
@@ -483,8 +483,8 @@
         return;
     }
 
-    UIFont* regularFont = [UIFont systemFontOfSize:13.0f];
-    UIFont* boldFont = [UIFont boldSystemFontOfSize:13.0f];
+    UIFont* regularFont = [UIFont systemFontOfSize:ICFontSize(13.0f)];
+    UIFont* boldFont = [UIFont boldSystemFontOfSize:ICFontSize(13.0f)];
     NSMutableAttributedString* message = [[NSMutableAttributedString alloc] init];
 
     [failures enumerateObjectsUsingBlock:^(NSString* line, NSUInteger idx, BOOL *stop) {

@@ -37,14 +37,14 @@
             case NumberAccessoryViewStyleNoOutline:
                 self.minWidth = 20;
                 self.showOutline = NO;
-                self.font = [UIFont boldSystemFontOfSize:15.0f];
+                self.font = [UIFont boldSystemFontOfSize:ICFontSize(15.0f)];
                 self.outlineColor = [UIColor colorWithRed:121.f/255.f green:130.f/255.f blue:136.f/255.f alpha:1.0];
                 self.insets = UIEdgeInsetsMake(1, 6, 1, 6);
                 break;
             case NumberAccessoryViewStyleRoundedOutline:
                 self.minWidth = 24;
                 self.showOutline = YES;
-                self.font = [UIFont boldSystemFontOfSize:12.0f];
+                self.font = [UIFont boldSystemFontOfSize:ICFontSize(12.0f)];
                 self.outlineColor = [UIColor colorWithWhite:0.65 alpha:1.0];
                 self.insets = UIEdgeInsetsMake(1, 6, 1, 6);
                 break;
@@ -52,7 +52,7 @@
                 self.minWidth = 20;
                 self.showOutline = YES;
                 self.borderRadius = 3;
-                self.font = [UIFont boldSystemFontOfSize:12.0f];
+                self.font = [UIFont boldSystemFontOfSize:ICFontSize(12.0f)];
                 self.outlineColor = [UIColor colorWithWhite:0.65 alpha:1.0];
                 self.insets = UIEdgeInsetsMake(1, 3, 1, 3);
                 break;

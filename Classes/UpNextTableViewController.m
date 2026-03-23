@@ -174,7 +174,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     self.emptyStateLabel.textAlignment = NSTextAlignmentCenter;
     self.emptyStateLabel.numberOfLines = 0;
     self.emptyStateLabel.textColor = ICMutedTextColor;
-    self.emptyStateLabel.font = [UIFont systemFontOfSize:15];
+    self.emptyStateLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     self.emptyStateLabel.translatesAutoresizingMaskIntoConstraints = NO;
 }
 

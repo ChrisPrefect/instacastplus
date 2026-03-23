@@ -65,14 +65,14 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
         _titleLabel = [[UILabel alloc] init];
         _titleLabel.text = title;
-        _titleLabel.font = [UIFont systemFontOfSize:14];
+        _titleLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
         _titleLabel.textColor = [UIColor tertiaryLabelColor];
         _titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [self addSubview:_titleLabel];
 
         _detailLabel = [[UILabel alloc] init];
-        _detailLabel.font = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightRegular];
+        _detailLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(12) weight:UIFontWeightRegular];
         _detailLabel.textColor = [UIColor tertiaryLabelColor];
         _detailLabel.textAlignment = NSTextAlignmentRight;
         _detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -89,7 +89,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
         // Error label — multi-line, below title, hidden by default
         _errorLabel = [[UILabel alloc] init];
-        _errorLabel.font = [UIFont systemFontOfSize:11];
+        _errorLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
         _errorLabel.textColor = [UIColor systemRedColor];
         _errorLabel.numberOfLines = 0; // multi-line
         _errorLabel.lineBreakMode = NSLineBreakByWordWrapping;
@@ -225,13 +225,13 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
         _titleLabel = [[UILabel alloc] init];
         _titleLabel.text = title;
-        _titleLabel.font = [UIFont systemFontOfSize:13];
+        _titleLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         _titleLabel.textColor = [UIColor tertiaryLabelColor];
         _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [self addSubview:_titleLabel];
 
         _detailLabel = [[UILabel alloc] init];
-        _detailLabel.font = [UIFont systemFontOfSize:11];
+        _detailLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
         _detailLabel.textColor = [UIColor tertiaryLabelColor];
         _detailLabel.textAlignment = NSTextAlignmentRight;
         _detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -341,7 +341,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         // Title
         _titleLabel = [[UILabel alloc] init];
         _titleLabel.text = @"Importing Data…".ls;
-        _titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
+        _titleLabel.font = [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightSemibold];
         _titleLabel.textColor = isDark ? [UIColor whiteColor] : [UIColor labelColor];
         _titleLabel.textAlignment = NSTextAlignmentCenter;
         _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -350,7 +350,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         // Timer
         _timerLabel = [[UILabel alloc] init];
         _timerLabel.text = @"";
-        _timerLabel.font = [UIFont monospacedDigitSystemFontOfSize:13 weight:UIFontWeightRegular];
+        _timerLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(13) weight:UIFontWeightRegular];
         _timerLabel.textColor = [UIColor secondaryLabelColor];
         _timerLabel.textAlignment = NSTextAlignmentCenter;
         _timerLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -365,7 +365,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
         _totalProgressLabel = [[UILabel alloc] init];
         _totalProgressLabel.text = @"0%";
-        _totalProgressLabel.font = [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightMedium];
+        _totalProgressLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(12) weight:UIFontWeightMedium];
         _totalProgressLabel.textColor = [UIColor secondaryLabelColor];
         _totalProgressLabel.textAlignment = NSTextAlignmentRight;
         _totalProgressLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -373,7 +373,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
         // Status label
         _statusLabel = [[UILabel alloc] init];
-        _statusLabel.font = [UIFont systemFontOfSize:13];
+        _statusLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         _statusLabel.textColor = [UIColor secondaryLabelColor];
         _statusLabel.textAlignment = NSTextAlignmentCenter;
         _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -427,7 +427,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         // Cancel button
         _cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
         [_cancelButton setTitle:@"Cancel".ls forState:UIControlStateNormal];
-        _cancelButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+        _cancelButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(16) weight:UIFontWeightMedium];
         _cancelButton.translatesAutoresizingMaskIntoConstraints = NO;
         [_cancelButton addTarget:self action:@selector(_cancelTapped) forControlEvents:UIControlEventTouchUpInside];
         [_cardView addSubview:_cancelButton];

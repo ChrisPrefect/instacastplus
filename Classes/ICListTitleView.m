@@ -16,7 +16,7 @@
         
         _textLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 4, CGRectGetWidth(frame), 21)];
         _textLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
-        _textLabel.font = [UIFont systemFontOfSize:15];
+        _textLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
         _textLabel.textColor = ICTextColor;
         _textLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         _textLabel.textAlignment = NSTextAlignmentCenter;
@@ -24,7 +24,7 @@
         
         _detailTextLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 25, CGRectGetWidth(frame), 13)];
         _detailTextLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
-        _detailTextLabel.font = [UIFont systemFontOfSize:11];
+        _detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
         _detailTextLabel.textColor = ICMutedTextColor;
         _detailTextLabel.lineBreakMode = NSLineBreakByTruncatingTail;
         _detailTextLabel.textAlignment = NSTextAlignmentCenter;

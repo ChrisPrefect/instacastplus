@@ -202,6 +202,7 @@ enum {
     if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
         UITableViewHeaderFooterView *footerView = (UITableViewHeaderFooterView *)view;
         footerView.textLabel.textColor = [UIColor grayColor];
+        footerView.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
     }
 }
 
@@ -317,7 +318,7 @@ enum {
         footerLabel.numberOfLines = 0;
         footerLabel.textAlignment = NSTextAlignmentLeft;
         [footerLabel setTextColor:[UIColor grayColor]];
-        footerLabel.font = [UIFont systemFontOfSize:14];
+        footerLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
         footerLabel.text = [NSString stringWithFormat:@"\nVersion %@\nPublisher: Chris Thomann \nDeveloper: Claude Code Opus 4.6\nDevendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion]];
 
         [footerView addSubview:footerLabel];

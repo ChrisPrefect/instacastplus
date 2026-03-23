@@ -29,7 +29,7 @@
         _textLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
         _textLabel.textAlignment = NSTextAlignmentCenter;
         _textLabel.textColor = [UIColor whiteColor];
-        _textLabel.font = [UIFont systemFontOfSize:13];
+        _textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         _textLabel.backgroundColor = [UIColor clearColor];
         [self addSubview:_textLabel];
         

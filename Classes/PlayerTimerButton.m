@@ -132,7 +132,7 @@
         
         [self setImage:[[UIImage imageNamed:@"Player Speed Fill"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
         self.titleLabel.textAlignment = NSTextAlignmentCenter;
-        self.titleLabel.font = [UIFont boldSystemFontOfSize:18];
+        self.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
         [self setTitleColor:ICBackgroundColor forState:UIControlStateNormal];
         //[self setTitle:[NSString stringWithFormat:@"%ld", sleepTimer] forState:UIControlStateNormal];
         
@@ -720,8 +720,9 @@
 */
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 53;
-    CGFloat h = 22;
+    CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
+    CGFloat w = 53 * scale;
+    CGFloat h = 22 * scale;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
                       w, h);
@@ -729,6 +730,7 @@
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
 {
+    CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
     AudioSession* session = [AudioSession sharedAudioSession];
     if (session.timerValue == PlaybackStopTimeNoValue)
     {
@@ -740,8 +742,8 @@
     }
     else
     {
-        CGFloat w = 53;
-        CGFloat h = 22;
+        CGFloat w = 53 * scale;
+        CGFloat h = 22 * scale;
         return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                           contentRect.origin.y + (contentRect.size.height - h) / 2,
                           w, h);

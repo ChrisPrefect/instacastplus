@@ -17,6 +17,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kLanguage = 0,
     kEpisodesSection,
     kAppearanceThemeSection,
+    kFontSizeSection,
     kPlayerColor,
     kPInterfaceColor,
     kWidgetColor,
@@ -71,6 +72,10 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     // so trigger appearance update when returning from Appearance mode selection.
     [[ICAppearanceManager sharedManager] updateAppearance];
 
+    // Force notification for font size changes (appearance may not have changed)
+    [[NSNotificationCenter defaultCenter] postNotificationName:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                        object:[ICAppearanceManager sharedManager]];
+
     [self updateAppearance];
 }
 
@@ -111,6 +116,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return 2;
         case kAppearanceThemeSection:
             return [ICAppearanceManager sharedManager].nightSettingMode ? 2 : 1;
+        case kFontSizeSection:
+            return 1;
         case kPlayerColor:
             if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive])
             {
@@ -210,6 +217,21 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             [control addTarget:self action:@selector(togglePureBlack:) forControlEvents:UIControlEventValueChanged];
             return cell;
         }
+    }
+    else if (indexPath.section == kFontSizeSection)
+    {
+        UITableViewCell* cell = [self detailCell];
+        cell.textLabel.text = @"Font Size".ls;
+        NSDictionary* fontSizeNames = @{
+            @0: @"Normal".ls,
+            @1: @"Larger".ls,
+            @2: @"Even Larger".ls,
+            @3: @"Largest".ls
+        };
+        NSInteger level = [USER_DEFAULTS integerForKey:kDefaultFontSizeLarger];
+        cell.detailTextLabel.text = fontSizeNames[@(level)] ?: @"Normal".ls;
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        return cell;
     }
     else if (indexPath.section == kPlayerColor)
     {
@@ -533,6 +555,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
             return @"Episodes".ls;
         case kAppearanceThemeSection:
             return @"";
+        case kFontSizeSection:
+            return @"";
         case kPlayerColor:
             return @"Player Color".ls;
         case kPInterfaceColor:
@@ -564,6 +588,13 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 {
     UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
     [header.textLabel setTextColor:[UIColor grayColor]];
+    header.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    NSString* text = [self tableView:tableView titleForFooterInSection:section];
+    return [self heightForFooterText:text];
 }
 
 - (NSString*) tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
@@ -727,6 +758,18 @@ API_AVAILABLE(ios(14.0)){
         controller.values = @[ @(ICAppearanceModeAutomatic), @(ICAppearanceModeLight), @(ICAppearanceModeDark) ];
         controller.titles = @[ @"Automatic".ls, @"Light".ls, @"Dark".ls ];
         controller.footerText = @"Automatic switches between Light and Dark based on your device settings.".ls;
+        [self.navigationController pushViewController:controller animated:YES];
+        return;
+    }
+
+    else if (indexPath.section == kFontSizeSection)
+    {
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.valueType = kSettingTypeInteger;
+        controller.key = kDefaultFontSizeLarger;
+        controller.title = @"Font Size".ls;
+        controller.values = @[ @0, @1, @2, @3 ];
+        controller.titles = @[ @"Normal".ls, @"Larger".ls, @"Even Larger".ls, @"Largest".ls ];
         [self.navigationController pushViewController:controller animated:YES];
         return;
     }

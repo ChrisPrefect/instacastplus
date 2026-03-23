@@ -37,7 +37,7 @@
             
             // Set properties
             _textField.placeholder = @"#000000";
-            _textField.font = [UIFont systemFontOfSize:15];
+            _textField.font = [UIFont systemFontOfSize:ICFontSize(15)];
             _textField.backgroundColor = [UIColor clearColor];
             _textField.returnKeyType = UIReturnKeyDone;
             _tfView.layer.borderWidth = 0.5;

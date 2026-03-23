@@ -13,7 +13,14 @@
 - (void) awakeFromNib
 {
     [super awakeFromNib];
-    
-    self.font = [UIFont monospacedDigitSystemFontOfSize:self.font.pointSize weight:UIFontWeightRegular];
+
+    self.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(self.font.pointSize) weight:UIFontWeightRegular];
+}
+
+- (void) updateFontScale
+{
+    // Re-apply font scaling (call after font size preference changes)
+    CGFloat baseSize = self.font.pointSize / [ICAppearanceManager sharedManager].fontSizeScale;
+    self.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(baseSize) weight:UIFontWeightRegular];
 }
 @end

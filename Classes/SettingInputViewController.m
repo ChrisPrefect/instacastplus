@@ -64,12 +64,12 @@
         self.navigationItem.prompt = nil;
         UILabel *promptLabel = [[UILabel alloc] init];
         promptLabel.text = self.feed.title; // Your prompt text
-        promptLabel.font = [UIFont systemFontOfSize:12];
+        promptLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
         promptLabel.textAlignment = NSTextAlignmentCenter;
         
         UILabel *titleLabel = [[UILabel alloc] init];
         titleLabel.text = self.titleStr.ls; // Your title text
-        titleLabel.font = [UIFont boldSystemFontOfSize:17];
+        titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(17)];
         titleLabel.textAlignment = NSTextAlignmentCenter;
         
         promptLabel.textColor = ICTextColor;
@@ -176,7 +176,7 @@
     // Keyword Label
     UILabel *label = [[UILabel alloc] init];
     label.text = self.inputValues[indexPath.row];
-    label.font = [UIFont systemFontOfSize:16];
+    label.font = [UIFont systemFontOfSize:ICFontSize(16)];
     label.numberOfLines = 0;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     

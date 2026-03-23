@@ -36,8 +36,8 @@
         return;
     }
 
-    UIFont* regularFont = [UIFont systemFontOfSize:13.0f];
-    UIFont* boldFont = [UIFont boldSystemFontOfSize:13.0f];
+    UIFont* regularFont = [UIFont systemFontOfSize:ICFontSize(13.0f)];
+    UIFont* boldFont = [UIFont boldSystemFontOfSize:ICFontSize(13.0f)];
     NSMutableAttributedString* message = [[NSMutableAttributedString alloc] init];
 
     [failures enumerateObjectsUsingBlock:^(NSString* line, NSUInteger idx, BOOL *stop) {

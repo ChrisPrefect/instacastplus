@@ -32,7 +32,7 @@
 
         // Labels: 34px vom linken Rand, +3px top padding (11 statt 8)
         _label1 = [[UILabel alloc] initWithFrame:CGRectMake(34, 0, CGRectGetWidth(frame)-34-80, 17)];
-        _label1.font = [UIFont boldSystemFontOfSize:13.f];
+        _label1.font = [UIFont boldSystemFontOfSize:ICFontSize(13.f)];
         _label1.textColor = [UIColor whiteColor];
         [self addSubview:_label1];
 
@@ -44,12 +44,12 @@
         label2.continuousMarqueeExtraBuffer = 10.0f;
         label2.animationDelay = 5.f;
         _label2 = label2;
-        _label2.font = [UIFont systemFontOfSize:13.f];
+        _label2.font = [UIFont systemFontOfSize:ICFontSize(13.f)];
         _label2.textColor = [UIColor colorWithWhite:0.57f alpha:1.0f];
         [self addSubview:_label2];
 
         _label3 = [[UILabel alloc] initWithFrame:CGRectMake(34, 40, CGRectGetWidth(frame)-34-80, 17)];
-        _label3.font = [UIFont systemFontOfSize:11.f];
+        _label3.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
         _label3.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
         [self addSubview:_label3];
         _marqueePaused = YES;

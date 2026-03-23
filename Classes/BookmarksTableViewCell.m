@@ -23,20 +23,20 @@
         // Initialization code
         self.selectedBackgroundView = [[UIView alloc] init];
         
-        self.textLabel.font = [UIFont systemFontOfSize:15.f];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
         self.textLabel.textColor = ICTextColor;
         self.textLabel.numberOfLines = 2;
         self.textLabel.lineBreakMode = NSLineBreakByWordWrapping;
         
-        self.detailTextLabel.font = [UIFont systemFontOfSize:11.f];
+        self.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
         
         _numberLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_numberLabel.font = [UIFont boldSystemFontOfSize:13.f];
+		_numberLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(13.f)];
 		_numberLabel.textColor = [UIColor colorWithWhite:0.7 alpha:1.0];
 		[self.contentView addSubview:_numberLabel];
         
         _timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _timeLabel.font = [UIFont systemFontOfSize:11.0f];
+        _timeLabel.font = [UIFont systemFontOfSize:ICFontSize(11.0f)];
         _timeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.f];
         _timeLabel.textAlignment = NSTextAlignmentRight;
         [self.contentView addSubview:_timeLabel];
@@ -63,7 +63,13 @@
 - (void) layoutSubviews
 {
     [super layoutSubviews];
-    
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
+    self.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
+    self.numberLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(13.f)];
+    self.timeLabel.font = [UIFont systemFontOfSize:ICFontSize(11.0f)];
+
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
     self.textLabel.textColor = ICTextColor;
     self.detailTextLabel.textColor = ICMutedTextColor;

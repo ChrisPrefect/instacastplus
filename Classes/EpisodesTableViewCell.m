@@ -64,13 +64,13 @@
         [self.contentView addSubview:_panningContentView];
 
         _titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _titleLabel.font = [UIFont systemFontOfSize:15.0f];
+        _titleLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
         _titleLabel.numberOfLines = 20;
         _titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
         [self.panningContentView addSubview:_titleLabel];
         
         _summaryLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _summaryLabel.font = [UIFont systemFontOfSize:11.0f];
+        _summaryLabel.font = [UIFont systemFontOfSize:ICFontSize(11.0f)];
         _summaryLabel.numberOfLines = 20;
         _summaryLabel.lineBreakMode = NSLineBreakByWordWrapping;
         [self.panningContentView addSubview:_summaryLabel];
@@ -79,12 +79,12 @@
         [self.panningContentView addSubview:_iconView];
         
         _durationLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_durationLabel.font = [UIFont systemFontOfSize:11];
+		_durationLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
 		
 		[self.panningContentView addSubview:_durationLabel];
 		
 		_dateLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_dateLabel.font = [UIFont systemFontOfSize:11];
+		_dateLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
 		[self.panningContentView addSubview:_dateLabel];
 		
         _consumeIndicator2 = [[ICEpisodeConsumeIndicator alloc] initWithFrame:CGRectZero];
@@ -129,7 +129,7 @@
         _moreButton = [[UIButton alloc] initWithFrame:CGRectZero];
         [_moreButton setBackgroundColor:self.contentView.backgroundColor];
         _moreButton.hidden = YES;
-        _moreButton.titleLabel.font = [UIFont systemFontOfSize:13];
+        _moreButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         [_moreButton setTitle:@"More".ls forState:UIControlStateNormal];
         [_moreButton setTitleColor:[UIColor colorWithWhite:0.6f alpha:1.0f] forState:UIControlStateNormal];
         [_moreButton setTitleColor:[UIColor colorWithWhite:0.6f alpha:0.5f] forState:UIControlStateHighlighted];
@@ -140,7 +140,7 @@
         _deleteButton = [[UIButton alloc] initWithFrame:CGRectZero];
         [_deleteButton setBackgroundColor:[UIColor colorWithRed:1.f green:59/255.f blue:48/255.f alpha:1.f]];
         _deleteButton.hidden = YES;
-        _deleteButton.titleLabel.font = [UIFont systemFontOfSize:13];
+        _deleteButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         [_deleteButton setTitle:@"Delete".ls forState:UIControlStateNormal];
         [_deleteButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         [_deleteButton setTitleColor:[UIColor colorWithWhite:1.0 alpha:0.5] forState:UIControlStateHighlighted];
@@ -235,13 +235,13 @@
         if (self.upNextStyle) {
             // Feed title above (bold, slightly larger), episode title below
             self.titleLabel.text = feed.displayTitle ?: feed.title;
-            self.titleLabel.font = [UIFont systemFontOfSize:12.0f weight:UIFontWeightSemibold];
+            self.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(12.0f) weight:UIFontWeightSemibold];
             self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
             self.summaryLabel.text = title;
-            self.summaryLabel.font = [UIFont systemFontOfSize:14.0f];
+            self.summaryLabel.font = [UIFont systemFontOfSize:ICFontSize(14.0f)];
         } else {
             self.titleLabel.text = title;
-            self.titleLabel.font = [UIFont systemFontOfSize:15.0f];
+            self.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
             self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
 
             if (!self.embedded) {
@@ -250,7 +250,7 @@
             else {
                 self.summaryLabel.text = episode.feed.title;
             }
-            self.summaryLabel.font = [UIFont systemFontOfSize:11.0f];
+            self.summaryLabel.font = [UIFont systemFontOfSize:ICFontSize(11.0f)];
         }
         
         //[self _setCell:cell imageForFeed:theFeed episode:episode];
@@ -287,11 +287,11 @@
     UIFont* detailLabelFont;
 
     if (upNextStyle) {
-        textLabelFont = [UIFont systemFontOfSize:12.0f weight:UIFontWeightSemibold];
-        detailLabelFont = [UIFont systemFontOfSize:14.0f];
+        textLabelFont = [UIFont systemFontOfSize:ICFontSize(12.0f) weight:UIFontWeightSemibold];
+        detailLabelFont = [UIFont systemFontOfSize:ICFontSize(14.0f)];
     } else {
-        textLabelFont = [UIFont systemFontOfSize:15.0f];
-        detailLabelFont = [UIFont systemFontOfSize:11.0f];
+        textLabelFont = [UIFont systemFontOfSize:ICFontSize(15.0f)];
+        detailLabelFont = [UIFont systemFontOfSize:ICFontSize(11.0f)];
     }
 
 

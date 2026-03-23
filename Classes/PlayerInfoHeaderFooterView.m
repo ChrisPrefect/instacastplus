@@ -43,7 +43,7 @@
         _doneButton.hidden = YES;
         [_doneButton setTitle:@"Done".ls forState:UIControlStateNormal];
         [_doneButton setTitleEdgeInsets:UIEdgeInsetsMake(0, 15, 0, 15)];
-        _doneButton.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+        _doneButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(15)];
         [self.contentView addSubview:_doneButton];
     }
     return self;
@@ -60,18 +60,18 @@
     self.separatorView.backgroundColor = ICTableSeparatorColor;
     self.separatorView2.backgroundColor = ICTableSeparatorColor;
     
-    self.textLabel.font = [UIFont boldSystemFontOfSize:15];
+    self.textLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(15)];
     
     CGRect b = self.bounds;
     CGFloat yOffset = 0;
     
     CGRect textRect = self.textLabel.frame;
     textRect.origin.x = 15;
-    textRect.origin.y = yOffset + floorf((44-CGRectGetHeight(textRect))/2);
-    
-    if (textRect.size.width > 0 && textRect.size.height > 0) {
-        self.textLabel.frame = textRect;
-    }
+    textRect.size.width = CGRectGetWidth(b) - 30; // Full width minus margins
+    [self.textLabel sizeToFit];
+    textRect.size.height = self.textLabel.frame.size.height;
+    textRect.origin.y = yOffset + floorf((CGRectGetHeight(b) - textRect.size.height) / 2);
+    self.textLabel.frame = textRect;
     
     CGFloat separatorHeight = (self.window.screen.scale == 1) ? 1.0 : 0.5;
     self.separatorView.frame = CGRectMake(0, 0, CGRectGetWidth(b), separatorHeight);

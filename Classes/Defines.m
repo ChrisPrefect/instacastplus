@@ -107,6 +107,7 @@ NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 NSString* kDefaultPlayerControls = @"PlayerControls";
 NSString* kDefaultAppearanceMode = @"AppearanceMode";
 NSString* kDefaultDarkModePureBlack = @"DarkModePureBlack";
+NSString* kDefaultFontSizeLarger = @"FontSizeLarger";
 
 NSString* TapOnEpisodeAction = @"TapOnEpisodeAction";
 NSString* EpisodeSwipeRightAction = @"EpisodeSwipeRightAction";

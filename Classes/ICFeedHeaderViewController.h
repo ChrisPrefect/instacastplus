@@ -18,7 +18,9 @@
 @property (nonatomic, strong, readonly) UILabel* feedSubtitleLabel;
 
 @property (nonatomic, copy) void(^action)(void);
+@property (nonatomic, readonly) CGFloat preferredHeight;
 
 - (void) deselectAnimated:(BOOL)animated;
+- (void) layoutContent;
 
 @end

@@ -265,7 +265,14 @@ enum {
     if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
         UITableViewHeaderFooterView *footerView = (UITableViewHeaderFooterView *)view;
         footerView.textLabel.textColor = [UIColor grayColor];
+        footerView.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
     }
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    NSString* text = [self tableView:tableView titleForFooterInSection:section];
+    return [self heightForFooterText:text];
 }
 
 #pragma mark - Table view delegate

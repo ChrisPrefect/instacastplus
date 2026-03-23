@@ -211,8 +211,10 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
     //NSString* templatePath = [[NSBundle mainBundle] pathForResource:templateName ofType:@"html"];
     NSString* infoHTMLTemplate = [NSString stringWithContentsOfFile:templatePath encoding:NSUTF8StringEncoding error:nil];
     
-    NSString* htmlContent = [infoHTMLTemplate stringByReplacingOccurrencesOfString:@"###CONTENT###" withString:content];
-    
+    NSString* scaledFontSize = [NSString stringWithFormat:@"%.0f", ICFontSize(15)];
+    NSString* htmlContent = [infoHTMLTemplate stringByReplacingOccurrencesOfString:@"###FONT_SIZE###" withString:scaledFontSize];
+    htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###CONTENT###" withString:content];
+
     NSString* buttons = @"";
     htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###BUTTONS###" withString:buttons];
     
@@ -341,7 +343,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             UILabel* titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
             titleLabel.numberOfLines = 2;
             titleLabel.text = self.feed.title;
-            titleLabel.font = [UIFont systemFontOfSize:17.0f];
+            titleLabel.font = [UIFont systemFontOfSize:ICFontSize(17.0f)];
             titleLabel.backgroundColor = [UIColor clearColor];
             titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
             [webShadowView addSubview:titleLabel];
@@ -351,7 +353,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             UILabel* authorLabel = [[UILabel alloc] initWithFrame:CGRectZero];
             authorLabel.numberOfLines = 2;
             authorLabel.text = self.feed.author;
-            authorLabel.font = [UIFont systemFontOfSize:13.0f];
+            authorLabel.font = [UIFont systemFontOfSize:ICFontSize(13.0f)];
             authorLabel.backgroundColor = [UIColor clearColor];
             authorLabel.lineBreakMode = NSLineBreakByWordWrapping;
             

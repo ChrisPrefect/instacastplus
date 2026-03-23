@@ -129,7 +129,9 @@
     NSString* templatePath = [[NSBundle mainBundle] pathForResource:@"InfoDescriptionTemplateIPhone" ofType:@"html"];
     NSString* infoHTMLTemplate = [NSString stringWithContentsOfFile:templatePath encoding:NSUTF8StringEncoding error:nil];
 
-    NSString* htmlContent = [infoHTMLTemplate stringByReplacingOccurrencesOfString:@"###CONTENT###" withString:content];
+    NSString* scaledFontSize = [NSString stringWithFormat:@"%.0f", ICFontSize(15)];
+    NSString* htmlContent = [infoHTMLTemplate stringByReplacingOccurrencesOfString:@"###FONT_SIZE###" withString:scaledFontSize];
+    htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###CONTENT###" withString:content];
     htmlContent = [htmlContent stringByReplacingOccurrencesOfString:@"###BUTTONS###" withString:@""];
 
     [self.webView setOpaque:NO];
@@ -247,31 +249,37 @@
 	{
         UINavigationBar* navBar = self.navigationController.navigationBar;
         CGRect b = self.view.bounds;
-        b.origin.y = 93 + CGRectGetMaxY(navBar.frame) ;
-        WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
-        //config.preferences.minimumFontSize = 25;
-        WKWebView* webView = [[WKWebView alloc] initWithFrame:b configuration:config];
-        [webView setOpaque:NO];
-        webView.backgroundColor = [UIColor clearColor];
-        webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-		webView.navigationDelegate = self;
-        if (@available(iOS 26.0, *)) {
-            webView.scrollView.bottomEdgeEffect.hidden = YES;
-        }
-		[self.view addSubview:webView];
-        self.webView = webView;
-        
-        self.webView.scrollView.showsHorizontalScrollIndicator = false;
-        
+
         self.headerViewController = [ICFeedHeaderViewController viewController];
-        self.headerViewController.view.frame = CGRectMake(0, CGRectGetMaxY(navBar.frame), CGRectGetWidth(b), 93);
+        self.headerViewController.view.frame = CGRectMake(0, 0, CGRectGetWidth(b), 93);
         self.headerViewController.titleLabel.text = self.feed.title;
         self.headerViewController.subtitleLabel.text = self.feed.author;
         NSString* feedSubtitle = self.feed.subtitle;
         if (feedSubtitle.length > 0 && ![feedSubtitle isEqualToString:self.feed.title]) {
             self.headerViewController.feedSubtitleLabel.text = feedSubtitle;
         }
-        
+
+        // Calculate header height dynamically based on font scaling
+        [self.headerViewController layoutContent];
+        CGFloat headerHeight = self.headerViewController.preferredHeight;
+        self.headerViewController.view.frame = CGRectMake(0, 0, CGRectGetWidth(b), headerHeight);
+
+        CGRect webFrame = b;
+        webFrame.origin.y = headerHeight;
+        webFrame.size.height -= webFrame.origin.y;
+        WKWebViewConfiguration* config = [[WKWebViewConfiguration alloc] init];
+        WKWebView* webView = [[WKWebView alloc] initWithFrame:webFrame configuration:config];
+        [webView setOpaque:NO];
+        webView.backgroundColor = [UIColor clearColor];
+        webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        webView.navigationDelegate = self;
+        if (@available(iOS 26.0, *)) {
+            webView.scrollView.bottomEdgeEffect.hidden = YES;
+        }
+        [self.view addSubview:webView];
+        self.webView = webView;
+        self.webView.scrollView.showsHorizontalScrollIndicator = false;
+
         __weak FeedViewController* weakSelf = self;
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
         NSURL* requestedImageURL = self.feed.imageURL;
@@ -281,7 +289,7 @@
                 strongSelf.headerViewController.imageView.image = image;
             }
         }];
-        
+
         [self addChildViewController:self.headerViewController];
         [self.view addSubview:self.headerViewController.view];
         [self.headerViewController didMoveToParentViewController:self];
@@ -301,7 +309,7 @@
 - (void) viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
-    [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsMake(93, 0, 0, 0) byAdjustingForStandardBars:YES];
+    [self setScrollView:self.webView.scrollView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
 
     self.webView.scrollView.contentInset = UIEdgeInsetsMake(0, 0, 50, 0);
 

@@ -338,6 +338,13 @@
 {
     UITableViewHeaderFooterView *footer = (UITableViewHeaderFooterView *)view;
     footer.textLabel.textColor = [UIColor grayColor];
+    footer.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    NSString* text = [self tableView:tableView titleForFooterInSection:section];
+    return [self heightForFooterText:text];
 }
 
 #pragma mark - Expand / Collapse

@@ -147,7 +147,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     UITextField *searchTextField = self.searchBar.searchTextField;
     searchTextField.textColor = textColor;
     searchTextField.tintColor = tintColorD;
-    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search or Enter URL".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor}];
+    searchTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"Search or Enter URL".ls attributes:@{NSForegroundColorAttributeName: ICPlaceholderTextColor, NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)]}];
 
     UIImageView *iconView = (UIImageView *)searchTextField.leftView;
     iconView.image = [iconView.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -631,8 +631,8 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(textX, 0, menuWidth - textX - labelRight, rowHeight)];
         label.text = item[@"title"];
         label.font = isSub
-            ? [UIFont systemFontOfSize:14]
-            : [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+            ? [UIFont systemFontOfSize:ICFontSize(14)]
+            : [UIFont systemFontOfSize:ICFontSize(15) weight:UIFontWeightMedium];
         label.textColor = ICTextColor;
         [row addSubview:label];
 
@@ -809,7 +809,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     [button setImage:chevron forState:UIControlStateNormal];
     button.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft; // image trailing
 
-    button.titleLabel.font = [UIFont systemFontOfSize:16.f weight:UIFontWeightMedium];
+    button.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(16.f) weight:UIFontWeightMedium];
     [button setTitleColor:ICTintColor forState:UIControlStateNormal];
     button.tintColor = ICTintColor;
     button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
@@ -848,7 +848,7 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     UILabel *label = [[UILabel alloc] init];
     label.text = @"Popular Podcasts".ls;
     label.textColor = ICTextColor;
-    label.font = [UIFont systemFontOfSize:20.f weight:UIFontWeightBold];
+    label.font = [UIFont systemFontOfSize:ICFontSize(20.f) weight:UIFontWeightBold];
     label.translatesAutoresizingMaskIntoConstraints = NO;
     [label setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
     [headerView addSubview:label];

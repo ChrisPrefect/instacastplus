@@ -61,7 +61,7 @@ enum {
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, [[UIScreen mainScreen] bounds].size.width, 44)];
         label.backgroundColor = [UIColor clearColor];
         label.numberOfLines = 2;
-        label.font = [UIFont boldSystemFontOfSize: 16.0f];
+        label.font = [UIFont boldSystemFontOfSize:ICFontSize(16.0f)];
         label.textAlignment = NSTextAlignmentCenter;
         label.textColor = ICTextColor;
         label.text = [NSString stringWithFormat:@"%@\n%@", self.feed.title, @"Subscription Settings".ls];
@@ -195,8 +195,9 @@ enum {
 
     else if (indexPath.section == kRestoreDeletedSection)
     {
-        cell.accessoryView = nil;
         cell = [self buttonCell];
+        cell.accessoryView = nil;
+        cell.accessoryType = UITableViewCellAccessoryNone;
         cell.textLabel.text = @"Restore Deleted Episodes".ls;
     }
     
@@ -763,6 +764,13 @@ enum {
 {
     UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
     [header.textLabel setTextColor:[UIColor grayColor]];
+    header.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
+{
+    NSString* text = [self tableView:tableView titleForFooterInSection:section];
+    return [self heightForFooterText:text];
 }
 
 

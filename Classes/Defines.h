@@ -117,6 +117,7 @@ extern NSString* kDefaultDontDeleteUpNextWhenChangingEpisode;
 
 extern NSString* kDefaultAppearanceMode;
 extern NSString* kDefaultDarkModePureBlack;
+extern NSString* kDefaultFontSizeLarger;
 
 typedef NS_ENUM(NSInteger, ICAppearanceMode) {
     ICAppearanceModeAutomatic = 0,  // Default - follows system

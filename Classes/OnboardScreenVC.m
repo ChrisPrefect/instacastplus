@@ -121,7 +121,7 @@
     // --- 3. Label (to the right of arrow) ---
     UILabel *label = [[UILabel alloc] init];
     label.text = @"to add podcasts, search the podcast directory".ls;
-    label.font = [UIFont systemFontOfSize:18 weight:UIFontWeightMedium];
+    label.font = [UIFont systemFontOfSize:ICFontSize(18) weight:UIFontWeightMedium];
     label.textColor = isDark ? [UIColor whiteColor] : [UIColor blackColor];
     label.numberOfLines = 0;
 

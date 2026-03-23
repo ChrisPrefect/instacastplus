@@ -36,7 +36,7 @@
     [self setTitle:title forState:UIControlStateNormal];
     
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
-    self.titleLabel.font = [UIFont boldSystemFontOfSize:18];
+    self.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow
@@ -122,8 +122,9 @@
 
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 53;
-    CGFloat h = 22;
+    CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
+    CGFloat w = 53 * scale;
+    CGFloat h = 22 * scale;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
                       w, h);
@@ -131,8 +132,9 @@
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
 {
-    CGFloat w = 53;
-    CGFloat h = 22;
+    CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
+    CGFloat w = 53 * scale;
+    CGFloat h = 22 * scale;
     return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
                       w, h);

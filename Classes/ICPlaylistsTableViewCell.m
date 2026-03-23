@@ -21,11 +21,11 @@
     if (self)
     {
         self.selectedBackgroundView = [[UIView alloc] init];
-        self.textLabel.font = [UIFont systemFontOfSize:17.f];  // Increased from 15
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17.f)];  // Increased from 15
 
 
         _numberLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_numberLabel.font = [UIFont boldSystemFontOfSize:14.f];  // Increased from 13
+		_numberLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(14.f)];  // Increased from 13
 		
 		[self.contentView addSubview:_numberLabel];
         
@@ -97,6 +97,10 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17.f)];
+    self.numberLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(14.f)];
 
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
     self.textLabel.textColor = ICTextColor;

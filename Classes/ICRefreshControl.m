@@ -35,12 +35,12 @@ typedef NS_ENUM(NSInteger, ICRefreshState) {
         [self addSubview:_progressView];
         
         _titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _titleLabel.font = [UIFont systemFontOfSize:13.0f];
+        _titleLabel.font = [UIFont systemFontOfSize:ICFontSize(13.0f)];
         _titleLabel.textColor = ICTextColor;
         [self addSubview:_titleLabel];
         
         _detailLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _detailLabel.font = [UIFont systemFontOfSize:11.0f];
+        _detailLabel.font = [UIFont systemFontOfSize:ICFontSize(11.0f)];
         _detailLabel.textColor = ICMutedTextColor;
         [self addSubview:_detailLabel];
     }

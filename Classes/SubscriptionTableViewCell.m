@@ -28,9 +28,9 @@
         
 		
 		//self.selectedBackgroundView = [[[UIImageView alloc] initWithImage:[UIImage imageNamed:@"EpisodeSelection"]] autorelease];
-        self.textLabel.font = [UIFont systemFontOfSize:15.f];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
         
-        self.detailTextLabel.font = [UIFont systemFontOfSize:11.f];
+        self.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
         self.detailTextLabel2.font = self.detailTextLabel.font;
         
 		self.imageView.backgroundColor = self.backgroundColor;
@@ -41,11 +41,11 @@
 		self.accessoryView.opaque = YES;
 		
 		_detailTextLabel2 = [[UILabel alloc] initWithFrame:CGRectZero];
-		_detailTextLabel2.font = [UIFont systemFontOfSize:11.f];
+		_detailTextLabel2.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
 		[self.contentView addSubview:_detailTextLabel2];
         
         _numberLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_numberLabel.font = [UIFont boldSystemFontOfSize:13.f];
+		_numberLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(13.f)];
 		[self.contentView addSubview:_numberLabel];
         
         _newsModeIndicatorImageView = [[UIImageView alloc] initWithImage:[[UIImage imageNamed:@"Episode News Mode"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
@@ -159,6 +159,12 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
+    self.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
+    self.detailTextLabel2.font = self.detailTextLabel.font;
+    self.numberLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(13.f)];
 
     CGRect bounds = self.bounds;
     CGRect cframe = self.contentView.frame;

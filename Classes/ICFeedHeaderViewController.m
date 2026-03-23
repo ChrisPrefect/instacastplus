@@ -28,7 +28,7 @@ static CGFloat ICMeasuredLabelHeight(UILabel* label, CGFloat width)
         return 0;
     }
 
-    UIFont* font = label.font ?: [UIFont systemFontOfSize:[UIFont labelFontSize]];
+    UIFont* font = label.font ?: [UIFont systemFontOfSize:ICFontSize([UIFont labelFontSize])];
     NSDictionary* attributes = @{ NSFontAttributeName : font };
     CGRect textRect = [text boundingRectWithSize:CGSizeMake(width, CGFLOAT_MAX)
                                          options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
@@ -67,7 +67,7 @@ static CGFloat ICMeasuredLabelHeight(UILabel* label, CGFloat width)
     // create title label
     UILabel* titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     titleLabel.numberOfLines = 2;
-    titleLabel.font = [UIFont boldSystemFontOfSize:18.0f];
+    titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18.0f)];
     titleLabel.backgroundColor = [UIColor clearColor];
     titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
     titleLabel.adjustsFontSizeToFitWidth = YES;
@@ -77,7 +77,7 @@ static CGFloat ICMeasuredLabelHeight(UILabel* label, CGFloat width)
     // create author label
     UILabel* authorLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     authorLabel.numberOfLines = 2;
-    authorLabel.font = [UIFont systemFontOfSize:13.0f];
+    authorLabel.font = [UIFont systemFontOfSize:ICFontSize(13.0f)];
     authorLabel.backgroundColor = [UIColor clearColor];
     authorLabel.lineBreakMode = NSLineBreakByWordWrapping;
     [self.view addSubview:authorLabel];
@@ -85,7 +85,7 @@ static CGFloat ICMeasuredLabelHeight(UILabel* label, CGFloat width)
     // create feed subtitle label (shown below author)
     UILabel* feedSubtitleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     feedSubtitleLabel.numberOfLines = 2;
-    feedSubtitleLabel.font = [UIFont systemFontOfSize:12.0f];
+    feedSubtitleLabel.font = [UIFont systemFontOfSize:ICFontSize(12.0f)];
     feedSubtitleLabel.backgroundColor = [UIColor clearColor];
     feedSubtitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [self.view addSubview:feedSubtitleLabel];
@@ -189,6 +189,31 @@ static CGFloat ICMeasuredLabelHeight(UILabel* label, CGFloat width)
     } else {
         self.feedSubtitleLabel.hidden = YES;
     }
+}
+
+- (CGFloat) preferredHeight
+{
+    CGFloat contentWidth = CGRectGetWidth(self.view.bounds);
+    CGFloat labelWidth = MAX(0, contentWidth - 72 - 60);
+
+    CGFloat titleHeight = ICMeasuredLabelHeight(self.titleLabel, labelWidth);
+    CGFloat authorHeight = ICMeasuredLabelHeight(self.subtitleLabel, labelWidth);
+    CGFloat feedSubtitleHeight = ICMeasuredLabelHeight(self.feedSubtitleLabel, labelWidth);
+
+    CGFloat labelsHeight = 0;
+    if (titleHeight > 0) labelsHeight += titleHeight;
+    if (authorHeight > 0) {
+        if (labelsHeight > 0) labelsHeight += 2;
+        labelsHeight += authorHeight;
+    }
+    if (feedSubtitleHeight > 0) {
+        if (labelsHeight > 0) labelsHeight += 2;
+        labelsHeight += feedSubtitleHeight;
+    }
+
+    // Minimum: image (72) + padding (10+11) = 93. Expand if labels need more.
+    CGFloat labelsNeeded = labelsHeight + 20; // 10pt top + 10pt bottom padding
+    return MAX(93, labelsNeeded);
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator

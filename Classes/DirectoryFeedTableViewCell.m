@@ -25,8 +25,8 @@
         _videoIndicator.tintColor = [UIColor colorWithWhite:0.6f alpha:1.f];
 		[self.contentView addSubview:_videoIndicator];
         
-        self.textLabel.font = [UIFont systemFontOfSize:15.f];
-        self.detailTextLabel.font = [UIFont systemFontOfSize:11.f];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
+        self.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
 
         self.accessoryView = [[UIImageView alloc] initWithImage:[[UIImage imageNamed:@"TableView Disclosure Triangle"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
 		self.accessoryView.backgroundColor = self.backgroundColor;
@@ -38,7 +38,11 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
+    self.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
+
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
     self.textLabel.textColor = ICTextColor;
     self.detailTextLabel.textColor = ICMutedTextColor;

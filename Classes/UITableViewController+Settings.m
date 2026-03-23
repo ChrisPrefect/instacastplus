@@ -25,9 +25,10 @@
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.imageView.image = nil;
-    
+
     return cell;
 }
 
@@ -49,7 +50,8 @@
     
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
-    
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
+
     UISwitch* control = (UISwitch*)cell.accessoryView;
     [control setOnTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
     cell.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
@@ -75,6 +77,7 @@
     }
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
     ((UITextField*)cell.accessoryView).text = nil;
     return cell;
 }
@@ -93,11 +96,13 @@
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
     cell.detailTextLabel.textColor = ICMutedTextColor;
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     cell.accessoryView = nil;
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    
+
     return cell;
 }
 
@@ -115,8 +120,10 @@
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
     cell.detailTextLabel.textColor = ICMutedTextColor;
-    
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
+
     return cell;
 }
 
@@ -140,6 +147,7 @@
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
     cell.textLabel.textColor = [UIColor redColor];
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
     return cell;
 }
 
@@ -155,9 +163,10 @@
     }
     
     cell.textLabel.textColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
-    
+
     return cell;
 }
 
@@ -174,7 +183,7 @@
     cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
     cell.textLabel.textColor = ICTextColor;
-    cell.textLabel.font = [UIFont systemFontOfSize:15];
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     cell.textLabel.numberOfLines = 10;
     cell.accessoryType = UITableViewCellAccessoryNone;
     
@@ -190,12 +199,28 @@
 
 - (CGFloat) heightForTextCellUsingText:(NSString*)text
 {
-    NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:text attributes:@{ NSFontAttributeName : [UIFont systemFontOfSize:15] }];
+    NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:text attributes:@{ NSFontAttributeName : [UIFont systemFontOfSize:ICFontSize(15)] }];
     
     CGFloat w = CGRectGetWidth(self.tableView.frame)-30;
     CGSize textLabelSize = [attributedTitle boundingRectWithSize:CGSizeMake(w, 500) options:NSStringDrawingUsesLineFragmentOrigin context:nil].size;
     IC_SIZE_INTEGRAL(textLabelSize);
 
     return textLabelSize.height+20;
+}
+
+- (CGFloat)heightForFooterText:(NSString*)text
+{
+    if (!text || text.length == 0) {
+        return UITableViewAutomaticDimension;
+    }
+
+    UIFont* font = [UIFont systemFontOfSize:ICFontSize(13)];
+    CGFloat width = CGRectGetWidth(self.tableView.frame) - 40; // 20pt inset on each side
+    NSAttributedString* attrText = [[NSAttributedString alloc] initWithString:text attributes:@{ NSFontAttributeName : font }];
+    CGSize textSize = [attrText boundingRectWithSize:CGSizeMake(width, CGFLOAT_MAX)
+                                             options:NSStringDrawingUsesLineFragmentOrigin
+                                             context:nil].size;
+    IC_SIZE_INTEGRAL(textSize);
+    return textSize.height + 24; // 12pt padding top + bottom
 }
 @end

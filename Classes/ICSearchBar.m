@@ -41,6 +41,7 @@
                 UITextField *searchBarTextField = (UITextField *)secondLevelSubview;
                 searchBarTextField.textColor = ICTextColor;
                 searchBarTextField.tintColor = ICTintColor;
+                searchBarTextField.font = [UIFont systemFontOfSize:ICFontSize(14)];
                 break;
             }
         }

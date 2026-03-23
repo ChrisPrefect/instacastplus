@@ -78,7 +78,7 @@
         [button setTitle:title forState:UIControlStateNormal];
     }
     
-    button.titleLabel.font = [UIFont systemFontOfSize:12];
+    button.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
     button.titleLabel.textAlignment = NSTextAlignmentCenter;
     
     return button;

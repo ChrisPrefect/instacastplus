@@ -70,6 +70,9 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
 @end
 
+static NSDate* _lastAutoRefreshDate = nil;
+static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
+
 @implementation InstacastSceneDelegate{
     struct {
         unsigned int apnRegisterSuccess:1;
@@ -161,6 +164,9 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 
             // Re-apply appearance now that window exists
             [[ICAppearanceManager sharedManager] updateAppearance];
+
+            // Auto-refresh feeds on app launch
+            [self _autoRefreshFeedsIfNeeded];
         }
 
     }
@@ -368,6 +374,9 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
     }
     [self _updateAppContentAfterBecomingActive];
     App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+
+    // Auto-refresh feeds if last refresh was more than 30 minutes ago
+    [self _autoRefreshFeedsIfNeeded];
 }
 
 - (void) _updateAppContentAfterBecomingActive
@@ -386,6 +395,24 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
             _flags.apnRegisterSuccess = 0;
         }
     }
+}
+
+- (void) _autoRefreshFeedsIfNeeded
+{
+    SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
+
+    // Skip if already refreshing
+    if (sman.isRefreshing) {
+        return;
+    }
+
+    // Skip if last refresh was less than 30 minutes ago
+    if (_lastAutoRefreshDate && [[NSDate date] timeIntervalSinceDate:_lastAutoRefreshDate] < kAutoRefreshCooldown) {
+        return;
+    }
+
+    _lastAutoRefreshDate = [NSDate date];
+    [sman refreshAllFeedsForce:NO];
 }
 
 - (void)sceneDidEnterBackground:(UIScene *)scene {

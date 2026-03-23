@@ -28,18 +28,18 @@ static CGFloat const kChapterTitleFontSize = 16.0f;
     {
         self.selectedBackgroundView = [[UIView alloc] init];
         
-        self.textLabel.font = [UIFont systemFontOfSize:kChapterTitleFontSize];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(kChapterTitleFontSize)];
         self.textLabel.lineBreakMode = NSLineBreakByWordWrapping;
         self.textLabel.numberOfLines = 20;
         
         // Initialization code.
 		_numLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_numLabel.font = [UIFont systemFontOfSize:13.f];
+		_numLabel.font = [UIFont systemFontOfSize:ICFontSize(13.f)];
         _numLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
 		[self.contentView addSubview:_numLabel];
 		
 		_timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_timeLabel.font = [UIFont systemFontOfSize:15.f];
+		_timeLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
 		_timeLabel.textAlignment = NSTextAlignmentRight;
         _timeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
 		[self.contentView addSubview:_timeLabel];
@@ -106,24 +106,34 @@ static CGFloat const kChapterTitleFontSize = 16.0f;
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(kChapterTitleFontSize)];
+    self.numLabel.font = [UIFont systemFontOfSize:ICFontSize(13.f)];
+    self.timeLabel.font = [UIFont systemFontOfSize:ICFontSize(15.f)];
+
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
 	
 	CGRect b = self.bounds;
-    
-    CGSize titleSize = [self.textLabel.attributedText boundingRectWithSize:CGSizeMake(CGRectGetWidth(b)-15-15-15-80-15, 200)
+    CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
+    CGFloat numWidth = 20 * scale;
+    CGFloat numHeight = 17 * scale;
+    CGFloat timeWidth = 55 * scale;
+    CGFloat timeHeight = numHeight;
+    CGFloat timeReserve = (80 - 55) + timeWidth; // padding + scaled time width
+
+    CGSize titleSize = [self.textLabel.attributedText boundingRectWithSize:CGSizeMake(CGRectGetWidth(b)-15-numWidth-15-timeReserve-15, 200)
                                                                    options:NSStringDrawingUsesLineFragmentOrigin
                                                                    context:nil].size;
     IC_SIZE_INTEGRAL(titleSize);
 
-	CGRect titleRect = CGRectMake(15+15+15, 11, CGRectGetWidth(b)-15-15-15-80-15, titleSize.height);
+	CGRect titleRect = CGRectMake(15+numWidth+15, 11, CGRectGetWidth(b)-15-numWidth-15-timeReserve-15, titleSize.height);
 	self.textLabel.frame = [self.contentView convertRect:titleRect fromView:self];
 
-
-	CGRect numRect = CGRectMake(15, 12.f, 20, 17.f);
+	CGRect numRect = CGRectMake(15, 12.f, numWidth, numHeight);
 	self.numLabel.frame = [self.contentView convertRect:numRect fromView:self];
 
-	CGRect timeRect = CGRectMake(CGRectGetWidth(b)-15-55, 12.f, 55.f, 17.f);
+	CGRect timeRect = CGRectMake(CGRectGetWidth(b)-15-timeWidth, 12.f, timeWidth, timeHeight);
 	self.timeLabel.frame = [self.contentView convertRect:timeRect fromView:self];
 
     self.linkButton.frame = CGRectMake(CGRectGetWidth(b)-100, 0, 100, CGRectGetHeight(b));
@@ -142,11 +152,15 @@ static CGFloat const kChapterTitleFontSize = 16.0f;
     }
     
     CGFloat width = CGRectGetWidth(tableBounds);
-    UIFont* font = [UIFont systemFontOfSize:kChapterTitleFontSize];
-    
+    CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
+    CGFloat numWidth = 20 * scale;
+    CGFloat timeWidth = 55 * scale;
+    CGFloat timeReserve = (80 - 55) + timeWidth;
+    UIFont* font = [UIFont systemFontOfSize:ICFontSize(kChapterTitleFontSize)];
+
     NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:title attributes:@{NSFontAttributeName : font}];
-    
-    CGSize titleSize = [attributedTitle boundingRectWithSize:CGSizeMake(width-15-15-15-80-15, 200)
+
+    CGSize titleSize = [attributedTitle boundingRectWithSize:CGSizeMake(width-15-numWidth-15-timeReserve-15, 200)
                                                      options:NSStringDrawingUsesLineFragmentOrigin
                                                      context:nil].size;
     IC_SIZE_INTEGRAL(titleSize);

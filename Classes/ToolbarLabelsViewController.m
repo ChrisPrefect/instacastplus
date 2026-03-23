@@ -42,9 +42,10 @@
     UIColor* secondTintColor = [UIColor colorWithRed:red green:green blue:blue alpha:alpha*0.5f];
     
     self.label1.textColor = tintColor;
+    self.label1.font = [UIFont systemFontOfSize:ICFontSize(11)];
     self.label2.textColor = secondTintColor;
-    
-    
+    self.label2.font = [UIFont systemFontOfSize:ICFontSize(11)];
+
     CGRect b = self.view.bounds;
     
     CGFloat yOffset = 15;

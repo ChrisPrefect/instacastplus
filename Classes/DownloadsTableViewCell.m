@@ -26,18 +26,18 @@
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
         
-        self.textLabel.font = [UIFont systemFontOfSize:13];
+        self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         
         // Initialization code.
 		_progressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
 		[self.contentView addSubview:_progressView];
 		
 		_sizeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_sizeLabel.font = [UIFont systemFontOfSize:11];
+		_sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
 		[self.contentView addSubview:_sizeLabel];
 		
 		_timeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-		_timeLabel.font = [UIFont systemFontOfSize:11];
+		_timeLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
 		_timeLabel.textAlignment = NSTextAlignmentRight;
 		[self.contentView addSubview:_timeLabel];
 		
@@ -54,7 +54,12 @@
 - (void) layoutSubviews
 {
 	[super layoutSubviews];
-    
+
+    // Update fonts for dynamic font size scaling
+    self.textLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
+    self.sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
+    self.timeLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
+
     self.textLabel.textColor = ICTextColor;
     self.sizeLabel.textColor = ICMutedTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
