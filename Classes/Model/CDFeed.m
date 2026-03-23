@@ -407,6 +407,7 @@ NSString* kUserDefinedFeedName = @"UserDefinedFeedName";
                         @"totalExpectedEpisodes",
                         @"preferredTranscriptLanguage",
                         @"preferredTranscriptURL",
+                        @"cachedPlayerTintColor",
                         nil];
     });
 
