@@ -144,6 +144,7 @@ NSString* SmarthomeWiFiOnly = @"SmarthomeWiFiOnly";
 NSString* SmarthomeDeviceName = @"SmarthomeDeviceName";
 
 NSString* OpenLinksInExternalBrowser = @"OpenLinksInExternalBrowser";
+NSString* AmazonAffiliateEnabled = @"AmazonAffiliateEnabled";
 
 
 NSString* AudioSessionSleepTimerDidExpireNotification = @"AudioSessionSleepTimerDidExpireNotification";

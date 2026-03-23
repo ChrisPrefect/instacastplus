@@ -21,6 +21,38 @@
 
 @implementation UIViewController (ShowNotes)
 
+static BOOL _isAmazonHost(NSString* host)
+{
+    if (!host) return NO;
+    host = [host lowercaseString];
+    return ([host containsString:@"amazon."] ||
+            [host isEqualToString:@"amzn.to"] ||
+            [host isEqualToString:@"amzn.eu"]);
+}
+
+static NSURL* _amazonAffiliateURL(NSURL* url)
+{
+    if (![USER_DEFAULTS boolForKey:AmazonAffiliateEnabled]) return url;
+    if (!_isAmazonHost([url host])) return url;
+
+    NSURLComponents* components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    if (!components) return url;
+
+    // Remove existing tag parameter, then add ours
+    NSMutableArray<NSURLQueryItem*>* queryItems = [[components queryItems] mutableCopy] ?: [NSMutableArray array];
+    NSMutableIndexSet* toRemove = [NSMutableIndexSet indexSet];
+    for (NSUInteger i = 0; i < queryItems.count; i++) {
+        if ([[queryItems[i] name] caseInsensitiveCompare:@"tag"] == NSOrderedSame) {
+            [toRemove addIndex:i];
+        }
+    }
+    [queryItems removeObjectsAtIndexes:toRemove];
+    [queryItems addObject:[NSURLQueryItem queryItemWithName:@"tag" value:@"iteconomy-21"]];
+    components.queryItems = queryItems;
+
+    return components.URL ?: url;
+}
+
 - (BOOL) handleShowNotesURL:(NSURL*)url
 {
     NSString* urlString = [url absoluteString];
@@ -34,6 +66,10 @@
 		[[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
 		return NO;
 	}
+
+    // Rewrite Amazon URLs with affiliate tag
+    url = _amazonAffiliateURL(url);
+    urlString = [url absoluteString];
 
     NSArray* hostToBeRedirected = @[
     @"twitter",
@@ -73,8 +109,7 @@
             storeController.delegate = self;
 
             NSMutableDictionary* storeParams = [@{ SKStoreProductParameterITunesItemIdentifier : productId } mutableCopy];
-            storeParams[SKStoreProductParameterAffiliateToken] = @"11lKc8";
-            storeParams[SKStoreProductParameterCampaignToken] = @"instacast-app";
+            // Affiliate token removed — will be replaced with new tag later
             [storeController loadProductWithParameters:storeParams
                                        completionBlock:^(BOOL result, NSError *error) {
 

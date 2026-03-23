@@ -18,6 +18,7 @@
 #import "CDMedium.h"
 #import "CDChapter.h"
 #import "Model/DatabaseManager.h"
+#import "ChangeLogViewController.h"
 
 #define kDonate1ProductID  @"donate_to_developer_1"
 #define kDonate5ProductID  @"donate_to_developer_5"
@@ -72,6 +73,7 @@ enum {
     [super viewWillAppear:animated];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
     [self updateAppearance];
+    [self.tableView reloadData];
 }
 
 - (void)dealloc
@@ -81,6 +83,9 @@ enum {
 
 - (void)updateAppearance
 {
+    BOOL isDark = [ICAppearanceManager sharedManager].nightSettingMode;
+    self.overrideUserInterfaceStyle = isDark ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     self.view.backgroundColor = ICBackgroundColor;
@@ -335,7 +340,7 @@ enum {
             return history.count > 0 ? history.count : 1; // 1 for "No donations yet" placeholder
         }
         case kSectionLinks:
-            return 2;
+            return 3;
         default:
             return 0;
     }
@@ -397,9 +402,12 @@ enum {
             if (indexPath.row == 0) {
                 cell.textLabel.text = @"Rate on App Store".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"star"];
-            } else {
+            } else if (indexPath.row == 1) {
                 cell.textLabel.text = @"Listen to Instacast lebt Podcast".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"mic"];
+            } else {
+                cell.textLabel.text = @"What's New".ls;
+                cell.imageView.image = [UIImage systemImageNamed:@"sparkles"];
             }
             cell.imageView.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
             return cell;
@@ -429,9 +437,12 @@ enum {
             if (indexPath.row == 0) {
                 // Rate on App Store
                 [self openAppStoreReviewPage];
-            } else {
+            } else if (indexPath.row == 1) {
                 // Instacast lebt Podcast - create temporary episode and play
                 [self playPodcastEpisode];
+            } else {
+                // What's New
+                [self showChangeLog];
             }
             break;
         }
@@ -510,6 +521,16 @@ enum {
 
     PlaybackViewController *playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
     [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
+}
+
+#pragma mark - Changelog
+
+- (void)showChangeLog
+{
+    ChangeLogViewController *changelogVC = [[ChangeLogViewController alloc] init];
+    UINavigationController *navVC = [[UINavigationController alloc] initWithRootViewController:changelogVC];
+    navVC.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self presentViewController:navVC animated:YES completion:nil];
 }
 
 #pragma mark - Fireworks Animation

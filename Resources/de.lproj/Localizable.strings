@@ -67,7 +67,10 @@
 "Off" = "Deaktivieren";
 "Are you sure you want to reset all custom subscription settings to default?" = "Sind Sie sicher, dass Sie alle Abo-Einstellungen auf die Werkseinstellungen zurücksetzen möchten?";
 "Audio Content" = "Audioinhalte";
+"Amazon Affiliate Program" = "Amazon Affiliate-Programm";
 "Auto-Delete Content" = "Inhalte automatisch löschen";
+"Thank you! You support the development of InstacastPlus with purchases through these links." = "Herzlichen Dank! Sie unterstützen mit Käufen über diese Links die Weiterentwicklung von InstacastPlus.";
+"You support the development of InstacastPlus with purchases through these links." = "Sie unterstützen mit Käufen über diese Links die Weiterentwicklung von InstacastPlus.";
 "Auto-Download Content" = "Inhalte automatisch laden";
 "Crazy (3x)" = "Verrückt (3x)";
 "Enable News Mode to only keep the most recent episode(s) of a podcast." = "Einschalten, um das Herunterladen und Löschen von Inhalten für Podcasts zu optimieren, die häufig und mehrmals am Tag veröffentlichen.";
@@ -244,7 +247,7 @@
 "Add" = "Hinzufügen";
 "Add Selected Podcasts" = "Ausgewählte Podcasts hinzufügen";
 "All Podcasts" = "Alle Podcasts";
-"Appearance" = "Darstellung";
+"Appearance" = "Erscheinungsbild";
 "Automatic" = "Automatisch";
 "Light" = "Hell";
 "Dark" = "Dunkel";
@@ -911,6 +914,7 @@
 "Rate on App Store" = "Im App Store bewerten";
 "Instacast lebt Podcast" = "Instacast lebt Podcast";
 "Listen to Instacast lebt Podcast" = "\"Instacast lebt\" Podcast anhören";
+"What's New" = "Neue Funktionen";
 
 /* Refresh Status */
 "%ld/%ld podcasts updating" = "%ld/%ld Podcasts werden aktualisiert";

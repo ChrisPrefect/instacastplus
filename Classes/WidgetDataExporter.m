@@ -225,7 +225,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        [self reloadWidgetTimelines];
+        // Episode started: reload immediately so widget reflects the new episode without waiting 5s.
+        [WidgetKitHelper reloadAllTimelines];
     });
 }
 
@@ -237,7 +238,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         [self exportNowPlayingSnapshot];
         [self exportStatsSnapshot];
         [self _persistLastPlayedCache];
-        [self reloadWidgetTimelines];
+        // Episode ended: reload immediately.
+        [WidgetKitHelper reloadAllTimelines];
     });
 }
 
@@ -245,7 +247,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        [self reloadWidgetTimelines];
+        // Episode changed: reload immediately so widget switches to the new episode without waiting 5s.
+        [WidgetKitHelper reloadAllTimelines];
     });
 }
 
@@ -638,6 +641,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         self.lastPlayedExtraFields = [extra copy];
     } else if (self.lastPlayedEpisodeDict) {
         // No current playback — show last played episode as paused
+        DebugLog(@"exportNowPlayingSnapshot: no active episode, using lastPlayedEpisodeDict: '%@'", self.lastPlayedEpisodeDict[@"title"]);
         snapshot[@"isPaused"] = @YES;
         snapshot[@"episode"] = self.lastPlayedEpisodeDict;
         if (self.lastPlayedExtraFields) {

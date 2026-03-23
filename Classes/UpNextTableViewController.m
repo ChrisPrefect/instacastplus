@@ -401,6 +401,59 @@ static NSString* kUpNextCell = @"UpNextCell";
     return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
+- (UIImage*) _downloadSwipeImageForEpisode:(CDEpisode*)episode
+{
+    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
+    CacheManager* cman = [CacheManager sharedCacheManager];
+    NSString* name;
+    if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
+        name = @"trash";
+    } else {
+        name = @"square.and.arrow.down";
+    }
+    UIImage* image = [UIImage systemImageNamed:name withConfiguration:config];
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+- (UIColor*) _downloadSwipeTintForEpisode:(CDEpisode*)episode
+{
+    CacheManager* cman = [CacheManager sharedCacheManager];
+    if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
+        return [UIColor systemRedColor];
+    }
+    return ICTintColor;
+}
+
+- (void) _toggleDownloadAtIndexPath:(NSIndexPath*)indexPath
+{
+    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
+    if (indexPath.row >= playlist.count) return;
+
+    CDEpisode* episode = playlist[indexPath.row];
+    EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
+    CacheManager* cman = [CacheManager sharedCacheManager];
+
+    if ([cman episodeIsCached:episode]) {
+        [cman removeCacheForEpisode:episode automatic:NO];
+        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+            [cell updatePlayComboButtonState];
+        }
+        PlaySoundFile(@"AffirmOut", NO);
+    } else if ([cman isCachingEpisode:episode]) {
+        [cman cancelCachingEpisode:episode disableAutoDownload:YES];
+        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+            [cell updatePlayComboButtonState];
+        }
+        PlaySoundFile(@"AffirmOut", NO);
+    } else {
+        [cman cacheEpisode:episode overwriteCellularLock:NO];
+        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+            [cell updatePlayComboButtonState];
+        }
+        PlaySoundFile(@"AffirmIn", NO);
+    }
+}
+
 - (void) _removeEpisodeAtIndexPath:(NSIndexPath*)indexPath
 {
     if (indexPath.section != 0 || indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
@@ -475,12 +528,14 @@ static NSString* kUpNextCell = @"UpNextCell";
         return [UIColor systemRedColor];
     };
     cell.rightSwipeImageProvider = ^UIImage* {
-        return nil;
+        return [weakSelf _downloadSwipeImageForEpisode:episode];
     };
     cell.rightSwipeTintProvider = ^UIColor* {
-        return [UIColor clearColor];
+        return [weakSelf _downloadSwipeTintForEpisode:episode];
     };
-    cell.didPanRight = nil;
+    cell.didPanRight = ^(NSIndexPath* swipedIndexPath) {
+        [weakSelf _toggleDownloadAtIndexPath:swipedIndexPath];
+    };
     cell.didPanLeft = ^(NSIndexPath* swipedIndexPath) {
         [weakSelf _removeEpisodeAtIndexPath:swipedIndexPath];
     };

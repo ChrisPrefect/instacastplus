@@ -175,7 +175,7 @@ enum {
             cell.backgroundColor = [[[ICAppearanceManager sharedManager] appearance].tintColor colorWithAlphaComponent:0.08];
             break;
         case kRowDonateToDeveloper:
-            cell.textLabel.text = @"Donate for further development".ls;
+            cell.textLabel.text = @"Support InstacastPlus".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"heart"];
             cell.backgroundColor = [[[ICAppearanceManager sharedManager] appearance].tintColor colorWithAlphaComponent:0.08];
             break;

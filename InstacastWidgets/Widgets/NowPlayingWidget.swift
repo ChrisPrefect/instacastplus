@@ -25,16 +25,9 @@ struct NowPlayingWidgetView: View {
 
     @ViewBuilder
     private func playPauseControl(data: WNowPlaying, imageSystemName: String, font: Font) -> some View {
-        if data.isPaused {
-            Link(destination: ICWidgetConstants.playerURL(action: "playpause")) {
-                Image(systemName: imageSystemName)
-                    .font(font)
-            }
-        } else {
-            Button(intent: PlayPauseIntent()) {
-                Image(systemName: imageSystemName)
-                    .font(font)
-            }
+        Button(intent: PlayPauseIntent()) {
+            Image(systemName: imageSystemName)
+                .font(font)
         }
     }
 

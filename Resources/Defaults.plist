@@ -102,5 +102,7 @@
 	<true/>
 	<key>AutoDownloadWhileStreaming</key>
 	<true/>
+	<key>AmazonAffiliateEnabled</key>
+	<true/>
 </dict>
 </plist>

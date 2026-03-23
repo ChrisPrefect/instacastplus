@@ -196,6 +196,7 @@ extern NSString* SmarthomeWiFiOnly;
 extern NSString* SmarthomeDeviceName;
 
 extern NSString* OpenLinksInExternalBrowser;
+extern NSString* AmazonAffiliateEnabled;
 
 
 extern NSString* AudioSessionSleepTimerDidExpireNotification;

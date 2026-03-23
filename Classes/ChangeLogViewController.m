@@ -13,6 +13,8 @@
 @property (nonatomic, strong) UITableView *tableView;
 @property (nonatomic, strong) NSArray *changelogSections;
 @property (nonatomic, strong) NSArray *changelogItems;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UILabel *subtitleLabel;
 
 @end
 
@@ -24,11 +26,7 @@
     UIBarButtonItem *closeButton = [[UIBarButtonItem alloc] initWithTitle:@"Got it!".ls style:UIBarButtonItemStylePlain target:self action:@selector(closeTapped)];
     closeButton.tintColor = ICTintColor;
     self.navigationItem.rightBarButtonItem = closeButton;
-    if (@available(iOS 13.0, *)) {
-        self.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
-    }
-    
-    self.view.backgroundColor = [UIColor whiteColor];
+
     // Define the sections and their items
     self.changelogSections = @[
         [NSString stringWithFormat:@"🚀 %@", @"Smarter Listening".ls],
@@ -87,7 +85,7 @@
             @"Donation Support – Love InstacastPlus? Now you can support development with in-app donations.".ls
         ]
     ];
-    
+
     // Initialize UITableView
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -95,30 +93,68 @@
     self.tableView.dataSource = self;
     self.tableView.tableHeaderView = [self createHeaderView];
     [self.view addSubview:self.tableView];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(updateAppearance)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self updateAppearance];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)updateAppearance {
+    BOOL isDark = [ICAppearanceManager sharedManager].nightSettingMode;
+
+    if (isDark) {
+        self.navigationController.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    } else {
+        self.navigationController.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+        self.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    }
+
+    self.view.backgroundColor = ICBackgroundColor;
+    self.tableView.backgroundColor = ICBackgroundColor;
+    self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+
+    self.titleLabel.textColor = ICTextColor;
+    self.subtitleLabel.textColor = ICMutedTextColor;
+
+    if (self.tableView.window && !self.transitionCoordinator) {
+        [self.tableView reloadData];
+    }
 }
 
 // MARK: - Custom Header View
 - (UIView *)createHeaderView {
     UIView *headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, 165)];
-    
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, headerView.bounds.size.width - 32, 80)];
-    titleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    titleLabel.text = @"InstacastPlus Changelog".ls;
-    titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
-    titleLabel.numberOfLines = 0;
-    titleLabel.textAlignment = NSTextAlignmentCenter;
 
-    UILabel *subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, headerView.bounds.size.width - 32, 75)];
-    subtitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    subtitleLabel.text = @"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!".ls;
-    subtitleLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
-    subtitleLabel.numberOfLines = 0;
-    subtitleLabel.textAlignment = NSTextAlignmentCenter;
-    subtitleLabel.textColor = [UIColor darkGrayColor];
+    self.titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 10, headerView.bounds.size.width - 32, 80)];
+    self.titleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    self.titleLabel.text = @"InstacastPlus Changelog".ls;
+    self.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
+    self.titleLabel.numberOfLines = 0;
+    self.titleLabel.textAlignment = NSTextAlignmentCenter;
+    self.titleLabel.textColor = ICTextColor;
 
-    [headerView addSubview:titleLabel];
-    [headerView addSubview:subtitleLabel];
-    
+    self.subtitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, 80, headerView.bounds.size.width - 32, 75)];
+    self.subtitleLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    self.subtitleLabel.text = @"We've been busy making InstacastPlus even smarter, and more powerful. Check out what's new and get ready to experience podcasts like never before!".ls;
+    self.subtitleLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
+    self.subtitleLabel.numberOfLines = 0;
+    self.subtitleLabel.textAlignment = NSTextAlignmentCenter;
+    self.subtitleLabel.textColor = ICMutedTextColor;
+
+    [headerView addSubview:self.titleLabel];
+    [headerView addSubview:self.subtitleLabel];
+
     return headerView;
 }
 
@@ -144,14 +180,16 @@
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     static NSString *cellIdentifier = @"ChangelogCell";
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellIdentifier];
-    
+
     if (!cell) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cellIdentifier];
         cell.textLabel.numberOfLines = 0;
         cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
     }
-    
+
     cell.textLabel.text = self.changelogItems[indexPath.section][indexPath.row];
+    cell.textLabel.textColor = ICTextColor;
+    cell.backgroundColor = ICGroupCellBackgroundColor;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -164,6 +202,13 @@
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
     return 40;
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section {
+    if ([view isKindOfClass:[UITableViewHeaderFooterView class]]) {
+        UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+        header.textLabel.textColor = ICMutedTextColor;
+    }
 }
 
 @end

@@ -67,7 +67,10 @@
 "Off" = "Off";
 "Are you sure you want to reset all custom subscription settings to default?" = "Are you sure you want to reset all custom subscription settings to default?";
 "Audio Content" = "Audio Content";
+"Amazon Affiliate Program" = "Amazon Affiliate Program";
 "Auto-Delete Content" = "Auto-Delete Content";
+"Thank you! You support the development of InstacastPlus with purchases through these links." = "Thank you! You support the development of InstacastPlus with purchases through these links.";
+"You support the development of InstacastPlus with purchases through these links." = "You support the development of InstacastPlus with purchases through these links.";
 "Auto-Download Content" = "Auto-Download Content";
 "Crazy (3x)" = "Crazy (3x)";
 "Enable News Mode to only keep the most recent episode(s) of a podcast." = "Enable News Mode to only keep the most recent episode(s) of a podcast.";
@@ -242,7 +245,7 @@
 "Add" = "Add";
 "Add Selected Podcasts" = "Add Selected Podcasts";
 "All Podcasts" = "All Podcasts";
-"Appearance" = "Appearance";
+"Appearance" = "Appearance Mode";
 "Automatic" = "Automatic";
 "Light" = "Light";
 "Dark" = "Dark";
@@ -907,6 +910,7 @@
 "Rate on App Store" = "Rate on App Store";
 "Instacast lebt Podcast" = "Instacast lebt Podcast";
 "Listen to Instacast lebt Podcast" = "Listen to \"Instacast lebt\" Podcast";
+"What's New" = "What's New";
 
 /* Refresh Status */
 "%ld/%ld podcasts updating" = "%ld/%ld podcasts updating";

@@ -1525,25 +1525,27 @@ didReceiveResponse:(NSURLResponse *)response
         self.inTransitionToNextTrack = NO;
 	}
 
-    [[NSNotificationCenter defaultCenter] postNotificationName:((self.changingEpisode) ? PlaybackManagerDidChangeEpisodeNotification : PlaybackManagerDidStartNotification) object:self];
+    // Capture notification name before resetting changingEpisode.
+    // Must be posted AFTER self.playingEpisode is set so observers see the correct episode.
+    NSString *pendingNotificationName = self.changingEpisode ? PlaybackManagerDidChangeEpisodeNotification : PlaybackManagerDidStartNotification;
 	self.changingEpisode = NO;
-	
+
     [self _setNowPlayingInfoOfEpisode:anEpisode];
     [self _setupRemotePlaybackCenterWithEpisode:anEpisode];
-	
+
 	// create background task until the first data is buffered and the app is ready to play
 	[self _startNextItemHandover];
-	
+
 	self.ready = NO;
 	self.failed = NO;
     self.movingVideo = NO;
 	self.currentChapter = -1;
     self.currentArtwork = -1;
     self.initialPlaybackTime = time;
-	
+
 	CacheManager* eman = [CacheManager sharedCacheManager];
 	CDMedium* media = [anEpisode preferedMedium];
-	
+
 	BOOL isCached = [eman episodeIsCached:anEpisode];
 	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
 
@@ -1562,8 +1564,11 @@ didReceiveResponse:(NSURLResponse *)response
     if (!url) {
         shouldCacheViaStream = NO;
     }
-	
+
     self.playingEpisode = anEpisode;
+    // Post start/change notification now that playingEpisode is set, so observers
+    // (e.g. WidgetDataExporter) read the correct current episode.
+    [[NSNotificationCenter defaultCenter] postNotificationName:pendingNotificationName object:self];
 	self.state = InitializedState;
     self.streamingCacheActive = NO;
     self.streamingCacheProgress = 0.0;
