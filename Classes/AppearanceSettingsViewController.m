@@ -198,7 +198,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     {
         if (indexPath.row == 0) {
             UITableViewCell* cell = [self detailCell];
-            cell.textLabel.text = @"Appearance".ls;
+            cell.textLabel.text = @"Appearance Mode".ls;
 
             NSDictionary* values = @{
                 @(ICAppearanceModeAutomatic): @"Automatic".ls,
@@ -754,7 +754,7 @@ API_AVAILABLE(ios(14.0)){
         SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
         controller.valueType = kSettingTypeInteger;
         controller.key = kDefaultAppearanceMode;
-        controller.title = @"Appearance".ls;
+        controller.title = @"Appearance Mode".ls;
         controller.values = @[ @(ICAppearanceModeAutomatic), @(ICAppearanceModeLight), @(ICAppearanceModeDark) ];
         controller.titles = @[ @"Automatic".ls, @"Light".ls, @"Dark".ls ];
         controller.footerText = @"Automatic switches between Light and Dark based on your device settings.".ls;

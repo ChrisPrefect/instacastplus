@@ -247,7 +247,8 @@
 "Add" = "Hinzufügen";
 "Add Selected Podcasts" = "Ausgewählte Podcasts hinzufügen";
 "All Podcasts" = "Alle Podcasts";
-"Appearance" = "Erscheinungsbild";
+"Appearance" = "Darstellung";
+"Appearance Mode" = "Erscheinungsbild";
 "Automatic" = "Automatisch";
 "Light" = "Hell";
 "Dark" = "Dunkel";
