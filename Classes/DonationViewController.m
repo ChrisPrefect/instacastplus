@@ -34,6 +34,7 @@ enum {
     kSectionDonationButtons,
     kSectionLinks,
     kSectionDonationHistory,
+    kSectionAmazonAffiliate,
     kNumberOfSections
 };
 
@@ -341,6 +342,8 @@ enum {
         }
         case kSectionLinks:
             return 3;
+        case kSectionAmazonAffiliate:
+            return 1;
         default:
             return 0;
     }
@@ -355,6 +358,8 @@ enum {
             return @"Donation History".ls;
         case kSectionLinks:
             return nil;
+        case kSectionAmazonAffiliate:
+            return @"";
         default:
             return nil;
     }
@@ -410,6 +415,15 @@ enum {
                 cell.imageView.image = [UIImage systemImageNamed:@"sparkles"];
             }
             cell.imageView.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
+            return cell;
+        }
+        case kSectionAmazonAffiliate:
+        {
+            UITableViewCell *cell = [self switchCell];
+            UISwitch *control = (UISwitch *)cell.accessoryView;
+            cell.textLabel.text = @"Amazon Affiliate Program".ls;
+            control.on = [USER_DEFAULTS boolForKey:AmazonAffiliateEnabled];
+            [control addTarget:self action:@selector(toggleAmazonAffiliate:) forControlEvents:UIControlEventValueChanged];
             return cell;
         }
         default:
@@ -468,8 +482,23 @@ enum {
     }
 }
 
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
+{
+    if (section == kSectionAmazonAffiliate) {
+        if ([USER_DEFAULTS boolForKey:AmazonAffiliateEnabled]) {
+            return @"Thank you! You support the development of InstacastPlus with purchases through these links.".ls;
+        } else {
+            return @"You support the development of InstacastPlus with purchases through these links.".ls;
+        }
+    }
+    return nil;
+}
+
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
+    if (section == kSectionAmazonAffiliate) {
+        return UITableViewAutomaticDimension;
+    }
     return 0.0f;
 }
 
@@ -797,6 +826,12 @@ enum {
 - (void)dismissFireworksOverlay:(UITapGestureRecognizer *)gesture
 {
     [self dismissOverlay:gesture.view];
+}
+
+- (void)toggleAmazonAffiliate:(UISwitch *)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:AmazonAffiliateEnabled];
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kSectionAmazonAffiliate] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 - (void)dismissOverlay:(UIView *)overlay

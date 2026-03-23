@@ -15,7 +15,6 @@ typedef NS_ENUM(NSInteger, DataSettingsSections) {
     kAutoDownloadSettingsSection,
     kAutoDownloadWhileStreamingSection,
     kAutoDeleteSettingsSection,
-    kAmazonAffiliateSection,
     k3GSection,
     kDownloadedFilesButton,
     kStatisticsSection,
@@ -118,8 +117,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             return 1;
         case kAutoDeleteSettingsSection:
             return 2;
-        case kAmazonAffiliateSection:
-            return 1;
         case kDownloadedFilesButton:
             return 1;
         case kStatisticsSection:
@@ -233,15 +230,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         control.tag = indexPath.row;
         [control addTarget:self action:@selector(toggleAutoDeleteSettings:) forControlEvents:UIControlEventValueChanged];
 
-        return cell;
-    }
-    else if (indexPath.section == kAmazonAffiliateSection)
-    {
-        UITableViewCell* cell = [self switchCell];
-        UISwitch* control = (UISwitch*)cell.accessoryView;
-        cell.textLabel.text = @"Amazon Affiliate Program".ls;
-        control.on = [USER_DEFAULTS boolForKey:AmazonAffiliateEnabled];
-        [control addTarget:self action:@selector(toggleAmazonAffiliate:) forControlEvents:UIControlEventValueChanged];
         return cell;
     }
     else if (indexPath.section == kDownloadedFilesButton)
@@ -368,8 +356,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
             return @"";
         case kAutoDeleteSettingsSection:
             return @"Auto-Delete Content".ls;
-        case kAmazonAffiliateSection:
-            return @"";
         case kDownloadedFilesButton:
             return @"";
         case kStatisticsSection:
@@ -410,14 +396,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         case kAutoDownloadWhileStreamingSection:
         {
             return @"Automatically downloads the full episode while streaming.".ls;
-        }
-        case kAmazonAffiliateSection:
-        {
-            if ([USER_DEFAULTS boolForKey:AmazonAffiliateEnabled]) {
-                return @"Thank you! You support the development of InstacastPlus with purchases through these links.".ls;
-            } else {
-                return @"You support the development of InstacastPlus with purchases through these links.".ls;
-            }
         }
         default:
             break;
@@ -530,13 +508,6 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     else if (sender.tag == 1) {
         [USER_DEFAULTS setBool:sender.on forKey:AutoDeleteAfterMarkedAsPlayed];
     }
-}
-
-- (void) toggleAmazonAffiliate:(UISwitch*)sender
-{
-    [USER_DEFAULTS setBool:sender.on forKey:AmazonAffiliateEnabled];
-    // Reload to update dynamic footer text
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kAmazonAffiliateSection] withRowAnimation:UITableViewRowAnimationNone];
 }
 
 @end
