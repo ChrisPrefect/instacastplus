@@ -69,8 +69,21 @@
 
         _progressView = [[UIProgressView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(frame), 2)];
         [self addSubview:_progressView];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_appearanceDidChange)
+                                                     name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                                   object:nil];
     }
     return self;
+}
+
+- (void)_appearanceDidChange {
+    [self setNeedsLayout];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void) setMarqueePaused:(BOOL)marqueePaused
@@ -121,18 +134,24 @@
 - (void) layoutSubviews{
     [super layoutSubviews];
 
-    CGRect b = self.bounds;
+    // Update fonts for dynamic font size scaling
+    self.label1.font = [UIFont boldSystemFontOfSize:ICFontSize(13.f)];
+    self.label2.font = [UIFont systemFontOfSize:ICFontSize(13.f)];
+    self.label3.font = [UIFont systemFontOfSize:ICFontSize(11.f)];
 
-    //self.label1.backgroundColor = [UIColor redColor];
-    //self.label2.backgroundColor = [UIColor greenColor];
+    CGRect b = self.bounds;
+    CGFloat labelHeight = ceil(self.label1.font.lineHeight);
+    CGFloat label3Height = ceil(self.label3.font.lineHeight);
+    CGFloat totalHeight = labelHeight + labelHeight + label3Height + 4; // 2px spacing between each
+    CGFloat topY = floorf((CGRectGetHeight(b) - totalHeight) / 2);
+    topY = MAX(2, topY);
 
     self.imageView.frame = CGRectMake(5, 0, 44, 44);
-    // +3px top padding (8->11, 27->30, 46->49)
-    self.label1.frame = CGRectMake(34, 11, CGRectGetWidth(b)-34-80, 17);
-    self.label2.frame = CGRectMake(34, 30, CGRectGetWidth(b)-34-80, 17);
-    self.label3.frame = CGRectMake(34, 49, CGRectGetWidth(b)-34-80, 17);
+    self.label1.frame = CGRectMake(34, topY, CGRectGetWidth(b)-34-80, labelHeight);
+    self.label2.frame = CGRectMake(34, topY + labelHeight + 2, CGRectGetWidth(b)-34-80, labelHeight);
+    self.label3.frame = CGRectMake(34, topY + labelHeight * 2 + 4, CGRectGetWidth(b)-34-80, label3Height);
 
-    // 60x80 Touch-Area, 22px vom rechten Rand, -4px vom oberen Rand (+3px padding)
+    // 60x80 Touch-Area, 22px vom rechten Rand, -4px vom oberen Rand
     self.rightButton.frame = CGRectMake(CGRectGetWidth(b)-60-22, -4, 60, 80);
     self.progressView.frame = CGRectMake(-2, 0, CGRectGetWidth(b)+2, 2);
 }
