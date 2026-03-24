@@ -28,6 +28,7 @@
     #import "SmarthomeManager.h"
     #import "UIViewController+UIViewController_NavbarFix.h"
     #import "UIViewController+Alert.h"
+    #import "UIImage+Utils.h"
 #endif
 
 #define SCREEN_HEIGHT (CGRectGetHeight([((UIWindow*)[((NSObject*)[UIApplication sharedApplication].delegate) valueForKey:@"window"]).screen bounds]))

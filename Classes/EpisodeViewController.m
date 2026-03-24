@@ -1244,14 +1244,13 @@
             [self _downloadFile];
         }]];
 
-        UIAction* deleteAction = [UIAction actionWithTitle:@"Delete Download".ls image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
+        UIAction* deleteAction = [UIAction actionWithTitle:@"Delete Download".ls image:[[UIImage systemImageNamed:@"square.and.arrow.down"] imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
             [DMANAGER markEpisode:self.episode asDownloaded:NO];
             [self _updateTimeDisplay];
             [self updatePlayComboButtonState];
         }];
-        deleteAction.attributes = UIMenuElementAttributesDestructive;
         [actions addObject:deleteAction];
     }
 
@@ -1264,7 +1263,7 @@
     NSMutableArray* actions = [NSMutableArray array];
 
     NSString* playedTitle = self.episode.consumed ? @"Mark as Unplayed".ls : @"Mark as Played".ls;
-    NSString* playedIcon = self.episode.consumed ? @"circle" : @"checkmark.circle";
+    NSString* playedIcon = self.episode.consumed ? @"circle.fill" : @"circle";
     [actions addObject:[UIAction actionWithTitle:playedTitle image:[UIImage systemImageNamed:playedIcon] identifier:nil handler:^(UIAction *action) {
         STRONG_SELF
         BOOL flag = !self.episode.consumed;

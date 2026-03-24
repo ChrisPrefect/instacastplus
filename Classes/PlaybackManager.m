@@ -2129,8 +2129,8 @@ didReceiveResponse:(NSURLResponse *)response
         AVPlayerItem* item = self.player.currentItem;
         if (item && episode && key) {
             CMTime current = [item currentTime];
-            NSInteger cur = current.value/current.timescale;
-            
+            NSInteger cur = (current.timescale != 0) ? current.value/current.timescale : 0;
+
             [playbackPositions setObject:@(cur) forKey:key];
             [USER_DEFAULTS setObject:playbackPositions forKey:kDefaultTemporaryPlaybackPositions];
         }
@@ -2154,7 +2154,7 @@ didReceiveResponse:(NSURLResponse *)response
     AVPlayerItem* item = self.player.currentItem;
     if (item && episode) {
         CMTime current = [item currentTime];
-        NSInteger cur = current.value/current.timescale;        
+        NSInteger cur = (current.timescale != 0) ? current.value/current.timescale : 0;
 
         _changingPosition = YES;
         [DMANAGER setEpisode:episode position:(double)cur];
@@ -2336,7 +2336,7 @@ didReceiveResponse:(NSURLResponse *)response
 		if ([USER_DEFAULTS boolForKey:PlayerReplayAfterPause] && [[NSDate date] timeIntervalSinceDate:self.lastPauseDate] > 600)
 		{
 			CMTime current = [self.player.currentItem currentTime];
-			NSInteger cur = current.value/current.timescale;
+			NSInteger cur = (current.timescale != 0) ? current.value/current.timescale : 0;
 			NSTimeInterval next = MAX(cur-30, 0);
 			[self seekToTime:next];
 		}

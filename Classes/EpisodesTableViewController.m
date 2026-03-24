@@ -446,10 +446,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     if ([self _numberOfPlayedDownloadedEpisodes] > 0) {
         UIAction* act = [UIAction actionWithTitle:@"Delete played content".ls
-                                           image:[UIImage systemImageNamed:@"trash"]
+                                           image:[[UIImage systemImageNamed:@"square.and.arrow.down"] imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal]
                                       identifier:nil
                                          handler:^(__unused UIAction* a) { STRONG_SELF [self _clearCacheOfAllPlayed]; }];
-        act.attributes = UIMenuElementAttributesDestructive;
         [items addObject:act];
     }
     if ([self canArchiveEpisodes] && [self _numberOfPlayedDisplayEpisodes] > 0) {
@@ -901,19 +900,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         case ICEpisodeSwipeActionDownload:
         {
             CacheManager* cman = [CacheManager sharedCacheManager];
-            if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
-                name = @"trash";
-            } else {
-                name = @"square.and.arrow.down";
-            }
+            name = @"square.and.arrow.down";
             break;
         }
         case ICEpisodeSwipeActionAddToPlayNext:
-        {
-            BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
-            name = inUpNext ? @"text.badge.minus" : @"text.badge.plus";
+            name = @"list.bullet.indent";
             break;
-        }
         case ICEpisodeSwipeActionDelete:
             name = @"trash";
             break;
@@ -943,7 +935,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         {
             CacheManager* cman = [CacheManager sharedCacheManager];
             if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
-                return deleteColor;
+                return grayColor;
             } else {
                 return accentColor;
             }
@@ -1245,7 +1237,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     // Delete File (only if cached)
     if ([cman episodeIsCached:episode]) {
         UIAction* deleteFileAction = [UIAction actionWithTitle:@"Delete File".ls
-                                                         image:[UIImage systemImageNamed:@"trash"]
+                                                         image:[[UIImage systemImageNamed:@"square.and.arrow.down"] imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
                                                            [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];

@@ -152,8 +152,8 @@ NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisode
 {
     _userAction = YES;
     [self willChangeValueForKey:@"sortedEpisodes"];
-    NSSet* playlistEpisodes = [episode valueForKey:@"playlistEpisodes"];
-    
+    NSSet* playlistEpisodes = self.playlistEpisodes;
+
     for(CDPlaylistEpisode* playlistEpisode in [playlistEpisodes copy])
     {
         if ([playlistEpisode.episode isEqual:episode]) {

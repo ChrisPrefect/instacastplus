@@ -222,8 +222,12 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     list.descending = self.descending;
     list.orderBy = self.orderBy;
     list.continuousPlayback = self.continuousPlayback;
-    list.rank = -1;
-    
+
+    // Only set rank for new lists — place at the end
+    if (!self.episodeList) {
+        list.rank = (int32_t)[DMANAGER.lists count];
+    }
+
     [list invalidateCaches];
 
     // Ensure list has a UID (new lists don't have one yet)

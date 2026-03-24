@@ -223,31 +223,36 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidStart:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        DebugLog(@"[Widget] _playbackDidStart: pm.playingEpisode='%@' isPaused=%d",
+                 [PlaybackManager playbackManager].playingEpisode.title ?: @"<nil>",
+                 [PlaybackManager playbackManager].isPaused);
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        // Episode started: reload immediately so widget reflects the new episode without waiting 5s.
+        DebugLog(@"[Widget] _playbackDidStart: calling reloadAllTimelines");
         [WidgetKitHelper reloadAllTimelines];
     });
 }
 
 - (void)_playbackDidEnd:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        DebugLog(@"[Widget] _playbackDidEnd");
         [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
         self.lastListeningTimestamp = nil;
         self.lastPlaybackStatsRefreshDate = nil;
         [self exportNowPlayingSnapshot];
         [self exportStatsSnapshot];
         [self _persistLastPlayedCache];
-        // Episode ended: reload immediately.
         [WidgetKitHelper reloadAllTimelines];
     });
 }
 
 - (void)_playbackDidChangeEpisode:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        DebugLog(@"[Widget] _playbackDidChangeEpisode: pm.playingEpisode='%@'",
+                 [PlaybackManager playbackManager].playingEpisode.title ?: @"<nil>");
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        // Episode changed: reload immediately so widget switches to the new episode without waiting 5s.
+        DebugLog(@"[Widget] _playbackDidChangeEpisode: calling reloadAllTimelines");
         [WidgetKitHelper reloadAllTimelines];
     });
 }

@@ -406,11 +406,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
     CacheManager* cman = [CacheManager sharedCacheManager];
     NSString* name;
-    if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
-        name = @"trash";
-    } else {
-        name = @"square.and.arrow.down";
-    }
+    name = @"square.and.arrow.down";
     UIImage* image = [UIImage systemImageNamed:name withConfiguration:config];
     return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
@@ -419,7 +415,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 {
     CacheManager* cman = [CacheManager sharedCacheManager];
     if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
-        return [UIColor systemRedColor];
+        return [UIColor colorWithWhite:0.5f alpha:1.0f];
     }
     return ICTintColor;
 }
