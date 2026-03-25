@@ -39,7 +39,6 @@ NSString* DatabaseManagerDidAddBookmarkNotification = @"DatabaseManagerDidAddBoo
 
 static NSString* kDefaultEpisodePositionMigrationDone = @"EpisodePositionMigrationDone";
 static NSString* kDefaultFTSMigrationDone = @"FTSMigrationDone";
-static NSString* kDefaultConsumedFlagMigrationDone = @"ConsumedFlagMigrationDone";
 
 
 #if TARGET_OS_IPHONE
@@ -618,7 +617,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
     [self _migrateDefaultListNamesToKeys];
     [self _migrateRemoveDuplicateFeeds];
     [self _migrateRemoveObsoletePauseFeedProperty];
-    [self _migrateFixConsumedFlags];
 }
 
 - (void) _migrateDefaultListNamesToKeys
@@ -703,30 +701,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
     }
 }
 
-- (void) _migrateFixConsumedFlags
-{
-    if ([USER_DEFAULTS boolForKey:kDefaultConsumedFlagMigrationDone]) {
-        return;
-    }
-
-    // Fix: addParserEpisodes:toFeed:markConsumed:NO did not explicitly set consumed = NO.
-    // Core Data default for consumed is YES, so background-loaded episodes were incorrectly
-    // marked as consumed. Fix: set consumed = NO for episodes that were never actually played.
-    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
-    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.objectContext];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"consumed == YES AND position == 0 AND lastPlayed == nil"];
-
-    NSArray* affected = [self.objectContext executeFetchRequest:fetchRequest error:nil];
-    if (affected.count > 0) {
-        for (CDEpisode* episode in affected) {
-            episode.consumed = NO;
-        }
-        DebugLog(@"Migration: Fixed consumed flag on %lu episodes that were never played", (unsigned long)affected.count);
-        [self save];
-    }
-
-    [USER_DEFAULTS setBool:YES forKey:kDefaultConsumedFlagMigrationDone];
-}
 
 - (void) _migrateRemoveObsoletePauseFeedProperty
 {
@@ -1116,8 +1090,8 @@ NS_INLINE NSString* _DataStoreFile(void) {
             persistentEpisode.media = media;
             [feed addEpisodesObject:persistentEpisode];
 
-            if (wasNew) {
-                persistentEpisode.consumed = markConsumed;
+            if (wasNew && markConsumed) {
+                persistentEpisode.consumed = YES;
             }
         }
     }

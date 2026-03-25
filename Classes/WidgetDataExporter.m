@@ -405,7 +405,20 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     BOOL scheduleDelayedExport = NO;
 
     if ([action isEqualToString:@"playpause"]) {
-        [pm playPause];
+        if (pm.playingEpisode) {
+            // Episode already loaded — just toggle play/pause
+            [pm playPause];
+        } else if (self.lastPlayedEpisodeDict[@"id"]) {
+            // No episode loaded — resume the last played episode
+            NSString *episodeHash = self.lastPlayedEpisodeDict[@"id"];
+            CDEpisode *episode = [DMANAGER episodeWithObjectHash:episodeHash];
+            if (episode) {
+                DebugLog(@"[Widget] playpause: no active episode, loading last played '%@'", episode.title);
+                [as playEpisode:episode];
+            } else {
+                DebugLog(@"[Widget] playpause: no active episode and last played hash '%@' not found in DB", episodeHash);
+            }
+        }
         exportImmediately = YES;
     } else if ([action isEqualToString:@"skipforward"]) {
         [pm seekForward];
@@ -643,6 +656,16 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         extra[@"playbackSpeed"] = snapshot[@"playbackSpeed"];
         extra[@"hasPreviousEpisode"] = snapshot[@"hasPreviousEpisode"];
         extra[@"hasNextEpisode"] = snapshot[@"hasNextEpisode"];
+        // Preserve chapter data so fallback display still shows chapter list/title
+        if (snapshot[@"chapters"]) {
+            extra[@"chapters"] = snapshot[@"chapters"];
+            extra[@"chapterTitle"] = snapshot[@"chapterTitle"] ?: @"";
+            extra[@"chapterIndex"] = snapshot[@"chapterIndex"] ?: @0;
+            extra[@"chapterCount"] = snapshot[@"chapterCount"] ?: @0;
+        }
+        if (snapshot[@"chapterArtPath"]) {
+            extra[@"chapterArtPath"] = snapshot[@"chapterArtPath"];
+        }
         self.lastPlayedExtraFields = [extra copy];
     } else if (self.lastPlayedEpisodeDict) {
         // No current playback — show last played episode as paused
@@ -846,7 +869,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (void)_exportEpisodesForList:(CDList *)list {
-    NSArray *episodes = list.sortedEpisodes;
+    NSArray *episodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
     NSMutableArray *episodeDicts = [NSMutableArray array];
 
     NSInteger count = 0;

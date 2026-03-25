@@ -12,6 +12,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface WidgetDataExporter : NSObject
 
+/// Last played episode dict (cached for fallback display and resume).
+@property (nonatomic, strong, readonly, nullable) NSDictionary *lastPlayedEpisodeDict;
+
 + (instancetype)sharedExporter;
 
 /// Called once at app launch (in AppDelegate didFinishLaunching).

@@ -404,9 +404,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (UIImage*) _downloadSwipeImageForEpisode:(CDEpisode*)episode
 {
     UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
-    CacheManager* cman = [CacheManager sharedCacheManager];
-    NSString* name;
-    name = @"square.and.arrow.down";
+    NSString* name = @"square.and.arrow.down";
     UIImage* image = [UIImage systemImageNamed:name withConfiguration:config];
     return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }

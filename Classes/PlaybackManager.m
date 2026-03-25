@@ -1065,11 +1065,9 @@ didReceiveResponse:(NSURLResponse *)response
 
     self.nowPlayingInfo[kMediaItemInstacastEpisodeHash] = episodeHash;
 
-    // When force-refreshing (e.g. after chapter artwork), clear the old artwork immediately
-    // so it doesn't persist in the lock screen/Dynamic Island while the new one loads async.
-    if (forceRefresh) {
-        [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
-    }
+    // Always clear the old artwork immediately when the episode changes,
+    // so the previous podcast's image doesn't persist in Dynamic Island / lock screen.
+    [self.nowPlayingInfo removeObjectForKey:MPMediaItemPropertyArtwork];
 
     void (^clearArtworkIfCurrentEpisode)(void) = ^{
         CDEpisode* playingEpisode = self.playingEpisode;

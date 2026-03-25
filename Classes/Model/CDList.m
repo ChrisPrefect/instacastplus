@@ -35,6 +35,15 @@
     return nil;
 }
 
+- (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit
+{
+    NSArray* all = [self sortedEpisodes];
+    if (limit > 0 && all.count > limit) {
+        return [all subarrayWithRange:NSMakeRange(0, limit)];
+    }
+    return all;
+}
+
 - (NSInteger) playbackTime
 {
     NSInteger playbackTime = 0;

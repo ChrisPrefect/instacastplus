@@ -242,23 +242,8 @@
 
     [self _updateAppContentAfterBecomingActive];
 
-    // One-time migration: fix episodes that were marked consumed by lazy loading
-    // but were never actually played (position == 0). Reset them to unconsumed.
-    if (![USER_DEFAULTS boolForKey:@"LazyLoadConsumedFixApplied"]) {
-        NSManagedObjectContext *ctx = DMANAGER.objectContext;
-        NSFetchRequest *fetch = [[NSFetchRequest alloc] init];
-        fetch.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:ctx];
-        fetch.predicate = [NSPredicate predicateWithFormat:@"consumed == YES AND position == 0 AND archived == NO"];
-        NSArray *episodes = [ctx executeFetchRequest:fetch error:nil];
-        if (episodes.count > 0) {
-            for (CDEpisode *ep in episodes) {
-                ep.consumed = NO;
-            }
-            [DMANAGER save];
-            DebugLog(@"LazyLoadConsumedFix: reset %lu episodes to unconsumed", (unsigned long)episodes.count);
-        }
-        [USER_DEFAULTS setBool:YES forKey:@"LazyLoadConsumedFixApplied"];
-    }
+    // LazyLoadConsumedFix removed — was too aggressive (reset episodes that were
+    // legitimately consumed with position==0). User restored correct state from backup.
 
     dispatch_async(dispatch_get_main_queue(), ^{
         [[EpisodeLoadingManager sharedManager] restoreLoadingState];

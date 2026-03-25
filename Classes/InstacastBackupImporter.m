@@ -405,7 +405,15 @@ static void runOnMain(void (^block)(void)) {
             @[@(ICBackupImportDownloads),     ^NSInteger{ return [self importDownloadsFromBackup:backup]; }],
         ];
 
+        // Count enabled phases for progress calculation
+        NSInteger enabledMetadataCount = 0;
+        for (NSArray *phase in metadataPhases) {
+            ICBackupImportCategory cat = [phase[0] unsignedIntegerValue];
+            if (categories & cat) enabledMetadataCount++;
+        }
+
         NSInteger metadataTotal = metadataPhases.count;
+        NSInteger enabledIndex = 0;
         for (NSInteger mi = 0; mi < metadataTotal; mi++) {
             if (op.isCancelled) break;
 
@@ -415,10 +423,44 @@ static void runOnMain(void (^block)(void)) {
 
             if (!(categories & cat)) continue;
 
-            __block NSInteger count = 0;
             runOnMain(^{
                 if (cb.setMetadataActive) cb.setMetadataActive(cat);
-                count = importBlock();
+            });
+
+            __block NSInteger count = 0;
+
+            // Episode status import can be very large (thousands of episodes per feed).
+            // Run it feed-by-feed with progress updates between feeds so the UI stays responsive.
+            if (cat == ICBackupImportEpisodeStatus) {
+                NSInteger podcastTotal = backup.podcasts.count;
+                for (NSInteger pi = 0; pi < podcastTotal; pi++) {
+                    if (op.isCancelled) break;
+
+                    NSInteger podcastIndex = pi;
+                    __block NSInteger feedCount = 0;
+                    runOnMain(^{
+                        feedCount = [self _importEpisodeStatusForPodcastAtIndex:podcastIndex fromBackup:backup];
+                    });
+                    count += feedCount;
+
+                    // Update progress per feed within the episode status phase
+                    float phaseStart = 0.98 + (0.02 * ((float)enabledIndex / (float)MAX(enabledMetadataCount, 1)));
+                    float phaseEnd   = 0.98 + (0.02 * ((float)(enabledIndex + 1) / (float)MAX(enabledMetadataCount, 1)));
+                    float feedProgress = phaseStart + (phaseEnd - phaseStart) * ((float)(pi + 1) / (float)MAX(podcastTotal, 1));
+                    runOnMain(^{
+                        if (cb.setTotalProgress) cb.setTotalProgress(feedProgress);
+                    });
+                }
+                runOnMain(^{
+                    [DMANAGER save];
+                });
+            } else {
+                runOnMain(^{
+                    count = importBlock();
+                });
+            }
+
+            runOnMain(^{
                 NSString *detail;
                 if (cat == ICBackupImportNowPlaying) {
                     detail = count > 0 ? @"1" : @"—";
@@ -433,10 +475,12 @@ static void runOnMain(void (^block)(void)) {
             totalImported += count;
 
             // Update total progress (metadata uses 98–100%)
-            float metaProgress = 0.98 + (0.02 * ((float)(mi + 1) / (float)MAX(metadataTotal, 1)));
+            float metaProgress = 0.98 + (0.02 * ((float)(enabledIndex + 1) / (float)MAX(enabledMetadataCount, 1)));
             runOnMain(^{
                 if (cb.setTotalProgress) cb.setTotalProgress(metaProgress);
             });
+
+            enabledIndex++;
         }
 
         if (op.isCancelled) {
@@ -598,113 +642,91 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
 
 #pragma mark - Episode Status
 
-+ (NSInteger)importEpisodeStatusFromBackup:(InstacastBackupData *)backup {
-    NSInteger count = 0;
-    NSInteger markedPlayed = 0;
-    NSInteger markedUnplayed = 0;
+/// Import episode status for a single podcast (called per-feed for responsive UI).
++ (NSInteger)_importEpisodeStatusForPodcastAtIndex:(NSInteger)index fromBackup:(InstacastBackupData *)backup {
+    if (index < 0 || index >= (NSInteger)backup.podcasts.count) return 0;
 
-    // The backup only contains episodes WITH some status (consumed, starred, archived, position>0, cached).
-    // Episodes that were unplayed and had no status are ABSENT from the backup.
-    // Therefore: episodes NOT in the backup = unplayed → consumed=NO.
-    //
-    // Strategy per feed:
-    // 1. Build a lookup of backup episode GUIDs → ICBackupEpisode
-    // 2. Iterate ALL episodes in Core Data for this feed
-    // 3. If GUID is in backup with played=YES → consumed=YES
-    // 4. If GUID is in backup with played=NO → consumed=NO
-    // 5. If GUID is NOT in backup at all → was unplayed → consumed=NO
+    ICBackupPodcast *podcast = backup.podcasts[index];
+    if (!podcast.feedURL) return 0;
+    NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
+    if (!feedURL) return 0;
 
-    for (ICBackupPodcast *podcast in backup.podcasts) {
-        if (!podcast.feedURL) continue;
-        NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
-        if (!feedURL) continue;
-
-        CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
-        if (!feed) {
-            DebugLog(@"BackupImporter: EpisodeStatus — Feed not found for URL: %@", podcast.feedURL);
-            continue;
-        }
-
-        // Build backup episode lookup by GUID
-        NSMutableDictionary<NSString *, ICBackupEpisode *> *backupEpisodesByGuid = [NSMutableDictionary dictionaryWithCapacity:podcast.episodes.count];
-        for (ICBackupEpisode *backupEp in podcast.episodes) {
-            if (backupEp.guid) {
-                backupEpisodesByGuid[backupEp.guid] = backupEp;
-            }
-        }
-
-        NSInteger feedMarkedPlayed = 0;
-        NSInteger feedMarkedUnplayed = 0;
-
-        // Iterate ALL episodes of this feed in Core Data
-        for (CDEpisode *episode in feed.episodes) {
-            if (!episode.guid) continue;
-
-            ICBackupEpisode *backupEp = backupEpisodesByGuid[episode.guid];
-
-            if (backupEp) {
-                // Episode exists in backup — apply all status fields
-
-                // Consumed / played status
-                BOOL shouldBeConsumed = backupEp.played;
-                if (shouldBeConsumed != episode.consumed) {
-                    episode.consumed = shouldBeConsumed;
-                    if (shouldBeConsumed) {
-                        feedMarkedPlayed++;
-                    } else {
-                        feedMarkedUnplayed++;
-                    }
-                    count++;
-                }
-
-                // Starred
-                if (backupEp.starred != episode.starred) {
-                    episode.starred = backupEp.starred;
-                    count++;
-                }
-
-                // Archived
-                if (backupEp.archived && !episode.archived) {
-                    [DMANAGER setEpisode:episode archived:YES];
-                    count++;
-                }
-
-                // Position
-                if (backupEp.position > 0 && backupEp.position != episode.position) {
-                    episode.position = backupEp.position;
-                    count++;
-                }
-
-                // Duration
-                if (backupEp.duration > 0 && episode.duration == 0) {
-                    episode.duration = backupEp.duration;
-                    count++;
-                }
-            } else {
-                // Episode NOT in backup → was unplayed (no status at all)
-                // The ELM marks all lazy-loaded episodes as consumed=YES,
-                // so we need to reset them to consumed=NO here.
-                if (episode.consumed) {
-                    episode.consumed = NO;
-                    feedMarkedUnplayed++;
-                    count++;
-                }
-            }
-        }
-
-        markedPlayed += feedMarkedPlayed;
-        markedUnplayed += feedMarkedUnplayed;
-
-        DebugLog(@"BackupImporter: EpisodeStatus — %@: %ld episodes, %ld in backup, %ld→played, %ld→unplayed",
-                 feed.title, (long)feed.episodes.count, (long)backupEpisodesByGuid.count,
-                 (long)feedMarkedPlayed, (long)feedMarkedUnplayed);
+    CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
+    if (!feed) {
+        DebugLog(@"BackupImporter: EpisodeStatus — Feed not found for URL: %@", podcast.feedURL);
+        return 0;
     }
 
+    // Build backup episode lookup by GUID
+    NSMutableDictionary<NSString *, ICBackupEpisode *> *backupEpisodesByGuid = [NSMutableDictionary dictionaryWithCapacity:podcast.episodes.count];
+    for (ICBackupEpisode *backupEp in podcast.episodes) {
+        if (backupEp.guid) {
+            backupEpisodesByGuid[backupEp.guid] = backupEp;
+        }
+    }
+
+    NSInteger count = 0;
+    NSInteger feedMarkedPlayed = 0;
+    NSInteger feedMarkedUnplayed = 0;
+
+    for (CDEpisode *episode in feed.episodes) {
+        if (!episode.guid) continue;
+
+        ICBackupEpisode *backupEp = backupEpisodesByGuid[episode.guid];
+
+        if (backupEp) {
+            BOOL shouldBeConsumed = backupEp.played;
+            if (shouldBeConsumed != episode.consumed) {
+                episode.consumed = shouldBeConsumed;
+                if (shouldBeConsumed) {
+                    feedMarkedPlayed++;
+                } else {
+                    feedMarkedUnplayed++;
+                }
+                count++;
+            }
+
+            if (backupEp.starred != episode.starred) {
+                episode.starred = backupEp.starred;
+                count++;
+            }
+
+            if (backupEp.archived && !episode.archived) {
+                [DMANAGER setEpisode:episode archived:YES];
+                count++;
+            }
+
+            if (backupEp.position > 0 && backupEp.position != episode.position) {
+                episode.position = backupEp.position;
+                count++;
+            }
+
+            if (backupEp.duration > 0 && episode.duration == 0) {
+                episode.duration = backupEp.duration;
+                count++;
+            }
+        } else {
+            if (episode.consumed) {
+                episode.consumed = NO;
+                feedMarkedUnplayed++;
+                count++;
+            }
+        }
+    }
+
+    DebugLog(@"BackupImporter: EpisodeStatus — %@: %ld episodes, %ld in backup, %ld→played, %ld→unplayed",
+             feed.title, (long)feed.episodes.count, (long)backupEpisodesByGuid.count,
+             (long)feedMarkedPlayed, (long)feedMarkedUnplayed);
+
+    return count;
+}
+
++ (NSInteger)importEpisodeStatusFromBackup:(InstacastBackupData *)backup {
+    NSInteger count = 0;
+    for (NSInteger i = 0; i < (NSInteger)backup.podcasts.count; i++) {
+        count += [self _importEpisodeStatusForPodcastAtIndex:i fromBackup:backup];
+    }
     [DMANAGER save];
-
-    DebugLog(@"BackupImporter: EpisodeStatus — Total: %ld marked played, %ld marked unplayed, %ld changes",
-             (long)markedPlayed, (long)markedUnplayed, (long)count);
-
     return count;
 }
 

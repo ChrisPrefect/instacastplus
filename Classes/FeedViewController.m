@@ -247,7 +247,6 @@
 
 	if (self.feed)
 	{
-        UINavigationBar* navBar = self.navigationController.navigationBar;
         CGRect b = self.view.bounds;
 
         self.headerViewController = [ICFeedHeaderViewController viewController];

@@ -352,6 +352,13 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
 
 - (void)sceneWillResignActive:(UIScene *)scene {
+    // Export widget snapshot early (before home screen becomes visible) so widgets
+    // show fresh data as soon as the user switches away from the app.
+    // sceneDidEnterBackground fires AFTER the home screen appears — too late for the
+    // first widget render. sceneWillResignActive fires BEFORE, so this is the right place.
+    [[WidgetDataExporter sharedExporter] exportNowPlayingSnapshot];
+    [WidgetKitHelper reloadAllTimelines];
+
 #if TARGET_OS_MACCATALYST
     // Mac Catalyst: Fenstergrösse in UserDefaults speichern.
     // coordinateSpace.bounds.size = gleiches Koordinatensystem wie sizeRestrictions.
@@ -2132,7 +2139,20 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         // Player actions
         BOOL handledPlayerAction = NO;
         if ([action isEqualToString:@"playpause"]) {
-            [[PlaybackManager playbackManager] playPause];
+            PlaybackManager *pm = [PlaybackManager playbackManager];
+            if (pm.playingEpisode) {
+                [pm playPause];
+            } else {
+                // No episode loaded — resume last played from widget cache
+                NSDictionary *lastPlayed = [WidgetDataExporter sharedExporter].lastPlayedEpisodeDict;
+                NSString *episodeHash = lastPlayed[@"id"];
+                if (episodeHash) {
+                    CDEpisode *episode = [DMANAGER episodeWithObjectHash:episodeHash];
+                    if (episode) {
+                        [[AudioSession sharedAudioSession] playEpisode:episode];
+                    }
+                }
+            }
             handledPlayerAction = YES;
         } else if ([action isEqualToString:@"skipforward"]) {
             [[PlaybackManager playbackManager] seekForward];

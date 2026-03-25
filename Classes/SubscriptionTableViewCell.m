@@ -114,20 +114,25 @@
         self.numberLabel.textColor = ICMutedTextColor;
         self.newsModeIndicatorImageView.tintColor = ICMutedTextColor;
 
-        self.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
         NSURL* requestedImageURL = objectValue.imageURL;
-        if (requestedImageURL) {
-            ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-            __weak SubscriptionTableViewCell* weakSelf = self;
-            [iman imageForURL:requestedImageURL size:56 grayscale:NO sender:self completion:^(UIImage *image) {
-                SubscriptionTableViewCell* strongSelf = weakSelf;
-                if (!strongSelf || strongSelf.objectValue != objectValue) {
-                    return;
-                }
-                if (image) {
-                    strongSelf.imageView.image = image;
-                }
-            }];
+        ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
+        UIImage* localImage = requestedImageURL ? [iman localImageForImageURL:requestedImageURL size:56 grayscale:NO] : nil;
+        if (localImage) {
+            self.imageView.image = localImage;
+        } else {
+            self.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
+            if (requestedImageURL) {
+                __weak SubscriptionTableViewCell* weakSelf = self;
+                [iman imageForURL:requestedImageURL size:56 grayscale:NO sender:self completion:^(UIImage *image) {
+                    SubscriptionTableViewCell* strongSelf = weakSelf;
+                    if (!strongSelf || strongSelf.objectValue != objectValue) {
+                        return;
+                    }
+                    if (image) {
+                        strongSelf.imageView.image = image;
+                    }
+                }];
+            }
         }
         
         [self _updateUnplayedCount];

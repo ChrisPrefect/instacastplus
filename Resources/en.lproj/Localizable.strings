@@ -716,23 +716,44 @@
 "Feature Request & Bug Report Link – Share your ideas and issues directly through the app." = "Feature Request & Bug Report Link – Share your ideas and issues directly through the app.";
 "Donation Support – Love InstacastPlus? Now you can support development with in-app donations." = "Donation Support – Love InstacastPlus? Now you can support development with in-app donations.";
 
-/* ChangeLogViewController – new sections & items */
+/* ChangeLogViewController – section headers */
 "Redesigned Player" = "Redesigned Player";
-"Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage." = "Live Transcripts – Podcasts with transcripts now show the spoken text live in the player. Tap any line to jump to that position. The text scrolls along automatically and highlights the current passage.";
-"Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position." = "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Scrubbing: tap or drag anywhere on the seek bar to jump to that position.";
-"Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted." = "Chapter Markers on Seek Bar – See chapter boundaries at a glance. The current chapter is highlighted.";
-"Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts." = "Backup & Restore – Never lose your data! Full export of all subscriptions, settings, playlists and play status. The new import dialog shows live progress and lets you skip individual podcasts.";
-"CarPlay – Take your podcasts on the road with full CarPlay support." = "CarPlay – Take your podcasts on the road with full CarPlay support.";
-"iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass." = "iPad & macOS Support – Enjoy an optimized experience on iPad and Mac with a dedicated layout. Optimized for iOS 26 Liquid Glass.";
-"Podcast Charts with Genre Filter – Browse the current Apple Podcast Charts right in the directory, filterable by categories like True Crime, Comedy, News and more." = "Podcast Charts with Genre Filter – Browse the current Apple Podcast Charts right in the directory, filterable by categories like True Crime, Comedy, News and more.";
-"Episode Retention Rules – Automatically delete episodes after X days or keep only the newest Y episodes per podcast." = "Episode Retention Rules – Automatically delete episodes after X days or keep only the newest Y episodes per podcast.";
-"Pause Podcast Updates – Temporarily exclude podcasts from syncing that you're not actively listening to." = "Pause Podcast Updates – Temporarily exclude podcasts from syncing that you're not actively listening to.";
-"Blazing Fast Refresh – Up to 10 podcasts refresh simultaneously. Unreachable podcasts no longer block the rest." = "Blazing Fast Refresh – Up to 10 podcasts refresh simultaneously. Unreachable podcasts no longer block the rest.";
-"Bigger Fonts and Buttons – Better readability and easier operation throughout the entire interface." = "Bigger Fonts and Buttons – Better readability and easier operation throughout the entire interface.";
-"Faster App Start – The app launches noticeably faster." = "Faster App Start – The app launches noticeably faster.";
-"Dark Mode – Automatic (follows system), Light or Dark. Replaces the old location-based night mode." = "Dark Mode – Automatic (follows system), Light or Dark. Replaces the old location-based night mode.";
-"Download Manager – Downloads sortable by size, date or podcast. Delete all downloads of a podcast at once." = "Download Manager – Downloads sortable by size, date or podcast. Delete all downloads of a podcast at once.";
-"MQTT Smart Home – Control your podcasts via your smart home! Playback status, chapters, sleep timer and more are published to your MQTT broker. Remote control included." = "MQTT Smart Home – Control your podcasts via your smart home! Playback status, chapters, sleep timer and more are published to your MQTT broker. Remote control included.";
+"Across Devices" = "Across Devices";
+"Podcast Management" = "Podcast Management";
+"Quality-of-Life" = "Quality-of-Life";
+"Personalization" = "Personalization";
+
+/* ChangeLogViewController – items (CL prefix) */
+"CL Live Transcripts" = "Live Transcripts – If a podcast provides transcripts, the spoken text is shown live in the player, synced to playback. Tap any line to jump there. Scrolls automatically with the current passage highlighted.";
+"CL Intelligent Sleep Timer" = "Intelligent Sleep Timer – Activates automatically with every playback if desired. Resets when it detects you're still awake via screen touch, volume buttons, or device movement. Adjustable motion sensitivity. Optionally disabled during CarPlay.";
+"CL Auto-Skip Chapters" = "Auto-Skip Chapters – Define keywords to skip matching chapters automatically. Per-keyword start/end offsets for fine-tuning. Also: skip a fixed number of seconds at the start or end of every episode. Configurable per podcast.";
+"CL Redesigned Now Playing" = "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Tap or drag anywhere on the seek bar to jump to that position. Tap the podcast title to jump to the episode list.";
+"CL Chapter Markers" = "Chapter Markers on Seek Bar – Chapter boundaries visible at a glance. The current chapter is highlighted.";
+"CL Swipeable Chapter Images" = "Swipeable Chapter Images – Browse chapter artwork by swiping without changing playback position.";
+"CL Widgets" = "Widgets – Home Screen and Lock Screen widgets: Now Playing with play/pause control, Smart List (configurable episode list), Stats, and three Lock Screen variants. Widget accent color configurable separately.";
+"CL Backup & Restore" = "Backup & Restore – Full export of all subscriptions, settings, playlists, play status, and credentials. Import with live progress, skippable individual podcasts, and selective import of each data category.";
+"CL CarPlay" = "CarPlay – Full CarPlay support with podcast list, episode selection, and playback control.";
+"CL iPad & macOS" = "iPad & macOS – Dedicated layouts for iPad and Mac. Optimized for iOS 26 Liquid Glass.";
+"CL Podcast Charts" = "Podcast Charts – Apple Podcast Charts in the directory, filterable by genre.";
+"CL Episode Filters" = "Episode Filters – Filter episodes by All, Unlistened, Started, Favorites, or Downloaded.";
+"CL Episode Retention" = "Episode Retention – Per podcast: auto-delete after 1–30 days, or keep only the newest 1–12 episodes.";
+"CL Pause Podcast Updates" = "Pause Podcast Updates – Temporarily exclude individual podcasts from refresh.";
+"CL Restore Deleted Episodes" = "Restore Deleted Episodes – Bring back accidentally deleted episodes from the podcast settings.";
+"CL Download Management" = "Download Management – View all downloads sorted by size, date, or podcast. Delete per podcast or individually. Found under Settings > Data > Downloaded Files.";
+"CL Configurable Swipe Actions" = "Configurable Swipe Actions – Choose what swiping left or right on an episode does: mark as played, favorite, download, add to Play Next, delete, or show info.";
+"CL Tap on Episode" = "Tap on Episode – Choose whether tapping an episode plays it directly or opens the show notes. Settings > Playback.";
+"CL Context Menus" = "Context Menus – Long-press on episodes shows a context menu with preview, including mark as played/unplayed.";
+"CL Adjustable Font Size" = "Adjustable Font Size – Four levels (Normal, Larger, Even Larger, Largest), applied app-wide. Settings > Appearance.";
+"CL Faster Refresh" = "Faster Refresh – Multiple podcasts refresh simultaneously. Unreachable podcasts no longer block the rest. Clear timeout messages.";
+"CL Remember Scroll Position" = "Remember Scroll Position – Your place is saved when browsing long episode lists.";
+"CL Faster App Start" = "Faster App Start – Noticeably faster launch.";
+"CL Custom Colors" = "Custom Colors – Set your own interface accent color. Player color adapts to podcast artwork or can be set manually.";
+"CL App Icons" = "App Icons – Seven icons to choose from, including a Dark Mode variant.";
+"CL Playback Speeds" = "Playback Speeds – 0.5x to 3x in fine steps. Choose which speeds appear in the player under Settings > Playback > Enabled Speed Steps.";
+"CL Dark Mode" = "Dark Mode – Automatic (system), Light, or Dark. Pure Black mode for OLED displays. External browser option for shownote links.";
+"CL MQTT Integration" = "MQTT Integration – Publish playback status, chapters, sleep timer, volume, and device state to your MQTT broker. Remote control via MQTT. WiFi-only mode available.";
+"CL Feedback" = "Feedback – Send questions and bug reports directly from the app.";
+"CL Donations" = "Donations – Support development with in-app donations.";
 
 /* DataSettingsViewController Statistics */
 "Statistics" = "Statistics";

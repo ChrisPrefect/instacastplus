@@ -114,11 +114,32 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (NSArray*) sortedEpisodes
 {
+    return [self _sortedEpisodesWithFetchLimit:0];
+}
+
+- (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit
+{
+    if ([self.episodes count] > 0) {
+        NSArray* all = [self.episodes array];
+        if (limit > 0 && all.count > limit) {
+            return [all subarrayWithRange:NSMakeRange(0, limit)];
+        }
+        return all;
+    }
+    NSArray* result = [self _sortedEpisodesWithFetchLimit:limit];
+    if (limit > 0 && result.count > limit) {
+        return [result subarrayWithRange:NSMakeRange(0, limit)];
+    }
+    return result;
+}
+
+- (NSArray*) _sortedEpisodesWithFetchLimit:(NSUInteger)fetchLimit
+{
     if ([self.episodes count] > 0) {
         return [self.episodes array];
     }
-    
-    
+
+
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
 #ifdef DEBUG
@@ -212,8 +233,11 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     if ([sortDescriptors count] > 0) {
         fetchRequest.sortDescriptors = sortDescriptors;
     }
-    
-    
+
+    if (fetchLimit > 0) {
+        fetchRequest.fetchLimit = fetchLimit;
+    }
+
     NSError* error;
     NSArray* objects = [self.managedObjectContext executeFetchRequest:fetchRequest error:&error];
     

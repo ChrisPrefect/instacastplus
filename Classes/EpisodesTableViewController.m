@@ -898,11 +898,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             name = episode.starred ? @"star.slash" : @"star";
             break;
         case ICEpisodeSwipeActionDownload:
-        {
-            CacheManager* cman = [CacheManager sharedCacheManager];
             name = @"square.and.arrow.down";
             break;
-        }
         case ICEpisodeSwipeActionAddToPlayNext:
             name = @"list.bullet.indent";
             break;
@@ -1151,7 +1148,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         previewProvider:nil
         actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
             __strong EpisodesTableViewController* strongSelf = weakSelf;
-            if (!strongSelf) return [UIMenu menuWithChildren:@[]];
+            if (!strongSelf) return [UIMenu menuWithTitle:@"" children:@[]];
             return [strongSelf _contextMenuForIndexPath:indexPath];
         }];
 }

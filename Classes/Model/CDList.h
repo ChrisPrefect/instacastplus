@@ -17,6 +17,7 @@
 
 @property (nonatomic, readonly) NSUInteger numberOfEpisodes;
 @property (nonatomic, readonly) NSArray* sortedEpisodes;
+- (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit;
 
 - (NSInteger) playbackTime;
 

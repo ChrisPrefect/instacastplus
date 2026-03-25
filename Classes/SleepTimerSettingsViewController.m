@@ -176,12 +176,12 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 cell.backgroundColor = ICGroupCellBackgroundColor;
                 cell.textLabel.text = @"Schwellwert für Bewegung".ls;
                 cell.textLabel.textColor = ICTextColor;
-                cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
+                cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
                 self.motionIndicatorLabel = cell.textLabel;
 
                 UIButton *minusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
                 [minusBtn setTitle:@"−" forState:UIControlStateNormal];
-                minusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(20)];
+                minusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(22)];
                 [minusBtn addTarget:self action:@selector(decreaseThreshold:) forControlEvents:UIControlEventTouchUpInside];
 
                 UILabel *valueLbl = [[UILabel alloc] init];
@@ -189,13 +189,13 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 if (currentThreshold <= 0) currentThreshold = 0.004;
                 valueLbl.text = [NSString stringWithFormat:@"%.3f", currentThreshold];
                 valueLbl.textColor = ICTextColor;
-                valueLbl.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(15) weight:UIFontWeightMedium];
+                valueLbl.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(17) weight:UIFontWeightMedium];
                 valueLbl.textAlignment = NSTextAlignmentCenter;
                 self.thresholdValueLabel = valueLbl;
 
                 UIButton *plusBtn = [UIButton buttonWithType:UIButtonTypeSystem];
                 [plusBtn setTitle:@"+" forState:UIControlStateNormal];
-                plusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(20)];
+                plusBtn.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(22)];
                 [plusBtn addTarget:self action:@selector(increaseThreshold:) forControlEvents:UIControlEventTouchUpInside];
 
                 UIStackView *controlStack = [[UIStackView alloc] initWithArrangedSubviews:@[minusBtn, valueLbl, plusBtn]];
@@ -204,7 +204,7 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
                 controlStack.alignment = UIStackViewAlignmentCenter;
                 [controlStack sizeToFit];
                 CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
-                controlStack.frame = CGRectMake(0, 0, 120 * scale, 30 * scale);
+                controlStack.frame = CGRectMake(0, 0, 130 * scale, 34 * scale);
                 cell.accessoryView = controlStack;
 
                 return cell;

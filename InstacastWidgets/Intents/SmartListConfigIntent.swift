@@ -8,25 +8,8 @@ struct SmartListConfigIntent: WidgetConfigurationIntent {
     @Parameter(title: "List")
     var list: ListEntity?
 
-    @Parameter(title: "Tap Action", default: .play)
-    var tapAction: EpisodeTapAction
-
-    @Parameter(title: "Compact", default: false)
+    @Parameter(title: "Compact", default: true)
     var compact: Bool
-}
-
-// MARK: - Tap Action Enum
-
-enum EpisodeTapAction: String, AppEnum, Sendable {
-    case play = "play"
-    case openPlayer = "openPlayer"
-
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Tap Action"
-
-    static let caseDisplayRepresentations: [EpisodeTapAction: DisplayRepresentation] = [
-        .play: DisplayRepresentation(title: "Play Episode (Background)"),
-        .openPlayer: DisplayRepresentation(title: "Open Player & Play")
-    ]
 }
 
 // MARK: - List Entity

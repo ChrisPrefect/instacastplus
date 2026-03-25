@@ -1,6 +1,6 @@
 # CLAUDE.md — Instacast+
 
-Podcast-App iOS/macOS, Objective-C. v2.9, min iOS 13.0. CarPlay, AVFoundation, OPML, Podlove Chapters.
+Podcast-App iOS/macOS, Objective-C. v3.2, min iOS 13.0. CarPlay, AVFoundation, OPML, Podlove Chapters.
 
 ## Build — NICHT automatisch builden!
 

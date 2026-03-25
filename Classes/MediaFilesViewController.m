@@ -349,13 +349,13 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
             UILabel *sizeLabel = (UILabel*)cell.accessoryView;
             if (!sizeLabel) {
-                sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+                sizeLabel = [[UILabel alloc] init];
                 sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(14) weight:UIFontWeightSemibold];
                 sizeLabel.textAlignment = NSTextAlignmentRight;
                 sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
                 cell.accessoryView = sizeLabel;
 
-                UILabel *editLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+                UILabel *editLabel = [[UILabel alloc] init];
                 editLabel.font = sizeLabel.font;
                 editLabel.textAlignment = NSTextAlignmentRight;
                 editLabel.textColor = sizeLabel.textColor;
@@ -364,7 +364,9 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
             NSString *sizeText = [NSByteCountFormatter stringFromByteCount:totalBytes countStyle:NSByteCountFormatterCountStyleMemory];
             sizeLabel.text = sizeText;
+            [sizeLabel sizeToFit];
             ((UILabel*)cell.editingAccessoryView).text = sizeText;
+            [(UILabel*)cell.editingAccessoryView sizeToFit];
 
             return cell;
         }
@@ -387,13 +389,13 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
         UILabel* sizeLabel = (UILabel*)cell.accessoryView;
         if (!sizeLabel) {
-            sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+            sizeLabel = [[UILabel alloc] init];
             sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
             sizeLabel.textAlignment = NSTextAlignmentRight;
             sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
             cell.accessoryView = sizeLabel;
 
-            UILabel *editLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+            UILabel *editLabel = [[UILabel alloc] init];
             editLabel.font = sizeLabel.font;
             editLabel.textAlignment = NSTextAlignmentRight;
             editLabel.textColor = sizeLabel.textColor;
@@ -408,7 +410,9 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
         NSString *sizeText = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
         sizeLabel.text = sizeText;
+        [sizeLabel sizeToFit];
         ((UILabel*)cell.editingAccessoryView).text = sizeText;
+        [(UILabel*)cell.editingAccessoryView sizeToFit];
 
         return cell;
     }
@@ -448,13 +452,13 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
     UILabel* sizeLabel = (UILabel*)cell.accessoryView;
     if (!sizeLabel) {
-        sizeLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+        sizeLabel = [[UILabel alloc] init];
         sizeLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
         sizeLabel.textAlignment = NSTextAlignmentRight;
         sizeLabel.textColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
         cell.accessoryView = sizeLabel;
 
-        UILabel *editLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, (44-20)/2, 65, 20)];
+        UILabel *editLabel = [[UILabel alloc] init];
         editLabel.font = sizeLabel.font;
         editLabel.textAlignment = NSTextAlignmentRight;
         editLabel.textColor = sizeLabel.textColor;
@@ -470,7 +474,9 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
     NSString *sizeText = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
     sizeLabel.text = sizeText;
+    [sizeLabel sizeToFit];
     ((UILabel*)cell.editingAccessoryView).text = sizeText;
+    [(UILabel*)cell.editingAccessoryView sizeToFit];
 
     return cell;
 }

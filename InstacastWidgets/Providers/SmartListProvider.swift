@@ -7,7 +7,6 @@ struct SmartListEntry: TimelineEntry, Sendable {
     let listName: String
     let listId: String
     let episodes: [WEpisode]
-    let tapAction: EpisodeTapAction
     let compact: Bool
 }
 
@@ -26,8 +25,7 @@ struct SmartListProvider: AppIntentTimelineProvider {
             listName: WidgetSampleData.smartList.listName,
             listId: WidgetSampleData.smartList.listId,
             episodes: WidgetSampleData.smartList.episodes,
-            tapAction: .play,
-            compact: false
+            compact: true
         )
     }
 
@@ -39,7 +37,6 @@ struct SmartListProvider: AppIntentTimelineProvider {
                 listName: WidgetSampleData.smartList.listName,
                 listId: WidgetSampleData.smartList.listId,
                 episodes: WidgetSampleData.smartList.episodes,
-                tapAction: configuration.tapAction,
                 compact: configuration.compact
             )
         }
@@ -52,41 +49,39 @@ struct SmartListProvider: AppIntentTimelineProvider {
     }
 
     private func loadEntry(for configuration: SmartListConfigIntent) -> SmartListEntry {
-        let tapAction = configuration.tapAction
         let compact = configuration.compact
 
         if let listEntity = configuration.list {
             if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
-                return entry(from: listData, tapAction: tapAction, compact: compact)
+                return entry(from: listData, compact: compact)
             }
-            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], tapAction: tapAction, compact: compact)
+            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], compact: compact)
         }
 
         // No list configured — choose the best currently available list.
-        if let fallback = fallbackEntry(excluding: nil, tapAction: tapAction, compact: compact) {
+        if let fallback = fallbackEntry(excluding: nil, compact: compact) {
             return fallback
         }
 
-        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], tapAction: tapAction, compact: compact)
+        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], compact: compact)
     }
 
-    private func entry(from listData: WListEpisodes, tapAction: EpisodeTapAction, compact: Bool) -> SmartListEntry {
+    private func entry(from listData: WListEpisodes, compact: Bool) -> SmartListEntry {
         SmartListEntry(
             date: Date(),
             listName: listData.listName,
             listId: listData.listId,
             episodes: listData.episodes,
-            tapAction: tapAction,
             compact: compact
         )
     }
 
-    private func fallbackEntry(excluding excludedListID: String?, tapAction: EpisodeTapAction, compact: Bool) -> SmartListEntry? {
+    private func fallbackEntry(excluding excludedListID: String?, compact: Bool) -> SmartListEntry? {
         guard let list = preferredFallbackList(excluding: excludedListID),
               let listData = SharedContainerReader.readListEpisodes(listId: list.id) else {
             return nil
         }
-        return entry(from: listData, tapAction: tapAction, compact: compact)
+        return entry(from: listData, compact: compact)
     }
 
     private func preferredFallbackList(excluding excludedListID: String?) -> WList? {

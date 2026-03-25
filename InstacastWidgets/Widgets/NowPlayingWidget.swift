@@ -248,10 +248,10 @@ struct NowPlayingWidgetView: View {
     // MARK: - Large
 
     private func largeView(episode: WEpisode, data: WNowPlaying) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             // Header: artwork + info
-            HStack(spacing: 12) {
-                artworkView(data: data, episode: episode, size: 90)
+            HStack(spacing: 10) {
+                artworkView(data: data, episode: episode, size: 80)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(episode.title)
@@ -301,80 +301,81 @@ struct NowPlayingWidgetView: View {
                 }
             }
 
-            // Main controls
-            HStack(spacing: 20) {
+            // Controls: speed | prev skip play skip next | sleeptimer — all in one row
+            HStack(spacing: 0) {
                 let canGoPrev = data.hasPreviousEpisode == true
                 let canGoNext = data.hasNextEpisode == true
 
-                Button(intent: PrevEpisodeIntent()) {
-                    Image(systemName: "backward.end.fill")
-                        .font(.system(size: 22))
-                }
-                .disabled(!canGoPrev)
-                .foregroundColor(canGoPrev ? accentColor : .secondary.opacity(0.4))
-
-                Button(intent: SkipBackwardIntent()) {
-                    skipControlLabel(forward: false, seconds: skipBackwardSeconds(data: data), iconSize: 28)
-                }
-                .foregroundColor(accentColor)
-
-                playPauseControl(
-                    data: data,
-                    imageSystemName: data.isPaused ? "play.circle.fill" : "pause.circle.fill",
-                    font: .system(size: 48)
-                )
-                .foregroundColor(accentColor)
-
-                Button(intent: SkipForwardIntent()) {
-                    skipControlLabel(forward: true, seconds: skipForwardSeconds(data: data), iconSize: 28)
-                }
-                .foregroundColor(accentColor)
-
-                Button(intent: NextEpisodeIntent()) {
-                    Image(systemName: "forward.end.fill")
-                        .font(.system(size: 22))
-                }
-                .disabled(!canGoNext)
-                .foregroundColor(canGoNext ? accentColor : .secondary.opacity(0.4))
-            }
-            .buttonStyle(.plain)
-
-            // Episode controls + speed + sleeptimer
-            HStack(spacing: 12) {
-                Spacer(minLength: 0)
-
+                // Speed (left edge)
                 Button(intent: CycleSpeedIntent()) {
                     Text(data.playbackSpeed ?? "1x")
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
                         .background(accentColor.opacity(0.15))
-                        .cornerRadius(8)
+                        .cornerRadius(7)
+                }
+                .foregroundColor(accentColor)
+
+                Spacer(minLength: 4)
+
+                // Playback controls (center)
+                HStack(spacing: 14) {
+                    Button(intent: PrevEpisodeIntent()) {
+                        Image(systemName: "backward.end.fill")
+                            .font(.system(size: 18))
+                    }
+                    .disabled(!canGoPrev)
+                    .foregroundColor(canGoPrev ? accentColor : .secondary.opacity(0.4))
+
+                    Button(intent: SkipBackwardIntent()) {
+                        skipControlLabel(forward: false, seconds: skipBackwardSeconds(data: data), iconSize: 24)
+                    }
+                    .foregroundColor(accentColor)
+
+                    playPauseControl(
+                        data: data,
+                        imageSystemName: data.isPaused ? "play.circle.fill" : "pause.circle.fill",
+                        font: .system(size: 42)
+                    )
+                    .foregroundColor(accentColor)
+
+                    Button(intent: SkipForwardIntent()) {
+                        skipControlLabel(forward: true, seconds: skipForwardSeconds(data: data), iconSize: 24)
+                    }
+                    .foregroundColor(accentColor)
+
+                    Button(intent: NextEpisodeIntent()) {
+                        Image(systemName: "forward.end.fill")
+                            .font(.system(size: 18))
+                    }
+                    .disabled(!canGoNext)
+                    .foregroundColor(canGoNext ? accentColor : .secondary.opacity(0.4))
                 }
 
+                Spacer(minLength: 4)
+
+                // Sleep timer (right edge)
                 Button(intent: ToggleSleepTimerIntent()) {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 2) {
                         Image(systemName: data.hasSleepTimer ? "moon.fill" : "moon")
-                            .font(.system(size: 15))
+                            .font(.system(size: 13))
                         if data.hasSleepTimer, let stopDate = data.sleepTimerStopDate {
                             Text(stopDate, style: .timer)
-                                .font(.system(size: 14))
+                                .font(.system(size: 12))
                                 .monospacedDigit()
                                 .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .fixedSize(horizontal: true, vertical: false)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
                     .background(data.hasSleepTimer ? accentColor.opacity(0.15) : Color.clear)
-                    .cornerRadius(8)
+                    .cornerRadius(7)
                 }
                 .foregroundColor(data.hasSleepTimer ? accentColor : .secondary)
-
-                Spacer(minLength: 0)
             }
             .buttonStyle(.plain)
-            .foregroundColor(accentColor.opacity(0.8))
 
             // Chapter list (show chapters around the current one)
             if let chapters = data.chapters,
@@ -392,8 +393,8 @@ struct NowPlayingWidgetView: View {
     // MARK: - Chapter List (Large widget)
 
     private func chapterListView(chapters: [WChapter], currentIndex: Int, episodeDuration: Int32) -> some View {
-        // Show previous chapter + current + next 2 (max 4 visible, centered on current)
-        let maxVisible = 4
+        // Show previous chapter + current + next chapters (max 5 visible, centered on current)
+        let maxVisible = 5
         let startIdx: Int
         if chapters.count <= maxVisible {
             startIdx = 0
