@@ -1171,6 +1171,31 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                  }];
     [actions addObject:favoriteAction];
 
+    // Mark as Played / Unplayed
+    UIAction* playedAction = [UIAction actionWithTitle:episode.consumed ? @"Mark as Unplayed".ls : @"Mark as Played".ls
+                                                  image:[UIImage systemImageNamed:episode.consumed ? @"circle.fill" : @"circle"]
+                                             identifier:nil
+                                                handler:^(UIAction *action) {
+                                                    __strong EpisodesTableViewController* strongSelf = weakSelf;
+                                                    if (!strongSelf) return;
+                                                    CDEpisode* ep = (CDEpisode*)[strongSelf.episodes objectAtIndex:indexPath.row];
+                                                    BOOL flag = !ep.consumed;
+                                                    strongSelf.userAction = YES;
+                                                    [DMANAGER markEpisode:ep asConsumed:flag];
+                                                    if (flag && [ep isEqual:[AudioSession sharedAudioSession].episode]) {
+                                                        [[AudioSession sharedAudioSession] stop];
+                                                    }
+                                                    EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[strongSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                                                        [cell updatePlayedAndStarredState];
+                                                    }
+                                                    [strongSelf _updateToolbarItemsAnimated:NO];
+                                                    [strongSelf _updateToolbarLabels];
+                                                    strongSelf.userAction = NO;
+                                                    PlaySoundFile(flag ? @"AffirmOut" : @"AffirmIn", NO);
+                                                }];
+    [actions addObject:playedAction];
+
     // Add to Play Next (only if not currently playing)
     AudioSession* session = [AudioSession sharedAudioSession];
     if (![episode isEqual:session.episode]) {
