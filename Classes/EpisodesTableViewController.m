@@ -12,7 +12,8 @@
 #import "EpisodesTableViewController.h"
 #import "EpisodesTableViewCell.h"
 
-
+#import "InstacastAppDelegate.h"
+#import "MainViewController_4.h"
 #import "UIManager.h"
 
 #import "VDModalInfo.h"
@@ -951,6 +952,77 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
 }
 
+- (void) _showPlayNextToastWithText:(NSString*)text added:(BOOL)added
+{
+    UIWindow* window = App.ic_keyWindow;
+    if (!window) return;
+
+    // Container view with blur background
+    UIVisualEffectView* blurView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleDark]];
+    blurView.layer.cornerRadius = 12;
+    blurView.clipsToBounds = YES;
+    blurView.alpha = 0;
+
+    // Horizontal stack: label + "Anzeigen" button
+    UILabel* label = [[UILabel alloc] init];
+    label.text = text;
+    label.textColor = [UIColor whiteColor];
+    label.font = [UIFont systemFontOfSize:ICFontSize(14)];
+
+    UIButton* showButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [showButton setTitle:@"Show".ls forState:UIControlStateNormal];
+    showButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(14)];
+    [showButton setTitleColor:ICTintColor forState:UIControlStateNormal];
+
+    // Only show "Anzeigen" button when adding (navigating to empty list on remove makes no sense)
+    showButton.hidden = !added;
+
+    UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[label, showButton]];
+    stack.axis = UILayoutConstraintAxisHorizontal;
+    stack.spacing = 12;
+    stack.alignment = UIStackViewAlignmentCenter;
+
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [blurView.contentView addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:blurView.contentView.leadingAnchor constant:16],
+        [stack.trailingAnchor constraintEqualToAnchor:blurView.contentView.trailingAnchor constant:-16],
+        [stack.topAnchor constraintEqualToAnchor:blurView.contentView.topAnchor constant:10],
+        [stack.bottomAnchor constraintEqualToAnchor:blurView.contentView.bottomAnchor constant:-10],
+    ]];
+
+    blurView.translatesAutoresizingMaskIntoConstraints = NO;
+    [window addSubview:blurView];
+    [NSLayoutConstraint activateConstraints:@[
+        [blurView.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
+        [blurView.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
+    ]];
+
+    // Tap on "Anzeigen" navigates to Up Next
+    if (@available(iOS 14.0, *)) {
+        [showButton addAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+            // Dismiss toast immediately
+            [blurView removeFromSuperview];
+
+            InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)[UIApplication sharedApplication].delegate;
+            [appDelegate.mainViewController showUpNext];
+        }] forControlEvents:UIControlEventTouchUpInside];
+    }
+
+    // Animate in, wait 3 seconds, animate out
+    [UIView animateWithDuration:0.3 animations:^{
+        blurView.alpha = 1.0;
+    } completion:^(BOOL finished) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [UIView animateWithDuration:0.3 animations:^{
+                blurView.alpha = 0;
+            } completion:^(BOOL finished) {
+                [blurView removeFromSuperview];
+            }];
+        });
+    }];
+}
+
 - (void) _performSwipeAction:(ICEpisodeSwipeAction)action atIndexPath:(NSIndexPath*)indexPath
 {
     NSArray* lEpisodes = self.episodes;
@@ -1029,38 +1101,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                 toastText = @"Added to Play Next".ls;
             }
             AudioServicesPlaySystemSound(1519);
-
-            UILabel* toastLabel = [[UILabel alloc] init];
-            toastLabel.text = toastText;
-            toastLabel.textColor = [UIColor whiteColor];
-            toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-            toastLabel.textAlignment = NSTextAlignmentCenter;
-            toastLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
-            toastLabel.layer.cornerRadius = 8;
-            toastLabel.clipsToBounds = YES;
-            toastLabel.alpha = 0;
-
-            UIWindow* window = App.ic_keyWindow;
-            [window addSubview:toastLabel];
-            toastLabel.translatesAutoresizingMaskIntoConstraints = NO;
-            [NSLayoutConstraint activateConstraints:@[
-                [toastLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
-                [toastLabel.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
-                [toastLabel.widthAnchor constraintGreaterThanOrEqualToConstant:180],
-                [toastLabel.heightAnchor constraintEqualToConstant:36]
-            ]];
-
-            [UIView animateWithDuration:0.3 animations:^{
-                toastLabel.alpha = 1.0;
-            } completion:^(BOOL finished) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    [UIView animateWithDuration:0.3 animations:^{
-                        toastLabel.alpha = 0;
-                    } completion:^(BOOL finished) {
-                        [toastLabel removeFromSuperview];
-                    }];
-                });
-            }];
+            [self _showPlayNextToastWithText:toastText added:!inUpNext];
             break;
         }
         case ICEpisodeSwipeActionDelete:
@@ -1202,38 +1243,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                      handler:^(UIAction *action) {
                                                          [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
                                                          AudioServicesPlaySystemSound(1519);
-
-                                                         UILabel* toastLabel = [[UILabel alloc] init];
-                                                         toastLabel.text = @"Added to Play Next".ls;
-                                                         toastLabel.textColor = [UIColor whiteColor];
-                                                         toastLabel.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-                                                         toastLabel.textAlignment = NSTextAlignmentCenter;
-                                                         toastLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
-                                                         toastLabel.layer.cornerRadius = 8;
-                                                         toastLabel.clipsToBounds = YES;
-                                                         toastLabel.alpha = 0;
-
-                                                         UIWindow* window = App.ic_keyWindow;
-                                                         [window addSubview:toastLabel];
-                                                         toastLabel.translatesAutoresizingMaskIntoConstraints = NO;
-                                                         [NSLayoutConstraint activateConstraints:@[
-                                                             [toastLabel.centerXAnchor constraintEqualToAnchor:window.centerXAnchor],
-                                                             [toastLabel.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-100],
-                                                             [toastLabel.widthAnchor constraintGreaterThanOrEqualToConstant:180],
-                                                             [toastLabel.heightAnchor constraintEqualToConstant:36]
-                                                         ]];
-
-                                                         [UIView animateWithDuration:0.3 animations:^{
-                                                             toastLabel.alpha = 1.0;
-                                                         } completion:^(BOOL finished) {
-                                                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                                                                 [UIView animateWithDuration:0.3 animations:^{
-                                                                     toastLabel.alpha = 0;
-                                                                 } completion:^(BOOL finished) {
-                                                                     [toastLabel removeFromSuperview];
-                                                                 }];
-                                                             });
-                                                         }];
+                                                         [weakSelf _showPlayNextToastWithText:@"Added to Play Next".ls added:YES];
                                                      }];
         [actions addObject:playNextAction];
     }

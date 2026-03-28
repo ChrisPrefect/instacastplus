@@ -208,7 +208,7 @@ NSImage* CreateGreyscaleImage(NSImage* i)
 	
     uint32_t *rgbImage = (uint32_t *) malloc(m_width * m_height * sizeof(uint32_t));
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(rgbImage, m_width, m_height, 8, m_width * 4, colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipLast);
+    CGContextRef context = CGBitmapContextCreate(rgbImage, m_width, m_height, 8, m_width * 4, colorSpace, kCGBitmapByteOrder32Little | (CGBitmapInfo)kCGImageAlphaNoneSkipLast);
     CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
     CGContextSetShouldAntialias(context, NO);
     
@@ -259,7 +259,7 @@ NSImage* CreateGreyscaleImage(NSImage* i)
 	
     // create a UIImage
     colorSpace = CGColorSpaceCreateDeviceRGB();
-    context = CGBitmapContextCreate(result, m_width, m_height, 8, m_width * sizeof(uint32_t), colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipLast);
+    context = CGBitmapContextCreate(result, m_width, m_height, 8, m_width * sizeof(uint32_t), colorSpace, kCGBitmapByteOrder32Little | (CGBitmapInfo)kCGImageAlphaNoneSkipLast);
     CGImageRef image = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
     CGColorSpaceRelease(colorSpace);

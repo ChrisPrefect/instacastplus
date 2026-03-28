@@ -838,6 +838,19 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [subscriptionTableViewController showEpisodeListForFeed:episode.feed animated:NO];
 }
 
+- (void) showUpNext
+{
+    if (self.presentedViewController) {
+        [self clearViewControllerPresentationQueue];
+        [self dismissViewControllerAnimated:NO completion:NULL];
+    }
+
+    if ([self _selectMainSidebarItemWithTag:kMainSidebarItemUpNext]) {
+        self.sidebarController.selectedItemTag = kMainSidebarItemUpNext;
+    }
+    [self setSidebarShown:NO animated:NO];
+}
+
 - (void) playerCloseButtonAction2:(id)sender
 {
     [self.presentedViewController dismissViewControllerAnimated:YES completion:^(void) {

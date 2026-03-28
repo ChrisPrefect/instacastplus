@@ -30,6 +30,30 @@ import Foundation
         }
     }
 
+    /// Reload only the NowPlaying widget timeline — preserves budget for other widgets.
+    @objc public static func reloadNowPlayingTimeline() {
+        if #available(iOS 14.0, *) {
+            if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.nowPlayingWidgetKind)
+        }
+    }
+
+    /// Reload only the SmartList widget timeline.
+    @objc public static func reloadListsTimeline() {
+        if #available(iOS 14.0, *) {
+            if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.smartListWidgetKind)
+        }
+    }
+
+    /// Reload only the Stats widget timeline.
+    @objc public static func reloadStatsTimeline() {
+        if #available(iOS 14.0, *) {
+            if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.statsWidgetKind)
+        }
+    }
+
     /// Start listening for Darwin notifications from widget control intents.
     /// Call this from InstacastAppDelegate.didFinishLaunchingWithOptions.
     /// Works when the app is alive in background (active audio session).

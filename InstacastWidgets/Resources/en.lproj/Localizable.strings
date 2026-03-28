@@ -22,6 +22,7 @@
 "widget.empty.noepisodes" = "No Episodes";
 "widget.empty.nosubscriptions" = "No Subscriptions";
 "widget.empty.nostats" = "No Stats Available";
+"widget.empty.needsconfig" = "Edit widget to choose an episode list";
 
 "widget.nowplaying.label" = "NOW PLAYING";
 "widget.listened.header" = "Listened";

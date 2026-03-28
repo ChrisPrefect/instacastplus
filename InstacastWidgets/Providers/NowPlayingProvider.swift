@@ -19,17 +19,20 @@ struct NowPlayingProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<NowPlayingEntry>) -> Void) {
         let data = SharedContainerReader.readNowPlaying()
 
+        // Diagnostics: log every getTimeline call so we can verify the widget is being refreshed
+        WidgetDiagnostics.log("getTimeline", details: [
+            "episode": data?.episode?.title ?? "nil",
+            "isPaused": data?.isPaused ?? true,
+            "chapters": data?.chapters?.count ?? 0,
+            "family": "\(context.family)"
+        ])
+
         #if DEBUG
         print("[NowPlayingWidget] getTimeline: episode='\(data?.episode?.title ?? "nil")', isPaused=\(data?.isPaused ?? false), chapters=\(data?.chapters?.count ?? 0), timestamp=\(data?.timestamp.description ?? "nil")")
         #endif
 
-        // Single entry per getTimeline call. The app calls reloadAllTimelines() on every
-        // relevant state change (play/pause, episode change, chapter change). Pre-projected
-        // multi-entry timelines prevent WidgetKit from calling getTimeline again after a
-        // reloadAllTimelines() request, because WidgetKit considers its existing entries
-        // still "valid" for the current time slot — causing stale play/pause state and
-        // stale episode info even after an explicit reload. Single entries force WidgetKit
-        // to call getTimeline whenever the current entry is consumed or a reload is requested.
+        // Single entry per getTimeline call. The app calls reloadTimelines on every
+        // relevant state change (play/pause, episode change, chapter change).
         let entry = NowPlayingEntry(date: Date(), data: data)
         let refreshInterval: TimeInterval = (data?.isPaused == false && data?.episode != nil) ? 60 : 2 * 60
         let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(refreshInterval)))

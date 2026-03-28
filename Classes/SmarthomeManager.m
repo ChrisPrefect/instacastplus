@@ -574,7 +574,13 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)publishPlayState
 {
     PlaybackManager *pm = [PlaybackManager playbackManager];
-    BOOL playing = pm.playingEpisode && !pm.paused;
+    BOOL hasEpisode = (pm.playingEpisode != nil);
+    BOOL paused = pm.paused;
+    BOOL podcastPlaying = pm.isPodcastPlaying;
+    BOOL waiting = pm.waitingForLoad;
+    BOOL playing = hasEpisode && !paused;
+    DebugLog(@"[MQTT] publishPlayState: hasEpisode=%d paused=%d podcastPlaying=%d waitingForLoad=%d → playing=%d (connected=%d lastPlay=%@)",
+             hasEpisode, paused, podcastPlaying, waiting, playing, self.connected, _lastPlay);
     [self publishValue:(playing ? @"1" : @"0") toTopic:[self topic:@"play"] lastValue:&_lastPlay retain:YES];
 }
 
@@ -644,10 +650,10 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     NSString *activeStr = active ? @"1" : @"0";
     [self publishValue:activeStr toTopic:[self topic:@"sleeptimer-active"] lastValue:&_lastSleeptimerActive retain:YES];
 
-    // Use stopDate directly to get accurate remaining seconds
+    // Use timerRemainingTime which correctly handles pause state
     NSInteger remaining = 0;
-    if (active && as.stopDate) {
-        remaining = (NSInteger)[as.stopDate timeIntervalSinceDate:[NSDate date]];
+    if (active) {
+        remaining = (NSInteger)as.timerRemainingTime;
         if (remaining < 0) remaining = 0;
     }
     NSString *remainStr = [NSString stringWithFormat:@"%ld", (long)remaining];

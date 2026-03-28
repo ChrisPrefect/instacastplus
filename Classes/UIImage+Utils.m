@@ -25,7 +25,7 @@
     CGContextRef bitmapContext = CGBitmapContextCreate (NULL, aImage.size.width * self.scale, aImage.size.height * self.scale, 8,
                                                         0, colorSpace,
                                                         // this will give us an optimal BGRA format for the device:
-                                                        (kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst));
+                                                        (kCGBitmapByteOrder32Little | (CGBitmapInfo)kCGImageAlphaPremultipliedFirst));
     
     CGColorSpaceRelease(colorSpace);
     //UIGraphicsPushContext(bitmapContext);

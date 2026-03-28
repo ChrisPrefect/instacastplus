@@ -87,6 +87,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_consumePendingWidgetActionIfNeeded;
 - (void)_clearPendingWidgetActionFile;
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex;
+- (void)_logWidgetDiagnostics;
 - (NSString *)_currentNowPlayingReloadSignature;
 - (NSInteger)_resolvedLiveChapterIndexForChapters:(NSArray<ICMetadataChapter *> *)liveChapters fallbackIndex:(NSInteger)fallbackIndex currentPosition:(NSInteger)currentPosition;
 - (BOOL)_hasNextEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as;
@@ -169,7 +170,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     [audioSession addTaskObserver:self forKeyPath:@"playlist" task:^(__unused id obj, __unused NSDictionary *change) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self exportNowPlayingSnapshot];
-            [self reloadWidgetTimelines];
+            [WidgetKitHelper reloadNowPlayingTimeline];
         });
     }];
 
@@ -194,7 +195,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         [self exportSettingsSnapshot];
         [self exportNowPlayingSnapshot];
         [self exportStatsSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadAllTimelines];
         [self _refreshStatsCacheInBackgroundWritingSnapshot:YES reloadWhenDone:NO];
     });
 }
@@ -228,8 +229,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                  [PlaybackManager playbackManager].isPaused);
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        DebugLog(@"[Widget] _playbackDidStart: calling reloadAllTimelines");
-        [WidgetKitHelper reloadAllTimelines];
+        DebugLog(@"[Widget] _playbackDidStart: calling reloadNowPlayingTimeline");
+        [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
 
@@ -242,7 +243,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         [self exportNowPlayingSnapshot];
         [self exportStatsSnapshot];
         [self _persistLastPlayedCache];
-        [WidgetKitHelper reloadAllTimelines];
+        [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
 
@@ -252,8 +253,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                  [PlaybackManager playbackManager].playingEpisode.title ?: @"<nil>");
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        DebugLog(@"[Widget] _playbackDidChangeEpisode: calling reloadAllTimelines");
-        [WidgetKitHelper reloadAllTimelines];
+        DebugLog(@"[Widget] _playbackDidChangeEpisode: calling reloadNowPlayingTimeline");
+        [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
 
@@ -272,14 +273,16 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         [self _persistLastPlayedCache];
         [self _debouncedListsExport];
         [self exportStatsSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadNowPlayingTimeline];
+        [WidgetKitHelper reloadListsTimeline];
+        [WidgetKitHelper reloadStatsTimeline];
     });
 }
 
 - (void)_feedsDidRefresh:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self exportListsSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadListsTimeline];
     });
 }
 
@@ -289,7 +292,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         [self _updateStatsCacheForAddedEpisodes:episodes];
         [self exportStatsSnapshot];
         [self _debouncedListsExport];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadListsTimeline];
+        [WidgetKitHelper reloadStatsTimeline];
     });
 }
 
@@ -297,7 +301,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self _debouncedListsExport];
         [self exportStatsSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadListsTimeline];
+        [WidgetKitHelper reloadStatsTimeline];
     });
 }
 
@@ -305,21 +310,22 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     dispatch_async(dispatch_get_main_queue(), ^{
         [self _debouncedListsExport];
         [self exportStatsSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadListsTimeline];
+        [WidgetKitHelper reloadStatsTimeline];
     });
 }
 
 - (void)_playlistDidChange:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self exportListsSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadListsTimeline];
     });
 }
 
 - (void)_sleepTimerExpired:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self exportNowPlayingSnapshot];
-        [self reloadWidgetTimelines];
+        [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
 
@@ -398,6 +404,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex {
     if (action.length == 0) return;
+
+    // Read and log widget diagnostics from shared container
+    [self _logWidgetDiagnostics];
 
     PlaybackManager *pm = [PlaybackManager playbackManager];
     AudioSession *as = [AudioSession sharedAudioSession];
@@ -483,7 +492,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     if (exportImmediately) {
         [self exportNowPlayingSnapshot];
-        [WidgetKitHelper reloadAllTimelines];
+        [WidgetKitHelper reloadNowPlayingTimeline];
     } else if (scheduleDelayedExport) {
         [self _scheduleControlActionNowPlayingExport];
     }
@@ -493,7 +502,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     if ([keyPath isEqualToString:@"numberOfDownloadedBytes"]) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self exportStatsSnapshot];
-            [self reloadWidgetTimelines];
+            // Only reload Stats widget — download progress doesn't affect NowPlaying or Lists
+            [WidgetKitHelper reloadStatsTimeline];
         });
     } else {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
@@ -501,13 +511,14 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (void)_debouncedNowPlayingExport {
-    NSString *signature = [self _currentNowPlayingReloadSignature];
-    BOOL shouldReload = ![self.lastNowPlayingReloadSignature isEqualToString:signature];
+    // Export the JSON snapshot — the widget reads it on next getTimeline.
+    // Do NOT call reloadTimelines here! During playback, chapter/artwork changes
+    // happen frequently and waste the WidgetKit budget (40-70 reloads/day).
+    // The widget's timeline policy refreshes every 60s during playback, which picks
+    // up the updated JSON. Critical state changes (play/pause, episode change) are
+    // handled by direct reloadNowPlayingTimeline calls in their notification handlers.
     [self exportNowPlayingSnapshot];
-    self.lastNowPlayingReloadSignature = signature;
-    if (shouldReload) {
-        [self reloadWidgetTimelines];
-    }
+    self.lastNowPlayingReloadSignature = [self _currentNowPlayingReloadSignature];
 }
 
 - (void)_debouncedListsExport {
@@ -516,19 +527,21 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_debouncedListsReload {
     [self exportListsSnapshot];
-    [self reloadWidgetTimelines];
+    [WidgetKitHelper reloadListsTimeline];
 }
 
 #pragma mark - Export All
 
 - (void)exportAllSnapshots {
     if (!self.containerURL) return;
+    [self _logWidgetDiagnostics];
     [self exportNowPlayingSnapshot];
     [self _persistLastPlayedCache];
     [self exportListsSnapshot];
     [self exportStatsSnapshot];
     [self exportSettingsSnapshot];
-    [self reloadWidgetTimelines];
+    // Full reload is OK here — only called on app background/startup
+    [WidgetKitHelper reloadAllTimelines];
 }
 
 #pragma mark - Now Playing Export
@@ -985,7 +998,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         self.lastPlaybackStatsRefreshDate = nil;
         if (wroteListeningDelta) {
             [self exportStatsSnapshot];
-            [self reloadWidgetTimelines];
+            [WidgetKitHelper reloadStatsTimeline];
         }
         return;
     }
@@ -998,7 +1011,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     self.lastPlaybackStatsRefreshDate = now;
     [self exportStatsSnapshot];
-    [self reloadWidgetTimelines];
+    [WidgetKitHelper reloadStatsTimeline];
 }
 
 - (NSDictionary *)_readListeningLog {
@@ -1179,7 +1192,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             if (localPath.length > 0) {
                 [self exportListsSnapshot];
                 [self exportNowPlayingSnapshot];
-                [self reloadWidgetTimelines];
+                [WidgetKitHelper reloadListsTimeline];
+                [WidgetKitHelper reloadNowPlayingTimeline];
             }
         });
     }];
@@ -1245,7 +1259,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 [self exportStatsSnapshot];
             }
             if (reloadWhenDone) {
-                [self reloadWidgetTimelines];
+                [WidgetKitHelper reloadStatsTimeline];
             }
         });
     });
@@ -1368,6 +1382,29 @@ static NSString* const kLastPlayedExtraCacheFile    = @"widget_lastplayed_extra.
         self.lastPlayedExtraFields = [NSDictionary dictionaryWithContentsOfURL:exURL];
         DebugLog(@"WidgetDataExporter: restored last played episode '%@' from disk", ep[@"title"]);
     }
+}
+
+#pragma mark - Widget Diagnostics
+
+- (void)_logWidgetDiagnostics {
+    if (!self.containerURL) return;
+    NSURL *diagURL = [self.containerURL URLByAppendingPathComponent:@"widget_diagnostics.json"];
+    NSData *data = [NSData dataWithContentsOfURL:diagURL];
+    if (!data) {
+        DebugLog(@"[Widget Diagnostics] no diagnostics file found");
+        return;
+    }
+    NSArray *entries = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if ([entries isKindOfClass:[NSArray class]]) {
+        for (NSDictionary *entry in entries) {
+            DebugLog(@"[Widget Diagnostics] %@ — %@: %@",
+                     entry[@"time"] ?: @"?",
+                     entry[@"event"] ?: @"?",
+                     entry);
+        }
+    }
+    // Clear after reading
+    [[NSFileManager defaultManager] removeItemAtURL:diagURL error:nil];
 }
 
 #pragma mark - ISO 8601 Helpers

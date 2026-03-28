@@ -8,16 +8,10 @@ struct SmartListEntry: TimelineEntry, Sendable {
     let listId: String
     let episodes: [WEpisode]
     let compact: Bool
+    let needsConfiguration: Bool  // true when no list has been selected yet
 }
 
 struct SmartListProvider: AppIntentTimelineProvider {
-    private static let preferredFallbackListIDs = [
-        "default.unplayed",
-        "default.started",
-        "default.downloaded",
-        "default.favorites",
-        "default.video"
-    ]
 
     func placeholder(in context: Context) -> SmartListEntry {
         SmartListEntry(
@@ -25,22 +19,23 @@ struct SmartListProvider: AppIntentTimelineProvider {
             listName: WidgetSampleData.smartList.listName,
             listId: WidgetSampleData.smartList.listId,
             episodes: WidgetSampleData.smartList.episodes,
-            compact: true
+            compact: true,
+            needsConfiguration: false
         )
     }
 
     func snapshot(for configuration: SmartListConfigIntent, in context: Context) async -> SmartListEntry {
-        let entry = loadEntry(for: configuration)
-        if entry.listId.isEmpty && entry.episodes.isEmpty {
+        if context.isPreview {
             return SmartListEntry(
                 date: Date(),
                 listName: WidgetSampleData.smartList.listName,
                 listId: WidgetSampleData.smartList.listId,
                 episodes: WidgetSampleData.smartList.episodes,
-                compact: configuration.compact
+                compact: configuration.compact,
+                needsConfiguration: false
             )
         }
-        return entry
+        return loadEntry(for: configuration)
     }
 
     func timeline(for configuration: SmartListConfigIntent, in context: Context) async -> Timeline<SmartListEntry> {
@@ -50,20 +45,21 @@ struct SmartListProvider: AppIntentTimelineProvider {
 
     private func loadEntry(for configuration: SmartListConfigIntent) -> SmartListEntry {
         let compact = configuration.compact
+        print("[Widget] SmartListProvider.loadEntry: list=\(configuration.list?.id ?? "nil"), compact=\(compact)")
 
-        if let listEntity = configuration.list {
-            if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
-                return entry(from: listData, compact: compact)
-            }
-            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], compact: compact)
+        // No list selected → show configuration prompt
+        guard let listEntity = configuration.list else {
+            print("[Widget] SmartListProvider: no list configured, showing configuration prompt")
+            return SmartListEntry(date: Date(), listName: "", listId: "", episodes: [], compact: compact, needsConfiguration: true)
         }
 
-        // No list configured — choose the best currently available list.
-        if let fallback = fallbackEntry(excluding: nil, compact: compact) {
-            return fallback
+        if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
+            print("[Widget] SmartListProvider: loaded \(listData.episodes.count) episodes for list '\(listEntity.name)'")
+            return entry(from: listData, compact: compact)
         }
 
-        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], compact: compact)
+        print("[Widget] SmartListProvider: no episode data for list '\(listEntity.name)' (id=\(listEntity.id))")
+        return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], compact: compact, needsConfiguration: false)
     }
 
     private func entry(from listData: WListEpisodes, compact: Bool) -> SmartListEntry {
@@ -72,40 +68,9 @@ struct SmartListProvider: AppIntentTimelineProvider {
             listName: listData.listName,
             listId: listData.listId,
             episodes: listData.episodes,
-            compact: compact
+            compact: compact,
+            needsConfiguration: false
         )
     }
 
-    private func fallbackEntry(excluding excludedListID: String?, compact: Bool) -> SmartListEntry? {
-        guard let list = preferredFallbackList(excluding: excludedListID),
-              let listData = SharedContainerReader.readListEpisodes(listId: list.id) else {
-            return nil
-        }
-        return entry(from: listData, compact: compact)
-    }
-
-    private func preferredFallbackList(excluding excludedListID: String?) -> WList? {
-        guard let lists = SharedContainerReader.readLists(), !lists.isEmpty else { return nil }
-
-        let availableLists = lists.filter { $0.id != excludedListID }
-        guard !availableLists.isEmpty else { return nil }
-
-        for preferredID in Self.preferredFallbackListIDs {
-            if let list = availableLists.first(where: { $0.id == preferredID && $0.episodeCount > 0 }) {
-                return list
-            }
-        }
-
-        if let firstNonEmpty = availableLists.first(where: { $0.episodeCount > 0 }) {
-            return firstNonEmpty
-        }
-
-        for preferredID in Self.preferredFallbackListIDs {
-            if let list = availableLists.first(where: { $0.id == preferredID }) {
-                return list
-            }
-        }
-
-        return availableLists.first
-    }
 }

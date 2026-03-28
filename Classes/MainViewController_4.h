@@ -15,4 +15,5 @@
 + (instancetype) mainViewController;
 
 - (void) showShowNotesOfEpisode:(CDEpisode*)episode animated:(BOOL)animated;
+- (void) showUpNext;
 @end

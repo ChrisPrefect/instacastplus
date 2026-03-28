@@ -12,6 +12,7 @@ struct SmartListWidget: Widget {
         .configurationDisplayName(NSLocalizedString("widget.smartlist.name", comment: ""))
         .description(NSLocalizedString("widget.smartlist.description", comment: ""))
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -45,7 +46,9 @@ struct SmartListWidgetView: View {
 
     var body: some View {
         Group {
-            if entry.episodes.isEmpty {
+            if entry.needsConfiguration {
+                WidgetEmptyStateView(icon: "list.bullet.rectangle", message: NSLocalizedString("widget.empty.needsconfig", comment: ""))
+            } else if entry.episodes.isEmpty {
                 WidgetEmptyStateView(icon: "tray", message: NSLocalizedString("widget.empty.noepisodes", comment: ""))
             } else {
                 switch family {
@@ -99,7 +102,7 @@ struct SmartListWidgetView: View {
 
                         Spacer(minLength: 0)
                     }
-                    .padding(2)
+                    .padding(8)
                 }
             }
         }
@@ -127,7 +130,7 @@ struct SmartListWidgetView: View {
                 }
             }
         }
-        .padding(4)
+        .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
     }
@@ -138,7 +141,7 @@ struct SmartListWidgetView: View {
         GeometryReader { geometry in
             let items = Array(entry.episodes.prefix(maxEpisodes))
             let rowCount = max(1, (items.count + 1) / 2)
-            let contentHeight = max(0, geometry.size.height - 8)  // minimal vertical padding
+            let contentHeight = max(0, geometry.size.height - 16)  // vertical padding (8+8)
             let rowSpacing: CGFloat = 3
             let rowsSpacingTotal = CGFloat(max(0, rowCount - 1)) * rowSpacing
             let cellHeight = max(26, (contentHeight - rowsSpacingTotal) / CGFloat(rowCount))
@@ -167,8 +170,8 @@ struct SmartListWidgetView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
         }
         .clipped()
     }
