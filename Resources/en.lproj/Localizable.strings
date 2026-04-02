@@ -977,6 +977,8 @@
 "Swipe Right" = "Swipe Right";
 "Swipe Left" = "Swipe Left";
 "Mark as Played / Unplayed" = "Mark as Played / Unplayed";
+"Delete Episode from List" = "Delete Episode from List";
+"Show Show Notes" = "Show Show Notes";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";

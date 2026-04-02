@@ -981,6 +981,8 @@
 "Swipe Right" = "Nach rechts wischen";
 "Swipe Left" = "Nach links wischen";
 "Mark as Played / Unplayed" = "Gehört / Ungehört markieren";
+"Delete Episode from List" = "Episode aus Liste löschen";
+"Show Show Notes" = "Show Notes anzeigen";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";

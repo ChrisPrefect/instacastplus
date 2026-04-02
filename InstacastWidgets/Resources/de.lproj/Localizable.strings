@@ -22,7 +22,6 @@
 "widget.empty.noepisodes" = "Keine Episoden";
 "widget.empty.nosubscriptions" = "Keine Abonnements";
 "widget.empty.nostats" = "Keine Statistiken";
-"widget.empty.needsconfig" = "Widget bearbeiten um Episoden-Liste auszuwählen";
 
 "widget.nowplaying.label" = "AKTUELLE WIEDERGABE";
 "widget.listened.header" = "Gehört";

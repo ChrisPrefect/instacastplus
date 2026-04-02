@@ -119,7 +119,7 @@ struct WListEpisodes: Codable, Sendable {
     let listId: String
     let listName: String
     let episodes: [WEpisode]
-    let timestamp: Date?  // optional for robustness with older data
+    let timestamp: Date
 }
 
 // MARK: - Settings Snapshot

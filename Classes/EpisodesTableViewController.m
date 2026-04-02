@@ -1086,10 +1086,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         }
         case ICEpisodeSwipeActionAddToPlayNext:
         {
-            if ([episode isEqual:[AudioSession sharedAudioSession].episode]) {
-                break;
-            }
-
             BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
             NSString* toastText;
 
@@ -1234,16 +1230,28 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 }];
     [actions addObject:playedAction];
 
-    // Add to Play Next (only if not currently playing)
-    AudioSession* session = [AudioSession sharedAudioSession];
-    if (![episode isEqual:session.episode]) {
-        UIAction* playNextAction = [UIAction actionWithTitle:@"Add to Play Next".ls
-                                                       image:[UIImage systemImageNamed:@"list.bullet.indent"]
+    // Add to / Remove from Play Next
+    {
+        BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
+        NSString* title = inUpNext ? @"Remove from Play Next".ls : @"Add to Play Next".ls;
+        UIImage* icon = [UIImage systemImageNamed:@"list.bullet.indent"];
+        if (inUpNext) {
+            icon = [icon imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal];
+        }
+        UIAction* playNextAction = [UIAction actionWithTitle:title
+                                                       image:icon
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
-                                                         [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
-                                                         AudioServicesPlaySystemSound(1519);
-                                                         [weakSelf _showPlayNextToastWithText:@"Added to Play Next".ls added:YES];
+                                                         BOOL wasInUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
+                                                         if (wasInUpNext) {
+                                                             [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+                                                             AudioServicesPlaySystemSound(1519);
+                                                             [weakSelf _showPlayNextToastWithText:@"Removed from Play Next".ls added:NO];
+                                                         } else {
+                                                             [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
+                                                             AudioServicesPlaySystemSound(1519);
+                                                             [weakSelf _showPlayNextToastWithText:@"Added to Play Next".ls added:YES];
+                                                         }
                                                      }];
         [actions addObject:playNextAction];
     }

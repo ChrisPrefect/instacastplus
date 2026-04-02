@@ -28,6 +28,7 @@ typedef NSInteger SettingValueType;
 @property (nonatomic, strong) NSString* titleStr;
 @property (nonatomic, assign) SettingValueType valueType;
 @property (nonatomic, strong) NSArray* titles;
+@property (nonatomic, strong) NSArray* images;
 @property (nonatomic, strong) NSArray* values;
 @property (nonatomic, strong) NSString* footerText;
 

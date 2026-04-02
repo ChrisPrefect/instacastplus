@@ -113,8 +113,8 @@ Alle Stellen (Swipe-Aktionen, Context-Menüs, Popup-Menüs, Toolbars) MÜSSEN id
 | Favorit entfernen | `star.slash` | — | Grau |
 | Als gehört markieren | `circle` | — | Grau |
 | Als ungehört markieren | `circle.fill` | — | Akzentfarbe |
-| Zur Abspielliste hinzufügen | `text.badge.plus` | — | Akzentfarbe |
-| Aus Abspielliste entfernen | `text.badge.minus` | — | Grau |
+| Zur Abspielliste hinzufügen | `list.bullet.indent` | — | Akzentfarbe |
+| Aus Abspielliste entfernen | `list.bullet.indent` | — | Grau |
 | Episoden Info | `info.circle` | — | Akzentfarbe |
 | Play Next (Seitenmenü/Tab) | `list.bullet.indent` | — | — |
 | Abspielen | `play.fill` | — | — |

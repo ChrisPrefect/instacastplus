@@ -697,12 +697,21 @@ API_AVAILABLE(ios(14.0)){
             @(ICEpisodeSwipeActionEpisodeInfo)
         ];
         controller.titles = @[
-            @"Mark as Played / Unplayed".ls,
+            @"Mark as Played".ls,
             @"Mark as Favorite".ls,
             @"Download".ls,
             @"Add to Play Next".ls,
-            @"Delete".ls,
-            @"Episode Info".ls
+            @"Delete Episode from List".ls,
+            @"Show Show Notes".ls
+        ];
+        UIImageSymbolConfiguration* symbolConfig = [UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleMedium];
+        controller.images = @[
+            [UIImage systemImageNamed:@"circle" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"star" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"square.and.arrow.down" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
         ];
         [self.navigationController pushViewController:controller animated:YES];
         return;
@@ -813,13 +822,13 @@ API_AVAILABLE(ios(14.0)){
 - (NSString*) _titleForSwipeAction:(NSInteger)action
 {
     switch (action) {
-        case ICEpisodeSwipeActionTogglePlayed: return @"Mark as Played / Unplayed".ls;
+        case ICEpisodeSwipeActionTogglePlayed: return @"Mark as Played".ls;
         case ICEpisodeSwipeActionToggleFavorite: return @"Mark as Favorite".ls;
         case ICEpisodeSwipeActionDownload: return @"Download".ls;
         case ICEpisodeSwipeActionAddToPlayNext: return @"Add to Play Next".ls;
-        case ICEpisodeSwipeActionDelete: return @"Delete".ls;
-        case ICEpisodeSwipeActionEpisodeInfo: return @"Episode Info".ls;
-        default: return @"Mark as Played / Unplayed".ls;
+        case ICEpisodeSwipeActionDelete: return @"Delete Episode from List".ls;
+        case ICEpisodeSwipeActionEpisodeInfo: return @"Show Show Notes".ls;
+        default: return @"Mark as Played".ls;
     }
 }
 

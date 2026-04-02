@@ -89,6 +89,10 @@
     UITableViewCell* cell = [self standardCell];
     
     cell.textLabel.text = [self.titles objectAtIndex:indexPath.row];
+    if (self.images && indexPath.row < (NSInteger)self.images.count) {
+        cell.imageView.image = self.images[indexPath.row];
+        cell.imageView.tintColor = ICTextColor;
+    }
     cell.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
     if (self.valueType == kSettingTypeInteger) {
         NSNumber* value = [NSNumber numberWithInteger:[[self source] integerForKey:self.key]];

@@ -243,6 +243,14 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     return nil;
 }
 
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
+{
+    if (section == kCarPlaySection) {
+        return 12;
+    }
+    return UITableViewAutomaticDimension;
+}
+
 - (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section
 {
     UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
@@ -390,10 +398,13 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
     if (!_thresholdHighlighted) {
         _thresholdHighlighted = YES;
         NSString *text = label.text;
-        NSRange lastSpace = [text rangeOfString:@" " options:NSBackwardsSearch];
-        NSRange wordRange = (lastSpace.location != NSNotFound)
-            ? NSMakeRange(lastSpace.location + 1, text.length - lastSpace.location - 1)
-            : NSMakeRange(0, text.length);
+        NSRange wordRange = [text rangeOfString:@"Bewegung"];
+        if (wordRange.location == NSNotFound) {
+            wordRange = [text rangeOfString:@"Motion"];
+        }
+        if (wordRange.location == NSNotFound) {
+            wordRange = NSMakeRange(0, text.length);
+        }
 
         NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:text attributes:@{
             NSFontAttributeName: label.font,

@@ -6,6 +6,8 @@
 //  Copyright 2011 Vemedio. All rights reserved.
 //
 
+#import <AudioToolbox/AudioToolbox.h>
+
 #import "EpisodeViewController.h"
 #import "UIManager.h"
 
@@ -1287,6 +1289,26 @@
         [self _updateTimeDisplay];
         [self updatePlayComboButtonState];
     }]];
+
+    // Add to / Remove from Play Next
+    {
+        BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:self.episode];
+        NSString* upNextTitle = inUpNext ? @"Remove from Play Next".ls : @"Add to Play Next".ls;
+        UIImage* upNextIcon = [UIImage systemImageNamed:@"list.bullet.indent"];
+        if (inUpNext) {
+            upNextIcon = [upNextIcon imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal];
+        }
+        [actions addObject:[UIAction actionWithTitle:upNextTitle image:upNextIcon identifier:nil handler:^(UIAction *action) {
+            STRONG_SELF
+            BOOL wasInUpNext = [[AudioSession sharedAudioSession].playlist containsObject:self.episode];
+            if (wasInUpNext) {
+                [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[self.episode]];
+            } else {
+                [[AudioSession sharedAudioSession] appendToUpNext:@[self.episode]];
+            }
+            AudioServicesPlaySystemSound(1519);
+        }]];
+    }
 
     return [UIMenu menuWithTitle:@"" children:actions];
 }

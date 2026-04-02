@@ -96,10 +96,10 @@ struct EpisodeRowView: View {
 
     private var artworkSize: CGFloat {
         switch widgetFamily {
-        case .systemSmall: return 40
-        case .systemMedium: return 42
-        case .systemLarge: return 40
-        default: return 42
+        case .systemSmall: return 44
+        case .systemMedium: return 48
+        case .systemLarge: return 46
+        default: return 48
         }
     }
 
@@ -108,7 +108,7 @@ struct EpisodeRowView: View {
     }
 
     private var titleFontSize: CGFloat {
-        widgetFamily == .systemSmall ? 13 : 14
+        widgetFamily == .systemSmall ? 12 : 13
     }
 
     private var subtitleFontSize: CGFloat {

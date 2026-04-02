@@ -42,23 +42,11 @@ struct ListEntityQuery: EntityStringQuery {
     }
 
     func suggestedEntities() async throws -> [ListEntity] {
-        let lists = Self.loadLists()
-        print("[Widget] ListEntityQuery.suggestedEntities: \(lists.count) lists")
-        return lists
-    }
-
-    func defaultResult() async -> ListEntity? {
-        let first = Self.loadLists().first
-        print("[Widget] ListEntityQuery.defaultResult: \(first?.name ?? "nil")")
-        return first
+        Self.loadLists()
     }
 
     static func loadLists() -> [ListEntity] {
-        guard let wLists = SharedContainerReader.readLists() else {
-            print("[Widget] ListEntityQuery.loadLists: readLists() returned nil")
-            return []
-        }
-        print("[Widget] ListEntityQuery.loadLists: \(wLists.count) lists found")
+        guard let wLists = SharedContainerReader.readLists() else { return [] }
         return wLists.map { ListEntity(id: $0.id, name: $0.name) }
     }
 }

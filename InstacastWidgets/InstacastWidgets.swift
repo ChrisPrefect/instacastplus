@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct InstacastWidgets: WidgetBundle {
     var body: some Widget {
-        NowPlayingWidget()
+        // NowPlayingWidget() — disabled until WidgetKit supports reliable interactive controls
         SmartListWidget()
         StatsWidget()
         LockScreenCircularWidget()

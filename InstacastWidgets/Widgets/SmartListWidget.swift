@@ -22,21 +22,26 @@ struct SmartListWidgetView: View {
     let entry: SmartListEntry
     @Environment(\.widgetFamily) var family
 
-    private var maxEpisodes: Int {
-        if entry.compact {
-            switch family {
-            case .systemSmall: return 1
-            case .systemMedium: return 6   // 2 columns × 3 rows
-            case .systemLarge: return 14   // 2 columns × 7 rows
-            default: return 6
-            }
-        }
+    /// Max rows in non-compact (full-width) list mode
+    private var maxListRows: Int {
         switch family {
         case .systemSmall: return 1
         case .systemMedium: return 2
         case .systemLarge: return 6
         default: return 2
         }
+    }
+
+    private var maxEpisodes: Int {
+        if entry.compact {
+            switch family {
+            case .systemSmall: return 4
+            case .systemMedium: return 6   // 2 columns × 3 rows
+            case .systemLarge: return 14   // 2 columns × 7 rows
+            default: return 6
+            }
+        }
+        return maxListRows
     }
 
     /// Always opens player and starts playback
@@ -46,16 +51,20 @@ struct SmartListWidgetView: View {
 
     var body: some View {
         Group {
-            if entry.needsConfiguration {
-                WidgetEmptyStateView(icon: "list.bullet.rectangle", message: NSLocalizedString("widget.empty.needsconfig", comment: ""))
-            } else if entry.episodes.isEmpty {
+            if entry.episodes.isEmpty {
                 WidgetEmptyStateView(icon: "tray", message: NSLocalizedString("widget.empty.noepisodes", comment: ""))
             } else {
                 switch family {
                 case .systemSmall:
-                    smallView
+                    if !entry.compact || entry.episodes.count <= 1 {
+                        smallView
+                    } else if entry.episodes.count <= 2 {
+                        smallListView
+                    } else {
+                        smallCompactView
+                    }
                 default:
-                    if entry.compact {
+                    if entry.compact && entry.episodes.count > maxListRows {
                         compactGridView
                     } else {
                         listView
@@ -73,11 +82,13 @@ struct SmartListWidgetView: View {
             if let episode = entry.episodes.first {
                 Link(destination: episodeTapURL(for: episode)) {
                     VStack(alignment: .leading, spacing: 6) {
+                        Spacer(minLength: 0)
+
                         if let image = WidgetImageLoader.loadImage(relativePath: episode.localImagePath) {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 44, height: 44)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                         } else {
                             RoundedRectangle(cornerRadius: 8)
@@ -85,35 +96,35 @@ struct SmartListWidgetView: View {
                                 .overlay(
                                     Image(systemName: "mic.fill")
                                         .foregroundColor(.gray.opacity(0.5))
-                                        .font(.system(size: 18))
+                                        .font(.system(size: 16))
                                 )
-                                .frame(width: 50, height: 50)
+                                .frame(width: 44, height: 44)
                         }
 
                         Text(episode.title)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(2)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(3)
                             .foregroundColor(.primary)
 
                         Text(episode.feedTitle)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .lineLimit(1)
                             .foregroundColor(.secondary)
 
                         Spacer(minLength: 0)
                     }
-                    .padding(8)
+                    .padding(12)
                 }
             }
         }
     }
 
-    // MARK: - Medium / Large (list)
+    // MARK: - Small List (2 episodes, full width)
 
-    private var listView: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            let items = Array(entry.episodes.prefix(maxEpisodes))
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, episode in
+    private var smallListView: some View {
+        let items = Array(entry.episodes.prefix(2))
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(items, id: \.id) { episode in
                 Link(destination: episodeTapURL(for: episode)) {
                     EpisodeRowView(
                         episode: episode,
@@ -123,15 +134,73 @@ struct SmartListWidgetView: View {
                         widgetFamily: family
                     )
                 }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
 
-                if index < items.count - 1 {
-                    Divider()
-                        .padding(.leading, 54)
+    // MARK: - Small Compact (3-4 episodes with small artwork)
+
+    private var smallCompactView: some View {
+        let items = Array(entry.episodes.prefix(4))
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(items, id: \.id) { episode in
+                Link(destination: episodeTapURL(for: episode)) {
+                    HStack(spacing: 8) {
+                        Group {
+                            if let image = WidgetImageLoader.loadImage(relativePath: episode.localImagePath) {
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } else {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.gray.opacity(0.2))
+                                    .overlay(
+                                        Image(systemName: "mic.fill")
+                                            .foregroundColor(.gray.opacity(0.5))
+                                            .font(.system(size: 9))
+                                    )
+                            }
+                        }
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                        Text(episode.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(2)
+                            .foregroundColor(.primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
-        .padding(8)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: - Medium / Large (list)
+
+    private var listView: some View {
+        let items = Array(entry.episodes.prefix(maxEpisodes))
+        let rowSpacing: CGFloat = family == .systemLarge ? 8 : 6
+
+        return VStack(alignment: .leading, spacing: rowSpacing) {
+            ForEach(items, id: \.id) { episode in
+                Link(destination: episodeTapURL(for: episode)) {
+                    EpisodeRowView(
+                        episode: episode,
+                        showFeedTitle: true,
+                        feedTitleAbove: true,
+                        showProgress: false,
+                        widgetFamily: family
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, family == .systemLarge ? 12 : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: family == .systemMedium ? .center : .topLeading)
         .clipped()
     }
 
@@ -141,7 +210,7 @@ struct SmartListWidgetView: View {
         GeometryReader { geometry in
             let items = Array(entry.episodes.prefix(maxEpisodes))
             let rowCount = max(1, (items.count + 1) / 2)
-            let contentHeight = max(0, geometry.size.height - 16)  // vertical padding (8+8)
+            let contentHeight = max(0, geometry.size.height - 16)  // vertical padding 8+8
             let rowSpacing: CGFloat = 3
             let rowsSpacingTotal = CGFloat(max(0, rowCount - 1)) * rowSpacing
             let cellHeight = max(26, (contentHeight - rowsSpacingTotal) / CGFloat(rowCount))
@@ -170,7 +239,7 @@ struct SmartListWidgetView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
         .clipped()
@@ -178,7 +247,7 @@ struct SmartListWidgetView: View {
 
     /// Compact episode cell for 2-column layout
     private func compactEpisodeCell(episode: WEpisode, height: CGFloat) -> some View {
-        let artworkSize = max(26, min(36, height - 4))
+        let artworkSize = max(30, min(42, height - 2))
 
         return HStack(spacing: 6) {
             // Artwork
@@ -188,22 +257,22 @@ struct SmartListWidgetView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } else {
-                    RoundedRectangle(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 5)
                         .fill(Color.gray.opacity(0.2))
                         .overlay(
                             Image(systemName: "mic.fill")
                                 .foregroundColor(.gray.opacity(0.5))
-                                .font(.system(size: 11))
+                                .font(.system(size: 12))
                         )
                 }
             }
             .frame(width: artworkSize, height: artworkSize)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: 5))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(episode.title)
                     .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .foregroundColor(.primary)
 
                 Text(episode.formattedTimeLeft)
