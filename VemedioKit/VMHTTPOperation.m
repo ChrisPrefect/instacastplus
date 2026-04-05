@@ -196,16 +196,6 @@
 
         else
         {
-#ifdef DEBUG
-            if (statusCode == 404) {
-                DebugLog(@"status code >= 300 (%ld): %@", (long)statusCode, [request.URL absoluteString]);
-            }
-
-            else if (statusCode >= 300 && statusCode != 304) {
-                NSString* content = [[NSString alloc] initWithData:self.connectionData encoding:NSUTF8StringEncoding];
-                DebugLog(@"status code >= 300 (%ld)\n%@:\n%@\n", (long)statusCode, [request.URL absoluteString], content);
-            }
-#endif
             data = self.connectionData;
             self.connectionData = nil;
             self.dataTask = nil;

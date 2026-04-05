@@ -240,13 +240,6 @@
 {
     [super viewDidAppear:animated];
 
-    // Debug: check floating button sizes to diagnose safari button size mismatch
-    if (@available(iOS 26.0, *)) {
-        DebugLog(@"FloatingButton frames — back: %@ forward: %@ safari: %@",
-            NSStringFromCGSize(self.floatingBackButton.bounds.size),
-            NSStringFromCGSize(self.floatingForwardButton.bounds.size),
-            NSStringFromCGSize(self.floatingSafariButton.bounds.size));
-    }
 }
 
 - (void) viewWillAppear:(BOOL)animated

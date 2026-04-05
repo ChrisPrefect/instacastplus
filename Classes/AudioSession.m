@@ -211,9 +211,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         NSDictionary* userInfo = [notification userInfo];
         NSInteger interruptionType = [userInfo[AVAudioSessionInterruptionTypeKey] integerValue];
         NSInteger option = [userInfo[AVAudioSessionInterruptionOptionKey] integerValue];
-        
-        DebugLog(@"userInfo: %@", userInfo);
-        
+
         BOOL wasPlaying = pman.hasBeenPlayingWhenInterrupted;
         
         if (interruptionType == AVAudioSessionInterruptionTypeBegan) {
@@ -246,8 +244,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         PlaybackManager* pman = [PlaybackManager playbackManager];
         
         NSDictionary* userInfo = [notification userInfo];
-        DebugLog(@"userInfo: %@", userInfo);
-        
+
         [self willChangeValueForKey:@"airPlayActive"];
         [self didChangeValueForKey:@"airPlayActive"];
         
@@ -420,8 +417,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     if (self.episode) {
         self.episode = nil;
         [self _savePlaybackStateInUserDefaults];
-
-        DebugLog(@"endReceivingRemoteControlEvents");
 
         [[UIApplication sharedApplication] endReceivingRemoteControlEvents];
         [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = nil;
@@ -823,7 +818,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         }];
 
     [self.silentPlayer play];
-    DebugLog(@"Started silent playback for background keep-alive");
 }
 
 - (void)stopSilentPlayback
@@ -836,7 +830,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     if (self.silentPlayer) {
         [self.silentPlayer pause];
         self.silentPlayer = nil;
-        DebugLog(@"Stopped silent playback");
     }
 }
 

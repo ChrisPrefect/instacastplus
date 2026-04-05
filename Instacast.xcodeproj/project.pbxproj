@@ -261,7 +261,6 @@
 		1D60589F0D05DD5A006BFB54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D30AB110D05D00D00671497 /* Foundation.framework */; };
 		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
 		230AD9362F6768BAECE4F8F7 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
-		C300DED378385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
 		288765FD0DF74451002DB57D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 288765FC0DF74451002DB57D /* CoreGraphics.framework */; };
 		3A9DED9C0252967C790B7883 /* InstacastWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3CCB7C121A2E030E38E79C3E /* NowPlayingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */; };
@@ -293,6 +292,7 @@
 		AE12279A77DE7A93EEDD0DED /* WidgetControlIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C56C700102BB7C820DF5AC17 /* WidgetControlIntents.swift */; };
 		B11A4DA81C178356BE3E0D86 /* StatsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA31224D071849FE16A7472 /* StatsWidget.swift */; };
 		BDDA2F12D823EEED173BED3F /* SmartListWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB33E265B93207D959630A1 /* SmartListWidget.swift */; };
+		C300DED378385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
 		C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */; };
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
@@ -810,7 +810,6 @@
 		1DF5F4DF0D08C38300B7A737 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		2030BFC1217ACA7E4CF62D1A /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		27C03CE231950A5FA4157032 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		8C668B14C6578204577EC82B /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 		288765FC0DF74451002DB57D /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		2EB5A45E6C7CB1D718F47F10 /* InstacastWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InstacastWidgets.swift; sourceTree = "<group>"; };
@@ -834,6 +833,7 @@
 		835A5B0F2F33BBFE00A70766 /* ICMQTTClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ICMQTTClient.m; path = MQTT/ICMQTTClient.m; sourceTree = "<group>"; };
 		83D65DA92F2F6A9000A3CC18 /* EpisodeLoadingManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = EpisodeLoadingManager.h; path = Classes/Model/EpisodeLoadingManager.h; sourceTree = "<group>"; };
 		83D65DAA2F2F6A9000A3CC18 /* EpisodeLoadingManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = EpisodeLoadingManager.m; path = Classes/Model/EpisodeLoadingManager.m; sourceTree = "<group>"; };
+		8C668B14C6578204577EC82B /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 		8F18A9A9049D062D880172CA /* SmartListProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmartListProvider.swift; sourceTree = "<group>"; };
 		9259B7F12D20FA990035AA91 /* SettingInputViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SettingInputViewController.h; sourceTree = "<group>"; };
 		9259B7F22D20FA990035AA91 /* SettingInputViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SettingInputViewController.m; sourceTree = "<group>"; };
@@ -2464,6 +2464,7 @@
 			baseConfigurationReference = 1B6465D512EF0CE400657F1D /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_VERSION = 3.2;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
@@ -2688,6 +2689,7 @@
 			baseConfigurationReference = 1B6465D512EF0CE400657F1D /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				BUNDLE_VERSION = 3.2;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;

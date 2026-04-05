@@ -50,7 +50,6 @@ static void runOnMain(void (^block)(void)) {
     runOnMain(^{
         [[EpisodeLoadingManager sharedManager] cancelAllLoading];
     });
-    DebugLog(@"BackupImporter: cancelImport — operation cancelled");
 }
 
 + (void)skipCurrentFeed {
@@ -520,11 +519,7 @@ static void runOnMain(void (^block)(void)) {
      wasCancelled:(BOOL)wasCancelled
        completion:(void(^)(NSInteger importedCount, NSError *error))completion
 {
-    NSDate *start = [NSDate date];
-    DebugLog(@"BackupImporter: _finalize START");
-
     [DMANAGER save];
-    DebugLog(@"BackupImporter: _finalize save: %.3fs", -[start timeIntervalSinceNow]);
 
     // Resume ELM — all feeds should be fully loaded already, but just in case
     [EpisodeLoadingManager sharedManager].suspended = NO;
@@ -532,10 +527,8 @@ static void runOnMain(void (^block)(void)) {
     if (categories & ICBackupImportSettings) {
         [[ICAppearanceManager sharedManager] updateAppearance];
     }
-    DebugLog(@"BackupImporter: _finalize appearance: %.3fs", -[start timeIntervalSinceNow]);
 
     [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
-    DebugLog(@"BackupImporter: _finalize OPMLNotification: %.3fs", -[start timeIntervalSinceNow]);
 
     if (!wasCancelled && (categories & ICBackupImportSettings)) {
         NSString *backupIcon = backup.settings.values[@"appIcon"];
@@ -555,8 +548,6 @@ static void runOnMain(void (^block)(void)) {
     _guidIndexByFeedURL = nil;
     _feedURLMapping = nil;
     _currentOperation = nil;
-
-    DebugLog(@"BackupImporter: _finalize DONE: %.3fs", -[start timeIntervalSinceNow]);
 
     if (completion) {
         NSError *error = wasCancelled
@@ -585,7 +576,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         }
         _guidIndexByFeedURL[key] = index;
     }
-    DebugLog(@"BackupImporter: Built GUID index for %lu feeds", (unsigned long)_guidIndexByFeedURL.count);
 }
 
 /// Map a backup feedURL to the actual feed sourceURL stored in Core Data.
@@ -652,10 +642,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     if (!feedURL) return 0;
 
     CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
-    if (!feed) {
-        DebugLog(@"BackupImporter: EpisodeStatus — Feed not found for URL: %@", podcast.feedURL);
-        return 0;
-    }
+    if (!feed) return 0;
 
     // Build backup episode lookup by GUID
     NSMutableDictionary<NSString *, ICBackupEpisode *> *backupEpisodesByGuid = [NSMutableDictionary dictionaryWithCapacity:podcast.episodes.count];
@@ -666,8 +653,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     }
 
     NSInteger count = 0;
-    NSInteger feedMarkedPlayed = 0;
-    NSInteger feedMarkedUnplayed = 0;
 
     for (CDEpisode *episode in feed.episodes) {
         if (!episode.guid) continue;
@@ -678,11 +663,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             BOOL shouldBeConsumed = backupEp.played;
             if (shouldBeConsumed != episode.consumed) {
                 episode.consumed = shouldBeConsumed;
-                if (shouldBeConsumed) {
-                    feedMarkedPlayed++;
-                } else {
-                    feedMarkedUnplayed++;
-                }
                 count++;
             }
 
@@ -708,15 +688,10 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         } else {
             if (episode.consumed) {
                 episode.consumed = NO;
-                feedMarkedUnplayed++;
                 count++;
             }
         }
     }
-
-    DebugLog(@"BackupImporter: EpisodeStatus — %@: %ld episodes, %ld in backup, %ld→played, %ld→unplayed",
-             feed.title, (long)feed.episodes.count, (long)backupEpisodesByGuid.count,
-             (long)feedMarkedPlayed, (long)feedMarkedUnplayed);
 
     return count;
 }
@@ -1203,16 +1178,12 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         [USER_DEFAULTS setObject:pendingDownloads forKey:kPendingBackupDownloadsKey];
     }
 
-    DebugLog(@"BackupImporter: Saved %ld episodes for deferred download", (long)count);
     return count;
 }
 
 + (void)processPendingDownloads {
     NSArray *pendingDownloads = [USER_DEFAULTS objectForKey:kPendingBackupDownloadsKey];
     if (!pendingDownloads || pendingDownloads.count == 0) return;
-
-    DebugLog(@"BackupImporter: processPendingDownloads START (%lu entries)", (unsigned long)pendingDownloads.count);
-    NSDate *dlStart = [NSDate date];
 
     NSInteger queued = 0;
     NSMutableArray *remaining = [NSMutableArray array];
@@ -1253,8 +1224,6 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         [USER_DEFAULTS removeObjectForKey:kPendingBackupDownloadsKey];
     }
 
-    DebugLog(@"BackupImporter: processPendingDownloads DONE: %.3fs, queued=%ld, remaining=%lu",
-             -[dlStart timeIntervalSinceNow], (long)queued, (unsigned long)remaining.count);
 }
 
 #pragma mark - Helper

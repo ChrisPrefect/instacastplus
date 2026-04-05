@@ -32,13 +32,10 @@
             break;
         }
     };
-    //DebugLog(@"_mySetNavigationControllerContentInsetAdjustment %@", NSStringFromClass([self class]));
 }
 
 - (void) _mySetNavigationControllerContentOffsetAdjustment:(float)offset
 {
-    //DebugLog(@"_mySetNavigationControllerContentOffsetAdjustment %@", NSStringFromClass([self class]));
-
     NSString* className = NSStringFromClass([self class]);
     NSArray* systemControllerWhitelist = @[@"_UIActivity", @"MFMail"];
     for (NSString* classNamePrefix in systemControllerWhitelist) {

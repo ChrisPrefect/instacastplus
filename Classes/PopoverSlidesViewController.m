@@ -90,7 +90,6 @@ static NSString* reuseIdentifier = @"PopoverSlidesCell";
             layout.scrolledIndexPath = cellPath;
             [self.collectionView scrollToItemAtIndexPath:cellPath atScrollPosition:UICollectionViewScrollPositionCenteredHorizontally animated:YES];
         }
-        DebugLog(@"%@", cellPath);
     }
 }
 @end

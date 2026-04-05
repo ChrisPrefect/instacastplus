@@ -9,6 +9,7 @@
 #import "GeneralSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "SettingsValuesTableViewController.h"
+#import "Language.h"
 #import "PlaybackDefines.h"
 #import "InstacastAppDelegate.h"
 #import "ChapterImageCell.h"
@@ -77,6 +78,9 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+
+    // Update title in case language changed
+    self.navigationItem.title = @"General".ls;
 
     // SettingsValuesTableViewController sets the UserDefault directly,
     // so trigger appearance update when returning from Appearance mode selection.
@@ -207,12 +211,12 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     }
     else if (indexPath.section == kLanguage)
     {
-        NSDictionary* lngValues = @{ @1 : @"English".ls, @2 : @"German".ls};
+        NSDictionary* lngValues = @{ @1 : @"English", @2 : @"Deutsch"};
         UITableViewCell* cell = [self detailCell];
         cell.textLabel.text = @"Language".ls;
-        NSInteger period = [USER_DEFAULTS integerForKey:SelectedAppLanguage];
-        cell.detailTextLabel.text = lngValues[@(period)];
-        
+        NSInteger selectedLanguage = [USER_DEFAULTS integerForKey:SelectedAppLanguage];
+        cell.detailTextLabel.text = lngValues[@(selectedLanguage)];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
     }
     else if (indexPath.section == kPlaybackSection)
@@ -877,17 +881,13 @@ API_AVAILABLE(ios(14.0)){
     
     else if (indexPath.section == kLanguage)
     {
-        /*
         SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
         controller.valueType = kSettingTypeInteger;
         controller.key = SelectedAppLanguage;
         controller.title = @"Language".ls;
-        controller.values = @[ @1, @2];
-        controller.titles = @[ @"English".ls, @"German".ls];
+        controller.values = @[ @1, @2 ];
+        controller.titles = @[ @"English", @"Deutsch" ];
         [self.navigationController pushViewController:controller animated:YES];
-         */
-        NSURL *settingsURL = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
-        [[UIApplication sharedApplication] openURL:settingsURL options:@{} completionHandler:nil];
     }
     
     else if (indexPath.section == kPlaybackSection)

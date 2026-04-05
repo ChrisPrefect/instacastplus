@@ -77,8 +77,6 @@ NSString* kiTunesStoreCollectionId = @"kiTunesStoreCollectionId";
 		[searchURLString appendFormat:@"&term=%@", encodedSearchString];
 	}
 
-	DebugLog(@"%@",searchURLString);
-
 	return [NSURLRequest requestWithURL:[NSURL URLWithString:searchURLString] cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20.0f];
 }
 

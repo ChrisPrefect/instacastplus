@@ -1151,7 +1151,6 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _setNowPlayingInfoOfEpisode:(CDEpisode*)anEpisode
 {
-    //DebugLog(@"_setNowPlayingInfoOfEpisode");
 #if TARGET_OS_IPHONE
     if (!self.nowPlayingInfo) {
         self.nowPlayingInfo = [NSMutableDictionary dictionary];
@@ -1822,7 +1821,6 @@ didReceiveResponse:(NSURLResponse *)response
 
     [self.player addTaskObserver:self forKeyPath:@"rate" task:^(id obj, NSDictionary *change)
     {
-       // DebugLog(@"kPlayerRateChangedContext: %lf", weakSelf.player.rate);
         float rate = weakSelf.player.rate;
                 
         if (rate > 0 && weakSelf.state == ShouldRunState) {
@@ -2837,8 +2835,6 @@ didReceiveResponse:(NSURLResponse *)response
         time = self.time;
     }
     
-    //DebugLog(@"time %f",time);
-	
 	NSInteger i;
 	NSInteger c = -1;
 	

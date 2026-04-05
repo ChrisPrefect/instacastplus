@@ -222,8 +222,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
         self.session = activeSession;
 
         [activeSession getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
-            DebugLog(@"download tasks %lu", (unsigned long)[downloadTasks count]);
-
             if ([downloadTasks count] > 0) {
                 self.downloadTask = [downloadTasks firstObject];
                 if (self->_shouldBeSuspended) {
@@ -331,16 +329,13 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session didBecomeInvalidWithError:(NSError *)error
 {
-    if (!error) {
-        DebugLog(@"didBecomeInvalidWithError %@ for: %@", error, session.configuration.identifier);
-    }
+    if (!error) {}
     self.session = nil;
     dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void)URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)session
 {
-    DebugLog(@"URLSessionDidFinishEventsForBackgroundURLSession for: %@", session.configuration.identifier);
 }
 
 
@@ -349,8 +344,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition disposition, NSURLCredential *credential))completionHandler
 {
-    DebugLog(@"%lx: didReceiveChallenge for: %@  auth: %lx", (long)self, session.configuration.identifier, (long)self.authentication);
-    
     NSURLProtectionSpace* space = [challenge protectionSpace];
     
     // in case there is
@@ -408,8 +401,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-    DebugLog(@"task didCompleteWithError %@", error);
-    
     if (error) {
         self.failed = (!self.suspended);
         
@@ -424,8 +415,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location
 {
-    DebugLog(@"didFinishDownloadingToURL %@, %@ for: %@", location, self.localURL, session.configuration.identifier);
-    
     NSFileManager* fman = [[NSFileManager alloc] init];
     [fman removeItemAtURL:self.localURL error:nil];
     
@@ -463,8 +452,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
  totalBytesWritten:(int64_t)totalBytesWritten
 totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite
 {
-    //DebugLog(@"didWriteData bytesWritten=%lld, totalBytesWritten=%lld, totalBytesExpectedToWrite=%lld", bytesWritten, totalBytesWritten, totalBytesExpectedToWrite);
-    
     self.loadedContentLength = totalBytesWritten;
     if (self.expectedContentLength == 0) {
         self.expectedContentLength = totalBytesExpectedToWrite;

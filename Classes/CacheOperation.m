@@ -264,7 +264,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
     // we got suspended, but have a task, kill the task
     if (self.suspended && self.mainTask) {
-        DebugLog(@"kill the connection");
         [self.mainTask cancel];
         self.mainTask = nil;
         [self.urlSession invalidateAndCancel];
@@ -416,7 +415,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 	}
 
     NSHTTPURLResponse* httpResponse = (NSHTTPURLResponse*)response;
-    DebugLog(@"response: %@, status: %ld", [[httpResponse allHeaderFields] description], (long)[httpResponse statusCode]);
 
     if (dataTask == self.mainTask)
     {
@@ -498,8 +496,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 
 	_loadedContentLength += [data length];
 
-    //DebugLog(@"_loadedContentLength %ld", _loadedContentLength);
-
     [self _notifyDidLoadBytesOnMainThread:[data length]];
     dispatch_semaphore_signal(_stateChangeSemaphore);
 
@@ -508,8 +504,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
     if (error) {
-        DebugLog(@"could not cache episode: %@", error);
-
         BOOL cancelledError = [error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled;
         if (!cancelledError && !self.mainCanceled && !self.suspended && ![self isCancelled]) {
             self.failed = YES;

@@ -42,9 +42,6 @@
     
     CGFloat distance = CGRectGetMidX(visibleRect) - CGRectGetMidX(frame) - 5;
     
-    DebugLog(@"%d, %f %f %f", attributes.indexPath.row, CGRectGetMidX(visibleRect), CGRectGetMidX(frame), distance);
-    
-    
     CGFloat normalizedDistance = distance / 200;
     
     CGFloat rotation = normalizedDistance * M_PI * 0.25f;

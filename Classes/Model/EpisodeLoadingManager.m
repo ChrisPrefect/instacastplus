@@ -101,8 +101,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
     // State is saved when feeds finish or are cancelled, which is sufficient for crash recovery.
     // If the app crashes mid-load, at most one batch of episodes will be re-processed (deduplication handles it).
 
-    DebugLog(@"EpisodeLoadingManager: Queued %lu episodes for feed %@", (unsigned long)episodeData.count, feed.title);
-
     [[NSNotificationCenter defaultCenter] postNotificationName:EpisodeLoadingManagerDidStartLoadingNotification
                                                         object:self
                                                       userInfo:@{@"feedURL": feedURL}];
@@ -133,8 +131,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
 
     [self _saveLoadingState];
 
-    DebugLog(@"EpisodeLoadingManager: Cancelled loading for %@", feedURL);
-
     if (wasActive) {
         [self _startNextPendingFeed];
     }
@@ -152,7 +148,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
 
     [self _saveLoadingState];
 
-    DebugLog(@"EpisodeLoadingManager: Cancelled all loading (%lu feeds)", (unsigned long)feedURLs.count);
 }
 
 - (BOOL)isLoadingFeed:(CDFeed*)feed
@@ -201,7 +196,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
 - (void)setSuspended:(BOOL)suspended
 {
     _loadingQueue.suspended = suspended;
-    DebugLog(@"EpisodeLoadingManager: %@", suspended ? @"suspended" : @"resumed");
 
     if (!suspended) {
         [self _startNextPendingFeed];
@@ -218,16 +212,7 @@ static const NSTimeInterval kBatchDelay = 0.25;
 
 - (void)logStatus
 {
-    // Status-Logging nur im Debug
-#ifdef DEBUG
-    [_lock lock];
-    NSUInteger feedCount = _pendingLoads.count;
-    [_lock unlock];
-
-    if (feedCount > 0) {
-        DebugLog(@"EpisodeLoadingManager: %lu feeds pending", (unsigned long)feedCount);
-    }
-#endif
+    // no-op, retained for API compatibility
 }
 
 #pragma mark - Crash Recovery
@@ -238,8 +223,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
     if (!savedInfo || savedInfo.count == 0) {
         return;
     }
-
-    DebugLog(@"EpisodeLoadingManager: Restoring %lu pending loads", (unsigned long)savedInfo.count);
 
     for (NSDictionary* loadInfo in savedInfo) {
         NSString* feedURL = loadInfo[@"feedURL"];
@@ -255,9 +238,8 @@ static const NSTimeInterval kBatchDelay = 0.25;
             [_lock lock];
             _pendingLoads[feedURL] = loadInfo;
             [_lock unlock];
-            DebugLog(@"EpisodeLoadingManager: Restored pending load for %@ (%lu episodes remaining)", feed.title, (unsigned long)episodes.count);
         } else {
-            DebugLog(@"EpisodeLoadingManager: Skipping restored feed (deleted/unsubscribed): %@", feedURL);
+            // Feed was deleted or unsubscribed — skip
         }
     }
 
@@ -285,7 +267,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
     [_lock unlock];
 
     if (nextURL) {
-        DebugLog(@"EpisodeLoadingManager: Starting sequential load for %@", nextURL);
         [self _startLoadingForFeedURL:nextURL];
     }
 }
@@ -352,9 +333,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
                 [DMANAGER save];
             }
 
-            DebugLog(@"EpisodeLoadingManager: Loaded batch of %lu episodes for %@, %lu remaining",
-                     (unsigned long)parserEpisodes.count, feed.title, (unsigned long)episodes.count);
-
             // Notify observers
             [[NSNotificationCenter defaultCenter] postNotificationName:EpisodeLoadingManagerDidLoadBatchNotification
                                                                 object:self
@@ -390,8 +368,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
         if (feed) {
             [feed setBool:YES forKey:kFeedPropertyEpisodeLoadingComplete];
             [DMANAGER save];
-
-            DebugLog(@"EpisodeLoadingManager: Finished loading all episodes for %@", feed.title);
 
             [[NSNotificationCenter defaultCenter] postNotificationName:EpisodeLoadingManagerDidFinishLoadingNotification
                                                                 object:self

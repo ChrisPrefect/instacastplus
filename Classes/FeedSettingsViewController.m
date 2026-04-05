@@ -867,7 +867,6 @@ enum {
         [NSString stringWithFormat:@"%@_auto_skip_end_period", self.feed.uid];
 
     double newValue = sender.value;
-    //NSLog(@"Stepper value changed to: %.1f for key: %@", newValue, key);
 
     if (self.feed) {
         if (newValue == [USER_DEFAULTS doubleForKey:key]) {

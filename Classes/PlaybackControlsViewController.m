@@ -229,11 +229,6 @@
     transcriptButton.hidden = YES;
     [self.toolsView addSubview:transcriptButton];
     self.transcriptButton = transcriptButton;
-    DebugLog(@"[TranscriptControl] created route=%@ transcript=%@ transcriptImage=%@ transcriptImageActive=%@",
-             self.routeButton,
-             self.transcriptButton,
-             self.transcriptImageNormal,
-             self.transcriptImageActive);
     [self updateToolButtonsVisibility];
 }
 
@@ -408,11 +403,6 @@
         }
         [toolButtons addObject:subview];
     }
-    DebugLog(@"[TranscriptControl] layout toolsView=%@ visibleToolButtons=%ld transcriptHidden=%@ routeHidden=%@",
-             NSStringFromCGRect(self.toolsView.frame),
-             (long)toolButtons.count,
-             self.transcriptButton.hidden ? @"YES" : @"NO",
-             self.routeButton.hidden ? @"YES" : @"NO");
     [toolButtons sortUsingComparator:^NSComparisonResult(UIView *v1, UIView *v2) {
         return [@(v1.frame.origin.x) compare:@(v2.frame.origin.x)];
     }];
@@ -438,12 +428,6 @@
         }
         CGFloat yPos = (toolsHeight - size) / 2.0;
         button.frame = CGRectMake(xPos, yPos, size, size);
-        if (button == self.transcriptButton || button == self.routeButton) {
-            DebugLog(@"[TranscriptControl] layout button %@ frame=%@ hidden=%@",
-                     (button == self.transcriptButton) ? @"transcript" : @"route",
-                     NSStringFromCGRect(button.frame),
-                     button.hidden ? @"YES" : @"NO");
-        }
         xPos += size + spacing;
     }
 
@@ -508,10 +492,7 @@
 {
     if (_shown != shown) {
         _shown = shown;
-        DebugLog(@"[TranscriptControl] setShown=%@ (volumeHitView hidden before=%@)",
-                 shown ? @"YES" : @"NO",
-                 self.volumeHitView.hidden ? @"YES" : @"NO");
-        
+
         // when controller is not shown, we want the HUD for volume
         self.volumeHitView.hidden = !shown;
         [self updateToolButtonsVisibility];
@@ -521,9 +502,6 @@
 - (void)setTranscriptAvailable:(BOOL)transcriptAvailable
 {
     if (_transcriptAvailable != transcriptAvailable) {
-        DebugLog(@"[TranscriptControl] setTranscriptAvailable %@ -> %@",
-                 _transcriptAvailable ? @"YES" : @"NO",
-                 transcriptAvailable ? @"YES" : @"NO");
         _transcriptAvailable = transcriptAvailable;
         if (!transcriptAvailable) {
             _transcriptVisible = NO;
@@ -535,9 +513,6 @@
 - (void)setTranscriptVisible:(BOOL)transcriptVisible
 {
     if (_transcriptVisible != transcriptVisible) {
-        DebugLog(@"[TranscriptControl] setTranscriptVisible %@ -> %@",
-                 _transcriptVisible ? @"YES" : @"NO",
-                 transcriptVisible ? @"YES" : @"NO");
         _transcriptVisible = transcriptVisible;
         [self.transcriptButton setImage:(transcriptVisible ? self.transcriptImageActive : self.transcriptImageNormal) forState:UIControlStateNormal];
     }
@@ -549,23 +524,12 @@
     self.transcriptButton.hidden = !showTranscriptControl;
     [self.transcriptButton setImage:(self.transcriptVisible ? self.transcriptImageActive : self.transcriptImageNormal) forState:UIControlStateNormal];
     self.routeButton.hidden = !(self.shown && !self.transcriptAvailable);
-    DebugLog(@"[TranscriptControl] updateToolButtonsVisibility shown=%@ available=%@ visible=%@ transcriptHidden=%@ routeHidden=%@ transcriptFrame=%@ routeFrame=%@",
-             self.shown ? @"YES" : @"NO",
-             self.transcriptAvailable ? @"YES" : @"NO",
-             self.transcriptVisible ? @"YES" : @"NO",
-             self.transcriptButton.hidden ? @"YES" : @"NO",
-             self.routeButton.hidden ? @"YES" : @"NO",
-             NSStringFromCGRect(self.transcriptButton.frame),
-             NSStringFromCGRect(self.routeButton.frame));
 
     [self.view setNeedsLayout];
 }
 
 - (void)toggleTranscript:(UIButton*)sender
 {
-    DebugLog(@"[TranscriptControl] toggle tapped available=%@ visible(before)=%@",
-             self.transcriptAvailable ? @"YES" : @"NO",
-             self.transcriptVisible ? @"YES" : @"NO");
     if (!self.transcriptAvailable) {
         return;
     }
@@ -574,7 +538,6 @@
     if (self.transcriptToggleHandler) {
         self.transcriptToggleHandler(self.transcriptVisible);
     }
-    DebugLog(@"[TranscriptControl] toggle handled visible(after)=%@", self.transcriptVisible ? @"YES" : @"NO");
 }
 
 #pragma mark -

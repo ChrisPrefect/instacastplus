@@ -376,7 +376,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             }
         }
         if (hasEpisodes) [xml appendString:@"      </episodes>\n"];
-        DebugLog(@"Export %@: %ld episodes, %ld downloaded", feed.title, (long)feed.episodes.count, (long)downloadedCount);
         [xml appendString:@"    </podcast>\n"];
     }
     [xml appendString:@"  </podcasts>\n"];

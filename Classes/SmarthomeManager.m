@@ -334,7 +334,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     if (client != _client) return;
 
-    DebugLog(@"[MQTT] Connected, publishing all states then subscribing");
     _reconnectDelay = 2.0;
     _connectionStatusText = @"Connected".ls;
     [self postConnectionStateChange];
@@ -394,8 +393,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)mqttClient:(ICMQTTClient*)client didReceiveMessage:(NSString*)message onTopic:(NSString*)topic
 {
     if (client != _client) return;
-
-    DebugLog(@"[MQTT RX] topic=%@ message=%@", topic, message);
 
     // Ignore empty/placeholder messages
     if (!message || message.length == 0 || [message isEqualToString:@"NaN"]) {
@@ -579,8 +576,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     BOOL podcastPlaying = pm.isPodcastPlaying;
     BOOL waiting = pm.waitingForLoad;
     BOOL playing = hasEpisode && !paused;
-    DebugLog(@"[MQTT] publishPlayState: hasEpisode=%d paused=%d podcastPlaying=%d waitingForLoad=%d → playing=%d (connected=%d lastPlay=%@)",
-             hasEpisode, paused, podcastPlaying, waiting, playing, self.connected, _lastPlay);
     [self publishValue:(playing ? @"1" : @"0") toTopic:[self topic:@"play"] lastValue:&_lastPlay retain:YES];
 }
 
@@ -719,7 +714,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     if (!self.connected) return;
     if (*lastValue && [*lastValue isEqualToString:value]) return;
 
-    DebugLog(@"[MQTT TX] topic=%@ value=%@ (last=%@)", topic, value, *lastValue ?: @"nil");
     *lastValue = [value copy];
     [_client publishMessage:value toTopic:topic retain:retain];
 }
@@ -758,8 +752,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)playbackDidEnd:(NSNotification*)note
 {
-    DebugLog(@"[MQTT] playbackDidEnd - connected=%d appState=%ld",
-             self.connected, (long)[UIApplication sharedApplication].applicationState);
     [self publishPlayState];
     [self publishEpisodeInfo];
     [self publishChapterState];
@@ -780,7 +772,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)sleepTimerDidExpire:(NSNotification*)note
 {
-    DebugLog(@"[MQTT] sleepTimerDidExpire - connected=%d", self.connected);
     [self publishSleeptimerState];
     _fellAsleepActive = YES;
     [self publishFellAsleepState];

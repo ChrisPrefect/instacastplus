@@ -303,9 +303,6 @@
     }
 
 
-    DebugLog(@"original image not found at %@", [self.url absoluteString]);
-    //[_failedImages setObject:@YES forKey:[refURL absoluteString]];
-    
     [self _sendCompletionBlockImage:nil error:error];
 }
 
@@ -314,7 +311,6 @@
     @autoreleasepool {
 
         if ([self isCancelled]) {
-            DebugLog(@"canceled");
             return;
         }
 

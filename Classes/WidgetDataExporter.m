@@ -87,7 +87,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_consumePendingWidgetActionIfNeeded;
 - (void)_clearPendingWidgetActionFile;
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex;
-- (void)_logWidgetDiagnostics;
 - (NSString *)_currentNowPlayingReloadSignature;
 - (NSInteger)_resolvedLiveChapterIndexForChapters:(NSArray<ICMetadataChapter *> *)liveChapters fallbackIndex:(NSInteger)fallbackIndex currentPosition:(NSInteger)currentPosition;
 - (BOOL)_hasNextEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as;
@@ -119,7 +118,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     self = [super init];
     if (self) {
         _containerURL = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:kAppGroupID];
-        DebugLog(@"WidgetDataExporter init: containerURL=%@", _containerURL);
         dispatch_queue_attr_t queueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
         _statsRefreshQueue = dispatch_queue_create("com.instacastplus.widget-stats", queueAttributes);
         _cachedStatsDayKey = [self _dateKeyForDate:[NSDate date]];
@@ -185,8 +183,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     [nc addObserver:self selector:@selector(_consumePendingWidgetActionNotification:) name:UIApplicationDidBecomeActiveNotification object:nil];
     [nc addObserver:self selector:@selector(_consumePendingWidgetActionNotification:) name:UIApplicationWillEnterForegroundNotification object:nil];
 
-    DebugLog(@"WidgetDataExporter: started observing notifications");
-
     // Initial export so widget config has data immediately
     // (exportAllSnapshots is also called in sceneDidEnterBackground)
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -224,19 +220,14 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidStart:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        DebugLog(@"[Widget] _playbackDidStart: pm.playingEpisode='%@' isPaused=%d",
-                 [PlaybackManager playbackManager].playingEpisode.title ?: @"<nil>",
-                 [PlaybackManager playbackManager].isPaused);
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        DebugLog(@"[Widget] _playbackDidStart: calling reloadNowPlayingTimeline");
         [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
 
 - (void)_playbackDidEnd:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        DebugLog(@"[Widget] _playbackDidEnd");
         [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
         self.lastListeningTimestamp = nil;
         self.lastPlaybackStatsRefreshDate = nil;
@@ -249,11 +240,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidChangeEpisode:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        DebugLog(@"[Widget] _playbackDidChangeEpisode: pm.playingEpisode='%@'",
-                 [PlaybackManager playbackManager].playingEpisode.title ?: @"<nil>");
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        DebugLog(@"[Widget] _playbackDidChangeEpisode: calling reloadNowPlayingTimeline");
         [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
@@ -405,9 +393,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex {
     if (action.length == 0) return;
 
-    // Read and log widget diagnostics from shared container
-    [self _logWidgetDiagnostics];
-
     PlaybackManager *pm = [PlaybackManager playbackManager];
     AudioSession *as = [AudioSession sharedAudioSession];
     BOOL exportImmediately = NO;
@@ -422,10 +407,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             NSString *episodeHash = self.lastPlayedEpisodeDict[@"id"];
             CDEpisode *episode = [DMANAGER episodeWithObjectHash:episodeHash];
             if (episode) {
-                DebugLog(@"[Widget] playpause: no active episode, loading last played '%@'", episode.title);
                 [as playEpisode:episode];
-            } else {
-                DebugLog(@"[Widget] playpause: no active episode and last played hash '%@' not found in DB", episodeHash);
             }
         }
         exportImmediately = YES;
@@ -478,17 +460,12 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             [[NSFileManager defaultManager] removeItemAtURL:skipFileURL error:nil];
         }
 
-        DebugLog(@"WidgetControlAction: skipchapter → index=%ld (chapters=%lu)",
-                 (long)targetIdx, (unsigned long)pm.chapters.count);
         if (targetIdx >= 0 && targetIdx < (NSInteger)pm.chapters.count) {
             ICMetadataChapter *chapter = pm.chapters[targetIdx];
             [pm seekToChapter:chapter];
             scheduleDelayedExport = YES;
         }
     }
-
-    DebugLog(@"WidgetControlAction: '%@' — playingEpisode=%@, isPaused=%d, speed=%ld",
-             action, pm.playingEpisode.title ?: @"<none>", pm.isPaused, (long)pm.speedControl);
 
     if (exportImmediately) {
         [self exportNowPlayingSnapshot];
@@ -534,7 +511,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)exportAllSnapshots {
     if (!self.containerURL) return;
-    [self _logWidgetDiagnostics];
     [self exportNowPlayingSnapshot];
     [self _persistLastPlayedCache];
     [self exportListsSnapshot];
@@ -553,7 +529,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     AudioSession *as = [AudioSession sharedAudioSession];
 
     CDEpisode *episode = pm.playingEpisode;
-    DebugLog(@"exportNowPlayingSnapshot: episode=%@, isPaused=%d", episode.title, pm.isPaused);
 
     NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
     snapshot[@"isPaused"] = @(pm.isPaused);
@@ -682,7 +657,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         self.lastPlayedExtraFields = [extra copy];
     } else if (self.lastPlayedEpisodeDict) {
         // No current playback — show last played episode as paused
-        DebugLog(@"exportNowPlayingSnapshot: no active episode, using lastPlayedEpisodeDict: '%@'", self.lastPlayedEpisodeDict[@"title"]);
         snapshot[@"isPaused"] = @YES;
         snapshot[@"episode"] = self.lastPlayedEpisodeDict;
         if (self.lastPlayedExtraFields) {
@@ -1092,7 +1066,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_doReloadTimelines {
     [WidgetKitHelper reloadAllTimelines];
-    DebugLog(@"WidgetDataExporter: reloaded all widget timelines");
 }
 
 #pragma mark - Episode Dictionary Builder
@@ -1327,7 +1300,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         }
     }
 
-    DebugLog(@"_copyImageForURL: no cached variant for %@ (requestedSize=%ld)", imageURL.lastPathComponent, (long)size);
     return nil;
 }
 
@@ -1349,13 +1321,11 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                                                   options:0
                                                     error:&error];
     if (error) {
-        DebugLog(@"WidgetDataExporter: JSON serialization error for %@: %@", filename, error.localizedDescription);
         return;
     }
 
     NSURL *fileURL = [self.containerURL URLByAppendingPathComponent:filename];
-    BOOL ok = [data writeToURL:fileURL atomically:YES];
-    DebugLog(@"WidgetDataExporter: wrote %@ (%lu bytes, success=%d)", filename, (unsigned long)data.length, ok);
+    [data writeToURL:fileURL atomically:YES];
 }
 
 #pragma mark - Last Played Cache Persistence
@@ -1380,31 +1350,7 @@ static NSString* const kLastPlayedExtraCacheFile    = @"widget_lastplayed_extra.
         self.lastPlayedEpisodeDict = ep;
         NSURL *exURL = [self.containerURL URLByAppendingPathComponent:kLastPlayedExtraCacheFile];
         self.lastPlayedExtraFields = [NSDictionary dictionaryWithContentsOfURL:exURL];
-        DebugLog(@"WidgetDataExporter: restored last played episode '%@' from disk", ep[@"title"]);
     }
-}
-
-#pragma mark - Widget Diagnostics
-
-- (void)_logWidgetDiagnostics {
-    if (!self.containerURL) return;
-    NSURL *diagURL = [self.containerURL URLByAppendingPathComponent:@"widget_diagnostics.json"];
-    NSData *data = [NSData dataWithContentsOfURL:diagURL];
-    if (!data) {
-        DebugLog(@"[Widget Diagnostics] no diagnostics file found");
-        return;
-    }
-    NSArray *entries = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-    if ([entries isKindOfClass:[NSArray class]]) {
-        for (NSDictionary *entry in entries) {
-            DebugLog(@"[Widget Diagnostics] %@ — %@: %@",
-                     entry[@"time"] ?: @"?",
-                     entry[@"event"] ?: @"?",
-                     entry);
-        }
-    }
-    // Clear after reading
-    [[NSFileManager defaultManager] removeItemAtURL:diagURL error:nil];
 }
 
 #pragma mark - ISO 8601 Helpers

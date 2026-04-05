@@ -285,8 +285,6 @@ kern_return_t __GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress)
         // Read from char array into a string object, into traditional Mac address format
         NSString *macAddressString = [NSString stringWithFormat:@"%02X:%02X:%02X:%02X:%02X:%02X",
                                       macAddress[0], macAddress[1], macAddress[2], macAddress[3], macAddress[4], macAddress[5]];
-        DebugLog(@"Mac Address: %@", macAddressString);
-        
         // Release the buffer memory
         free(msgBuffer);
         

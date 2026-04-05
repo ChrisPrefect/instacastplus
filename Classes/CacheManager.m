@@ -235,8 +235,6 @@ static void ICClearAllTranscriptCache(void)
 
 - (void) _handleNetworkStatusChanged
 {
-    DebugLog(@"_handleNetworkStatusChanged");
-    
     if (![self canDownload]) {
         NSArray* operations = [_downloadQueue operations];
         for(CACHE_OPERATION_CLASS* operation in operations) {
@@ -384,7 +382,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
         // Migrate: rename old file to new name
         NSError* error;
         if ([[NSFileManager defaultManager] moveItemAtPath:oldPath toPath:newPath error:&error]) {
-            DebugLog(@"Migrated episode file: %@ → %@", oldFilename, newFilename);
+            // migrated
         } else {
             // If rename fails (e.g. name collision), keep old name
             NSURL* URL = [NSURL fileURLWithPath:oldPath];
@@ -607,7 +605,6 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 - (void) removeCacheForEpisode:(CDEpisode*)episode automatic:(BOOL)automatic
 {
     if (automatic && episode.starred) {
-        DebugLog(@"not removing episode cache of starred episodes");
         return;
     }
     
@@ -965,8 +962,6 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
     
 	CDEpisode* episode = operation.userInfo;
     
-    DebugLog(@"episode did finish download: %@", episode.objectHash);
-    
     @try {
         [self willChangeValueForKey:@"cachingEpisodes"];
         [_cachingEpisodes removeObject:episode];
@@ -1096,8 +1091,6 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 			[self _endBackgroundTaskAfterSoundPlayed];
 		}
 		
-        DebugLog(@"caching finished");
-        
         _flags.supressSendUpdate = YES;
         dispatch_async(dispatch_get_main_queue(), ^{
             [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
@@ -1573,8 +1566,6 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
 
 - (void) handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completionHandler
 {
-    DebugLog(@"handleEventsForBackgroundURLSession: %@", identifier);
-    
     CACHE_OPERATION_CLASS* foundOperation = nil;
     
     NSArray* operations = [_downloadQueue operations];
@@ -1593,7 +1584,6 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
     
     
     [self perform:^(id sender) {
-        DebugLog(@"sending completion handler for: %@", identifier);
         completionHandler();
     } afterDelay:2.f];
 }

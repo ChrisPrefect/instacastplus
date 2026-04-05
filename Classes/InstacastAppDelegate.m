@@ -213,7 +213,6 @@
 
 -(void)applicationDidTimeout:(NSNotification *) notif
 {
-    DebugLog(@"Intelligent Sleep Time exceeded");
 }
 
 - (void) _startUpApplicationWithLaunchOptions:(NSDictionary *)launchOptions
@@ -407,7 +406,6 @@
 
 - (void) _updateAppContentAfterBecomingActive
 {
-    //DebugLog(@"applicationDidBecomeActive, state: %d", App.applicationState);
 	App.idleTimerDisabled = [USER_DEFAULTS boolForKey:DisableAutoLock];
     
     if (_flags.apnRegisterSuccess == 0)
@@ -430,7 +428,6 @@
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
 {
-	//DebugLog(@"applicationWillResignActive, state: %d", App.applicationState);
 	App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
 	
 	if (!self.mainViewController.presentedViewController) {

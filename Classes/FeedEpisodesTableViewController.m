@@ -293,14 +293,11 @@
 
 - (void)controllerDidChangeContent:(NSFetchedResultsController *)controller
 {
-    //NSLog(@"==DEVD CONTROLLER DID CHANGE CONTENT STARTED==");
     if (self.userAction) {
         return;
     }
     [self updateEpisodes];
-    //NSLog(@"Before endUpdates111: %lu rows in section 0", [self.tableView numberOfRowsInSection:0]);
-    [self.tableView endUpdates];//crashes
-    //NSLog(@"Before endUpdates222: %lu rows in section 0", [self.tableView numberOfRowsInSection:0]);
+    [self.tableView endUpdates];
     [self _updateToolbarLabels];
     
     for (NSIndexPath* indexPath in _selectionPreservingIndexPathes) {
@@ -308,8 +305,6 @@
     }
     
     _selectionPreservingIndexPathes = nil;
-
-    //NSLog(@"==DEVD CONTROLLER DID CHANGE CONTENT ENDED==");
 }
 
 #pragma mark -

@@ -215,7 +215,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                                                   error:&error];
     }
     @catch (NSException *exception) {
-        DebugLog(@"core data exception: %@", exception);
     }
     
     return (![destinationModel isConfiguration:nil compatibleWithStoreMetadata:sourceMetadata]);
@@ -247,7 +246,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
         NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
 
         _databaseURL = [NSURL fileURLWithPath:[dataPath stringByAppendingPathComponent:_DataStoreFile()]];
-        DebugLog(@"%@", _databaseURL);
 
         _imageCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Images" parent:[DatabaseManager pathToDocuments]]];
         _fileCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Episodes" parent:[DatabaseManager pathToDocuments]]];
@@ -687,10 +685,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
         CDFeed* keeper = feeds.firstObject;
         for (NSUInteger i = 1; i < feeds.count; i++) {
             CDFeed* duplicate = feeds[i];
-            DebugLog(@"Removing duplicate feed: '%@' sourceURL=%@ parked=%d episodes=%lu (keeping '%@' with %lu episodes)",
-                     duplicate.title, duplicate.sourceURL, duplicate.parked,
-                     (unsigned long)duplicate.episodes.count,
-                     keeper.title, (unsigned long)keeper.episodes.count);
             [self.objectContext deleteObject:duplicate];
             changed = YES;
         }
@@ -1278,9 +1272,6 @@ static const NSInteger kInitialEpisodeLimit = 50;
         [persistentFeed setBool:NO forKey:kFeedPropertyEpisodeLoadingComplete];
         [persistentFeed setInteger:totalEpisodeCount forKey:kFeedPropertyTotalExpectedEpisodes];
         [persistentFeed setInteger:initialLoadCount forKey:kFeedPropertyLoadedEpisodeCount];
-
-        DebugLog(@"Lazy loading: Feed '%@' has %ld episodes, loaded %ld initially, queueing %ld for background",
-                 persistentFeed.title, (long)totalEpisodeCount, (long)initialLoadCount, (long)(totalEpisodeCount - initialLoadCount));
 
         // Queue remaining episodes for background loading
         [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:persistentFeed

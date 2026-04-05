@@ -109,7 +109,9 @@
 
 - (void) subscriptionManagerDidStartRefreshingFeedsNotification:(NSNotification*)notification
 {
-    [self.refreshControl beginRefreshing];
+    if (self.isViewLoaded && self.view.window) {
+        [self.refreshControl beginRefreshing];
+    }
 }
 
 - (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures

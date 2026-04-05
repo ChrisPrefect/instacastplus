@@ -288,8 +288,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
     [App retainNetworkActivity];
 
-    DebugLog(@"subscribing with URL: %@", url);
-
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
     parser.timeout = 20;
@@ -329,8 +327,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     
     [App retainNetworkActivity];
 
-    DebugLog(@"subscribing with URL: %@", url);
-    
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
@@ -365,8 +361,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     
     [App retainNetworkActivity];
 
-    DebugLog(@"subscribing with URL: %@", url);
-    
     ICFeedParser* parser = [[ICFeedParser alloc] init];
     parser.url = url;
     parser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
@@ -391,11 +385,9 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
             if (existingFeeds.count > 0) {
                 persistentFeed = existingFeeds.firstObject;
-                DebugLog(@"Already subscribed to feed: %@", url);
             } else {
                 persistentFeed = [self subscribeParserFeed:parserFeed autodownload:NO options:options];
                 [DMANAGER save];
-                DebugLog(@"New feed subscribed: %@", url);
             }
 
             if (completion) {
@@ -647,7 +639,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     else
     {
         if (App.networkAccessTechnology < kICNetworkAccessTechnlogyEDGE) {
-            DebugLog(@"not auto refreshing, because no internet connection");
             return;
         }
         
@@ -941,8 +932,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                         }
                     }
 
-                    DebugLog(@"parsed %@", feed.title);
-
                     [strongSelfInner _finishParsingFeed:feed url:url shouldAutoDownload:([allNewEpisodes count] > 0)];
 
                     if (completion) {
@@ -1086,7 +1075,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
  
 #if TARGET_OS_IPHONE
         [self perform:^(id sender) {
-            DebugLog(@"end background task");
             if (self.backgroundIdentifier != UIBackgroundTaskInvalid) {
                 [App endBackgroundTask:self.backgroundIdentifier];
                 self.backgroundIdentifier = UIBackgroundTaskInvalid;
@@ -1207,8 +1195,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
             // target is typically the public feed URL without auth path
             if (!localFeed.username || localFeed.username.length == 0) {
                 localFeed.sourceURL = remoteFeed.changedSourceURL;
-            } else {
-                DebugLog(@"Skipping sourceURL update for feed with credentials: %@ → %@", localFeed.sourceURL, remoteFeed.changedSourceURL);
             }
         }
         localFeed.etag = remoteFeed.etag;
@@ -1413,10 +1399,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 		}
 	}
 
-    if (newEpisodes.count > 0) {
-        DebugLog(@"merged %lu new episodes into %@", (unsigned long)newEpisodes.count, localFeed.title);
-    }
-    
     [self updateLocalFeedInfo:localFeed withRemoteFeed:remoteFeed force:force];
     
     return newEpisodes;
@@ -1615,7 +1597,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         }
         
         else if (!pickedEpisode) {
-            //NSLog(@"try auto-caching episode '%@'", episode.title);
             caching |= [cman autoCacheEpisode:episode enableFilters:YES];
         }
     }
@@ -1905,7 +1886,6 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 }
 
                 [urlsToImport addObject:feedURL];
-                DebugLog(@"queued for import: %@", normalized);
             }
             
             if (urlsToImport.count == 0) {

@@ -81,7 +81,6 @@ static NSURL* _amazonAffiliateURL(NSURL* url)
 
     for(NSString* host in hostToBeRedirected) {
         if ([url host] && [[url host] rangeOfString:host].location != NSNotFound) {
-            DebugLog(@"external link %@", urlString);
             [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
             return NO;
         }
@@ -90,7 +89,6 @@ static NSURL* _amazonAffiliateURL(NSURL* url)
 
 	NSArray* mediaSuffixes = [NSArray arrayWithObjects:@"mp3",@"m4a",@"mp4",@"mp4",nil];
 	if ([[url path] pathExtension] && [mediaSuffixes containsObject:[[url path] pathExtension]]) {
-		DebugLog(@"media link %@", urlString);
         [App openURL:url options:@{} completionHandler:nil];
 		return NO;
 	}
@@ -126,8 +124,6 @@ static NSURL* _amazonAffiliateURL(NSURL* url)
             return NO;
         }
     }
-
-    DebugLog(@"website link %@",urlString);
 
     if ([USER_DEFAULTS boolForKey:OpenLinksInExternalBrowser]) {
         [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];

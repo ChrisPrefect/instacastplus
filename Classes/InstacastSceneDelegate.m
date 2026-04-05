@@ -83,6 +83,25 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
     if ([scene isKindOfClass:[UIWindowScene class]]) {
         UIWindowScene *windowScene = (UIWindowScene *)scene;
+
+        // Only allow one UIWindowScene at a time.
+        // Singletons (UIManager, PlaybackManager, etc.) store a single mainViewController
+        // reference that would be overwritten by a second window.
+        for (UIScene *existingScene in UIApplication.sharedApplication.connectedScenes) {
+            if (existingScene != scene &&
+                [existingScene isKindOfClass:[UIWindowScene class]] &&
+                [existingScene.session.role isEqualToString:UIWindowSceneSessionRoleApplication]) {
+                // Activate existing window, destroy this one
+                [[UIApplication sharedApplication] requestSceneSessionActivation:existingScene.session
+                                                                    userActivity:nil
+                                                                         options:nil
+                                                                    errorHandler:nil];
+                [[UIApplication sharedApplication] requestSceneSessionDestruction:session
+                                                                          options:nil
+                                                                     errorHandler:nil];
+                return;
+            }
+        }
         self.window = [[ICWindow alloc] initWithWindowScene:windowScene];
         self.window.backgroundColor = ICBackgroundColor;
 
@@ -167,6 +186,11 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
             // Auto-refresh feeds on app launch
             [self _autoRefreshFeedsIfNeeded];
+
+            // Handle URL that launched the app
+            if (connectionOptions.URLContexts.count > 0) {
+                [self scene:scene openURLContexts:connectionOptions.URLContexts];
+            }
         }
 
     }
@@ -191,6 +215,22 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
         
         if ([[url scheme] isEqualToString:@"instacastplus"]) {
             [self _handleWidgetDeepLink:url];
+        }
+        else if ([[url scheme] isEqualToString:@"instacast"] && [[url host] isEqualToString:@"share-episode"]) {
+            // instacast://share-episode?url=FEED_URL&guid=GUID
+            NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+            NSString *feedURLString = nil;
+            NSString *episodeGUID = nil;
+            for (NSURLQueryItem *item in components.queryItems) {
+                if ([item.name isEqualToString:@"url"]) feedURLString = item.value;
+                else if ([item.name isEqualToString:@"guid"]) episodeGUID = item.value;
+            }
+            if (feedURLString) {
+                NSURL *feedURL = [NSURL URLWithString:feedURLString];
+                if (feedURL) {
+                    [self _handlePcastURL:feedURL episodeGUID:episodeGUID];
+                }
+            }
         }
         else if ([subscribeSchemes containsObject:[url scheme]]) {
             [self _handlePcastURL:url];
@@ -322,10 +362,12 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
     NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
     NSString *feedURLString = nil;
+    NSString *episodeGUID = nil;
     for (NSURLQueryItem *item in components.queryItems) {
         if ([item.name isEqualToString:@"url"]) {
             feedURLString = item.value;
-            break;
+        } else if ([item.name isEqualToString:@"guid"]) {
+            episodeGUID = item.value;
         }
     }
 
@@ -335,7 +377,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
     NSURL *feedURL = [NSURL URLWithString:feedURLString];
     if (feedURL) {
-        [self _handlePcastURL:feedURL];
+        [self _handlePcastURL:feedURL episodeGUID:episodeGUID];
     }
 }
 
@@ -420,7 +462,6 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
 - (void) _updateAppContentAfterBecomingActive
 {
-    //DebugLog(@"applicationDidBecomeActive, state: %d", App.applicationState);
     App.idleTimerDisabled = [USER_DEFAULTS boolForKey:DisableAutoLock];
     
     if (_flags.apnRegisterSuccess == 0)
@@ -2098,6 +2139,11 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void) _handlePcastURL:(NSURL*)url
 {
+    [self _handlePcastURL:url episodeGUID:nil];
+}
+
+- (void) _handlePcastURL:(NSURL*)url episodeGUID:(NSString*)episodeGUID
+{
     NSString* urlString = [[url absoluteString] substringFromIndex:[[url scheme] length]];
     if ([urlString hasPrefix:@":http://"] || [urlString hasPrefix:@":https://"]) {
         NSString* newURLString = [urlString substringFromIndex:1];
@@ -2111,7 +2157,30 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         urlString = [urlString stringByReplacingCharactersInRange:NSMakeRange(0, [scheme length]) withString:@"http"];
         url = [NSURL URLWithString:urlString];
     }
-    
+
+    // episode share link: parse feed in background, find episode by GUID, play directly
+    if (episodeGUID.length > 0) {
+        ICFeedParser* parser = [[ICFeedParser alloc] init];
+        parser.url = url;
+        parser.timeout = 15;
+        parser.didParseFeedBlock = ^(ICFeed* feed) {
+            ICEpisode* targetEpisode = nil;
+            for (ICEpisode* ep in feed.episodes) {
+                if ([ep.guid isEqualToString:episodeGUID]) {
+                    targetEpisode = ep;
+                    break;
+                }
+            }
+            if (targetEpisode) {
+                CDEpisode* persistentEpisode = [DMANAGER addUnsubscribedFeed:feed andEpisode:targetEpisode];
+                [[AudioSession sharedAudioSession] playEpisode:persistentEpisode];
+                [[AudioSession sharedAudioSession] disableContinuousPlaybackForCurrentEpisode];
+            }
+        };
+        [[App mainQueue] addOperation:parser];
+        return;
+    }
+
     __weak InstacastSceneDelegate* weakSelf = self;
     self.feedView = [DirectoryFeedViewController directoryFeedViewController];
     self.feedView.feedURL = url;
@@ -2121,26 +2190,26 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         if (!success)
         {
             [weakSelf perform:^(id sender) {
-                
+
                 if (error) {
                     [self.feedView presentError:error];
                 }
-                
+
                 [self.mainViewController dismissViewControllerAnimated:YES completion:^{
                     self.feedView = nil;
                 }];
             } afterDelay:0.5];
             return;
         }
-        
+
         else {
             weakSelf.feedView = nil;
         }
     };
-    
+
     PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:weakSelf.feedView];
     navController.modalPresentationStyle = UIModalPresentationFormSheet;
-    
+
     if (self.mainViewController.presentedViewController) {
         [self.mainViewController.presentedViewController presentViewController:navController animated:YES completion:NULL];
     } else {
@@ -2153,10 +2222,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 #pragma mark - Widget Deep Link Handling
 
 - (void)_handleWidgetDeepLink:(NSURL *)url {
-    DebugLog(@"Widget deep link: %@", url);
-
     if (!self.mainViewController || !self.mainViewController.contentViewController) {
-        DebugLog(@"Widget deep link ignored: mainViewController or contentViewController is nil");
         return;
     }
 
@@ -2164,8 +2230,6 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     NSString *path = [url path];
     NSDictionary *params = [self _queryParametersFromURL:url];
     NSString *action = params[@"action"];
-
-    DebugLog(@"Widget deep link: host=%@, path=%@, action=%@", host, path, action);
 
     if ([host isEqualToString:@"player"]) {
         // Player actions
@@ -2246,11 +2310,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     }
     else if ([host isEqualToString:@"episode"]) {
         NSString *objectHash = (path.length > 1) ? [path substringFromIndex:1] : nil;
-        DebugLog(@"Widget episode link: objectHash=%@", objectHash);
         BOOL handledEpisodeAction = NO;
         if (objectHash) {
             CDEpisode *episode = [DMANAGER episodeWithObjectHash:objectHash];
-            DebugLog(@"Widget episode link: found episode=%@", episode.title);
             if (episode) {
                 if ([action isEqualToString:@"play"]) {
                     // Play in background without presenting the player UI.

@@ -6,6 +6,7 @@
 #import "AppearanceSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "SettingsValuesTableViewController.h"
+#import "Language.h"
 #import "InstacastAppDelegate.h"
 #import "ChapterImageCell.h"
 #import "ChooseThemeColorCell.h"
@@ -67,6 +68,9 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 - (void)viewWillAppear:(BOOL)animated
 {
     [super viewWillAppear:animated];
+
+    // Update title in case language changed
+    self.navigationItem.title = @"Appearance".ls;
 
     // SettingsValuesTableViewController sets the UserDefault directly,
     // so trigger appearance update when returning from Appearance mode selection.
@@ -172,12 +176,12 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 {
     if (indexPath.section == kLanguage)
     {
-        NSDictionary* lngValues = @{ @1 : @"English".ls, @2 : @"German".ls};
+        NSDictionary* lngValues = @{ @1 : @"English", @2 : @"Deutsch"};
         UITableViewCell* cell = [self detailCell];
         cell.textLabel.text = @"Language".ls;
-        NSInteger period = [USER_DEFAULTS integerForKey:SelectedAppLanguage];
-        cell.detailTextLabel.text = lngValues[@(period)];
-
+        NSInteger selectedLanguage = [USER_DEFAULTS integerForKey:SelectedAppLanguage];
+        cell.detailTextLabel.text = lngValues[@(selectedLanguage)];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
     }
     else if (indexPath.section == kEpisodesSection)
@@ -678,8 +682,14 @@ API_AVAILABLE(ios(14.0)){
 {
     if (indexPath.section == kLanguage)
     {
-        NSURL *settingsURL = [NSURL URLWithString:UIApplicationOpenSettingsURLString];
-        [[UIApplication sharedApplication] openURL:settingsURL options:@{} completionHandler:nil];
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.valueType = kSettingTypeInteger;
+        controller.key = SelectedAppLanguage;
+        controller.title = @"Language".ls;
+        controller.values = @[ @1, @2 ];
+        controller.titles = @[ @"English", @"Deutsch" ];
+        [self.navigationController pushViewController:controller animated:YES];
+        return;
     }
 
     else if (indexPath.section == kEpisodesSection)

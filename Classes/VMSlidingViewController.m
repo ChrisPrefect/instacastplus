@@ -76,7 +76,6 @@
 }
 
 - (UIViewController*) childViewControllerForStatusBarHidden {
-    //DebugLog(@"childViewControllerForStatusBarHidden %d: %@", self.revealed, (self.revealed) ? self.sidebarViewController : self.contentViewController);
     return (self.sidebarShown || self.revealing) ? self.sidebarViewController : self.contentViewController;
 }
 

@@ -31,27 +31,19 @@
 
 - (void)_setupButtons API_AVAILABLE(ios(26.0)) {
     UIView* container = self.navigationController.view;
-    if (!container) {
-        NSLog(@"GLASS TEST: navigationController.view is NIL!");
-        return;
-    }
-    NSLog(@"GLASS TEST: container = %@, size = %@", container, NSStringFromCGSize(container.bounds.size));
+    if (!container) return;
 
     // --- Normal mode: 2 buttons ---
     UIButtonConfiguration* leftConfig = [UIButtonConfiguration glassButtonConfiguration];
     leftConfig.image = [UIImage systemImageNamed:@"checkmark.circle"];
     leftConfig.buttonSize = UIButtonConfigurationSizeLarge;
-    _leftButton = [UIButton buttonWithConfiguration:leftConfig primaryAction:
-        [UIAction actionWithHandler:^(__unused UIAction* a) {
-            NSLog(@"GLASS TEST: LEFT button tapped");
-        }]];
+    _leftButton = [UIButton buttonWithConfiguration:leftConfig primaryAction:nil];
 
     UIButtonConfiguration* rightConfig = [UIButtonConfiguration glassButtonConfiguration];
     rightConfig.image = [UIImage systemImageNamed:@"pencil"];
     rightConfig.buttonSize = UIButtonConfigurationSizeLarge;
     _rightButton = [UIButton buttonWithConfiguration:rightConfig primaryAction:
         [UIAction actionWithHandler:^(__unused UIAction* a) {
-            NSLog(@"GLASS TEST: RIGHT button tapped — entering editing");
             [self _toggleEditing];
         }]];
 
@@ -59,33 +51,23 @@
     UIButtonConfiguration* e1Config = [UIButtonConfiguration glassButtonConfiguration];
     e1Config.image = [UIImage systemImageNamed:@"ellipsis.circle"];
     e1Config.buttonSize = UIButtonConfigurationSizeLarge;
-    _editBtn1 = [UIButton buttonWithConfiguration:e1Config primaryAction:
-        [UIAction actionWithHandler:^(__unused UIAction* a) {
-            NSLog(@"GLASS TEST: EDIT1 button tapped");
-        }]];
+    _editBtn1 = [UIButton buttonWithConfiguration:e1Config primaryAction:nil];
 
     UIButtonConfiguration* e2Config = [UIButtonConfiguration glassButtonConfiguration];
     e2Config.image = [UIImage systemImageNamed:@"play.fill"];
     e2Config.buttonSize = UIButtonConfigurationSizeLarge;
-    _editBtn2 = [UIButton buttonWithConfiguration:e2Config primaryAction:
-        [UIAction actionWithHandler:^(__unused UIAction* a) {
-            NSLog(@"GLASS TEST: EDIT2 button tapped");
-        }]];
+    _editBtn2 = [UIButton buttonWithConfiguration:e2Config primaryAction:nil];
 
     UIButtonConfiguration* e3Config = [UIButtonConfiguration glassButtonConfiguration];
     e3Config.title = @"All";
     e3Config.buttonSize = UIButtonConfigurationSizeLarge;
-    _editBtn3 = [UIButton buttonWithConfiguration:e3Config primaryAction:
-        [UIAction actionWithHandler:^(__unused UIAction* a) {
-            NSLog(@"GLASS TEST: EDIT3 (All) button tapped");
-        }]];
+    _editBtn3 = [UIButton buttonWithConfiguration:e3Config primaryAction:nil];
 
     UIButtonConfiguration* doneConfig = [UIButtonConfiguration prominentGlassButtonConfiguration];
     doneConfig.title = @"Done";
     doneConfig.buttonSize = UIButtonConfigurationSizeLarge;
     _doneBtn = [UIButton buttonWithConfiguration:doneConfig primaryAction:
         [UIAction actionWithHandler:^(__unused UIAction* a) {
-            NSLog(@"GLASS TEST: DONE button tapped — exiting editing");
             [self _toggleEditing];
         }]];
 
@@ -122,12 +104,10 @@
         [_doneBtn.trailingAnchor constraintLessThanOrEqualToAnchor:safeArea.trailingAnchor constant:-12],
     ]];
 
-    NSLog(@"GLASS TEST: All buttons created and laid out.");
 }
 
 - (void)_toggleEditing API_AVAILABLE(ios(26.0)) {
     _editingMode = !_editingMode;
-    NSLog(@"GLASS TEST: editingMode = %@", _editingMode ? @"YES" : @"NO");
 
     _leftButton.hidden = _editingMode;
     _rightButton.hidden = _editingMode;
@@ -147,13 +127,6 @@
         [container bringSubviewToFront:_rightButton];
     }
 
-    // Log button frames
-    [container layoutIfNeeded];
-    NSLog(@"GLASS TEST: editBtn1 frame=%@ hidden=%d", NSStringFromCGRect(_editBtn1.frame), _editBtn1.hidden);
-    NSLog(@"GLASS TEST: editBtn2 frame=%@ hidden=%d", NSStringFromCGRect(_editBtn2.frame), _editBtn2.hidden);
-    NSLog(@"GLASS TEST: editBtn3 frame=%@ hidden=%d", NSStringFromCGRect(_editBtn3.frame), _editBtn3.hidden);
-    NSLog(@"GLASS TEST: doneBtn  frame=%@ hidden=%d userInteraction=%d", NSStringFromCGRect(_doneBtn.frame), _doneBtn.hidden, _doneBtn.userInteractionEnabled);
-    NSLog(@"GLASS TEST: container size=%@", NSStringFromCGSize(container.bounds.size));
 }
 
 - (void)viewWillAppear:(BOOL)animated {

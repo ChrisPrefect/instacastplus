@@ -57,9 +57,15 @@
     <script>
         var params = new URLSearchParams(window.location.search);
         var feedURL = params.get('url');
+        var guid = params.get('guid');
         var openLink = document.getElementById('open-app');
         if (feedURL) {
-            var appURL = 'instacast:' + feedURL;
+            var appURL;
+            if (guid) {
+                appURL = 'instacast://share-episode?url=' + encodeURIComponent(feedURL) + '&guid=' + encodeURIComponent(guid);
+            } else {
+                appURL = 'instacast:' + feedURL;
+            }
             openLink.href = appURL;
             window.location.href = appURL;
         } else {

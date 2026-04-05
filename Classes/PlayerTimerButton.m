@@ -137,11 +137,9 @@
         //[self setTitle:[NSString stringWithFormat:@"%ld", sleepTimer] forState:UIControlStateNormal];
         
         NSTimeInterval tRem = ceil(session.timerRemainingTime);
-        //NSLog(@"Player time remaining==%f",tRem);
         NSInteger minutes = floor(tRem/60);
         NSInteger seconds = trunc(tRem - minutes * 60);
         NSString*remainingTime = [NSString stringWithFormat:@"%02ld:%02ld", (long)minutes, (long)seconds];
-        //NSLog(@"Player time remaining==%@",remainingTime);
         [self setTitle:[NSString stringWithFormat:@"%@", remainingTime] forState:UIControlStateNormal];
         //[self setTitle:[NSString stringWithFormat:@"%ld", (long)(tRem/60)+1] forState:UIControlStateNormal];
     }

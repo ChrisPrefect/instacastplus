@@ -104,7 +104,9 @@
         }];
         
         [nc addObserver:self name:SubscriptionManagerDidStartRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
-            [self.refreshControl beginRefreshing];
+            if (self.isViewLoaded && self.view.window) {
+                [self.refreshControl beginRefreshing];
+            }
         }];
         
         [nc addObserver:self name:SubscriptionManagerDidFinishRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {

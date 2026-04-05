@@ -637,7 +637,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     (void)notification;
     if (!self.isViewLoaded || self.view.window == nil) {
-        DebugLog(@"[TranscriptData] restore playback ignored (view not visible)");
         return;
     }
 
@@ -645,11 +644,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
     NSString* currentEpisodeHash = episode.objectHash;
     BOOL episodeChanged = (currentEpisodeHash.length > 0 && ![currentEpisodeHash isEqualToString:self.transcriptDataEpisodeHash]);
-    DebugLog(@"[TranscriptData] restore playback episode=%@ tracked=%@ changed=%@ available=%@",
-             currentEpisodeHash ?: @"(nil)",
-             self.transcriptDataEpisodeHash ?: @"(nil)",
-             episodeChanged ? @"YES" : @"NO",
-             self.transcriptAvailable ? @"YES" : @"NO");
     if (episodeChanged) {
         [self reloadData];
     } else if (self.transcriptAvailable) {
@@ -806,13 +800,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     _transcriptAvailable = available;
-    CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
-    DebugLog(@"[TranscriptData] available state changed: %@ episode=%@ sources=%ld cues=%ld visible=%@",
-             available ? @"YES" : @"NO",
-             episode.objectHash ?: @"(nil)",
-             (long)self.transcriptSources.count,
-             (long)self.transcriptCues.count,
-             self.transcriptVisible ? @"YES" : @"NO");
     if (!available) {
         self.pendingTranscriptShowAfterScrollToTop = NO;
         self.transcriptVisible = NO;
@@ -829,10 +816,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptContainerView.hidden = !self.transcriptVisible;
     self.chapterImagesCollection.hidden = self.transcriptVisible;
     chevronIndicatorView.hidden = ![self _hasContentBelowImage];
-    DebugLog(@"[TranscriptUI] apply visibility visible=%@ containerHidden=%@ chapterHidden=%@",
-             self.transcriptVisible ? @"YES" : @"NO",
-             self.transcriptContainerView.hidden ? @"YES" : @"NO",
-             self.chapterImagesCollection.hidden ? @"YES" : @"NO");
     [self _updateTranscriptSyncTimerState];
 }
 
@@ -840,9 +823,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     NSMutableArray* sources = [NSMutableArray array];
     NSArray* rawSources = [episode.transcripts isKindOfClass:[NSArray class]] ? episode.transcripts : @[];
-    DebugLog(@"[TranscriptData] normalize sources episode=%@ rawCount=%ld",
-             episode.objectHash ?: @"(nil)",
-             (long)rawSources.count);
     for (id item in rawSources) {
         if (![item isKindOfClass:[NSDictionary class]]) {
             continue;
@@ -884,16 +864,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         NSString* title2 = [source2[@"title"] isKindOfClass:[NSString class]] ? source2[@"title"] : @"";
         return [title1 localizedCaseInsensitiveCompare:title2];
     }];
-    for (NSDictionary* source in sources) {
-        DebugLog(@"[TranscriptData] source url=%@ type=%@ lang=%@ rel=%@ title=%@ fallback=%@ href=%@",
-                 source[@"url"] ?: @"",
-                 source[@"type"] ?: @"",
-                 source[@"language"] ?: @"",
-                 source[@"rel"] ?: @"",
-                 source[@"title"] ?: @"",
-                 source[@"fallbackURL"] ?: @"",
-                 source[@"href"] ?: @"");
-    }
     return sources;
 }
 
@@ -1046,11 +1016,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSString* title = (self.selectedTranscriptDescriptor != nil) ? [self _transcriptDisplayNameForDescriptor:self.selectedTranscriptDescriptor] : @"Transcript".ls;
     [self.transcriptPickerButton setTitle:title forState:UIControlStateNormal];
     self.transcriptPickerButton.hidden = YES;
-    DebugLog(@"[TranscriptUI] picker title='%@' hidden=%@ sources=%ld selected=%@",
-             title,
-             self.transcriptPickerButton.hidden ? @"YES" : @"NO",
-             (long)self.transcriptSources.count,
-             self.selectedTranscriptDescriptor[@"url"] ?: @"");
 }
 
 - (NSURL*)_transcriptCacheDirectoryURLCreate:(BOOL)create
@@ -1331,8 +1296,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
-    DebugLog(@"[TranscriptData] transcript loaded url=%@ cues=%ld", resolvedURL, (long)cues.count);
-
     CDEpisode* loadedEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     self.transcriptLoadedEpisodeHash = loadedEpisode.objectHash;
 
@@ -1346,7 +1309,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     s_transcriptCachedCues = cues;
     s_transcriptCachedDescriptor = [resolvedDescriptor copy];
     s_transcriptCachedSources = [self.transcriptSources copy];
-    DebugLog(@"[TranscriptData] saved to in-memory cache episode=%@ cues=%ld", s_transcriptCachedEpisodeHash, (long)cues.count);
 
     [self _rebuildTranscriptLines];
     [self _updateTranscriptPickerButton];
@@ -1355,7 +1317,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     BOOL shouldRestoreVisible = [USER_DEFAULTS boolForKey:@"TranscriptVisiblePreference"];
     if (shouldRestoreVisible && !self.transcriptVisible) {
         self.transcriptVisible = YES;
-        DebugLog(@"[TranscriptUI] restored transcript visibility from preference");
     }
 
     // Fire availability callback AFTER visibility is restored so controls pick up correct state
@@ -1375,17 +1336,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     BOOL shouldRun = (self.isViewLoaded && self.view.window != nil && self.transcriptVisible && self.transcriptCues.count > 0);
     if (shouldRun && !self.transcriptSyncTimer) {
-        DebugLog(@"[TranscriptSync] start timer cues=%ld", (long)self.transcriptCues.count);
         self.transcriptSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
                                                                      target:self
                                                                    selector:@selector(_transcriptSyncTimerFired:)
                                                                    userInfo:nil
                                                                     repeats:YES];
     } else if (!shouldRun && self.transcriptSyncTimer) {
-        DebugLog(@"[TranscriptSync] stop timer visible=%@ window=%@ cues=%ld",
-                 self.transcriptVisible ? @"YES" : @"NO",
-                 self.view.window ? @"YES" : @"NO",
-                 (long)self.transcriptCues.count);
         [self.transcriptSyncTimer invalidate];
         self.transcriptSyncTimer = nil;
     }
@@ -1664,25 +1620,17 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSString* mimeType = [[response MIMEType] lowercaseString];
     NSString* extensionURLString = [descriptor[@"resolvedURL"] isKindOfClass:[NSString class]] ? descriptor[@"resolvedURL"] : descriptor[@"url"];
     NSString* urlExtension = [[NSURL URLWithString:extensionURLString].pathExtension lowercaseString];
-    DebugLog(@"[TranscriptData] parse start url=%@ type=%@ mime=%@ ext=%@ bytes=%lu",
-             extensionURLString ?: @"",
-             descriptorType ?: @"",
-             mimeType ?: @"",
-             urlExtension ?: @"",
-             (unsigned long)data.length);
 
     BOOL maybeJSON = ICTranscriptTypeContains(descriptorType, @"json") || ICTranscriptTypeContains(mimeType, @"json") || [urlExtension isEqualToString:@"json"];
     if (maybeJSON) {
         NSArray* jsonCues = ICTranscriptParseJSON(data);
         if (jsonCues.count > 0) {
-            DebugLog(@"[TranscriptData] parse success JSON cues=%ld", (long)jsonCues.count);
             return jsonCues;
         }
     }
 
     NSString* text = ICTranscriptDecodedString(data);
     if (text.length == 0) {
-        DebugLog(@"[TranscriptData] parse failed: decoded text empty");
         return @[];
     }
 
@@ -1690,7 +1638,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (maybeTTML || [text rangeOfString:@"<tt" options:NSCaseInsensitiveSearch].location != NSNotFound) {
         NSArray* ttmlCues = ICTranscriptParseTTML(text);
         if (ttmlCues.count > 0) {
-            DebugLog(@"[TranscriptData] parse success TTML cues=%ld", (long)ttmlCues.count);
             return ttmlCues;
         }
     }
@@ -1699,26 +1646,22 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (maybeLRC) {
         NSArray* lrcCues = ICTranscriptParseLRC(text);
         if (lrcCues.count > 0) {
-            DebugLog(@"[TranscriptData] parse success LRC(ext) cues=%ld", (long)lrcCues.count);
             return lrcCues;
         }
     }
 
     NSArray* timedTextCues = ICTranscriptParseArrowTimedText(text);
     if (timedTextCues.count > 0) {
-        DebugLog(@"[TranscriptData] parse success timed-text cues=%ld", (long)timedTextCues.count);
         return timedTextCues;
     }
 
     NSArray* lrcCues = ICTranscriptParseLRC(text);
     if (lrcCues.count > 0) {
-        DebugLog(@"[TranscriptData] parse success LRC(fallback) cues=%ld", (long)lrcCues.count);
         return lrcCues;
     }
 
     NSArray* jsonCues = ICTranscriptParseJSON(data);
     if (jsonCues.count > 0) {
-        DebugLog(@"[TranscriptData] parse success JSON(fallback) cues=%ld", (long)jsonCues.count);
         return jsonCues;
     }
 
@@ -1727,16 +1670,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                       [urlExtension isEqualToString:@"txt"];
     NSArray* plainTextCues = ICTranscriptParsePlainText(text);
     if (maybePlain && plainTextCues.count > 0) {
-        DebugLog(@"[TranscriptData] parse success plain(ext/type) cues=%ld", (long)plainTextCues.count);
         return plainTextCues;
     }
 
     if (plainTextCues.count > 0) {
-        DebugLog(@"[TranscriptData] parse success plain(fallback) cues=%ld", (long)plainTextCues.count);
         return plainTextCues;
     }
 
-    DebugLog(@"[TranscriptData] parse failed: no parser produced cues");
     return @[];
 }
 
@@ -1776,7 +1716,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         for (NSString* scheme in schemes) {
             NSString* candidate = [NSString stringWithFormat:@"%@:%@", scheme, trimmed];
             [attempts addObject:candidate];
-            DebugLog(@"[TranscriptData] URL attempt(protocol-relative): %@", candidate);
         }
         return;
     }
@@ -1786,7 +1725,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         NSString* absolute = directURL.absoluteString ?: trimmed;
         if (absolute.length > 0) {
             [attempts addObject:absolute];
-            DebugLog(@"[TranscriptData] URL attempt(absolute): %@", absolute);
         }
         return;
     }
@@ -1798,7 +1736,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         if (resolved.absoluteString.length > 0) {
             [attempts addObject:resolved.absoluteString];
             addedResolvedURL = YES;
-            DebugLog(@"[TranscriptData] URL attempt(source relative): %@", resolved.absoluteString);
         }
     }
 
@@ -1808,13 +1745,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         if (resolved.absoluteString.length > 0) {
             [attempts addObject:resolved.absoluteString];
             addedResolvedURL = YES;
-            DebugLog(@"[TranscriptData] URL attempt(link relative): %@", resolved.absoluteString);
         }
     }
 
     if (!addedResolvedURL) {
         [attempts addObject:trimmed];
-        DebugLog(@"[TranscriptData] URL attempt(raw fallback): %@", trimmed);
     }
 }
 
@@ -1829,9 +1764,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self _appendTranscriptURLAttemptForRawValue:primaryURL episode:episode attempts:attempts];
     [self _appendTranscriptURLAttemptForRawValue:fallbackURL episode:episode attempts:attempts];
     [self _appendTranscriptURLAttemptForRawValue:href episode:episode attempts:attempts];
-    DebugLog(@"[TranscriptData] attempts built for descriptor url=%@ attempts=%@",
-             descriptor[@"url"] ?: @"",
-             attempts.array);
 
     return attempts.array;
 }
@@ -1842,14 +1774,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                           attempts:(NSArray<NSString*>*)attempts
                           urlIndex:(NSInteger)urlIndex
 {
-    DebugLog(@"[TranscriptData] load descriptor candidateIndex=%ld/%ld urlIndex=%ld/%ld descriptorURL=%@",
-             (long)candidateIndex,
-             (long)candidates.count,
-             (long)urlIndex,
-             (long)attempts.count,
-             descriptor[@"url"] ?: @"");
     if (urlIndex >= (NSInteger)attempts.count) {
-        DebugLog(@"[TranscriptData] descriptor exhausted, moving to next candidate");
         [self _loadTranscriptCandidates:candidates index:candidateIndex + 1];
         return;
     }
@@ -1883,16 +1808,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             if (![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
             if (cachedCues.count > 0) {
-                DebugLog(@"[TranscriptData] cache hit+parse success episode=%@ url=%@ cues=%ld", episodeHash ?: @"(nil)", urlString, (long)cachedCues.count);
                 [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
                 return;
             }
 
             if (cachedData.length > 0) {
-                DebugLog(@"[TranscriptData] cache parse failed, removing cached entry url=%@", urlString);
                 [self _removeTranscriptCacheForEpisodeHash:episodeHash resolvedURL:urlString];
-            } else {
-                DebugLog(@"[TranscriptData] cache miss episode=%@ url=%@", episodeHash ?: @"(nil)", urlString);
             }
 
             // No cache or cache invalid — start network load
@@ -1917,7 +1838,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     [self.transcriptTask cancel];
     _transcriptLoadingURL = urlString;
-    DebugLog(@"[TranscriptData] starting network transcript load url=%@", urlString);
 
     NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30.0];
     [request setValue:@"text/vtt,application/x-subrip,text/plain,application/json,application/ttml+xml,text/xml;q=0.9,*/*;q=0.8" forHTTPHeaderField:@"Accept"];
@@ -1959,19 +1879,16 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             if (![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
             if (statusFailed) {
-                DebugLog(@"[TranscriptData] transcript request failed (%ld) url=%@", (long)statusCode, urlString);
                 [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
                 return;
             }
 
             if (hasError) {
-                DebugLog(@"[TranscriptData] transcript request error url=%@ error=%@", urlString, error.localizedDescription ?: @"no data");
                 [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
                 return;
             }
 
             if (cues.count == 0) {
-                DebugLog(@"[TranscriptData] transcript parse returned no cues url=%@", urlString);
                 [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
                 return;
             }
@@ -1986,7 +1903,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_loadTranscriptCandidates:(NSArray<NSDictionary*>*)candidates index:(NSInteger)index
 {
-    DebugLog(@"[TranscriptData] load candidates index=%ld total=%ld", (long)index, (long)candidates.count);
     if (index >= (NSInteger)candidates.count) {
         self.transcriptCues = @[];
         [self _clearTranscriptLines];
@@ -1994,20 +1910,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [self _updateTranscriptPickerButton];
         [self _applyTranscriptVisibility];
         [self _updateTranscriptSyncTimerState];
-        DebugLog(@"[TranscriptData] no candidate produced transcript -> available=NO");
         return;
     }
 
     NSDictionary* descriptor = candidates[index];
-    DebugLog(@"[TranscriptData] trying candidate index=%ld url=%@ type=%@ lang=%@",
-             (long)index,
-             descriptor[@"url"] ?: @"",
-             descriptor[@"type"] ?: @"",
-             descriptor[@"language"] ?: @"");
     CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     NSArray<NSString*>* attempts = [self _transcriptURLAttemptsForDescriptor:descriptor episode:episode];
     if (attempts.count == 0) {
-        DebugLog(@"[TranscriptData] candidate has no URL attempts -> next candidate");
         [self _loadTranscriptCandidates:candidates index:index + 1];
         return;
     }
@@ -2016,15 +1925,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_refreshTranscriptState
 {
-    DebugLog(@"[TranscriptData] refresh start");
-
     CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
 
     // 1) Same VC instance already has cues for this episode
     if (self.transcriptCues.count > 0 &&
         self.transcriptLoadedEpisodeHash.length > 0 &&
         [currentEpisode.objectHash isEqualToString:self.transcriptLoadedEpisodeHash]) {
-        DebugLog(@"[TranscriptData] refresh skipped: same episode already loaded (%ld cues)", (long)self.transcriptCues.count);
         [self _updateTranscriptSyncTimerState];
         return;
     }
@@ -2033,8 +1939,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (s_transcriptCachedCues.count > 0 &&
         s_transcriptCachedEpisodeHash.length > 0 &&
         [currentEpisode.objectHash isEqualToString:s_transcriptCachedEpisodeHash]) {
-        DebugLog(@"[TranscriptData] instant restore from in-memory cache episode=%@ cues=%ld",
-                 s_transcriptCachedEpisodeHash, (long)s_transcriptCachedCues.count);
 
         // Restore everything synchronously — with scrollEnabled=YES, attributedText is instant (lazy layout)
         self.transcriptLoadedEpisodeHash = s_transcriptCachedEpisodeHash;
@@ -2079,12 +1983,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptLoadedEpisodeHash = nil;
 
     CDEpisode* episode = currentEpisode;
-    BOOL isCached = [[CacheManager sharedCacheManager] episodeIsCached:episode];
-    DebugLog(@"[TranscriptData] refresh episode=%@ title='%@' cached=%@ consumed=%@",
-             episode.objectHash ?: @"(nil)",
-             episode.title ?: @"",
-             isCached ? @"YES" : @"NO",
-             episode.consumed ? @"YES" : @"NO");
     [self _clearTranscriptCacheIfNeededForEpisode:episode];
     self.transcriptSources = [self _normalizedTranscriptSourcesForEpisode:episode];
     self.selectedTranscriptDescriptor = nil;
@@ -2097,14 +1995,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     NSDictionary* preferred = [self _preferredTranscriptDescriptorFromSources:self.transcriptSources];
     NSArray* candidates = [self _orderedTranscriptCandidatesFromSources:self.transcriptSources preferred:preferred];
-    DebugLog(@"[TranscriptData] refresh sources=%ld preferred=%@ candidates=%ld",
-             (long)self.transcriptSources.count,
-             preferred[@"url"] ?: @"(nil)",
-             (long)candidates.count);
     if (candidates.count > 0) {
         [self _loadTranscriptCandidates:candidates index:0];
-    } else {
-        DebugLog(@"[TranscriptData] refresh ended: no transcript candidates");
     }
 }
 
@@ -2164,12 +2056,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)setTranscriptVisibleFromControl:(BOOL)visible
 {
-    DebugLog(@"[TranscriptUI] set visible from control requested=%@ available=%@ currentlyVisible=%@",
-             visible ? @"YES" : @"NO",
-             self.transcriptAvailable ? @"YES" : @"NO",
-             self.transcriptVisible ? @"YES" : @"NO");
     if (visible && !self.transcriptAvailable) {
-        DebugLog(@"[TranscriptUI] reject show: transcript not available");
         return;
     }
 
@@ -2178,16 +2065,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         self.transcriptVisible = NO;
         [self _applyTranscriptVisibility];
         [USER_DEFAULTS setBool:NO forKey:@"TranscriptVisiblePreference"];
-        DebugLog(@"[TranscriptUI] transcript hidden via control");
         return;
     }
 
     CGFloat topOffsetY = -self.tableView.contentInset.top;
     if (self.tableView.contentOffset.y > topOffsetY + 1.0) {
         self.pendingTranscriptShowAfterScrollToTop = YES;
-        DebugLog(@"[TranscriptUI] delaying show until table scrolled to top currentOffset=%.2f target=%.2f",
-                 self.tableView.contentOffset.y,
-                 topOffsetY);
         [self.tableView setContentOffset:CGPointMake(0, topOffsetY) animated:YES];
         return;
     }
@@ -2199,8 +2082,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     PlaybackManager* pman = [PlaybackManager playbackManager];
     [self _updateTranscriptCueForPlaybackTime:pman.time animated:NO];
     [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
-    DebugLog(@"[TranscriptUI] transcript shown immediately cueIndex=%ld",
-             (long)self.activeTranscriptCueIndex);
 }
 
 
@@ -2534,13 +2415,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
-    BOOL isCached = [[CacheManager sharedCacheManager] episodeIsCached:episode];
-    DebugLog(@"[TranscriptData] reloadData episode=%@ title='%@' cached=%@ ready=%@ movingVideo=%@",
-             episode.objectHash ?: @"(nil)",
-             episode.title ?: @"",
-             isCached ? @"YES" : @"NO",
-             pman.ready ? @"YES" : @"NO",
-             pman.movingVideo ? @"YES" : @"NO");
     self.transcriptDataEpisodeHash = episode.objectHash;
     self.chapters = (episode != nil) ? [episode sortedChapters] : @[];
     self.currentChapterIndex = pman.currentChapter;

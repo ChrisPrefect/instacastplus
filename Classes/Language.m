@@ -7,6 +7,7 @@
 //
 
 #import "Language.h"
+#import "Foundation+Localization.h"
 
 @implementation Language
 
@@ -24,6 +25,9 @@ static NSBundle *bundle = nil;
 {
     NSString *path = [[ NSBundle mainBundle ] pathForResource:language ofType:@"lproj"];
     bundle = [NSBundle bundleWithPath:path];
+
+    // Update mainBundle preferred localization so .ls works immediately
+    [[NSBundle mainBundle] vm_setPreferredLocalizations:@[language]];
 }
 
 +(NSString *)get:(NSString *)key alter:(NSString *)alternate

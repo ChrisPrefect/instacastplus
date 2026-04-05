@@ -245,7 +245,7 @@
     {
         [[NSUserDefaults standardUserDefaults] setObject:@[@"en"] forKey:@"AppleLanguages"];
         [[NSUserDefaults standardUserDefaults] synchronize];
-        [Language setLanguage:@"es"];
+        [Language setLanguage:@"en"];
     }
     else
     {

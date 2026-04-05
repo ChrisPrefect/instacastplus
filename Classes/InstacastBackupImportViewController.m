@@ -223,11 +223,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
                 podcastDownloaded++;
             }
         }
-        if (podcastDownloaded > 0) {
-            DebugLog(@"Backup analyze %@: %ld downloaded of %ld episodes", podcast.title, (long)podcastDownloaded, (long)podcast.episodes.count);
-        }
     }
-    DebugLog(@"Backup analyze total: %ld downloaded episodes", (long)self.downloadedEpisodeCount);
 }
 
 - (void)initializeSelectedCategories {

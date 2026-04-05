@@ -259,10 +259,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     }
     
 
-    DebugLog(@"stage 1: %lf, %ld", [[NSDate date] timeIntervalSinceDate:start], (long)[objects count]);
-    
-
-    
     NSArray* objectHashes = [objects valueForKey:@"objectHash"];
     NSMutableSet* filteredObjectHashes = [[NSMutableSet alloc] initWithArray:objectHashes];
     
@@ -297,8 +293,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         objectHashes = [filteredObjectHashes allObjects];
     }
     
-    DebugLog(@"stage 2: %lf, %ld", [[NSDate date] timeIntervalSinceDate:start], (long)[objectHashes count]);
-    
     NSFetchRequest* fetchRequest2 = [[NSFetchRequest alloc] init];
     fetchRequest2.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
     fetchRequest2.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", objectHashes];
@@ -308,8 +302,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     
     NSError* error2;
     NSArray* stage3Objects = [self.managedObjectContext executeFetchRequest:fetchRequest2 error:&error2];
-    
-    DebugLog(@"stage 3: %lf, %ld", [[NSDate date] timeIntervalSinceDate:start], (long)[stage3Objects count]);
     
     if ([self.orderBy isEqualToString:@"timeLeft"]) {
         stage3Objects = [stage3Objects sortedArrayUsingComparator:^NSComparisonResult(CDEpisode* obj1, CDEpisode* obj2) {
@@ -476,7 +468,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         }
         
         
-        //DebugLog(@"count of '%@ (%@)': %lf, %ld", contextSelf.name, contextSelf.uid, [[NSDate date] timeIntervalSinceDate:start], (long)[filteredObjectHashes count]);
         
         dispatch_async(dispatch_get_main_queue(), ^{
             NSUInteger count = [filteredObjectHashes count];
