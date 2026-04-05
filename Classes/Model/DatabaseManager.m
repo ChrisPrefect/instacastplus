@@ -682,7 +682,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
             return [@(b.episodes.count) compare:@(a.episodes.count)];
         }];
 
-        CDFeed* keeper = feeds.firstObject;
+        // Keep first (non-parked, most episodes), delete rest
         for (NSUInteger i = 1; i < feeds.count; i++) {
             CDFeed* duplicate = feeds[i];
             [self.objectContext deleteObject:duplicate];

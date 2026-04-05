@@ -141,7 +141,6 @@ static const NSTimeInterval kBatchDelay = 0.25;
     [_loadingQueue cancelAllOperations];
 
     [_lock lock];
-    NSArray* feedURLs = [_pendingLoads allKeys];
     [_pendingLoads removeAllObjects];
     _activeFeedURL = nil;
     [_lock unlock];

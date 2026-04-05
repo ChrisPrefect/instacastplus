@@ -573,8 +573,6 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     PlaybackManager *pm = [PlaybackManager playbackManager];
     BOOL hasEpisode = (pm.playingEpisode != nil);
     BOOL paused = pm.paused;
-    BOOL podcastPlaying = pm.isPodcastPlaying;
-    BOOL waiting = pm.waitingForLoad;
     BOOL playing = hasEpisode && !paused;
     [self publishValue:(playing ? @"1" : @"0") toTopic:[self topic:@"play"] lastValue:&_lastPlay retain:YES];
 }
