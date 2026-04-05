@@ -2160,6 +2160,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     // episode share link: parse feed in background, find episode by GUID, play directly
     if (episodeGUID.length > 0) {
+        __weak InstacastSceneDelegate* weakSelf = self;
         ICFeedParser* parser = [[ICFeedParser alloc] init];
         parser.url = url;
         parser.timeout = 15;
@@ -2173,10 +2174,12 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             }
             if (targetEpisode) {
                 CDEpisode* persistentEpisode = [DMANAGER addUnsubscribedFeed:feed andEpisode:targetEpisode];
-                [[AudioSession sharedAudioSession] playEpisode:persistentEpisode];
+                PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:persistentEpisode forceReload:YES];
+                [playbackController presentFromParentViewController:weakSelf.mainViewController autostart:YES completion:NULL];
                 [[AudioSession sharedAudioSession] disableContinuousPlaybackForCurrentEpisode];
             }
         };
+        parser.didEndWithError = ^(NSError* error) {};
         [[App mainQueue] addOperation:parser];
         return;
     }
