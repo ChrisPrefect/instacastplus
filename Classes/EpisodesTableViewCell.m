@@ -453,7 +453,24 @@
     
     self.multipleSelectionBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
     self.selectedBackgroundView.backgroundColor = ICTableSelectedBackgroundColor;
-    
+
+    // Highlight currently loaded episode
+    AudioSession* session = [AudioSession sharedAudioSession];
+    if (session.episode && session.episode == episode) {
+        ICAppearanceManager* aman = [ICAppearanceManager sharedManager];
+        if (aman.nightSettingMode) {
+            if ([USER_DEFAULTS boolForKey:kDefaultDarkModePureBlack]) {
+                self.backgroundColor = [UIColor colorWithWhite:0.12f alpha:1.0f];
+            } else {
+                self.backgroundColor = [UIColor blackColor];
+            }
+        } else {
+            self.backgroundColor = [UIColor colorWithWhite:0.93f alpha:1.0f];
+        }
+    } else {
+        self.backgroundColor = ICBackgroundColor;
+    }
+
     self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
     self.summaryLabel.textColor = ICMutedTextColor;
     self.durationLabel.textColor = ICMutedTextColor;
@@ -461,7 +478,6 @@
     self.playAccessoryButton.tintColor = ICTintColor;
     self.topSeparatorView.backgroundColor = ICTableSeparatorColor;
     self.videoIndicator.tintColor = ICMutedTextColor;
-    //self.contentView.backgroundColor = ICTableSeparatorColor;
     
     
 	CGRect bounds = self.bounds;

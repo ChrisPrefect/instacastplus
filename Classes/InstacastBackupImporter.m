@@ -1094,6 +1094,11 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"intelligentSleepAlways":  IntelligentSleepTimerAlwaysActive,
         @"feedSortOrder":           FeedSortOrder,
         @"selectedAppLanguage":     SelectedAppLanguage,
+        @"episodeSwipeRightAction": EpisodeSwipeRightAction,
+        @"episodeSwipeLeftAction":  EpisodeSwipeLeftAction,
+        @"darkModePureBlack":       kDefaultDarkModePureBlack,
+        @"fontSizeLarger":          kDefaultFontSizeLarger,
+        @"tapOnEpisodeAction":      TapOnEpisodeAction,
     };
 
     NSSet *boolKeys = [NSSet setWithArray:@[
@@ -1106,7 +1111,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"deviceMovementIntelligentSleep", @"screenTouchIntelligentSleep", @"volumeChangeIntelligentSleep",
         @"continuousPlay", @"autoDownloadWhileStreaming", @"enableCachingImagesOver3G",
         @"openLinksExternal", @"notifyNewEpisode", @"notifyRefreshFinished", @"notifyDownloadFinished",
-        @"intelligentSleepAlways",
+        @"intelligentSleepAlways", @"darkModePureBlack",
     ]];
 
     NSSet *doubleKeys = [NSSet setWithArray:@[@"deviceMovementSensitivity"]];
@@ -1140,6 +1145,11 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     if (backup.settings.mainMenuListUIDs.count > 0) {
         [defaults setObject:backup.settings.mainMenuListUIDs forKey:@"MainMenuListUIDs"];
         [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
+        count++;
+    }
+
+    if (backup.settings.enabledPlaybackSpeeds.count > 0) {
+        [defaults setObject:backup.settings.enabledPlaybackSpeeds forKey:EnabledPlaybackSpeedsKey];
         count++;
     }
 

@@ -1,4 +1,6 @@
-# CLAUDE.md — Instacast+
+# CLAUDE.md — InstacastPlus
+
+App-Name: **InstacastPlus** (ein Wort, kein Leerzeichen, kein Bindestrich). Website: `https://instacast.ch`. App Store: `https://apps.apple.com/app/id6472283494`. Bundle ID: `com.iteconomy.instacastplus`. Team ID: `L95F4M2LHG`.
 
 Podcast-App iOS/macOS, Objective-C. v3.2, min iOS 13.0. CarPlay, AVFoundation, OPML, Podlove Chapters.
 

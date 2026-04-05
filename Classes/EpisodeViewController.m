@@ -1414,11 +1414,18 @@
 {
     UIBarButtonItem* barButton = [sender isKindOfClass:[UIBarButtonItem class]] ? (UIBarButtonItem*)sender : nil;
 
-    NSURL* linkURL = self.episode.linkURL;
-    NSURL* deeplinkURL = self.episode.deeplinkURL;
-    NSURL* feedLinkURL = self.episode.feed.linkURL;
     NSURL* feedSourceURL = self.episode.feed.sourceURL;
-    NSURL* link = deeplinkURL ?: linkURL ?: feedLinkURL ?: feedSourceURL;
+    if (!feedSourceURL) {
+        return;
+    }
+
+    NSMutableArray* queryItems = [NSMutableArray arrayWithObject:[NSURLQueryItem queryItemWithName:@"url" value:[feedSourceURL absoluteString]]];
+    if (self.episode.guid.length > 0) {
+        [queryItems addObject:[NSURLQueryItem queryItemWithName:@"guid" value:self.episode.guid]];
+    }
+    NSURLComponents* shareComponents = [NSURLComponents componentsWithString:@"https://instacast.ch/share/episode"];
+    shareComponents.queryItems = queryItems;
+    NSURL* link = shareComponents.URL;
     if (!link) {
         return;
     }

@@ -1,0 +1,23 @@
+{
+    "applinks": {
+        "details": [
+            {
+                "appIDs": [
+                    "L95F4M2LHG.com.iteconomy.instacastplus"
+                ],
+                "components": [
+                    {
+                        "/": "/share/podcast",
+                        "?": { "url": "?*" },
+                        "comment": "Share a podcast feed"
+                    },
+                    {
+                        "/": "/share/episode",
+                        "?": { "url": "?*", "guid": "?*" },
+                        "comment": "Share an episode"
+                    }
+                ]
+            }
+        ]
+    }
+}

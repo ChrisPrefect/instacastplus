@@ -843,19 +843,12 @@
 
 - (void) share:(id)sender
 {
-    NSURL* feedURL;
-    if (self.feed.username.length > 0) {
-        NSURLComponents* components = [NSURLComponents componentsWithURL:self.feed.sourceURL resolvingAgainstBaseURL:NO];
-        components.scheme = @"podcast";
-        components.user = self.feed.username;
-        components.password = self.feed.password;
-        feedURL = components.URL;
-    } else {
-        feedURL = [self.feed sourceURLAsPcastURL];
-    }
+    NSURLComponents* shareComponents = [NSURLComponents componentsWithString:@"https://instacast.ch/share/podcast"];
+    shareComponents.queryItems = @[[NSURLQueryItem queryItemWithName:@"url" value:[self.feed.sourceURL absoluteString]]];
+    NSURL* shareURL = shareComponents.URL;
 
     UIImage* feedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:self.feed.imageURL size:72 grayscale:NO];
-    ICShareItem* shareItem = [ICShareItem itemWithURL:feedURL title:self.feed.title image:feedImage];
+    ICShareItem* shareItem = [ICShareItem itemWithURL:shareURL title:self.feed.title image:feedImage];
     UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[shareItem] applicationActivities:nil];
     if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
         shareController.popoverPresentationController.barButtonItem = sender;

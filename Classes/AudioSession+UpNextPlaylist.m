@@ -39,27 +39,19 @@
 
 - (void) prependToUpNext:(NSArray*)episodes
 {
-    // currently playing episode can not be in up next
-    NSMutableArray* mutableEpisodes = [episodes mutableCopy];
-    [mutableEpisodes removeObject:self.episode];
-    
     [self willChangeValueForKey:@"playlist"];
-    [self _eraseEpisodesFromUpNext:mutableEpisodes];
-    [self.mutablePlaylist insertObjects:mutableEpisodes
-                              atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, [mutableEpisodes count])]];
+    [self _eraseEpisodesFromUpNext:episodes];
+    [self.mutablePlaylist insertObjects:episodes
+                              atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, [episodes count])]];
     [self didChangeValueForKey:@"playlist"];
     [self _savePlaybackStateInUserDefaults];
 }
 
 - (void) appendToUpNext:(NSArray*)episodes
 {
-    // currently playing episode can not be in up next
-    NSMutableArray* mutableEpisodes = [episodes mutableCopy];
-    [mutableEpisodes removeObject:self.episode];
-    
     [self willChangeValueForKey:@"playlist"];
-    [self _eraseEpisodesFromUpNext:mutableEpisodes];
-    [self.mutablePlaylist addObjectsFromArray:mutableEpisodes];
+    [self _eraseEpisodesFromUpNext:episodes];
+    [self.mutablePlaylist addObjectsFromArray:episodes];
     [self didChangeValueForKey:@"playlist"];
     [self _savePlaybackStateInUserDefaults];
 }

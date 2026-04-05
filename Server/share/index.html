@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InstacastPlus</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #000;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container { text-align: center; max-width: 400px; }
+        .icon {
+            width: 120px; height: 120px;
+            border-radius: 27px;
+            margin: 0 auto 24px;
+            overflow: hidden;
+        }
+        .icon img { width: 100%; height: 100%; }
+        h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+        .subtitle { font-size: 17px; color: #999; margin-bottom: 32px; }
+        .open-app-button {
+            display: inline-block; background: #E8520A; color: #fff;
+            text-decoration: none; font-size: 17px; font-weight: 600;
+            padding: 14px 32px; border-radius: 12px; transition: opacity 0.2s;
+            margin-bottom: 12px;
+        }
+        .open-app-button:hover { opacity: 0.85; }
+        .app-store-button {
+            display: inline-block; background: #333; color: #fff;
+            text-decoration: none; font-size: 15px; font-weight: 500;
+            padding: 10px 24px; border-radius: 12px; transition: opacity 0.2s;
+        }
+        .app-store-button:hover { opacity: 0.85; }
+        .fallback { margin-top: 16px; font-size: 13px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">
+            <img src="data:image/png;base64,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" alt="InstacastPlus">
+        </div>
+        <h1>InstacastPlus</h1>
+        <p class="subtitle">Open in InstacastPlus</p>
+        <a class="open-app-button" id="open-app" href="#">Open in App</a>
+        <a class="app-store-button" href="https://apps.apple.com/app/id6472283494">
+            Download on the App Store
+        </a>
+    </div>
+    <script>
+        var params = new URLSearchParams(window.location.search);
+        var feedURL = params.get('url');
+        var openLink = document.getElementById('open-app');
+        if (feedURL) {
+            var appURL = 'instacast:' + feedURL;
+            openLink.href = appURL;
+            window.location.href = appURL;
+        } else {
+            openLink.style.display = 'none';
+        }
+    </script>
+</body>
+</html>

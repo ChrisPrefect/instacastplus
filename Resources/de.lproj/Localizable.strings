@@ -983,6 +983,7 @@
 "Mark as Played / Unplayed" = "Gehört / Ungehört markieren";
 "Delete Episode from List" = "Episode aus Liste löschen";
 "Show Show Notes" = "Show Notes anzeigen";
+"Swipe Action Toggle Info" = "\"Gehört markieren\", \"Favorit markieren\" und \"Zur Abspielliste hinzufügen\" führen bei erneuter Ausführung die Gegenoperation aus.";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer zurücksetzen bei";

@@ -91,6 +91,7 @@
 @property (readonly, strong) NSArray* artworks;
 @property (assign) NSInteger currentArtwork; /* observable */
 
+- (void) updateNowPlayingInfo;
 - (void) stopAirPlayVideo;
 
 @property (nonatomic, strong) ICAudioEndpoint* audioEndpoint;

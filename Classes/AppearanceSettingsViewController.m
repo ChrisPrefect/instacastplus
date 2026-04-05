@@ -713,6 +713,7 @@ API_AVAILABLE(ios(14.0)){
             [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
             [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
         ];
+        controller.footerText = @"Swipe Action Toggle Info".ls;
         [self.navigationController pushViewController:controller animated:YES];
         return;
     }

@@ -82,6 +82,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, nullable) NSString *feedListSortMode;
 @property (nonatomic, strong, nullable) NSMutableArray<NSString *> *manualFeedOrder;
 @property (nonatomic, strong, nullable) NSMutableArray<NSString *> *mainMenuListUIDs;
+@property (nonatomic, strong, nullable) NSMutableArray<NSNumber *> *enabledPlaybackSpeeds;
 @end
 
 #pragma mark - InstacastBackupData

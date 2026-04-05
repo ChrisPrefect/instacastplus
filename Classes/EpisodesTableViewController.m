@@ -28,6 +28,7 @@
 #import "NumberAccessoryView.h"
 
 #import "ToolbarLabelsViewController.h"
+#import "PlaybackDefines.h"
 #import "ICSidebarPanGestureRecognizer.h"
 #import "UpNextTableViewController.h"
 #import "InstacastAppDelegate.h"
@@ -90,6 +91,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                  selector:@selector(updateAppearance)
                                                      name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                    object:nil];
+        [nc addObserver:self
+                                                 selector:@selector(_playbackEpisodeDidChange:)
+                                                     name:PlaybackManagerDidChangeEpisodeNotification
+                                                   object:nil];
+        [nc addObserver:self
+                                                 selector:@selector(_playbackEpisodeDidChange:)
+                                                     name:PlaybackManagerDidEndNotification
+                                                   object:nil];
 
         _observing = YES;
         [self _setNeedsPlayComboButtonUpdate];
@@ -103,6 +112,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachingEpisodes"];
 
         _observing = NO;
+    }
+}
+
+- (void) _playbackEpisodeDidChange:(NSNotification*)notification
+{
+    if (self.tableView.window) {
+        [self.tableView reloadData];
     }
 }
 

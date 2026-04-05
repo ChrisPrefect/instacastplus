@@ -142,9 +142,7 @@
 	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>5.0</string>
-	<key>NSMainNibFile</key>
-	<string>MainWindow-iPad</string>
-	<key>NSPrincipalClass</key>
+<key>NSPrincipalClass</key>
 	<string>Application</string>
 	<key>UIBackgroundModes</key>
 	<array>

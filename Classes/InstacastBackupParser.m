@@ -200,7 +200,7 @@
         }
     }
     // Global settings child elements
-    else if ([path hasPrefix:@"instacast/settings/"] && ![elementName isEqualToString:@"manualFeedOrder"] && ![elementName isEqualToString:@"feedUrl"] && ![elementName isEqualToString:@"mainMenuListUIDs"] && ![elementName isEqualToString:@"uid"]) {
+    else if ([path hasPrefix:@"instacast/settings/"] && ![elementName isEqualToString:@"manualFeedOrder"] && ![elementName isEqualToString:@"feedUrl"] && ![elementName isEqualToString:@"mainMenuListUIDs"] && ![elementName isEqualToString:@"uid"] && ![elementName isEqualToString:@"enabledPlaybackSpeeds"] && ![elementName isEqualToString:@"speed"]) {
         if (text.length > 0) {
             if ([elementName isEqualToString:@"feedListSortMode"]) {
                 _backupData.settings.feedListSortMode = text;
@@ -225,6 +225,15 @@
                 _backupData.settings.mainMenuListUIDs = [NSMutableArray array];
             }
             [_backupData.settings.mainMenuListUIDs addObject:text];
+        }
+    }
+    // speed inside enabledPlaybackSpeeds
+    else if ([path isEqualToString:@"instacast/settings/enabledPlaybackSpeeds/speed"]) {
+        if (text.length > 0) {
+            if (!_backupData.settings.enabledPlaybackSpeeds) {
+                _backupData.settings.enabledPlaybackSpeeds = [NSMutableArray array];
+            }
+            [_backupData.settings.enabledPlaybackSpeeds addObject:@([text integerValue])];
         }
     }
 

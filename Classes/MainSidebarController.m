@@ -136,6 +136,15 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     }
 
     self.tableView.contentInset = UIEdgeInsetsMake(headerHeight, 0, 0, 0);
+
+    UIEdgeInsets safeArea = self.view.safeAreaInsets;
+    UIEdgeInsets adjustedInset = self.tableView.adjustedContentInset;
+    DebugLog(@"[Sidebar Layout] viewBounds=%@ safeArea=(%g,%g,%g,%g) items=%ld contentH=%g headerH=%g contentInset.top=%g adjustedInset.top=%g scrollEnabled=%d",
+             NSStringFromCGRect(self.view.bounds),
+             safeArea.top, safeArea.left, safeArea.bottom, safeArea.right,
+             (long)itemCount, totalContentHeight, headerHeight,
+             self.tableView.contentInset.top, adjustedInset.top,
+             self.tableView.scrollEnabled);
 }
 
 #pragma mark - Table view data source

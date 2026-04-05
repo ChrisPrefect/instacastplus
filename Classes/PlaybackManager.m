@@ -1643,14 +1643,9 @@ didReceiveResponse:(NSURLResponse *)response
 }
 
 - (void)updateNowPlayingInfo {
-    /*MPNowPlayingInfoCenter *nowPlayingInfoCenter = [MPNowPlayingInfoCenter defaultCenter];
-    NSDictionary *nowPlayingInfo = @{
-        MPMediaItemPropertyTitle: self.playingEpisode.title,
-        MPMediaItemPropertyArtist: self.playingEpisode.author,
-        MPMediaItemPropertyPlaybackDuration: @(self.playingEpisode.duration), // total duration in seconds
-        MPNowPlayingInfoPropertyElapsedPlaybackTime: @(self.playingEpisode.position) // current time in seconds
-    };
-    nowPlayingInfoCenter.nowPlayingInfo = nowPlayingInfo;*/
+    if (self.playingEpisode) {
+        [self _setNowPlayingInfoOfEpisode:self.playingEpisode];
+    }
 }
 
 

@@ -175,7 +175,6 @@
 		1B8C230712DDC77F00589115 /* EpisodeViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8C230612DDC77F00589115 /* EpisodeViewController.m */; };
 		1B8DAB9D179531EB00DD78F3 /* EpisodePlayComboButton.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8DAB9C179531EB00DD78F3 /* EpisodePlayComboButton.m */; };
 		1B8DBA07150E406600F6A7CB /* DirectoryViewController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DB9FF150E406600F6A7CB /* DirectoryViewController.xib */; };
-		1B8DBA09150E406600F6A7CB /* MainWindow.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DBA01150E406600F6A7CB /* MainWindow.xib */; };
 		1B8DBA0B150E406600F6A7CB /* PlayerController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DBA03150E406600F6A7CB /* PlayerController.xib */; };
 		1B8DBA0C150E406600F6A7CB /* PlayerInfoController.xib in Resources */ = {isa = PBXBuildFile; fileRef = 1B8DBA04150E406600F6A7CB /* PlayerInfoController.xib */; };
 		1B8F6A7B19D55E6D0098399D /* FXKeychain.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8F6A7A19D55E6D0098399D /* FXKeychain.m */; };
@@ -660,7 +659,6 @@
 		1B8DAB9B179531EB00DD78F3 /* EpisodePlayComboButton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EpisodePlayComboButton.h; sourceTree = "<group>"; };
 		1B8DAB9C179531EB00DD78F3 /* EpisodePlayComboButton.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EpisodePlayComboButton.m; sourceTree = "<group>"; };
 		1B8DB9FF150E406600F6A7CB /* DirectoryViewController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = DirectoryViewController.xib; path = "../../Resources-iPhone/Nibs/DirectoryViewController.xib"; sourceTree = "<group>"; };
-		1B8DBA01150E406600F6A7CB /* MainWindow.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = MainWindow.xib; path = "../../Resources-iPhone/Nibs/MainWindow.xib"; sourceTree = "<group>"; };
 		1B8DBA03150E406600F6A7CB /* PlayerController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = PlayerController.xib; path = "../../Resources-iPhone/Nibs/PlayerController.xib"; sourceTree = "<group>"; };
 		1B8DBA04150E406600F6A7CB /* PlayerInfoController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; name = PlayerInfoController.xib; path = "../../Resources-iPhone/Nibs/PlayerInfoController.xib"; sourceTree = "<group>"; };
 		1B8DBA581514E8E100F6A7CB /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
@@ -1087,7 +1085,6 @@
 			isa = PBXGroup;
 			children = (
 				1B9D82C819C31D2F00F03B69 /* LaunchScreen.xib */,
-				1B8DBA01150E406600F6A7CB /* MainWindow.xib */,
 				1B8DB9FF150E406600F6A7CB /* DirectoryViewController.xib */,
 				1B8DBA03150E406600F6A7CB /* PlayerController.xib */,
 				1B61040C162462C20075541D /* PlayerControlView.xib */,
@@ -2099,7 +2096,6 @@
 				CE3EA6912AA7A952001900EB /* Info-OSX.plist in Resources */,
 				1B9D82C919C31D2F00F03B69 /* LaunchScreen.xib in Resources */,
 				CE3EA6922AA7A952001900EB /* Info-iOS.plist in Resources */,
-				1B8DBA09150E406600F6A7CB /* MainWindow.xib in Resources */,
 				1B97834D182175B400365797 /* ShowNotesTemplateIPhone.html in Resources */,
 				1B83D1D21983CB3B00669575 /* ShowNotesNightAppearance.css in Resources */,
 				CDA678092C5C13DA003168EA /* Main.storyboard in Resources */,

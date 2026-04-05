@@ -979,6 +979,7 @@
 "Mark as Played / Unplayed" = "Mark as Played / Unplayed";
 "Delete Episode from List" = "Delete Episode from List";
 "Show Show Notes" = "Show Show Notes";
+"Swipe Action Toggle Info" = "\"Mark as Played\", \"Mark as Favorite\" and \"Add to Play Next\" perform the reverse action when swiped again.";
 
 /* SleepTimerSettingsViewController */
 "Smart Sleep Timer reset at" = "Smart Sleep Timer reset at";

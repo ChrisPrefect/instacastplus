@@ -221,6 +221,6 @@
                                              options:NSStringDrawingUsesLineFragmentOrigin
                                              context:nil].size;
     IC_SIZE_INTEGRAL(textSize);
-    return textSize.height + 24; // 12pt padding top + bottom
+    return textSize.height + 16; // 8pt padding top + bottom
 }
 @end

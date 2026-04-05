@@ -139,6 +139,7 @@
 - (void) _showMenuViewController:(BOOL)show
 {
     if (show) {
+        _sidebarViewController.view.frame = self.view.bounds;
         [self addChildViewController:_sidebarViewController];
         if (_contentViewController.view) {
             [self.view insertSubview:_sidebarViewController.view belowSubview:_contentViewController.view];
@@ -168,7 +169,7 @@
         
         
         [sidebarViewController.view setAutoresizingMask:UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight];
-        sidebarViewController.view.frame = self.view.frame;
+        sidebarViewController.view.frame = self.view.bounds;
     }
 }
 

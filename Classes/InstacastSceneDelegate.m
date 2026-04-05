@@ -310,6 +310,35 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     }
 }
 
+- (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity {
+    if (![userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
+        return;
+    }
+
+    NSURL *url = userActivity.webpageURL;
+    if (!url || ![url.host isEqualToString:@"instacast.ch"]) {
+        return;
+    }
+
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    NSString *feedURLString = nil;
+    for (NSURLQueryItem *item in components.queryItems) {
+        if ([item.name isEqualToString:@"url"]) {
+            feedURLString = item.value;
+            break;
+        }
+    }
+
+    if (!feedURLString) {
+        return;
+    }
+
+    NSURL *feedURL = [NSURL URLWithString:feedURLString];
+    if (feedURL) {
+        [self _handlePcastURL:feedURL];
+    }
+}
+
 - (UIViewController*)getRootViewControllerDev
 {
     UIViewController* rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
@@ -381,6 +410,9 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     }
     [self _updateAppContentAfterBecomingActive];
     App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+
+    // Sync Now Playing lockscreen state with actual playback state
+    [[PlaybackManager playbackManager] updateNowPlayingInfo];
 
     // Auto-refresh feeds if last refresh was more than 30 minutes ago
     [self _autoRefreshFeedsIfNeeded];

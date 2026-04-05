@@ -567,6 +567,22 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:FeedListSortMode]) [xml appendFormat:@"    <feedListSortMode>%@</feedListSortMode>\n", [self xmlEscape:[defaults stringForKey:FeedListSortMode]]];
     if ([defaults objectForKey:FeedSortOrder]) [xml appendFormat:@"    <feedSortOrder>%@</feedSortOrder>\n", [self xmlEscape:[defaults stringForKey:FeedSortOrder]]];
     if ([defaults objectForKey:SelectedAppLanguage]) [xml appendFormat:@"    <selectedAppLanguage>%@</selectedAppLanguage>\n", [self xmlEscape:[defaults stringForKey:SelectedAppLanguage]]];
+    // Swipe Actions
+    if ([defaults objectForKey:EpisodeSwipeRightAction]) [xml appendFormat:@"    <episodeSwipeRightAction>%ld</episodeSwipeRightAction>\n", (long)[defaults integerForKey:EpisodeSwipeRightAction]];
+    if ([defaults objectForKey:EpisodeSwipeLeftAction]) [xml appendFormat:@"    <episodeSwipeLeftAction>%ld</episodeSwipeLeftAction>\n", (long)[defaults integerForKey:EpisodeSwipeLeftAction]];
+    // Display
+    if ([defaults objectForKey:kDefaultDarkModePureBlack]) [xml appendFormat:@"    <darkModePureBlack>%@</darkModePureBlack>\n", [defaults boolForKey:kDefaultDarkModePureBlack] ? @"true" : @"false"];
+    if ([defaults objectForKey:kDefaultFontSizeLarger]) [xml appendFormat:@"    <fontSizeLarger>%ld</fontSizeLarger>\n", (long)[defaults integerForKey:kDefaultFontSizeLarger]];
+    if ([defaults objectForKey:TapOnEpisodeAction]) [xml appendFormat:@"    <tapOnEpisodeAction>%ld</tapOnEpisodeAction>\n", (long)[defaults integerForKey:TapOnEpisodeAction]];
+    // Enabled Playback Speeds
+    if ([defaults objectForKey:EnabledPlaybackSpeedsKey]) {
+        NSArray* speeds = [defaults objectForKey:EnabledPlaybackSpeedsKey];
+        [xml appendString:@"    <enabledPlaybackSpeeds>\n"];
+        for (NSNumber* speed in speeds) {
+            [xml appendFormat:@"      <speed>%ld</speed>\n", (long)[speed integerValue]];
+        }
+        [xml appendString:@"    </enabledPlaybackSpeeds>\n"];
+    }
     if ([defaults objectForKey:@"ManualFeedOrder"]) {
         NSArray* manualOrder = [defaults objectForKey:@"ManualFeedOrder"];
         [xml appendString:@"    <manualFeedOrder>\n"];
