@@ -21,7 +21,6 @@
 #import "NumberAccessoryView.h"
 #import "CDModel.h"
 #import "PortraitNavigationController.h"
-#import "IOS8FixedSeparatorTableViewCell.h"
 #import "InstacastAppDelegate.h"
 
 static NSString* kBookmarkIndexHash = @"hash";
@@ -334,7 +333,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 		
 		UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:BookmarksPlaceholder];
 		if (cell == nil) {
-			cell = [[IOS8FixedSeparatorTableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:BookmarksPlaceholder];
+			cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:BookmarksPlaceholder];
 		}
 		cell.backgroundColor = self.tableView.backgroundColor;
 		

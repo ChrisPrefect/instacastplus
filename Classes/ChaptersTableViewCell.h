@@ -7,9 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
-@interface ChaptersTableViewCell : IOS8FixedSeparatorTableViewCell {
+@interface ChaptersTableViewCell : UITableViewCell {
 
 }
 

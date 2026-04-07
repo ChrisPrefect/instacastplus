@@ -398,12 +398,8 @@
         UIButton* filterButton = [UIButton buttonWithType:UIButtonTypeSystem];
         [filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         filterButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
-        if (@available(iOS 14.0, *)) {
-            filterButton.menu = [self _buildFilterMenu];
-            filterButton.showsMenuAsPrimaryAction = YES;
-        } else {
-            [filterButton addTarget:self action:@selector(filterActionLegacy:) forControlEvents:UIControlEventTouchUpInside];
-        }
+        filterButton.menu = [self _buildFilterMenu];
+        filterButton.showsMenuAsPrimaryAction = YES;
         self.filterButton = filterButton;
 
         [buttonStack addArrangedSubview:reloadButton];
@@ -864,9 +860,7 @@
         [self.filterButton setTitle:@"All".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"All" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        if (@available(iOS 14.0, *)) {
-            self.filterButton.menu = [self _buildFilterMenu];
-        }
+        self.filterButton.menu = [self _buildFilterMenu];
     }];
     allAction.state = [currentFilter isEqualToString:@"All"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -877,9 +871,7 @@
         [self.filterButton setTitle:@"Unplayed".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Unplayed" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        if (@available(iOS 14.0, *)) {
-            self.filterButton.menu = [self _buildFilterMenu];
-        }
+        self.filterButton.menu = [self _buildFilterMenu];
     }];
     unplayedAction.state = [currentFilter isEqualToString:@"Unplayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -890,9 +882,7 @@
         [self.filterButton setTitle:@"Unfinished".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Unfinished" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        if (@available(iOS 14.0, *)) {
-            self.filterButton.menu = [self _buildFilterMenu];
-        }
+        self.filterButton.menu = [self _buildFilterMenu];
     }];
     unfinishedAction.state = [currentFilter isEqualToString:@"Unfinished"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -903,9 +893,7 @@
         [self.filterButton setTitle:@"Unplayed & Started".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"UnplayedAndStarted" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        if (@available(iOS 14.0, *)) {
-            self.filterButton.menu = [self _buildFilterMenu];
-        }
+        self.filterButton.menu = [self _buildFilterMenu];
     }];
     unplayedAndStartedAction.state = [currentFilter isEqualToString:@"UnplayedAndStarted"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -916,9 +904,7 @@
         [self.filterButton setTitle:@"Downloaded".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Downloaded" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        if (@available(iOS 14.0, *)) {
-            self.filterButton.menu = [self _buildFilterMenu];
-        }
+        self.filterButton.menu = [self _buildFilterMenu];
     }];
     downloadedAction.state = [currentFilter isEqualToString:@"Downloaded"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -929,9 +915,7 @@
         [self.filterButton setTitle:@"Favorites".ls forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setValue:@"Favorites" forKey:self->_feed.uid];
         [self reloadDataWithFilter:NO];
-        if (@available(iOS 14.0, *)) {
-            self.filterButton.menu = [self _buildFilterMenu];
-        }
+        self.filterButton.menu = [self _buildFilterMenu];
     }];
     favoritesAction.state = [currentFilter isEqualToString:@"Favorites"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 

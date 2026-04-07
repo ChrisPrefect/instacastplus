@@ -23,6 +23,7 @@
 
 
 #import "ImageFunctions.h"
+#import "InstacastPlus-Swift.h"
 #import "CDModel.h"
 #import "CDEpisode+ShowNotes.h"
 #import "CDChapter.h"
@@ -1017,17 +1018,14 @@ didReceiveResponse:(NSURLResponse *)response
 #if TARGET_OS_MACCATALYST
     return NO;
 #else
-    if (@available(iOS 13.0, *))
+    NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
+    for (UIScene* scene in connectedScenes)
     {
-        NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
-        for (UIScene* scene in connectedScenes)
+        if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
+            scene.activationState != UISceneActivationStateUnattached &&
+            scene.activationState != UISceneActivationStateBackground)
         {
-            if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
-                scene.activationState != UISceneActivationStateUnattached &&
-                scene.activationState != UISceneActivationStateBackground)
-            {
-                return YES;
-            }
+            return YES;
         }
     }
     return NO;
@@ -1310,9 +1308,7 @@ didReceiveResponse:(NSURLResponse *)response
     }
     
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
-    if (@available(iOS 13.0, *)) {
-        MPNowPlayingInfoCenter.defaultCenter.playbackState = (self.player.rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
-    }
+    MPNowPlayingInfoCenter.defaultCenter.playbackState = (self.player.rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
     
 #endif
 }
@@ -1850,9 +1846,7 @@ didReceiveResponse:(NSURLResponse *)response
             [[AudioSession sharedAudioSession] stopSilentPlayback];
         }
 
-        if (@available(iOS 13.0, *)) {
-            MPNowPlayingInfoCenter.defaultCenter.playbackState = (rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
-        }
+        MPNowPlayingInfoCenter.defaultCenter.playbackState = (rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
 
         // Propagate the effective player state (rate-based paused/running) immediately.
         [weakSelf _sendUpdateNotification];
@@ -2887,13 +2881,29 @@ didReceiveResponse:(NSURLResponse *)response
     [parser loadAsynchronouslyWithCompletionHandler:^(BOOL success, NSError *error) {
         
         NSArray* chapters = parser.metadataAsset.chapters;
-        
+
+        // If no embedded chapters, try loading generated chapters
+        if (chapters.count == 0 && self.playingEpisode.objectHash.length > 0) {
+            NSArray<ICGeneratedChapter*>* generated = [[ChapterGenerator shared] loadChaptersFor:self.playingEpisode.objectHash];
+            if (generated.count > 0) {
+                NSMutableArray* metaChapters = [NSMutableArray arrayWithCapacity:generated.count];
+                for (ICGeneratedChapter* gch in generated) {
+                    ICMetadataChapter* ch = [[ICMetadataChapter alloc] init];
+                    ch.title = gch.title;
+                    ch.start = CMTimeMakeWithSeconds(gch.start, NSEC_PER_SEC);
+                    ch.end = CMTimeMakeWithSeconds(gch.end, NSEC_PER_SEC);
+                    [metaChapters addObject:ch];
+                }
+                chapters = metaChapters;
+            }
+        }
+
         // create chapter index for fast chapter search
         self->_chapterTimesIdx = (float*)malloc(sizeof(float)*[chapters count]);
         [chapters enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
             self->_chapterTimesIdx[idx] = (float)CMTimeGetSeconds(chapter.start);
         }];
-        
+
         self.chapters = chapters;
         [self _findAndSetCurrentChapter:-1];
         [self _computeAutoSkipMarkers];

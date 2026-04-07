@@ -54,7 +54,10 @@ static CGFloat const kChapterTitleFontSize = 16.0f;
         [_linkButton setImage:[[UIImage imageNamed:@"Player Chapter Link"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                      forState:UIControlStateNormal];
         _linkButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         _linkButton.imageEdgeInsets = UIEdgeInsetsMake(0, 5, 0, 0);
+#pragma clang diagnostic pop
         _linkButton.hidden = YES;
         [self.contentView addSubview:_linkButton];
         

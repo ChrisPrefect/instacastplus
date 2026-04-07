@@ -58,7 +58,10 @@
         _badgeButton = [[UIButton alloc] initWithFrame:CGRectZero];
         _badgeButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(11)];
         [_badgeButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         _badgeButton.titleEdgeInsets = UIEdgeInsetsMake(1, 0.5, 0, -0.5);
+#pragma clang diagnostic pop
         _badgeButton.userInteractionEnabled = NO;
         
         UIImage* badgeBackgroundImage = [ICImageFromByDrawingInContextWithScale(CGSizeMake(21, 21), NO, App.ic_keyWindow.screen.scale, ^(void) {

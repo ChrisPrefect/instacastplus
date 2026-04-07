@@ -173,18 +173,11 @@
     volumeView.backgroundColor = [UIColor clearColor];
     volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     volumeView.userInteractionEnabled = NO; // container handles all touches
-    if (@available(iOS 16, *)) {
-        for (UIView *subview in volumeView.subviews) {
-            if ([subview isKindOfClass:[UIButton class]]) {
-                subview.hidden = YES;
-                break;
-            }
+    for (UIView *subview in volumeView.subviews) {
+        if ([subview isKindOfClass:[UIButton class]]) {
+            subview.hidden = YES;
+            break;
         }
-    } else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        [volumeView setValue:@(NO) forKey:@"showsRouteButton"];
-#pragma clang diagnostic pop
     }
 
     [hitView addSubview:volumeView];
@@ -223,7 +216,10 @@
         ErrLog(@"[TranscriptControl] transcript symbol not found: captions.bubble");
     }
     [transcriptButton setImage:self.transcriptImageNormal forState:UIControlStateNormal];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     transcriptButton.contentEdgeInsets = UIEdgeInsetsMake(14, 14, 14, 14);
+#pragma clang diagnostic pop
     [transcriptButton addTarget:self action:@selector(toggleTranscript:) forControlEvents:UIControlEventTouchUpInside];
     transcriptButton.accessibilityLabel = @"Transcript".ls;
     transcriptButton.hidden = YES;
@@ -384,9 +380,7 @@
     [super viewWillLayoutSubviews];
 
     UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-    if (@available(iOS 11.0, *)) {
-        safeAreaInsets = self.view.safeAreaInsets;
-    }
+    safeAreaInsets = self.view.safeAreaInsets;
 
     CGRect b = self.view.bounds;
     self.toolsView.frame = CGRectMake(0, CGRectGetHeight(b)-safeAreaInsets.bottom-50, CGRectGetWidth(b), 50);

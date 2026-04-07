@@ -10,6 +10,8 @@
 
 @implementation ICTableViewButton
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
     return CGRectMake(5, CGRectGetHeight(contentRect)-34, CGRectGetWidth(contentRect)-10, 20);
@@ -27,4 +29,5 @@
     
     return CGRectMake(floorf((CGRectGetWidth(contentRect)-imageSize.width)/2), floorf((CGRectGetHeight(contentRect)-imageSize.height)/2)+yOffset, imageSize.width, imageSize.height);
 }
+#pragma clang diagnostic pop
 @end

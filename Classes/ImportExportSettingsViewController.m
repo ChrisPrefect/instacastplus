@@ -621,8 +621,11 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     } else {
         documentTypes = @[@"public.xml", @"org.opml.opml", @"instacast.opml"];
     }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     UIDocumentPickerViewController *picker =
         [[UIDocumentPickerViewController alloc] initWithDocumentTypes:documentTypes inMode:UIDocumentPickerModeImport];
+#pragma clang diagnostic pop
     picker.delegate = self;
     picker.allowsMultipleSelection = NO;
     picker.shouldShowFileExtensions = YES;

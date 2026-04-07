@@ -136,9 +136,7 @@ static const CGFloat kFullscreenButtonSize = 44.0;
         };
 
         // Allow Picture-in-Picture if available
-        if (@available(iOS 14.2, *)) {
-            self.avPlayerViewController.canStartPictureInPictureAutomaticallyFromInline = YES;
-        }
+        self.avPlayerViewController.canStartPictureInPictureAutomaticallyFromInline = YES;
 
         // Present the system video player
         [self.parentViewController presentViewController:self.avPlayerViewController animated:animated completion:^{

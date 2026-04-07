@@ -45,10 +45,8 @@
         }];
         _observing = YES;
 
-        if (@available(iOS 14.0, *)) {
-            self.menu = [self _buildSleepTimerMenu];
-            self.showsMenuAsPrimaryAction = YES;
-        }
+        self.menu = [self _buildSleepTimerMenu];
+        self.showsMenuAsPrimaryAction = YES;
     }
     else if (!newWindow && self.clockStepsImageView)
     {
@@ -147,11 +145,6 @@
 }
 
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    if (@available(iOS 14.0, *)) {
-        return [super beginTrackingWithTouch:touch withEvent:event];
-    }
-    _trackingDate = [NSDate date];
-    _longTrackingTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(_longTrackingTimer:) userInfo:nil repeats:NO];
     return [super beginTrackingWithTouch:touch withEvent:event];
 }
 
@@ -194,24 +187,7 @@
 - (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event
 {
     [super endTrackingWithTouch:touch withEvent:event];
-
-    if (@available(iOS 14.0, *)) {
-        return;
-    }
-
-    CGRect b = CGRectInset(self.bounds, -10, -10);
-    if (CGRectContainsPoint(b,  [touch locationInView:self]))
-    {
-        if ([_trackingDate timeIntervalSinceNow] >= -0.5)
-        {
-            [self showIntelligentSleepTimerAlert];
-        }
-    }
-
-    [_longTrackingTimer invalidate];
-    _longTrackingTimer = nil;
-
-    _trackingDate = nil;
+    return;
 }
 
 - (void)showTimerDropDown
@@ -305,7 +281,7 @@
         [USER_DEFAULTS setBool:NO forKey:ScreenTimerAlwaysActive];
         [AudioSession sharedAudioSession].timerValue = PlaybackStopTimeNoValue;
         [strongSelf IntelligentSleepTimerUpdate];
-        if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+ strongSelf.menu = [strongSelf _buildSleepTimerMenu]; 
     }];
     offAction.state = (sleepTimer == PlaybackStopTimeNoValue && !isAlwaysActive) ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -330,7 +306,7 @@
             [USER_DEFAULTS setInteger:value forKey:LastSelectedSleepTimer];
             [AudioSession sharedAudioSession].timerValue = value;
             [strongSelf IntelligentSleepTimerUpdate];
-            if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+ strongSelf.menu = [strongSelf _buildSleepTimerMenu]; 
         }];
         action.state = (activeValue == value) ? UIMenuElementStateOn : UIMenuElementStateOff;
         [timerActions addObject:action];
@@ -343,7 +319,7 @@
         __strong PlayerTimerButton* strongSelf = weakSelf;
         BOOL newValue = ![USER_DEFAULTS boolForKey:IntelligentSleepTimerAlwaysActive];
         [USER_DEFAULTS setBool:newValue forKey:IntelligentSleepTimerAlwaysActive];
-        if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+ strongSelf.menu = [strongSelf _buildSleepTimerMenu]; 
     }];
     smartAction.state = isIntelligent ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -352,7 +328,7 @@
         BOOL newValue = ![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive];
         [USER_DEFAULTS setBool:newValue forKey:ScreenTimerAlwaysActive];
         [strongSelf setAlwaysSleepTimerUpdate:newValue];
-        if (@available(iOS 14.0, *)) { strongSelf.menu = [strongSelf _buildSleepTimerMenu]; }
+ strongSelf.menu = [strongSelf _buildSleepTimerMenu]; 
     }];
     alwaysAction.state = isAlwaysActive ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -716,6 +692,8 @@
     }
 }
 */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
     CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
@@ -747,5 +725,6 @@
                           w, h);
     }
 }
+#pragma clang diagnostic pop
 
 @end

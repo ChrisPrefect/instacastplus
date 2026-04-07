@@ -7,9 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
-@interface ICPlaylistsTableViewCell : IOS8FixedSeparatorTableViewCell
+@interface ICPlaylistsTableViewCell : UITableViewCell
 @property (nonatomic, readonly, strong) UILabel* numberLabel;
 @property (nonatomic) CGFloat imageYOffset;
 

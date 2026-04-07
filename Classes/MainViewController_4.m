@@ -26,6 +26,8 @@
 #import "VDModalInfo.h"
 #import "OnboardScreenVC.h"
 #import "UpNextTableViewController.h"
+#import "TranscriptionQueueViewController.h"
+#import "InstacastPlus-Swift.h"
 
 typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemSubscriptions   = 2,
@@ -39,6 +41,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemImported        = 10,
     kMainSidebarItemFavorites       = 11,
     kMainSidebarItemStarted         = 12,
+    kMainSidebarItemTranscription   = 13,
 };
 
 NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNotification";
@@ -161,6 +164,9 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
     [self.activityViewController.nowPlayingControl addTarget:self action:@selector(playNow:) forControlEvents:UIControlEventTouchUpInside];
     
+
+    // Rebuild sidebar when transcription queue changes
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueDidChange) name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
 
     self.sidebarController = [[MainSidebarController alloc] initWithStyle:UITableViewStylePlain];
 
@@ -328,9 +334,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [super setNeedsContentControllerLayoutUpdateAnimated:animated];
     
     UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-    if (@available(iOS 11.0, *)) {
-        safeAreaInsets = self.view.safeAreaInsets;
-    }
+    safeAreaInsets = self.view.safeAreaInsets;
     
     CGRect b = self.view.bounds;
     // Bottom padding: mindestens 21pt damit label3 (y=49, h=17 → bottom=66) sichtbar bleibt,
@@ -366,9 +370,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     CGRect rect = [super rectForContentControllerWhenShown:shown];
     
     UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-    if (@available(iOS 11.0, *)) {
-        safeAreaInsets = self.view.safeAreaInsets;
-    }
+    safeAreaInsets = self.view.safeAreaInsets;
     
     if (self.activityViewController.visible) {
         CGFloat bottomPadding = MAX(safeAreaInsets.bottom, 21);
@@ -529,6 +531,12 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [self.sidebarController updateRowSelectionForSelectedItemTag];
 }
 
+- (void) _transcriptionQueueDidChange
+{
+    [self _rebuildSidebarItems];
+    [self.sidebarController.tableView reloadData];
+}
+
 - (NSInteger) _tagForListUID:(NSString*)uid
 {
     // Map known default UIDs to their existing enum tags for backward compatibility
@@ -625,15 +633,36 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         return nil;
     };
 
-    NSArray* section2 = @[
-        downloadsItem,
-        [MainSidebarItem itemWithTitle:@"Settings".ls
-                                   tag:kMainSidebarItemSettings
-                                 image:[UIImage imageNamed:@"Menu Settings"]
-                         selectedImage:[UIImage imageNamed:@"Menu Settings"]],
-    ];
+    // Transcription queue item (only visible when queue is active)
+    // Use count check without forcing heavy initialization on first launch
+    MainSidebarItem* transcriptionItem = [MainSidebarItem itemWithTitle:NSLocalizedString(@"Transkribieren", nil)
+                                                                   tag:kMainSidebarItemTranscription
+                                                                 image:[UIImage systemImageNamed:@"captions.bubble"]
+                                                         selectedImage:[UIImage systemImageNamed:@"captions.bubble.fill"]];
+    transcriptionItem.subtitle = ^NSString*{
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        NSInteger pending = 0;
+        for (ICTranscriptionQueueItem* item in queue.items) {
+            if (item.status != ICTranscriptionStatusCompleted && item.status != ICTranscriptionStatusFailed) {
+                pending++;
+            }
+        }
+        if (pending > 0) {
+            return [NSString stringWithFormat:@"%ld", (long)pending];
+        }
+        return nil;
+    };
 
-    self.sidebarController.items = @[section1, section2];
+    NSMutableArray* section2Items = [NSMutableArray arrayWithObject:downloadsItem];
+    {
+        [section2Items addObject:transcriptionItem];
+    }
+    [section2Items addObject:[MainSidebarItem itemWithTitle:@"Settings".ls
+                                                       tag:kMainSidebarItemSettings
+                                                     image:[UIImage imageNamed:@"Menu Settings"]
+                                             selectedImage:[UIImage imageNamed:@"Menu Settings"]]];
+
+    self.sidebarController.items = @[section1, section2Items];
 }
 
 - (UIViewController*) _statusBarAdjustingContainerViewControllerForViewController:(UIViewController*)viewController
@@ -766,6 +795,17 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         case kMainSidebarItemDownloads:
         {
             UIViewController* controller = [DownloadsViewController downloadsViewController];
+            controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+
+            PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+            navController.view.tintColor = ICTintColor;
+            self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+            navController.toolbarHidden = NO;
+            return YES;
+        }
+        case kMainSidebarItemTranscription:
+        {
+            TranscriptionQueueViewController* controller = [[TranscriptionQueueViewController alloc] initWithStyle:UITableViewStylePlain];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
 
             PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];

@@ -14,6 +14,7 @@
 #import "ICEpisodeConsumeIndicator.h"
 #import "GradientProgressView.h"
 #import "PlaybackManager.h"
+#import "InstacastPlus-Swift.h"
 
 
 @interface EpisodesTableViewCell ()
@@ -34,6 +35,8 @@
 @property (nonatomic, strong, readwrite) UIButton* deleteButton;
 
 @property (nonatomic, readwrite, strong) UIImageView* videoIndicator;
+@property (nonatomic, strong) UIImageView* transcriptIndicator;
+@property (nonatomic) BOOL transcriptIndicatorVisible; // cached, updated in setObjectValue/updateTranscriptState
 @property (nonatomic, strong) UIView* starredIndicator;
 @property (nonatomic, strong, readwrite) EpisodePlayComboButton* playAccessoryButton;
 @property (nonatomic, strong, readwrite) UIPanGestureRecognizer* panRecognizer;
@@ -89,9 +92,16 @@
 		
         _consumeIndicator2 = [[ICEpisodeConsumeIndicator alloc] initWithFrame:CGRectZero];
         [self.panningContentView addSubview:_consumeIndicator2];
-        
 
-        
+        // Transcript indicator (captions.bubble) below consumed indicator
+        _transcriptIndicator = [[UIImageView alloc] initWithFrame:CGRectZero];
+        UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:9 weight:UIImageSymbolWeightMedium];
+        _transcriptIndicator.image = [[UIImage systemImageNamed:@"captions.bubble" withConfiguration:config] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        _transcriptIndicator.tintColor = ICTintColor;
+        _transcriptIndicator.contentMode = UIViewContentModeScaleAspectFit;
+        _transcriptIndicator.hidden = YES;
+        [self.panningContentView addSubview:_transcriptIndicator];
+
 		_videoIndicator = [[UIImageView alloc] initWithFrame:CGRectZero];
 		_videoIndicator.image = [[UIImage imageNamed:@"Episode Video"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
         _videoIndicator.tintColor = [UIColor colorWithWhite:0.6f alpha:1.0f];
@@ -144,7 +154,10 @@
         [_deleteButton setTitle:@"Delete".ls forState:UIControlStateNormal];
         [_deleteButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
         [_deleteButton setTitleColor:[UIColor colorWithWhite:1.0 alpha:0.5] forState:UIControlStateHighlighted];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [_deleteButton setTitleEdgeInsets:UIEdgeInsetsMake(0, 0, 0, 20)];
+#pragma clang diagnostic pop
         [_deleteButton addTarget:self action:@selector(delete:) forControlEvents:UIControlEventTouchUpInside];
         [self.contentView insertSubview:_deleteButton belowSubview:_panningContentView];
      
@@ -272,7 +285,8 @@
     
         [self updatePlayComboButtonState];
         [self updatePlayedAndStarredState];
-        
+        [self updateTranscriptIndicatorState];
+
     }
 }
 
@@ -431,6 +445,47 @@
     }
 }
 
+- (void) updateTranscriptIndicatorState
+{
+    CDEpisode* episode = (CDEpisode*)self.objectValue;
+
+    // Fast path: RSS transcripts are already in memory (no I/O)
+    BOOL hasRSSTranscript = (episode.transcripts.count > 0);
+
+    if (hasRSSTranscript) {
+        self.transcriptIndicatorVisible = YES;
+        _transcriptIndicator.hidden = NO;
+        _transcriptIndicator.tintColor = ICTintColor;
+        _transcriptIndicator.alpha = 1.0;
+        return;
+    }
+
+    // Check filesystem for generated SRT — hasSRTFor is a simple file existence check, fast enough synchronously
+    self.transcriptIndicatorVisible = NO;
+    _transcriptIndicator.hidden = YES;
+
+    if (episode.objectHash.length > 0) {
+        BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
+        BOOL isQueued = NO;
+        if (!hasSRT) {
+            // Check if episode is in the transcription queue (array is small, O(n) is fine)
+            NSString* hash = episode.objectHash;
+            for (ICTranscriptionQueueItem* item in [TranscriptionQueue shared].items) {
+                if ([item.episodeHash isEqualToString:hash]) {
+                    isQueued = YES;
+                    break;
+                }
+            }
+        }
+        if (hasSRT || isQueued) {
+            self.transcriptIndicatorVisible = YES;
+            _transcriptIndicator.hidden = NO;
+            _transcriptIndicator.tintColor = ICTintColor;
+            _transcriptIndicator.alpha = hasSRT ? 1.0 : 0.4;
+        }
+    }
+}
+
 - (UIScrollView*) _cellScrollView
 {
     UIScrollView* scrollView = nil;
@@ -579,7 +634,11 @@
 	self.summaryLabel.frame = detailLabelRect;
 	self.iconView.frame = imageViewRect;
     self.consumeIndicator2.frame = consumeIndicatorFrame;
-    
+
+    // Transcript indicator — state is cached in transcriptIndicatorVisible (updated in setObjectValue)
+    _transcriptIndicator.hidden = !self.transcriptIndicatorVisible;
+    _transcriptIndicator.frame = CGRectMake(consumeIndicatorFrame.origin.x - 2, detailLabelRect.origin.y + 1, 14, 11);
+
     self.videoIndicator.frame = videoIndicatorFrame;
     
     self.starredIndicator.frame = (self.editing) ? CGRectMake(-56, 0, 3, CGRectGetHeight(bounds)) : CGRectMake(0, 0, 3, CGRectGetHeight(bounds));

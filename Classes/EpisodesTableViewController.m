@@ -32,6 +32,8 @@
 #import "ICSidebarPanGestureRecognizer.h"
 #import "UpNextTableViewController.h"
 #import "InstacastAppDelegate.h"
+#import "TranscriptionSettingsViewController.h"
+#import "InstacastPlus-Swift.h"
 
 NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeUID";
 
@@ -208,6 +210,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     [super viewDidLoad];
     self.edgesForExtendedLayout = UIRectEdgeBottom;
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
+
+    // Update transcript indicators when queue changes
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueChanged)
+                                                 name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueChanged)
+                                                 name:@"ICTranscriptionDidFinishNotification" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueChanged)
+                                                 name:@"ICTranscriptionDidChangeNotification" object:nil];
 
     self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
 
@@ -926,6 +936,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         case ICEpisodeSwipeActionEpisodeInfo:
             name = @"info.circle";
             break;
+        case ICEpisodeSwipeActionTranscribe:
+            name = @"captions.bubble";
+            break;
         default:
             name = @"circle";
             break;
@@ -962,6 +975,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         case ICEpisodeSwipeActionDelete:
             return deleteColor;
         case ICEpisodeSwipeActionEpisodeInfo:
+            return accentColor;
+        case ICEpisodeSwipeActionTranscribe:
             return accentColor;
         default:
             return grayColor;
@@ -1015,15 +1030,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     ]];
 
     // Tap on "Anzeigen" navigates to Up Next
-    if (@available(iOS 14.0, *)) {
-        [showButton addAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
-            // Dismiss toast immediately
-            [blurView removeFromSuperview];
+    [showButton addAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+        // Dismiss toast immediately
+        [blurView removeFromSuperview];
 
-            InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)[UIApplication sharedApplication].delegate;
-            [appDelegate.mainViewController showUpNext];
-        }] forControlEvents:UIControlEventTouchUpInside];
-    }
+        InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)[UIApplication sharedApplication].delegate;
+        [appDelegate.mainViewController showUpNext];
+    }] forControlEvents:UIControlEventTouchUpInside];
 
     // Animate in, wait 3 seconds, animate out
     [UIView animateWithDuration:0.3 animations:^{
@@ -1141,7 +1154,57 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             [self _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
             break;
         }
+        case ICEpisodeSwipeActionTranscribe:
+        {
+            [self _transcribeEpisode:episode];
+            break;
+        }
     }
+}
+
+- (void) _transcribeEpisode:(CDEpisode*)episode
+{
+    // Check if already transcribed
+    if ([[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
+        return;
+    }
+
+    // Check if WhisperKit model is downloaded
+    BOOL isWhisper = ![USER_DEFAULTS stringForKey:kTranscriptionEngine] || [[USER_DEFAULTS stringForKey:kTranscriptionEngine] isEqualToString:@"WhisperKit"];
+    if (isWhisper && ![[TranscriptionEngine shared] isModelDownloaded]) {
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Sprachmodell benötigt", nil)
+                                                                      message:NSLocalizedString(@"Bitte lade zuerst ein Sprachmodell in den Transkriptions-Einstellungen herunter.", nil)
+                                                               preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Einstellungen", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            TranscriptionSettingsViewController* settingsVC = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
+            [self.navigationController pushViewController:settingsVC animated:YES];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    // Enqueue for transcription — auto-downloads episode if needed
+    CacheManager* cman = [CacheManager sharedCacheManager];
+    NSURL* audioURL = [cman episodeIsCached:episode] ? [cman URLForCachedEpisode:episode] : nil;
+    BOOL enqueued = [[TranscriptionQueue shared] enqueueWithEpisodeHash:episode.objectHash
+                                                          episodeTitle:episode.title ?: @""
+                                                             feedTitle:episode.feed.title ?: @""
+                                                              audioURL:audioURL
+                                                              language:episode.feed.language];
+    if (enqueued) {
+        PlaySoundFile(@"AffirmIn", NO);
+        [self _showPlayNextToastWithText:NSLocalizedString(@"Transkription gestartet", nil) added:YES];
+    } else {
+        // Already in queue — haptic feedback only
+        AudioServicesPlaySystemSound(1519);
+    }
+    [self.tableView reloadData];
+}
+
+- (void) _transcriptionQueueChanged
+{
+    [self.tableView reloadData];
 }
 
 - (UIView*) _separatorViewOfCell:(UITableViewCell*)cell
@@ -1301,6 +1364,61 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                            [cell updatePlayComboButtonState];
                                                        }];
         [actions addObject:deleteFileAction];
+    }
+
+    // Transcribe (only if downloaded and not already transcribed)
+    // Transcribe (episode will be auto-downloaded if needed)
+    if (![[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
+        UIAction* transcribeAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkribieren", nil)
+                                                         image:[UIImage systemImageNamed:@"captions.bubble"]
+                                                    identifier:nil
+                                                       handler:^(UIAction *action) {
+                                                           [weakSelf _transcribeEpisode:episode];
+                                                       }];
+        [actions addObject:transcribeAction];
+    }
+
+    // Chapters generieren (if transcript available but no generated chapters)
+    BOOL hasTranscript = (episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
+    if (hasTranscript && [ChapterGenerator isAvailable] && ![[ChapterGenerator shared] hasChaptersFor:episode.objectHash]) {
+        UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil)
+                                                       image:[UIImage systemImageNamed:@"list.number"]
+                                                  identifier:nil
+                                                     handler:^(UIAction *action) {
+                                                         [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:episode.objectHash
+                                                                                                        episodeTitle:episode.title ?: @""
+                                                                                                           feedTitle:episode.feed.title ?: @""];
+                                                     }];
+        [actions addObject:chaptersAction];
+    }
+
+    // Delete generated transcript
+    if ([[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
+        UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil)
+                                                               image:[UIImage systemImageNamed:@"captions.bubble"]
+                                                          identifier:nil
+                                                             handler:^(UIAction *action) {
+                                                                 [[TranscriptionEngine shared] removeSRTFor:episode.objectHash];
+                                                                 // Force immediate cell update + notify player
+                                                                 [weakSelf.tableView reloadData];
+                                                                 [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": episode.objectHash}];
+                                                             }];
+        deleteTranscriptAction.attributes = UIMenuElementAttributesDestructive;
+        [actions addObject:deleteTranscriptAction];
+    }
+
+    // Delete generated chapters
+    if ([[ChapterGenerator shared] hasChaptersFor:episode.objectHash]) {
+        UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil)
+                                                             image:[UIImage systemImageNamed:@"list.number"]
+                                                        identifier:nil
+                                                           handler:^(UIAction *action) {
+                                                               // Remove chapters file
+                                                               NSString* path = [[TranscriptionEngine shared] chaptersJSONURLFor:episode.objectHash].path;
+                                                               [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+                                                           }];
+        deleteChaptersAction.attributes = UIMenuElementAttributesDestructive;
+        [actions addObject:deleteChaptersAction];
     }
 
     // Show Notes or Play (depending on tap-on-episode setting)

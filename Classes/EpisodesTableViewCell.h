@@ -7,12 +7,10 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
 @class EpisodePlayComboButton;
 @class GradientProgressView;
 
-@interface EpisodesTableViewCell : IOS8FixedSeparatorTableViewCell {
+@interface EpisodesTableViewCell : UITableViewCell {
     GradientProgressView *progressView;
 }
 

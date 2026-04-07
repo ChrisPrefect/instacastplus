@@ -62,7 +62,10 @@
         _rightButton.imageView.contentMode = UIViewContentModeScaleAspectFit;
         _rightButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentFill;
         _rightButton.contentVerticalAlignment = UIControlContentVerticalAlignmentFill;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         _rightButton.imageEdgeInsets = UIEdgeInsetsMake(18, 8, 18, 8);
+#pragma clang diagnostic pop
         _rightButton.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
         _rightButton.tintColor = [UIColor whiteColor];
         [self addSubview:_rightButton];

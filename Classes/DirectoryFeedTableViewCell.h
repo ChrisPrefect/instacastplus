@@ -7,9 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
-@interface DirectoryFeedTableViewCell : IOS8FixedSeparatorTableViewCell {
+@interface DirectoryFeedTableViewCell : UITableViewCell {
 @protected
 	UIImageView*	_videoIndicator;
 }

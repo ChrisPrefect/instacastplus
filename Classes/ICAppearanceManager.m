@@ -162,9 +162,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         toolbarAppearance.shadowColor = nil;
         nav.toolbar.standardAppearance = toolbarAppearance;
         nav.toolbar.compactAppearance = toolbarAppearance;
-        if (@available(iOS 15.0, *)) {
-            nav.toolbar.scrollEdgeAppearance = toolbarAppearance;
-        }
+        nav.toolbar.scrollEdgeAppearance = toolbarAppearance;
     }
 
     // Update tab bar
@@ -177,9 +175,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         tabAppearance.shadowImage = [[UIImage alloc] init];
         tabAppearance.shadowColor = nil;
         tabVC.tabBar.standardAppearance = tabAppearance;
-        if (@available(iOS 15.0, *)) {
-            tabVC.tabBar.scrollEdgeAppearance = tabAppearance;
-        }
+        tabVC.tabBar.scrollEdgeAppearance = tabAppearance;
     }
 
     // Recurse into child view controllers
@@ -519,6 +515,9 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 @implementation ICWindow
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
 {
     [super traitCollectionDidChange:previousTraitCollection];
@@ -529,5 +528,6 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         }
     }
 }
+#pragma clang diagnostic pop
 
 @end

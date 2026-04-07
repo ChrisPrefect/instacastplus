@@ -52,9 +52,7 @@ static NSString* kHeaderCellIdentifier = @"HeaderCell";
     self.tableView.scrollEnabled = NO;
 
     // Remove default section header padding (iOS 15+)
-    if (@available(iOS 15.0, *)) {
-        self.tableView.sectionHeaderTopPadding = 0;
-    }
+    self.tableView.sectionHeaderTopPadding = 0;
 
     [self.tableView registerClass:[MainSidebarTableCell class] forCellReuseIdentifier:kDataCellIdentifier];
     [self.tableView registerClass:[UITableViewHeaderFooterView class] forHeaderFooterViewReuseIdentifier:kHeaderCellIdentifier];

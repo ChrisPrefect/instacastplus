@@ -340,7 +340,7 @@
     // Toolbar-Items nur setzen wenn noch nicht gesetzt
     if (!self.toolbarItems || self.toolbarItems.count == 0) {
         UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-        [self setToolbarItems:@[self.addButtonItem, flexSpace, self.labelsItems, flexSpace] animated:animated];
+        [self setToolbarItems:@[self.addButtonItem, flexSpace] animated:animated];
     }
 }
 

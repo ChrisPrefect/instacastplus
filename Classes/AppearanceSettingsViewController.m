@@ -258,38 +258,21 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
                 cell.textLabel.numberOfLines = 0;
 
-                if (@available(iOS 14.0, *)) {
-                    cell.textLabel.text = @"Choose Custom".ls;
-                    [cell.disclosureView setHidden:FALSE];
-                    [cell.colorView setHidden:FALSE];
-                    [cell.textField setHidden:TRUE];
-                    [cell.tfView setHidden:TRUE];
-                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                    [cell.colorView setHidden:YES];
-                    if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
-                    {
-                        [cell.colorView setHidden:NO];
-                        cell.colorView.clipsToBounds = true;
-                        cell.colorView.layer.cornerRadius = 5;
-                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
-                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                        cell.colorView.backgroundColor = themeColor;
-                    }
-                }
-                else
+                cell.textLabel.text = @"Choose Custom".ls;
+                [cell.disclosureView setHidden:FALSE];
+                [cell.colorView setHidden:FALSE];
+                [cell.textField setHidden:TRUE];
+                [cell.tfView setHidden:TRUE];
+                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                [cell.colorView setHidden:YES];
+                if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
                 {
-                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
-                    [cell.disclosureView setHidden:TRUE];
-                    [cell.colorView setHidden:TRUE];
-                    [cell.textField setHidden:FALSE];
-                    [cell.tfView setHidden:FALSE];
-                    cell.textField.tag = 555;
-                    cell.textField.delegate = self;
-                    cell.textField.text = @"";
-                    if ([USER_DEFAULTS objectForKey:PlayerThemeColorHexCode])
-                    {
-                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:PlayerThemeColorHexCode]];
-                    }
+                    [cell.colorView setHidden:NO];
+                    cell.colorView.clipsToBounds = true;
+                    cell.colorView.layer.cornerRadius = 5;
+                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
+                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                    cell.colorView.backgroundColor = themeColor;
                 }
                 return cell;
             }
@@ -319,38 +302,21 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
                 cell.textLabel.numberOfLines = 0;
 
-                if (@available(iOS 14.0, *)) {
-                    cell.textLabel.text = @"Choose Custom".ls;
-                    [cell.disclosureView setHidden:FALSE];
-                    [cell.colorView setHidden:FALSE];
-                    [cell.textField setHidden:TRUE];
-                    [cell.tfView setHidden:TRUE];
-                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                    [cell.colorView setHidden:YES];
-                    if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
-                    {
-                        [cell.colorView setHidden:NO];
-                        cell.colorView.clipsToBounds = true;
-                        cell.colorView.layer.cornerRadius = 5;
-                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                        cell.colorView.backgroundColor = themeColor;
-                    }
-                }
-                else
+                cell.textLabel.text = @"Choose Custom".ls;
+                [cell.disclosureView setHidden:FALSE];
+                [cell.colorView setHidden:FALSE];
+                [cell.textField setHidden:TRUE];
+                [cell.tfView setHidden:TRUE];
+                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                [cell.colorView setHidden:YES];
+                if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
                 {
-                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
-                    [cell.disclosureView setHidden:TRUE];
-                    [cell.colorView setHidden:TRUE];
-                    [cell.textField setHidden:FALSE];
-                    [cell.tfView setHidden:FALSE];
-                    cell.textField.tag = 777;
-                    cell.textField.delegate = self;
-                    cell.textField.text = @"";
-                    if ([USER_DEFAULTS objectForKey:InterfaceThemeColorHexCode])
-                    {
-                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:InterfaceThemeColorHexCode]];
-                    }
+                    [cell.colorView setHidden:NO];
+                    cell.colorView.clipsToBounds = true;
+                    cell.colorView.layer.cornerRadius = 5;
+                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
+                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                    cell.colorView.backgroundColor = themeColor;
                 }
 
                 return cell;
@@ -381,38 +347,21 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
                 cell.textLabel.numberOfLines = 0;
 
-                if (@available(iOS 14.0, *)) {
-                    cell.textLabel.text = @"Choose Custom".ls;
-                    [cell.disclosureView setHidden:FALSE];
-                    [cell.colorView setHidden:FALSE];
-                    [cell.textField setHidden:TRUE];
-                    [cell.tfView setHidden:TRUE];
-                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                    [cell.colorView setHidden:YES];
-                    if ([USER_DEFAULTS objectForKey:WidgetThemeColorCode])
-                    {
-                        [cell.colorView setHidden:NO];
-                        cell.colorView.clipsToBounds = true;
-                        cell.colorView.layer.cornerRadius = 5;
-                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:WidgetThemeColorCode];
-                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                        cell.colorView.backgroundColor = themeColor;
-                    }
-                }
-                else
+                cell.textLabel.text = @"Choose Custom".ls;
+                [cell.disclosureView setHidden:FALSE];
+                [cell.colorView setHidden:FALSE];
+                [cell.textField setHidden:TRUE];
+                [cell.tfView setHidden:TRUE];
+                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                [cell.colorView setHidden:YES];
+                if ([USER_DEFAULTS objectForKey:WidgetThemeColorCode])
                 {
-                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
-                    [cell.disclosureView setHidden:TRUE];
-                    [cell.colorView setHidden:TRUE];
-                    [cell.textField setHidden:FALSE];
-                    [cell.tfView setHidden:FALSE];
-                    cell.textField.tag = 888;
-                    cell.textField.delegate = self;
-                    cell.textField.text = @"";
-                    if ([USER_DEFAULTS objectForKey:WidgetThemeColorHexCode])
-                    {
-                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:WidgetThemeColorHexCode]];
-                    }
+                    [cell.colorView setHidden:NO];
+                    cell.colorView.clipsToBounds = true;
+                    cell.colorView.layer.cornerRadius = 5;
+                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:WidgetThemeColorCode];
+                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                    cell.colorView.backgroundColor = themeColor;
                 }
                 return cell;
             }
@@ -704,7 +653,8 @@ API_AVAILABLE(ios(14.0)){
             @(ICEpisodeSwipeActionDownload),
             @(ICEpisodeSwipeActionAddToPlayNext),
             @(ICEpisodeSwipeActionDelete),
-            @(ICEpisodeSwipeActionEpisodeInfo)
+            @(ICEpisodeSwipeActionEpisodeInfo),
+            @(ICEpisodeSwipeActionTranscribe)
         ];
         controller.titles = @[
             @"Mark as Played".ls,
@@ -712,7 +662,8 @@ API_AVAILABLE(ios(14.0)){
             @"Download".ls,
             @"Add to Play Next".ls,
             @"Delete Episode from List".ls,
-            @"Show Show Notes".ls
+            @"Show Show Notes".ls,
+            @"Transcribe".ls
         ];
         UIImageSymbolConfiguration* symbolConfig = [UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleMedium];
         controller.images = @[
@@ -722,6 +673,7 @@ API_AVAILABLE(ios(14.0)){
             [UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:symbolConfig],
             [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
             [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"captions.bubble" withConfiguration:symbolConfig],
         ];
         controller.footerText = @"Swipe Action Toggle Info".ls;
         [self.navigationController pushViewController:controller animated:YES];
@@ -730,37 +682,31 @@ API_AVAILABLE(ios(14.0)){
 
     else if (indexPath.section == kPlayerColor) {
         if (indexPath.row == 1) {
-            if (@available(iOS 14.0, *)) {
-                self->colorPickerTarget = ColorPickerTargetPlayer;
-                [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-                UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-                picker.delegate = self;
-                [self presentViewController:picker animated:YES completion:nil];
-            }
+            self->colorPickerTarget = ColorPickerTargetPlayer;
+            [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+            UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            picker.delegate = self;
+            [self presentViewController:picker animated:YES completion:nil];
         }
     }
 
     else if (indexPath.section == kPInterfaceColor) {
         if (indexPath.row == 1) {
-            if (@available(iOS 14.0, *)) {
-                self->colorPickerTarget = ColorPickerTargetInterface;
-                [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-                UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-                picker.delegate = self;
-                [self presentViewController:picker animated:YES completion:nil];
-            }
+            self->colorPickerTarget = ColorPickerTargetInterface;
+            [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+            UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            picker.delegate = self;
+            [self presentViewController:picker animated:YES completion:nil];
         }
     }
 
     else if (indexPath.section == kWidgetColor) {
         if (indexPath.row == 1) {
-            if (@available(iOS 14.0, *)) {
-                self->colorPickerTarget = ColorPickerTargetWidget;
-                [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-                UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-                picker.delegate = self;
-                [self presentViewController:picker animated:YES completion:nil];
-            }
+            self->colorPickerTarget = ColorPickerTargetWidget;
+            [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+            UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            picker.delegate = self;
+            [self presentViewController:picker animated:YES completion:nil];
         }
     }
 
@@ -839,6 +785,7 @@ API_AVAILABLE(ios(14.0)){
         case ICEpisodeSwipeActionAddToPlayNext: return @"Add to Play Next".ls;
         case ICEpisodeSwipeActionDelete: return @"Delete Episode from List".ls;
         case ICEpisodeSwipeActionEpisodeInfo: return @"Show Show Notes".ls;
+        case ICEpisodeSwipeActionTranscribe: return @"Transcribe".ls;
         default: return @"Mark as Played".ls;
     }
 }

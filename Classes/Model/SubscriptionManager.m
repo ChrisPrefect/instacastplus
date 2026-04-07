@@ -7,6 +7,7 @@
 //
 
 
+#import <UserNotifications/UserNotifications.h>
 #import "ICFeedParser.h"
 #import "ICPagedFeedParser.h"
 
@@ -1034,9 +1035,9 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         
         // update application badge
 #if TARGET_OS_IPHONE
-        App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+        [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
 #endif
-        
+
 		[App releaseNetworkActivity];
 		
 		if (self.numOfNewEpisodesAfterRefresh > 0) {
@@ -1065,7 +1066,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 finishedNotification.alertBody = @"Refreshing finished and there are no new episodes available.".ls;
             }
 
-            App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+            [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
             [App presentLocalNotificationNow:finishedNotification];
 #pragma clang diagnostic pop
         }

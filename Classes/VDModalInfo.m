@@ -203,13 +203,6 @@ static NSMutableSet* gModelInfos = nil;
 	
 	CGRect frame = self.frame;
 	
-    UIInterfaceOrientation orientation = [self getDeviceOrientation];//[[UIApplication sharedApplication] statusBarOrientation];
-	if (!IS_IOS8 && UIInterfaceOrientationIsLandscape(orientation)) {
-		CGFloat tmp = frame.size.height;
-		frame.size.height = frame.size.width;
-		frame.size.width = tmp;
-	}
-	
     CGRect messageViewRect = CGRectMake(floorf((CGRectGetWidth(frame)-_size.width)*0.5f), floorf((CGRectGetHeight(frame)-_size.height)*0.4f), _size.width, _size.height);
     
     void (^applyConstrains)(CGRect*) = ^(CGRect* sourceRect) {

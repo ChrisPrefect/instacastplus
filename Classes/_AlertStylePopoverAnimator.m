@@ -25,11 +25,6 @@
         UIView* backdropView = toVC.backdropView;
         
         CGRect endFrame = [transitionContext initialFrameForViewController:fromVC];
-        // xxx: API does not give correct frame origin
-        if (IS_IOS8 && fromVC.modalPresentationStyle == UIModalPresentationFormSheet) {
-            endFrame.origin = CGPointMake(floorf((CGRectGetWidth(backdropView.frame)-CGRectGetWidth(endFrame))/2), floorf((CGRectGetHeight(backdropView.frame)-CGRectGetHeight(endFrame))/2));
-        }
-        
         fromVC.view.frame = endFrame;
         [transitionContext.containerView addSubview:fromVC.view];
         
@@ -66,7 +61,7 @@
     else
     {
         AlertStylePopoverController *fromVC = (AlertStylePopoverController*)[transitionContext viewControllerForKey:UITransitionContextFromViewControllerKey];  // main view controller
-        UIViewController *toVC = [transitionContext viewControllerForKey:UITransitionContextToViewControllerKey];
+        __unused UIViewController *toVC = [transitionContext viewControllerForKey:UITransitionContextToViewControllerKey];
         UIViewController* contentViewController = fromVC.contentController;
         UIView* backdropView = fromVC.backdropView;
         
@@ -81,11 +76,6 @@
                          }
                          completion:^(BOOL finished) {
                              [transitionContext completeTransition:YES];
-                             
-                             /// xxx: IOS 8 removing toViewController from window after dismissal
-                             if (IS_IOS8) {
-                                 [App.ic_keyWindow addSubview:toVC.view];
-                             }
                          }];
     }
 }

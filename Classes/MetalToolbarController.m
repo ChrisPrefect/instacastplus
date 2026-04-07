@@ -156,7 +156,10 @@
 	[self.mainToolbarView addSubview:actionButton];
     
     self.volumeButton = [UIButton buttonWithType:UIButtonTypeCustom];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     volumeButton.imageEdgeInsets = UIEdgeInsetsMake(0, 4, 0, 0);
+#pragma clang diagnostic pop
 	volumeButton.frame = CGRectMake(0, CGRectGetHeight(applicationBounds)-88-11, 44, 44);
 	volumeButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin | UIViewAutoresizingFlexibleTopMargin;
 	[volumeButton setImage:[UIImage imageNamed:@"PadToolbarVolumeButton.png"] forState:UIControlStateNormal];

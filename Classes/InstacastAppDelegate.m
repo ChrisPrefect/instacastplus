@@ -9,6 +9,7 @@
 
 #import <UserNotifications/UserNotifications.h>
 #import <CarPlay/CarPlay.h>
+#import <BackgroundTasks/BackgroundTasks.h>
 
 #import "InstacastAppDelegate.h"
 #import "UIManager.h"
@@ -126,6 +127,25 @@
 
     [App initializeLoggers];
 
+    // Register background tasks for transcription
+    [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"
+                                                         usingQueue:nil
+                                                      launchHandler:^(BGTask * _Nonnull task) {
+        BGProcessingTask* processingTask = (BGProcessingTask*)task;
+        // Resume transcription queue in background
+        [[TranscriptionQueue shared] resumeIfNeeded];
+        __weak BGProcessingTask* weakTask = processingTask;
+        processingTask.expirationHandler = ^{
+            // Save checkpoint - TranscriptionEngine handles this automatically
+            [weakTask setTaskCompletedWithSuccess:NO];
+        };
+        // Re-schedule for next opportunity
+        BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"];
+        request.requiresExternalPower = NO;
+        request.requiresNetworkConnectivity = NO;
+        [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:nil];
+    }];
+
     if ([DatabaseManager dataStoreNeedsMigration]) {
         UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
         self.window.rootViewController = migrationViewController;
@@ -140,9 +160,7 @@
     // On macOS ("Designed for iPad"), requestAuthorization triggers the
     // TCC dialog "wants to access data from other apps" — skip on Mac.
     BOOL isiOSAppOnMac_notif = NO;
-    if (@available(iOS 14.0, *)) {
-        isiOSAppOnMac_notif = NSProcessInfo.processInfo.isiOSAppOnMac;
-    }
+    isiOSAppOnMac_notif = NSProcessInfo.processInfo.isiOSAppOnMac;
     if (!isiOSAppOnMac_notif) {
         __weak typeof(self) weakSelf = self;
         [center requestAuthorizationWithOptions:(UNAuthorizationOptionBadge | UNAuthorizationOptionSound | UNAuthorizationOptionAlert)
@@ -379,7 +397,10 @@
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
         }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
         UIViewController *rootVC = keyWindow.rootViewController;
         [rootVC presentViewController:alert animated:YES completion:nil];
     }
@@ -428,7 +449,7 @@
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
 {
-	App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+	[[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
 	
 	if (!self.mainViewController.presentedViewController) {
 		[[CacheManager sharedCacheManager] tidyUp];
@@ -723,22 +744,18 @@
         return configuration;
     }
 
-    if (@available(iOS 13.4, *)) {
-        if ([role isEqualToString:CPTemplateApplicationDashboardSceneSessionRoleApplication]) {
-            UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:nil sessionRole:role];
-            configuration.sceneClass = [CPTemplateApplicationDashboardScene class];
-            configuration.delegateClass = [InstacastSceneDelegate class];
-            return configuration;
-        }
+    if ([role isEqualToString:CPTemplateApplicationDashboardSceneSessionRoleApplication]) {
+        UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:nil sessionRole:role];
+        configuration.sceneClass = [CPTemplateApplicationDashboardScene class];
+        configuration.delegateClass = [InstacastSceneDelegate class];
+        return configuration;
     }
 
-    if (@available(iOS 15.4, *)) {
-        if ([role isEqualToString:CPTemplateApplicationInstrumentClusterSceneSessionRoleApplication]) {
-            UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:nil sessionRole:role];
-            configuration.sceneClass = [CPTemplateApplicationInstrumentClusterScene class];
-            configuration.delegateClass = [InstacastSceneDelegate class];
-            return configuration;
-        }
+    if ([role isEqualToString:CPTemplateApplicationInstrumentClusterSceneSessionRoleApplication]) {
+        UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:nil sessionRole:role];
+        configuration.sceneClass = [CPTemplateApplicationInstrumentClusterScene class];
+        configuration.delegateClass = [InstacastSceneDelegate class];
+        return configuration;
     }
 
     UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:@"Default Configuration" sessionRole:role];

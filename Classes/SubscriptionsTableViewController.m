@@ -321,11 +321,7 @@
         tintColorD = [UIColor grayColor];
         textColor = [UIColor blackColor];
     }
-    if (@available(iOS 13.0, *)) {
-        searchTextField = self.searchBar.searchTextField;
-    } else {
-        searchTextField = [self.searchBar valueForKey:@"_searchField"];
-    }
+    searchTextField = self.searchBar.searchTextField;
     searchTextField.textColor = textColor;
     searchTextField.tintColor = tintColorD;
     // 1. Change placeholder text color
@@ -458,9 +454,7 @@
     if (@available(iOS 26.0, *)) {
         self.floatingSortButton.menu = [self _buildSortMenu];
     }
-    if (@available(iOS 14.0, *)) {
-        self.sortItem.menu = [self _buildSortMenu];
-    }
+    self.sortItem.menu = [self _buildSortMenu];
 }
 
 - (void) _updateToolbarItemsAnimated:(BOOL)animated
@@ -473,11 +467,7 @@
         self.addItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"plus"] style:UIBarButtonItemStylePlain target:self action:@selector(addAction:)];
     }
     if (!self.sortItem) {
-        if (@available(iOS 14.0, *)) {
-            self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] menu:[self _buildSortMenu]];
-        } else {
-            self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] style:UIBarButtonItemStylePlain target:self action:@selector(sortAction:)];
-        }
+        self.sortItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"arrow.up.arrow.down"] menu:[self _buildSortMenu]];
     }
 
     // Toolbar-Items nur setzen wenn noch nicht gesetzt
@@ -1055,10 +1045,8 @@
 
 - (void) sortAction:(UIBarButtonItem*)item
 {
-    if (@available(iOS 14.0, *)) {
-        // Menu is shown automatically via sortItem.menu
-        return;
-    }
+    // Menu is shown automatically via sortItem.menu
+    return;
 
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Sort by".ls

@@ -142,7 +142,10 @@
 {
     [super viewWillAppear:animated];
     
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [self traitCollectionDidChange:self.traitCollection];
+#pragma clang diagnostic pop
     self.controlsVisible = YES;
 }
 
@@ -154,9 +157,12 @@
     return (!self.controlsVisible);
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (BOOL)shouldAutorotate {
     return YES;
 }
+#pragma clang diagnostic pop
 
 - (UIStatusBarStyle)preferredStatusBarStyle
 {
@@ -230,18 +236,11 @@
         [volumeView setMinimumVolumeSliderImage:[[[UIImage imageNamed:@"Video Slider Fill Track"] imageWithColor:[UIColor whiteColor]] resizableImageWithCapInsets:UIEdgeInsetsMake(0, 5, 0, 5)] forState:UIControlStateNormal];
         [volumeView setMaximumVolumeSliderImage:[[[UIImage imageNamed:@"Video Slider Fill Track"] imageWithColor:[UIColor blackColor]] resizableImageWithCapInsets:UIEdgeInsetsMake(0, 5, 0, 5)] forState:UIControlStateNormal];
         
-        if (@available(iOS 16, *)) {
-            for (UIView *subview in volumeView.subviews) {
-                if ([subview isKindOfClass:[UIButton class]]) {
-                    subview.hidden = YES;
-                    break;
-                }
+        for (UIView *subview in volumeView.subviews) {
+            if ([subview isKindOfClass:[UIButton class]]) {
+                subview.hidden = YES;
+                break;
             }
-        } else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            [volumeView setValue:@(NO) forKey:@"showsRouteButton"];
-#pragma clang diagnostic pop
         }
          
         [self.bottomBar addSubview:volumeView];
@@ -259,6 +258,9 @@
     }
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void) traitCollectionDidChange: (UITraitCollection *)previousTraitCollection
 {
     [super traitCollectionDidChange: previousTraitCollection];
@@ -269,6 +271,7 @@
         [self _updateLayout];
     }
 }
+#pragma clang diagnostic pop
 
 
 - (void) viewSafeAreaInsetsDidChange

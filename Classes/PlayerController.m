@@ -657,21 +657,19 @@ enum {
 
 - (UIWindowScene*)_activeWindowScene
 {
-    if (@available(iOS 13.0, *)) {
-        UIWindow* keyWindow = [self getKeyWindow];
-        if ([keyWindow.windowScene isKindOfClass:[UIWindowScene class]]) {
-            return keyWindow.windowScene;
-        }
+    UIWindow* keyWindow = [self getKeyWindow];
+    if ([keyWindow.windowScene isKindOfClass:[UIWindowScene class]]) {
+        return keyWindow.windowScene;
+    }
 
-        for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
-            if (![scene isKindOfClass:[UIWindowScene class]]) {
-                continue;
-            }
-            UIWindowScene* windowScene = (UIWindowScene*)scene;
-            if (windowScene.activationState == UISceneActivationStateForegroundActive ||
-                windowScene.activationState == UISceneActivationStateForegroundInactive) {
-                return windowScene;
-            }
+    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) {
+            continue;
+        }
+        UIWindowScene* windowScene = (UIWindowScene*)scene;
+        if (windowScene.activationState == UISceneActivationStateForegroundActive ||
+            windowScene.activationState == UISceneActivationStateForegroundInactive) {
+            return windowScene;
         }
     }
     return nil;

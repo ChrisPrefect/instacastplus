@@ -63,9 +63,7 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
 
         // Skip iOS-only hardware access on macOS ("Designed for iPad") to avoid TCC dialogs.
         BOOL isiOSAppOnMac = NO;
-        if (@available(iOS 14.0, *)) {
-            isiOSAppOnMac = NSProcessInfo.processInfo.isiOSAppOnMac;
-        }
+        isiOSAppOnMac = NSProcessInfo.processInfo.isiOSAppOnMac;
 
         _reachability = [Reachability reachabilityForInternetConnection];
         [_reachability startNotifier];
@@ -87,8 +85,12 @@ NSString* ApplicationDidRegisterTouchNotification = @"ApplicationDidRegisterTouc
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(_networkAccessTechnologyDidChange:) name:kReachabilityChangedNotification object:nil];
 
         // CMMotionManager (accelerometer) is not available on macOS — skip.
+        // Init on background thread — CMMotionManager reads CoreMotion.plist synchronously
+        // which blocks for seconds on device due to sandbox permission errors.
         if (!isiOSAppOnMac) {
-            [self deviceMotionDetection];
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                [self deviceMotionDetection];
+            });
         }
         [self volumeChangeNotification];
 	}

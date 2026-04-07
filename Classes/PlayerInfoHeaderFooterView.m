@@ -36,13 +36,19 @@
         _editButton = [UIButton buttonWithType:UIButtonTypeSystem];
         _editButton.hidden = YES;
         [_editButton setTitle:@"Edit".ls forState:UIControlStateNormal];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [_editButton setTitleEdgeInsets:UIEdgeInsetsMake(0, 15, 0, 15)];
+#pragma clang diagnostic pop
         [self.contentView addSubview:_editButton];
         
         _doneButton = [UIButton buttonWithType:UIButtonTypeSystem];
         _doneButton.hidden = YES;
         [_doneButton setTitle:@"Done".ls forState:UIControlStateNormal];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [_doneButton setTitleEdgeInsets:UIEdgeInsetsMake(0, 15, 0, 15)];
+#pragma clang diagnostic pop
         _doneButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(15)];
         [self.contentView addSubview:_doneButton];
     }

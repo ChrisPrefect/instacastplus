@@ -102,9 +102,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 + (instancetype)sharedExporter {
     // iOS widgets don't work on macOS ("Designed for iPad").
     // Skip entirely to avoid App Group container access triggering TCC dialog.
-    if (@available(iOS 14.0, *)) {
-        if (NSProcessInfo.processInfo.isiOSAppOnMac) return nil;
-    }
+    if (NSProcessInfo.processInfo.isiOSAppOnMac) return nil;
 
     static WidgetDataExporter *shared = nil;
     static dispatch_once_t onceToken;
@@ -1046,21 +1044,19 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 #pragma mark - Widget Timeline Reload
 
 - (void)reloadWidgetTimelines {
-    if (@available(iOS 14.0, *)) {
-        // Ensure timer creation on main thread
-        void (^block)(void) = ^{
-            [self.reloadTimelineTimer invalidate];
-            self.reloadTimelineTimer = [NSTimer scheduledTimerWithTimeInterval:5.0
-                                                                       target:self
-                                                                     selector:@selector(_doReloadTimelines)
-                                                                     userInfo:nil
-                                                                      repeats:NO];
-        };
-        if ([NSThread isMainThread]) {
-            block();
-        } else {
-            dispatch_async(dispatch_get_main_queue(), block);
-        }
+    // Ensure timer creation on main thread
+    void (^block)(void) = ^{
+        [self.reloadTimelineTimer invalidate];
+        self.reloadTimelineTimer = [NSTimer scheduledTimerWithTimeInterval:5.0
+                                                                   target:self
+                                                                 selector:@selector(_doReloadTimelines)
+                                                                 userInfo:nil
+                                                                  repeats:NO];
+    };
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block);
     }
 }
 

@@ -139,10 +139,44 @@ typedef NS_ENUM(NSInteger, ICEpisodeSwipeAction) {
     ICEpisodeSwipeActionDownload,
     ICEpisodeSwipeActionAddToPlayNext,
     ICEpisodeSwipeActionDelete,
-    ICEpisodeSwipeActionEpisodeInfo
+    ICEpisodeSwipeActionEpisodeInfo,
+    ICEpisodeSwipeActionTranscribe
 };
 
 extern NSString* EnabledPlaybackSpeedsKey;
+
+// Transcription & Chapters
+extern NSString* kTranscriptionEngine;              // "WhisperKit" or "Apple"
+extern NSString* kTranscriptionWhisperModel;         // "large-v3-turbo" or "small"
+extern NSString* kTranscriptionAutoDefault;           // BOOL - auto-transcribe new episodes
+extern NSString* kChapterAutoDefault;                 // BOOL - auto-generate chapters
+extern NSString* kTranscriptionEverActivated;         // BOOL - set to YES after first transcription
+extern NSString* kAutoSkipSponsors;                   // BOOL - auto-skip sponsor chapters
+extern NSString* kTranscriptionFirstRunShown;         // BOOL - first-run dialog shown
+
+// Per-Feed keys (stored via CDFeedProperty)
+extern NSString* kFeedPropertyAutoTranscribe;         // "default", "yes", "no"
+extern NSString* kFeedPropertyAutoChapters;            // "default", "yes", "no"
+extern NSString* kFeedPropertyAutoSkipSponsors;        // "default", "yes", "no"
+
+// Transcription status values
+typedef NS_ENUM(NSInteger, ICTranscriptionStatus) {
+    ICTranscriptionStatusNone = 0,
+    ICTranscriptionStatusQueued,
+    ICTranscriptionStatusDownloadingModel,
+    ICTranscriptionStatusAnalyzingMusic,
+    ICTranscriptionStatusTranscribing,
+    ICTranscriptionStatusGeneratingChapters,
+    ICTranscriptionStatusCompleted,
+    ICTranscriptionStatusFailed
+};
+
+// Notifications
+extern NSString* ICTranscriptionDidStartNotification;
+extern NSString* ICTranscriptionDidProgressNotification;
+extern NSString* ICTranscriptionDidFinishNotification;
+extern NSString* ICTranscriptionDidFailNotification;
+extern NSString* ICTranscriptionQueueDidChangeNotification;
 
 #if TARGET_OS_IPHONE==1
 #else

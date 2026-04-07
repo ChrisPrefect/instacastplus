@@ -29,6 +29,8 @@
 
     // Define the sections and their items
     self.changelogSections = @[
+        [NSString stringWithFormat:@"💡 %@", @"CL Tips Title".ls],
+        [NSString stringWithFormat:@"🎙️ %@", @"CL Transcription Title".ls],
         [NSString stringWithFormat:@"🚀 %@", @"Smarter Listening".ls],
         [NSString stringWithFormat:@"🎵 %@", @"Redesigned Player".ls],
         [NSString stringWithFormat:@"📱 %@", @"Across Devices".ls],
@@ -40,6 +42,20 @@
     ];
 
     self.changelogItems = @[
+        @[
+            @"CL Tip LongPress".ls,
+            @"CL Tip SwipeActions".ls,
+            @"CL Tip Transcription".ls,
+            @"CL Tip ChapterSkip".ls,
+            @"CL Tip SleepTimer".ls,
+            @"CL Tip Playlists".ls
+        ],
+        @[
+            @"CL Transcription Feature".ls,
+            @"CL Chapter Generation".ls,
+            @"CL Sponsor Detection".ls,
+            @"CL Music Analysis".ls
+        ],
         @[
             @"CL Live Transcripts".ls,
             @"CL Intelligent Sleep Timer".ls,

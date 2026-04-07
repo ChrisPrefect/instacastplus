@@ -113,6 +113,25 @@ NSString* TapOnEpisodeAction = @"TapOnEpisodeAction";
 NSString* EpisodeSwipeRightAction = @"EpisodeSwipeRightAction";
 NSString* EpisodeSwipeLeftAction = @"EpisodeSwipeLeftAction";
 NSString* EnabledPlaybackSpeedsKey = @"EnabledPlaybackSpeeds";
+
+// Transcription & Chapters
+NSString* kTranscriptionEngine = @"TranscriptionEngine";
+NSString* kTranscriptionWhisperModel = @"TranscriptionWhisperModel";
+NSString* kTranscriptionAutoDefault = @"TranscriptionAutoDefault";
+NSString* kChapterAutoDefault = @"ChapterAutoDefault";
+NSString* kTranscriptionEverActivated = @"TranscriptionEverActivated";
+NSString* kAutoSkipSponsors = @"AutoSkipSponsors";
+NSString* kTranscriptionFirstRunShown = @"TranscriptionFirstRunShown";
+
+NSString* kFeedPropertyAutoTranscribe = @"AutoTranscribe";
+NSString* kFeedPropertyAutoChapters = @"AutoChapters";
+NSString* kFeedPropertyAutoSkipSponsors = @"AutoSkipSponsors";
+
+NSString* ICTranscriptionDidStartNotification = @"ICTranscriptionDidStartNotification";
+NSString* ICTranscriptionDidProgressNotification = @"ICTranscriptionDidProgressNotification";
+NSString* ICTranscriptionDidFinishNotification = @"ICTranscriptionDidFinishNotification";
+NSString* ICTranscriptionDidFailNotification = @"ICTranscriptionDidFailNotification";
+NSString* ICTranscriptionQueueDidChangeNotification = @"ICTranscriptionQueueDidChangeNotification";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 
 #if TARGET_OS_IPHONE==1
@@ -225,10 +244,7 @@ void ICApplySyncedListScrollPositions(NSDictionary<NSString*, NSNumber*>* positi
 #if TARGET_OS_IPHONE
 static UIEdgeInsets _effectiveInsetsForScrollView(UIScrollView* scrollView)
 {
-    if (@available(iOS 11.0, *)) {
-        return scrollView.adjustedContentInset;
-    }
-    return scrollView.contentInset;
+    return scrollView.adjustedContentInset;
 }
 
 static CGFloat _clampedOffsetYForScrollView(UIScrollView* scrollView, CGFloat offsetY)

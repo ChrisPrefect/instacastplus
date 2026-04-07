@@ -310,17 +310,14 @@ typedef NS_ENUM(NSInteger, SleepTimerSettingsSections) {
 #if TARGET_OS_MACCATALYST
     return NO;
 #else
-    if (@available(iOS 13.0, *))
+    NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
+    for (UIScene* scene in connectedScenes)
     {
-        NSSet<UIScene*>* connectedScenes = [UIApplication sharedApplication].connectedScenes;
-        for (UIScene* scene in connectedScenes)
+        if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
+            scene.activationState != UISceneActivationStateUnattached &&
+            scene.activationState != UISceneActivationStateBackground)
         {
-            if ([scene.session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication] &&
-                scene.activationState != UISceneActivationStateUnattached &&
-                scene.activationState != UISceneActivationStateBackground)
-            {
-                return YES;
-            }
+            return YES;
         }
     }
     return NO;

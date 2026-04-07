@@ -7,9 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
-@interface PlayerBookmarksTableViewCell : IOS8FixedSeparatorTableViewCell
+@interface PlayerBookmarksTableViewCell : UITableViewCell
 
 @property (nonatomic, readonly, strong) UILabel* timeLabel;
 

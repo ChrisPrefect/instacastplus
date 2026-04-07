@@ -8,6 +8,7 @@
 
 #import <objc/runtime.h>
 
+#import "InstacastPlus-Swift.h"
 #import "PlayerInfoViewController_v5.h"
 #import "ChaptersTableViewCell.h"
 #import "PlayerInfoHeaderFooterView.h"
@@ -590,6 +591,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(_playbackDidUpdateForTranscriptFollow:) name:PlaybackManagerDidUpdateNotification object:nil];
+        [nc addObserver:self selector:@selector(_transcriptDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
 
         _observing = YES;
     }
@@ -663,6 +665,35 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 }
 
+- (void)_transcriptDidChange:(NSNotification*)notification
+{
+    if (!self.isViewLoaded || !self.view.window) return;
+
+    NSString* hash = notification.userInfo[@"episodeHash"];
+    if (!hash) return;
+
+    CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode;
+    if (!currentEpisode || ![hash isEqualToString:currentEpisode.objectHash]) return;
+
+    // Clear static cache
+    s_transcriptCachedEpisodeHash = nil;
+    s_transcriptCachedCues = nil;
+    s_transcriptCachedDescriptor = nil;
+    s_transcriptCachedSources = nil;
+    s_transcriptCachedAttrString = nil;
+    s_transcriptCachedRanges = nil;
+
+    // Reload transcript sources
+    self.transcriptSources = [self _normalizedTranscriptSourcesForEpisode:currentEpisode];
+    if (self.transcriptSources.count == 0) {
+        self.transcriptCues = @[];
+        [self _clearTranscriptLines];
+        [self _setTranscriptAvailableState:NO];
+        [self _applyTranscriptVisibility];
+    }
+    [self _updateTranscriptPickerButton];
+}
+
 - (void) viewDidLoad
 {
     [super viewDidLoad];
@@ -673,9 +704,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     
     self.tableView.separatorInset = UIEdgeInsetsZero;
     self.tableView.allowsSelectionDuringEditing = YES;
-    if (@available(iOS 11.0, *)) {
-        self.tableView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
-    }
+    self.tableView.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
     [self.tableView registerClass:[ChaptersTableViewCell class] forCellReuseIdentifier:kChapterCell];
     [self.tableView registerClass:[PlayerBookmarksTableViewCell class] forCellReuseIdentifier:kBookmarkCell];
     [self.tableView registerClass:[EpisodesTableViewCell class] forCellReuseIdentifier:kUpNextCell];
@@ -730,7 +759,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     pickerButton.backgroundColor = [UIColor clearColor];
     pickerButton.layer.cornerRadius = 0;
     pickerButton.layer.masksToBounds = NO;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     pickerButton.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
+#pragma clang diagnostic pop
     pickerButton.titleLabel.font = [UIFont systemFontOfSize:ICFontSize(12) weight:UIFontWeightSemibold];
     [pickerButton setTitleColor:ICMutedTextColor forState:UIControlStateNormal];
     UIImageSymbolConfiguration* chevronConfig = [UIImageSymbolConfiguration configurationWithPointSize:11 weight:UIImageSymbolWeightSemibold];
@@ -738,7 +770,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [pickerButton setImage:pickerChevronImage forState:UIControlStateNormal];
     pickerButton.tintColor = ICMutedTextColor;
     pickerButton.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     pickerButton.imageEdgeInsets = UIEdgeInsetsMake(0, 6, 0, -6);
+#pragma clang diagnostic pop
     pickerButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
     [pickerButton setTitle:@"Transcript".ls forState:UIControlStateNormal];
     [pickerButton addTarget:self action:@selector(showTranscriptPicker:) forControlEvents:UIControlEventTouchUpInside];
@@ -847,6 +882,18 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         if (href.length > 0) normalized[@"href"] = href;
         [sources addObject:normalized];
     }
+    // Add locally generated SRT transcript if available
+    NSString* episodeHash = episode.objectHash;
+    if (episodeHash.length > 0 && [[TranscriptionEngine shared] hasSRTFor:episodeHash]) {
+        NSURL* srtURL = [[TranscriptionEngine shared] srtURLFor:episodeHash];
+        NSMutableDictionary* generatedSource = [NSMutableDictionary dictionary];
+        generatedSource[@"url"] = [srtURL absoluteString];
+        generatedSource[@"type"] = @"application/x-subrip";
+        generatedSource[@"title"] = NSLocalizedString(@"Generiert", nil);
+        generatedSource[@"isGenerated"] = @YES;
+        [sources addObject:generatedSource];
+    }
+
     [sources sortUsingComparator:^NSComparisonResult(NSDictionary* source1, NSDictionary* source2) {
         NSInteger rank1 = [self _transcriptUtilityRankForDescriptor:source1];
         NSInteger rank2 = [self _transcriptUtilityRankForDescriptor:source2];
@@ -2139,30 +2186,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [super viewDidLayoutSubviews];
 
     if (_didWillAppear) {
-        if (!SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
-
-            // xxx: hard coded content Insets, because of rotation issues
-            UIEdgeInsets edgeInsets = UIEdgeInsetsMake(20+44, 0, self.bottomScrollInset, 0);
-
-            self.tableView.contentInset = edgeInsets;
-            self.tableView.scrollIndicatorInsets = edgeInsets;
-            if (CGPointEqualToPoint(self.tableView.contentOffset, CGPointZero)) {
-                self.tableView.contentOffset = CGPointMake(0,-edgeInsets.top);
-            }
-        }
-        else
-        {
-            UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20+44, 0, 0, 0);
-            if (@available(iOS 11.0, *)) {
-                safeAreaInsets = self.view.safeAreaInsets;
-            }
-
-            UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
-
-            self.tableView.contentInset = edgeInsets;
-            self.tableView.scrollIndicatorInsets = edgeInsets;
-            self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);
-        }
+        UIEdgeInsets safeAreaInsets = self.view.safeAreaInsets;
+        UIEdgeInsets edgeInsets = UIEdgeInsetsMake(safeAreaInsets.top, 0, self.bottomScrollInset, 0);
+        self.tableView.contentInset = edgeInsets;
+        self.tableView.scrollIndicatorInsets = edgeInsets;
+        self.tableView.contentOffset = CGPointMake(0, -safeAreaInsets.top);
     }
 
     if (self.transcriptVisible) {
@@ -2379,21 +2407,19 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (UIWindowScene*)_activeWindowScene
 {
-    if (@available(iOS 13.0, *)) {
-        UIWindow* keyWindow = [self getKeyWindow];
-        if ([keyWindow.windowScene isKindOfClass:[UIWindowScene class]]) {
-            return keyWindow.windowScene;
-        }
+    UIWindow* keyWindow = [self getKeyWindow];
+    if ([keyWindow.windowScene isKindOfClass:[UIWindowScene class]]) {
+        return keyWindow.windowScene;
+    }
 
-        for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
-            if (![scene isKindOfClass:[UIWindowScene class]]) {
-                continue;
-            }
-            UIWindowScene* windowScene = (UIWindowScene*)scene;
-            if (windowScene.activationState == UISceneActivationStateForegroundActive ||
-                windowScene.activationState == UISceneActivationStateForegroundInactive) {
-                return windowScene;
-            }
+    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) {
+            continue;
+        }
+        UIWindowScene* windowScene = (UIWindowScene*)scene;
+        if (windowScene.activationState == UISceneActivationStateForegroundActive ||
+            windowScene.activationState == UISceneActivationStateForegroundInactive) {
+            return windowScene;
         }
     }
     return nil;
@@ -2993,56 +3019,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
-    if (SYSTEM_VERSION_GREATER_THAN_OR_EQUAL_TO(@"11.0.0")) {
-        return;
-    }
-    
-    CGFloat topOffset = scrollView.contentInset.top;
-    CGFloat yOffset = scrollView.contentOffset.y + topOffset;
-    UIPanGestureRecognizer* recognizer = scrollView.panGestureRecognizer;
-    CGPoint translation = [recognizer translationInView:scrollView];
-    CGPoint velocity = [recognizer velocityInView:scrollView];
-    
-    PlaybackViewController* navigationController = (PlaybackViewController*)self.navigationController;
-    
-    if (yOffset <= 0 && [recognizer state] == UIGestureRecognizerStateChanged)
-    {
-        if (!navigationController.interactive) {
-            [navigationController beginInteractiveDismissing];
-            scrollView.showsVerticalScrollIndicator = NO;
-            _dismissEnded = NO;
-            _startY = translation.y;
-        }
-        
-        translation.y -= _startY;
-        [navigationController.dismissalAnimator _driveTransitionWithTranslation:translation velocity:velocity recognizerState:recognizer.state];
-        
-        scrollView.transform = CGAffineTransformMakeTranslation(0, yOffset);
-        _oldScrollVelocity = velocity;
-    }
-    else
-    {
-        if (navigationController.interactive) {
-            [navigationController.dismissalAnimator _driveTransitionWithTranslation:translation velocity:_oldScrollVelocity recognizerState:UIGestureRecognizerStateEnded];
-            
-            scrollView.showsVerticalScrollIndicator = YES;
-            _dismissEnded = YES;
-            _startY = 0;
-        }
-        
-        if (_dismissEnded)
-        {
-            if (yOffset < 0) {
-                scrollView.transform = CGAffineTransformMakeTranslation(0, yOffset);
-                scrollView.bounces = NO;
-            }
-            else {
-                scrollView.transform = CGAffineTransformIdentity;
-                scrollView.bounces = YES;
-                _dismissEnded = NO;
-            }
-        }
-    }
+    // Dismissal handling is in PlaybackViewController (iOS 11+)
 }
 
 - (NSInteger)numberOfSectionsInCollectionView:(UICollectionView *)collectionView

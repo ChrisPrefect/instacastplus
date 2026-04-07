@@ -192,9 +192,7 @@
 
 - (void)setupSettingsTableViewSpacing
 {
-    if (@available(iOS 15.0, *)) {
-        self.tableView.sectionHeaderTopPadding = 0;
-    }
+    self.tableView.sectionHeaderTopPadding = 0;
 }
 
 - (CGFloat) heightForTextCellUsingText:(NSString*)text

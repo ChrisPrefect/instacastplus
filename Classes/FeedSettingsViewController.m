@@ -20,6 +20,7 @@
 
 enum {
     kEpisodesSection,
+    kTranscriptionSection,
     kAutoSkipSection,
     kNewsModeSection,
     kAggregateUnavailableEpisodesSection,
@@ -147,6 +148,8 @@ enum {
     switch (section) {
         case kEpisodesSection:
             return 1;
+        case kTranscriptionSection:
+            return 3; // auto-transcribe, auto-chapters, sponsor-skip
         case kAutoSkipSection:
             return 3;
         case kNewsModeSection:
@@ -191,6 +194,46 @@ enum {
 
         NSString* feedSortOrder = [self.feed stringForKey:FeedSortOrder];
         cell.detailTextLabel.text = ([feedSortOrder isEqualToString:@"NewerFirst"]) ? @"Newest First".ls : @"Oldest First".ls;
+    }
+
+    else if (indexPath.section == kTranscriptionSection)
+    {
+        cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        control.tag = 1000 + indexPath.row; // offset to avoid conflicts
+
+        switch (indexPath.row) {
+            case 0:
+                cell.textLabel.text = NSLocalizedString(@"Neue Folgen transkribieren", nil);
+                {
+                    NSString* val = [self.feed stringForKey:kFeedPropertyAutoTranscribe];
+                    control.on = (val == nil || [val isEqualToString:@"default"])
+                        ? [USER_DEFAULTS boolForKey:kTranscriptionAutoDefault]
+                        : [val isEqualToString:@"yes"];
+                }
+                break;
+            case 1:
+                cell.textLabel.text = NSLocalizedString(@"Neue Folgen Chapters generieren", nil);
+                {
+                    NSString* val = [self.feed stringForKey:kFeedPropertyAutoChapters];
+                    control.on = (val == nil || [val isEqualToString:@"default"])
+                        ? [USER_DEFAULTS boolForKey:kChapterAutoDefault]
+                        : [val isEqualToString:@"yes"];
+                }
+                break;
+            case 2:
+                cell.textLabel.text = NSLocalizedString(@"Sponsoren überspringen", nil);
+                {
+                    NSString* val = [self.feed stringForKey:kFeedPropertyAutoSkipSponsors];
+                    control.on = (val == nil || [val isEqualToString:@"default"])
+                        ? [USER_DEFAULTS boolForKey:kAutoSkipSponsors]
+                        : [val isEqualToString:@"yes"];
+                }
+                break;
+        }
+
+        [control addTarget:self action:@selector(_transcriptionToggleChanged:) forControlEvents:UIControlEventValueChanged];
+        return cell;
     }
 
     else if (indexPath.section == kRestoreDeletedSection)
@@ -500,6 +543,8 @@ enum {
     switch (section) {
         case kEpisodesSection:
             return @"Episodes".ls;
+        case kTranscriptionSection:
+            return NSLocalizedString(@"Transkription und Chapters", nil);
         case kAutoSkipSection:
             return @"Auto Skip".ls;
         case kAutoDownloadSettingsSection:
@@ -512,6 +557,24 @@ enum {
             break;
     }
     return nil;
+}
+
+- (void) _transcriptionToggleChanged:(UISwitch*)sender
+{
+    NSInteger row = sender.tag - 1000;
+    NSString* value = sender.on ? @"yes" : @"no";
+    switch (row) {
+        case 0:
+            [self.feed setString:value forKey:kFeedPropertyAutoTranscribe];
+            break;
+        case 1:
+            [self.feed setString:value forKey:kFeedPropertyAutoChapters];
+            break;
+        case 2:
+            [self.feed setString:value forKey:kFeedPropertyAutoSkipSponsors];
+            break;
+    }
+    [DMANAGER save];
 }
 
 - (void) toggleShowUnavailableEpisodes:(UISwitch*)sender

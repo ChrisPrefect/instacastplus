@@ -120,6 +120,8 @@
     _trackingDate = nil;
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
     CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
@@ -139,6 +141,7 @@
                       contentRect.origin.y + (contentRect.size.height - h) / 2,
                       w, h);
 }
+#pragma clang diagnostic pop
 
 #pragma mark - Speed cycling helpers
 

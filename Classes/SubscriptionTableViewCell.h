@@ -7,11 +7,9 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
 @class CDFeed;
 
-@interface SubscriptionTableViewCell : IOS8FixedSeparatorTableViewCell
+@interface SubscriptionTableViewCell : UITableViewCell
 
 @property (nonatomic, readonly, strong) UILabel* detailTextLabel2;
 @property (nonatomic, readonly, strong) UILabel* numberLabel;

@@ -146,10 +146,8 @@ static NSURL* _amazonAffiliateURL(NSURL* url)
     toolbarAppearance.shadowColor = [UIColor clearColor];
     webNavController.toolbar.standardAppearance = toolbarAppearance;
     webNavController.toolbar.compactAppearance = toolbarAppearance;
-    if (@available(iOS 15.0, *)) {
-        webNavController.toolbar.scrollEdgeAppearance = toolbarAppearance;
-        webNavController.toolbar.compactScrollEdgeAppearance = toolbarAppearance;
-    }
+    webNavController.toolbar.scrollEdgeAppearance = toolbarAppearance;
+    webNavController.toolbar.compactScrollEdgeAppearance = toolbarAppearance;
 
     UIViewController* presenter = ([self isKindOfClass:[UINavigationController class]]) ? self : (self.navigationController ?: self);
     [presenter presentViewController:webNavController animated:YES completion:nil];

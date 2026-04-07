@@ -9,9 +9,11 @@
 #import "InstacastSceneDelegate.h"
 #import "MainViewController_4.h"
 #import "InstacastAppDelegate.h"
+#import "InstacastPlus-Swift.h"
 #import <CarPlay/CarPlay.h>
 
 #import <StoreKit/StoreKit.h>
+#import <UserNotifications/UserNotifications.h>
 #import "SubscriptionManager.h"
 
 #import "UIManager.h"
@@ -108,9 +110,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
         // Window size restrictions for macOS and iPadOS Stage Manager.
         // iPhone 17 Pro: 402×874pt. Minimum height: -30% + 30px = 662pt.
         BOOL isiOSAppOnMac = NO;
-        if (@available(iOS 14.0, *)) {
-            isiOSAppOnMac = NSProcessInfo.processInfo.isiOSAppOnMac;
-        }
+        isiOSAppOnMac = NSProcessInfo.processInfo.isiOSAppOnMac;
 
         CGSize startSize = CGSizeMake(402, 874);
         CGSize minSize = CGSizeMake(402, 662);
@@ -186,6 +186,11 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
             // Auto-refresh feeds on app launch
             [self _autoRefreshFeedsIfNeeded];
+
+            // Resume transcription queue (delayed to not block app launch)
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [[TranscriptionQueue shared] resumeIfNeeded];
+            });
 
             // Handle URL that launched the app
             if (connectionOptions.URLContexts.count > 0) {
@@ -342,7 +347,10 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
                 alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
             }
             
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
             UIViewController *rootVC = keyWindow.rootViewController;
             [rootVC presentViewController:alert animated:YES completion:nil];
         }
@@ -451,13 +459,18 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
         [[ICAppearanceManager sharedManager] updateAppearance];
     }
     [self _updateAppContentAfterBecomingActive];
-    App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+    [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
 
     // Sync Now Playing lockscreen state with actual playback state
     [[PlaybackManager playbackManager] updateNowPlayingInfo];
 
     // Auto-refresh feeds if last refresh was more than 30 minutes ago
     [self _autoRefreshFeedsIfNeeded];
+
+    // Resume transcription queue (delayed to not block UI)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [[TranscriptionQueue shared] resumeIfNeeded];
+    });
 }
 
 - (void) _updateAppContentAfterBecomingActive
@@ -501,7 +514,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     // to restore the scene back to its current state.
     
     // Save changes in the application's managed object context when the application transitions to the background.
-    App.applicationIconBadgeNumber = ([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0;
+    [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
     if (!self.mainViewController.presentedViewController) {
         [[CacheManager sharedCacheManager] tidyUp];
     }
@@ -598,9 +611,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     [nc addObserver:self selector:@selector(carPlayPlaybackDidUpdate:) name:PlaybackManagerDidEndNotification object:nil];
     [nc addObserver:self selector:@selector(carPlayAudioSessionDidRestorePlayback:) name:AudioSessionDidRestorePlaybackNotification object:nil];
 
-    if (@available(iOS 14.0, *)) {
-        [[CPNowPlayingTemplate sharedTemplate] addObserver:self];
-    }
+    [[CPNowPlayingTemplate sharedTemplate] addObserver:self];
 
     [self carPlayPreloadChapterArtworkData];
     [self carPlayUpdateNowPlayingTemplateConfiguration];
@@ -627,9 +638,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     [nc removeObserver:self name:PlaybackManagerDidEndNotification object:nil];
     [nc removeObserver:self name:AudioSessionDidRestorePlaybackNotification object:nil];
 
-    if (@available(iOS 14.0, *)) {
-        [[CPNowPlayingTemplate sharedTemplate] removeObserver:self];
-    }
+    [[CPNowPlayingTemplate sharedTemplate] removeObserver:self];
 
     [[PlaybackManager playbackManager] removeTaskObserver:self forKeyPath:@"chapters"];
 
@@ -660,15 +669,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        [interfaceController setRootTemplate:template animated:animated completion:nil];
-    }
-    else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        [interfaceController setRootTemplate:template animated:animated];
-#pragma clang diagnostic pop
-    }
+    [interfaceController setRootTemplate:template animated:animated completion:nil];
 }
 
 - (void)carPlayPushTemplate:(CPTemplate*)template animated:(BOOL)animated
@@ -682,27 +683,11 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
     if ([templateStack containsObject:template]) {
-        if (@available(iOS 14.0, *)) {
-            [self.interfaceController popToTemplate:template animated:animated completion:nil];
-        }
-        else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            [self.interfaceController popToTemplate:template animated:animated];
-#pragma clang diagnostic pop
-        }
+        [self.interfaceController popToTemplate:template animated:animated completion:nil];
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        [self.interfaceController pushTemplate:template animated:animated completion:nil];
-    }
-    else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        [self.interfaceController pushTemplate:template animated:animated];
-#pragma clang diagnostic pop
-    }
+    [self.interfaceController pushTemplate:template animated:animated completion:nil];
 }
 
 - (void)carPlayPopTemplateAnimated:(BOOL)animated
@@ -711,15 +696,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        [self.interfaceController popTemplateAnimated:animated completion:nil];
-    }
-    else {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-        [self.interfaceController popTemplateAnimated:animated];
-#pragma clang diagnostic pop
-    }
+    [self.interfaceController popTemplateAnimated:animated completion:nil];
 }
 
 - (void)carPlayConfigureLegacySelectionDelegateIfNeededForTemplate:(CPListTemplate*)template
@@ -728,14 +705,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        return;
-    }
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    template.delegate = (id)self;
-#pragma clang diagnostic pop
+    return;
 }
 
 - (void)carPlayAssignSelectionHandlerForItem:(CPListItem*)item handler:(dispatch_block_t)handler
@@ -744,18 +714,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        item.handler = ^(id<CPSelectableListItem> _Nonnull listItem, dispatch_block_t _Nonnull completionHandler) {
-            handler();
-            completionHandler();
-        };
-    }
-    else {
-        if (!self.carPlayLegacyItemHandlers) {
-            self.carPlayLegacyItemHandlers = [NSMapTable weakToStrongObjectsMapTable];
-        }
-        [self.carPlayLegacyItemHandlers setObject:[handler copy] forKey:item];
-    }
+    item.handler = ^(id<CPSelectableListItem> _Nonnull listItem, dispatch_block_t _Nonnull completionHandler) {
+        handler();
+        completionHandler();
+    };
 }
 
 - (void)carPlaySetImage:(UIImage*)image forListItem:(CPListItem*)item
@@ -764,9 +726,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        [item setImage:image];
-    }
+    [item setImage:image];
 }
 
 - (CPListItem*)carPlayListItemWithText:(NSString*)text detailText:(NSString*)detailText image:(UIImage*)image
@@ -791,9 +751,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return;
     }
 
-    if (@available(iOS 14.0, *)) {
-        [item setAccessoryImage:[self carPlayTemplatedImage:image]];
-    }
+    [item setAccessoryImage:[self carPlayTemplatedImage:image]];
 }
 
 #pragma clang diagnostic push
@@ -1158,20 +1116,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
             if (isCurrent) {
                 NSString* detailText = [self carPlayEpisodeDetailText:episode];
-                if (@available(iOS 14.0, *)) {
-                    if (![(item.detailText ?: @"") isEqualToString:(detailText ?: @"")]) {
-                        [item setDetailText:detailText];
-                    }
+                if (![(item.detailText ?: @"") isEqualToString:(detailText ?: @"")]) {
+                    [item setDetailText:detailText];
                 }
             }
 
-            if (@available(iOS 14.0, *)) {
-                if (isCurrent) {
-                    item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
-                }
-                if (item.playing) {
-                    item.playing = NO;
-                }
+            if (isCurrent) {
+                item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
+            }
+            if (item.playing) {
+                item.playing = NO;
             }
         }
     }
@@ -1179,22 +1133,20 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayUpdateChapterItemsInTemplate:(CPListTemplate*)listTemplate
 {
-    if (@available(iOS 14.0, *)) {
-        NSInteger currentChapter = [PlaybackManager playbackManager].currentChapter;
-        for (CPListSection* section in listTemplate.sections) {
-            for (id<CPListTemplateItem> listItem in section.items) {
-                if (![listItem isKindOfClass:[CPListItem class]]) {
-                    continue;
-                }
-                CPListItem* item = (CPListItem*)listItem;
-                NSNumber* chapterIndex = item.userInfo;
-                if (![chapterIndex isKindOfClass:[NSNumber class]]) {
-                    continue;
-                }
-                BOOL isPlayingChapter = (chapterIndex.integerValue == currentChapter);
-                if (item.playing != isPlayingChapter) {
-                    item.playing = isPlayingChapter;
-                }
+    NSInteger currentChapter = [PlaybackManager playbackManager].currentChapter;
+    for (CPListSection* section in listTemplate.sections) {
+        for (id<CPListTemplateItem> listItem in section.items) {
+            if (![listItem isKindOfClass:[CPListItem class]]) {
+                continue;
+            }
+            CPListItem* item = (CPListItem*)listItem;
+            NSNumber* chapterIndex = item.userInfo;
+            if (![chapterIndex isKindOfClass:[NSNumber class]]) {
+                continue;
+            }
+            BOOL isPlayingChapter = (chapterIndex.integerValue == currentChapter);
+            if (item.playing != isPlayingChapter) {
+                item.playing = isPlayingChapter;
             }
         }
     }
@@ -1309,10 +1261,8 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     [list calculateNumberOfEpisodesCompletion:^(NSUInteger numberOfEpisodes) {
         dispatch_async(dispatch_get_main_queue(), ^{
             NSString* detail = [NSString stringWithFormat:@"%lu %@", (unsigned long)numberOfEpisodes, @"Episodes".ls];
-            if (@available(iOS 14.0, *)) {
-                if (![(item.detailText ?: @"") isEqualToString:(detail ?: @"")]) {
-                    [item setDetailText:detail];
-                }
+            if (![(item.detailText ?: @"") isEqualToString:(detail ?: @"")]) {
+                [item setDetailText:detail];
             }
         });
     }];
@@ -1574,14 +1524,12 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return nil;
     }
 
-    if (@available(iOS 13.0, *)) {
-        UIImageSymbolConfiguration* configuration = [UIImageSymbolConfiguration configurationWithPointSize:pointSize];
-        UIImage* image = [UIImage systemImageNamed:symbolName withConfiguration:configuration];
-        if (image) {
-            return image;
-        }
-        return [UIImage systemImageNamed:symbolName];
+    UIImageSymbolConfiguration* configuration = [UIImageSymbolConfiguration configurationWithPointSize:pointSize];
+    UIImage* image = [UIImage systemImageNamed:symbolName withConfiguration:configuration];
+    if (image) {
+        return image;
     }
+    return [UIImage systemImageNamed:symbolName];
 
     return nil;
 }
@@ -1606,11 +1554,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
     [self carPlaySetTrailingSymbolImage:[self carPlayEpisodeAccessoryImage:episode] forListItem:item];
 
-    if (@available(iOS 14.0, *)) {
-        item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
-        item.playing = NO;
-        item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
-    }
+    item.playbackProgress = [self carPlayPlaybackProgressForEpisode:episode];
+    item.playing = NO;
+    item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
 
     [self carPlayAssignSelectionHandlerForItem:item handler:^{
         [self carPlayPlayEpisode:episode at:MAX(0, episode.position)];
@@ -1640,14 +1586,12 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayShowNowPlayingTemplate
 {
-    if (@available(iOS 14.0, *)) {
-        [self carPlayUpdateNowPlayingTemplateConfiguration];
-        CPNowPlayingTemplate* nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
-        if (self.interfaceController.topTemplate == nowPlayingTemplate) {
-            return;
-        }
-        [self carPlayPushTemplate:nowPlayingTemplate animated:YES];
+    [self carPlayUpdateNowPlayingTemplateConfiguration];
+    CPNowPlayingTemplate* nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
+    if (self.interfaceController.topTemplate == nowPlayingTemplate) {
+        return;
     }
+    [self carPlayPushTemplate:nowPlayingTemplate animated:YES];
 }
 
 - (void)carPlayPresentiPhonePlayer
@@ -1671,25 +1615,23 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (void)carPlayUpdateNowPlayingTemplateConfiguration
 {
-    if (@available(iOS 14.0, *)) {
-        PlaybackManager* playbackManager = [PlaybackManager playbackManager];
-        CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode ?: playbackManager.playingEpisode;
-        NSArray* storedChapters = (currentEpisode != nil) ? [currentEpisode sortedChapters] : @[];
-        BOOL hasRuntimeChapters = (playbackManager.chapters.count > 0);
-        BOOL hasStoredChapters = (!hasRuntimeChapters && storedChapters.count > 0);
+    PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+    CDEpisode* currentEpisode = [AudioSession sharedAudioSession].episode ?: playbackManager.playingEpisode;
+    NSArray* storedChapters = (currentEpisode != nil) ? [currentEpisode sortedChapters] : @[];
+    BOOL hasRuntimeChapters = (playbackManager.chapters.count > 0);
+    BOOL hasStoredChapters = (!hasRuntimeChapters && storedChapters.count > 0);
 
-        CPNowPlayingTemplate* nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
-        NSString* chaptersTitle = @"Chapters".ls;
-        BOOL upNextEnabled = (hasRuntimeChapters || hasStoredChapters);
-        if (![(nowPlayingTemplate.upNextTitle ?: @"") isEqualToString:(chaptersTitle ?: @"")]) {
-            nowPlayingTemplate.upNextTitle = chaptersTitle;
-        }
-        if (nowPlayingTemplate.isUpNextButtonEnabled != upNextEnabled) {
-            nowPlayingTemplate.upNextButtonEnabled = upNextEnabled;
-        }
-        if (nowPlayingTemplate.isAlbumArtistButtonEnabled) {
-            nowPlayingTemplate.albumArtistButtonEnabled = NO;
-        }
+    CPNowPlayingTemplate* nowPlayingTemplate = [CPNowPlayingTemplate sharedTemplate];
+    NSString* chaptersTitle = @"Chapters".ls;
+    BOOL upNextEnabled = (hasRuntimeChapters || hasStoredChapters);
+    if (![(nowPlayingTemplate.upNextTitle ?: @"") isEqualToString:(chaptersTitle ?: @"")]) {
+        nowPlayingTemplate.upNextTitle = chaptersTitle;
+    }
+    if (nowPlayingTemplate.isUpNextButtonEnabled != upNextEnabled) {
+        nowPlayingTemplate.upNextButtonEnabled = upNextEnabled;
+    }
+    if (nowPlayingTemplate.isAlbumArtistButtonEnabled) {
+        nowPlayingTemplate.albumArtistButtonEnabled = NO;
     }
 }
 
@@ -1811,18 +1753,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         CPListItem* item = [self carPlayListItemWithText:title detailText:detail image:fallbackArtwork];
         item.userInfo = @(index);
 
-        if (@available(iOS 14.0, *)) {
-            BOOL isCurrentChapter = NO;
-            if (usingRuntimeChapters) {
-                isCurrentChapter = (index == playbackManager.currentChapter);
-            } else {
-                isCurrentChapter = (playerTime >= startTime && (endTime < 0.0 || playerTime < endTime));
-            }
-            item.playing = isCurrentChapter;
-            item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
-            if (isCurrentChapter) {
-                currentChapterIndex = index;
-            }
+        BOOL isCurrentChapter = NO;
+        if (usingRuntimeChapters) {
+            isCurrentChapter = (index == playbackManager.currentChapter);
+        } else {
+            isCurrentChapter = (playerTime >= startTime && (endTime < 0.0 || playerTime < endTime));
+        }
+        item.playing = isCurrentChapter;
+        item.playingIndicatorLocation = CPListItemPlayingIndicatorLocationTrailing;
+        if (isCurrentChapter) {
+            currentChapterIndex = index;
         }
 
         if (usingRuntimeChapters) {
@@ -1917,7 +1857,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 }
 
 - (void)showPopup {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
     UIViewController *rootVC = keyWindow.rootViewController;
 
     SKProduct *p1 = validProducts[@"product_first"];
@@ -2069,7 +2012,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     }
     
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     UIWindow *keyWindow = [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
     UIViewController *rootVC = keyWindow.rootViewController;
     [rootVC presentViewController:alert animated:YES completion:nil];
 }

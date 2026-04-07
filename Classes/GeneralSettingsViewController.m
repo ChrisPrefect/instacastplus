@@ -440,38 +440,21 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
                 cell.textLabel.numberOfLines = 0;
                 
-                if (@available(iOS 14.0, *)) {
-                    cell.textLabel.text = @"Choose Custom".ls;
-                    [cell.disclosureView setHidden:FALSE];
-                    [cell.colorView setHidden:FALSE];
-                    [cell.textField setHidden:TRUE];
-                    [cell.tfView setHidden:TRUE];
-                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                    [cell.colorView setHidden:YES];
-                    if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
-                    {
-                        [cell.colorView setHidden:NO];
-                        cell.colorView.clipsToBounds = true;
-                        cell.colorView.layer.cornerRadius = 5;
-                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
-                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                        cell.colorView.backgroundColor = themeColor;
-                    }
-                }
-                else
+                cell.textLabel.text = @"Choose Custom".ls;
+                [cell.disclosureView setHidden:FALSE];
+                [cell.colorView setHidden:FALSE];
+                [cell.textField setHidden:TRUE];
+                [cell.tfView setHidden:TRUE];
+                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                [cell.colorView setHidden:YES];
+                if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
                 {
-                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
-                    [cell.disclosureView setHidden:TRUE];
-                    [cell.colorView setHidden:TRUE];
-                    [cell.textField setHidden:FALSE];
-                    [cell.tfView setHidden:FALSE];
-                    cell.textField.tag = 555;
-                    cell.textField.delegate = self;
-                    cell.textField.text = @"";
-                    if ([USER_DEFAULTS objectForKey:PlayerThemeColorHexCode])
-                    {
-                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:PlayerThemeColorHexCode]];
-                    }
+                    [cell.colorView setHidden:NO];
+                    cell.colorView.clipsToBounds = true;
+                    cell.colorView.layer.cornerRadius = 5;
+                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
+                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                    cell.colorView.backgroundColor = themeColor;
                 }
                 return cell;
             }
@@ -501,38 +484,21 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 ChooseThemeColorCell *cell = (ChooseThemeColorCell*)[tableView dequeueReusableCellWithIdentifier:@"ChooseThemeColorCell" forIndexPath:indexPath];
                 cell.textLabel.numberOfLines = 0;
                                 
-                if (@available(iOS 14.0, *)) {
-                    cell.textLabel.text = @"Choose Custom".ls;
-                    [cell.disclosureView setHidden:FALSE];
-                    [cell.colorView setHidden:FALSE];
-                    [cell.textField setHidden:TRUE];
-                    [cell.tfView setHidden:TRUE];
-                    cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
-                    [cell.colorView setHidden:YES];
-                    if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
-                    {
-                        [cell.colorView setHidden:NO];
-                        cell.colorView.clipsToBounds = true;
-                        cell.colorView.layer.cornerRadius = 5;
-                        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-                        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-                        cell.colorView.backgroundColor = themeColor;
-                    }
-                }
-                else
+                cell.textLabel.text = @"Choose Custom".ls;
+                [cell.disclosureView setHidden:FALSE];
+                [cell.colorView setHidden:FALSE];
+                [cell.textField setHidden:TRUE];
+                [cell.tfView setHidden:TRUE];
+                cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
+                [cell.colorView setHidden:YES];
+                if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
                 {
-                    cell.textLabel.text = @"Choose Custom (Hex)".ls;
-                    [cell.disclosureView setHidden:TRUE];
-                    [cell.colorView setHidden:TRUE];
-                    [cell.textField setHidden:FALSE];
-                    [cell.tfView setHidden:FALSE];
-                    cell.textField.tag = 777;
-                    cell.textField.delegate = self;
-                    cell.textField.text = @"";
-                    if ([USER_DEFAULTS objectForKey:InterfaceThemeColorHexCode])
-                    {
-                        cell.textField.text = [NSString stringWithFormat:@"%@", [USER_DEFAULTS stringForKey:InterfaceThemeColorHexCode]];
-                    }
+                    [cell.colorView setHidden:NO];
+                    cell.colorView.clipsToBounds = true;
+                    cell.colorView.layer.cornerRadius = 5;
+                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
+                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+                    cell.colorView.backgroundColor = themeColor;
                 }
                 
                 return cell;
@@ -955,29 +921,21 @@ API_AVAILABLE(ios(14.0)){
     
     else if (indexPath.section == kPlayerColor) {
         if (indexPath.row == 1) {
-            if (@available(iOS 14.0, *)) {
-                self->isPlayerColorSelected = true;
-                [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-                UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-                picker.delegate = self;
-                [self presentViewController:picker animated:YES completion:nil];
-            } else {
-                // Fallback on earlier versions
-            }
+            self->isPlayerColorSelected = true;
+            [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+            UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            picker.delegate = self;
+            [self presentViewController:picker animated:YES completion:nil];
         }
     }
     
     else if (indexPath.section == kPInterfaceColor) {
         if (indexPath.row == 1) {
-            if (@available(iOS 14.0, *)) {
-                self->isPlayerColorSelected = false;
-                [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-                UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-                picker.delegate = self;
-                [self presentViewController:picker animated:YES completion:nil];
-            } else {
-                // Fallback on earlier versions
-            }
+            self->isPlayerColorSelected = false;
+            [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
+            UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            picker.delegate = self;
+            [self presentViewController:picker animated:YES completion:nil];
         }
     }
     

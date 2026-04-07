@@ -7,9 +7,7 @@
 //
 
 #import <UIKit/UIKit.h>
-#import "IOS8FixedSeparatorTableViewCell.h"
-
-@interface ICButtonsTableViewCell : IOS8FixedSeparatorTableViewCell
+@interface ICButtonsTableViewCell : UITableViewCell
 
 + (UIButton*) configuredButtonWithTitle:(NSString*)title imageNamed:(NSString*)imageName;
 

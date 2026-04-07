@@ -303,9 +303,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             }
             
             UIEdgeInsets safeAreaInsets = UIEdgeInsetsMake(20, 0, 0, 0);
-            if (@available(iOS 11.0, *)) {
-                safeAreaInsets = self.view.safeAreaInsets;
-            }
+            safeAreaInsets = self.view.safeAreaInsets;
             
            // [self setScrollView:webView.scrollView contentInsets:UIEdgeInsetsMake(safeAreaInsets.top + 72+15, 0, safeAreaInsets.bottom, 0) byAdjustingForStandardBars:YES];
             

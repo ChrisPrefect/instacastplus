@@ -189,11 +189,7 @@
     [settingsButton addTarget:self action:@selector(openSettings:) forControlEvents:UIControlEventTouchUpInside];
     
     UIImage *gearImage;
-    if (@available(iOS 14.0, *)) {
-        gearImage = [UIImage systemImageNamed:@"gearshape"];//gearshape
-    } else {
-        gearImage = [[UIImage imageNamed:@"setting_chapter"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]; // Use a custom image
-    }
+    gearImage = [UIImage systemImageNamed:@"gearshape"];//gearshape
     UIImageView *settingsIconImageView = [[UIImageView alloc] initWithImage:gearImage];
     settingsIconImageView.tintColor = ICTintColor;
     settingsIconImageView.translatesAutoresizingMaskIntoConstraints = NO;

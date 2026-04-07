@@ -22,6 +22,7 @@
 #import "DataSettingsViewController.h"
 #import "ImportExportSettingsViewController.h"
 #import "SmarthomeSettingsViewController.h"
+#import "TranscriptionSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #import "DonationViewController.h"
@@ -45,6 +46,7 @@ enum {
     kRowSubscriptions,
     kRowNotifications,
     kRowImportExport,
+    kRowTranscription,
     kRowSmartHome,
     kRowEmailFeedback,
     kRowDonateToDeveloper,
@@ -164,6 +166,10 @@ enum {
             cell.textLabel.text = @"Import / Export".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
             break;
+        case kRowTranscription:
+            cell.textLabel.text = NSLocalizedString(@"Transkription und Chapters", nil);
+            cell.imageView.image = [UIImage systemImageNamed:@"captions.bubble"];
+            break;
         case kRowSmartHome:
             cell.textLabel.text = @"Smart Home".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"house"];
@@ -246,6 +252,11 @@ enum {
         }
         case kRowImportExport: {
             ImportExportSettingsViewController* controller = [ImportExportSettingsViewController viewController];
+            [self.navigationController pushViewController:controller animated:YES];
+            break;
+        }
+        case kRowTranscription: {
+            TranscriptionSettingsViewController* controller = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
             [self.navigationController pushViewController:controller animated:YES];
             break;
         }
