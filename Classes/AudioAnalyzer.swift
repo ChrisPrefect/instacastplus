@@ -188,6 +188,11 @@ private struct MusicTimeline: Codable {
 
 private class SoundClassificationObserver: NSObject, SNResultsObserving {
     var segments: [ICAudioSegment] = []
+
+    // Serial queue to synchronize markCompleted() (SoundAnalysis thread)
+    // and waitForCompletion() (async caller thread). Without this,
+    // a race between completed/continuation access can hang forever.
+    private let lock = DispatchQueue(label: "SoundClassificationObserver.lock")
     private var continuation: CheckedContinuation<Void, Never>?
     private var completed = false
 
@@ -239,15 +244,30 @@ private class SoundClassificationObserver: NSObject, SNResultsObserving {
     }
 
     private func markCompleted() {
-        guard !completed else { return }
-        completed = true
-        continuation?.resume()
+        lock.sync {
+            guard !completed else { return }
+            completed = true
+            continuation?.resume()
+        }
     }
 
     func waitForCompletion() async {
-        if completed { return }
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
+        // Check under lock whether already completed before suspending
+        let alreadyDone: Bool = lock.sync {
+            if completed { return true }
+            return false
+        }
+        if alreadyDone { return }
+
+        await withCheckedContinuation { cont in
+            lock.sync {
+                if completed {
+                    // Completed between the check above and now — resume immediately
+                    cont.resume()
+                } else {
+                    continuation = cont
+                }
+            }
         }
     }
 }

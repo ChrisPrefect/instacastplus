@@ -2,12 +2,15 @@
 //  TranscriptionEngine.swift
 //  Instacast
 //
-//  On-device speech-to-text via WhisperKit or Apple DictationTranscriber.
+//  On-device speech-to-text via WhisperKit or Apple SpeechAnalyzer.
 //  Produces SRT files stored in Application Support/TranscriptCache/.
 //
 
 import Foundation
 import AVFoundation
+#if canImport(Speech)
+import Speech
+#endif
 
 // MARK: - Engine Type
 
@@ -131,26 +134,35 @@ private struct TranscriptionCheckpoint: Codable {
 
                 var newCues: [ICTranscriptCue] = []
 
+                // WhisperKit reports p as 0..1 fraction of the audio it was asked to process.
+                // When resuming, it starts from startOffset, so map p back to absolute position.
                 let sendableProgress: @Sendable (Float) -> Void = { [weak self] p in
-                    let adjustedProgress = Float((startOffset + Double(p) * (totalDuration - startOffset)) / totalDuration)
+                    let absoluteProgress = Float(startOffset / totalDuration) + p * Float((totalDuration - startOffset) / totalDuration)
+                    NSLog("[TranscriptionEngine] Progress callback: raw=%.1f%% absolute=%.1f%%", p * 100, absoluteProgress * 100)
                     DispatchQueue.main.async {
-                        self?.currentProgress = adjustedProgress
-                        progress(adjustedProgress, .transcribing)
+                        self?.currentProgress = absoluteProgress
+                        progress(absoluteProgress, .transcribing)
                     }
                 }
 
-                // Intermediate checkpoint: save every ~10% progress to survive app crashes.
-                // All access to checkpointCues/lastCheckpointProg happens on main thread to avoid data races.
+                // Segment callback: fine-grained progress + periodic checkpoint saves.
+                // Accumulate cues so checkpoints contain all transcribed text for crash recovery.
                 nonisolated(unsafe) var lastCheckpointProg: Float = 0
+                nonisolated(unsafe) var accumulatedCues: [ICTranscriptCue] = existingCues
                 let segmentCb: @Sendable (ICTranscriptCue) -> Void = { [weak self] cue in
+                    accumulatedCues.append(cue)
                     let cueEnd = cue.end
                     DispatchQueue.main.async {
                         guard let self = self else { return }
-                        let currentProg = Float(cueEnd / totalDuration)
-                        if currentProg - lastCheckpointProg >= 0.1 {
-                            lastCheckpointProg = currentProg
-                            // Use the engine's internal cue tracking for checkpoint
-                            self.saveCheckpointAtProgress(episodeHash: episodeHash, endTime: cueEnd, engineType: effectiveEngine.rawValue)
+                        // Update progress per segment (much more frequent than per-window callback)
+                        let segProgress = Float(cueEnd / totalDuration)
+                        self.currentProgress = segProgress
+                        progress(segProgress, .transcribing)
+
+                        // Checkpoint every ~10%
+                        if segProgress - lastCheckpointProg >= 0.1 {
+                            lastCheckpointProg = segProgress
+                            self.saveCheckpointWithCues(episodeHash: episodeHash, cues: accumulatedCues, engineType: effectiveEngine.rawValue)
                         }
                     }
                 }
@@ -248,6 +260,22 @@ private struct TranscriptionCheckpoint: Codable {
         return WhisperKitBackend.shared.isModelDownloadedSync()
     }
 
+    /// Pre-load WhisperKit model in background. Called at app launch so the model
+    /// is ready in memory when the user starts transcribing.
+    @objc func preloadModel() {
+        guard engineType == .whisperKit && isModelDownloaded() else { return }
+        Task.detached {
+            let start = CFAbsoluteTimeGetCurrent()
+            do {
+                try await WhisperKitBackend.shared.prepareModel()
+                let elapsed = CFAbsoluteTimeGetCurrent() - start
+                NSLog("[TranscriptionEngine] Model pre-loaded in %.1fs", elapsed)
+            } catch {
+                NSLog("[TranscriptionEngine] Model pre-load failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     @objc var modelSizeOnDisk: Int64 {
         return WhisperKitBackend.shared.modelSizeOnDiskSync()
     }
@@ -342,41 +370,129 @@ private struct TranscriptionCheckpoint: Codable {
         )
     }
 
-    // MARK: - Apple DictationTranscriber Backend
+    // MARK: - Apple SpeechAnalyzer Backend
 
     private func transcribeWithApple(audioURL: URL, startOffset: Double, totalDuration: Double,
                                      language: String?,
                                      progress: @escaping (Float) -> Void,
                                      segmentCallback: @escaping (ICTranscriptCue) -> Void) async throws -> [ICTranscriptCue] {
-        // DictationTranscriber requires iOS 26+
         guard #available(iOS 26, *) else {
             throw NSError(domain: "TranscriptionEngine", code: 101,
-                          userInfo: [NSLocalizedDescriptionKey: "Apple speech transcription requires iOS 26+"])
+                          userInfo: [NSLocalizedDescriptionKey: "Apple-Spracherkennung benötigt iOS 26."])
         }
 
-        // TODO: Implement with SpeechAnalyzer / DictationTranscriber
-        // import Speech
-        //
-        // let analyzer = SpeechAnalyzer()
-        // let transcriber = DictationTranscriber()
-        // analyzer.addModule(transcriber)
-        //
-        // if startOffset > 0 {
-        //     // Use AVAssetReader with timeRange starting at offset
-        // } else {
-        //     try await analyzer.start(inputAudioFile: audioURL)
-        // }
-        //
-        // for try await result in transcriber.results {
-        //     let cue = ICTranscriptCue(...)
-        //     segmentCallback(cue)
-        // }
-        //
-        // analyzer.finalizeAndFinish()
-
-        throw NSError(domain: "TranscriptionEngine", code: 102,
-                      userInfo: [NSLocalizedDescriptionKey: "Apple DictationTranscriber not yet implemented."])
+        #if canImport(Speech)
+        return try await transcribeWithSpeechAnalyzer(
+            audioURL: audioURL, startOffset: startOffset, totalDuration: totalDuration,
+            language: language, progress: progress, segmentCallback: segmentCallback)
+        #else
+        throw NSError(domain: "TranscriptionEngine", code: 103,
+                      userInfo: [NSLocalizedDescriptionKey: "Speech-Framework nicht verfügbar."])
+        #endif
     }
+
+    #if canImport(Speech)
+    @available(iOS 26, *)
+    private func transcribeWithSpeechAnalyzer(
+        audioURL: URL, startOffset: Double, totalDuration: Double,
+        language: String?,
+        progress: @escaping (Float) -> Void,
+        segmentCallback: @escaping (ICTranscriptCue) -> Void
+    ) async throws -> [ICTranscriptCue] {
+
+        // 1. Resolve locale from language code (BCP-47: "de", "en-US", etc.)
+        let locale: Locale
+        if let lang = language, !lang.isEmpty {
+            locale = Locale(identifier: lang)
+        } else {
+            locale = Locale.current
+        }
+
+        // 2. Check locale support (compare at language-code level: "de" matches "de_DE")
+        let supported = await SpeechTranscriber.supportedLocales
+        let langCode = locale.language.languageCode
+        guard supported.contains(where: { $0.language.languageCode == langCode }) else {
+            let name = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+            throw NSError(domain: "TranscriptionEngine", code: 104,
+                          userInfo: [NSLocalizedDescriptionKey:
+                              String(format: NSLocalizedString("Sprache '%@' wird von Apple-Spracherkennung nicht unterstützt.", comment: ""), name)])
+        }
+
+        // 3. Create transcriber with timestamps (no volatile results — we only need finals)
+        let transcriber = SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [],
+            attributeOptions: [.audioTimeRange]
+        )
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+
+        NSLog("[TranscriptionEngine] Apple SpeechAnalyzer: locale=%@, file=%@", locale.identifier, audioURL.lastPathComponent)
+
+        // 4. Collect results concurrently while analyzer processes the file
+        nonisolated(unsafe) let unsafeTranscriber = transcriber
+        nonisolated(unsafe) let unsafeTotalDuration = totalDuration
+        nonisolated(unsafe) let unsafeStartOffset = startOffset
+        nonisolated(unsafe) let unsafeProgress = progress
+        nonisolated(unsafe) let unsafeSegmentCallback = segmentCallback
+
+        async let resultsFuture: [ICTranscriptCue] = {
+            var cues: [ICTranscriptCue] = []
+            for try await result in unsafeTranscriber.results {
+                if Task.isCancelled { throw CancellationError() }
+                guard result.isFinal else { continue }
+
+                let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.isEmpty { continue }
+
+                // Extract time range from AttributedString runs
+                var segStart: Double = 0
+                var segEnd: Double = 0
+                for run in result.text.runs {
+                    if let timeRange = run.audioTimeRange {
+                        let runStart = CMTimeGetSeconds(timeRange.start)
+                        let runEnd = CMTimeGetSeconds(CMTimeAdd(timeRange.start, timeRange.duration))
+                        if segStart == 0 || runStart < segStart { segStart = runStart }
+                        if runEnd > segEnd { segEnd = runEnd }
+                    }
+                }
+
+                // Skip if no time range was found (would produce a broken 0,0 cue)
+                if segEnd == 0 { continue }
+
+                // Skip segments before the resume offset
+                if unsafeStartOffset > 0 && segEnd < unsafeStartOffset { continue }
+
+                let cue = ICTranscriptCue(start: segStart, end: segEnd, text: text)
+                cues.append(cue)
+                unsafeSegmentCallback(cue)
+
+                // Report progress
+                if unsafeTotalDuration > 0 {
+                    let p = min(Float(segEnd / unsafeTotalDuration), 0.99)
+                    unsafeProgress(p)
+                }
+            }
+            return cues
+        }()
+
+        // 5. Feed the audio file to the analyzer
+        let audioFile = try AVAudioFile(forReading: audioURL)
+        if let lastSample = try await analyzer.analyzeSequence(from: audioFile) {
+            try await analyzer.finalizeAndFinish(through: lastSample)
+        } else {
+            await analyzer.cancelAndFinishNow()
+            throw NSError(domain: "TranscriptionEngine", code: 105,
+                          userInfo: [NSLocalizedDescriptionKey: "SpeechAnalyzer konnte die Audiodatei nicht verarbeiten."])
+        }
+
+        // 6. Await collected results
+        let cues = try await resultsFuture
+        progress(1.0)
+        NSLog("[TranscriptionEngine] Apple transcription done: %d cues", cues.count)
+        return cues
+    }
+    #endif
 
     // MARK: - Post-Processing
 
@@ -507,14 +623,13 @@ private struct TranscriptionCheckpoint: Codable {
         return try? JSONDecoder().decode(TranscriptionCheckpoint.self, from: data)
     }
 
-    /// Lightweight checkpoint: saves only the timestamp (no full cue array).
-    /// Used for intermediate saves during transcription to enable resume from crash.
-    func saveCheckpointAtProgress(episodeHash: String, endTime: Double, engineType: Int) {
-        // Load existing checkpoint to preserve cues and failure counter
+    /// Save checkpoint with accumulated cues for crash recovery.
+    /// Called periodically (~every 10%) during transcription.
+    func saveCheckpointWithCues(episodeHash: String, cues: [ICTranscriptCue], engineType: Int) {
         let existing = loadCheckpoint(for: episodeHash)
         let checkpoint = TranscriptionCheckpoint(
-            lastTimestamp: endTime,
-            cues: existing?.cues ?? [],
+            lastTimestamp: cues.last?.end ?? 0,
+            cues: cues.map { .init(start: $0.start, end: $0.end, text: $0.text) },
             engineType: engineType,
             consecutiveFailures: existing?.consecutiveFailures ?? 0
         )
@@ -556,10 +671,15 @@ private struct TranscriptionCheckpoint: Codable {
                 NSLog("[TranscriptionEngine] Auto-downgraded to small model after %d failures", failures)
                 return .whisperKit
             }
-            // After 4 failures even with small model, give up (Apple engine not yet implemented)
+            // After 4 failures with WhisperKit, fall back to Apple SpeechAnalyzer (iOS 26+)
             if failures >= 4 {
-                NSLog("[TranscriptionEngine] Giving up after %d failures with WhisperKit", failures)
-                return .whisperKit // Will be caught by failure counter >= 6 in TranscriptionQueue
+                if #available(iOS 26, *) {
+                    NSLog("[TranscriptionEngine] Falling back to Apple engine after %d WhisperKit failures", failures)
+                    return .apple
+                } else {
+                    NSLog("[TranscriptionEngine] Giving up after %d failures (Apple engine requires iOS 26)", failures)
+                    return .whisperKit // Will be caught by failure counter >= 6 in TranscriptionQueue
+                }
             }
         }
 

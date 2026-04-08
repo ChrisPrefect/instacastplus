@@ -167,7 +167,7 @@ enum {
             cell.imageView.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
             break;
         case kRowTranscription:
-            cell.textLabel.text = NSLocalizedString(@"Transkription und Chapters", nil);
+            cell.textLabel.text = NSLocalizedString(@"Transkription und Kapitel", nil);
             cell.imageView.image = [UIImage systemImageNamed:@"captions.bubble"];
             break;
         case kRowSmartHome:

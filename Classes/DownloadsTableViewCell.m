@@ -70,7 +70,8 @@
     
 
     self.imageView.frame = imageViewRect;
-	CGFloat width = CGRectGetWidth(bounds)-CGRectGetMaxX(imageViewRect)-55;
+	CGFloat rightPadding = (self.playAccessoryButton.superview != nil) ? 55 : 15;
+	CGFloat width = CGRectGetWidth(bounds)-CGRectGetMaxX(imageViewRect)-rightPadding;
     
     textLabelRect.origin.x = CGRectGetMaxX(imageViewRect) + 10;
 	textLabelRect.origin.y = 10;

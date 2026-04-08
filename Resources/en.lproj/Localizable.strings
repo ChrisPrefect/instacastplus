@@ -257,6 +257,11 @@
 "Larger" = "Larger";
 "Even Larger" = "Even Larger";
 "Largest" = "Largest";
+"Transcript Highlight" = "Transcript Highlight";
+"Bold and Colored" = "Bold and Colored";
+"Colored with Background" = "Colored with Background";
+"The active line is displayed bold and in the accent color." = "The active line is displayed bold and in the accent color.";
+"The active line is displayed in the accent color with a subtle background. This avoids text reflow caused by the bold font weight." = "The active line is displayed in the accent color with a subtle background. This avoids text reflow caused by the bold font weight.";
 "Ascending" = "Ascending";
 "Audio" = "Audio";
 "Contains Keyword" = "Contains Keyword";
@@ -986,7 +991,7 @@
 
 /* Transcription */
 "Transkription" = "Transcription";
-"Transkription und Chapters" = "Transcription and Chapters";
+"Transkription und Kapitel" = "Transcription and Chapters";
 "Transkribieren" = "Transcribe";
 "Transkript löschen" = "Delete Transcript";
 "Generiert" = "Generated";
@@ -1066,6 +1071,7 @@
 "Musik wird analysiert..." = "Analyzing music...";
 "Sprachmodell wird vorbereitet..." = "Preparing speech model...";
 "Sprachmodell wird vorbereitet... %lds" = "Preparing speech model... %lds";
+"Sprachmodell wird geladen... %lds" = "Loading speech model... %lds";
 "Modell kompilieren" = "Compile Model";
 "Bereit" = "Ready";
 "Sprachmodell nicht kompiliert. Bitte in Einstellungen > Transkription kompilieren." = "Speech model not compiled. Please compile in Settings > Transcription.";
@@ -1089,7 +1095,7 @@
 "⚠️ Apple Intelligence nicht aktiviert" = "⚠️ Apple Intelligence Not Enabled";
 
 /* TranscriptionSettingsViewController — new entries */
-"Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar.\n\nWhisperKit bietet die beste Genauigkeit, benötigt aber einen Modell-Download. Apple Spracherkennung braucht keinen Download." = "Transcribes podcast episodes to text on-device. The transcript is shown in the player and is searchable.\n\nWhisperKit offers the best accuracy but requires a model download. Apple Speech Recognition needs no download.";
+"Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar." = "Transcribes podcast episodes to text on-device. The transcript is shown in the player and is searchable.";
 "Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Bei Folgen mit vorhandenen Kapiteln wird nur Sponsor-Erkennung durchgeführt." = "Apple Intelligence detects topic changes and ads in the transcript and creates chapters. Sponsor chapters can be skipped automatically. For episodes with existing chapters, only sponsor detection is performed.";
 "Apple Intelligence nicht verfügbar. Für automatische Kapitel und Sponsor-Erkennung wird Apple Intelligence benötigt." = "Apple Intelligence not available. Apple Intelligence is required for automatic chapters and sponsor detection.";
 "Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden." = "Default settings for all podcasts. Can be customized per podcast in the podcast settings.";
@@ -1112,3 +1118,7 @@
 "Kapitelerkennung fehlgeschlagen." = "Chapter detection failed.";
 "Episode wird heruntergeladen..." = "Episode is downloading...";
 "Kapitelerkennung benötigt iOS 26. Bitte aktualisiere auf iOS 26 wenn verfügbar." = "Chapter detection requires iOS 26. Please update to iOS 26 when available.";
+"Transkription wird gestartet... %lds" = "Transcription starting... %lds";
+"Kapitel werden erkannt... %d%%" = "Detecting chapters... %d%%";
+"Kapitelerkennung gestartet" = "Chapter Detection Started";
+"Transkript und Chapters löschen" = "Delete Transcript and Chapters";

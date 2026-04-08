@@ -19,6 +19,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     kEpisodesSection,
     kAppearanceThemeSection,
     kFontSizeSection,
+    kTranscriptHighlightSection,
     kPlayerColor,
     kPInterfaceColor,
     kWidgetColor,
@@ -121,6 +122,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kAppearanceThemeSection:
             return [ICAppearanceManager sharedManager].nightSettingMode ? 2 : 1;
         case kFontSizeSection:
+            return 1;
+        case kTranscriptHighlightSection:
             return 1;
         case kPlayerColor:
             if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive])
@@ -234,6 +237,19 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         };
         NSInteger level = [USER_DEFAULTS integerForKey:kDefaultFontSizeLarger];
         cell.detailTextLabel.text = fontSizeNames[@(level)] ?: @"Normal".ls;
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        return cell;
+    }
+    else if (indexPath.section == kTranscriptHighlightSection)
+    {
+        UITableViewCell* cell = [self detailCell];
+        cell.textLabel.text = @"Transcript Highlight".ls;
+        NSDictionary* styleNames = @{
+            @(ICTranscriptHighlightBold): @"Bold and Colored".ls,
+            @(ICTranscriptHighlightBackground): @"Colored with Background".ls
+        };
+        NSInteger style = [USER_DEFAULTS integerForKey:kDefaultTranscriptHighlightStyle];
+        cell.detailTextLabel.text = styleNames[@(style)] ?: @"Bold and Colored".ls;
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         return cell;
     }
@@ -736,6 +752,22 @@ API_AVAILABLE(ios(14.0)){
         controller.title = @"Font Size".ls;
         controller.values = @[ @0, @1, @2, @3 ];
         controller.titles = @[ @"Normal".ls, @"Larger".ls, @"Even Larger".ls, @"Largest".ls ];
+        [self.navigationController pushViewController:controller animated:YES];
+        return;
+    }
+
+    else if (indexPath.section == kTranscriptHighlightSection)
+    {
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.valueType = kSettingTypeInteger;
+        controller.key = kDefaultTranscriptHighlightStyle;
+        controller.title = @"Transcript Highlight".ls;
+        controller.values = @[ @(ICTranscriptHighlightBold), @(ICTranscriptHighlightBackground) ];
+        controller.titles = @[ @"Bold and Colored".ls, @"Colored with Background".ls ];
+        controller.footerTexts = @[
+            @"The active line is displayed bold and in the accent color.".ls,
+            @"The active line is displayed in the accent color with a subtle background. This avoids text reflow caused by the bold font weight.".ls
+        ];
         [self.navigationController pushViewController:controller animated:YES];
         return;
     }

@@ -544,7 +544,7 @@ enum {
         case kEpisodesSection:
             return @"Episodes".ls;
         case kTranscriptionSection:
-            return NSLocalizedString(@"Transkription und Chapters", nil);
+            return NSLocalizedString(@"Transkription und Kapitel", nil);
         case kAutoSkipSection:
             return @"Auto Skip".ls;
         case kAutoDownloadSettingsSection:

@@ -118,6 +118,12 @@ extern NSString* kDefaultDontDeleteUpNextWhenChangingEpisode;
 extern NSString* kDefaultAppearanceMode;
 extern NSString* kDefaultDarkModePureBlack;
 extern NSString* kDefaultFontSizeLarger;
+extern NSString* kDefaultTranscriptHighlightStyle;
+
+typedef NS_ENUM(NSInteger, ICTranscriptHighlightStyle) {
+    ICTranscriptHighlightBold = 0,       // Bold + colored (default)
+    ICTranscriptHighlightBackground = 1  // Color + subtle background
+};
 
 typedef NS_ENUM(NSInteger, ICAppearanceMode) {
     ICAppearanceModeAutomatic = 0,  // Default - follows system

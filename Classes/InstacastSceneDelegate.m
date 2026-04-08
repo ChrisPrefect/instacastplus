@@ -192,6 +192,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
                 [[TranscriptionQueue shared] resumeIfNeeded];
             });
 
+
             // Handle URL that launched the app
             if (connectionOptions.URLContexts.count > 0) {
                 [self scene:scene openURLContexts:connectionOptions.URLContexts];

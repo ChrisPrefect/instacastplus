@@ -9,6 +9,7 @@
 #import "DownloadsTableViewCell.h"
 #import "EpisodePlayComboButton.h"
 #import "CDEpisode+ShowNotes.h"
+#import "PlaybackViewController.h"
 #import "InstacastPlus-Swift.h"
 #import <BackgroundTasks/BackgroundTasks.h>
 
@@ -65,6 +66,8 @@
 }
 
 - (void)dealloc {
+    [self.elapsedTimer invalidate];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -77,6 +80,12 @@
 
 - (void)_queueChanged {
     if (self.suppressReload) return;
+    // Debounce: coalesce rapid queue changes into a single reload
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_debouncedReload) object:nil];
+    [self performSelector:@selector(_debouncedReload) withObject:nil afterDelay:0.3];
+}
+
+- (void)_debouncedReload {
     [self.tableView reloadData];
 }
 
@@ -177,7 +186,8 @@
     if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) {
         return cell;
     }
-    cell.playAccessoryButton.hidden = YES;
+    // Remove play button and reclaim its space
+    [cell.playAccessoryButton removeFromSuperview];
 
     ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
     cell.tag = indexPath.row;
@@ -230,7 +240,7 @@
                 }];
             }
             NSInteger elapsed = (NSInteger)[[NSDate date] timeIntervalSinceDate:self.modelLoadStartDate];
-            cell.sizeLabel.text = [NSString stringWithFormat:NSLocalizedString(@"Sprachmodell wird vorbereitet... %lds", nil), (long)elapsed];
+            cell.sizeLabel.text = [NSString stringWithFormat:NSLocalizedString(@"Sprachmodell wird geladen... %lds", nil), (long)elapsed];
             cell.progressView.progress = 0;
             cell.progressView.hidden = YES;
             break;
@@ -241,27 +251,45 @@
             cell.progressView.hidden = NO;
             break;
         case ICTranscriptionStatusTranscribing: {
-            // Stop model-load timer
-            if (self.modelLoadStartDate) {
-                self.modelLoadStartDate = nil;
-                [self.elapsedTimer invalidate];
-                self.elapsedTimer = nil;
-            }
+            // Keep elapsed timer running until real progress arrives
             int pct = (int)(item.progress * 100);
             if (pct <= 0) {
-                cell.sizeLabel.text = NSLocalizedString(@"Transkription wird gestartet...", nil);
+                // Still waiting for first WhisperKit window — show elapsed time
+                if (!self.modelLoadStartDate) {
+                    self.modelLoadStartDate = [NSDate date];
+                    [self.elapsedTimer invalidate];
+                    self.elapsedTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer* t) {
+                        [self _progressUpdated];
+                    }];
+                }
+                NSInteger elapsed = (NSInteger)[[NSDate date] timeIntervalSinceDate:self.modelLoadStartDate];
+                cell.sizeLabel.text = [NSString stringWithFormat:NSLocalizedString(@"Transkription wird gestartet... %lds", nil), (long)elapsed];
+                cell.progressView.progress = 0;
+                cell.progressView.hidden = YES;
             } else {
+                // Real progress — stop timer, show percentage
+                if (self.modelLoadStartDate) {
+                    self.modelLoadStartDate = nil;
+                    [self.elapsedTimer invalidate];
+                    self.elapsedTimer = nil;
+                }
                 cell.sizeLabel.text = [NSString stringWithFormat:NSLocalizedString(@"Transkribiert... %d%%", nil), pct];
+                cell.progressView.progress = item.progress;
+                cell.progressView.hidden = NO;
+            }
+            break;
+        }
+        case ICTranscriptionStatusGeneratingChapters: {
+            int pct = (int)(item.progress * 100);
+            if (pct > 0 && pct < 100) {
+                cell.sizeLabel.text = [NSString stringWithFormat:NSLocalizedString(@"Kapitel werden erkannt... %d%%", nil), pct];
+            } else {
+                cell.sizeLabel.text = NSLocalizedString(@"Kapitel werden erkannt...", nil);
             }
             cell.progressView.progress = item.progress;
             cell.progressView.hidden = NO;
             break;
         }
-        case ICTranscriptionStatusGeneratingChapters:
-            cell.sizeLabel.text = NSLocalizedString(@"Kapitel werden erkannt...", nil);
-            cell.progressView.progress = 0.95;
-            cell.progressView.hidden = NO;
-            break;
         case ICTranscriptionStatusCompleted:
             cell.sizeLabel.text = NSLocalizedString(@"Fertig ✓", nil);
             cell.sizeLabel.textColor = [UIColor systemGreenColor];
@@ -275,6 +303,17 @@
             break;
     }
     cell.timeLabel.text = item.feedTitle; // Podcast name on the right
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) return;
+    ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
+    CDEpisode* episode = [self _episodeForHash:item.episodeHash];
+    if (!episode) return;
+    BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
+    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+    [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 
 - (CDEpisode*)_episodeForHash:(NSString*)hash {

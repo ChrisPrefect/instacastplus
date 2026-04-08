@@ -2,7 +2,7 @@
 //  TranscriptionSettingsViewController.m
 //  Instacast
 //
-//  Settings UI for "Transkription und Chapters".
+//  Settings UI for "Transkription und Kapitel".
 //  Sections: Intro → Sprachmodell (combined Engine+Model) → Kapitel & Sponsoren → Automatisch
 //
 
@@ -112,7 +112,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
         case TSSectionModel:
-            return NSLocalizedString(@"Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar.\n\nWhisperKit bietet die beste Genauigkeit, benötigt aber einen Modell-Download. Apple Spracherkennung braucht keinen Download.", nil);
+            return NSLocalizedString(@"Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar.", nil);
         case TSSectionChapters: {
             if ([ChapterGenerator isAvailable]) {
                 return NSLocalizedString(@"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Bei Folgen mit vorhandenen Kapiteln wird nur Sponsor-Erkennung durchgeführt.", nil);

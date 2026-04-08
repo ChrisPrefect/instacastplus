@@ -92,6 +92,7 @@ private struct ChaptersFile: Codable {
     /// Mode A: Full chapter generation (no existing chapters).
     @objc func generateChapters(fromCues cues: [ICTranscriptCue],
                                 musicSegments: [ICAudioSegment]?,
+                                progress: ((Float, Int, Int) -> Void)? = nil,
                                 completion: @escaping ([ICGeneratedChapter]?, Error?) -> Void) {
         guard ChapterGenerator.isAvailable() else {
             completion(nil, NSError(domain: "ChapterGenerator", code: 1,
@@ -108,7 +109,7 @@ private struct ChaptersFile: Codable {
         Task {
             do {
                 let chapters = try await self.generateWithLLM(cues: cues, musicSegments: musicSegments,
-                                                              existingChapters: nil)
+                                                              existingChapters: nil, progress: progress)
                 await MainActor.run {
                     completion(chapters, nil)
                 }
@@ -120,8 +121,8 @@ private struct ChaptersFile: Codable {
         }
     }
 
-    /// Detect sponsor segments and merge into existing chapters.
-    /// Mode B: Only sponsor detection (existing chapters present).
+    /// Detect sponsor segments from transcript using existing chapters as context.
+    /// Returns only the detected sponsor chapters — caller must merge via `mergeSponsors(_:into:)`.
     @objc func detectSponsors(fromCues cues: [ICTranscriptCue],
                               existingChapters: [ICGeneratedChapter],
                               completion: @escaping ([ICGeneratedChapter]?, Error?) -> Void) {
@@ -150,34 +151,111 @@ private struct ChaptersFile: Codable {
 
     private func generateWithLLM(cues: [ICTranscriptCue],
                                  musicSegments: [ICAudioSegment]?,
-                                 existingChapters: [ICGeneratedChapter]?) async throws -> [ICGeneratedChapter] {
+                                 existingChapters: [ICGeneratedChapter]?,
+                                 progress: ((Float, Int, Int) -> Void)? = nil) async throws -> [ICGeneratedChapter] {
         guard #available(iOS 26, *) else {
             throw NSError(domain: "ChapterGenerator", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "iOS 26 required"])
         }
 
-        // Build prompt
-        let _ = buildPrompt(cues: cues, musicSegments: musicSegments, existingChapters: existingChapters)
+        #if canImport(FoundationModels)
+        let model = SystemLanguageModel.default
+        let contextSize = model.contextSize
+        // Reserve half for response — the LLM needs room to generate a full chapter list
+        let maxInputTokens = contextSize / 2
 
-        // TODO: Implement with Foundation Models framework
-        // import FoundationModels
-        //
-        // let session = LanguageModelSession()
-        //
-        // // Use Guided Generation for structured JSON output
-        // let schema = GenerationSchema(type: .array, items: .object(properties: [
-        //     "start": .number,
-        //     "end": .number,
-        //     "title": .string,
-        //     "isSponsor": .boolean
-        // ]))
-        //
-        // let response = try await session.respond(to: prompt, generating: [ChapterOutput].self)
-        //
-        // return response.map { ICGeneratedChapter(start: $0.start, end: $0.end, title: $0.title, isSponsor: $0.isSponsor) }
+        NSLog("[ChapterGenerator] Context window: %d tokens, max input: %d tokens", contextSize, maxInputTokens)
+        await MainActor.run { progress?(0.1, 0, 1) }
 
+        // Iteratively condense until the prompt fits the token budget.
+        // Start with generous char estimate, measure actual tokens, reduce if needed.
+        // ~3 chars/token is a reasonable starting estimate for mixed German/English text.
+        var charBudget = maxInputTokens * 3
+        var finalPrompt: String = ""
+
+        for attempt in 1...5 {
+            let condensed = Self.condenseTranscript(cues, maxChars: charBudget)
+            let prompt = buildPrompt(cues: condensed, musicSegments: musicSegments, existingChapters: existingChapters)
+
+            var promptTokens = prompt.count / 2 // conservative fallback
+            if #available(iOS 26.4, *) {
+                promptTokens = (try? await model.tokenCount(for: prompt)) ?? promptTokens
+            }
+
+            NSLog("[ChapterGenerator] Attempt %d: %d samples, %d chars, %d tokens (limit: %d)",
+                  attempt, condensed.count, prompt.count, promptTokens, maxInputTokens)
+
+            if promptTokens <= maxInputTokens {
+                finalPrompt = prompt
+                break
+            }
+
+            // Reduce char budget proportionally based on actual measurement
+            charBudget = charBudget * maxInputTokens / max(promptTokens, 1)
+            charBudget = max(charBudget, 500) // minimum
+        }
+
+        guard !finalPrompt.isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 10,
+                          userInfo: [NSLocalizedDescriptionKey: "Transkript zu lang für Kapitelerkennung."])
+        }
+
+        await MainActor.run { progress?(0.3, 0, 1) }
+
+        let session = LanguageModelSession()
+        let response = try await session.respond(to: finalPrompt)
+        let text = response.content
+        NSLog("[ChapterGenerator] Response (%d chars): %@", text.count, String(text.prefix(500)))
+
+        await MainActor.run { progress?(0.9, 1, 1) }
+
+        let chapters = parseChaptersFromLLMResponse(text)
+        NSLog("[ChapterGenerator] Parsed %d chapters", chapters.count)
+
+        await MainActor.run { progress?(1.0, 1, 1) }
+        return chapters
+        #else
         throw NSError(domain: "ChapterGenerator", code: 100,
                       userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Kapitelerkennung benötigt iOS 26. Bitte aktualisiere auf iOS 26 wenn verfügbar.", comment: "")])
+        #endif
+    }
+
+    /// Parse the LLM response text into chapter objects.
+    /// Expects JSON array with objects containing: start, end, title, isSponsor
+    private func parseChaptersFromLLMResponse(_ text: String) -> [ICGeneratedChapter] {
+        // Extract JSON from the response (LLM may wrap it in markdown code blocks)
+        var jsonString = text
+        if let startRange = text.range(of: "[", options: .literal),
+           let endRange = text.range(of: "]", options: .backwards) {
+            jsonString = String(text[startRange.lowerBound...endRange.lowerBound])
+        }
+
+        guard let data = jsonString.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            NSLog("[ChapterGenerator] Failed to parse JSON from LLM response: %@", text.prefix(200).description)
+            return []
+        }
+
+        var chapters: [ICGeneratedChapter] = []
+        for item in array {
+            guard let title = item["title"] as? String else { continue }
+            // Flexibly parse start/end — LLM may return Int, Double, or String
+            guard let start = Self.parseNumber(item["start"]) else { continue }
+            let end = Self.parseNumber(item["end"]) ?? start
+            let isSponsor = item["isSponsor"] as? Bool ?? (item["is_sponsor"] as? Bool ?? false)
+            chapters.append(ICGeneratedChapter(start: start, end: end, title: title, isSponsor: isSponsor))
+        }
+        if chapters.isEmpty {
+            NSLog("[ChapterGenerator] No chapters parsed from %d items. First item: %@", array.count, array.first.map { String(describing: $0) } ?? "nil")
+        }
+        return chapters.sorted { $0.start < $1.start }
+    }
+
+    private static func parseNumber(_ value: Any?) -> Double? {
+        if let d = value as? Double { return d }
+        if let i = value as? Int { return Double(i) }
+        if let s = value as? String { return Double(s) }
+        return nil
     }
 
     private func buildPrompt(cues: [ICTranscriptCue],
@@ -185,51 +263,108 @@ private struct ChaptersFile: Codable {
                              existingChapters: [ICGeneratedChapter]?) -> String {
         var prompt = ""
 
-        if let existing = existingChapters, !existing.isEmpty {
-            // Mode B: Sponsor detection only
-            prompt += "Analyze the following podcast transcript and identify ONLY sponsor/advertisement segments.\n"
-            prompt += "The podcast already has these chapters:\n"
-            for ch in existing {
-                let startStr = formatTime(ch.start)
-                let endStr = formatTime(ch.end)
-                prompt += "  [\(startStr) - \(endStr)] \(ch.title)\n"
+        let totalDuration = max((cues.last?.end ?? 0) - (cues.first?.start ?? 0), 1)
+        let durationStr = formatTime(totalDuration)
+
+        if let chapters = existingChapters, !chapters.isEmpty {
+            // Mode B: Sponsor detection with existing chapters
+            prompt += "Finde Werbe- und Sponsoring-Segmente in diesem Podcast-Transkript.\n"
+            prompt += "Gesamtdauer: \(durationStr)\n\n"
+            prompt += "Bestehende Kapitel NICHT verändern. Nur neue Sponsor-Segmente zurückgeben.\n\n"
+
+            prompt += "Typische Sponsoring-Merkmale:\n"
+            prompt += "- \"brought to you by\", \"sponsored by\", \"presented by\", \"powered by\"\n"
+            prompt += "- Promo-Codes, Rabattcodes, Gutscheine (\"code\", \"coupon\", \"% off\", \"Rabatt\")\n"
+            prompt += "- URLs/Links zu Produkten (\"slash\", \".com/\", \"link in der Beschreibung\")\n"
+            prompt += "- \"kostenlos testen\", \"free trial\", \"Angebot\"\n"
+            prompt += "- Abrupter Themenwechsel zu einem Produkt/Dienst, dann Rückkehr zum eigentlichen Thema\n\n"
+
+            prompt += "Antwort NUR als JSON: [{\"start\":SEKUNDEN,\"end\":SEKUNDEN,\"title\":\"Sponsor: MARKENNAME\",\"isSponsor\":true}]\n"
+            prompt += "Falls keine Werbung: leeres Array [] zurückgeben.\n\n"
+
+            prompt += "Bestehende Kapitel:\n"
+            for ch in chapters {
+                let marker = ch.isSponsor ? " [Sponsor]" : ""
+                prompt += "[\(formatTime(ch.start))-\(formatTime(ch.end))] \(ch.title)\(marker)\n"
             }
-            prompt += "\nFind sponsor segments and return them with start/end times and the sponsor name.\n"
-            prompt += "Look for: 'brought to you by', 'sponsored by', promo codes, discount links, 'use code', etc.\n"
+            prompt += "\n"
         } else {
             // Mode A: Full chapter generation
-            prompt += "Analyze the following podcast transcript and create chapter markers.\n"
-            prompt += "Identify topic changes and sponsor/advertisement segments.\n"
-            prompt += "For sponsor segments, prefix the title with 'Sponsor: '.\n"
+            prompt += "Teile dieses Podcast-Transkript in sinnvolle Kapitel auf.\n"
+            prompt += "Gesamtdauer: \(durationStr)\n\n"
 
-            if let music = musicSegments, !music.isEmpty {
-                let musicSegs = music.filter { $0.type == "music" && ($0.end - $0.start) >= 3.0 }
-                if !musicSegs.isEmpty {
-                    prompt += "\nMusic segments detected (these mark definitive chapter boundaries):\n"
-                    for seg in musicSegs {
-                        prompt += "  Music at \(formatTime(seg.start)) - \(formatTime(seg.end))\n"
-                    }
-                }
-            }
+            prompt += "Regeln:\n"
+            prompt += "- Erstelle so viele oder wenige Kapitel wie der Inhalt erfordert.\n"
+            prompt += "- Jeder klare Themenwechsel ist eine Kapitelgrenze.\n"
+            prompt += "- Kapitel können sehr kurz (30s Einschub) oder lang (30min Themenblock) sein.\n"
+            prompt += "- Titel kurz und beschreibend, in der Sprache des Transkripts.\n\n"
+
+            prompt += "Sponsoring/Werbung erkennen und als \"Sponsor: MARKENNAME\" kennzeichnen (isSponsor: true):\n"
+            prompt += "- \"brought to you by\", \"sponsored by\", \"presented by\", \"powered by\"\n"
+            prompt += "- Promo-Codes, Rabattcodes, Gutscheine (\"code\", \"coupon\", \"% off\", \"Rabatt\")\n"
+            prompt += "- URLs/Links zu Produkten (\"slash\", \".com/\", \"link in der Beschreibung\")\n"
+            prompt += "- \"kostenlos testen\", \"free trial\", \"Angebot\"\n"
+            prompt += "- Abrupter Themenwechsel zu einem Produkt/Dienst, dann Rückkehr zum Thema\n\n"
+
+            prompt += "Antwort NUR als JSON: [{\"start\":SEKUNDEN,\"end\":SEKUNDEN,\"title\":\"TITEL\",\"isSponsor\":false}]\n\n"
         }
 
-        // Add transcript (truncated if too long for context window)
-        prompt += "\nTranscript:\n"
-        var totalChars = 0
-        let maxChars = 30000 // ~7500 tokens, safe for ~3B model context
+        // Music segments — the model should interpret their meaning from context
+        if let music = musicSegments?.filter({ $0.type == "music" }), !music.isEmpty {
+            prompt += "Musik-Segmente (können Intro-Theme, Outro-Theme, Jingles zwischen Themen, oder Werbe-Jingles sein — aus dem Kontext erschließen):\n"
+            for seg in music {
+                prompt += "[\(formatTime(seg.start))-\(formatTime(seg.end))]\n"
+            }
+            prompt += "\n"
+        }
+
+        prompt += "Transkript:\n"
         for cue in cues {
-            let line = "[\(formatTime(cue.start))] \(cue.text)\n"
-            totalChars += line.count
-            if totalChars > maxChars {
-                prompt += "... (transcript truncated)\n"
-                break
-            }
-            prompt += line
+            prompt += "[\(formatTime(cue.start))] \(cue.text)\n"
         }
-
-        prompt += "\nReturn a JSON array of chapters with: start (seconds), end (seconds), title, isSponsor (boolean).\n"
 
         return prompt
+    }
+
+    // MARK: - Transcript Condensing
+
+    /// Condense a full transcript to fit the on-device LLM context window.
+    /// Keeps full cue text (no truncation!) so the model sees complete sentences.
+    /// Reduces density by sampling at wider intervals when needed.
+    private static func condenseTranscript(_ cues: [ICTranscriptCue], maxChars: Int) -> [ICTranscriptCue] {
+        guard !cues.isEmpty else { return [] }
+
+        // Check if full transcript fits — best case, send everything
+        let totalChars = cues.reduce(0) { $0 + $1.text.count + 15 }
+        if totalChars <= maxChars {
+            return cues
+        }
+
+        let totalDuration = (cues.last?.end ?? 0) - (cues.first?.start ?? 0)
+        guard totalDuration > 0 else { return cues }
+
+        // Calculate sampling interval from actual average cue size (not a hardcoded guess)
+        let avgCharsPerCue = max(totalChars / cues.count, 1)
+        let targetSamples = max(maxChars / avgCharsPerCue, 10)
+        let interval = totalDuration / Double(targetSamples)
+
+        var sampled: [ICTranscriptCue] = []
+        var nextSampleTime = cues.first?.start ?? 0
+        var totalCharsUsed = 0
+
+        for cue in cues {
+            if cue.start >= nextSampleTime {
+                let lineChars = cue.text.count + 12 // timestamp overhead
+                if totalCharsUsed + lineChars > maxChars { break }
+                sampled.append(cue) // Full text — no truncation
+                totalCharsUsed += lineChars
+                nextSampleTime = cue.start + interval
+            }
+        }
+
+        NSLog("[ChapterGenerator] Condensed: %d cues → %d samples (interval %.0fs, ~%d chars)",
+              cues.count, sampled.count, interval, totalCharsUsed)
+        return sampled
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -253,6 +388,7 @@ private struct ChaptersFile: Codable {
         let url = TranscriptionEngine.shared.chaptersJSONURL(for: episodeHash)
         if let data = try? JSONEncoder().encode(file) {
             try? data.write(to: url, options: .atomic)
+            NSLog("[ChapterGenerator] Saved %d chapters to %@, exists: %d", chapters.count, url.path, FileManager.default.fileExists(atPath: url.path) ? 1 : 0)
         }
     }
 
@@ -269,7 +405,9 @@ private struct ChaptersFile: Codable {
 
     @objc func hasChapters(for episodeHash: String) -> Bool {
         let url = TranscriptionEngine.shared.chaptersJSONURL(for: episodeHash)
-        return FileManager.default.fileExists(atPath: url.path)
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        NSLog("[ChapterGenerator] hasChapters(%@) = %d, path: %@", episodeHash, exists ? 1 : 0, url.path)
+        return exists
     }
 
     // MARK: - Sponsor Skip Integration

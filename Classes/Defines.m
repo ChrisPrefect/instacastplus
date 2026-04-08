@@ -108,6 +108,7 @@ NSString* kDefaultPlayerControls = @"PlayerControls";
 NSString* kDefaultAppearanceMode = @"AppearanceMode";
 NSString* kDefaultDarkModePureBlack = @"DarkModePureBlack";
 NSString* kDefaultFontSizeLarger = @"FontSizeLarger";
+NSString* kDefaultTranscriptHighlightStyle = @"TranscriptHighlightStyle";
 
 NSString* TapOnEpisodeAction = @"TapOnEpisodeAction";
 NSString* EpisodeSwipeRightAction = @"EpisodeSwipeRightAction";

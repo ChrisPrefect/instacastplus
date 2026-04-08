@@ -1353,31 +1353,43 @@
         }]];
     }
 
-    // 8. Delete transcript (destructive)
-    if ([[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash]) {
-        UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
-            STRONG_SELF
-            NSString* hash = self.episode.objectHash;
-            if (!hash) return;
-            [[TranscriptionEngine shared] removeSRTFor:hash];
-            [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
-        }];
-        deleteAction.attributes = UIMenuElementAttributesDestructive;
-        [actions addObject:deleteAction];
-    }
+    // 8+9. Delete transcript and/or chapters (destructive)
+    {
+        BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
+        BOOL hasChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash];
 
-    // 9. Delete generated chapters (destructive)
-    if ([[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash]) {
-        UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
-            STRONG_SELF
-            NSString* hash = self.episode.objectHash;
-            if (!hash) return;
-            NSString* path = [[TranscriptionEngine shared] chaptersJSONURLFor:hash].path;
-            [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
-            [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
-        }];
-        deleteAction.attributes = UIMenuElementAttributesDestructive;
-        [actions addObject:deleteAction];
+        if (hasSRT && hasChapters) {
+            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript und Chapters löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
+                STRONG_SELF
+                NSString* hash = self.episode.objectHash;
+                if (!hash) return;
+                [[TranscriptionEngine shared] removeSRTFor:hash];
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
+            }];
+            deleteAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteAction];
+        } else if (hasSRT) {
+            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
+                STRONG_SELF
+                NSString* hash = self.episode.objectHash;
+                if (!hash) return;
+                [[TranscriptionEngine shared] removeSRTFor:hash];
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
+            }];
+            deleteAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteAction];
+        } else if (hasChapters) {
+            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
+                STRONG_SELF
+                NSString* hash = self.episode.objectHash;
+                if (!hash) return;
+                NSString* path = [[TranscriptionEngine shared] chaptersJSONURLFor:hash].path;
+                [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+                [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
+            }];
+            deleteAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteAction];
+        }
     }
 
     return [UIMenu menuWithTitle:@"" children:actions];

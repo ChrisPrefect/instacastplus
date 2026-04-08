@@ -891,6 +891,19 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [self setSidebarShown:NO animated:NO];
 }
 
+- (void) showTranscriptionQueue
+{
+    if (self.presentedViewController) {
+        [self clearViewControllerPresentationQueue];
+        [self dismissViewControllerAnimated:NO completion:NULL];
+    }
+
+    if ([self _selectMainSidebarItemWithTag:kMainSidebarItemTranscription]) {
+        self.sidebarController.selectedItemTag = kMainSidebarItemTranscription;
+    }
+    [self setSidebarShown:NO animated:NO];
+}
+
 - (void) playerCloseButtonAction2:(id)sender
 {
     [self.presentedViewController dismissViewControllerAnimated:YES completion:^(void) {

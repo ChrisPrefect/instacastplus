@@ -63,6 +63,7 @@ private struct PersistedQueue: Codable {
     private var chapterGen: ChapterGenerator { ChapterGenerator.shared }
 
     private var currentTask: Task<Void, Never>?
+    private var chapterTask: Task<Void, Never>?  // Tracked separately so cancelAll/dequeue can stop it
     private var pendingDownloadHashes: Set<String> = [] // Tracks episodes being auto-downloaded
 
     override init() {
@@ -156,6 +157,8 @@ private struct PersistedQueue: Codable {
     @objc func cancelAll() {
         currentTask?.cancel()
         currentTask = nil
+        chapterTask?.cancel()
+        chapterTask = nil
         engine.cancelTranscription()
         items.removeAll()
         isProcessing = false
@@ -196,7 +199,7 @@ private struct PersistedQueue: Codable {
         items.append(item)
         postQueueChangeNotification()
 
-        Task {
+        chapterTask = Task {
             await MainActor.run {
                 self.postQueueChangeNotification()
             }
@@ -230,13 +233,19 @@ private struct PersistedQueue: Codable {
 
             var chapterError: Error? = nil
             let chapters = await withCheckedContinuation { (continuation: CheckedContinuation<[ICGeneratedChapter]?, Never>) in
-                self.chapterGen.generateChapters(fromCues: cues, musicSegments: musicSegments) { chapters, error in
-                    if let error = error {
-                        chapterError = error
-                        NSLog("[TranscriptionQueue] Chapter generation error: %@", error.localizedDescription)
+                self.chapterGen.generateChapters(fromCues: cues, musicSegments: musicSegments,
+                    progress: { [weak self] progress, chunkIndex, totalChunks in
+                        item.progress = progress
+                        self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
+                    },
+                    completion: { chapters, error in
+                        if let error = error {
+                            chapterError = error
+                            NSLog("[TranscriptionQueue] Chapter generation error: %@", error.localizedDescription)
+                        }
+                        continuation.resume(returning: chapters)
                     }
-                    continuation.resume(returning: chapters)
-                }
+                )
             }
 
             await MainActor.run {
@@ -353,8 +362,8 @@ private struct PersistedQueue: Codable {
                 items.removeAll { $0.status == .completed }
                 persistQueue()
                 postQueueChangeNotification()
-                // Release WhisperKit model from memory when queue is done
-                Task { await WhisperKitBackend.shared.releaseModel() }
+                // Keep model in memory for fast re-use.
+                // Only released on memory warning (see init observer).
                 return
             }
 
@@ -387,8 +396,7 @@ private struct PersistedQueue: Codable {
             }
 
             // Check if WhisperKit model is downloaded
-            let engineRaw = UserDefaults.standard.string(forKey: "TranscriptionEngine") ?? "WhisperKit"
-            if engineRaw == "WhisperKit" && !WhisperKitBackend.shared.isModelDownloadedSync() {
+            if engine.engineType == .whisperKit && !WhisperKitBackend.shared.isModelDownloadedSync() {
                 candidate.status = .failed
                 candidate.error = NSLocalizedString("Sprachmodell nicht installiert. Bitte in Einstellungen > Transkription herunterladen.", comment: "")
                 postQueueChangeNotification()
@@ -423,18 +431,15 @@ private struct PersistedQueue: Codable {
                 }
             }
 
-            // Check cancellation
             guard !Task.isCancelled else {
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.processNext()
-                }
+                await MainActor.run { self.isProcessing = false; self.processNext() }
                 return
             }
 
-            // Step 2: Transcription (WhisperKit/Apple)
+            // Step 2: Transcription — starts with model loading, then transcribing
+            // Show "model loading" until first progress callback switches to .transcribing
             await MainActor.run {
-                item.status = .transcribing
+                item.status = .downloadingModel
                 item.progress = 0
                 self.postQueueChangeNotification()
             }
@@ -445,6 +450,7 @@ private struct PersistedQueue: Codable {
                     episodeHash: episodeHash,
                     language: item.language,
                     progress: { [weak self] progress, status in
+                        NSLog("[TranscriptionQueue] Progress received: %.1f%% status=%ld", progress * 100, status.rawValue)
                         DispatchQueue.main.async {
                             item.progress = progress
                             item.status = status
@@ -499,21 +505,27 @@ private struct PersistedQueue: Codable {
             if shouldGenerateChapters {
                 await MainActor.run {
                     item.status = .generatingChapters
-                    item.progress = 0.95
+                    item.progress = 0
                     self.postQueueChangeNotification()
                 }
                 NSLog("[TranscriptionQueue] Generating chapters from %d cues + %d music segments",
                       transcriptCues.count, musicSegments?.count ?? 0)
 
                 let chapters = await withCheckedContinuation { (continuation: CheckedContinuation<[ICGeneratedChapter]?, Never>) in
-                    self.chapterGen.generateChapters(fromCues: transcriptCues, musicSegments: musicSegments) { chapters, error in
-                        if let error = error {
-                            NSLog("[TranscriptionQueue] Chapter generation error: %@", error.localizedDescription)
-                        } else {
-                            NSLog("[TranscriptionQueue] Generated %d chapters", chapters?.count ?? 0)
+                    self.chapterGen.generateChapters(fromCues: transcriptCues, musicSegments: musicSegments,
+                        progress: { [weak self] progress, chunkIndex, totalChunks in
+                            item.progress = progress
+                            self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
+                        },
+                        completion: { chapters, error in
+                            if let error = error {
+                                NSLog("[TranscriptionQueue] Chapter generation error: %@", error.localizedDescription)
+                            } else {
+                                NSLog("[TranscriptionQueue] Generated %d chapters", chapters?.count ?? 0)
+                            }
+                            continuation.resume(returning: chapters)
                         }
-                        continuation.resume(returning: chapters)
-                    }
+                    )
                 }
 
                 if let chapters = chapters, !chapters.isEmpty {
@@ -634,11 +646,15 @@ private struct PersistedQueue: Codable {
 
     @objc func handleEpisodeDeleted(episodeHash: String) {
         if let item = items.first(where: { $0.episodeHash == episodeHash }) {
-            if item.status == .transcribing || item.status == .analyzingMusic {
+            if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel {
                 currentTask?.cancel()
                 currentTask = nil
                 engine.cancelTranscription()
                 isProcessing = false
+            }
+            if item.status == .generatingChapters {
+                chapterTask?.cancel()
+                chapterTask = nil
             }
             dequeue(episodeHash: episodeHash)
             NSLog("[TranscriptionQueue] Cancelled transcription for deleted episode %@", episodeHash)

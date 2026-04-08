@@ -31,5 +31,6 @@ typedef NSInteger SettingValueType;
 @property (nonatomic, strong) NSArray* images;
 @property (nonatomic, strong) NSArray* values;
 @property (nonatomic, strong) NSString* footerText;
+@property (nonatomic, strong) NSArray<NSString*>* footerTexts; // per-value footer texts (overrides footerText when set)
 
 @end

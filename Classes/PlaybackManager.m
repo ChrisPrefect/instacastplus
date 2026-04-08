@@ -964,6 +964,9 @@ didReceiveResponse:(NSURLResponse *)response
 
         // overwrite current default on iOS, because we actually use the system volume
         [USER_DEFAULTS setFloat:1.0f forKey:kDefaultPlaybackVolume];
+
+        // Reload chapters when generated chapters are added or deleted
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_generatedChaptersDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
 #else
         dispatch_async(dispatch_get_main_queue(), ^{
             [self initializeMikey];
@@ -2873,6 +2876,21 @@ didReceiveResponse:(NSURLResponse *)response
 
 #pragma mark -
 #pragma mark Chapter Support
+
+- (void) _generatedChaptersDidChange:(NSNotification*)notification
+{
+    NSString* hash = notification.userInfo[@"episodeHash"];
+    if (!hash || !self.playingEpisode) return;
+    if (![hash isEqualToString:self.playingEpisode.objectHash]) return;
+
+    // Clear current chapters and reload
+    if (_chapterTimesIdx) {
+        free(_chapterTimesIdx);
+        _chapterTimesIdx = NULL;
+    }
+    self.chapters = nil;
+    [self _startLoadingChapters];
+}
 
 - (void) _startLoadingChapters
 {

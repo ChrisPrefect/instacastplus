@@ -121,6 +121,13 @@
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
+    if (self.footerTexts && self.valueType == kSettingTypeInteger) {
+        NSInteger selectedIndex = [[self source] integerForKey:self.key];
+        NSUInteger idx = [self.values indexOfObject:@(selectedIndex)];
+        if (idx != NSNotFound && idx < self.footerTexts.count) {
+            return self.footerTexts[idx];
+        }
+    }
     return self.footerText;
 }
 
@@ -237,6 +244,10 @@
     cell.textLabel.textColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
     
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (self.footerTexts) {
+        [tableView reloadSections:[NSIndexSet indexSetWithIndex:0] withRowAnimation:UITableViewRowAnimationNone];
+    }
 }
 
 -(void)changeAppLanguage:(NSInteger)value

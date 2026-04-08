@@ -68,7 +68,8 @@ actor WhisperKitBackend {
     func downloadModel() async throws {
         let modelName = WhisperKitBackend.resolvedModelName()
         NSLog("[WhisperKitBackend] Downloading and preparing model: %@", modelName)
-        let wk = try await WhisperKit(model: modelName, verbose: false, logLevel: .none)
+        let computeOptions = ModelComputeOptions(audioEncoderCompute: .cpuAndGPU)
+        let wk = try await WhisperKit(model: modelName, computeOptions: computeOptions, verbose: false, logLevel: .none)
         whisperKit = wk // keep the ready instance
         NSLog("[WhisperKitBackend] Model ready: %@", modelName)
     }
@@ -83,8 +84,18 @@ actor WhisperKitBackend {
             throw NSError(domain: "WhisperKitBackend", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Sprachmodell nicht installiert. Bitte in Einstellungen herunterladen."])
         }
-        NSLog("[WhisperKitBackend] Loading model from: %@", folder)
-        let wk = try await WhisperKit(modelFolder: folder, verbose: false, logLevel: .none)
+        // Log folder contents and measure init time
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []
+        NSLog("[WhisperKitBackend] Loading model from: %@ (%d files: %@)", folder, contents.count, contents.joined(separator: ", "))
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        // Use cpuAndGPU for audio encoder to avoid ANE specialization (3-4 min on first load).
+        // CoreML "specializes" models for the Neural Engine on first use, and this cache is
+        // evicted after OS updates. cpuAndGPU loads in seconds with minimal inference trade-off.
+        let computeOptions = ModelComputeOptions(audioEncoderCompute: .cpuAndGPU)
+        let wk = try await WhisperKit(modelFolder: folder, computeOptions: computeOptions, verbose: true, logLevel: .debug)
+        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+        NSLog("[WhisperKitBackend] Model loaded in %.1fs", elapsed)
         whisperKit = wk
         return wk
     }
@@ -141,8 +152,10 @@ actor WhisperKitBackend {
         nonisolated(unsafe) let whisper = wk
         let callback: TranscriptionCallback = { [progress, totalDuration] tp in
             let estimatedTime = Double(tp.windowId + 1) * 30.0
+            let p = min(Float(estimatedTime / totalDuration), 0.99)
+            NSLog("[WhisperKitBackend] Window %d complete, progress: %.1f%%", tp.windowId, p * 100)
             if totalDuration > 0 {
-                progress(min(Float(estimatedTime / totalDuration), 0.99))
+                progress(p)
             }
             return nil
         }

@@ -1442,10 +1442,18 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSTextStorage* textStorage = self.transcriptTextView.textStorage;
     if (!textStorage || self.transcriptCueRanges.count == 0) return;
 
+    NSInteger highlightStyle = [USER_DEFAULTS integerForKey:kDefaultTranscriptHighlightStyle];
+    BOOL useBold = (highlightStyle == ICTranscriptHighlightBold);
+
     UIColor* normalColor = ICMutedTextColor;
     UIFont* normalFont = [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightRegular];
     UIColor* activeColor = self.view.tintColor ?: ICTintColor;
-    UIFont* activeFont = [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightSemibold];
+    UIFont* activeFont = useBold
+        ? [UIFont systemFontOfSize:ICFontSize(17) weight:UIFontWeightSemibold]
+        : normalFont;
+    UIColor* activeBgColor = useBold
+        ? [UIColor clearColor]
+        : [activeColor colorWithAlphaComponent:0.15];
 
     [textStorage beginEditing];
 
@@ -1456,6 +1464,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         NSRange oldRange = [self.transcriptCueRanges[_previousTranscriptCueIndex] rangeValue];
         [textStorage addAttribute:NSForegroundColorAttributeName value:normalColor range:oldRange];
         [textStorage addAttribute:NSFontAttributeName value:normalFont range:oldRange];
+        [textStorage addAttribute:NSBackgroundColorAttributeName value:[UIColor clearColor] range:oldRange];
     }
 
     // Highlight new active cue
@@ -1465,6 +1474,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         NSRange newRange = [self.transcriptCueRanges[self.activeTranscriptCueIndex] rangeValue];
         [textStorage addAttribute:NSForegroundColorAttributeName value:activeColor range:newRange];
         [textStorage addAttribute:NSFontAttributeName value:activeFont range:newRange];
+        [textStorage addAttribute:NSBackgroundColorAttributeName value:activeBgColor range:newRange];
     }
 
     [textStorage endEditing];

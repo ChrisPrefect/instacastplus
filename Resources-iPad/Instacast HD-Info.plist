@@ -202,6 +202,8 @@
 			</dict>
 		</dict>
 	</array>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Instacast verwendet Spracherkennung um Podcasts zu transkribieren.</string>
 	<key>VDBuildVersion</key>
 	<string>v000</string>
 </dict>
