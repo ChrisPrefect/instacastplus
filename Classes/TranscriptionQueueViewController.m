@@ -141,6 +141,9 @@
     NSDate* _lastCacheProgressUpdate;
 }
 
+static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
+static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued";
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.navigationItem.title = NSLocalizedString(@"Transkribieren", nil);
@@ -274,6 +277,11 @@
         self.backgroundTaskActive = NO;
         [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskActive"];
         [self _updateBackgroundButtonAppearance];
+        [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
+        if (@available(iOS 26.0, *)) {
+            [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionContinuedTaskIdentifier];
+        }
+        [[TranscriptionQueue shared] deactivateBackgroundExecutionPathWithReason:@"user-disabled"];
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"Hintergrund-Transkription deaktiviert"
                                      metadata:@{
@@ -282,7 +290,15 @@
         return;
     }
 
-    BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"];
+    if ([self _shouldUseContinuedGPUBackgroundPath]) {
+        [self _submitContinuedGPUBackgroundTask];
+    } else {
+        [self _submitProcessingBackgroundTask];
+    }
+}
+
+- (void)_submitProcessingBackgroundTask {
+    BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
     request.requiresExternalPower = NO;
     request.requiresNetworkConnectivity = NO;
     NSError* submitError = nil;
@@ -306,14 +322,74 @@
     self.backgroundTaskActive = YES;
     [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundTaskActive"];
     [self _updateBackgroundButtonAppearance];
+    [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:@"legacy-processing"
+                                                                  detail:@"BGProcessingTask eingereicht"];
+    [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                  message:@"Hintergrundpfad aktiviert"
+                                 metadata:@{
+                                     @"path": @"legacy-processing",
+                                     @"queueCount": @([TranscriptionQueue shared].count),
+                                 }];
     [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                   message:@"BGProcessingTask-Request eingereicht"
                                  metadata:@{
-                                     @"identifier": @"com.iteconomy.instacastplus.transcription.processing",
+                                     @"identifier": ICTranscriptionProcessingTaskIdentifier,
+                                     @"path": @"legacy-processing",
                                      @"queueCount": @([TranscriptionQueue shared].count),
                                  }];
+    [self _presentBackgroundExplanationIfNeeded];
+}
 
-    // Show explanation only on first use
+- (void)_submitContinuedGPUBackgroundTask {
+    if (@available(iOS 26.0, *)) {
+        BGContinuedProcessingTaskRequest* request = [[BGContinuedProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionContinuedTaskIdentifier
+                                                                                                          title:NSLocalizedString(@"Transkription läuft", nil)
+                                                                                                       subtitle:NSLocalizedString(@"WhisperKit verarbeitet Podcasts im Hintergrund.", nil)];
+        request.strategy = BGContinuedProcessingTaskRequestSubmissionStrategyFail;
+        request.requiredResources = BGContinuedProcessingTaskRequestResourcesGPU;
+
+        NSError* submitError = nil;
+        [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:&submitError];
+        if (submitError) {
+            [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                          message:@"BGContinuedProcessingTask-Request fehlgeschlagen"
+                                         metadata:@{
+                                             @"error": submitError.localizedDescription ?: @"",
+                                             @"path": @"continued-gpu",
+                                             @"queueCount": @([TranscriptionQueue shared].count),
+                                         }];
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Fehler", nil)
+                                                                          message:submitError.localizedDescription
+                                                                   preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+            return;
+        }
+
+        self.backgroundTaskActive = YES;
+        [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundTaskActive"];
+        [self _updateBackgroundButtonAppearance];
+        [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:@"continued-gpu"
+                                                                      detail:@"BGContinuedProcessingTask mit GPU eingereicht"];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"Hintergrundpfad aktiviert"
+                                     metadata:@{
+                                         @"path": @"continued-gpu",
+                                         @"queueCount": @([TranscriptionQueue shared].count),
+                                     }];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGContinuedProcessingTask-Request eingereicht"
+                                     metadata:@{
+                                         @"identifier": ICTranscriptionContinuedTaskIdentifier,
+                                         @"path": @"continued-gpu",
+                                         @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
+                                         @"queueCount": @([TranscriptionQueue shared].count),
+                                     }];
+        [self _presentBackgroundExplanationIfNeeded];
+    }
+}
+
+- (void)_presentBackgroundExplanationIfNeeded {
     if (![USER_DEFAULTS boolForKey:@"TranscriptionBackgroundExplained"]) {
         [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundExplained"];
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Hintergrund-Transkription", nil)
@@ -324,9 +400,18 @@
     }
 }
 
-- (BOOL)backgroundControlsAvailable {
+- (BOOL)_isWhisperKitEngine {
     NSString* engine = [USER_DEFAULTS stringForKey:kTranscriptionEngine];
-    return engine.length > 0 && ![engine isEqualToString:@"WhisperKit"];
+    return engine.length == 0 || [engine isEqualToString:@"WhisperKit"];
+}
+
+- (BOOL)_shouldUseContinuedGPUBackgroundPath {
+    return [self _isWhisperKitEngine] && [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];
+}
+
+- (BOOL)backgroundControlsAvailable {
+    if (![self _isWhisperKitEngine]) return YES;
+    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];
 }
 
 - (void)_syncBackgroundButtonState {

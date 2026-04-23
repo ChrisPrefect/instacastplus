@@ -161,10 +161,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         [subPredicates addObject:[NSPredicate predicateWithFormat:@"position == 0"]];
     }
     
-    if (!self.downloaded) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"downloaded == NO"]];
-    }
-    
     if (!self.played) {
         [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == NO"]];
     }
@@ -391,10 +387,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         
         if (!contextSelf.starred) {
             [subPredicates addObject:[NSPredicate predicateWithFormat:@"starred == NO"]];
-        }
-        
-        if (!contextSelf.downloaded) {
-            [subPredicates addObject:[NSPredicate predicateWithFormat:@"downloaded == NO"]];
         }
         
         if (!contextSelf.notStarred) {

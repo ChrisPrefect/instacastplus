@@ -12,80 +12,6 @@
 #import "CDMedium.h"
 #import "InstacastPlus-Swift.h"
 
-static NSString* ICCDMediumBaseMimeType(NSString* mimeType)
-{
-    NSString* baseType = [[mimeType componentsSeparatedByString:@";"] firstObject];
-    return [[baseType stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] lowercaseString];
-}
-
-static NSString* ICCDMediumCodecText(CDMedium* media)
-{
-    NSMutableArray* parts = [NSMutableArray array];
-    if (media.mimeType.length > 0) {
-        [parts addObject:media.mimeType];
-    }
-    if (media.fileURL.absoluteString.length > 0) {
-        [parts addObject:media.fileURL.absoluteString];
-    }
-    return [[parts componentsJoinedByString:@" "] lowercaseString];
-}
-
-static NSString* ICCDMediumCompactedCodecText(NSString* text)
-{
-    NSCharacterSet* allowed = [NSCharacterSet alphanumericCharacterSet];
-    return [[text componentsSeparatedByCharactersInSet:[allowed invertedSet]] componentsJoinedByString:@""];
-}
-
-static BOOL ICCDMediumCodecTextContainsHEVC(NSString* text)
-{
-    NSString* compacted = ICCDMediumCompactedCodecText(text);
-    return [text containsString:@"hevc"] ||
-           [text containsString:@"hvc1"] ||
-           [text containsString:@"hev1"] ||
-           [text containsString:@"x265"] ||
-           [compacted containsString:@"h265"];
-}
-
-static BOOL ICCDMediumCodecTextContainsAVC(NSString* text)
-{
-    NSString* compacted = ICCDMediumCompactedCodecText(text);
-    return [text containsString:@"avc1"] ||
-           [text containsString:@"avc3"] ||
-           [text containsString:@"x264"] ||
-           [compacted containsString:@"h264"];
-}
-
-static BOOL ICCDMediumLooksLikeVideo(CDMedium* media)
-{
-    NSString* text = ICCDMediumCodecText(media);
-    NSString* baseMimeType = ICCDMediumBaseMimeType(media.mimeType);
-    NSString* extension = [[media.fileURL pathExtension] lowercaseString];
-    if ([baseMimeType containsString:@"audio"]) {
-        return NO;
-    }
-    return [baseMimeType containsString:@"video"] ||
-           [extension isEqualToString:@"mp4"] ||
-           [extension isEqualToString:@"m4v"] ||
-           [extension isEqualToString:@"mov"] ||
-           ICCDMediumCodecTextContainsHEVC(text) ||
-           ICCDMediumCodecTextContainsAVC(text);
-}
-
-static BOOL ICCDMediumIsHEVCVideo(CDMedium* media)
-{
-    return ICCDMediumLooksLikeVideo(media) && ICCDMediumCodecTextContainsHEVC(ICCDMediumCodecText(media));
-}
-
-static BOOL ICCDMediumIsLegacyAVCVideo(CDMedium* media)
-{
-    return ICCDMediumLooksLikeVideo(media) && ICCDMediumCodecTextContainsAVC(ICCDMediumCodecText(media));
-}
-
-static BOOL ICCDMediumIsNonHEVCVideo(CDMedium* media)
-{
-    return ICCDMediumLooksLikeVideo(media) && !ICCDMediumIsHEVCVideo(media);
-}
-
 @interface CDEpisode ()
 @property (nonatomic, strong) NSString * imageURL_;
 @property (nonatomic, strong) NSString * linkURL_;
@@ -370,34 +296,12 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
 	if ([mediaItems count] == 0) {
 		return nil;
 	}
-
-    NSMutableArray* allowedMediaItems = [NSMutableArray array];
-    for(CDMedium* media in mediaItems) {
-        if (ICCDMediumIsLegacyAVCVideo(media) || ICCDMediumIsNonHEVCVideo(media)) {
-            continue;
-        }
-        [allowedMediaItems addObject:media];
-    }
-    mediaItems = [NSSet setWithArray:allowedMediaItems];
-    if ([mediaItems count] == 0) {
-        return nil;
-    }
-
-    CDMedium* hevcMedium = nil;
-    for(CDMedium* media in mediaItems) {
-        if (ICCDMediumIsHEVCVideo(media) && (!hevcMedium || media.byteSize > hevcMedium.byteSize)) {
-            hevcMedium = media;
-        }
-    }
-    if (hevcMedium) {
-        return hevcMedium;
-    }
     
     NSArray* preferredMediaTypes = [NSArray arrayWithObjects:@"audio/x-m4a", @"video/mp4", @"video/x-m4v", @"audio/mpeg", nil];
     
     NSMutableArray* filteredItems = [[NSMutableArray alloc] init];
 	for(CDMedium* media in mediaItems) {
-        if ([preferredMediaTypes containsObject:ICCDMediumBaseMimeType(media.mimeType)]) {
+        if ([preferredMediaTypes containsObject:media.mimeType]) {
             [filteredItems addObject:media];
 		}
 	}

@@ -772,121 +772,6 @@ static BOOL ICFeedParserTypeLooksLikeTranscript(NSString* type)
            [lower containsString:@"json"];
 }
 
-static NSString* ICFeedParserAttribute(NSDictionary* attributes, NSArray<NSString*>* names)
-{
-    for (NSString* wantedName in names) {
-        NSString* wantedLower = [wantedName lowercaseString];
-        for (NSString* attributeName in attributes) {
-            if ([[attributeName lowercaseString] isEqualToString:wantedLower]) {
-                id value = attributes[attributeName];
-                if ([value respondsToSelector:@selector(length)] && [value length] > 0) {
-                    return value;
-                }
-            }
-        }
-    }
-    return nil;
-}
-
-static NSString* ICFeedParserCodecFromAttributes(NSDictionary* attributes)
-{
-    NSMutableArray* parts = [NSMutableArray array];
-    NSString* codec = ICFeedParserAttribute(attributes, @[@"codec", @"codecs", @"videoCodec", @"video-codec"]);
-    if (codec.length > 0) {
-        [parts addObject:codec];
-    }
-
-    NSString* type = ICFeedParserAttribute(attributes, @[@"type", @"mimeType", @"mimetype"]);
-    if (type.length > 0) {
-        [parts addObject:type];
-    }
-
-    return (parts.count > 0) ? [parts componentsJoinedByString:@" "] : nil;
-}
-
-static NSString* ICFeedParserCompactedCodecText(NSString* text)
-{
-    NSCharacterSet* allowed = [NSCharacterSet alphanumericCharacterSet];
-    return [[[text lowercaseString] componentsSeparatedByCharactersInSet:[allowed invertedSet]] componentsJoinedByString:@""];
-}
-
-static BOOL ICFeedParserCodecTextContainsAVC(NSString* text)
-{
-    NSString* lower = [text lowercaseString];
-    NSString* compacted = ICFeedParserCompactedCodecText(text);
-    return [lower containsString:@"avc1"] ||
-           [lower containsString:@"avc3"] ||
-           [lower containsString:@"x264"] ||
-           [compacted containsString:@"h264"];
-}
-
-static BOOL ICFeedParserMediaIsLegacyAVCVideo(ICMedia* media)
-{
-    NSString* codecText = [[@[media.codec ?: @"", media.mimeType ?: @"", media.fileURL.absoluteString ?: @""] componentsJoinedByString:@" "] lowercaseString];
-    if (!ICFeedParserCodecTextContainsAVC(codecText)) {
-        return NO;
-    }
-    if (ICFeedParserCodecTextContainsAVC(media.codec ?: @"")) {
-        return YES;
-    }
-
-    NSString* mimeType = [[[media.mimeType componentsSeparatedByString:@";"] firstObject] lowercaseString];
-    NSString* extension = [[media.fileURL pathExtension] lowercaseString];
-    return [mimeType containsString:@"video"] ||
-           [extension isEqualToString:@"mp4"] ||
-           [extension isEqualToString:@"m4v"] ||
-           [extension isEqualToString:@"mov"];
-}
-
-static BOOL ICFeedParserCodecTextContainsHEVC(NSString* text)
-{
-    NSString* lower = [text lowercaseString];
-    NSString* compacted = ICFeedParserCompactedCodecText(text);
-    return [lower containsString:@"hevc"] ||
-           [lower containsString:@"hvc1"] ||
-           [lower containsString:@"hev1"] ||
-           [lower containsString:@"x265"] ||
-           [compacted containsString:@"h265"];
-}
-
-static BOOL ICFeedParserMediaLooksLikeVideo(ICMedia* media)
-{
-    NSString* codecText = [[@[media.codec ?: @"", media.mimeType ?: @"", media.fileURL.absoluteString ?: @""] componentsJoinedByString:@" "] lowercaseString];
-    NSString* mimeType = [[[media.mimeType componentsSeparatedByString:@";"] firstObject] lowercaseString];
-    NSString* extension = [[media.fileURL pathExtension] lowercaseString];
-    if ([mimeType containsString:@"audio"]) {
-        return NO;
-    }
-    return [mimeType containsString:@"video"] ||
-           [extension isEqualToString:@"mp4"] ||
-           [extension isEqualToString:@"m4v"] ||
-           [extension isEqualToString:@"mov"] ||
-           ICFeedParserCodecTextContainsAVC(codecText) ||
-           ICFeedParserCodecTextContainsHEVC(codecText);
-}
-
-static BOOL ICFeedParserMediaIsNonHEVCVideo(ICMedia* media)
-{
-    NSString* codecText = [[@[media.codec ?: @"", media.mimeType ?: @"", media.fileURL.absoluteString ?: @""] componentsJoinedByString:@" "] lowercaseString];
-    return ICFeedParserMediaLooksLikeVideo(media) && !ICFeedParserCodecTextContainsHEVC(codecText);
-}
-
-static NSArray* ICFeedParserPruneLegacyVideoCodecs(NSArray* mediaItems)
-{
-    if (mediaItems.count == 0) {
-        return mediaItems;
-    }
-
-    NSMutableArray* filteredMediaItems = [NSMutableArray arrayWithCapacity:mediaItems.count];
-    for (ICMedia* media in mediaItems) {
-        if (ICFeedParserMediaIsLegacyAVCVideo(media) || ICFeedParserMediaIsNonHEVCVideo(media)) {
-            continue;
-        }
-        [filteredMediaItems addObject:media];
-    }
-    return filteredMediaItems;
-}
-
 #define TYPE_ATTRIBUTE [[attributes objectForKey:@"type"] lowercaseString]
 #define REL_ATTRIBUTE [[attributes objectForKey:@"rel"] lowercaseString]
 
@@ -1215,8 +1100,6 @@ static NSArray* ICFeedParserPruneLegacyVideoCodecs(NSArray* mediaItems)
             if ([_episode.subtitle length] == 0) {
                 _episode.subtitle = _episode.summary;
             }
-
-            _episode.media = ICFeedParserPruneLegacyVideoCodecs(_episode.media);
             
             if ([_episode preferedMedium] != nil) {
                 [_episodes addObject:_episode];
@@ -1374,7 +1257,6 @@ static NSArray* ICFeedParserPruneLegacyVideoCodecs(NSArray* mediaItems)
         {
             ICMedia* media = [ICMedia media];
             media.mimeType = [[attributes objectForKey:@"type"] lowercaseString];
-            media.codec = ICFeedParserCodecFromAttributes(attributes);
             media.byteSize = [(NSString*)[attributes objectForKey:@"length"] integerValue];
             
             NSString* urlString = [attributes objectForKey:@"url"];

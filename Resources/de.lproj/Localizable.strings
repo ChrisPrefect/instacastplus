@@ -1064,9 +1064,15 @@
 "Abbrechen" = "Abbrechen";
 "Bitte wähle ein Sprachmodell für die Transkription und die Kapitelerkennung." = "Bitte wähle ein Sprachmodell für die Transkription und die Kapitelerkennung.";
 "WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.";
+"WhisperKit nutzt Core ML/GPU. Im Hintergrund läuft es nur über iOS 26 Background GPU Access; sonst wird beim Verlassen der App pausiert. Apple-Spracherkennung benötigt keinen Download und kann über den klassischen Hintergrundpfad weiterlaufen, wenn iOS dafür Zeit gibt." = "WhisperKit nutzt Core ML/GPU. Im Hintergrund läuft es nur über iOS 26 Background GPU Access; sonst wird beim Verlassen der App pausiert. Apple-Spracherkennung benötigt keinen Download und kann über den klassischen Hintergrundpfad weiterlaufen, wenn iOS dafür Zeit gibt.";
 "nur Vordergrund" = "nur Vordergrund";
+"iOS 26 GPU-Hintergrund" = "iOS 26 GPU-Hintergrund";
 "Hintergrund möglich" = "Hintergrund möglich";
 "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.";
+"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit kann im Hintergrund nur mit iOS 26 Background GPU Access laufen; ohne diese Systemunterstützung pausiert die App. Apple-Spracherkennung benötigt keinen Download und nutzt den klassischen Hintergrundpfad." = "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit kann im Hintergrund nur mit iOS 26 Background GPU Access laufen; ohne diese Systemunterstützung pausiert die App. Apple-Spracherkennung benötigt keinen Download und nutzt den klassischen Hintergrundpfad.";
+"%.0f %% abgeschlossen" = "%.0f %% abgeschlossen";
+"Transkription läuft" = "Transkription läuft";
+"WhisperKit verarbeitet Podcasts im Hintergrund." = "WhisperKit verarbeitet Podcasts im Hintergrund.";
 "Einstellungen" = "Einstellungen";
 "Alle Transkriptionen abbrechen?" = "Alle Transkriptionen abbrechen?";
 "Zurück" = "Zurück";

@@ -67,13 +67,14 @@
     self.sizeLabel.textColor = ICMutedTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
 	
-    CGRect bounds = self.bounds;
+    CGRect bounds = self.contentView.bounds;
 	CGRect textLabelRect = self.textLabel.frame;
     CGRect imageViewRect = CGRectMake(10, 7, 56, 56);
     
 
     self.imageView.frame = imageViewRect;
-	CGFloat rightPadding = (self.playAccessoryButton.superview != nil) ? 55 : 15;
+    CGFloat accessoryReservedWidth = (self.accessoryType != UITableViewCellAccessoryNone || self.accessoryView != nil) ? 34 : 0;
+	CGFloat rightPadding = ((self.playAccessoryButton.superview != nil) ? 55 : 15) + accessoryReservedWidth;
 	CGFloat width = CGRectGetWidth(bounds)-CGRectGetMaxX(imageViewRect)-rightPadding;
     
     textLabelRect.origin.x = CGRectGetMaxX(imageViewRect) + 10;

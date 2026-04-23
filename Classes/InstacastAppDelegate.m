@@ -41,6 +41,10 @@
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
 
+static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
+static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued";
+static NSString* const ICTranscriptionContinuedGPUPath = @"continued-gpu";
+static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing";
 
 @interface InstacastAppDelegate () <UNUserNotificationCenterDelegate>
 @property BOOL resettingContext;
@@ -91,6 +95,169 @@
     [[ICDiagnosticLogger shared] logEvent:@"lifecycle" message:@"applicationDidReceiveMemoryWarning" metadata:nil];
 }
 
+- (void)_registerTranscriptionBackgroundTasks {
+    [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionProcessingTaskIdentifier
+                                                         usingQueue:nil
+                                                      launchHandler:^(BGTask * _Nonnull task) {
+        [self _handleTranscriptionProcessingTask:(BGProcessingTask*)task];
+    }];
+
+    if (@available(iOS 26.0, *)) {
+        BOOL registered = [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifier
+                                                                                usingQueue:nil
+                                                                             launchHandler:^(BGTask * _Nonnull task) {
+            [self _handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)task];
+        }];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGContinuedProcessingTask registriert"
+                                     metadata:@{
+                                         @"identifier": ICTranscriptionContinuedTaskIdentifier,
+                                         @"registered": @(registered),
+                                         @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
+                                     }];
+    }
+}
+
+- (void)_handleTranscriptionProcessingTask:(BGProcessingTask*)processingTask {
+    __block id queueObserver = nil;
+    __block BOOL taskCompleted = NO;
+    void (^scheduleNextRequest)(void) = ^{
+        BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
+        request.requiresExternalPower = NO;
+        request.requiresNetworkConnectivity = NO;
+        [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:nil];
+    };
+    void (^completeTask)(BOOL) = ^(BOOL success) {
+        if (taskCompleted) return;
+        taskCompleted = YES;
+        if (queueObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
+            queueObserver = nil;
+        }
+        [[TranscriptionQueue shared] completeBackgroundExecutionPathWithSuccess:success reason:@"legacy-processing-completed"];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGProcessingTask abgeschlossen"
+                                     metadata:@{
+                                         @"path": ICTranscriptionLegacyProcessingPath,
+                                         @"success": @(success),
+                                     }];
+        [processingTask setTaskCompletedWithSuccess:success];
+        scheduleNextRequest();
+    };
+    processingTask.expirationHandler = ^{
+        [[ICDiagnosticLogger shared] logEvent:@"background-task" message:@"BGProcessingTask abgelaufen" metadata:@{
+            @"path": ICTranscriptionLegacyProcessingPath,
+        }];
+        completeTask(NO);
+    };
+
+    [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:ICTranscriptionLegacyProcessingPath
+                                                                  detail:@"BGProcessingTask gestartet"];
+    [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                  message:@"BGProcessingTask gestartet"
+                                 metadata:@{
+                                     @"identifier": processingTask.identifier ?: @"",
+                                     @"path": ICTranscriptionLegacyProcessingPath,
+                                 }];
+
+    queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
+                                                                      object:nil
+                                                                       queue:[NSOperationQueue mainQueue]
+                                                                  usingBlock:^(__unused NSNotification *note) {
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!queue.isProcessing && queue.currentItem == nil) {
+            completeTask(YES);
+        }
+    }];
+
+    [[TranscriptionQueue shared] resumeIfNeeded];
+    TranscriptionQueue* queue = [TranscriptionQueue shared];
+    if (!queue.isProcessing && queue.currentItem == nil) {
+        completeTask(YES);
+    }
+}
+
+- (void)_handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)continuedTask API_AVAILABLE(ios(26.0)) {
+    __block id queueObserver = nil;
+    __block id progressObserver = nil;
+    __block BOOL taskCompleted = NO;
+
+    continuedTask.progress.totalUnitCount = 1000;
+    continuedTask.progress.completedUnitCount = 0;
+
+    void (^completeTask)(BOOL, NSString*) = ^(BOOL success, NSString* reason) {
+        if (taskCompleted) return;
+        taskCompleted = YES;
+        if (queueObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
+            queueObserver = nil;
+        }
+        if (progressObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:progressObserver];
+            progressObserver = nil;
+        }
+        [[TranscriptionQueue shared] completeBackgroundExecutionPathWithSuccess:success reason:reason];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGContinuedProcessingTask abgeschlossen"
+                                     metadata:@{
+                                         @"path": ICTranscriptionContinuedGPUPath,
+                                         @"reason": reason ?: @"",
+                                         @"success": @(success),
+                                         @"completedUnitCount": @(continuedTask.progress.completedUnitCount),
+                                     }];
+        [continuedTask setTaskCompletedWithSuccess:success];
+    };
+
+    continuedTask.expirationHandler = ^{
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGContinuedProcessingTask abgelaufen"
+                                     metadata:@{
+                                         @"path": ICTranscriptionContinuedGPUPath,
+                                     }];
+        [[TranscriptionQueue shared] expireContinuedGPUBackgroundExecutionWithReason:@"continued-gpu-expired"];
+        completeTask(NO, @"continued-gpu-expired");
+    };
+
+    [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:ICTranscriptionContinuedGPUPath
+                                                                  detail:@"BGContinuedProcessingTask mit GPU gestartet"];
+    [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                  message:@"BGContinuedProcessingTask gestartet"
+                                 metadata:@{
+                                     @"identifier": continuedTask.identifier ?: @"",
+                                     @"path": ICTranscriptionContinuedGPUPath,
+                                     @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
+                                 }];
+
+    progressObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionDidProgressNotification"
+                                                                         object:nil
+                                                                          queue:[NSOperationQueue mainQueue]
+                                                                     usingBlock:^(NSNotification *note) {
+        NSNumber* progressValue = note.userInfo[@"progress"];
+        double fraction = progressValue ? progressValue.doubleValue : 0.0;
+        continuedTask.progress.completedUnitCount = (int64_t)llround(MAX(0.0, MIN(1.0, fraction)) * 1000.0);
+        NSString* subtitle = [NSString stringWithFormat:NSLocalizedString(@"%.0f %% abgeschlossen", nil), fraction * 100.0];
+        [continuedTask updateTitle:NSLocalizedString(@"Transkription läuft", nil) subtitle:subtitle];
+    }];
+
+    queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
+                                                                      object:nil
+                                                                       queue:[NSOperationQueue mainQueue]
+                                                                  usingBlock:^(__unused NSNotification *note) {
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!queue.isProcessing && queue.currentItem == nil) {
+            continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
+            completeTask(YES, @"queue-completed");
+        }
+    }];
+
+    [[TranscriptionQueue shared] resumeIfNeeded];
+    TranscriptionQueue* queue = [TranscriptionQueue shared];
+    if (!queue.isProcessing && queue.currentItem == nil) {
+        continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
+        completeTask(YES, @"queue-empty");
+    }
+}
+
 
 
 
@@ -133,63 +300,7 @@
                                             @"launchOptionsCount": @(launchOptions.count),
                                         }];
 
-    // Register background tasks for transcription
-    [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"
-                                                         usingQueue:nil
-                                                      launchHandler:^(BGTask * _Nonnull task) {
-        BGProcessingTask* processingTask = (BGProcessingTask*)task;
-        __block id queueObserver = nil;
-        __block BOOL taskCompleted = NO;
-        void (^scheduleNextRequest)(void) = ^{
-            BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"];
-            request.requiresExternalPower = NO;
-            request.requiresNetworkConnectivity = NO;
-            [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:nil];
-        };
-        void (^completeTask)(BOOL) = ^(BOOL success) {
-            if (taskCompleted) return;
-            taskCompleted = YES;
-            if (queueObserver) {
-                [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
-                queueObserver = nil;
-            }
-            [[ICDiagnosticLogger shared] logEvent:@"background-task"
-                                          message:@"BGProcessingTask abgeschlossen"
-                                         metadata:@{
-                                             @"success": @(success),
-                                         }];
-            [processingTask setTaskCompletedWithSuccess:success];
-            scheduleNextRequest();
-        };
-        processingTask.expirationHandler = ^{
-            // Save checkpoint - TranscriptionEngine handles this automatically
-            [[ICDiagnosticLogger shared] logEvent:@"background-task" message:@"BGProcessingTask abgelaufen" metadata:nil];
-            completeTask(NO);
-        };
-
-        [[ICDiagnosticLogger shared] logEvent:@"background-task"
-                                      message:@"BGProcessingTask gestartet"
-                                     metadata:@{
-                                         @"identifier": processingTask.identifier ?: @"",
-                                     }];
-
-        queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
-                                                                          object:nil
-                                                                           queue:[NSOperationQueue mainQueue]
-                                                                      usingBlock:^(__unused NSNotification *note) {
-            TranscriptionQueue* queue = [TranscriptionQueue shared];
-            if (!queue.isProcessing && queue.currentItem == nil) {
-                completeTask(YES);
-            }
-        }];
-
-        // Resume transcription queue in background.
-        [[TranscriptionQueue shared] resumeIfNeeded];
-        TranscriptionQueue* queue = [TranscriptionQueue shared];
-        if (!queue.isProcessing && queue.currentItem == nil) {
-            completeTask(YES);
-        }
-    }];
+    [self _registerTranscriptionBackgroundTasks];
 
     if ([DatabaseManager dataStoreNeedsMigration]) {
         UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];

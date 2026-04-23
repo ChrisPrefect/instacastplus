@@ -911,8 +911,9 @@ didReceiveResponse:(NSURLResponse *)response
 #endif
 
 @property (nonatomic) double initialPlaybackTime;
-@property (nonatomic, weak) id playbackObserver;
-@property (nonatomic, weak) id positionObserver;
+@property (nonatomic, strong) id playbackObserver;
+@property (nonatomic, strong) id temporaryPositionObserver;
+@property (nonatomic, strong) id savedPositionObserver;
 @property (assign) NSInteger state;
 
 @property (nonatomic) BOOL inTransitionToNextTrack;
@@ -1964,9 +1965,15 @@ didReceiveResponse:(NSURLResponse *)response
     }];
     
     
-    self.positionObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(30,25000) queue:NULL usingBlock:^(CMTime time) {
+    self.temporaryPositionObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(5,25000) queue:NULL usingBlock:^(CMTime time) {
         if (weakSelf.ready) {
             [weakSelf _temporarySavePosition];
+        }
+    }];
+
+    self.savedPositionObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(30,25000) queue:NULL usingBlock:^(CMTime time) {
+        if (weakSelf.ready && !weakSelf.paused) {
+            [weakSelf _saveCurrentPlaybackPosition];
         }
     }];
     
@@ -2226,9 +2233,14 @@ didReceiveResponse:(NSURLResponse *)response
 			self.playbackObserver = nil;
 		}
         
-        if (self.positionObserver) {
-            [self.player removeTimeObserver:self.positionObserver];
-            self.positionObserver = nil;
+        if (self.temporaryPositionObserver) {
+            [self.player removeTimeObserver:self.temporaryPositionObserver];
+            self.temporaryPositionObserver = nil;
+        }
+        
+        if (self.savedPositionObserver) {
+            [self.player removeTimeObserver:self.savedPositionObserver];
+            self.savedPositionObserver = nil;
         }
         
         [self.playingEpisode removeTaskObserver:self forKeyPath:@"position"];

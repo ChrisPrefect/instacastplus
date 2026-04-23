@@ -112,7 +112,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
         case TSSectionModel:
-            return NSLocalizedString(@"WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.", nil);
+            return NSLocalizedString(@"WhisperKit nutzt Core ML/GPU. Im Hintergrund läuft es nur über iOS 26 Background GPU Access; sonst wird beim Verlassen der App pausiert. Apple-Spracherkennung benötigt keinen Download und kann über den klassischen Hintergrundpfad weiterlaufen, wenn iOS dafür Zeit gibt.", nil);
         case TSSectionChapters: {
             if ([ChapterGenerator isAvailable]) {
                 return NSLocalizedString(@"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.", nil);
@@ -309,14 +309,14 @@ typedef NS_ENUM(NSInteger, TSSection) {
         [values addObject:kCombinedWhisperLarge];
         NSString* rec = [recEngine isEqualToString:@"WhisperKit"] ? NSLocalizedString(@" (empfohlen)", nil) : @"";
         [titles addObject:[NSString stringWithFormat:@"WhisperKit Large V3 Turbo (~645 MB, %@)%@",
-                           NSLocalizedString(@"nur Vordergrund", nil), rec]];
+                           NSLocalizedString(@"iOS 26 GPU-Hintergrund", nil), rec]];
     }
 
     [values addObject:kCombinedWhisperSmall];
     {
         NSString* rec = (!largeAvailable && [recEngine isEqualToString:@"WhisperKit"]) ? NSLocalizedString(@" (empfohlen)", nil) : @"";
         [titles addObject:[NSString stringWithFormat:@"WhisperKit Small (~216 MB, %@)%@",
-                           NSLocalizedString(@"nur Vordergrund", nil), rec]];
+                           NSLocalizedString(@"iOS 26 GPU-Hintergrund", nil), rec]];
     }
 
     [values addObject:kCombinedApple];
@@ -328,7 +328,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
     controller.values = values;
     controller.titles = titles;
-    controller.footerText = NSLocalizedString(@"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.", nil);
+    controller.footerText = NSLocalizedString(@"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit kann im Hintergrund nur mit iOS 26 Background GPU Access laufen; ohne diese Systemunterstützung pausiert die App. Apple-Spracherkennung benötigt keinen Download und nutzt den klassischen Hintergrundpfad.", nil);
 
     [self.navigationController pushViewController:controller animated:YES];
 }

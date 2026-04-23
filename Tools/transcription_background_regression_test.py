@@ -15,6 +15,9 @@ backend_source = (ROOT / "Classes" / "WhisperKitBackend.swift").read_text()
 chapter_source = (ROOT / "Classes" / "ChapterGenerator.swift").read_text()
 controller_source = (ROOT / "Classes" / "TranscriptionQueueViewController.m").read_text()
 settings_source = (ROOT / "Classes" / "TranscriptionSettingsViewController.m").read_text()
+app_delegate_source = (ROOT / "Classes" / "InstacastAppDelegate.m").read_text()
+cell_source = (ROOT / "Classes" / "DownloadsTableViewCell.m").read_text()
+entitlements_source = (ROOT / "Instacast.entitlements").read_text()
 
 
 require(
@@ -71,9 +74,31 @@ require(
     "Unavailable background transcription is still shown as a disabled toolbar button.",
 )
 require(
-    "WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund" in settings_source
+    "BGContinuedProcessingTaskRequest" in controller_source
+    and "BGContinuedProcessingTaskRequestResourcesGPU" in controller_source
+    and "supportedResources" in controller_source
+    and "Hintergrundpfad aktiviert" in controller_source,
+    "WhisperKit background still does not submit the iOS 26 continued-processing GPU path transparently.",
+)
+require(
+    "BGContinuedProcessingTask" in app_delegate_source
+    and "progress.completedUnitCount" in app_delegate_source
+    and "continued-gpu" in app_delegate_source,
+    "The iOS 26 continued-processing task is not registered, monitored, and logged.",
+)
+require(
+    "com.apple.developer.background-tasks.continued-processing.gpu" in entitlements_source,
+    "Background GPU Access entitlement is missing.",
+)
+require(
+    "CGRect bounds = self.contentView.bounds;" in cell_source
+    and "accessoryReservedWidth" in cell_source,
+    "Download/transcription cell layout does not reserve space for the info accessory.",
+)
+require(
+    "WhisperKit nutzt Core ML/GPU. Im Hintergrund läuft es nur über iOS 26 Background GPU Access" in settings_source
     and "Hintergrund möglich" in settings_source
-    and "nur Vordergrund" in settings_source,
+    and "iOS 26 GPU-Hintergrund" in settings_source,
     "Model settings do not explain the foreground/background tradeoff.",
 )
 require(

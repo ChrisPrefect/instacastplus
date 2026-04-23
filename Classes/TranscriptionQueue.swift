@@ -9,6 +9,7 @@
 
 import Foundation
 import UIKit
+import BackgroundTasks
 
 let ICTranscriptionInternalStatusDetailNotification = Notification.Name("ICTranscriptionInternalStatusDetailNotification")
 
@@ -160,9 +161,16 @@ private struct PersistedQueue: Codable {
     private static let _shared = TranscriptionQueue()
     @objc static var shared: TranscriptionQueue { _shared }
     private static let backgroundTaskEnabledKey = "TranscriptionBackgroundTaskActive"
+    private static let continuedGPUBackgroundActiveKey = "TranscriptionBackgroundContinuedGPUActive"
+    private static let backgroundExecutionPathKey = "TranscriptionBackgroundExecutionPath"
 
     @objc private(set) var items: [ICTranscriptionQueueItem] = []
     @objc private(set) var isProcessing = false
+
+    @objc static func supportsContinuedGPUBackgroundProcessing() -> Bool {
+        guard #available(iOS 26.0, *) else { return false }
+        return BGTaskScheduler.supportedResources.contains(.gpu)
+    }
 
     private var engine: TranscriptionEngine { TranscriptionEngine.shared }
     private var analyzer: AudioAnalyzer { AudioAnalyzer.shared }
@@ -647,6 +655,10 @@ private struct PersistedQueue: Codable {
         UserDefaults.standard.bool(forKey: TranscriptionQueue.backgroundTaskEnabledKey)
     }
 
+    private var continuedGPUBackgroundActive: Bool {
+        UserDefaults.standard.bool(forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
+    }
+
     private var hasLifecycleManagedWork: Bool {
         isProcessing || chapterTask != nil
     }
@@ -727,6 +739,11 @@ private struct PersistedQueue: Codable {
 
     @discardableResult
     private func pauseWhisperKitForBackgroundIfNeeded() -> Bool {
+        return pauseWhisperKitForBackgroundIfNeeded(reason: "applicationDidEnterBackground")
+    }
+
+    @discardableResult
+    private func pauseWhisperKitForBackgroundIfNeeded(reason: String) -> Bool {
         guard shouldPauseWhisperKitForBackground else { return false }
         guard isProcessing else { return false }
         guard let item = items.first(where: {
@@ -736,7 +753,7 @@ private struct PersistedQueue: Codable {
         }) else { return false }
 
         let task = currentTask
-        finishBackgroundPause(for: item, reason: "applicationDidEnterBackground")
+        finishBackgroundPause(for: item, reason: reason)
         task?.cancel()
         analyzer.cancelAnalysis()
         engine.cancelTranscription()
@@ -744,7 +761,75 @@ private struct PersistedQueue: Codable {
     }
 
     private var shouldPauseWhisperKitForBackground: Bool {
-        engine.engineType == .whisperKit && UIApplication.shared.applicationState == .background
+        engine.engineType == .whisperKit &&
+            UIApplication.shared.applicationState == .background &&
+            !continuedGPUBackgroundActive
+    }
+
+    @objc(activateBackgroundExecutionPathWithPath:detail:)
+    func activateBackgroundExecutionPath(path: String, detail: String) {
+        UserDefaults.standard.set(true, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
+        UserDefaults.standard.set(path, forKey: TranscriptionQueue.backgroundExecutionPathKey)
+        UserDefaults.standard.set(path == "continued-gpu", forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
+
+        let activeItems = items.filter {
+            $0.status == .queued ||
+            $0.status == .analyzingMusic ||
+            $0.status == .downloadingModel ||
+            $0.status == .transcribing ||
+            $0.status == .generatingChapters
+        }
+        for item in activeItems {
+            TranscriptionLogger.shared.append(episodeHash: item.episodeHash,
+                                              phase: "background",
+                                              message: "Hintergrundpfad aktiviert",
+                                              detailText: "\(path): \(detail)")
+        }
+
+        ICDiagnosticLogger.shared.logEvent("background-task", message: "Hintergrundpfad aktiviert", metadata: [
+            "path": path,
+            "detail": detail,
+            "queueCount": items.count,
+        ] as NSDictionary)
+    }
+
+    @objc(completeBackgroundExecutionPathWithSuccess:reason:)
+    func completeBackgroundExecutionPath(success: Bool, reason: String) {
+        let path = UserDefaults.standard.string(forKey: TranscriptionQueue.backgroundExecutionPathKey) ?? "unknown"
+        UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
+        if !success {
+            UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
+        }
+        ICDiagnosticLogger.shared.logEvent("background-task", message: "Hintergrundpfad beendet", metadata: [
+            "path": path,
+            "reason": reason,
+            "success": success,
+            "queueCount": items.count,
+        ] as NSDictionary)
+    }
+
+    @objc(deactivateBackgroundExecutionPathWithReason:)
+    func deactivateBackgroundExecutionPath(reason: String) {
+        let path = UserDefaults.standard.string(forKey: TranscriptionQueue.backgroundExecutionPathKey) ?? "unknown"
+        UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
+        UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
+        UserDefaults.standard.removeObject(forKey: TranscriptionQueue.backgroundExecutionPathKey)
+        ICDiagnosticLogger.shared.logEvent("background-task", message: "Hintergrundpfad deaktiviert", metadata: [
+            "path": path,
+            "reason": reason,
+            "queueCount": items.count,
+        ] as NSDictionary)
+    }
+
+    @objc(expireContinuedGPUBackgroundExecutionWithReason:)
+    func expireContinuedGPUBackgroundExecution(reason: String) {
+        UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
+        UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
+        ICDiagnosticLogger.shared.logEvent("background-task", message: "BGContinuedProcessingTask abgelaufen", metadata: [
+            "reason": reason,
+            "queueCount": items.count,
+        ] as NSDictionary)
+        _ = pauseWhisperKitForBackgroundIfNeeded(reason: reason)
     }
 
     private func finishBackgroundPause(for item: ICTranscriptionQueueItem, reason: String, error: Error? = nil) {
@@ -756,6 +841,7 @@ private struct PersistedQueue: Codable {
         item.error = NSLocalizedString("Transkription im Hintergrund pausiert. Tippe zum Fortsetzen.", comment: "")
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
+        UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
         isProcessing = false
         currentTask = nil
         refreshBackgroundContinuation(reason: reason)
