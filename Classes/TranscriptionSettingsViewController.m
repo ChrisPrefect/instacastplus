@@ -112,10 +112,10 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
         case TSSectionModel:
-            return NSLocalizedString(@"Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar.", nil);
+            return NSLocalizedString(@"WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.", nil);
         case TSSectionChapters: {
             if ([ChapterGenerator isAvailable]) {
-                return NSLocalizedString(@"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Bei Folgen mit vorhandenen Kapiteln wird nur Sponsor-Erkennung durchgeführt.", nil);
+                return NSLocalizedString(@"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.", nil);
             }
             NSString* reason = [ChapterGenerator unavailabilityReason];
             return reason ?: NSLocalizedString(@"Apple Intelligence nicht verfügbar. Für automatische Kapitel und Sponsor-Erkennung wird Apple Intelligence benötigt.", nil);
@@ -171,6 +171,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
                 cell.textLabel.text = NSLocalizedString(@"Wird geladen...", nil);
                 cell.detailTextLabel.text = currentSizeStr;
                 cell.textLabel.textColor = ICTintColor;
+                cell.selectionStyle = UITableViewCellSelectionStyleNone;
                 UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
                 [spinner startAnimating];
                 cell.accessoryView = spinner;
@@ -307,35 +308,33 @@ typedef NS_ENUM(NSInteger, TSSection) {
     if (largeAvailable) {
         [values addObject:kCombinedWhisperLarge];
         NSString* rec = [recEngine isEqualToString:@"WhisperKit"] ? NSLocalizedString(@" (empfohlen)", nil) : @"";
-        [titles addObject:[NSString stringWithFormat:@"WhisperKit Large V3 Turbo (~645 MB)%@", rec]];
+        [titles addObject:[NSString stringWithFormat:@"WhisperKit Large V3 Turbo (~645 MB, %@)%@",
+                           NSLocalizedString(@"nur Vordergrund", nil), rec]];
     }
 
     [values addObject:kCombinedWhisperSmall];
     {
         NSString* rec = (!largeAvailable && [recEngine isEqualToString:@"WhisperKit"]) ? NSLocalizedString(@" (empfohlen)", nil) : @"";
-        [titles addObject:[NSString stringWithFormat:@"WhisperKit Small (~216 MB)%@", rec]];
+        [titles addObject:[NSString stringWithFormat:@"WhisperKit Small (~216 MB, %@)%@",
+                           NSLocalizedString(@"nur Vordergrund", nil), rec]];
     }
 
     [values addObject:kCombinedApple];
     {
         NSString* rec = [recEngine isEqualToString:@"Apple"] ? NSLocalizedString(@" (empfohlen)", nil) : @"";
-        [titles addObject:[NSString stringWithFormat:@"Apple Spracherkennung%@", rec]];
+        [titles addObject:[NSString stringWithFormat:@"Apple Spracherkennung (%@)%@",
+                           NSLocalizedString(@"Hintergrund möglich", nil), rec]];
     }
 
     controller.values = values;
     controller.titles = titles;
-    controller.footerText = NSLocalizedString(@"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nApple: Gute Genauigkeit, kein Download nötig, benötigt iOS 26.", nil);
+    controller.footerText = NSLocalizedString(@"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.", nil);
 
     [self.navigationController pushViewController:controller animated:YES];
 }
 
 - (void)_handleModelAction {
     if (self.isDownloadingModel) {
-        // Cancel — reset UI
-        self.isDownloadingModel = NO;
-        [self.downloadProgressTimer invalidate];
-        self.downloadProgressTimer = nil;
-        [self.tableView reloadData];
         return;
     }
 

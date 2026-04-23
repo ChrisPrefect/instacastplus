@@ -377,14 +377,35 @@ kern_return_t __GetMACAddress(io_iterator_t intfIterator, UInt8 *MACAddress)
 
 + (NSString*) pathToLogsDirectory
 {
-    NSString* libraryPath = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) lastObject];
-    NSString* logsPath = [libraryPath stringByAppendingPathComponent:@"Logs"];
+    NSString* documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
+#if !TARGET_OS_IPHONE
+    documentsPath = [documentsPath stringByAppendingPathComponent:@"Instacast"];
+#endif
+    NSString* logsPath = [documentsPath stringByAppendingPathComponent:@"Logs"];
     NSFileManager* fman = [[NSFileManager alloc] init];
-    
+
     if (![fman fileExistsAtPath:logsPath]) {
         [fman createDirectoryAtPath:logsPath withIntermediateDirectories:YES attributes:nil error:nil];
     }
-    
+
+    NSString* libraryPath = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) lastObject];
+    NSString* legacyLogsPath = [libraryPath stringByAppendingPathComponent:@"Logs"];
+    if ([fman fileExistsAtPath:legacyLogsPath]) {
+        NSArray<NSString*>* legacyFiles = [fman contentsOfDirectoryAtPath:legacyLogsPath error:nil];
+        for (NSString* fileName in legacyFiles) {
+            NSString* legacyFile = [legacyLogsPath stringByAppendingPathComponent:fileName];
+            NSString* newFile = [logsPath stringByAppendingPathComponent:fileName];
+            if (![fman fileExistsAtPath:newFile]) {
+                [fman moveItemAtPath:legacyFile toPath:newFile error:nil];
+            } else {
+                [fman removeItemAtPath:legacyFile error:nil];
+            }
+        }
+        [fman removeItemAtPath:legacyLogsPath error:nil];
+    }
+
+    NSURL* logsURL = [NSURL fileURLWithPath:logsPath isDirectory:YES];
+    [logsURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
     return logsPath;
 }
 

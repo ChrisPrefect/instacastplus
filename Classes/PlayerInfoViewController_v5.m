@@ -33,7 +33,6 @@ static NSString* kUpNextCell = @"UpNextCell";
 static NSString* kHeaderView = @"HeaderView";
 static NSString* kFeedPropertyPreferredTranscriptLanguage = @"preferredTranscriptLanguage";
 static NSString* kFeedPropertyPreferredTranscriptURL = @"preferredTranscriptURL";
-static NSString* kTranscriptCacheFolderName = @"TranscriptCache";
 
 static NSDictionary* ICTranscriptCueMake(NSTimeInterval start, NSTimeInterval end, NSString* text)
 {
@@ -453,7 +452,7 @@ enum {
 
 
 
-@interface PlayerInfoViewController_v5 () <UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, UITextViewDelegate>
+@interface PlayerInfoViewController_v5 () <UICollectionViewDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIScrollViewDelegate, UITextViewDelegate, UITextFieldDelegate>
 @property (nonatomic, strong, readwrite) UIImageView* imageView;
 
 @property (nonatomic) NSTimeInterval duration;
@@ -477,6 +476,18 @@ enum {
 @property (nonatomic, strong) NSTimer* transcriptFollowResumeTimer;
 @property (nonatomic, strong) NSTimer* transcriptSyncTimer;
 @property (nonatomic) BOOL transcriptAutoFollowSuspended;
+
+// — Transcript Search —
+@property (nonatomic, strong) UIButton* transcriptSearchButton;
+@property (nonatomic, strong) UIVisualEffectView* transcriptSearchBarContainer;
+@property (nonatomic, strong) UITextField* transcriptSearchField;
+@property (nonatomic, strong) UIButton* transcriptSearchUpButton;
+@property (nonatomic, strong) UIButton* transcriptSearchDownButton;
+@property (nonatomic, strong) UIButton* transcriptSearchCloseButton;
+@property (nonatomic, strong) UILabel* transcriptSearchCountLabel;
+@property (nonatomic, strong) NSArray<NSValue*>* transcriptSearchMatchRanges;
+@property (nonatomic) NSInteger transcriptSearchCurrentIndex;
+@property (nonatomic) BOOL transcriptSearchActive;
 @property (nonatomic) BOOL transcriptWasPaused;
 @property (nonatomic) BOOL pendingTranscriptShowAfterScrollToTop;
 @property (nonatomic, copy) NSString* transcriptDataEpisodeHash;
@@ -509,6 +520,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSString* _transcriptLoadingURL;
     NSInteger _previousTranscriptCueIndex;
     CGSize _lastTranscriptBoundsSize;
+    NSString* _transcriptSearchTerm;
+    UIVisualEffect* _transcriptSearchBarEffect; // saved glass effect for materialize/dematerialize
 }
 
 + (instancetype) viewController {
@@ -667,23 +680,28 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_transcriptDidChange:(NSNotification*)notification
 {
-    if (!self.isViewLoaded || !self.view.window) return;
-
     NSString* hash = notification.userInfo[@"episodeHash"];
     if (!hash) return;
+
+    // Invalidate the static cache unconditionally — the cache is instance-less and must
+    // never outlive a deletion, otherwise the next time the player is opened it re-shows
+    // a transcript that was removed while the player wasn't visible.
+    if ([hash isEqualToString:s_transcriptCachedEpisodeHash]) {
+        s_transcriptCachedEpisodeHash = nil;
+        s_transcriptCachedCues = nil;
+        s_transcriptCachedDescriptor = nil;
+        s_transcriptCachedSources = nil;
+        s_transcriptCachedAttrString = nil;
+        s_transcriptCachedRanges = nil;
+    }
+
+    if (!self.isViewLoaded) return;
 
     CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode;
     if (!currentEpisode || ![hash isEqualToString:currentEpisode.objectHash]) return;
 
-    // Clear static cache
-    s_transcriptCachedEpisodeHash = nil;
-    s_transcriptCachedCues = nil;
-    s_transcriptCachedDescriptor = nil;
-    s_transcriptCachedSources = nil;
-    s_transcriptCachedAttrString = nil;
-    s_transcriptCachedRanges = nil;
-
-    // Reload transcript sources
+    // Reload transcript sources even when the window isn't visible, so a later
+    // presentation doesn't render stale cues that no longer have a backing file.
     self.transcriptSources = [self _normalizedTranscriptSourcesForEpisode:currentEpisode];
     if (self.transcriptSources.count == 0) {
         self.transcriptCues = @[];
@@ -692,6 +710,15 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [self _applyTranscriptVisibility];
     }
     [self _updateTranscriptPickerButton];
+
+    // Refresh the chapter list as well. The notification also fires when "Generierte
+    // Chapters löschen" runs — the KVO on playingEpisode.chapters doesn't always deliver
+    // for core-data deletes when only the relationship membership changes, so we re-read
+    // sortedChapters here to guarantee the player reflects the deletion immediately.
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    self.chapters = [pman.playingEpisode sortedChapters];
+    self.duration = pman.duration;
+    [self.tableView reloadData];
 }
 
 - (void) viewDidLoad
@@ -780,6 +807,181 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     pickerButton.hidden = YES;
     [self.transcriptContainerView addSubview:pickerButton];
     self.transcriptPickerButton = pickerButton;
+
+    // — Transcript Search Button (glass on iOS 26) —
+    WEAK_SELF;
+    if (@available(iOS 26.0, *)) {
+        UIButtonConfiguration* searchConfig = [UIButtonConfiguration glassButtonConfiguration];
+        searchConfig.image = [UIImage systemImageNamed:@"magnifyingglass"];
+        searchConfig.buttonSize = UIButtonConfigurationSizeSmall;
+        UIButton* searchBtn = [UIButton buttonWithConfiguration:searchConfig
+                                                  primaryAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF;
+            [self _openTranscriptSearch];
+        }]];
+        UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode
+            ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        searchBtn.overrideUserInterfaceStyle = style;
+        [self.transcriptContainerView addSubview:searchBtn];
+        self.transcriptSearchButton = searchBtn;
+    } else {
+        UIButton* searchBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        [searchBtn setImage:[UIImage systemImageNamed:@"magnifyingglass"] forState:UIControlStateNormal];
+        searchBtn.tintColor = ICMutedTextColor;
+        [searchBtn addTarget:self action:@selector(_openTranscriptSearch) forControlEvents:UIControlEventTouchUpInside];
+        [self.transcriptContainerView addSubview:searchBtn];
+        self.transcriptSearchButton = searchBtn;
+    }
+    self.transcriptSearchButton.hidden = YES;
+
+    // — Transcript Search Bar —
+    // Glass search field pill + glass navigation buttons, all inside a UIGlassContainerEffect
+    // so they automatically merge into one visual unit
+    if (@available(iOS 26.0, *)) {
+        UIGlassContainerEffect* containerEffect = [[UIGlassContainerEffect alloc] init];
+        containerEffect.spacing = 4.0;
+        _transcriptSearchBarEffect = containerEffect;
+        UIVisualEffectView* searchBarContainer = [[UIVisualEffectView alloc] initWithEffect:nil];
+        searchBarContainer.hidden = YES;
+        [self.transcriptContainerView addSubview:searchBarContainer];
+        self.transcriptSearchBarContainer = searchBarContainer;
+
+        UIView* containerContent = searchBarContainer.contentView;
+
+        // Text field inside its own glass pill
+        UIGlassEffect* fieldGlass = [[UIGlassEffect alloc] init];
+        UIVisualEffectView* fieldPill = [[UIVisualEffectView alloc] initWithEffect:fieldGlass];
+        [containerContent addSubview:fieldPill];
+        // Tag for layout lookup
+        fieldPill.tag = 100;
+
+        UITextField* searchField = [[UITextField alloc] initWithFrame:CGRectZero];
+        searchField.placeholder = @"Search Transcript".ls;
+        searchField.font = [UIFont systemFontOfSize:ICFontSize(14)];
+        searchField.textColor = ICTextColor;
+        searchField.tintColor = ICTintColor;
+        searchField.returnKeyType = UIReturnKeyDone;
+        searchField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        searchField.autocorrectionType = UITextAutocorrectionTypeNo;
+        searchField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        searchField.delegate = self;
+        [searchField addTarget:self action:@selector(_transcriptSearchTextChanged:) forControlEvents:UIControlEventEditingChanged];
+        [fieldPill.contentView addSubview:searchField];
+        self.transcriptSearchField = searchField;
+
+        // Count label inside the field pill
+        UILabel* countLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        countLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(12) weight:UIFontWeightRegular];
+        countLabel.textColor = ICMutedTextColor;
+        countLabel.textAlignment = NSTextAlignmentCenter;
+        [fieldPill.contentView addSubview:countLabel];
+        self.transcriptSearchCountLabel = countLabel;
+
+        UIUserInterfaceStyle btnStyle = [ICAppearanceManager sharedManager].nightSettingMode
+            ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+
+        // Glass navigation buttons — siblings of the field pill, will merge via container
+        UIButtonConfiguration* upConfig = [UIButtonConfiguration glassButtonConfiguration];
+        upConfig.image = [UIImage systemImageNamed:@"chevron.up"];
+        upConfig.buttonSize = UIButtonConfigurationSizeSmall;
+        UIButton* upBtn = [UIButton buttonWithConfiguration:upConfig
+                                              primaryAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF;
+            [self _transcriptSearchPrevious];
+        }]];
+        upBtn.enabled = NO;
+        upBtn.overrideUserInterfaceStyle = btnStyle;
+        [containerContent addSubview:upBtn];
+        self.transcriptSearchUpButton = upBtn;
+
+        UIButtonConfiguration* downConfig = [UIButtonConfiguration glassButtonConfiguration];
+        downConfig.image = [UIImage systemImageNamed:@"chevron.down"];
+        downConfig.buttonSize = UIButtonConfigurationSizeSmall;
+        UIButton* downBtn = [UIButton buttonWithConfiguration:downConfig
+                                               primaryAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF;
+            [self _transcriptSearchNext];
+        }]];
+        downBtn.enabled = NO;
+        downBtn.overrideUserInterfaceStyle = btnStyle;
+        [containerContent addSubview:downBtn];
+        self.transcriptSearchDownButton = downBtn;
+
+        UIButtonConfiguration* closeConfig = [UIButtonConfiguration glassButtonConfiguration];
+        closeConfig.image = [UIImage systemImageNamed:@"xmark"];
+        closeConfig.buttonSize = UIButtonConfigurationSizeSmall;
+        UIButton* closeBtn = [UIButton buttonWithConfiguration:closeConfig
+                                                 primaryAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+            STRONG_SELF;
+            [self _closeTranscriptSearch];
+        }]];
+        closeBtn.overrideUserInterfaceStyle = btnStyle;
+        [containerContent addSubview:closeBtn];
+        self.transcriptSearchCloseButton = closeBtn;
+
+    } else {
+        // iOS ≤25 fallback: blur bar with system buttons
+        UIBlurEffect* blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
+        _transcriptSearchBarEffect = blurEffect;
+        UIVisualEffectView* searchBarContainer = [[UIVisualEffectView alloc] initWithEffect:nil];
+        searchBarContainer.layer.cornerRadius = 12;
+        searchBarContainer.layer.masksToBounds = YES;
+        searchBarContainer.hidden = YES;
+        [self.transcriptContainerView addSubview:searchBarContainer];
+        self.transcriptSearchBarContainer = searchBarContainer;
+
+        UIView* contentView = searchBarContainer.contentView;
+
+        UITextField* searchField = [[UITextField alloc] initWithFrame:CGRectZero];
+        searchField.placeholder = @"Search Transcript".ls;
+        searchField.font = [UIFont systemFontOfSize:ICFontSize(14)];
+        searchField.textColor = ICTextColor;
+        searchField.tintColor = ICTintColor;
+        searchField.returnKeyType = UIReturnKeyDone;
+        searchField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        searchField.autocorrectionType = UITextAutocorrectionTypeNo;
+        searchField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        searchField.delegate = self;
+        [searchField addTarget:self action:@selector(_transcriptSearchTextChanged:) forControlEvents:UIControlEventEditingChanged];
+        [contentView addSubview:searchField];
+        self.transcriptSearchField = searchField;
+
+        UILabel* countLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        countLabel.font = [UIFont monospacedDigitSystemFontOfSize:ICFontSize(12) weight:UIFontWeightRegular];
+        countLabel.textColor = ICMutedTextColor;
+        countLabel.textAlignment = NSTextAlignmentCenter;
+        [contentView addSubview:countLabel];
+        self.transcriptSearchCountLabel = countLabel;
+
+        UIImageSymbolConfiguration* arrowConfig = [UIImageSymbolConfiguration configurationWithPointSize:14 weight:UIImageSymbolWeightMedium];
+
+        UIButton* upBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        [upBtn setImage:[[UIImage systemImageNamed:@"chevron.up" withConfiguration:arrowConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
+        upBtn.tintColor = ICTintColor;
+        upBtn.enabled = NO;
+        [upBtn addTarget:self action:@selector(_transcriptSearchPrevious) forControlEvents:UIControlEventTouchUpInside];
+        [contentView addSubview:upBtn];
+        self.transcriptSearchUpButton = upBtn;
+
+        UIButton* downBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        [downBtn setImage:[[UIImage systemImageNamed:@"chevron.down" withConfiguration:arrowConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
+        downBtn.tintColor = ICTintColor;
+        downBtn.enabled = NO;
+        [downBtn addTarget:self action:@selector(_transcriptSearchNext) forControlEvents:UIControlEventTouchUpInside];
+        [contentView addSubview:downBtn];
+        self.transcriptSearchDownButton = downBtn;
+
+        UIButton* closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        [closeBtn setImage:[[UIImage systemImageNamed:@"xmark" withConfiguration:arrowConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
+        closeBtn.tintColor = ICMutedTextColor;
+        [closeBtn addTarget:self action:@selector(_closeTranscriptSearch) forControlEvents:UIControlEventTouchUpInside];
+        [contentView addSubview:closeBtn];
+        self.transcriptSearchCloseButton = closeBtn;
+    }
+
+    self.transcriptSearchMatchRanges = @[];
+    self.transcriptSearchCurrentIndex = NSNotFound;
+    self.transcriptSearchActive = NO;
 
     self.transcriptCueRanges = @[];
     self.transcriptCues = @[];
@@ -885,7 +1087,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     // Add locally generated SRT transcript if available
     NSString* episodeHash = episode.objectHash;
     if (episodeHash.length > 0 && [[TranscriptionEngine shared] hasSRTFor:episodeHash]) {
-        NSURL* srtURL = [[TranscriptionEngine shared] srtURLFor:episodeHash];
+        NSURL* srtURL = [ICTranscriptionPaths srtURLFor:episodeHash];
         NSMutableDictionary* generatedSource = [NSMutableDictionary dictionary];
         generatedSource[@"url"] = [srtURL absoluteString];
         generatedSource[@"type"] = @"application/x-subrip";
@@ -1067,17 +1269,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (NSURL*)_transcriptCacheDirectoryURLCreate:(BOOL)create
 {
-    NSURL* appSupportURL = [[[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask] firstObject];
-    if (!appSupportURL) {
-        return nil;
-    }
-
-    NSURL* directoryURL = [appSupportURL URLByAppendingPathComponent:kTranscriptCacheFolderName isDirectory:YES];
-    if (create) {
-        [[NSFileManager defaultManager] createDirectoryAtURL:directoryURL withIntermediateDirectories:YES attributes:nil error:nil];
-        [directoryURL setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
-    }
-    return directoryURL;
+    (void)create;
+    return [ICTranscriptionPaths transcriptCacheDirectory];
 }
 
 - (NSURL*)_transcriptCacheFileURLForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL createDirectory:(BOOL)createDirectory
@@ -1101,7 +1294,17 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (!cacheFileURL) {
         return nil;
     }
-    return [NSData dataWithContentsOfURL:cacheFileURL];
+    NSData* data = [NSData dataWithContentsOfURL:cacheFileURL];
+    BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:cacheFileURL.path];
+    [[ICDiagnosticLogger shared] logFileEvent:@"file-read"
+                                      message:(data.length > 0 ? @"Transcript-Cache geladen" : (fileExists ? @"Transcript-Cache ist leer" : @"Transcript-Cache fehlt"))
+                                         path:cacheFileURL.path
+                                     metadata:@{
+                                         @"episodeHash": episodeHash ?: @"",
+                                         @"resolvedURL": resolvedURL ?: @"",
+                                         @"dataBytes": @(data.length),
+                                     }];
+    return data;
 }
 
 - (void)_storeTranscriptData:(NSData*)data forEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
@@ -1115,7 +1318,15 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
-    [data writeToURL:cacheFileURL atomically:YES];
+    BOOL success = [data writeToURL:cacheFileURL atomically:YES];
+    [[ICDiagnosticLogger shared] logFileEvent:@"file-write"
+                                      message:(success ? @"Transcript-Cache gespeichert" : @"Transcript-Cache konnte nicht gespeichert werden")
+                                         path:cacheFileURL.path
+                                     metadata:@{
+                                         @"episodeHash": episodeHash,
+                                         @"resolvedURL": resolvedURL,
+                                         @"dataBytes": @(data.length),
+                                     }];
 }
 
 - (void)_removeTranscriptCacheForEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
@@ -1124,7 +1335,17 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (!cacheFileURL) {
         return;
     }
-    [[NSFileManager defaultManager] removeItemAtURL:cacheFileURL error:nil];
+    BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:cacheFileURL.path];
+    NSError* error = nil;
+    BOOL removed = fileExists ? [[NSFileManager defaultManager] removeItemAtURL:cacheFileURL error:&error] : NO;
+    [[ICDiagnosticLogger shared] logFileEvent:@"file-delete"
+                                      message:(removed ? @"Transcript-Cache entfernt" : (fileExists ? @"Transcript-Cache konnte nicht entfernt werden" : @"Transcript-Cache fehlte beim Entfernen"))
+                                         path:cacheFileURL.path
+                                     metadata:@{
+                                         @"episodeHash": episodeHash ?: @"",
+                                         @"resolvedURL": resolvedURL ?: @"",
+                                         @"error": error.localizedDescription ?: @"",
+                                     }];
 }
 
 - (void)_removeTranscriptCacheForEpisode:(CDEpisode*)episode
@@ -1154,12 +1375,22 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                                                                   options:0
                                                                                     error:nil];
     NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
+    NSInteger removedFileCount = 0;
     for (NSURL* fileURL in fileURLs) {
         NSString* fileName = fileURL.lastPathComponent;
         if ([fileName hasPrefix:prefix]) {
-            [[NSFileManager defaultManager] removeItemAtURL:fileURL error:nil];
+            if ([[NSFileManager defaultManager] removeItemAtURL:fileURL error:nil]) {
+                removedFileCount += 1;
+            }
         }
     }
+    [[ICDiagnosticLogger shared] logDirectoryEvent:@"file-delete"
+                                           message:@"Episode-Transcript-Artefakte entfernt"
+                                              path:directoryURL.path
+                                          metadata:@{
+                                              @"episodeHash": episodeHash,
+                                              @"removedFiles": @(removedFileCount),
+                                          }];
 }
 
 - (void)_clearAllTranscriptCache
@@ -1176,7 +1407,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (!directoryURL) {
         return;
     }
-    [[NSFileManager defaultManager] removeItemAtURL:directoryURL error:nil];
+    NSError* error = nil;
+    BOOL removed = [[NSFileManager defaultManager] removeItemAtURL:directoryURL error:&error];
+    [[ICDiagnosticLogger shared] logDirectoryEvent:@"file-delete"
+                                           message:(removed ? @"Gesamter Transcript-Ordner entfernt" : @"Transcript-Ordner konnte nicht entfernt werden")
+                                              path:directoryURL.path
+                                          metadata:@{
+                                              @"error": error.localizedDescription ?: @"",
+                                          }];
 }
 
 - (void)_clearTranscriptCacheIfNeededForEpisode:(CDEpisode*)episode
@@ -1425,7 +1663,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     }
 
-    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && cueChanged) {
+    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && !self.transcriptSearchActive && cueChanged) {
         [self _focusTranscriptCueAtIndex:cueIndex animated:YES];
     }
 }
@@ -1435,6 +1673,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptTextView.attributedText = nil;
     self.transcriptCueRanges = @[];
     self.activeTranscriptCueIndex = NSNotFound;
+    self.transcriptSearchMatchRanges = @[];
+    self.transcriptSearchCurrentIndex = NSNotFound;
+    self.transcriptSearchButton.hidden = YES;
 }
 
 - (void)_updateTranscriptLabelAppearance
@@ -1479,6 +1720,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     [textStorage endEditing];
     _previousTranscriptCueIndex = self.activeTranscriptCueIndex;
+
+    // Re-apply search highlights on top of cue highlighting
+    if (self.transcriptSearchActive && self.transcriptSearchMatchRanges.count > 0) {
+        [self _applyTranscriptSearchHighlights];
+    }
 }
 
 - (void)_rebuildTranscriptLines
@@ -1511,9 +1757,24 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptTextView.attributedText = attrString;
     self.transcriptCueRanges = ranges;
 
+    // Force the full layout eagerly. Without this the first user tap on a paragraph
+    // triggers a large ensureLayoutForCharacterRange pass which in turn changes
+    // contentSize — UITextView then shifts contentOffset "to stay consistent", and our
+    // subsequent setContentOffset:animated:YES animates from that shifted origin,
+    // producing the wild jump described by the user. Doing the layout once up-front
+    // makes every later tap scroll from a stable origin.
+    [self.transcriptTextView.layoutManager
+        ensureLayoutForCharacterRange:NSMakeRange(0, self.transcriptTextView.textStorage.length)];
+
     // Cache the built attributed string + ranges for instant restore
     s_transcriptCachedAttrString = [attrString copy];
     s_transcriptCachedRanges = [ranges copy];
+
+    // Re-run search if active
+    self.transcriptSearchButton.hidden = (self.transcriptCueRanges.count == 0 || self.transcriptSearchActive);
+    if (self.transcriptSearchActive && _transcriptSearchTerm.length > 0) {
+        [self _performTranscriptSearch:_transcriptSearchTerm];
+    }
 }
 
 - (NSInteger)_activeTranscriptCueIndexForPlaybackTime:(NSTimeInterval)time
@@ -1582,6 +1843,254 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (self.transcriptVisible) {
         [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:YES];
     }
+}
+
+#pragma mark — Transcript Search
+
+- (void)_layoutTranscriptSearchBarInternalWithWidth:(CGFloat)totalW
+{
+    // Layout: [glass pill: textfield + count] [▲] [▼] [X]
+    // All children sit inside the UIGlassContainerEffect's contentView.
+    // Glass buttons are self-sizing, position them from the right edge.
+    CGFloat barH = 44;
+    CGFloat btnSize = 36; // glass buttons are self-sizing but we position them
+    CGFloat gap = 4;
+    CGFloat rightX = totalW;
+
+    // X button — rightmost
+    rightX -= btnSize;
+    self.transcriptSearchCloseButton.frame = CGRectMake(rightX, (barH - btnSize) / 2, btnSize, btnSize);
+
+    // Down button
+    rightX -= (btnSize + gap);
+    self.transcriptSearchDownButton.frame = CGRectMake(rightX, (barH - btnSize) / 2, btnSize, btnSize);
+
+    // Up button
+    rightX -= (btnSize + gap);
+    self.transcriptSearchUpButton.frame = CGRectMake(rightX, (barH - btnSize) / 2, btnSize, btnSize);
+
+    // Glass field pill — takes remaining width
+    CGFloat pillX = 0;
+    CGFloat pillW = rightX - gap;
+    UIView* fieldPill = [self.transcriptSearchBarContainer.contentView viewWithTag:100];
+    if (fieldPill) {
+        fieldPill.frame = CGRectMake(pillX, 0, pillW, barH);
+        // TextField + count inside the pill
+        CGFloat countW = 44;
+        self.transcriptSearchCountLabel.frame = CGRectMake(pillW - countW - 8, (barH - 36) / 2, countW, 36);
+        CGFloat fieldX = 12;
+        CGFloat fieldW = pillW - countW - fieldX - 12;
+        self.transcriptSearchField.frame = CGRectMake(fieldX, (barH - 32) / 2, MAX(fieldW, 40), 32);
+    } else {
+        // iOS ≤25 fallback — all elements in flat container
+        CGFloat countW = 44;
+        CGFloat countX = rightX - gap - countW;
+        self.transcriptSearchCountLabel.frame = CGRectMake(countX, (barH - 36) / 2, countW, 36);
+        CGFloat fieldX = 12;
+        CGFloat fieldW = countX - fieldX - 4;
+        self.transcriptSearchField.frame = CGRectMake(fieldX, (barH - 32) / 2, MAX(fieldW, 40), 32);
+    }
+}
+
+- (CGRect)_transcriptSearchBarFullFrame
+{
+    CGRect containerBounds = self.transcriptContainerView.bounds;
+    CGFloat barW = CGRectGetWidth(containerBounds) - 32;
+    return CGRectMake(16, 8, barW, 44);
+}
+
+- (void)_openTranscriptSearch
+{
+    if (self.transcriptSearchActive) return;
+    self.transcriptSearchActive = YES;
+    self.transcriptSearchMatchRanges = @[];
+    self.transcriptSearchCurrentIndex = NSNotFound;
+    _transcriptSearchTerm = nil;
+
+    // Suspend auto-follow
+    self.transcriptAutoFollowSuspended = YES;
+    [self.transcriptFollowResumeTimer invalidate];
+    self.transcriptFollowResumeTimer = nil;
+
+    self.transcriptSearchButton.hidden = YES;
+    self.transcriptSearchBarContainer.frame = [self _transcriptSearchBarFullFrame];
+    [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(self.transcriptSearchBarContainer.frame)];
+    self.transcriptSearchBarContainer.hidden = NO;
+    self.transcriptSearchBarContainer.effect = _transcriptSearchBarEffect;
+
+    [self.transcriptSearchField becomeFirstResponder];
+    [self _updateTranscriptSearchUI];
+}
+
+- (void)_closeTranscriptSearch
+{
+    if (!self.transcriptSearchActive) return;
+    self.transcriptSearchActive = NO;
+    [self.transcriptSearchField resignFirstResponder];
+    self.transcriptSearchField.text = @"";
+    _transcriptSearchTerm = nil;
+
+    // Clear highlights
+    [self _clearTranscriptSearchHighlights];
+    self.transcriptSearchMatchRanges = @[];
+    self.transcriptSearchCurrentIndex = NSNotFound;
+
+    self.transcriptSearchBarContainer.effect = nil;
+    self.transcriptSearchBarContainer.hidden = YES;
+    self.transcriptSearchButton.hidden = (self.transcriptCueRanges.count == 0);
+
+    // Resume auto-follow and scroll to current playback position
+    [self _resumeTranscriptAutoFollow];
+}
+
+- (void)_transcriptSearchTextChanged:(UITextField*)textField
+{
+    NSString* term = textField.text;
+    _transcriptSearchTerm = term;
+    [self _performTranscriptSearch:term];
+}
+
+- (void)_performTranscriptSearch:(NSString*)term
+{
+    // Clear previous highlights
+    [self _clearTranscriptSearchHighlights];
+
+    if (term.length < 3) {
+        self.transcriptSearchMatchRanges = @[];
+        self.transcriptSearchCurrentIndex = NSNotFound;
+        [self _updateTranscriptSearchUI];
+        return;
+    }
+
+    NSString* fullText = self.transcriptTextView.textStorage.string;
+    if (fullText.length == 0) {
+        self.transcriptSearchMatchRanges = @[];
+        self.transcriptSearchCurrentIndex = NSNotFound;
+        [self _updateTranscriptSearchUI];
+        return;
+    }
+
+    NSMutableArray<NSValue*>* matches = [NSMutableArray array];
+    NSRange searchRange = NSMakeRange(0, fullText.length);
+    while (searchRange.location < fullText.length) {
+        NSRange found = [fullText rangeOfString:term options:NSCaseInsensitiveSearch range:searchRange];
+        if (found.location == NSNotFound) break;
+        [matches addObject:[NSValue valueWithRange:found]];
+        searchRange.location = found.location + found.length;
+        searchRange.length = fullText.length - searchRange.location;
+    }
+
+    self.transcriptSearchMatchRanges = matches;
+
+    if (matches.count > 0) {
+        self.transcriptSearchCurrentIndex = 0;
+        [self _applyTranscriptSearchHighlights];
+        [self _scrollToTranscriptSearchMatch:0 animated:YES];
+    } else {
+        self.transcriptSearchCurrentIndex = NSNotFound;
+    }
+
+    [self _updateTranscriptSearchUI];
+}
+
+- (void)_applyTranscriptSearchHighlights
+{
+    NSTextStorage* textStorage = self.transcriptTextView.textStorage;
+    if (!textStorage || self.transcriptSearchMatchRanges.count == 0) return;
+
+    UIColor* matchBg = [ICTintColor colorWithAlphaComponent:0.25];
+    UIColor* currentMatchBg = [ICTintColor colorWithAlphaComponent:0.5];
+
+    [textStorage beginEditing];
+    for (NSInteger i = 0; i < (NSInteger)self.transcriptSearchMatchRanges.count; i++) {
+        NSRange range = [self.transcriptSearchMatchRanges[i] rangeValue];
+        UIColor* bg = (i == self.transcriptSearchCurrentIndex) ? currentMatchBg : matchBg;
+        [textStorage addAttribute:NSBackgroundColorAttributeName value:bg range:range];
+    }
+    [textStorage endEditing];
+}
+
+- (void)_clearTranscriptSearchHighlights
+{
+    NSTextStorage* textStorage = self.transcriptTextView.textStorage;
+    if (!textStorage || textStorage.length == 0) return;
+
+    // Clear ALL background colors in the entire text to avoid stale highlights
+    [textStorage beginEditing];
+    [textStorage removeAttribute:NSBackgroundColorAttributeName range:NSMakeRange(0, textStorage.length)];
+    [textStorage endEditing];
+
+    // Re-apply active cue highlight since we cleared its background too
+    [self _updateTranscriptLabelAppearance];
+}
+
+- (void)_scrollToTranscriptSearchMatch:(NSInteger)index animated:(BOOL)animated
+{
+    if (index < 0 || index >= (NSInteger)self.transcriptSearchMatchRanges.count) return;
+
+    NSRange matchRange = [self.transcriptSearchMatchRanges[index] rangeValue];
+    NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
+    NSTextContainer* textContainer = self.transcriptTextView.textContainer;
+
+    [layoutManager ensureLayoutForCharacterRange:NSMakeRange(0, layoutManager.textStorage.length)];
+    NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:matchRange actualCharacterRange:NULL];
+    CGRect glyphRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
+    glyphRect.origin.y += self.transcriptTextView.textContainerInset.top;
+
+    CGFloat viewHeight = CGRectGetHeight(self.transcriptTextView.bounds);
+    CGFloat targetOffsetY = CGRectGetMidY(glyphRect) - viewHeight * 0.5f;
+    CGFloat minOffsetY = -self.transcriptTextView.contentInset.top;
+    CGFloat maxOffsetY = self.transcriptTextView.contentSize.height - viewHeight + self.transcriptTextView.contentInset.bottom;
+    if (maxOffsetY < minOffsetY) maxOffsetY = minOffsetY;
+    targetOffsetY = MAX(minOffsetY, MIN(targetOffsetY, maxOffsetY));
+
+    [self.transcriptTextView setContentOffset:CGPointMake(0, targetOffsetY) animated:animated];
+}
+
+- (void)_transcriptSearchNext
+{
+    if (self.transcriptSearchMatchRanges.count == 0) return;
+    NSInteger newIndex = self.transcriptSearchCurrentIndex + 1;
+    if (newIndex >= (NSInteger)self.transcriptSearchMatchRanges.count) return;
+    self.transcriptSearchCurrentIndex = newIndex;
+    [self _applyTranscriptSearchHighlights];
+    [self _scrollToTranscriptSearchMatch:newIndex animated:YES];
+    [self _updateTranscriptSearchUI];
+}
+
+- (void)_transcriptSearchPrevious
+{
+    if (self.transcriptSearchMatchRanges.count == 0) return;
+    NSInteger newIndex = self.transcriptSearchCurrentIndex - 1;
+    if (newIndex < 0) return;
+    self.transcriptSearchCurrentIndex = newIndex;
+    [self _applyTranscriptSearchHighlights];
+    [self _scrollToTranscriptSearchMatch:newIndex animated:YES];
+    [self _updateTranscriptSearchUI];
+}
+
+- (void)_updateTranscriptSearchUI
+{
+    NSInteger count = (NSInteger)self.transcriptSearchMatchRanges.count;
+    if (count == 0) {
+        self.transcriptSearchCountLabel.text = (_transcriptSearchTerm.length >= 3) ? @"0" : @"";
+        self.transcriptSearchUpButton.enabled = NO;
+        self.transcriptSearchDownButton.enabled = NO;
+    } else {
+        self.transcriptSearchCountLabel.text = [NSString stringWithFormat:@"%ld/%ld",
+            (long)(self.transcriptSearchCurrentIndex + 1), (long)count];
+        self.transcriptSearchUpButton.enabled = (self.transcriptSearchCurrentIndex > 0);
+        self.transcriptSearchDownButton.enabled = (self.transcriptSearchCurrentIndex < count - 1);
+    }
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField*)textField
+{
+    if (textField == self.transcriptSearchField) {
+        [textField resignFirstResponder];
+        return YES;
+    }
+    return YES;
 }
 
 - (void)_transcriptTextViewTapped:(UITapGestureRecognizer*)gesture
@@ -1666,7 +2175,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [self _updateTranscriptLabelAppearance];
     }
 
-    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && cueChanged) {
+    if (self.transcriptVisible && !self.transcriptAutoFollowSuspended && !self.transcriptSearchActive && cueChanged) {
         [self _focusTranscriptCueAtIndex:cueIndex animated:animated];
     }
 }
@@ -1839,17 +2348,36 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSString* urlString = attempts[urlIndex];
     NSURL* url = [NSURL URLWithInsecureString:urlString];
     if (!url) {
+        [[ICDiagnosticLogger shared] logEvent:@"transcript-load"
+                                      message:@"Transcript-URL ungültig"
+                                     metadata:@{
+                                         @"urlString": urlString ?: @"",
+                                         @"candidateIndex": @(candidateIndex),
+                                         @"urlIndex": @(urlIndex),
+                                     }];
         [self _loadTranscriptDescriptor:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex + 1];
         return;
     }
 
     CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     NSString* episodeHash = episode.objectHash;
+    [[ICDiagnosticLogger shared] logEvent:@"transcript-load"
+                                  message:@"Transcript-Ladeversuch gestartet"
+                                 metadata:@{
+                                     @"episodeHash": episodeHash ?: @"",
+                                     @"resolvedURL": urlString ?: @"",
+                                     @"candidateIndex": @(candidateIndex),
+                                     @"urlIndex": @(urlIndex),
+                                     @"attemptCount": @(attempts.count),
+                                 }];
 
     // Move cache file I/O and parsing entirely off the main thread
     _transcriptLoadingURL = urlString;
     NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
     descriptorForParsing[@"resolvedURL"] = urlString;
+    if (episodeHash.length > 0) {
+        descriptorForParsing[@"episodeHash"] = episodeHash;
+    }
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         __strong typeof(weakSelf) strongSelf = weakSelf;
@@ -1858,6 +2386,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         NSArray<NSDictionary*>* cachedCues = nil;
         if (cachedData.length > 0) {
             cachedCues = [strongSelf _parseTranscriptData:cachedData descriptor:descriptorForParsing response:nil];
+            [[ICDiagnosticLogger shared] logEvent:@"transcript-parse"
+                                          message:(cachedCues.count > 0 ? @"Transcript-Cache erfolgreich geparst" : @"Transcript-Cache konnte nicht geparst werden")
+                                         metadata:@{
+                                             @"episodeHash": episodeHash ?: @"",
+                                             @"resolvedURL": urlString ?: @"",
+                                             @"cueCount": @(cachedCues.count),
+                                             @"dataBytes": @(cachedData.length),
+                                         }];
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) self = weakSelf;
@@ -1908,6 +2444,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     __weak typeof(self) weakSelf = self;
+    [[ICDiagnosticLogger shared] logEvent:@"transcript-load"
+                                  message:@"Transcript-HTTP-Request gestartet"
+                                 metadata:@{
+                                     @"episodeHash": episodeHash ?: @"",
+                                     @"resolvedURL": urlString ?: @"",
+                                 }];
     __block NSURLSessionDataTask* task = nil;
     task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
         // Completion handler runs on background thread — do parsing here, not on main thread
@@ -1920,13 +2462,33 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         NSInteger statusCode = httpResponse.statusCode;
         BOOL statusFailed = (httpResponse && (statusCode < 200 || statusCode >= 300));
         BOOL hasError = (error != nil || data.length == 0);
+        [[ICDiagnosticLogger shared] logEvent:@"transcript-load"
+                                      message:@"Transcript-HTTP-Antwort erhalten"
+                                     metadata:@{
+                                         @"episodeHash": episodeHash ?: @"",
+                                         @"resolvedURL": urlString ?: @"",
+                                         @"statusCode": @(statusCode),
+                                         @"dataBytes": @(data.length),
+                                         @"error": error.localizedDescription ?: @"",
+                                     }];
 
         // Parse on background thread
         NSArray<NSDictionary*>* cues = nil;
         if (!statusFailed && !hasError && data.length > 0) {
             NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
             descriptorForParsing[@"resolvedURL"] = urlString;
+            if (episodeHash.length > 0) {
+                descriptorForParsing[@"episodeHash"] = episodeHash;
+            }
             cues = [strongSelf _parseTranscriptData:data descriptor:descriptorForParsing response:response];
+            [[ICDiagnosticLogger shared] logEvent:@"transcript-parse"
+                                          message:(cues.count > 0 ? @"Transcript-HTTP-Antwort erfolgreich geparst" : @"Transcript-HTTP-Antwort konnte nicht geparst werden")
+                                         metadata:@{
+                                             @"episodeHash": episodeHash ?: @"",
+                                             @"resolvedURL": urlString ?: @"",
+                                             @"cueCount": @(cues.count),
+                                             @"dataBytes": @(data.length),
+                                         }];
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1982,6 +2544,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_refreshTranscriptState
 {
+    if (self.transcriptSearchActive) {
+        [self _closeTranscriptSearch];
+    }
+
     CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
 
     // 1) Same VC instance already has cues for this episode
@@ -2007,6 +2573,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
             self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
             self.transcriptCueRanges = s_transcriptCachedRanges;
+            // Same eager layout as in _rebuildTranscriptLines — without it the first
+            // user tap on a paragraph triggers a layout pass that shifts contentSize
+            // and breaks the seek-scroll animation.
+            [self.transcriptTextView.layoutManager
+                ensureLayoutForCharacterRange:NSMakeRange(0, self.transcriptTextView.textStorage.length)];
         } else {
             [self _rebuildTranscriptLines];
         }
@@ -2293,6 +2864,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                                        CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
                                                        pickerSize.width,
                                                        pickerSize.height);
+        // Search button: top-right, aligned with picker button's trailing edge
+        CGFloat searchBtnSize = 36;
+        self.transcriptSearchButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - searchBtnSize - 16,
+                                                        8, searchBtnSize, searchBtnSize);
+        // Search bar: full width, only layout internal elements (frame set by open/close animation)
+        [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(newFrameTemp) - 32];
         CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f) - 36.0f, 0);
         self.transcriptTextView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
@@ -2374,6 +2951,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                                    CGRectGetMaxY(newFrameTemp) - pickerSize.height - 1.0,
                                                    pickerSize.width,
                                                    pickerSize.height);
+    // Search button: top-right, aligned with picker button's trailing edge
+    {
+        CGFloat searchBtnSize = 36;
+        self.transcriptSearchButton.frame = CGRectMake(CGRectGetMaxX(newFrameTemp) - searchBtnSize - 16,
+                                                        8, searchBtnSize, searchBtnSize);
+    }
+    [self _layoutTranscriptSearchBarInternalWithWidth:CGRectGetWidth(newFrameTemp) - 32];
     CGFloat verticalInset = MAX((CGRectGetHeight(self.transcriptTextView.bounds) * 0.5f) - 36.0f, 0);
     self.transcriptTextView.contentInset = UIEdgeInsetsMake(verticalInset, 0, verticalInset, 0);
 
@@ -2505,6 +3089,20 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self _updateTranscriptLabelAppearance];
     [self.transcriptPickerButton setTitleColor:ICMutedTextColor forState:UIControlStateNormal];
     self.transcriptPickerButton.tintColor = ICMutedTextColor;
+
+    // Update search UI colors
+    self.transcriptSearchField.textColor = ICTextColor;
+    self.transcriptSearchField.tintColor = ICTintColor;
+    self.transcriptSearchCountLabel.textColor = ICMutedTextColor;
+    if (@available(iOS 26.0, *)) {
+        UIUserInterfaceStyle style = [ICAppearanceManager sharedManager].nightSettingMode
+            ? UIUserInterfaceStyleDark : UIUserInterfaceStyleLight;
+        self.transcriptSearchButton.overrideUserInterfaceStyle = style;
+        self.transcriptSearchUpButton.overrideUserInterfaceStyle = style;
+        self.transcriptSearchDownButton.overrideUserInterfaceStyle = style;
+        self.transcriptSearchCloseButton.overrideUserInterfaceStyle = style;
+    }
+    [self _updateTranscriptSearchUI];
 }
 
 - (void) reloadBookmarks
@@ -3158,7 +3756,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     if (scrollView == self.transcriptTextView) {
         self.transcriptAutoFollowSuspended = YES;
-        [self _scheduleTranscriptAutoFollowResume];
+        if (!self.transcriptSearchActive) {
+            [self _scheduleTranscriptAutoFollowResume];
+        }
     }
 }
 
@@ -3166,7 +3766,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     if (scrollView == self.transcriptTextView) {
         self.transcriptAutoFollowSuspended = YES;
-        if (!decelerate) {
+        if (!decelerate && !self.transcriptSearchActive) {
             [self _scheduleTranscriptAutoFollowResume];
         }
     }

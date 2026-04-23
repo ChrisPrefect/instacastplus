@@ -88,6 +88,7 @@
     /*
      Free up as much memory as possible by purging cached data objects that can be recreated (or reloaded from disk) later.
      */
+    [[ICDiagnosticLogger shared] logEvent:@"lifecycle" message:@"applicationDidReceiveMemoryWarning" metadata:nil];
 }
 
 
@@ -126,24 +127,68 @@
     }
 
     [App initializeLoggers];
+    [[ICDiagnosticLogger shared] start];
+    [[ICDiagnosticLogger shared] recordLifecycle:@"applicationDidFinishLaunching"
+                                        metadata:@{
+                                            @"launchOptionsCount": @(launchOptions.count),
+                                        }];
 
     // Register background tasks for transcription
     [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"
                                                          usingQueue:nil
                                                       launchHandler:^(BGTask * _Nonnull task) {
         BGProcessingTask* processingTask = (BGProcessingTask*)task;
-        // Resume transcription queue in background
-        [[TranscriptionQueue shared] resumeIfNeeded];
-        __weak BGProcessingTask* weakTask = processingTask;
+        __block id queueObserver = nil;
+        __block BOOL taskCompleted = NO;
+        void (^scheduleNextRequest)(void) = ^{
+            BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"];
+            request.requiresExternalPower = NO;
+            request.requiresNetworkConnectivity = NO;
+            [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:nil];
+        };
+        void (^completeTask)(BOOL) = ^(BOOL success) {
+            if (taskCompleted) return;
+            taskCompleted = YES;
+            if (queueObserver) {
+                [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
+                queueObserver = nil;
+            }
+            [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                          message:@"BGProcessingTask abgeschlossen"
+                                         metadata:@{
+                                             @"success": @(success),
+                                         }];
+            [processingTask setTaskCompletedWithSuccess:success];
+            scheduleNextRequest();
+        };
         processingTask.expirationHandler = ^{
             // Save checkpoint - TranscriptionEngine handles this automatically
-            [weakTask setTaskCompletedWithSuccess:NO];
+            [[ICDiagnosticLogger shared] logEvent:@"background-task" message:@"BGProcessingTask abgelaufen" metadata:nil];
+            completeTask(NO);
         };
-        // Re-schedule for next opportunity
-        BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:@"com.iteconomy.instacastplus.transcription.processing"];
-        request.requiresExternalPower = NO;
-        request.requiresNetworkConnectivity = NO;
-        [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:nil];
+
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGProcessingTask gestartet"
+                                     metadata:@{
+                                         @"identifier": processingTask.identifier ?: @"",
+                                     }];
+
+        queueObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICTranscriptionQueueDidChangeNotification"
+                                                                          object:nil
+                                                                           queue:[NSOperationQueue mainQueue]
+                                                                      usingBlock:^(__unused NSNotification *note) {
+            TranscriptionQueue* queue = [TranscriptionQueue shared];
+            if (!queue.isProcessing && queue.currentItem == nil) {
+                completeTask(YES);
+            }
+        }];
+
+        // Resume transcription queue in background.
+        [[TranscriptionQueue shared] resumeIfNeeded];
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!queue.isProcessing && queue.currentItem == nil) {
+            completeTask(YES);
+        }
     }];
 
     if ([DatabaseManager dataStoreNeedsMigration]) {
@@ -444,11 +489,16 @@
 
 - (void)applicationWillEnterForeground:(UIApplication *)application
 {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"applicationWillEnterForeground" metadata:nil];
     [self _updateAppContentAfterBecomingActive];
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
 {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"applicationDidEnterBackground"
+                                        metadata:@{
+                                            @"queuedTranscriptions": @([TranscriptionQueue shared].count),
+                                        }];
 	[[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
 	
 	if (!self.mainViewController.presentedViewController) {
@@ -456,6 +506,14 @@
 	}
     
     [DMANAGER save];
+}
+
+- (void)applicationWillTerminate:(UIApplication *)application
+{
+    [[ICDiagnosticLogger shared] recordLifecycle:@"applicationWillTerminate"
+                                        metadata:@{
+                                            @"queuedTranscriptions": @([TranscriptionQueue shared].count),
+                                        }];
 }
 
 - (void) setNeedsStatusBarAppearanceUpdate {

@@ -901,7 +901,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 - (NSArray*) visibleFeeds
 {
-    return [self.feeds filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"parked == NO"]];
+    return self.feeds;
 }
 
 - (void) _updateFeedOrderNums:(NSArray*)feeds
@@ -1084,8 +1084,10 @@ NS_INLINE NSString* _DataStoreFile(void) {
             persistentEpisode.media = media;
             [feed addEpisodesObject:persistentEpisode];
 
-            if (wasNew && markConsumed) {
-                persistentEpisode.consumed = YES;
+            if (wasNew) {
+                // markConsumed=YES: refresh adds older episodes → mark as heard
+                // markConsumed=NO: subscription background-loads → mark as unheard
+                persistentEpisode.consumed = markConsumed ? YES : NO;
             }
         }
     }
@@ -1690,17 +1692,17 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == %@ && feed.parked == %@ && archived == %@ && consumed == %@", @YES, @NO, @NO, @NO];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == %@ && archived == %@ && consumed == %@", @YES, @NO, @NO];
     return [context countForFetchRequest:fetchRequest error:nil];
 }
 
 - (NSArray*) allUnseenEpisodesReverseOrder:(BOOL)reverseOrder
 {
     NSManagedObjectContext* context = self.objectContext;
-    
+
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == %@ && feed.parked == %@ && archived == %@ && consumed == %@", @YES, @NO, @NO, @NO];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == %@ && archived == %@ && consumed == %@", @YES, @NO, @NO];
     fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
     return [context executeFetchRequest:fetchRequest error:nil];
 }

@@ -405,6 +405,7 @@
 "Authors" = "Autoren";
 "Popular" = "Beliebt";
 "Search" = "Suchen";
+"Search Transcript" = "Transkript durchsuchen";
 
 /* CacheOperation_iOS7.m */
 "Authentication required to download a file." = "Benötigt Authentifzierung zum Herunterladen einer Datei.";
@@ -1062,6 +1063,10 @@
 "Herunterladen" = "Herunterladen";
 "Abbrechen" = "Abbrechen";
 "Bitte wähle ein Sprachmodell für die Transkription und die Kapitelerkennung." = "Bitte wähle ein Sprachmodell für die Transkription und die Kapitelerkennung.";
+"WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.";
+"nur Vordergrund" = "nur Vordergrund";
+"Hintergrund möglich" = "Hintergrund möglich";
+"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt.";
 "Einstellungen" = "Einstellungen";
 "Alle Transkriptionen abbrechen?" = "Alle Transkriptionen abbrechen?";
 "Zurück" = "Zurück";
@@ -1071,6 +1076,7 @@
 "Alle abbrechen" = "Alle abbrechen";
 "Entfernen" = "Entfernen";
 "Wartend..." = "Wartend...";
+"Unterbrochen. Tippe zum Fortsetzen." = "Unterbrochen. Tippe zum Fortsetzen.";
 "Sprachmodell wird geladen..." = "Sprachmodell wird geladen...";
 "Musik wird analysiert..." = "Musik wird analysiert...";
 "Sprachmodell wird vorbereitet..." = "Sprachmodell wird vorbereitet...";
@@ -1100,7 +1106,7 @@
 
 /* TranscriptionSettingsViewController — new entries */
 "Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar." = "Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar.";
-"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Bei Folgen mit vorhandenen Kapiteln wird nur Sponsor-Erkennung durchgeführt." = "Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Bei Folgen mit vorhandenen Kapiteln wird nur Sponsor-Erkennung durchgeführt.";
+"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert." = "Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.";
 "Apple Intelligence nicht verfügbar. Für automatische Kapitel und Sponsor-Erkennung wird Apple Intelligence benötigt." = "Apple Intelligence nicht verfügbar. Für automatische Kapitel und Sponsor-Erkennung wird Apple Intelligence benötigt.";
 "Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden." = "Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden.";
 " (empfohlen)" = " (empfohlen)";
@@ -1126,3 +1132,45 @@
 "Kapitel werden erkannt... %d%%" = "Kapitel werden erkannt... %d%%";
 "Kapitelerkennung gestartet" = "Kapitelerkennung gestartet";
 "Transkript und Chapters löschen" = "Transkript und Chapters löschen";
+"Unterbrochen" = "Unterbrochen";
+"Tippe zum Fortsetzen." = "Tippe zum Fortsetzen.";
+"Wartet auf Verarbeitung" = "Wartet auf Verarbeitung";
+"Episode wird heruntergeladen" = "Episode wird heruntergeladen";
+"Audio wird analysiert" = "Audio wird analysiert";
+"%@ wird vorbereitet" = "%@ wird vorbereitet";
+"Core ML öffnet das Whisper-Modell." = "Core ML öffnet das Whisper-Modell.";
+"Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen." = "Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen.";
+"Transkription wird gestartet" = "Transkription wird gestartet";
+"Transkription läuft (%d%%)" = "Transkription läuft (%d%%)";
+"%@ verarbeitet die Audiodatei." = "%@ verarbeitet die Audiodatei.";
+"Warte auf das erste erkannte Transkriptsegment." = "Warte auf das erste erkannte Transkriptsegment.";
+"Kapitel werden erstellt" = "Kapitel werden erstellt";
+"Kapitel werden erstellt (%d%%)" = "Kapitel werden erstellt (%d%%)";
+"Apple Intelligence erstellt die Kapitelstruktur." = "Apple Intelligence erstellt die Kapitelstruktur.";
+"Automatischer Download wurde gestartet." = "Automatischer Download wurde gestartet.";
+"Transkript wird für die Kapitel-Erstellung vorbereitet." = "Transkript wird für die Kapitel-Erstellung vorbereitet.";
+"Transkript wird in verarbeitbare Abschnitte aufgeteilt." = "Transkript wird in verarbeitbare Abschnitte aufgeteilt.";
+"Pass 1/2: Themenwechsel in Abschnitt %d von %d werden extrahiert." = "Pass 1/2: Themenwechsel in Abschnitt %d von %d werden extrahiert.";
+"Pass 2/2: Finale Kapitelstruktur wird erstellt." = "Pass 2/2: Finale Kapitelstruktur wird erstellt.";
+"Apple-Spracherkennung" = "Apple-Spracherkennung";
+"Apple-Spracherkennung wird vorbereitet." = "Apple-Spracherkennung wird vorbereitet.";
+"Apple-Spracherkennung wird mit Sprache %@ vorbereitet." = "Apple-Spracherkennung wird mit Sprache %@ vorbereitet.";
+"Apple-Sprachpaket wird geladen." = "Apple-Sprachpaket wird geladen.";
+"Apple analysiert die Audiodatei." = "Apple analysiert die Audiodatei.";
+"Sprache '%@' wird von Apple-Spracherkennung nicht unterstützt." = "Sprache '%@' wird von Apple-Spracherkennung nicht unterstützt.";
+"Sprachmodell für '%@' konnte nicht heruntergeladen werden." = "Sprachmodell für '%@' konnte nicht heruntergeladen werden.";
+"Sprachmodell konnte nicht geladen werden. Bitte Modell löschen und neu herunterladen." = "Sprachmodell konnte nicht geladen werden. Bitte Modell löschen und neu herunterladen.";
+"Whisper-Modell wird heruntergeladen und geöffnet." = "Whisper-Modell wird heruntergeladen und geöffnet.";
+"Whisper bereitet die Audiodatei vor." = "Whisper bereitet die Audiodatei vor.";
+"Whisper bereitet die Audiodatei für die Dekodierung vor." = "Whisper bereitet die Audiodatei für die Dekodierung vor.";
+"Whisper startet die Dekodierung." = "Whisper startet die Dekodierung.";
+"Whisper verarbeitet den nächsten Audioblock." = "Whisper verarbeitet den nächsten Audioblock.";
+"Erstes Transkriptsegment erkannt." = "Erstes Transkriptsegment erkannt.";
+"Tokenizer wird geladen." = "Tokenizer wird geladen.";
+"Core ML lädt/spezialisiert das Mel-Spektrogramm." = "Core ML lädt/spezialisiert das Mel-Spektrogramm.";
+"Core ML lädt/spezialisiert den Decoder-Kontext." = "Core ML lädt/spezialisiert den Decoder-Kontext.";
+"Core ML lädt/spezialisiert den Text-Decoder." = "Core ML lädt/spezialisiert den Text-Decoder.";
+"Core ML lädt/spezialisiert den Audio-Encoder." = "Core ML lädt/spezialisiert den Audio-Encoder.";
+"Unterbrochene Transkription wird fortgesetzt." = "Unterbrochene Transkription wird fortgesetzt.";
+"Transkriptionsfehler" = "Transkriptionsfehler";
+"Unbekannter Fehler." = "Unbekannter Fehler.";

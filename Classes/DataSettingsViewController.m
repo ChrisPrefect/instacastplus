@@ -254,7 +254,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 cell.textLabel.text = @"Subscriptions".ls;
                 NSFetchRequest* request = [[NSFetchRequest alloc] init];
                 request.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
-                request.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+                request.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
                 NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
                 cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
                 break;
@@ -263,7 +263,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 cell.textLabel.text = @"Total Episodes".ls;
                 NSFetchRequest* request = [[NSFetchRequest alloc] init];
                 request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO"];
+                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && archived == NO"];
                 NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
                 cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
                 break;
@@ -272,7 +272,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 cell.textLabel.text = @"Total Unplayed".ls;
                 NSFetchRequest* request = [[NSFetchRequest alloc] init];
                 request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && feed.parked == NO && archived == NO && consumed == NO"];
+                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && archived == NO && consumed == NO"];
                 NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
                 cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
                 break;

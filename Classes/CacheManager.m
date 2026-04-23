@@ -11,6 +11,7 @@
 #import "CDFeed+Helper.h"
 #import "ICCacheHistory.h"
 #import "UtilityFunctions.h"
+#import "InstacastPlus-Swift.h"
 
 #if TARGET_OS_IPHONE
 #import "CacheOperation_iOS7.h"
@@ -40,40 +41,58 @@ NSString* CacheManagerWiFiDidBecomeAvailableNotification = @"CacheManagerWiFiDid
 static CacheManager* gSharedCacheManager = nil;
 static NSString* gPathToCache = nil;
 
+static NSString* ICTranscriptArtifactsPath(void)
+{
+    return [[ICTranscriptionPaths transcriptCacheDirectory] path];
+}
+
 static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
 {
     if (episodeHash.length == 0) {
         return;
     }
 
-    NSArray* appSupportPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
-    NSString* appSupportPath = appSupportPaths.firstObject;
-    if (appSupportPath.length == 0) {
+    NSString* transcriptCachePath = ICTranscriptArtifactsPath();
+    if (transcriptCachePath.length == 0) {
         return;
     }
 
-    NSString* transcriptCachePath = [appSupportPath stringByAppendingPathComponent:@"TranscriptCache"];
     NSFileManager* fileManager = [NSFileManager defaultManager];
     NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:nil];
     NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
+    NSInteger removedFileCount = 0;
     for (NSString* fileName in fileNames) {
         if ([fileName hasPrefix:prefix]) {
             NSString* filePath = [transcriptCachePath stringByAppendingPathComponent:fileName];
-            [fileManager removeItemAtPath:filePath error:nil];
+            if ([fileManager removeItemAtPath:filePath error:nil]) {
+                removedFileCount += 1;
+            }
         }
     }
+    [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
+                                           message:@"Transcript-Artefakte für Episode entfernt"
+                                              path:transcriptCachePath
+                                          metadata:@{
+                                              @"episodeHash": episodeHash,
+                                              @"removedFiles": @(removedFileCount),
+                                          }];
 }
 
 static void ICClearAllTranscriptCache(void)
 {
-    NSArray* appSupportPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
-    NSString* appSupportPath = appSupportPaths.firstObject;
-    if (appSupportPath.length == 0) {
+    NSString* transcriptCachePath = ICTranscriptArtifactsPath();
+    if (transcriptCachePath.length == 0) {
         return;
     }
 
-    NSString* transcriptCachePath = [appSupportPath stringByAppendingPathComponent:@"TranscriptCache"];
-    [[NSFileManager defaultManager] removeItemAtPath:transcriptCachePath error:nil];
+    NSError* error = nil;
+    BOOL removed = [[NSFileManager defaultManager] removeItemAtPath:transcriptCachePath error:&error];
+    [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
+                                           message:(removed ? @"Gesamter Transcript-Artefaktordner entfernt" : @"Transcript-Artefaktordner konnte nicht entfernt werden")
+                                              path:transcriptCachePath
+                                          metadata:@{
+                                              @"error": error.localizedDescription ?: @"",
+                                          }];
 }
 
 #if TARGET_OS_IPHONE

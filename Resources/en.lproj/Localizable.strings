@@ -403,6 +403,7 @@
 "Authors" = "Authors";
 "Popular" = "Popular";
 "Search" = "Search";
+"Search Transcript" = "Search Transcript";
 
 /* CacheOperation_iOS7.m */
 "Authentication required to download a file." = "Authentication required to download a file.";
@@ -1058,6 +1059,10 @@
 "Herunterladen" = "Download";
 "Abbrechen" = "Cancel";
 "Bitte wähle ein Sprachmodell für die Transkription und die Kapitelerkennung." = "Please choose a speech model for transcription and chapter detection.";
+"WhisperKit nutzt Core ML/GPU und läuft nur im Vordergrund; beim Verlassen der App wird pausiert. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "WhisperKit uses Core ML/GPU and runs in the foreground only; leaving the app pauses it. Apple Speech Recognition requires no download and can continue in the background when iOS grants time.";
+"nur Vordergrund" = "foreground only";
+"Hintergrund möglich" = "background possible";
+"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit läuft wegen Core ML/GPU nur im Vordergrund. Apple-Spracherkennung benötigt keinen Download und kann im Hintergrund weiterlaufen, wenn iOS dafür Zeit gibt." = "Large V3 Turbo: best accuracy (98%), ~645 MB, 8 GB RAM.\nSmall: good accuracy (94%), ~216 MB, 2 GB RAM.\nWhisperKit runs in the foreground only because it uses Core ML/GPU. Apple Speech Recognition requires no download and can continue in the background when iOS grants time.";
 "Einstellungen" = "Settings";
 "Alle Transkriptionen abbrechen?" = "Cancel all transcriptions?";
 "Zurück" = "Back";
@@ -1067,6 +1072,7 @@
 "Alle abbrechen" = "Cancel All";
 "Entfernen" = "Remove";
 "Wartend..." = "Waiting...";
+"Unterbrochen. Tippe zum Fortsetzen." = "Interrupted. Tap to resume.";
 "Sprachmodell wird geladen..." = "Loading speech model...";
 "Musik wird analysiert..." = "Analyzing music...";
 "Sprachmodell wird vorbereitet..." = "Preparing speech model...";
@@ -1096,7 +1102,7 @@
 
 /* TranscriptionSettingsViewController — new entries */
 "Transkribiert Podcast-Folgen auf dem Gerät in Text. Das Transkript wird im Player angezeigt und ist durchsuchbar." = "Transcribes podcast episodes to text on-device. The transcript is shown in the player and is searchable.";
-"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Bei Folgen mit vorhandenen Kapiteln wird nur Sponsor-Erkennung durchgeführt." = "Apple Intelligence detects topic changes and ads in the transcript and creates chapters. Sponsor chapters can be skipped automatically. For episodes with existing chapters, only sponsor detection is performed.";
+"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert." = "Apple Intelligence detects topic changes and ads in the transcript and creates chapters. Sponsor chapters can be skipped automatically. Episodes with existing chapters stay unchanged.";
 "Apple Intelligence nicht verfügbar. Für automatische Kapitel und Sponsor-Erkennung wird Apple Intelligence benötigt." = "Apple Intelligence not available. Apple Intelligence is required for automatic chapters and sponsor detection.";
 "Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden." = "Default settings for all podcasts. Can be customized per podcast in the podcast settings.";
 " (empfohlen)" = " (recommended)";
@@ -1122,3 +1128,45 @@
 "Kapitel werden erkannt... %d%%" = "Detecting chapters... %d%%";
 "Kapitelerkennung gestartet" = "Chapter Detection Started";
 "Transkript und Chapters löschen" = "Delete Transcript and Chapters";
+"Unterbrochen" = "Interrupted";
+"Tippe zum Fortsetzen." = "Tap to resume.";
+"Wartet auf Verarbeitung" = "Waiting for processing";
+"Episode wird heruntergeladen" = "Downloading episode";
+"Audio wird analysiert" = "Analyzing audio";
+"%@ wird vorbereitet" = "Preparing %@";
+"Core ML öffnet das Whisper-Modell." = "Core ML is opening the Whisper model.";
+"Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen." = "Detecting music, speech, and silence for later chapter boundaries.";
+"Transkription wird gestartet" = "Starting transcription";
+"Transkription läuft (%d%%)" = "Transcription in progress (%d%%)";
+"%@ verarbeitet die Audiodatei." = "%@ is processing the audio file.";
+"Warte auf das erste erkannte Transkriptsegment." = "Waiting for the first recognized transcript segment.";
+"Kapitel werden erstellt" = "Creating chapters";
+"Kapitel werden erstellt (%d%%)" = "Creating chapters (%d%%)";
+"Apple Intelligence erstellt die Kapitelstruktur." = "Apple Intelligence is creating the chapter structure.";
+"Automatischer Download wurde gestartet." = "Automatic download has started.";
+"Transkript wird für die Kapitel-Erstellung vorbereitet." = "Preparing transcript for chapter creation.";
+"Transkript wird in verarbeitbare Abschnitte aufgeteilt." = "Splitting transcript into processable sections.";
+"Pass 1/2: Themenwechsel in Abschnitt %d von %d werden extrahiert." = "Pass 1/2: Extracting topic changes in section %d of %d.";
+"Pass 2/2: Finale Kapitelstruktur wird erstellt." = "Pass 2/2: Building final chapter structure.";
+"Apple-Spracherkennung" = "Apple Speech Recognition";
+"Apple-Spracherkennung wird vorbereitet." = "Preparing Apple Speech Recognition.";
+"Apple-Spracherkennung wird mit Sprache %@ vorbereitet." = "Preparing Apple Speech Recognition for %@.";
+"Apple-Sprachpaket wird geladen." = "Loading Apple speech package.";
+"Apple analysiert die Audiodatei." = "Apple is analyzing the audio file.";
+"Sprache '%@' wird von Apple-Spracherkennung nicht unterstützt." = "Language '%@' is not supported by Apple Speech Recognition.";
+"Sprachmodell für '%@' konnte nicht heruntergeladen werden." = "Could not download the speech model for '%@'.";
+"Sprachmodell konnte nicht geladen werden. Bitte Modell löschen und neu herunterladen." = "The speech model could not be loaded. Please delete the model and download it again.";
+"Whisper-Modell wird heruntergeladen und geöffnet." = "Downloading and opening Whisper model.";
+"Whisper bereitet die Audiodatei vor." = "Whisper is preparing the audio file.";
+"Whisper bereitet die Audiodatei für die Dekodierung vor." = "Whisper is preparing the audio file for decoding.";
+"Whisper startet die Dekodierung." = "Whisper is starting decoding.";
+"Whisper verarbeitet den nächsten Audioblock." = "Whisper is processing the next audio chunk.";
+"Erstes Transkriptsegment erkannt." = "First transcript segment recognized.";
+"Tokenizer wird geladen." = "Loading tokenizer.";
+"Core ML lädt/spezialisiert das Mel-Spektrogramm." = "Core ML is loading/specializing the mel spectrogram.";
+"Core ML lädt/spezialisiert den Decoder-Kontext." = "Core ML is loading/specializing the decoder context.";
+"Core ML lädt/spezialisiert den Text-Decoder." = "Core ML is loading/specializing the text decoder.";
+"Core ML lädt/spezialisiert den Audio-Encoder." = "Core ML is loading/specializing the audio encoder.";
+"Unterbrochene Transkription wird fortgesetzt." = "Interrupted transcription is being resumed.";
+"Transkriptionsfehler" = "Transcription Error";
+"Unbekannter Fehler." = "Unknown error.";

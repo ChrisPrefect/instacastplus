@@ -449,18 +449,8 @@
 {
     CDEpisode* episode = (CDEpisode*)self.objectValue;
 
-    // Fast path: RSS transcripts are already in memory (no I/O)
-    BOOL hasRSSTranscript = (episode.transcripts.count > 0);
-
-    if (hasRSSTranscript) {
-        self.transcriptIndicatorVisible = YES;
-        _transcriptIndicator.hidden = NO;
-        _transcriptIndicator.tintColor = ICTintColor;
-        _transcriptIndicator.alpha = 1.0;
-        return;
-    }
-
-    // Check filesystem for generated SRT — hasSRTFor is a simple file existence check, fast enough synchronously
+    // Only show the indicator for self-generated transcripts (SRT on disk or in queue).
+    // RSS-provided transcripts (episode.transcripts) intentionally don't get an indicator.
     self.transcriptIndicatorVisible = NO;
     _transcriptIndicator.hidden = YES;
 

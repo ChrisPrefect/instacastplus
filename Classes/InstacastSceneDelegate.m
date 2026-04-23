@@ -82,6 +82,11 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 }
 
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneWillConnect"
+                                        metadata:@{
+                                            @"role": session.role ?: @"",
+                                            @"urlContextCount": @(connectionOptions.URLContexts.count),
+                                        }];
 
     if ([scene isKindOfClass:[UIWindowScene class]]) {
         UIWindowScene *windowScene = (UIWindowScene *)scene;
@@ -413,10 +418,18 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     // This occurs shortly after the scene enters the background, or when its session is discarded.
     // Release any resources associated with this scene that can be re-created the next time the scene connects.
     // The scene may re-connect later, as its session was not necessarily discarded (see `application:didDiscardSceneSessions` instead).
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneDidDisconnect"
+                                        metadata:@{
+                                            @"role": scene.session.role ?: @"",
+                                        }];
 }
 
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneDidBecomeActive"
+                                        metadata:@{
+                                            @"role": scene.session.role ?: @"",
+                                        }];
 #if !TARGET_OS_MACCATALYST
     // iPadOS Stage Manager: maximumSize freigeben (war startSize für initiale Grösse)
     if ([scene isKindOfClass:[UIWindowScene class]]) {
@@ -432,6 +445,10 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
 
 - (void)sceneWillResignActive:(UIScene *)scene {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneWillResignActive"
+                                        metadata:@{
+                                            @"role": scene.session.role ?: @"",
+                                        }];
     // Export widget snapshot early (before home screen becomes visible) so widgets
     // show fresh data as soon as the user switches away from the app.
     // sceneDidEnterBackground fires AFTER the home screen appears — too late for the
@@ -456,6 +473,10 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
 
 - (void)sceneWillEnterForeground:(UIScene *)scene {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneWillEnterForeground"
+                                        metadata:@{
+                                            @"role": scene.session.role ?: @"",
+                                        }];
     if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
         [[ICAppearanceManager sharedManager] updateAppearance];
     }
@@ -513,6 +534,11 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     // Called as the scene transitions from the foreground to the background.
     // Use this method to save data, release shared resources, and store enough scene-specific state information
     // to restore the scene back to its current state.
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneDidEnterBackground"
+                                        metadata:@{
+                                            @"role": scene.session.role ?: @"",
+                                            @"queuedTranscriptions": @([TranscriptionQueue shared].count),
+                                        }];
     
     // Save changes in the application's managed object context when the application transitions to the background.
     [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];

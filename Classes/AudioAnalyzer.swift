@@ -57,39 +57,11 @@ private struct MusicTimeline: Codable {
     /// Returns an array of ICAudioSegment. Result is cached to disk.
     @objc func analyze(audioURL: URL, episodeHash: String,
                        completion: @escaping ([ICAudioSegment]?, Error?) -> Void) {
-
-        // Check cached result first
-        if let cached = loadCachedTimeline(for: episodeHash) {
-            completion(cached, nil)
-            return
-        }
-
-        guard FileManager.default.fileExists(atPath: audioURL.path) else {
-            completion(nil, NSError(domain: "AudioAnalyzer", code: 1,
-                                   userInfo: [NSLocalizedDescriptionKey: "Audio file not found"]))
-            return
-        }
-
         Task {
             do {
-                let segments = try await self.performAnalysis(audioURL: audioURL)
-
-                // Merge adjacent segments of the same type
-                let merged = self.mergeAdjacentSegments(segments)
-
-                // Filter: only keep music segments >= 3 seconds
-                let filtered = merged.filter { segment in
-                    if segment.type == "music" {
-                        return (segment.end - segment.start) >= 3.0
-                    }
-                    return true
-                }
-
-                // Cache to disk
-                self.saveCachedTimeline(segments: filtered, for: episodeHash)
-
+                let segments = try await analyzeAsync(audioURL: audioURL, episodeHash: episodeHash)
                 await MainActor.run {
-                    completion(filtered, nil)
+                    completion(segments, nil)
                 }
             } catch {
                 await MainActor.run {
@@ -99,16 +71,59 @@ private struct MusicTimeline: Codable {
         }
     }
 
+    func analyzeAsync(audioURL: URL, episodeHash: String) async throws -> [ICAudioSegment] {
+        // Check cached result first
+        if let cached = loadCachedTimeline(for: episodeHash) {
+            return cached
+        }
+
+        guard FileManager.default.fileExists(atPath: audioURL.path) else {
+            throw NSError(domain: "AudioAnalyzer", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Audio file not found"])
+        }
+
+        let segments = try await performAnalysis(audioURL: audioURL)
+        try Task.checkCancellation()
+
+        // Merge adjacent segments of the same type
+        let merged = mergeAdjacentSegments(segments)
+
+        // Filter: only keep music segments >= 3 seconds
+        let filtered = merged.filter { segment in
+            if segment.type == "music" {
+                return (segment.end - segment.start) >= 3.0
+            }
+            return true
+        }
+
+        // Cache to disk
+        saveCachedTimeline(segments: filtered, for: episodeHash)
+        return filtered
+    }
+
     /// Check if a cached music timeline exists
     @objc func hasCachedTimeline(for episodeHash: String) -> Bool {
-        let url = TranscriptionEngine.shared.musicTimelineURL(for: episodeHash)
+        let url = ICTranscriptionPaths.musicTimelineURL(for: episodeHash)
         return FileManager.default.fileExists(atPath: url.path)
+    }
+
+    @objc func cancelAnalysis() {
+        currentAnalyzer?.cancelAnalysis()
+        currentAnalyzer = nil
     }
 
     // MARK: - SoundAnalysis
 
+    private var currentAnalyzer: SNAudioFileAnalyzer?
+
     private func performAnalysis(audioURL: URL) async throws -> [ICAudioSegment] {
         let analyzer = try SNAudioFileAnalyzer(url: audioURL)
+        currentAnalyzer = analyzer
+        defer {
+            if currentAnalyzer === analyzer {
+                currentAnalyzer = nil
+            }
+        }
 
         let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
         request.windowDuration = CMTimeMakeWithSeconds(2.0, preferredTimescale: 48000)
@@ -117,15 +132,22 @@ private struct MusicTimeline: Codable {
         let observer = SoundClassificationObserver()
         try analyzer.add(request, withObserver: observer)
 
-        // analyze() is synchronous and blocks, so use DispatchQueue
+        try Task.checkCancellation()
         nonisolated(unsafe) let unsafeAnalyzer = analyzer
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global(qos: .userInitiated).async {
-                unsafeAnalyzer.analyze()
-                cont.resume()
+        let reachedEnd = await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                unsafeAnalyzer.analyze { didReachEndOfFile in
+                    cont.resume(returning: didReachEndOfFile)
+                }
             }
+        } onCancel: {
+            unsafeAnalyzer.cancelAnalysis()
+        }
+        guard reachedEnd else {
+            throw CancellationError()
         }
         await observer.waitForCompletion()
+        try Task.checkCancellation()
 
         return observer.segments
     }
@@ -161,13 +183,38 @@ private struct MusicTimeline: Codable {
     // MARK: - Persistence
 
     private func loadCachedTimeline(for episodeHash: String) -> [ICAudioSegment]? {
-        let url = TranscriptionEngine.shared.musicTimelineURL(for: episodeHash)
-        guard let data = try? Data(contentsOf: url),
-              let timeline = try? JSONDecoder().decode(MusicTimeline.self, from: data) else {
+        let url = ICTranscriptionPaths.musicTimelineURL(for: episodeHash)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            ICDiagnosticLogger.shared.logFileEvent("file-read",
+                                                   message: "Musik-Timeline fehlt",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                   ] as NSDictionary)
             return nil
         }
-        return timeline.segments.map {
-            ICAudioSegment(type: $0.type, start: $0.start, end: $0.end, confidence: $0.confidence)
+        do {
+            let data = try Data(contentsOf: url)
+            let timeline = try JSONDecoder().decode(MusicTimeline.self, from: data)
+            ICDiagnosticLogger.shared.logFileEvent("file-read",
+                                                   message: "Musik-Timeline geladen",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "segmentCount": timeline.segments.count,
+                                                   ] as NSDictionary)
+            return timeline.segments.map {
+                ICAudioSegment(type: $0.type, start: $0.start, end: $0.end, confidence: $0.confidence)
+            }
+        } catch {
+            ICDiagnosticLogger.shared.logFileEvent("file-read",
+                                                   message: "Musik-Timeline konnte nicht geladen werden",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "error": error.localizedDescription,
+                                                   ] as NSDictionary)
+            return nil
         }
     }
 
@@ -177,9 +224,26 @@ private struct MusicTimeline: Codable {
                 .init(type: $0.type, start: $0.start, end: $0.end, confidence: $0.confidence)
             }
         )
-        let url = TranscriptionEngine.shared.musicTimelineURL(for: episodeHash)
-        if let data = try? JSONEncoder().encode(timeline) {
-            try? data.write(to: url, options: .atomic)
+        let url = ICTranscriptionPaths.musicTimelineURL(for: episodeHash)
+        do {
+            let data = try JSONEncoder().encode(timeline)
+            try data.write(to: url, options: .atomic)
+            ICDiagnosticLogger.shared.logFileEvent("file-write",
+                                                   message: "Musik-Timeline geschrieben",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "segmentCount": segments.count,
+                                                   ] as NSDictionary)
+        } catch {
+            ICDiagnosticLogger.shared.logFileEvent("file-write",
+                                                   message: "Musik-Timeline konnte nicht geschrieben werden",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "segmentCount": segments.count,
+                                                    "error": error.localizedDescription,
+                                                   ] as NSDictionary)
         }
     }
 }

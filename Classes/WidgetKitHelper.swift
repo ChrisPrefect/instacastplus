@@ -22,10 +22,23 @@ import Foundation
         "cyclespeed", "togglesleeptimer", "skipchapter"
     ]
 
+    // Throttle: each kind can reload at most once per 2 seconds.
+    // Prevents startup cascades (Core Data changes, feed refreshes, etc.) from spamming WidgetKit.
+    private nonisolated(unsafe) static var _lastReloadAll: Date?
+    private nonisolated(unsafe) static var _lastReloadNowPlaying: Date?
+    private nonisolated(unsafe) static var _lastReloadLists: Date?
+    private nonisolated(unsafe) static var _lastReloadStats: Date?
+    private static let _minInterval: TimeInterval = 2.0
+
     @objc public static func reloadAllTimelines() {
         if #available(iOS 14.0, *) {
-            // iOS widgets don't work on macOS ("Designed for iPad") — skip.
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            let now = Date()
+            if let last = _lastReloadAll, now.timeIntervalSince(last) < _minInterval { return }
+            _lastReloadAll = now
+            _lastReloadNowPlaying = now
+            _lastReloadLists = now
+            _lastReloadStats = now
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
@@ -34,6 +47,9 @@ import Foundation
     @objc public static func reloadNowPlayingTimeline() {
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            let now = Date()
+            if let last = _lastReloadNowPlaying, now.timeIntervalSince(last) < _minInterval { return }
+            _lastReloadNowPlaying = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.nowPlayingWidgetKind)
         }
     }
@@ -42,6 +58,9 @@ import Foundation
     @objc public static func reloadListsTimeline() {
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            let now = Date()
+            if let last = _lastReloadLists, now.timeIntervalSince(last) < _minInterval { return }
+            _lastReloadLists = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.smartListWidgetKind)
         }
     }
@@ -50,6 +69,9 @@ import Foundation
     @objc public static func reloadStatsTimeline() {
         if #available(iOS 14.0, *) {
             if ProcessInfo.processInfo.isiOSAppOnMac { return }
+            let now = Date()
+            if let last = _lastReloadStats, now.timeIntervalSince(last) < _minInterval { return }
+            _lastReloadStats = now
             WidgetCenter.shared.reloadTimelines(ofKind: ICWidgetConstants.statsWidgetKind)
         }
     }

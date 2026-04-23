@@ -2894,14 +2894,22 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _startLoadingChapters
 {
+    NSString* episodeHash = self.playingEpisode.objectHash ?: @"";
+    [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
+                                  message:@"Kapitel-Ladevorgang gestartet"
+                                 metadata:@{
+                                     @"episodeHash": episodeHash,
+                                 }];
 
     ICMetadataParser* parser = [[ICMetadataParser alloc] initWithAsset:self.mediaAsset];
     [parser loadAsynchronouslyWithCompletionHandler:^(BOOL success, NSError *error) {
         
-        NSArray* chapters = parser.metadataAsset.chapters;
+        NSArray* chapters = nil;
 
-        // If no embedded chapters, try loading generated chapters
-        if (chapters.count == 0 && self.playingEpisode.objectHash.length > 0) {
+        // If the user generated chapters, make that explicit choice win. Otherwise a
+        // media file with embedded chapters can make freshly generated chapters appear
+        // to do nothing until the user deletes them.
+        if (self.playingEpisode.objectHash.length > 0) {
             NSArray<ICGeneratedChapter*>* generated = [[ChapterGenerator shared] loadChaptersFor:self.playingEpisode.objectHash];
             if (generated.count > 0) {
                 NSMutableArray* metaChapters = [NSMutableArray arrayWithCapacity:generated.count];
@@ -2913,7 +2921,24 @@ didReceiveResponse:(NSURLResponse *)response
                     [metaChapters addObject:ch];
                 }
                 chapters = metaChapters;
+                [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
+                                              message:@"Generierte Kapitel für Playback geladen"
+                                             metadata:@{
+                                                 @"episodeHash": episodeHash,
+                                                 @"chapterCount": @(generated.count),
+                                             }];
             }
+        }
+        if (chapters == nil) {
+            chapters = parser.metadataAsset.chapters;
+            [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
+                                          message:@"Eingebettete Medien-Kapitel für Playback geladen"
+                                         metadata:@{
+                                             @"episodeHash": episodeHash,
+                                             @"chapterCount": @([chapters count]),
+                                             @"parserSuccess": @(success),
+                                             @"error": error.localizedDescription ?: @"",
+                                         }];
         }
 
         // create chapter index for fast chapter search

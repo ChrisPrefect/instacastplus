@@ -204,18 +204,23 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         PlaybackManager* pman = [PlaybackManager playbackManager];
-        
+
         NSDictionary* userInfo = [notification userInfo];
         NSInteger interruptionType = [userInfo[AVAudioSessionInterruptionTypeKey] integerValue];
         NSInteger option = [userInfo[AVAudioSessionInterruptionOptionKey] integerValue];
 
         BOOL wasPlaying = pman.hasBeenPlayingWhenInterrupted;
-        
+
         if (interruptionType == AVAudioSessionInterruptionTypeBegan) {
-            pman.hasBeenPlayingWhenInterrupted = !pman.paused;
+            BOOL playingBeforeInterrupt = !pman.paused;
+            pman.hasBeenPlayingWhenInterrupted = playingBeforeInterrupt;
+            DebugLog(@"AVAudioSession interruption BEGAN: playingBefore=%d paused=%d",
+                     playingBeforeInterrupt, pman.paused);
             [pman pause];
         }
         else if (interruptionType == AVAudioSessionInterruptionTypeEnded && wasPlaying) {
+            DebugLog(@"AVAudioSession interruption ENDED: wasPlaying=%d option=%ld paused=%d",
+                     wasPlaying, (long)option, pman.paused);
             if (option == AVAudioSessionInterruptionOptionShouldResume) {
                 [pman play];
                 [self updateNowPlayingInfo];

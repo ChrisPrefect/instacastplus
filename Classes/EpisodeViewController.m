@@ -887,7 +887,16 @@
 
     UIBarButtonItem* moreItem;
     moreItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar More"] menu:[self _buildMoreMenu]];
-    
+    // iOS default reorders the menu so the first child sits closest to the tap point,
+    // which for a bottom toolbar means children are shown bottom-up. That flipped the
+    // order relative to the cell long-press menu, which the user explicitly called out.
+    // .fixed forces the menu to respect the children-array order regardless of anchor
+    // position (iOS 16+). Also the same UIBarButtonItem.preferredMenuElementOrder docs:
+    // https://developer.apple.com/documentation/uikit/uibarbuttonitem/preferredmenuelementorder
+    if (@available(iOS 16.0, *)) {
+        moreItem.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
+    }
+
     UIBarButtonItem* negativeSpaceItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
     negativeSpaceItem.width = -12;
     
@@ -1342,9 +1351,12 @@
         }]];
     }
 
-    // 7. Generate chapters (if transcript available but no generated chapters)
+    // 7. Generate chapters (only if no generated chapters exist — neither in the JSON
+    // cache nor copied into Core Data on first playback). Otherwise "Generieren" and
+    // "Löschen" would be visible at the same time, which is confusing.
     BOOL hasTranscript = (self.episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
-    if (hasTranscript && [ChapterGenerator isAvailable] && ![[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash]) {
+    BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash] || self.episode.chapters.count > 0;
+    if (hasTranscript && [ChapterGenerator isAvailable] && !hasAnyChapters) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:self.episode.objectHash
@@ -1353,45 +1365,43 @@
         }]];
     }
 
-    // 8+9. Delete transcript and/or chapters (destructive)
+    // 8+9. Delete transcript and chapters as separate destructive actions, so each can
+    // be removed individually (and re-generated individually afterwards).
     {
         BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
-        BOOL hasChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash];
+        // Only the generated-chapter JSON proves ownership. CDChapter can also contain
+        // podcast-provided chapters copied during playback, so it must not drive this action.
+        BOOL hasGeneratedChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash];
 
-        if (hasSRT && hasChapters) {
-            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript und Chapters löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
+        if (hasSRT) {
+            UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
                 STRONG_SELF
                 NSString* hash = self.episode.objectHash;
                 if (!hash) return;
                 [[TranscriptionEngine shared] removeSRTFor:hash];
                 [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
             }];
-            deleteAction.attributes = UIMenuElementAttributesDestructive;
-            [actions addObject:deleteAction];
-        } else if (hasSRT) {
-            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
+            deleteTranscriptAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteTranscriptAction];
+        }
+        if (hasGeneratedChapters) {
+            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
                 STRONG_SELF
                 NSString* hash = self.episode.objectHash;
                 if (!hash) return;
-                [[TranscriptionEngine shared] removeSRTFor:hash];
+                [[ChapterGenerator shared] removeGeneratedChaptersFor:self.episode];
                 [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
             }];
-            deleteAction.attributes = UIMenuElementAttributesDestructive;
-            [actions addObject:deleteAction];
-        } else if (hasChapters) {
-            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
-                STRONG_SELF
-                NSString* hash = self.episode.objectHash;
-                if (!hash) return;
-                NSString* path = [[TranscriptionEngine shared] chaptersJSONURLFor:hash].path;
-                [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
-                [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
-            }];
-            deleteAction.attributes = UIMenuElementAttributesDestructive;
-            [actions addObject:deleteAction];
+            deleteChaptersAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteChaptersAction];
         }
     }
 
+    // Reverse so the visible top-to-bottom order matches the long-press menu in
+    // EpisodesTableViewController. The toolbar is anchored at the bottom of the
+    // screen, and iOS shows menu items from the anchor outward — i.e. the first
+    // child appears at the BOTTOM (next to the tap point). Without reversing the
+    // array, the visible order would be the inverse of the long-press menu.
     return [UIMenu menuWithTitle:@"" children:actions];
 }
 

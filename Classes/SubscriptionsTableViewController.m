@@ -222,7 +222,17 @@
     self.searchBar.showsActivity = DMANAGER.ftsIndexing;
     
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsMake(0, 0, 0, 0) byAdjustingForStandardBars:YES];
-    
+
+    // Extra scrollable space at the bottom so the last podcast can be scrolled above
+    // the floating Add/Sort glass buttons (iOS 26) or the system toolbar (iOS <26).
+    // Same pattern as EpisodesTableViewController.
+    UIEdgeInsets inset = self.tableView.contentInset;
+    inset.bottom += 72;
+    self.tableView.contentInset = inset;
+    UIEdgeInsets scrollIndicatorInset = self.tableView.verticalScrollIndicatorInsets;
+    scrollIndicatorInset.bottom += 72;
+    self.tableView.verticalScrollIndicatorInsets = scrollIndicatorInset;
+
     self.toolbarLabelsViewController = [ToolbarLabelsViewController toolbarLabelsViewController];
     
     UILongPressGestureRecognizer* pressRecognizer = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(handleLongPress:)];
@@ -237,7 +247,7 @@
     //[NSFetchedResultsController deleteCacheWithName:@"_subscriptiontableview_feeds_"];
     NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
     feedsRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
-    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
     feedsRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
     
     
@@ -291,7 +301,7 @@
 
 - (void)setupFetchController {
     NSFetchRequest *feedsRequest = [CDFeed fetchRequest];
-    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
     feedsRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"rank" ascending:YES]];
 
     self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:feedsRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
@@ -885,7 +895,7 @@
         [USER_DEFAULTS setObject:searchText forKey:kUIPersistenceSubscriptionsSearchTerm];
     }
     else {
-        self.fetchController.fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
+        self.fetchController.fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
         [self.fetchController performFetch:nil];
         [USER_DEFAULTS removeObjectForKey:kUIPersistenceSubscriptionsSearchTerm];
     }

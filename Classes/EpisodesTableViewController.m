@@ -221,6 +221,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
 
+    // Extra scrollable space at the bottom equal to one episode row height so the user
+    // can scroll the last episode up above the floating toolbar buttons.
+    UIEdgeInsets inset = self.tableView.contentInset;
+    inset.bottom += 72;
+    self.tableView.contentInset = inset;
+    UIEdgeInsets scrollIndicatorInset = self.tableView.verticalScrollIndicatorInsets;
+    scrollIndicatorInset.bottom += 72;
+    self.tableView.verticalScrollIndicatorInsets = scrollIndicatorInset;
+
     self.toolbarLabelsViewController = [ToolbarLabelsViewController toolbarLabelsViewController];
 
     self.labelsItems = [[UIBarButtonItem alloc] initWithCustomView:self.toolbarLabelsViewController.view];
@@ -1326,13 +1335,20 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     if (indexPath.row >= [self.episodes count]) return nil;
 
     WEAK_SELF
-    return [UIContextMenuConfiguration configurationWithIdentifier:nil
+    UIContextMenuConfiguration* config = [UIContextMenuConfiguration configurationWithIdentifier:nil
         previewProvider:nil
         actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
             __strong EpisodesTableViewController* strongSelf = weakSelf;
             if (!strongSelf) return [UIMenu menuWithTitle:@"" children:@[]];
             return [strongSelf _contextMenuForIndexPath:indexPath];
         }];
+    // Force fixed element order so the cell long-press menu matches the show-notes
+    // more-menu regardless of whether iOS would otherwise flip based on tap position.
+    // Docs: https://developer.apple.com/documentation/uikit/uicontextmenuconfiguration/elementorder/fixed
+    if (@available(iOS 16.0, *)) {
+        config.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
+    }
+    return config;
 }
 
 - (UIMenu *) _contextMenuForIndexPath:(NSIndexPath *)indexPath
@@ -1444,9 +1460,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [actions addObject:transcribeAction];
     }
 
-    // Chapters generieren (if transcript available but no generated chapters)
+    // Chapters generieren (if transcript available but no generated chapters anywhere —
+    // neither in the JSON cache nor copied into Core Data on first playback).
     BOOL hasTranscript = (episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
-    if (hasTranscript && [ChapterGenerator isAvailable] && ![[ChapterGenerator shared] hasChaptersFor:episode.objectHash]) {
+    BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash] || episode.chapters.count > 0;
+    if (hasTranscript && [ChapterGenerator isAvailable] && !hasAnyChapters) {
         UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil)
                                                        image:[UIImage systemImageNamed:@"list.number"]
                                                   identifier:nil
@@ -1460,14 +1478,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [actions addObject:chaptersAction];
     }
 
-    // Delete generated transcript + chapters
+    // Delete generated transcript + chapters as separate menu items
     {
         BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
-        BOOL hasChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash];
+        // Only the generated-chapter JSON proves ownership. CDChapter can also contain
+        // podcast-provided chapters copied during playback, so it must not drive this action.
+        BOOL hasGeneratedChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash];
 
-        if (hasSRT && hasChapters) {
-            // Combined: delete both
-            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript und Chapters löschen", nil)
+        if (hasSRT) {
+            UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil)
                                                          image:[UIImage systemImageNamed:@"captions.bubble"]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
@@ -1475,30 +1494,20 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                            [weakSelf.tableView reloadData];
                                                            [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": episode.objectHash}];
                                                        }];
-            deleteAction.attributes = UIMenuElementAttributesDestructive;
-            [actions addObject:deleteAction];
-        } else if (hasSRT) {
-            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil)
-                                                         image:[UIImage systemImageNamed:@"captions.bubble"]
-                                                    identifier:nil
-                                                       handler:^(UIAction *action) {
-                                                           [[TranscriptionEngine shared] removeSRTFor:episode.objectHash];
-                                                           [weakSelf.tableView reloadData];
-                                                           [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": episode.objectHash}];
-                                                       }];
-            deleteAction.attributes = UIMenuElementAttributesDestructive;
-            [actions addObject:deleteAction];
-        } else if (hasChapters) {
-            UIAction* deleteAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil)
+            deleteTranscriptAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteTranscriptAction];
+        }
+        if (hasGeneratedChapters) {
+            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil)
                                                          image:[UIImage systemImageNamed:@"list.number"]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
-                                                           NSString* path = [[TranscriptionEngine shared] chaptersJSONURLFor:episode.objectHash].path;
-                                                           [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+                                                           [[ChapterGenerator shared] removeGeneratedChaptersFor:episode];
+                                                           [weakSelf.tableView reloadData];
                                                            [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": episode.objectHash}];
                                                        }];
-            deleteAction.attributes = UIMenuElementAttributesDestructive;
-            [actions addObject:deleteAction];
+            deleteChaptersAction.attributes = UIMenuElementAttributesDestructive;
+            [actions addObject:deleteChaptersAction];
         }
     }
 

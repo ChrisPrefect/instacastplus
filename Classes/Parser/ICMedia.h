@@ -14,5 +14,6 @@
 @property (nonatomic, strong) NSURL* fileURL;
 @property (nonatomic) unsigned long long byteSize;
 @property (nonatomic, strong) NSString* mimeType;
+@property (nonatomic, strong) NSString* codec;
 
 @end
