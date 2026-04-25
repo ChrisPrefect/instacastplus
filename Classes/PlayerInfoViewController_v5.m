@@ -1378,7 +1378,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSInteger removedFileCount = 0;
     for (NSURL* fileURL in fileURLs) {
         NSString* fileName = fileURL.lastPathComponent;
-        if ([fileName hasPrefix:prefix]) {
+        if ([fileName hasPrefix:prefix] && [[fileName pathExtension] isEqualToString:@"trcache"]) {
             if ([[NSFileManager defaultManager] removeItemAtURL:fileURL error:nil]) {
                 removedFileCount += 1;
             }
@@ -3171,31 +3171,58 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 - (void) _updateVisibleCells
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
+    NSInteger currentChapter = [self _effectiveChapterIndexForPlaybackManager:pman];
     
     for(NSIndexPath* indexPath in self.tableView.indexPathsForVisibleRows)
     {
         ChaptersTableViewCell* cell = (ChaptersTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
         if ([cell isKindOfClass:[ChaptersTableViewCell class]])
         {
-            if (indexPath.row == pman.currentChapter) {
+            if (indexPath.row == currentChapter) {
                 cell.textLabel.textColor = self.view.tintColor;
                 cell.numLabel.textColor = self.view.tintColor;
                 cell.timeLabel.textColor = self.view.tintColor;
             }
             else
             {
-                cell.textLabel.textColor = (indexPath.row <= pman.currentChapter) ? ICMutedTextColor : ICTextColor;
+                cell.textLabel.textColor = (indexPath.row <= currentChapter) ? ICMutedTextColor : ICTextColor;
                 cell.numLabel.textColor = ICMutedTextColor;
                 cell.timeLabel.textColor = ICMutedTextColor;
             }
             
-            BOOL hidden = (pman.currentChapter != indexPath.row);
+            BOOL hidden = (currentChapter != indexPath.row);
             BOOL changed = (cell.progressView.hidden != hidden);
             cell.progressView.hidden = hidden;
-            [cell.progressView setProgress:((pman.time - cell.objectValue.timecode) / cell.objectValue.duration) animated:(!hidden && !changed)];
+            float progress = 0;
+            if (cell.objectValue.duration > 0) {
+                progress = MAX(0, MIN(1, (pman.time - cell.objectValue.timecode) / cell.objectValue.duration));
+            }
+            [cell.progressView setProgress:progress animated:(!hidden && !changed)];
         }
     }
 
+}
+
+- (NSInteger)_chapterIndexForPlaybackTime:(NSTimeInterval)time
+{
+    NSInteger current = -1;
+    for (NSInteger idx = 0; idx < (NSInteger)self.chapters.count; idx++) {
+        CDChapter* chapter = [self.chapters objectAtIndex:idx];
+        if (chapter.timecode <= time) {
+            current = idx;
+        } else {
+            break;
+        }
+    }
+    return current;
+}
+
+- (NSInteger)_effectiveChapterIndexForPlaybackManager:(PlaybackManager*)pman
+{
+    if (pman.currentChapter >= 0 && pman.currentChapter < (NSInteger)self.chapters.count) {
+        return pman.currentChapter;
+    }
+    return [self _chapterIndexForPlaybackTime:pman.time];
 }
 
 - (BOOL) _hasChapters {
@@ -3262,13 +3289,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         cell.objectValue = chapter;
         
         
-        if (indexPath.row == pman.currentChapter) {
+        NSInteger currentChapter = [self _effectiveChapterIndexForPlaybackManager:pman];
+        if (indexPath.row == currentChapter) {
             cell.textLabel.textColor = self.view.tintColor;
             cell.numLabel.textColor = self.view.tintColor;
             cell.timeLabel.textColor = self.view.tintColor;
         }
         else {
-            cell.textLabel.textColor = (indexPath.row <= pman.currentChapter) ? ICMutedTextColor : ICTextColor;
+            cell.textLabel.textColor = (indexPath.row <= currentChapter) ? ICMutedTextColor : ICTextColor;
             cell.numLabel.textColor = ICMutedTextColor;
             cell.timeLabel.textColor = ICMutedTextColor;
         }
@@ -3306,10 +3334,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         }
         cell.textLabel.attributedText = [[NSAttributedString alloc] initWithString:chapter.title attributes:attrs];
 
-        cell.progressView.hidden = (pman.currentChapter != indexPath.row);
+        cell.progressView.hidden = (currentChapter != indexPath.row);
         cell.progressView.progress = 0;
         cell.progressView.tintColor = self.view.tintColor;
-        cell.progressView.progress = (pman.time - chapter.timecode) / chapter.duration;
+        if (chapter.duration > 0) {
+            cell.progressView.progress = MAX(0, MIN(1, (pman.time - chapter.timecode) / chapter.duration));
+        }
         
 //        CGFloat progressY = CGRectGetHeight(cell.bounds) - 2; // Ensures 1pt height
 //        cell.progressView.frame = CGRectMake(-1, progressY, CGRectGetWidth(cell.bounds) + 2, 2);
@@ -3536,9 +3566,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     {
         CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
         
-        NSArray* playbackChapters = pman.chapters;
-        ICMetadataChapter* playbackChapter = playbackChapters[chapter.index];
-        [pman seekToChapter:playbackChapter];
+        [pman seekToTime:chapter.timecode tolerance:NO];
         [pman play];
         
         [tableView deselectRowAtIndexPath:indexPath animated:YES];

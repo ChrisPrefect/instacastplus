@@ -1244,18 +1244,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         return;
     }
 
-    // Check if WhisperKit model is downloaded
-    BOOL isWhisper = ![USER_DEFAULTS stringForKey:kTranscriptionEngine] || [[USER_DEFAULTS stringForKey:kTranscriptionEngine] isEqualToString:@"WhisperKit"];
-    if (isWhisper && ![[TranscriptionEngine shared] isModelDownloaded]) {
-        UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Sprachmodell benötigt", nil)
-                                                                      message:NSLocalizedString(@"Bitte lade zuerst ein Sprachmodell in den Transkriptions-Einstellungen herunter.", nil)
-                                                               preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Einstellungen", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            TranscriptionSettingsViewController* settingsVC = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
-            [self.navigationController pushViewController:settingsVC animated:YES];
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+    if (![ICDownloadableModelStore selectedVoiceModelIsReady]) {
+        UIViewController *settingsVC = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:YES];
+        [self.navigationController pushViewController:settingsVC animated:YES];
         return;
     }
 
@@ -1464,11 +1455,16 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     // neither in the JSON cache nor copied into Core Data on first playback).
     BOOL hasTranscript = (episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash] || episode.chapters.count > 0;
-    if (hasTranscript && [ChapterGenerator isAvailable] && !hasAnyChapters) {
+    if (hasTranscript && !hasAnyChapters) {
         UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil)
                                                        image:[UIImage systemImageNamed:@"list.number"]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
+                                                         if (![ICDownloadableModelStore selectedChapterModelCanGenerate]) {
+                                                             UIViewController *settingsVC = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:NO];
+                                                             [weakSelf.navigationController pushViewController:settingsVC animated:YES];
+                                                             return;
+                                                         }
                                                          [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:episode.objectHash
                                                                                                         episodeTitle:episode.title ?: @""
                                                                                                            feedTitle:episode.feed.title ?: @""];

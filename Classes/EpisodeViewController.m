@@ -1334,10 +1334,8 @@
     if (![[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash]) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Transkribieren", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
-            // Check model first
-            BOOL isWhisper = ![USER_DEFAULTS stringForKey:kTranscriptionEngine] || [[USER_DEFAULTS stringForKey:kTranscriptionEngine] isEqualToString:@"WhisperKit"];
-            if (isWhisper && ![[TranscriptionEngine shared] isModelDownloaded]) {
-                TranscriptionSettingsViewController* settingsVC = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
+            if (![ICDownloadableModelStore selectedVoiceModelIsReady]) {
+                UIViewController* settingsVC = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:YES];
                 [self.navigationController pushViewController:settingsVC animated:YES];
                 return;
             }
@@ -1356,9 +1354,14 @@
     // "Löschen" would be visible at the same time, which is confusing.
     BOOL hasTranscript = (self.episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash] || self.episode.chapters.count > 0;
-    if (hasTranscript && [ChapterGenerator isAvailable] && !hasAnyChapters) {
+    if (hasTranscript && !hasAnyChapters) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
+            if (![ICDownloadableModelStore selectedChapterModelCanGenerate]) {
+                UIViewController* settingsVC = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:NO];
+                [self.navigationController pushViewController:settingsVC animated:YES];
+                return;
+            }
             [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:self.episode.objectHash
                                                            episodeTitle:self.episode.title ?: @""
                                                               feedTitle:self.episode.feed.title ?: @""];

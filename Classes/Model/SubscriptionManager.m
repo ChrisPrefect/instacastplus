@@ -791,6 +791,16 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                                                       userInfo:(feed)?[NSDictionary dictionaryWithObject:feed forKey:@"feed"]:nil];
 }
 
+- (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed
+{
+    for (CDEpisode* episode in feed.episodes) {
+        if (!episode.archived && !episode.consumed && episode.position <= 0 && episode.duration <= 0) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
 {    
     if (!feed || [self _isSynchronizationPausedForFeed:feed]) {
@@ -812,8 +822,9 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:self userInfo:@{@"url" : feed.sourceURL}];
     }
     
+    BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefresh:feed];
     ICFeedParser* feedParser = [ICFeedParser feedParser];
-    if (etagHandling) {
+    if (etagHandling && !needsDurationMetadataRefresh) {
         feedParser.etag = feed.etag;
     }
     
@@ -862,7 +873,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                     }
 
                     if (parsedFeed) {
-                        if (!etagHandling || ![localFeed.contentHash isEqual:parsedFeed.contentHash]) {
+                        if (!etagHandling || needsDurationMetadataRefresh || ![localFeed.contentHash isEqual:parsedFeed.contentHash]) {
                             NSArray* newEpisodes = [strongSelf _mergeLocalFeed:localFeed withWithRemoteFeed:parsedFeed force:NO];
                             for (CDEpisode* episode in newEpisodes) {
                                 if (episode.objectID) {
@@ -1218,6 +1229,10 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
             }
             
             CDEpisode* localEpisode = localEpisodeIndex[remoteEpisode.guid];
+            NSInteger remoteDuration = remoteEpisode.duration;
+            if (remoteDuration > 0 && localEpisode.duration != (int32_t)remoteDuration) {
+                localEpisode.duration = (int32_t)remoteDuration;
+            }
             BOOL newer = ([remoteEpisode.pubDate timeIntervalSince1970] > [localEpisode.pubDate timeIntervalSince1970]);
             
             if (newer) {

@@ -62,7 +62,7 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
     NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
     NSInteger removedFileCount = 0;
     for (NSString* fileName in fileNames) {
-        if ([fileName hasPrefix:prefix]) {
+        if ([fileName hasPrefix:prefix] && [[fileName pathExtension] isEqualToString:@"trcache"]) {
             NSString* filePath = [transcriptCachePath stringByAppendingPathComponent:fileName];
             if ([fileManager removeItemAtPath:filePath error:nil]) {
                 removedFileCount += 1;

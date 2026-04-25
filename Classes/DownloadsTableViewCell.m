@@ -70,43 +70,44 @@
     CGRect bounds = self.contentView.bounds;
 	CGRect textLabelRect = self.textLabel.frame;
     CGRect imageViewRect = CGRectMake(10, 7, 56, 56);
+    BOOL showsPlayButton = (self.playAccessoryButton.superview == self.contentView);
     
 
     self.imageView.frame = imageViewRect;
-    CGFloat accessoryReservedWidth = (self.accessoryType != UITableViewCellAccessoryNone || self.accessoryView != nil) ? 34 : 0;
-	CGFloat rightPadding = ((self.playAccessoryButton.superview != nil) ? 55 : 15) + accessoryReservedWidth;
-	CGFloat width = CGRectGetWidth(bounds)-CGRectGetMaxX(imageViewRect)-rightPadding;
+    CGFloat textLeft = CGRectGetMaxX(imageViewRect) + (showsPlayButton ? 25 : 10);
+    CGFloat rightInset = showsPlayButton ? 44 : ((self.accessoryView != nil) ? 49 : 0);
+	CGFloat width = MAX(0, CGRectGetWidth(bounds)-textLeft-rightInset);
     
-    textLabelRect.origin.x = CGRectGetMaxX(imageViewRect) + 10;
+    textLabelRect.origin.x = textLeft;
 	textLabelRect.origin.y = 10;
     textLabelRect.size.width = width;
     
 	self.textLabel.frame = textLabelRect;
 	
 
-	self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, width, 10);
-    
     BOOL multilineStatus = self.sizeLabel.numberOfLines > 1;
 	if (multilineStatus) {
-        // Use the label's actual line height so both rows share the same baseline.
-        // Previously the hard-coded 13pt didn't match the 11pt system font's intrinsic
-        // line height (~13.2pt), which put the time label ~2pt above the first line.
-        CGFloat lineH = ceilf(self.sizeLabel.font.lineHeight);
         CGFloat timeWidth = ([self.timeLabel.text length] == 0) ? 0 : 54;
         CGFloat spacing = (timeWidth > 0) ? 6 : 0;
-        CGFloat sizeWidth = width - timeWidth - spacing;
-        self.sizeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect), 43, sizeWidth, lineH * 2);
+        CGFloat progressWidth = MAX(0, width - timeWidth - spacing);
+        self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, progressWidth, 10);
         if (timeWidth > 0) {
-            // Match the first line of sizeLabel exactly: same y, same height, same font.
-            self.timeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect) + width - timeWidth, 43, timeWidth, lineH);
+            self.timeLabel.frame = CGRectMake(CGRectGetMaxX(self.progressView.frame) + 6, 30, timeWidth, 16);
             self.timeLabel.hidden = NO;
         } else {
             self.timeLabel.hidden = YES;
         }
+        // Use the label's actual line height so both rows share the same baseline.
+        // Previously the hard-coded 13pt didn't match the 11pt system font's intrinsic
+        // line height (~13.2pt), which put the time label ~2pt above the first line.
+        CGFloat lineH = ceilf(self.sizeLabel.font.lineHeight);
+        self.sizeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect), 47, width, lineH * 2);
     } else if ([self.timeLabel.text length] == 0) {
+        self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, width, 10);
 		self.sizeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect), 47, width, 13);
 		self.timeLabel.hidden = YES;
 	} else {
+        self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, width, 10);
 		self.sizeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect), 47, width/2+20, 13);
 		self.timeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect)+floorf(width/2)+20, 47, floorf(width/2)-20, 13);
 		self.timeLabel.hidden = NO;

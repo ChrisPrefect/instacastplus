@@ -31,7 +31,7 @@ require(
     "Whisper model download no longer loads the model eagerly after download, so specialization can slip back to first transcription.",
 )
 require(
-    "if (self.isDownloadingModel) {\n        return;\n    }" in SETTINGS_SOURCE and
+    "if ([self.busyModelIDs containsObject:model.identifier]) return;" in SETTINGS_SOURCE and
     "Cancel — reset UI" not in SETTINGS_SOURCE,
     "Settings UI can again fake-cancel a model download without cancelling the underlying WhisperKit task.",
 )
@@ -43,7 +43,7 @@ require(
 
 require(
     "private nonisolated static func directorySize(at url: URL) -> Int64" in SOURCE and
-    "return WhisperKitBackend.directorySize(at: WhisperKitBackend.modelFolderURL())" in SOURCE,
+    "return WhisperKitBackend.directorySize(at: WhisperKitBackend.modelFolderURL(modelName: modelName))" in SOURCE,
     "Model size reporting no longer counts partially-downloaded model directories, so settings download progress can stay at 0 bytes.",
 )
 

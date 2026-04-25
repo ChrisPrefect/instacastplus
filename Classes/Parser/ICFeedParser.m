@@ -1240,6 +1240,12 @@ static BOOL ICFeedParserTypeLooksLikeTranscript(NSString* type)
             NSInteger hours = ([c count] > 2) ? [(NSString*)[c objectAtIndex:[c count]-3] integerValue] : 0;
             
             _episode.duration = hours*3600 + mins*60 + secs;
+            if (_episode.duration > 0) {
+                if (!_contentHashString) {
+                    _contentHashString = [[NSMutableString alloc] init];
+                }
+                [_contentHashString appendFormat:@"duration:%ld;", (long)_episode.duration];
+            }
         }
         
         else if ([elementName isEqualToString:@"itunes:image"])

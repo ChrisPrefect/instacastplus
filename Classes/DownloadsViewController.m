@@ -341,7 +341,11 @@
         if (cell == nil) {
             cell = [[DownloadsTableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
         }
+        [cell.playAccessoryButton removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
         [cell.playAccessoryButton addTarget:self action:@selector(cancelCachingEpisode:) forControlEvents:UIControlEventTouchUpInside];
+        if (cell.playAccessoryButton.superview != cell.contentView) {
+            [cell.contentView addSubview:cell.playAccessoryButton];
+        }
         cell.backgroundColor = tableView.backgroundColor;
         
         NSArray* episodes = [cman cachingEpisodes];
@@ -354,10 +358,9 @@
         NSString* title = [episode cleanTitleUsingFeedTitle:feed.title];
         
         cell.textLabel.text = title;
-        cell.accessoryView = cell.playAccessoryButton;
-        
-        UIButton* accessoryButton = (UIButton*)cell.accessoryView;
-        accessoryButton.tag = indexPath.row;
+        cell.accessoryView = nil;
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.playAccessoryButton.tag = indexPath.row;
         
         cell.imageView.tag = 0;
         cell.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];

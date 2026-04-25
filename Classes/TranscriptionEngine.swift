@@ -1089,7 +1089,7 @@ private struct TranscriptionCheckpoint: Codable {
 
         switch engine {
         case .whisperKit:
-            return NSLocalizedString("Whisper bereitet die Audiodatei für die Dekodierung vor.", comment: "") + resumeSuffix
+            return NSLocalizedString("Transkription wird vorbereitet.", comment: "") + resumeSuffix
         case .apple:
             if let languageName = languageDisplayName(for: language) {
                 return String(format: NSLocalizedString("Apple-Spracherkennung wird mit Sprache %@ vorbereitet.", comment: ""), languageName) + resumeSuffix
@@ -1119,7 +1119,7 @@ private struct TranscriptionCheckpoint: Codable {
         var pendingEnd: Double = 0
 
         for cue in cues {
-            let text = cue.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = cleanedTranscriptText(cue.text)
             if text.isEmpty { continue }
 
             if pendingText.isEmpty {
@@ -1188,6 +1188,17 @@ private struct TranscriptionCheckpoint: Codable {
         }
 
         return result
+    }
+
+    private func cleanedTranscriptText(_ text: String) -> String {
+        let withoutControlTokens = text.replacingOccurrences(
+            of: #"<\|[^>]+\|>"#,
+            with: "",
+            options: .regularExpression
+        )
+        return withoutControlTokens
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - SRT Writing
@@ -1406,4 +1417,813 @@ private struct TranscriptionCheckpoint: Codable {
         return ICTranscriptionPaths.musicTimelineURL(for: episodeHash)
     }
 
+}
+
+// MARK: - Downloadable Model Catalog
+
+@objc enum ICDownloadableModelRole: Int {
+    case voiceToText = 0
+    case textToChapters = 1
+}
+
+@objc class ICDownloadableModel: NSObject, @unchecked Sendable {
+    @objc let identifier: String
+    @objc let title: String
+    @objc let shortTitle: String
+    @objc let detail: String
+    @objc let role: ICDownloadableModelRole
+    @objc let downloadSizeBytes: Int64
+    @objc let requiresDownload: Bool
+    @objc let supportsCompilation: Bool
+    @objc let remoteURLString: String?
+    @objc let fileName: String?
+    let whisperModelName: String?
+
+    init(identifier: String,
+         title: String,
+         shortTitle: String? = nil,
+         detail: String,
+         role: ICDownloadableModelRole,
+         downloadSizeBytes: Int64,
+         requiresDownload: Bool,
+         supportsCompilation: Bool,
+         remoteURLString: String? = nil,
+         fileName: String? = nil,
+         whisperModelName: String? = nil) {
+        self.identifier = identifier
+        self.title = title
+        self.shortTitle = shortTitle ?? title
+        self.detail = detail
+        self.role = role
+        self.downloadSizeBytes = downloadSizeBytes
+        self.requiresDownload = requiresDownload
+        self.supportsCompilation = supportsCompilation
+        self.remoteURLString = remoteURLString
+        self.fileName = fileName
+        self.whisperModelName = whisperModelName
+        super.init()
+    }
+
+    @objc var downloadSizeText: String {
+        guard downloadSizeBytes > 0 else {
+            return NSLocalizedString("Kein Download", comment: "")
+        }
+        return ByteCountFormatter.string(fromByteCount: downloadSizeBytes, countStyle: .file)
+    }
+
+    @objc var roleTitle: String {
+        switch role {
+        case .voiceToText:
+            return NSLocalizedString("Voice to Text", comment: "")
+        case .textToChapters:
+            return NSLocalizedString("Text zu Kapitel", comment: "")
+        @unknown default:
+            return ""
+        }
+    }
+}
+
+@objc class ICModelDownloadProgress: NSObject, @unchecked Sendable {
+    @objc let fraction: Float
+    @objc let completedBytes: Int64
+    @objc let totalBytes: Int64
+
+    @objc init(fraction: Float, completedBytes: Int64, totalBytes: Int64) {
+        self.fraction = fraction
+        self.completedBytes = completedBytes
+        self.totalBytes = totalBytes
+        super.init()
+    }
+
+    @objc var byteText: String {
+        let completed = ByteCountFormatter.string(fromByteCount: completedBytes, countStyle: .file)
+        guard totalBytes > 0 else { return completed }
+        let total = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+        return "\(completed) / \(total)"
+    }
+}
+
+private final class ICModelDownloadCancellationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var cancelHandlers: [@Sendable () -> Void] = []
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        let value = cancelled
+        lock.unlock()
+        return value
+    }
+
+    func setTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = cancelled
+        if !shouldCancel {
+            self.task = task
+        }
+        lock.unlock()
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func addCancelHandler(_ handler: @escaping @Sendable () -> Void) {
+        lock.lock()
+        let shouldRun = cancelled
+        if !shouldRun {
+            cancelHandlers.append(handler)
+        }
+        lock.unlock()
+        if shouldRun {
+            handler()
+        }
+    }
+
+    func cancel() {
+        let taskToCancel: Task<Void, Never>?
+        let handlers: [@Sendable () -> Void]
+        lock.lock()
+        guard !cancelled else {
+            lock.unlock()
+            return
+        }
+        cancelled = true
+        taskToCancel = task
+        handlers = cancelHandlers
+        cancelHandlers.removeAll()
+        lock.unlock()
+
+        taskToCancel?.cancel()
+        handlers.forEach { $0() }
+    }
+}
+
+@objc class ICModelDownloadTask: NSObject {
+    private let cancellationBox: ICModelDownloadCancellationBox
+
+    fileprivate init(cancellationBox: ICModelDownloadCancellationBox) {
+        self.cancellationBox = cancellationBox
+        super.init()
+    }
+
+    @objc var isCancelled: Bool {
+        cancellationBox.isCancelled
+    }
+
+    @objc func cancel() {
+        cancellationBox.cancel()
+    }
+}
+
+private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let remoteURL: URL
+    private let expectedBytes: Int64
+    private let progress: @Sendable (ICModelDownloadProgress) -> Void
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var session: URLSession?
+    private var task: URLSessionDownloadTask?
+    private var finishedTemporaryURL: URL?
+    private var finishedResponse: URLResponse?
+    private var finishedError: Error?
+
+    init(remoteURL: URL,
+         expectedBytes: Int64,
+         progress: @escaping @Sendable (ICModelDownloadProgress) -> Void) {
+        self.remoteURL = remoteURL
+        self.expectedBytes = expectedBytes
+        self.progress = progress
+        super.init()
+    }
+
+    func start() async throws -> (URL, URLResponse) {
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                let configuration = URLSessionConfiguration.default
+                configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+                let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+                let task = session.downloadTask(with: remoteURL)
+
+                lock.lock()
+                self.continuation = continuation
+                self.session = session
+                self.task = task
+                lock.unlock()
+
+                task.resume()
+            }
+        }, onCancel: {
+            self.cancel()
+        })
+    }
+
+    func cancel() {
+        lock.lock()
+        let task = self.task
+        let session = self.session
+        lock.unlock()
+        task?.cancel()
+        session?.invalidateAndCancel()
+    }
+
+    func urlSession(_ session: URLSession,
+                    downloadTask: URLSessionDownloadTask,
+                    didWriteData bytesWritten: Int64,
+                    totalBytesWritten: Int64,
+                    totalBytesExpectedToWrite: Int64) {
+        let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : expectedBytes
+        let fraction = total > 0 ? Float(min(Double(totalBytesWritten) / Double(total), 1.0)) : 0
+        progress(ICModelDownloadProgress(fraction: fraction,
+                                         completedBytes: totalBytesWritten,
+                                         totalBytes: total))
+    }
+
+    func urlSession(_ session: URLSession,
+                    downloadTask: URLSessionDownloadTask,
+                    didFinishDownloadingTo location: URL) {
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("download")
+        do {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            do {
+                try FileManager.default.moveItem(at: location, to: temporaryURL)
+            } catch {
+                try FileManager.default.copyItem(at: location, to: temporaryURL)
+            }
+            lock.lock()
+            finishedTemporaryURL = temporaryURL
+            finishedResponse = downloadTask.response
+            lock.unlock()
+        } catch {
+            lock.lock()
+            finishedError = error
+            lock.unlock()
+        }
+    }
+
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    didCompleteWithError error: Error?) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        let temporaryURL = finishedTemporaryURL
+        let response = finishedResponse ?? URLResponse(url: remoteURL,
+                                                       mimeType: nil,
+                                                       expectedContentLength: Int(expectedBytes),
+                                                       textEncodingName: nil)
+        let finishError = finishedError
+        self.task = nil
+        self.session = nil
+        lock.unlock()
+
+        session.finishTasksAndInvalidate()
+
+        if let error {
+            continuation?.resume(throwing: error)
+        } else if let finishError {
+            continuation?.resume(throwing: finishError)
+        } else if let temporaryURL {
+            continuation?.resume(returning: (temporaryURL, response))
+        } else {
+            continuation?.resume(throwing: NSError(domain: "ICDownloadableModelStore", code: 5,
+                                                  userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Download konnte nicht abgeschlossen werden.", comment: "")]))
+        }
+    }
+}
+
+@objc class ICDownloadableModelStore: NSObject {
+    private static let chapterModelKey = "ChapterGenerationModel"
+    private static let modelRootDirectoryName = "DownloadedModels"
+    private static let downloadStateLock = NSLock()
+    private nonisolated(unsafe) static var activeDownloadTasksByModelID: [String: ICModelDownloadTask] = [:]
+    private nonisolated(unsafe) static var activeDownloadProgressByModelID: [String: ICModelDownloadProgress] = [:]
+
+    private static let models: [ICDownloadableModel] = [
+        ICDownloadableModel(
+            identifier: "whisperkit-large-v3-turbo",
+            title: "WhisperKit Large V3 Turbo",
+            shortTitle: "Whisper Large",
+            detail: NSLocalizedString("Sehr gute Genauigkeit, größerer Download.", comment: ""),
+            role: .voiceToText,
+            downloadSizeBytes: 645_000_000,
+            requiresDownload: true,
+            supportsCompilation: true,
+            whisperModelName: "openai_whisper-large-v3-v20240930_turbo_632MB"
+        ),
+        ICDownloadableModel(
+            identifier: "whisperkit-small",
+            title: "WhisperKit Small",
+            shortTitle: "Whisper Small",
+            detail: NSLocalizedString("Kleinerer Download, schneller bereit.", comment: ""),
+            role: .voiceToText,
+            downloadSizeBytes: 216_000_000,
+            requiresDownload: true,
+            supportsCompilation: true,
+            whisperModelName: "openai_whisper-small_216MB"
+        ),
+        ICDownloadableModel(
+            identifier: "apple-speech",
+            title: NSLocalizedString("Apple Spracherkennung", comment: ""),
+            shortTitle: "Apple",
+            detail: NSLocalizedString("Kein Download in der App.", comment: ""),
+            role: .voiceToText,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false
+        ),
+        ICDownloadableModel(
+            identifier: "gemma-4-e2b-it-q4-k",
+            title: "Gemma 4 E2B-it",
+            shortTitle: "Gemma 4",
+            detail: NSLocalizedString("Für Kapitel in langen Folgen.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 2_629_991_680,
+            requiresDownload: true,
+            supportsCompilation: false,
+            remoteURLString: "https://huggingface.co/eaddario/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K.gguf",
+            fileName: "gemma-4-E2B-it-Q4_K.gguf"
+        ),
+        ICDownloadableModel(
+            identifier: "granite-3.3-2b-instruct-q4-k-m",
+            title: "Granite 3.3 2B Instruct",
+            shortTitle: "Granite 3.3",
+            detail: NSLocalizedString("Kleinerer Download für Kapitel.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 1_545_303_328,
+            requiresDownload: true,
+            supportsCompilation: false,
+            remoteURLString: "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct-GGUF/resolve/main/granite-3.3-2b-instruct-Q4_K_M.gguf",
+            fileName: "granite-3.3-2b-instruct-Q4_K_M.gguf"
+        ),
+        ICDownloadableModel(
+            identifier: "apple-foundation-models",
+            title: NSLocalizedString("Apple Intelligence", comment: ""),
+            shortTitle: "Apple",
+            detail: NSLocalizedString("Kein Download in der App.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false
+        ),
+    ]
+
+    @objc static func allModels() -> [ICDownloadableModel] {
+        models
+    }
+
+    @objc(modelsForRole:)
+    static func models(for role: ICDownloadableModelRole) -> [ICDownloadableModel] {
+        models.filter { $0.role == role }
+    }
+
+    @objc(modelWithIdentifier:)
+    static func model(identifier: String) -> ICDownloadableModel? {
+        models.first { $0.identifier == identifier }
+    }
+
+    @objc(selectedModelForRole:)
+    static func selectedModel(for role: ICDownloadableModelRole) -> ICDownloadableModel {
+        switch role {
+        case .voiceToText:
+            let engine = UserDefaults.standard.string(forKey: "TranscriptionEngine") ?? ""
+            if engine == "Apple" {
+                return model(identifier: "apple-speech")!
+            }
+            let modelName = WhisperKitBackend.resolvedModelName()
+            if modelName.contains("large") {
+                return model(identifier: "whisperkit-large-v3-turbo")!
+            }
+            return model(identifier: "whisperkit-small")!
+        case .textToChapters:
+            let identifier = UserDefaults.standard.string(forKey: chapterModelKey) ?? "granite-3.3-2b-instruct-q4-k-m"
+            return model(identifier: identifier) ?? model(identifier: "granite-3.3-2b-instruct-q4-k-m")!
+        @unknown default:
+            return models.first!
+        }
+    }
+
+    @objc(selectModel:)
+    static func select(model: ICDownloadableModel) {
+        switch model.role {
+        case .voiceToText:
+            if model.identifier == "apple-speech" {
+                UserDefaults.standard.set("Apple", forKey: "TranscriptionEngine")
+            } else if let whisperModelName = model.whisperModelName {
+                UserDefaults.standard.set("WhisperKit", forKey: "TranscriptionEngine")
+                UserDefaults.standard.set(whisperModelName, forKey: "TranscriptionWhisperModel")
+            }
+        case .textToChapters:
+            UserDefaults.standard.set(model.identifier, forKey: chapterModelKey)
+        @unknown default:
+            break
+        }
+        ICDiagnosticLogger.shared.logEvent("model", message: "Modell ausgewählt", metadata: [
+            "model": model.identifier,
+            "role": model.roleTitle,
+        ] as NSDictionary)
+    }
+
+    @objc static func selectedVoiceModelIsReady() -> Bool {
+        isDownloaded(model: selectedModel(for: .voiceToText))
+    }
+
+    @objc static func selectedChapterModelIsReady() -> Bool {
+        isDownloaded(model: selectedModel(for: .textToChapters))
+    }
+
+    @MainActor
+    @objc static func selectedChapterModelCanGenerate() -> Bool {
+        let model = selectedModel(for: .textToChapters)
+        guard isDownloaded(model: model) else { return false }
+        if model.identifier == "apple-foundation-models" {
+            return ChapterGenerator.isAvailable()
+        }
+        return model.role == .textToChapters && modelFileURL(for: model) != nil
+    }
+
+    @MainActor
+    @objc static func selectedChapterModelUnavailableReason() -> String {
+        let model = selectedModel(for: .textToChapters)
+        if !isDownloaded(model: model) {
+            return NSLocalizedString("Kapitelmodell ist nicht geladen.", comment: "")
+        }
+        if model.identifier == "apple-foundation-models" {
+            return ChapterGenerator.unavailabilityReason() ?? NSLocalizedString("Apple Intelligence nicht verfügbar.", comment: "")
+        }
+        return NSLocalizedString("Kapitelmodell ist nicht bereit.", comment: "")
+    }
+
+    @objc(isDownloadedModel:)
+    static func isDownloaded(model: ICDownloadableModel) -> Bool {
+        guard model.requiresDownload else { return true }
+        switch model.role {
+        case .voiceToText:
+            guard let modelName = model.whisperModelName else { return false }
+            return WhisperKitBackend.shared.isModelDownloadedSync(modelName: modelName)
+        case .textToChapters:
+            return modelFileURL(for: model) != nil
+        @unknown default:
+            return false
+        }
+    }
+
+    @objc(sizeOnDiskForModel:)
+    static func sizeOnDisk(model: ICDownloadableModel) -> Int64 {
+        guard model.requiresDownload else { return 0 }
+        switch model.role {
+        case .voiceToText:
+            guard let modelName = model.whisperModelName else { return 0 }
+            return WhisperKitBackend.shared.modelSizeOnDiskSync(modelName: modelName)
+        case .textToChapters:
+            return directorySize(at: modelDirectory(for: model))
+        @unknown default:
+            return 0
+        }
+    }
+
+    @objc(modelFileURLForModel:)
+    static func modelFileURL(for model: ICDownloadableModel) -> URL? {
+        guard model.role == .textToChapters, let fileName = model.fileName else { return nil }
+        let url = modelDirectory(for: model).appendingPathComponent(fileName)
+        return validateTextModelFile(at: url, expectedBytes: model.downloadSizeBytes) ? url : nil
+    }
+
+    @objc(downloadTaskForModel:)
+    static func downloadTask(for model: ICDownloadableModel) -> ICModelDownloadTask? {
+        downloadStateLock.lock()
+        let task = activeDownloadTasksByModelID[model.identifier]
+        downloadStateLock.unlock()
+        return task
+    }
+
+    @objc(downloadProgressForModel:)
+    static func downloadProgress(for model: ICDownloadableModel) -> ICModelDownloadProgress? {
+        downloadStateLock.lock()
+        let progress = activeDownloadProgressByModelID[model.identifier]
+        downloadStateLock.unlock()
+        return progress
+    }
+
+    @objc(isDownloadingModel:)
+    static func isDownloading(model: ICDownloadableModel) -> Bool {
+        return downloadTask(for: model) != nil
+    }
+
+    @objc(cancelDownloadForModel:)
+    static func cancelDownload(for model: ICDownloadableModel) {
+        guard let task = downloadTask(for: model) else { return }
+        ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Download abgebrochen", metadata: [
+            "model": model.identifier,
+            "role": model.roleTitle,
+        ] as NSDictionary)
+        task.cancel()
+    }
+
+    @objc(downloadModel:progress:completion:)
+    @discardableResult
+    static func download(model: ICDownloadableModel,
+                         progress: @escaping (Float) -> Void,
+                         completion: @escaping (NSError?) -> Void) -> ICModelDownloadTask {
+        return download(model: model, detailProgress: { detail in
+            progress(detail.fraction)
+        }, completion: completion)
+    }
+
+    @objc(downloadModel:detailProgress:completion:)
+    @discardableResult
+    static func download(model: ICDownloadableModel,
+                         detailProgress: @escaping (ICModelDownloadProgress) -> Void,
+                         completion: @escaping (NSError?) -> Void) -> ICModelDownloadTask {
+        select(model: model)
+        if let existingTask = downloadTask(for: model) {
+            if let existingProgress = downloadProgress(for: model) {
+                detailProgress(existingProgress)
+            }
+            return existingTask
+        }
+        let cancellationBox = ICModelDownloadCancellationBox()
+        let downloadTask = ICModelDownloadTask(cancellationBox: cancellationBox)
+        guard model.requiresDownload else {
+            detailProgress(ICModelDownloadProgress(fraction: 1, completedBytes: 0, totalBytes: 0))
+            completion(nil)
+            return downloadTask
+        }
+
+        let selectedModel = model
+        nonisolated(unsafe) let detailProgressCallback = detailProgress
+        nonisolated(unsafe) let completionCallback = completion
+        setActiveDownloadTask(downloadTask, for: selectedModel)
+        ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Download gestartet", metadata: [
+            "model": selectedModel.identifier,
+            "role": selectedModel.roleTitle,
+            "expectedBytes": selectedModel.downloadSizeBytes,
+        ] as NSDictionary)
+        let task = Task.detached {
+            do {
+                let reportProgress: @Sendable (ICModelDownloadProgress) -> Void = { progress in
+                    setActiveDownloadProgress(progress, for: selectedModel)
+                    DispatchQueue.main.async {
+                        detailProgressCallback(progress)
+                    }
+                }
+
+                try Task.checkCancellation()
+                switch selectedModel.role {
+                case .voiceToText:
+                    guard let modelName = selectedModel.whisperModelName else {
+                        throw NSError(domain: "ICDownloadableModelStore", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey: "Whisper model name missing"])
+                    }
+                    do {
+                        try await WhisperKitBackend.shared.downloadModel(modelName: modelName) { _ in
+                            let completed = sizeOnDisk(model: selectedModel)
+                            let total = selectedModel.downloadSizeBytes
+                            let fraction = total > 0 ? Float(min(Double(completed) / Double(total), 1.0)) : 0
+                            reportProgress(ICModelDownloadProgress(fraction: fraction,
+                                                                   completedBytes: completed,
+                                                                   totalBytes: total))
+                        }
+                    } catch {
+                        if cancellationBox.isCancelled || Task.isCancelled {
+                            await WhisperKitBackend.shared.deleteModel(modelName: modelName)
+                        }
+                        throw error
+                    }
+                case .textToChapters:
+                    try await downloadTextModel(selectedModel,
+                                                progress: reportProgress,
+                                                cancellationBox: cancellationBox)
+                @unknown default:
+                    break
+                }
+                try Task.checkCancellation()
+                await MainActor.run {
+                    detailProgressCallback(ICModelDownloadProgress(fraction: 1,
+                                                                   completedBytes: selectedModel.downloadSizeBytes,
+                                                                   totalBytes: selectedModel.downloadSizeBytes))
+                    completionCallback(nil)
+                }
+                ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Download beendet", metadata: [
+                    "model": selectedModel.identifier,
+                    "role": selectedModel.roleTitle,
+                ] as NSDictionary)
+            } catch {
+                let nsError = downloadError(error, cancelled: cancellationBox.isCancelled || Task.isCancelled)
+                ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Download fehlgeschlagen", metadata: [
+                    "model": selectedModel.identifier,
+                    "role": selectedModel.roleTitle,
+                    "error": nsError.localizedDescription,
+                ] as NSDictionary)
+                await MainActor.run {
+                    completionCallback(nsError)
+                }
+            }
+            clearActiveDownload(for: selectedModel)
+        }
+        cancellationBox.setTask(task)
+        return downloadTask
+    }
+
+    private static func setActiveDownloadTask(_ task: ICModelDownloadTask, for model: ICDownloadableModel) {
+        downloadStateLock.lock()
+        activeDownloadTasksByModelID[model.identifier] = task
+        downloadStateLock.unlock()
+    }
+
+    private static func setActiveDownloadProgress(_ progress: ICModelDownloadProgress, for model: ICDownloadableModel) {
+        downloadStateLock.lock()
+        activeDownloadProgressByModelID[model.identifier] = progress
+        downloadStateLock.unlock()
+    }
+
+    private static func clearActiveDownload(for model: ICDownloadableModel) {
+        downloadStateLock.lock()
+        activeDownloadTasksByModelID.removeValue(forKey: model.identifier)
+        activeDownloadProgressByModelID.removeValue(forKey: model.identifier)
+        downloadStateLock.unlock()
+    }
+
+    @objc(prepareModel:completion:)
+    static func prepare(model: ICDownloadableModel,
+                        completion: @escaping (NSError?) -> Void) {
+        guard isDownloaded(model: model) else {
+            completion(NSError(domain: "ICDownloadableModelStore", code: 2,
+                               userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Modell ist nicht geladen.", comment: "")]))
+            return
+        }
+
+        let selectedModel = model
+        nonisolated(unsafe) let completionCallback = completion
+        Task.detached {
+            do {
+                if selectedModel.role == .voiceToText, let modelName = selectedModel.whisperModelName {
+                    try await WhisperKitBackend.shared.prepareModel(modelName: modelName)
+                } else {
+                    ICDiagnosticLogger.shared.logEvent("model", message: "Kapitelmodell geprüft", metadata: [
+                        "model": selectedModel.identifier,
+                        "path": modelDirectory(for: selectedModel).path,
+                    ] as NSDictionary)
+                }
+                await MainActor.run { completionCallback(nil) }
+            } catch {
+                await MainActor.run { completionCallback(error as NSError) }
+            }
+        }
+    }
+
+    @objc(deleteModel:completion:)
+    static func delete(model: ICDownloadableModel,
+                       completion: @escaping (NSError?) -> Void) {
+        guard model.requiresDownload else {
+            completion(nil)
+            return
+        }
+
+        let selectedModel = model
+        nonisolated(unsafe) let completionCallback = completion
+        Task.detached {
+            do {
+                switch selectedModel.role {
+                case .voiceToText:
+                    if let modelName = selectedModel.whisperModelName {
+                        await WhisperKitBackend.shared.deleteModel(modelName: modelName)
+                    }
+                case .textToChapters:
+                    try? FileManager.default.removeItem(at: modelDirectory(for: selectedModel))
+                @unknown default:
+                    break
+                }
+                ICDiagnosticLogger.shared.logEvent("model", message: "Modell gelöscht", metadata: [
+                    "model": selectedModel.identifier,
+                    "role": selectedModel.roleTitle,
+                ] as NSDictionary)
+                await MainActor.run { completionCallback(nil) }
+            }
+        }
+    }
+
+    private static func downloadTextModel(_ model: ICDownloadableModel,
+                                          progress: @escaping @Sendable (ICModelDownloadProgress) -> Void,
+                                          cancellationBox: ICModelDownloadCancellationBox) async throws {
+        guard let urlString = model.remoteURLString,
+              let remoteURL = URL(string: urlString),
+              let fileName = model.fileName else {
+            throw NSError(domain: "ICDownloadableModelStore", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Model download URL missing"])
+        }
+
+        if model.downloadSizeBytes > 0 {
+            let requiredBytes = model.downloadSizeBytes + 512 * 1024 * 1024
+            let availableBytes = freeDiskBytes()
+            if availableBytes < requiredBytes {
+                let requiredText = ByteCountFormatter.string(fromByteCount: requiredBytes, countStyle: .file)
+                let availableText = ByteCountFormatter.string(fromByteCount: availableBytes, countStyle: .file)
+                throw NSError(domain: "ICDownloadableModelStore", code: 4,
+                              userInfo: [NSLocalizedDescriptionKey: String(format: NSLocalizedString("Nicht genug freier Speicher für diesen Download. Benötigt %@. Verfügbar %@.", comment: ""), requiredText, availableText)])
+            }
+        }
+
+        let directory = modelDirectory(for: model)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        ICSetExcludedFromBackup(directory)
+
+        let destinationURL = directory.appendingPathComponent(fileName)
+        let operation = ICTextModelDownloadOperation(remoteURL: remoteURL,
+                                                     expectedBytes: model.downloadSizeBytes,
+                                                     progress: progress)
+        cancellationBox.addCancelHandler {
+            operation.cancel()
+        }
+        let (temporaryURL, response) = try await operation.start()
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw NSError(domain: "ICDownloadableModelStore", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"])
+        }
+
+        guard validateTextModelFile(at: temporaryURL, expectedBytes: model.downloadSizeBytes) else {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Download ungültig", metadata: [
+                "model": model.identifier,
+                "expectedBytes": model.downloadSizeBytes,
+            ] as NSDictionary)
+            throw NSError(domain: "ICDownloadableModelStore", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Modell-Download ungültig. Bitte erneut laden.", comment: "")])
+        }
+
+        if FileManager.default.fileExists(atPath: destinationURL.path) {
+            try FileManager.default.removeItem(at: destinationURL)
+        }
+        try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+        ICSetExcludedFromBackup(destinationURL)
+        progress(ICModelDownloadProgress(fraction: 1,
+                                         completedBytes: model.downloadSizeBytes,
+                                         totalBytes: model.downloadSizeBytes))
+        ICDiagnosticLogger.shared.logEvent("model", message: "Kapitelmodell heruntergeladen", metadata: [
+            "model": model.identifier,
+            "path": destinationURL.path,
+            "bytesOnDisk": directorySize(at: directory),
+        ] as NSDictionary)
+    }
+
+    private static func modelDirectory(for model: ICDownloadableModel) -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport
+            .appendingPathComponent(modelRootDirectoryName, isDirectory: true)
+            .appendingPathComponent(model.identifier, isDirectory: true)
+    }
+
+    private static func directorySize(at url: URL) -> Int64 {
+        guard FileManager.default.fileExists(atPath: url.path) else { return 0 }
+        var totalSize: Int64 = 0
+        if let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) {
+            for case let fileURL as URL in enumerator {
+                if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                    totalSize += Int64(size)
+                }
+            }
+        }
+        return totalSize
+    }
+
+    private static func validateTextModelFile(at url: URL, expectedBytes: Int64) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.int64Value ?? 0
+        if expectedBytes > 0 {
+            let minimumBytes = Int64(Double(expectedBytes) * 0.98)
+            guard size >= minimumBytes else { return false }
+        }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 4),
+              data.count == 4,
+              String(data: data, encoding: .ascii) == "GGUF" else { return false }
+        return true
+    }
+
+    private static func freeDiskBytes() -> Int64 {
+        let homeURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        if let values = try? homeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let available = values.volumeAvailableCapacityForImportantUsage {
+            return available
+        }
+        if let values = try? homeURL.resourceValues(forKeys: [.volumeAvailableCapacityKey]),
+           let available = values.volumeAvailableCapacity {
+            return Int64(available)
+        }
+        guard let attrs = try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory()),
+              let freeSpace = attrs[.systemFreeSize] as? NSNumber else { return Int64.max }
+        return freeSpace.int64Value
+    }
+
+    private static func downloadError(_ error: Error, cancelled: Bool) -> NSError {
+        if cancelled || error is CancellationError || (error as NSError).code == NSURLErrorCancelled {
+            return NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled,
+                           userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Download abgebrochen.", comment: "")])
+        }
+        return error as NSError
+    }
 }

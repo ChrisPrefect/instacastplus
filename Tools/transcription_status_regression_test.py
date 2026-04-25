@@ -15,6 +15,7 @@ backend_source = (ROOT / "Classes" / "WhisperKitBackend.swift").read_text()
 chapter_source = (ROOT / "Classes" / "ChapterGenerator.swift").read_text()
 audio_source = (ROOT / "Classes" / "AudioAnalyzer.swift").read_text()
 controller_source = (ROOT / "Classes" / "TranscriptionQueueViewController.m").read_text()
+main_source = (ROOT / "Classes" / "MainViewController_4.m").read_text()
 playback_source = (ROOT / "Classes" / "PlaybackManager.m").read_text()
 settings_source = (ROOT / "Classes" / "TranscriptionSettingsViewController.m").read_text()
 app_delegate_source = (ROOT / "Classes" / "InstacastAppDelegate.m").read_text()
@@ -35,6 +36,41 @@ require(
 require(
     "@objc var statusDetail: String?" in queue_source and "@objc var statusStartedAt: Date?" in queue_source,
     "Queue items no longer persist detail text and step start times for UI status reporting.",
+)
+require(
+    "@objc var completedAt: Date?" in queue_source
+    and "private static let completedItemRetentionInterval: TimeInterval = 30 * 60" in queue_source
+    and "scheduleCompletedItemPrune" in queue_source
+    and ".now() + Self.completedItemRetentionInterval" in queue_source,
+    "Completed transcription items must stay visible for 30 minutes before being pruned.",
+)
+require(
+    "completedAt: Date?" in queue_source
+    and "statusRawValue: Int" in queue_source
+    and "Date().timeIntervalSince(completedAt) < Self.completedItemRetentionInterval" in queue_source,
+    "Completed queue items must persist as completed rows for the 30-minute retention window without being restarted.",
+)
+require(
+    "items.removeAll { $0.status == .completed }" not in queue_source,
+    "Completed queue items are still removed immediately.",
+)
+require(
+    "@objc var hasVisibleItems: Bool" in queue_source
+    and "@objc var activeItemCount: Int" in queue_source
+    and "[TranscriptionQueue shared].hasVisibleItems" in main_source
+    and "activeItemCount" in main_source,
+    "The sidebar transcription entry must only be visible while the queue has active or recently completed items.",
+)
+require(
+    "chapterGenerationError" in queue_source
+    and "Transkription abgeschlossen, Kapitel fehlgeschlagen." in queue_source
+    and "item.status = .failed" in queue_source,
+    "Auto chapter-generation failures after a successful transcription must not be hidden behind a completed queue row.",
+)
+require(
+    "applicationWillEnterForeground" in queue_source
+    and "self?.resumeIfNeeded()" in queue_source,
+    "Foreground/unlock must resume queued transcription work instead of only refreshing background state.",
 )
 require(
     "private func beginStep(for item: ICTranscriptionQueueItem," in queue_source,
@@ -245,6 +281,17 @@ require(
     "Queue UI no longer allows two-line status text for detailed updates.",
 )
 require(
+    "Transkription wird gestartet" not in controller_source
+    and "Transkription läuft" in controller_source
+    and "Transkription läuft." in backend_source,
+    "The transcription row still says it is starting after transcription is already running.",
+)
+require(
+    "Core ML öffnet das Whisper-Modell." not in queue_source
+    and "Core ML öffnet das Whisper-Modell." not in controller_source,
+    "Queue UI/status code still exposes technical Core ML model-loading text.",
+)
+require(
     "_combinedStatusTextWithHeadline" in controller_source and
     "_elapsedTextForItem" in controller_source and
     "_presentFailureDetailsForItem" in controller_source,
@@ -252,8 +299,8 @@ require(
 )
 
 for text in [
-    "Core ML öffnet das Whisper-Modell.",
-    "Whisper startet die Dekodierung.",
+    "Modell wird vorbereitet.",
+    "Transkription läuft.",
     "Kapitel werden erstellt (%d%%)",
     "Transkriptionsfehler",
 ]:

@@ -310,6 +310,9 @@
 		CC000001AABB00000000000A /* DataSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000C /* DataSettingsViewController.m */; };
 		CC000001AABB00000000000D /* EnabledSpeedStepsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB00000000000F /* EnabledSpeedStepsViewController.m */; };
 		CCA420203F2DE44E828D25C0 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 768D9E9235479C0E57092DBD /* WhisperKit */; };
+		EA0EAB67BB9A49BDB816D31E /* LocalGGUFModelRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8091F01C47CD4B72B3981202 /* LocalGGUFModelRunner.swift */; };
+		5A2E9033549D40E7962DD609 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; };
+		211918C4F91F4222A698C942 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CD0082042CD65D91001E081B /* InstacastSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */; };
 		CD00AA012D10A00100000001 /* ICShareItem.m in Sources */ = {isa = PBXBuildFile; fileRef = CD00AA002D10A00100000001 /* ICShareItem.m */; };
 		CD0SILENCE2026020100000002 /* Silence.caf in Resources */ = {isa = PBXBuildFile; fileRef = CD0SILENCE2026020100000001 /* Silence.caf */; };
@@ -377,6 +380,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
+				211918C4F91F4222A698C942 /* llama.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -840,6 +844,7 @@
 		3A0D3AB08CCCD63037D9F524 /* NowPlayingProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingProvider.swift; sourceTree = "<group>"; };
 		3EB984E2E160A577257960B2 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		534123C112215367E937C1E7 /* TranscriptionQueue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TranscriptionQueue.swift; sourceTree = "<group>"; };
+		55B48241CC8542159B525C5D /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = SOURCE_ROOT; };
 		5645886712DE345E4E7D3055 /* Instacast-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "Instacast-Bridging-Header.h"; sourceTree = "<group>"; };
 		62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChapterGenerator.swift; sourceTree = "<group>"; };
 		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
@@ -850,6 +855,7 @@
 		7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetKitHelper.swift; sourceTree = "<group>"; };
 		7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
 		80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedContainerReader.swift; sourceTree = "<group>"; };
+		8091F01C47CD4B72B3981202 /* LocalGGUFModelRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalGGUFModelRunner.swift; sourceTree = "<group>"; };
 		835A5AEF2F338F7800A70766 /* ImportExportSettingsViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ImportExportSettingsViewController.m; path = Classes/ImportExportSettingsViewController.m; sourceTree = "<group>"; };
 		835A5B082F33BBC000A70766 /* SmarthomeManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeManager.h; sourceTree = "<group>"; };
 		835A5B092F33BBC000A70766 /* SmarthomeSettingsViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SmarthomeSettingsViewController.h; sourceTree = "<group>"; };
@@ -1005,6 +1011,7 @@
 				49D903092A323760C89F3C52 /* WidgetKit.framework in Frameworks */,
 				4E17049B04D20C89632443B7 /* SoundAnalysis.framework in Frameworks */,
 				7AAD44DAC694DAF0924D189C /* Speech.framework in Frameworks */,
+				5A2E9033549D40E7962DD609 /* llama.xcframework in Frameworks */,
 				CCA420203F2DE44E828D25C0 /* WhisperKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1077,6 +1084,7 @@
 				B874ED55A5A0F6ED98DD872E /* TranscriptionEngine.swift */,
 				309F5FF890FC8186D9DA11BD /* AudioAnalyzer.swift */,
 				62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */,
+				8091F01C47CD4B72B3981202 /* LocalGGUFModelRunner.swift */,
 				534123C112215367E937C1E7 /* TranscriptionQueue.swift */,
 				FE0ABE1118AA6011E195F7E3 /* TranscriptionSettingsViewController.h */,
 				2A9AE325CC4ABD7AD2B4F511 /* TranscriptionQueueViewController.h */,
@@ -1888,6 +1896,7 @@
 				27C03CE231950A5FA4157032 /* SwiftUI.framework */,
 				0E1EBF5E0B5CFC7C64346CB5 /* SoundAnalysis.framework */,
 				3EB984E2E160A577257960B2 /* Speech.framework */,
+				55B48241CC8542159B525C5D /* llama.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -2506,6 +2515,7 @@
 				165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */,
 				3F95B365F085435221B62942 /* AudioAnalyzer.swift in Sources */,
 				C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */,
+				EA0EAB67BB9A49BDB816D31E /* LocalGGUFModelRunner.swift in Sources */,
 				FB242F4261A8102DA6E1EF81 /* TranscriptionQueue.swift in Sources */,
 				8AE904639392BCD06F5EAFD2 /* TranscriptionSettingsViewController.m in Sources */,
 				F7A2FA597A4284CBF92BE7A5 /* TranscriptionQueueViewController.m in Sources */,

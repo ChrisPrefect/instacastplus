@@ -406,7 +406,8 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 }
 
 - (BOOL)_shouldUseContinuedGPUBackgroundPath {
-    return [self _isWhisperKitEngine] && [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];
+    if (![self _isWhisperKitEngine]) return NO;
+    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];
 }
 
 - (BOOL)backgroundControlsAvailable {
@@ -483,18 +484,25 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.sizeLabel.numberOfLines = 2;
     cell.timeLabel.textAlignment = NSTextAlignmentRight;
-    // (i) accessory opens the detailed log (durations, sizes, char/chapter counts).
-    cell.accessoryType = UITableViewCellAccessoryDetailButton;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = nil;
+    // Remove play button and reclaim its space.
+    [cell.playAccessoryButton removeFromSuperview];
 
     // Bounds check — items array could change between numberOfRows and cellForRow
     if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) {
         return cell;
     }
-    // Remove play button and reclaim its space
-    [cell.playAccessoryButton removeFromSuperview];
 
     ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
     cell.tag = indexPath.row;
+    // (i) accessory opens the detailed log (durations, sizes, char/chapter counts).
+    UIButton* logButton = [UIButton buttonWithType:UIButtonTypeInfoLight];
+    logButton.frame = CGRectMake(0, 0, 44, 44);
+    logButton.imageEdgeInsets = UIEdgeInsetsMake(8, 0, -8, 0);
+    logButton.tag = indexPath.row;
+    [logButton addTarget:self action:@selector(_showLogFromAccessoryButton:) forControlEvents:UIControlEventTouchUpInside];
+    cell.accessoryView = logButton;
 
     // Title — same as Downloads: cleaned episode title
     CDEpisode* episode = [self _episodeForHash:item.episodeHash];
@@ -564,7 +572,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
                 cell.progressView.hidden = YES;
                 cell.timeLabel.text = @"";
             } else {
-                headline = NSLocalizedString(@"Wartet auf Verarbeitung", nil);
+                if ([[TranscriptionEngine shared] hasCheckpointFor:item.episodeHash]) {
+                    headline = NSLocalizedString(@"Unterbrochene Transkription wird fortgesetzt.", nil);
+                } else {
+                    headline = NSLocalizedString(@"Wartet auf Verarbeitung", nil);
+                }
                 cell.progressView.progress = 0;
                 cell.progressView.hidden = YES;
                 cell.timeLabel.text = @"";
@@ -573,7 +585,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         }
         case ICTranscriptionStatusDownloadingModel: {
             headline = [NSString stringWithFormat:NSLocalizedString(@"%@ wird vorbereitet", nil), [self _activeEngineLabel]];
-            detail = detail ?: NSLocalizedString(@"Core ML öffnet das Whisper-Modell.", nil);
+            detail = detail ?: NSLocalizedString(@"Modell wird vorbereitet.", nil);
             cell.progressView.progress = 0;
             cell.progressView.hidden = YES;
             cell.timeLabel.text = elapsedText ?: @"";
@@ -593,11 +605,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
                 cell.progressView.progress = item.progress;
                 cell.progressView.hidden = NO;
             } else {
-                headline = NSLocalizedString(@"Transkription wird gestartet", nil);
+                headline = NSLocalizedString(@"Transkription läuft", nil);
                 cell.progressView.progress = 0;
                 cell.progressView.hidden = YES;
             }
-            detail = detail ?: [NSString stringWithFormat:NSLocalizedString(@"%@ verarbeitet die Audiodatei.", nil), [self _activeEngineLabel]];
+            detail = detail ?: NSLocalizedString(@"Audiodatei wird verarbeitet.", nil);
             cell.timeLabel.text = elapsedText ?: @"";
             break;
         }
@@ -608,7 +620,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             } else {
                 headline = NSLocalizedString(@"Kapitel werden erstellt", nil);
             }
-            detail = detail ?: NSLocalizedString(@"Apple Intelligence erstellt die Kapitelstruktur.", nil);
+            detail = detail ?: NSLocalizedString(@"Kapitel werden aus dem Transkript erstellt.", nil);
             cell.progressView.progress = item.progress;
             cell.progressView.hidden = NO;
             cell.timeLabel.text = elapsedText ?: @"";
@@ -673,9 +685,17 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     return nil;
 }
 
+- (void)_showLogFromAccessoryButton:(UIButton*)button {
+    [self _showLogForRow:button.tag];
+}
+
 - (void)tableView:(UITableView *)tableView accessoryButtonTappedForRowWithIndexPath:(NSIndexPath *)indexPath {
-    if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) return;
-    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].items[indexPath.row];
+    [self _showLogForRow:indexPath.row];
+}
+
+- (void)_showLogForRow:(NSInteger)row {
+    if (row >= (NSInteger)[TranscriptionQueue shared].items.count) return;
+    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].items[row];
     TranscriptionLogDetailViewController* vc = [[TranscriptionLogDetailViewController alloc] initWithStyle:UITableViewStylePlain];
     vc.episodeHash = item.episodeHash;
     CDEpisode* episode = [self _episodeForHash:item.episodeHash];

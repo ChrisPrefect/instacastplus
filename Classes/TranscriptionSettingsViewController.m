@@ -3,31 +3,42 @@
 //  Instacast
 //
 //  Settings UI for "Transkription und Kapitel".
-//  Sections: Intro → Sprachmodell (combined Engine+Model) → Kapitel & Sponsoren → Automatisch
 //
 
 #import "TranscriptionSettingsViewController.h"
-#import "SettingsValuesTableViewController.h"
 #import "InstacastPlus-Swift.h"
 
-// Combined engine+model values
-static NSString* const kCombinedWhisperLarge = @"WhisperKit_large";
-static NSString* const kCombinedWhisperSmall = @"WhisperKit_small";
-static NSString* const kCombinedApple       = @"Apple";
+@interface ICModelLibraryViewController : UITableViewController
+@property (nonatomic, assign) BOOL focusVoiceToText;
+@property (nonatomic, assign) ICDownloadableModelRole modelRole;
+@property (nonatomic, strong) NSMutableSet<NSString *> *busyModelIDs;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, ICModelDownloadTask *> *downloadTasksByModelID;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, ICModelDownloadProgress *> *downloadProgressByModelID;
+@property (nonatomic, strong) NSTimer *refreshTimer;
+@end
 
 typedef NS_ENUM(NSInteger, TSSection) {
-    TSSectionModel = 0,
+    TSSectionModels = 0,
     TSSectionChapters,
     TSSectionAuto,
     TSSectionCount
 };
 
 @interface TranscriptionSettingsViewController ()
-@property (nonatomic) BOOL isDownloadingModel;
-@property (nonatomic, strong) NSTimer* downloadProgressTimer;
 @end
 
 @implementation TranscriptionSettingsViewController
+
++ (UIViewController *)modelLibraryViewController {
+    return [self modelLibraryViewControllerFocusedOnVoiceToText:YES];
+}
+
++ (UIViewController *)modelLibraryViewControllerFocusedOnVoiceToText:(BOOL)voiceToText {
+    ICModelLibraryViewController *controller = [[ICModelLibraryViewController alloc] initWithStyle:UITableViewStyleGrouped];
+    controller.focusVoiceToText = voiceToText;
+    controller.modelRole = voiceToText ? ICDownloadableModelRoleVoiceToText : ICDownloadableModelRoleTextToChapters;
+    return controller;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -39,62 +50,14 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    // Sync combined value back to underlying keys (after returning from picker)
-    [self _syncCombinedToUnderlyingKeys];
-    // Cancel any running download if model changed (prevents mismatched download)
-    if (self.isDownloadingModel) {
-        self.isDownloadingModel = NO;
-        [self.downloadProgressTimer invalidate];
-        self.downloadProgressTimer = nil;
-    }
     [self.tableView reloadData];
 }
 
 - (void)dealloc {
-    [self.downloadProgressTimer invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)_reload { [self.tableView reloadData]; }
-
-#pragma mark - Combined Value Helpers
-
-/// Read current combined value from underlying keys
-- (NSString*)_combinedValue {
-    NSString* engine = [USER_DEFAULTS stringForKey:kTranscriptionEngine];
-    if ([engine isEqualToString:@"Apple"]) return kCombinedApple;
-    // WhisperKit (default)
-    NSString* model = [TranscriptionEngine resolvedModelName];
-    if ([model containsString:@"large"]) return kCombinedWhisperLarge;
-    return kCombinedWhisperSmall;
-}
-
-/// Sync the "TranscriptionModelCombined" UserDefault to the two underlying keys
-- (void)_syncCombinedToUnderlyingKeys {
-    NSString* combined = [USER_DEFAULTS stringForKey:@"TranscriptionModelCombined"];
-    if (!combined) return;
-
-    if ([combined isEqualToString:kCombinedWhisperLarge]) {
-        [USER_DEFAULTS setObject:@"WhisperKit" forKey:kTranscriptionEngine];
-        [USER_DEFAULTS setObject:@"openai_whisper-large-v3-v20240930_turbo_632MB" forKey:kTranscriptionWhisperModel];
-    } else if ([combined isEqualToString:kCombinedWhisperSmall]) {
-        [USER_DEFAULTS setObject:@"WhisperKit" forKey:kTranscriptionEngine];
-        [USER_DEFAULTS setObject:@"openai_whisper-small_216MB" forKey:kTranscriptionWhisperModel];
-    } else if ([combined isEqualToString:kCombinedApple]) {
-        [USER_DEFAULTS setObject:@"Apple" forKey:kTranscriptionEngine];
-    }
-}
-
-- (BOOL)_isWhisperKit {
-    NSString* engine = [USER_DEFAULTS stringForKey:kTranscriptionEngine];
-    return engine == nil || [engine isEqualToString:@"WhisperKit"];
-}
-
-- (BOOL)_isLargeAvailableOnDevice {
-    // Large V3 Turbo needs ~8 GB RAM for CoreML inference
-    uint64_t physicalMemory = [NSProcessInfo processInfo].physicalMemory;
-    return physicalMemory >= (uint64_t)8 * 1024 * 1024 * 1024;
-}
 
 #pragma mark - Data Source
 
@@ -102,7 +65,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
-        case TSSectionModel: return NSLocalizedString(@"Sprachmodell", nil);
+        case TSSectionModels: return NSLocalizedString(@"Modelle", nil);
         case TSSectionChapters: return NSLocalizedString(@"Kapitel & Sponsoren", nil);
         case TSSectionAuto: return NSLocalizedString(@"Automatisch", nil);
         default: return nil;
@@ -111,15 +74,10 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
-        case TSSectionModel:
-            return NSLocalizedString(@"WhisperKit nutzt Core ML/GPU. Im Hintergrund läuft es nur über iOS 26 Background GPU Access; sonst wird beim Verlassen der App pausiert. Apple-Spracherkennung benötigt keinen Download und kann über den klassischen Hintergrundpfad weiterlaufen, wenn iOS dafür Zeit gibt.", nil);
-        case TSSectionChapters: {
-            if ([ChapterGenerator isAvailable]) {
-                return NSLocalizedString(@"Apple Intelligence erkennt Themenwechsel und Werbung im Transkript und erzeugt daraus Kapitel. Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.", nil);
-            }
-            NSString* reason = [ChapterGenerator unavailabilityReason];
-            return reason ?: NSLocalizedString(@"Apple Intelligence nicht verfügbar. Für automatische Kapitel und Sponsor-Erkennung wird Apple Intelligence benötigt.", nil);
-        }
+        case TSSectionModels:
+            return NSLocalizedString(@"Modelle werden bei Bedarf heruntergeladen und danach vorbereitet.", nil);
+        case TSSectionChapters:
+            return NSLocalizedString(@"Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.", nil);
         case TSSectionAuto:
             return NSLocalizedString(@"Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden.", nil);
         default: return nil;
@@ -128,12 +86,8 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
-        case TSSectionModel: {
-            if (![self _isWhisperKit]) return 1; // Just the picker row
-            BOOL downloaded = [[TranscriptionEngine shared] isModelDownloaded];
-            return downloaded ? 3 : 2; // picker + (download OR ready) + (delete if downloaded)
-        }
-        case TSSectionChapters: return 2;
+        case TSSectionModels: return 2;
+        case TSSectionChapters: return 1;
         case TSSectionAuto: return 2;
         default: return 0;
     }
@@ -141,113 +95,64 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     switch (indexPath.section) {
-        case TSSectionModel: return [self _modelCellForRow:indexPath.row];
+        case TSSectionModels: return [self _modelCellForRow:indexPath.row];
         case TSSectionChapters: return [self _chaptersCellForRow:indexPath.row];
         case TSSectionAuto: return [self _autoCellForRow:indexPath.row];
         default: return [[UITableViewCell alloc] init];
     }
 }
 
-#pragma mark - Model Section (Combined Engine + Model)
+#pragma mark - Model Section
 
 - (UITableViewCell *)_modelCellForRow:(NSInteger)row {
-    switch (row) {
-        case 0: {
-            // Combined engine+model picker
-            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-            cell.textLabel.text = NSLocalizedString(@"Sprachmodell", nil);
-            cell.detailTextLabel.text = [self _modelDisplayName];
-            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-            return cell;
-        }
-        case 1: {
-            // Download / Ready status
-            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-            BOOL downloaded = [[TranscriptionEngine shared] isModelDownloaded];
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
 
-            if (self.isDownloadingModel) {
-                int64_t currentSize = [[TranscriptionEngine shared] modelSizeOnDisk];
-                NSString *currentSizeStr = [NSByteCountFormatter stringFromByteCount:currentSize countStyle:NSByteCountFormatterCountStyleFile];
-                cell.textLabel.text = NSLocalizedString(@"Wird geladen...", nil);
-                cell.detailTextLabel.text = currentSizeStr;
-                cell.textLabel.textColor = ICTintColor;
-                cell.selectionStyle = UITableViewCellSelectionStyleNone;
-                UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-                [spinner startAnimating];
-                cell.accessoryView = spinner;
-            } else if (!downloaded) {
-                cell.textLabel.text = NSLocalizedString(@"Modell herunterladen", nil);
-                cell.textLabel.textColor = ICTintColor;
-                cell.detailTextLabel.text = [self _modelSizeText];
-            } else {
-                cell.textLabel.text = NSLocalizedString(@"Bereit", nil);
-                cell.textLabel.textColor = [UIColor systemGreenColor];
-                int64_t size = [[TranscriptionEngine shared] modelSizeOnDisk];
-                cell.detailTextLabel.text = [NSByteCountFormatter stringFromByteCount:size countStyle:NSByteCountFormatterCountStyleFile];
-                cell.imageView.image = [UIImage systemImageNamed:@"checkmark.circle.fill"];
-                cell.imageView.tintColor = [UIColor systemGreenColor];
-            }
-            return cell;
-        }
-        case 2: {
-            // Delete model (only shown when downloaded)
-            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-            cell.textLabel.text = NSLocalizedString(@"Modell löschen", nil);
-            cell.textLabel.textColor = [UIColor systemRedColor];
-            return cell;
-        }
-        default: return [[UITableViewCell alloc] init];
+    if (row == 0) {
+        ICDownloadableModel *model = [ICDownloadableModelStore selectedModelForRole:ICDownloadableModelRoleVoiceToText];
+        cell.textLabel.text = NSLocalizedString(@"Voice to Text", nil);
+        cell.detailTextLabel.text = [self _summaryForModel:model];
+        return cell;
     }
+
+    if (row == 1) {
+        ICDownloadableModel *model = [ICDownloadableModelStore selectedModelForRole:ICDownloadableModelRoleTextToChapters];
+        cell.textLabel.text = NSLocalizedString(@"Text zu Kapitel", nil);
+        cell.detailTextLabel.text = [self _summaryForModel:model];
+        return cell;
+    }
+
+    return cell;
 }
 
-- (NSString *)_modelDisplayName {
-    if (![self _isWhisperKit]) return @"Apple";
-    NSString *model = [TranscriptionEngine resolvedModelName];
-    if ([model containsString:@"large"]) return @"WhisperKit Large V3";
-    return @"WhisperKit Small";
-}
-
-- (NSString *)_modelSizeText {
-    NSString *model = [TranscriptionEngine resolvedModelName];
-    if ([model containsString:@"large"]) return @"~645 MB";
-    return @"~216 MB";
+- (NSString *)_summaryForModel:(ICDownloadableModel *)model {
+    if (![model requiresDownload]) return model.shortTitle;
+    if ([ICDownloadableModelStore isDownloadedModel:model]) {
+        return [NSString stringWithFormat:@"%@ · %@", model.shortTitle,
+                [NSByteCountFormatter stringFromByteCount:[ICDownloadableModelStore sizeOnDiskForModel:model]
+                                                countStyle:NSByteCountFormatterCountStyleFile]];
+    }
+    return [NSString stringWithFormat:@"%@ · %@", model.shortTitle, NSLocalizedString(@"nicht geladen", nil)];
 }
 
 #pragma mark - Chapters Section
 
 - (UITableViewCell *)_chaptersCellForRow:(NSInteger)row {
-    if (row == 0) {
-        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-        cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        if ([ChapterGenerator isAvailable]) {
-            cell.textLabel.text = NSLocalizedString(@"Apple Intelligence aktiv", nil);
-            cell.imageView.image = [UIImage systemImageNamed:@"checkmark.circle.fill"];
-            cell.imageView.tintColor = [UIColor systemGreenColor];
-        } else {
-            cell.textLabel.text = NSLocalizedString(@"Apple Intelligence nicht aktiviert", nil);
-            cell.imageView.image = [UIImage systemImageNamed:@"exclamationmark.triangle.fill"];
-            cell.imageView.tintColor = [UIColor systemOrangeColor];
-            cell.textLabel.numberOfLines = 0;
-        }
-        return cell;
-    } else {
-        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-        cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        cell.textLabel.text = NSLocalizedString(@"Sponsoren überspringen", nil);
-        UISwitch *toggle = [[UISwitch alloc] init];
-        toggle.on = [USER_DEFAULTS boolForKey:kAutoSkipSponsors];
-        [toggle addTarget:self action:@selector(_sponsorToggle:) forControlEvents:UIControlEventValueChanged];
-        toggle.enabled = [ChapterGenerator isAvailable];
-        cell.accessoryView = toggle;
-        return cell;
-    }
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.textLabel.text = NSLocalizedString(@"Sponsoren überspringen", nil);
+    UISwitch *toggle = [[UISwitch alloc] init];
+    toggle.on = [USER_DEFAULTS boolForKey:kAutoSkipSponsors];
+    [toggle addTarget:self action:@selector(_sponsorToggle:) forControlEvents:UIControlEventValueChanged];
+    cell.accessoryView = toggle;
+    return cell;
 }
 
 - (void)_sponsorToggle:(UISwitch *)toggle {
     [USER_DEFAULTS setBool:toggle.isOn forKey:kAutoSkipSponsors];
 }
 
-#pragma mark - Auto Section (moved to bottom)
+#pragma mark - Auto Section
 
 - (UITableViewCell *)_autoCellForRow:(NSInteger)row {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
@@ -265,7 +170,6 @@ typedef NS_ENUM(NSInteger, TSSection) {
         case 1:
             cell.textLabel.text = NSLocalizedString(@"Neue Folgen Chapters generieren", nil);
             toggle.on = [USER_DEFAULTS boolForKey:kChapterAutoDefault];
-            toggle.enabled = [ChapterGenerator isAvailable];
             break;
     }
     return cell;
@@ -280,84 +184,246 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (indexPath.section != TSSectionModels) return;
+    if (indexPath.row > 1) return;
 
-    if (indexPath.section != TSSectionModel) return;
-
-    switch (indexPath.row) {
-        case 0: [self _showCombinedModelPicker]; break;
-        case 1: [self _handleModelAction]; break;
-        case 2: [self _handleDeleteModel]; break;
-    }
-}
-
-- (void)_showCombinedModelPicker {
-    // Persist combined value so the picker shows the current selection
-    [USER_DEFAULTS setObject:[self _combinedValue] forKey:@"TranscriptionModelCombined"];
-
-    SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-    controller.valueType = kSettingTypeString;
-    controller.key = @"TranscriptionModelCombined";
-    controller.titleStr = NSLocalizedString(@"Sprachmodell", nil);
-
-    NSMutableArray* values = [NSMutableArray array];
-    NSMutableArray* titles = [NSMutableArray array];
-
-    BOOL largeAvailable = [self _isLargeAvailableOnDevice];
-    NSString* recEngine = [TranscriptionEngine recommendedEngine] == ICTranscriptionEngineTypeWhisperKit ? @"WhisperKit" : @"Apple";
-
-    if (largeAvailable) {
-        [values addObject:kCombinedWhisperLarge];
-        NSString* rec = [recEngine isEqualToString:@"WhisperKit"] ? NSLocalizedString(@" (empfohlen)", nil) : @"";
-        [titles addObject:[NSString stringWithFormat:@"WhisperKit Large V3 Turbo (~645 MB, %@)%@",
-                           NSLocalizedString(@"iOS 26 GPU-Hintergrund", nil), rec]];
-    }
-
-    [values addObject:kCombinedWhisperSmall];
-    {
-        NSString* rec = (!largeAvailable && [recEngine isEqualToString:@"WhisperKit"]) ? NSLocalizedString(@" (empfohlen)", nil) : @"";
-        [titles addObject:[NSString stringWithFormat:@"WhisperKit Small (~216 MB, %@)%@",
-                           NSLocalizedString(@"iOS 26 GPU-Hintergrund", nil), rec]];
-    }
-
-    [values addObject:kCombinedApple];
-    {
-        NSString* rec = [recEngine isEqualToString:@"Apple"] ? NSLocalizedString(@" (empfohlen)", nil) : @"";
-        [titles addObject:[NSString stringWithFormat:@"Apple Spracherkennung (%@)%@",
-                           NSLocalizedString(@"Hintergrund möglich", nil), rec]];
-    }
-
-    controller.values = values;
-    controller.titles = titles;
-    controller.footerText = NSLocalizedString(@"Large V3 Turbo: Beste Genauigkeit (98%), ~645 MB, 8 GB RAM.\nSmall: Gute Genauigkeit (94%), ~216 MB, 2 GB RAM.\nWhisperKit kann im Hintergrund nur mit iOS 26 Background GPU Access laufen; ohne diese Systemunterstützung pausiert die App. Apple-Spracherkennung benötigt keinen Download und nutzt den klassischen Hintergrundpfad.", nil);
-
+    BOOL focusVoice = indexPath.row != 1;
+    UIViewController *controller = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:focusVoice];
     [self.navigationController pushViewController:controller animated:YES];
 }
 
-- (void)_handleModelAction {
-    if (self.isDownloadingModel) {
+@end
+
+#pragma mark - Model Library
+
+@implementation ICModelLibraryViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Voice to Text", nil) : NSLocalizedString(@"Text zu Kapitel", nil);
+    self.busyModelIDs = [NSMutableSet set];
+    self.downloadTasksByModelID = [NSMutableDictionary dictionary];
+    self.downloadProgressByModelID = [NSMutableDictionary dictionary];
+    if ([self _hasBusyModels]) {
+        [self _startRefreshTimerIfNeeded];
+    }
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if ([self _hasBusyModels]) {
+        [self _startRefreshTimerIfNeeded];
+    }
+    [self.tableView reloadData];
+}
+
+- (void)dealloc {
+    [self.refreshTimer invalidate];
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    return self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Voice to Text", nil) : NSLocalizedString(@"Text zu Kapitel", nil);
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (self.modelRole == ICDownloadableModelRoleVoiceToText) {
+        return NSLocalizedString(@"Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet.", nil);
+    }
+    return NSLocalizedString(@"Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet.", nil);
+}
+
+- (NSArray<ICDownloadableModel *> *)_modelsForSection:(NSInteger)section {
+    return [ICDownloadableModelStore modelsForRole:self.modelRole];
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return [self _modelsForSection:section].count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    ICDownloadableModel *model = [self _modelsForSection:indexPath.section][indexPath.row];
+    BOOL selected = [[[ICDownloadableModelStore selectedModelForRole:model.role] identifier] isEqualToString:model.identifier];
+    BOOL downloaded = [ICDownloadableModelStore isDownloadedModel:model];
+    BOOL busy = [self _isBusyModel:model];
+
+    cell.textLabel.text = model.shortTitle;
+    cell.textLabel.numberOfLines = 0;
+    cell.detailTextLabel.numberOfLines = 0;
+    cell.detailTextLabel.text = [self _detailTextForModel:model downloaded:downloaded busy:busy selected:selected];
+    cell.accessoryType = selected && (downloaded || !model.requiresDownload) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    cell.tintColor = ICTintColor;
+
+    if (busy) {
+        UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        [spinner startAnimating];
+        cell.accessoryView = spinner;
+    } else {
+        cell.accessoryView = nil;
+    }
+
+    if (downloaded || !model.requiresDownload) {
+        cell.imageView.image = [UIImage systemImageNamed:@"checkmark.circle.fill"];
+        cell.imageView.tintColor = [UIColor systemGreenColor];
+    } else {
+        cell.imageView.image = [UIImage systemImageNamed:@"arrow.down.circle"];
+        cell.imageView.tintColor = ICTintColor;
+    }
+
+    return cell;
+}
+
+- (NSString *)_detailTextForModel:(ICDownloadableModel *)model downloaded:(BOOL)downloaded busy:(BOOL)busy selected:(BOOL)selected {
+    if (busy) {
+        return [NSString stringWithFormat:@"%@: %@\n%@", NSLocalizedString(@"Wird geladen", nil), [self _downloadProgressTextForModel:model], model.detail];
+    }
+    if (!model.requiresDownload) {
+        return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Kein Download erforderlich.", nil), model.detail];
+    }
+    if (downloaded) {
+        NSString *size = [NSByteCountFormatter stringFromByteCount:[ICDownloadableModelStore sizeOnDiskForModel:model]
+                                                        countStyle:NSByteCountFormatterCountStyleFile];
+        NSString *prepare = NSLocalizedString(@"Geladen und vorbereitet.", nil);
+        return [NSString stringWithFormat:@"%@ · %@\n%@", size, prepare, model.detail];
+    }
+    if (selected) {
+        return [NSString stringWithFormat:@"%@ · %@ %@\n%@",
+                NSLocalizedString(@"Ausgewählt, noch nicht geladen", nil),
+                NSLocalizedString(@"Download", nil),
+                model.downloadSizeText,
+                model.detail];
+    }
+    return [NSString stringWithFormat:@"%@ %@\n%@", NSLocalizedString(@"Download", nil), model.downloadSizeText, model.detail];
+}
+
+- (NSString *)_downloadProgressTextForModel:(ICDownloadableModel *)model {
+    ICModelDownloadProgress *progress = self.downloadProgressByModelID[model.identifier] ?: [ICDownloadableModelStore downloadProgressForModel:model];
+    if (progress) {
+        return progress.byteText;
+    }
+
+    long long total = model.downloadSizeBytes;
+    long long completed = [ICDownloadableModelStore sizeOnDiskForModel:model];
+    NSString *completedText = [NSByteCountFormatter stringFromByteCount:completed
+                                                             countStyle:NSByteCountFormatterCountStyleFile];
+    if (total <= 0) {
+        return completedText;
+    }
+    NSString *totalText = [NSByteCountFormatter stringFromByteCount:total
+                                                         countStyle:NSByteCountFormatterCountStyleFile];
+    return [NSString stringWithFormat:@"%@ / %@", completedText, totalText];
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    ICDownloadableModel *model = [self _modelsForSection:indexPath.section][indexPath.row];
+    [ICDownloadableModelStore selectModel:model];
+
+    if (model.requiresDownload && ![ICDownloadableModelStore isDownloadedModel:model]) {
+        [self _startDownloadForModel:model];
         return;
     }
 
-    if ([[TranscriptionEngine shared] isModelDownloaded]) {
-        return;
+    [self.tableView reloadData];
+}
+
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    ICDownloadableModel *model = [self _modelsForSection:indexPath.section][indexPath.row];
+    if ([ICDownloadableModelStore isDownloadingModel:model]) {
+        UIContextualAction *cancelAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                                                   title:NSLocalizedString(@"Abbrechen", nil)
+                                                                                 handler:^(UIContextualAction *action, UIView *sourceView, void (^completionHandler)(BOOL)) {
+            [self _cancelDownloadForModel:model];
+            completionHandler(YES);
+        }];
+        return [UISwipeActionsConfiguration configurationWithActions:@[cancelAction]];
     }
 
-    // Download model
-    self.isDownloadingModel = YES;
+    if ([self.busyModelIDs containsObject:model.identifier]) return nil;
+    if (!model.requiresDownload) return nil;
+
+    NSMutableArray<UIContextualAction *> *actions = [NSMutableArray array];
+    BOOL downloaded = [ICDownloadableModelStore isDownloadedModel:model];
+
+    if (downloaded) {
+        UIContextualAction *deleteAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                                                   title:NSLocalizedString(@"Löschen", nil)
+                                                                                 handler:^(UIContextualAction *action, UIView *sourceView, void (^completionHandler)(BOOL)) {
+            [self _deleteModel:model];
+            completionHandler(YES);
+        }];
+        [actions addObject:deleteAction];
+
+        if (model.supportsCompilation) {
+            UIContextualAction *compileAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal
+                                                                                       title:NSLocalizedString(@"Vorbereiten", nil)
+                                                                                     handler:^(UIContextualAction *action, UIView *sourceView, void (^completionHandler)(BOOL)) {
+                [self _prepareModel:model];
+                completionHandler(YES);
+            }];
+            compileAction.backgroundColor = ICTintColor;
+            [actions addObject:compileAction];
+        }
+    } else {
+        UIContextualAction *downloadAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal
+                                                                                    title:NSLocalizedString(@"Laden", nil)
+                                                                                  handler:^(UIContextualAction *action, UIView *sourceView, void (^completionHandler)(BOOL)) {
+            [ICDownloadableModelStore selectModel:model];
+            [self _startDownloadForModel:model];
+            completionHandler(YES);
+        }];
+        downloadAction.backgroundColor = ICTintColor;
+        [actions addObject:downloadAction];
+    }
+
+    return [UISwipeActionsConfiguration configurationWithActions:actions];
+}
+
+- (void)_startDownloadForModel:(ICDownloadableModel *)model {
+    if ([self _isBusyModel:model]) return;
+
+    [self.busyModelIDs addObject:model.identifier];
+    [self.downloadProgressByModelID removeObjectForKey:model.identifier];
+    [self _startRefreshTimerIfNeeded];
     [self.tableView reloadData];
 
-    self.downloadProgressTimer = [NSTimer scheduledTimerWithTimeInterval:2.0 repeats:YES block:^(NSTimer *timer) {
-        [self.tableView reloadData];
-    }];
-
-    WEAK_SELF
-    [[TranscriptionEngine shared] downloadModelWithProgress:^(float progress) {
-    } completion:^(NSError *error) {
-        STRONG_SELF
-        self.isDownloadingModel = NO;
-        [self.downloadProgressTimer invalidate];
-        self.downloadProgressTimer = nil;
+    ICModelDownloadTask *task = [ICDownloadableModelStore downloadModel:model detailProgress:^(ICModelDownloadProgress *progress) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            self.downloadProgressByModelID[model.identifier] = progress;
+            [self.tableView reloadData];
+        });
+    } completion:^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.downloadTasksByModelID removeObjectForKey:model.identifier];
+            [self.downloadProgressByModelID removeObjectForKey:model.identifier];
+            [self.busyModelIDs removeObject:model.identifier];
+            [self _stopRefreshTimerIfIdle];
+            if (error && !([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled)) {
+                [self _showError:error.localizedDescription];
+            }
+            [self.tableView reloadData];
+        });
+    }];
+    self.downloadTasksByModelID[model.identifier] = task;
+}
+
+- (void)_cancelDownloadForModel:(ICDownloadableModel *)model {
+    [ICDownloadableModelStore cancelDownloadForModel:model];
+    [self.tableView reloadData];
+}
+
+- (void)_prepareModel:(ICDownloadableModel *)model {
+    if ([self.busyModelIDs containsObject:model.identifier]) return;
+    [self.busyModelIDs addObject:model.identifier];
+    [self _startRefreshTimerIfNeeded];
+    [self.tableView reloadData];
+
+    [ICDownloadableModelStore prepareModel:model completion:^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.busyModelIDs removeObject:model.identifier];
+            [self _stopRefreshTimerIfIdle];
             if (error) {
                 [self _showError:error.localizedDescription];
             }
@@ -366,20 +432,54 @@ typedef NS_ENUM(NSInteger, TSSection) {
     }];
 }
 
-- (void)_handleDeleteModel {
+- (void)_deleteModel:(ICDownloadableModel *)model {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Modell löschen?", nil)
-                                                                  message:NSLocalizedString(@"Das Sprachmodell wird gelöscht und muss erneut geladen werden.", nil)
+                                                                  message:model.title
                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Löschen", nil) style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
-        [[TranscriptionEngine shared] deleteModel];
-        [self.tableView reloadData];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Löschen", nil) style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [ICDownloadableModelStore deleteModel:model completion:^(NSError *error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (error) {
+                    [self _showError:error.localizedDescription];
+                }
+                [self.tableView reloadData];
+            });
+        }];
     }]];
     [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-- (void)_showError:(NSString*)msg {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Fehler", nil) message:msg preferredStyle:UIAlertControllerStyleAlert];
+- (void)_startRefreshTimerIfNeeded {
+    if (self.refreshTimer) return;
+    self.refreshTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
+        [self.tableView reloadData];
+        [self _stopRefreshTimerIfIdle];
+    }];
+}
+
+- (void)_stopRefreshTimerIfIdle {
+    if ([self _hasBusyModels]) return;
+    [self.refreshTimer invalidate];
+    self.refreshTimer = nil;
+}
+
+- (BOOL)_isBusyModel:(ICDownloadableModel *)model {
+    return [self.busyModelIDs containsObject:model.identifier] || [ICDownloadableModelStore isDownloadingModel:model];
+}
+
+- (BOOL)_hasBusyModels {
+    if (self.busyModelIDs.count > 0) return YES;
+    for (ICDownloadableModel *model in [self _modelsForSection:0]) {
+        if ([ICDownloadableModelStore isDownloadingModel:model]) return YES;
+    }
+    return NO;
+}
+
+- (void)_showError:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Fehler", nil)
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }

@@ -59,7 +59,7 @@ actor WhisperKitBackend {
         hub.appendingPathComponent("models/argmaxinc/whisperkit-coreml", isDirectory: true)
     }
 
-    private nonisolated static func modelFolderURL(modelName: String = WhisperKitBackend.resolvedModelName()) -> URL {
+    nonisolated static func modelFolderURL(modelName: String = WhisperKitBackend.resolvedModelName()) -> URL {
         modelRoot(in: whisperDownloadBase()).appendingPathComponent(modelName, isDirectory: true)
     }
 
@@ -192,18 +192,26 @@ actor WhisperKitBackend {
         return localModelFolder() != nil
     }
 
+    nonisolated func isModelDownloadedSync(modelName: String) -> Bool {
+        return localModelFolder(modelName: modelName) != nil
+    }
+
     nonisolated func modelSizeOnDiskSync() -> Int64 {
-        if let folder = localModelFolder() {
+        return modelSizeOnDiskSync(modelName: WhisperKitBackend.resolvedModelName())
+    }
+
+    nonisolated func modelSizeOnDiskSync(modelName: String) -> Int64 {
+        if let folder = localModelFolder(modelName: modelName) {
             return WhisperKitBackend.directorySize(at: URL(fileURLWithPath: folder))
         }
         // During download the final .mlmodelc may not exist yet, but the settings UI still
         // needs to show byte progress for the partially-populated model directory.
-        return WhisperKitBackend.directorySize(at: WhisperKitBackend.modelFolderURL())
+        return WhisperKitBackend.directorySize(at: WhisperKitBackend.modelFolderURL(modelName: modelName))
     }
 
-    private nonisolated func localModelFolder() -> String? {
+    private nonisolated func localModelFolder(modelName: String = WhisperKitBackend.resolvedModelName()) -> String? {
         WhisperKitBackend.migrateFromDocumentsIfNeeded()
-        let modelDir = WhisperKitBackend.modelFolderURL()
+        let modelDir = WhisperKitBackend.modelFolderURL(modelName: modelName)
         guard let contents = try? FileManager.default.contentsOfDirectory(atPath: modelDir.path),
               contents.contains(where: { $0.hasSuffix(".mlmodelc") }) else {
             return nil
@@ -232,40 +240,55 @@ actor WhisperKitBackend {
     }
 
     private nonisolated static func wrappedModelLoadError(_ error: Error) -> NSError {
+        let underlyingDescription = modelLoadErrorDescription(error)
+        let description: String
+        if underlyingDescription.contains("Unable to mmap file") || underlyingDescription.contains("weight.bin") {
+            description = NSLocalizedString("Core ML konnte die Modellgewichte nicht in den Speicher einblenden. Das deutet auf ein mmap-, Speicher- oder Datei-Leseproblem hin.", comment: "")
+        } else {
+            description = NSLocalizedString("Sprachmodell konnte nicht geladen werden. Bitte Modell löschen und neu herunterladen.", comment: "")
+        }
         return NSError(
             domain: "WhisperKitBackend",
             code: 5,
             userInfo: [
-                NSLocalizedDescriptionKey: NSLocalizedString("Sprachmodell konnte nicht geladen werden. Bitte Modell löschen und neu herunterladen.", comment: ""),
+                NSLocalizedDescriptionKey: description,
                 NSUnderlyingErrorKey: error,
             ]
         )
     }
 
+    private nonisolated static func modelLoadErrorDescription(_ error: Error) -> String {
+        var descriptions = [error.localizedDescription]
+        var underlyingError = (error as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+        while let current = underlyingError {
+            descriptions.append(current.localizedDescription)
+            underlyingError = (current as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+        }
+        return descriptions.joined(separator: "\n")
+    }
+
     private nonisolated static func userVisibleStatus(fromWhisperLog message: String) -> String? {
         if message.contains("Loading feature extractor") {
-            return NSLocalizedString("Core ML lädt/spezialisiert das Mel-Spektrogramm.", comment: "")
+            return NSLocalizedString("Modell wird vorbereitet.", comment: "")
         }
         if message.contains("Loading text decoder prefill data") {
-            return NSLocalizedString("Core ML lädt/spezialisiert den Decoder-Kontext.", comment: "")
+            return NSLocalizedString("Modell wird vorbereitet.", comment: "")
         }
         if message.contains("Loading text decoder") {
-            return NSLocalizedString("Core ML lädt/spezialisiert den Text-Decoder.", comment: "")
+            return NSLocalizedString("Modell wird vorbereitet.", comment: "")
         }
         if message.contains("Loading audio encoder") {
-            return NSLocalizedString("Core ML lädt/spezialisiert den Audio-Encoder.", comment: "")
+            return NSLocalizedString("Modell wird vorbereitet.", comment: "")
         }
         if message.contains("Loading tokenizer") {
-            return NSLocalizedString("Tokenizer wird geladen.", comment: "")
+            return NSLocalizedString("Modell wird vorbereitet.", comment: "")
         }
         if message.contains("Starting pipeline at") {
-            return NSLocalizedString("Whisper startet die Dekodierung.", comment: "")
+            return NSLocalizedString("Transkription läuft.", comment: "")
         }
-        if message.contains("Decoding Seek:") {
-            return NSLocalizedString("Whisper verarbeitet den nächsten Audioblock.", comment: "")
-        }
+        if message.contains("Decoding Seek:") { return nil }
         if message.contains("Found first token at") {
-            return NSLocalizedString("Erstes Transkriptsegment erkannt.", comment: "")
+            return nil
         }
         return nil
     }
@@ -294,7 +317,7 @@ actor WhisperKitBackend {
 
         NSLog("[WhisperKitBackend] Existing WhisperKit instance in state %@, loading models now",
               String(describing: wk.modelState))
-        statusUpdate(NSLocalizedString("Core ML öffnet das Whisper-Modell.", comment: ""))
+        statusUpdate(NSLocalizedString("Modell wird vorbereitet.", comment: ""))
         installStatusLogger(on: wk, statusUpdate: statusUpdate)
         do {
             nonisolated(unsafe) let whisper = wk
@@ -330,7 +353,11 @@ actor WhisperKitBackend {
     // MARK: - Download (includes CoreML compilation via WhisperKit init)
 
     func downloadModel(statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws {
-        let modelName = WhisperKitBackend.resolvedModelName()
+        try await downloadModel(modelName: WhisperKitBackend.resolvedModelName(), statusUpdate: statusUpdate)
+    }
+
+    func downloadModel(modelName: String,
+                       statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         let base = WhisperKitBackend.whisperDownloadBase()
         NSLog("[WhisperKitBackend] Downloading and preparing model: %@ → %@", modelName, base.path)
         ICDiagnosticLogger.shared.logEvent("model", message: "Whisper-Modell-Download gestartet", metadata: [
@@ -394,7 +421,7 @@ actor WhisperKitBackend {
         NSLog("[WhisperKitBackend] Loading model from: %@ (%d files)", folder, contents.count)
         NSLog("[WhisperKitBackend] Device RAM: %llu MB, free disk: %lld MB",
               memBefore / 1024 / 1024, freeDisk / 1024 / 1024)
-        statusUpdate(NSLocalizedString("Core ML öffnet das Whisper-Modell.", comment: ""))
+        statusUpdate(NSLocalizedString("Modell wird vorbereitet.", comment: ""))
         // Print mtime for each .mlmodelc so we can see if it's stable between launches.
         for file in contents where file.hasSuffix(".mlmodelc") {
             let fileURL = folderURL.appendingPathComponent(file)
@@ -443,7 +470,7 @@ actor WhisperKitBackend {
         }
         let elapsed = CFAbsoluteTimeGetCurrent() - startTime
         NSLog("[WhisperKitBackend] Model loaded in %.1fs", elapsed)
-        ICDiagnosticLogger.shared.logEvent("model", message: "Whisper-Modell geladen", metadata: [
+        ICDiagnosticLogger.shared.logEvent("model", message: "WhisperKit-Load beendet", metadata: [
             "modelFolder": folder,
             "elapsedSeconds": String(format: "%.1f", elapsed),
         ] as NSDictionary)
@@ -458,6 +485,27 @@ actor WhisperKitBackend {
         let wk = try await getOrCreateWhisperKit(statusUpdate: statusUpdate)
         // Release the per-instance callback so a stale closure (capturing this episode's
         // detail sink) can't keep firing between prepareModel and the next transcribe.
+        clearStatusLogger(on: wk)
+    }
+
+    func prepareModel(modelName: String,
+                      statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws {
+        let oldModelName = UserDefaults.standard.string(forKey: "TranscriptionWhisperModel")
+        if oldModelName != modelName {
+            whisperKit = nil
+            UserDefaults.standard.set(modelName, forKey: "TranscriptionWhisperModel")
+        }
+        defer {
+            if let oldModelName, oldModelName != modelName {
+                UserDefaults.standard.set(oldModelName, forKey: "TranscriptionWhisperModel")
+                whisperKit = nil
+            }
+        }
+
+        ICDiagnosticLogger.shared.logEvent("model", message: "prepareModel aufgerufen", metadata: [
+            "modelName": modelName,
+        ] as NSDictionary)
+        let wk = try await getOrCreateWhisperKit(statusUpdate: statusUpdate)
         clearStatusLogger(on: wk)
     }
 
@@ -476,7 +524,11 @@ actor WhisperKitBackend {
 
     func deleteModel() {
         whisperKit = nil
-        let modelName = WhisperKitBackend.resolvedModelName()
+        deleteModel(modelName: WhisperKitBackend.resolvedModelName())
+    }
+
+    func deleteModel(modelName: String) {
+        whisperKit = nil
         try? FileManager.default.removeItem(at: WhisperKitBackend.modelFolderURL(modelName: modelName))
         // Also clean up any stale Documents copy (pre-migration).
         try? FileManager.default.removeItem(at: WhisperKitBackend.documentsModelFolderURL(modelName: modelName))
@@ -516,7 +568,7 @@ actor WhisperKitBackend {
         let clipStart = max(0.0, startOffset - 5.0)
         let audioArray: [Float]
         do {
-            statusUpdate(NSLocalizedString("Whisper bereitet die Audiodatei vor.", comment: ""))
+            statusUpdate(NSLocalizedString("Transkription wird vorbereitet.", comment: ""))
             audioArray = try AudioProcessor.loadAudioAsFloatArray(
                 fromPath: audioURL.path,
                 startTime: clipStart,
@@ -536,7 +588,7 @@ actor WhisperKitBackend {
             "loadedDurationSeconds": String(format: "%.1f", loadedDuration),
             "totalDurationSeconds": String(format: "%.1f", totalDuration),
         ] as NSDictionary)
-        statusUpdate(NSLocalizedString("Whisper startet die Dekodierung.", comment: ""))
+        statusUpdate(NSLocalizedString("Transkription läuft.", comment: ""))
 
         // Progress is reported per segment below. WindowId-based progress would be
         // unreliable when audio was trimmed, so we don't use the window callback for UI.

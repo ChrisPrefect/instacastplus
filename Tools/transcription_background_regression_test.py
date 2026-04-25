@@ -81,6 +81,11 @@ require(
     "WhisperKit background still does not submit the iOS 26 continued-processing GPU path transparently.",
 )
 require(
+    "- (BOOL)_shouldUseContinuedGPUBackgroundPath {\n    if (![self _isWhisperKitEngine]) return NO;\n    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];\n}" in controller_source
+    and "- (BOOL)backgroundControlsAvailable {\n    if (![self _isWhisperKitEngine]) return YES;\n    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];\n}" in controller_source,
+    "WhisperKit background UI can still submit BGContinuedProcessingTask when the device reports no GPU background support.",
+)
+require(
     "BGContinuedProcessingTask" in app_delegate_source
     and "progress.completedUnitCount" in app_delegate_source
     and "continued-gpu" in app_delegate_source,
@@ -92,14 +97,17 @@ require(
 )
 require(
     "CGRect bounds = self.contentView.bounds;" in cell_source
-    and "accessoryReservedWidth" in cell_source,
-    "Download/transcription cell layout does not reserve space for the info accessory.",
+    and "CGFloat textLeft = CGRectGetMaxX(imageViewRect) + (showsPlayButton ? 25 : 10);" in cell_source
+    and "CGFloat rightInset = showsPlayButton ? 44 : ((self.accessoryView != nil) ? 49 : 0);" in cell_source
+    and "timeLabel.frame = CGRectMake(CGRectGetMaxX(self.progressView.frame) + 6" in cell_source
+    and "accessoryReservedWidth" not in cell_source,
+    "Download/transcription cell layout still double-reserves accessory space or keeps elapsed time on the status text row.",
 )
 require(
-    "WhisperKit nutzt Core ML/GPU. Im Hintergrund läuft es nur über iOS 26 Background GPU Access" in settings_source
-    and "Hintergrund möglich" in settings_source
-    and "iOS 26 GPU-Hintergrund" in settings_source,
-    "Model settings do not explain the foreground/background tradeoff.",
+    "Modelle werden bei Bedarf heruntergeladen und danach vorbereitet." in settings_source
+    and "Core ML" not in settings_source
+    and "GPU" not in settings_source,
+    "Model settings copy should be short and user-centered without implementation details.",
 )
 require(
     "willBeginEditingRowAtIndexPath" in controller_source

@@ -640,13 +640,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
                                                                  image:[UIImage systemImageNamed:@"captions.bubble"]
                                                          selectedImage:[UIImage systemImageNamed:@"captions.bubble.fill"]];
     transcriptionItem.subtitle = ^NSString*{
-        TranscriptionQueue* queue = [TranscriptionQueue shared];
-        NSInteger pending = 0;
-        for (ICTranscriptionQueueItem* item in queue.items) {
-            if (item.status != ICTranscriptionStatusCompleted && item.status != ICTranscriptionStatusFailed) {
-                pending++;
-            }
-        }
+        NSInteger pending = [TranscriptionQueue shared].activeItemCount;
         if (pending > 0) {
             return [NSString stringWithFormat:@"%ld", (long)pending];
         }
@@ -654,7 +648,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     };
 
     NSMutableArray* section2Items = [NSMutableArray arrayWithObject:downloadsItem];
-    {
+    if ([TranscriptionQueue shared].hasVisibleItems) {
         [section2Items addObject:transcriptionItem];
     }
     [section2Items addObject:[MainSidebarItem itemWithTitle:@"Settings".ls

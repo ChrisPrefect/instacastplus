@@ -8,4 +8,6 @@
 #import <UIKit/UIKit.h>
 
 @interface TranscriptionSettingsViewController : UITableViewController
++ (UIViewController *)modelLibraryViewController;
++ (UIViewController *)modelLibraryViewControllerFocusedOnVoiceToText:(BOOL)voiceToText;
 @end
