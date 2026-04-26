@@ -126,6 +126,7 @@ let ICTranscriptionInternalStatusDetailNotification = Notification.Name("ICTrans
     @objc var statusDetail: String?
     @objc var statusStartedAt: Date?
     @objc var completedAt: Date?
+    @objc var chapterOnly = false
 
     @objc init(episodeHash: String, episodeTitle: String, feedTitle: String,
                audioURL: URL?, language: String?) {
@@ -361,29 +362,150 @@ private struct PersistedQueue: Codable {
         releaseModelIfIdle(reason: "cancelAll")
     }
 
+    @objc func enqueueExistingEpisode(episodeHash: String) -> Bool {
+        guard let episode = findEpisode(hash: episodeHash) else {
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "Episode fuer Transkription nicht gefunden",
+                                               metadata: ["episodeHash": episodeHash] as NSDictionary)
+            return false
+        }
+        return enqueue(episodeHash: episodeHash,
+                       episodeTitle: episode.title ?? episodeHash,
+                       feedTitle: episode.feed?.title ?? "",
+                       audioURL: resolveAudioURL(for: episodeHash),
+                       language: episode.feed?.language)
+    }
+
+    @objc func generateChaptersForExistingEpisode(episodeHash: String) -> Bool {
+        guard let episode = findEpisode(hash: episodeHash) else {
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "Episode fuer Kapitelerstellung nicht gefunden",
+                                               metadata: ["episodeHash": episodeHash] as NSDictionary)
+            return false
+        }
+        guard engine.hasSRT(for: episodeHash) else {
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "SRT fuer Kapitelerstellung fehlt",
+                                               metadata: ["episodeHash": episodeHash] as NSDictionary)
+            return false
+        }
+        guard ICDownloadableModelStore.selectedChapterModelIsReady() else {
+            TranscriptionLogger.shared.append(episodeHash: episodeHash,
+                                              phase: "chapters",
+                                              message: "Kapitelerstellung nicht gestartet",
+                                              detailText: NSLocalizedString("Kapitelmodell ist nicht geladen.", comment: ""))
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "Kapitelmodell fuer Kapitelerstellung nicht bereit",
+                                               metadata: [
+                                                "episodeHash": episodeHash,
+                                                "reason": NSLocalizedString("Kapitelmodell ist nicht geladen.", comment: ""),
+                                               ] as NSDictionary)
+            return false
+        }
+        guard ICDownloadableModelStore.selectedChapterModelCanGenerate() else {
+            let reason = ICDownloadableModelStore.selectedChapterModelUnavailableReason()
+            TranscriptionLogger.shared.append(episodeHash: episodeHash,
+                                              phase: "chapters",
+                                              message: "Kapitelerstellung nicht gestartet",
+                                              detailText: reason)
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "Kapitelmodell fuer Kapitelerstellung nicht verfuegbar",
+                                               metadata: [
+                                                "episodeHash": episodeHash,
+                                                "reason": reason,
+                                               ] as NSDictionary)
+            return false
+        }
+        return generateChapters(episodeHash: episodeHash,
+                                episodeTitle: episode.title ?? episodeHash,
+                                feedTitle: episode.feed?.title ?? "")
+    }
+
+    @objc func debugQueueSnapshot() -> NSArray {
+        let snapshot = items.map { item -> NSDictionary in
+            [
+                "episodeHash": item.episodeHash,
+                "episodeTitle": item.episodeTitle,
+                "feedTitle": item.feedTitle,
+                "status": item.status.rawValue,
+                "statusName": Self.debugStatusName(item.status),
+                "progress": item.progress,
+                "error": item.error ?? "",
+                "statusDetail": item.statusDetail ?? "",
+                "statusStartedAt": item.statusStartedAt.map(Self.debugTimestampString) ?? "",
+                "completedAt": item.completedAt.map(Self.debugTimestampString) ?? "",
+                "chapterOnly": item.chapterOnly,
+            ] as NSDictionary
+        }
+        return snapshot as NSArray
+    }
+
+    @objc func debugInspection(episodeHash: String) -> NSDictionary {
+        let srtURL = ICTranscriptionPaths.srtURL(for: episodeHash)
+        let chaptersURL = ICTranscriptionPaths.chaptersJSONURL(for: episodeHash)
+        let musicURL = ICTranscriptionPaths.musicTimelineURL(for: episodeHash)
+        let checkpointURL = ICTranscriptionPaths.checkpointURL(for: episodeHash)
+        let logURL = TranscriptionEngine.shared.transcriptCacheDirectory()
+            .appendingPathComponent("\(episodeHash)_log.json")
+        let chapterDebugURL = TranscriptionEngine.shared.transcriptCacheDirectory()
+            .appendingPathComponent("\(episodeHash)_chapter_debug.json")
+        let chapters = ChapterGenerator.shared.loadChapters(for: episodeHash) ?? []
+        let logEntries = TranscriptionLogger.shared.entries(episodeHash: episodeHash).map { entry -> NSDictionary in
+            [
+                "timestamp": Self.debugTimestampString(entry.timestamp),
+                "phase": entry.phase,
+                "message": entry.message,
+                "detailText": entry.detailText ?? "",
+            ] as NSDictionary
+        }
+
+        return [
+            "episodeHash": episodeHash,
+            "queue": debugQueueSnapshot(),
+            "artifacts": [
+                "srt": Self.debugFileSnapshot(srtURL),
+                "chapters": Self.debugFileSnapshot(chaptersURL),
+                "music": Self.debugFileSnapshot(musicURL),
+                "checkpoint": Self.debugFileSnapshot(checkpointURL),
+                "episodeLog": Self.debugFileSnapshot(logURL),
+                "chapterDebug": Self.debugFileSnapshot(chapterDebugURL),
+            ],
+            "chapters": chapters.map { chapter -> NSDictionary in
+                [
+                    "start": chapter.start,
+                    "end": chapter.end,
+                    "title": chapter.title,
+                    "isSponsor": chapter.isSponsor,
+                ] as NSDictionary
+            },
+            "log": logEntries,
+        ] as NSDictionary
+    }
+
     /// Generate chapters for an episode that already has a transcript.
-    @objc func generateChapters(episodeHash: String, episodeTitle: String, feedTitle: String) {
+    @objc func generateChapters(episodeHash: String, episodeTitle: String, feedTitle: String) -> Bool {
         guard ICDownloadableModelStore.selectedChapterModelIsReady() else {
             NSLog("[TranscriptionQueue] Cannot generate chapters: chapter model is not downloaded")
-            return
+            return false
         }
 
         guard ICDownloadableModelStore.selectedChapterModelCanGenerate() else {
             NSLog("[TranscriptionQueue] Cannot generate chapters: %@", ICDownloadableModelStore.selectedChapterModelUnavailableReason())
-            return
+            return false
         }
 
-        // Don't add if already in queue (dedup)
-        guard !items.contains(where: { $0.episodeHash == episodeHash }) else {
+        let activeStatuses: Set<ICTranscriptionStatus> = [.queued, .analyzingMusic, .downloadingModel, .transcribing, .generatingChapters]
+        guard !items.contains(where: { $0.episodeHash == episodeHash && activeStatuses.contains($0.status) }) else {
             NSLog("[TranscriptionQueue] Episode %@ already in queue, skipping chapter generation", episodeHash)
-            return
+            return false
         }
+        items.removeAll { $0.episodeHash == episodeHash && ($0.status == .completed || $0.status == .failed) }
 
         // Load transcript cues from SRT
         let srtURL = TranscriptionEngine.shared.srtURL(for: episodeHash)
         guard FileManager.default.fileExists(atPath: srtURL.path) else {
             NSLog("[TranscriptionQueue] No SRT for %@, chapter generation from RSS not yet supported", episodeHash)
-            return
+            return false
         }
 
         // Add to queue with special "chapters only" status
@@ -394,6 +516,7 @@ private struct PersistedQueue: Codable {
             audioURL: nil,
             language: nil
         )
+        item.chapterOnly = true
         beginStep(for: item,
                   status: .generatingChapters,
                   detail: NSLocalizedString("Transkript wird für die Kapitel-Erstellung vorbereitet.", comment: ""))
@@ -467,7 +590,8 @@ private struct PersistedQueue: Codable {
                     progress: { [weak self] progress, chunkIndex, totalChunks in
                         item.progress = progress
                         self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
-                    }
+                    },
+                    debugEpisodeHash: episodeHash
                 )
             } catch {
                 chapterError = error
@@ -516,6 +640,7 @@ private struct PersistedQueue: Codable {
                 self.releaseModelIfIdle(reason: "chapter-task-finished")
             }
         }
+        return true
     }
 
     /// Parse SRT file into transcript cues
@@ -566,6 +691,12 @@ private struct PersistedQueue: Codable {
 
         guard !isProcessing else {
             ICDiagnosticLogger.shared.logEvent("queue", message: "resumeIfNeeded übersprungen (aktiver Lauf lebt noch)", metadata: [
+                "queueCount": items.count,
+            ] as NSDictionary)
+            return
+        }
+        guard chapterTask == nil else {
+            ICDiagnosticLogger.shared.logEvent("queue", message: "resumeIfNeeded übersprungen (Kapitelerstellung läuft)", metadata: [
                 "queueCount": items.count,
             ] as NSDictionary)
             return
@@ -1281,6 +1412,13 @@ private struct PersistedQueue: Codable {
             var chapterGenerationError: Error?
 
             if shouldGenerateChapters {
+                await WhisperKitBackend.shared.releaseModel()
+                ICDiagnosticLogger.shared.logEvent("model",
+                                                   message: "Whisper-Modell vor Kapitelerstellung freigegeben",
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "reason": "before-chapter-generation",
+                                                   ] as NSDictionary)
                 let musicCount = (musicSegments ?? []).filter { $0.type == "music" }.count
                 await MainActor.run {
                     self.beginStep(for: item,
@@ -1304,7 +1442,8 @@ private struct PersistedQueue: Codable {
                         progress: { [weak self] progress, chunkIndex, totalChunks in
                             item.progress = progress
                             self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
-                        }
+                        },
+                        debugEpisodeHash: episodeHash
                     )
                     NSLog("[TranscriptionQueue] Generated %d chapters", chapters?.count ?? 0)
                 } catch {
@@ -1473,6 +1612,36 @@ private struct PersistedQueue: Codable {
         return nil
     }
 
+    private static func debugStatusName(_ status: ICTranscriptionStatus) -> String {
+        switch status {
+        case .none: return "none"
+        case .queued: return "queued"
+        case .downloadingModel: return "downloadingModel"
+        case .analyzingMusic: return "analyzingMusic"
+        case .transcribing: return "transcribing"
+        case .generatingChapters: return "generatingChapters"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        @unknown default: return "unknown"
+        }
+    }
+
+    private static func debugTimestampString(_ date: Date) -> String {
+        ISO8601DateFormatter().string(from: date)
+    }
+
+    private static func debugFileSnapshot(_ url: URL) -> NSDictionary {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+        let modified = attributes?[.modificationDate] as? Date
+        return [
+            "path": url.path,
+            "exists": FileManager.default.fileExists(atPath: url.path),
+            "bytes": size,
+            "modifiedAt": modified.map(debugTimestampString) ?? "",
+        ] as NSDictionary
+    }
+
     private func autoDownloadEpisode(hash: String) -> Bool {
         guard let episode = findEpisode(hash: hash) else { return false }
         guard let cman = CacheManager.shared() else { return false }
@@ -1549,6 +1718,7 @@ private struct PersistedQueue: Codable {
         let persistable = PersistedQueue(
             items: items.compactMap { item -> PersistedQueue.PersistedItem? in
                 if item.status == .failed { return nil }
+                if item.chapterOnly { return nil }
                 if item.status == .completed {
                     guard let completedAt = item.completedAt,
                           now.timeIntervalSince(completedAt) < Self.completedItemRetentionInterval else { return nil }

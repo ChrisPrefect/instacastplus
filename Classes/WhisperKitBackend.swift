@@ -331,7 +331,7 @@ actor WhisperKitBackend {
 
     private nonisolated static func transcriptCue(from segment: TranscriptionSegment,
                                                   clipStart: Double) -> ICTranscriptCue? {
-        let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = cleanedSegmentText(segment.text)
         // Skip empty or hallucinated segments (WhisperKit sometimes produces these during music)
         if text.isEmpty { return nil }
         // Skip segments that are just punctuation or whitespace artifacts
@@ -342,6 +342,16 @@ actor WhisperKitBackend {
             end: Double(segment.end) + clipStart,
             text: text
         )
+    }
+
+    private nonisolated static func cleanedSegmentText(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"<\|[^>]+\|>"#,
+            with: "",
+            options: .regularExpression
+        )
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private nonisolated static func deliveredSegmentKey(for cue: ICTranscriptCue) -> String {

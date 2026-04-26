@@ -10,12 +10,20 @@ import Foundation
 #if canImport(llama)
 @preconcurrency import llama
 
+enum LocalGGUFJSONGrammar {
+    case genericJSON
+    case chapters
+    case markers
+}
+
 private enum LocalGGUFModelError: LocalizedError {
     case modelLoadFailed(String)
     case contextLoadFailed
+    case vocabLoadFailed
     case tokenizeFailed
     case promptTooLong(Int, Int)
     case decodeFailed(Int32)
+    case grammarLoadFailed
     case cancelled
 
     var errorDescription: String? {
@@ -25,6 +33,8 @@ private enum LocalGGUFModelError: LocalizedError {
             return "Kapitelmodell konnte nicht geöffnet werden. Bitte lösche es und lade es erneut."
         case .contextLoadFailed:
             return "Kapitelmodell konnte nicht vorbereitet werden."
+        case .vocabLoadFailed:
+            return "Kapitelmodell konnte das Vokabular nicht vorbereiten."
         case .tokenizeFailed:
             return "Kapitel konnten nicht vorbereitet werden."
         case .promptTooLong(let count, let limit):
@@ -33,6 +43,8 @@ private enum LocalGGUFModelError: LocalizedError {
         case .decodeFailed(let code):
             NSLog("[LocalGGUFModelRunner] Decode failed: %d", code)
             return "Kapitelmodell konnte die Kapitel nicht erstellen."
+        case .grammarLoadFailed:
+            return "Kapitelmodell konnte die JSON-Ausgabe nicht vorbereiten."
         case .cancelled:
             return "Kapitelgenerierung abgebrochen."
         }
@@ -40,6 +52,32 @@ private enum LocalGGUFModelError: LocalizedError {
 }
 
 actor LocalGGUFModelRunner {
+    private final class CancellationState: @unchecked Sendable {
+        let flag: UnsafeMutablePointer<Int32>
+
+        init() {
+            flag = UnsafeMutablePointer<Int32>.allocate(capacity: 1)
+            flag.initialize(to: 0)
+        }
+
+        deinit {
+            flag.deinitialize(count: 1)
+            flag.deallocate()
+        }
+
+        func reset() {
+            flag.pointee = 0
+        }
+
+        func cancel() {
+            flag.pointee = 1
+        }
+
+        var isCancelled: Bool {
+            flag.pointee != 0
+        }
+    }
+
     private final class Handle: @unchecked Sendable {
         let model: OpaquePointer
         let context: OpaquePointer
@@ -47,19 +85,52 @@ actor LocalGGUFModelRunner {
         var sampler: UnsafeMutablePointer<llama_sampler>
         var batch: llama_batch
 
-        init(model: OpaquePointer, context: OpaquePointer, batchCapacity: Int32) {
+        init(model: OpaquePointer, context: OpaquePointer, batchCapacity: Int32, cancellationState: CancellationState) throws {
+            guard let resolvedVocab = llama_model_get_vocab(model) else {
+                throw LocalGGUFModelError.vocabLoadFailed
+            }
             self.model = model
             self.context = context
-            self.vocab = llama_model_get_vocab(model)
+            self.vocab = resolvedVocab
+            llama_set_abort_callback(context, { data in
+                guard let data else { return false }
+                return data.assumingMemoryBound(to: Int32.self).pointee != 0
+            }, cancellationState.flag)
 
-            let samplerParams = llama_sampler_chain_default_params()
-            self.sampler = llama_sampler_chain_init(samplerParams)
-            llama_sampler_chain_add(self.sampler, llama_sampler_init_greedy())
+            self.sampler = try Self.makeSampler(vocab: resolvedVocab,
+                                                grammar: LocalGGUFModelRunner.jsonGrammar)
 
             self.batch = llama_batch_init(batchCapacity, 0, 1)
         }
 
+        func installSampler(grammar: String) throws {
+            let newSampler = try Self.makeSampler(vocab: vocab, grammar: grammar)
+            llama_sampler_free(sampler)
+            sampler = newSampler
+        }
+
+        private static func makeSampler(vocab: OpaquePointer,
+                                        grammar: String) throws -> UnsafeMutablePointer<llama_sampler> {
+            let samplerParams = llama_sampler_chain_default_params()
+            guard let sampler = llama_sampler_chain_init(samplerParams) else {
+                throw LocalGGUFModelError.grammarLoadFailed
+            }
+            let grammarSampler = grammar.withCString { grammarPointer in
+                "root".withCString { rootPointer in
+                    llama_sampler_init_grammar(vocab, grammarPointer, rootPointer)
+                }
+            }
+            guard let grammarSampler else {
+                llama_sampler_free(sampler)
+                throw LocalGGUFModelError.grammarLoadFailed
+            }
+            llama_sampler_chain_add(sampler, grammarSampler)
+            llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+            return sampler
+        }
+
         deinit {
+            llama_set_abort_callback(context, nil, nil)
             llama_sampler_free(sampler)
             llama_batch_free(batch)
             llama_model_free(model)
@@ -69,16 +140,18 @@ actor LocalGGUFModelRunner {
     }
 
     private let handle: Handle
+    private let cancellationState: CancellationState
     private let contextTokens: Int
     private let batchCapacity: Int32 = 512
     private var pendingUTF8: [CChar] = []
     private var shouldCancel = false
 
-    private init(model: OpaquePointer,
-                 context: OpaquePointer,
+    private init(handle: Handle,
+                 cancellationState: CancellationState,
                  contextTokens: Int) {
         self.contextTokens = contextTokens
-        self.handle = Handle(model: model, context: context, batchCapacity: batchCapacity)
+        self.cancellationState = cancellationState
+        self.handle = handle
     }
 
     static func create(modelURL: URL, contextTokens: Int32 = LocalGGUFModelRunner.recommendedContextTokens()) throws -> LocalGGUFModelRunner {
@@ -110,12 +183,64 @@ actor LocalGGUFModelRunner {
             throw LocalGGUFModelError.contextLoadFailed
         }
 
-        return LocalGGUFModelRunner(model: model, context: context, contextTokens: Int(contextTokens))
+        let cancellationState = CancellationState()
+        let handle: Handle
+        do {
+            handle = try Handle(model: model,
+                                context: context,
+                                batchCapacity: 512,
+                                cancellationState: cancellationState)
+        } catch {
+            llama_model_free(model)
+            llama_free(context)
+            llama_backend_free()
+            throw error
+        }
+        return LocalGGUFModelRunner(handle: handle,
+                                   cancellationState: cancellationState,
+                                   contextTokens: Int(contextTokens))
     }
 
     static func recommendedContextTokens() -> Int32 {
-        let memory = ProcessInfo.processInfo.physicalMemory
-        return memory >= 7_500_000_000 ? 65_536 : 32_768
+        8_192
+    }
+
+    private static let jsonGrammar = #"""
+    root ::= object
+    value ::= object | array | string | number | ("true" | "false" | "null") ws
+    object ::= "{" ws (string ":" ws value ("," ws string ":" ws value)*)? "}" ws
+    array ::= "[" ws (value ("," ws value)*)? "]" ws
+    string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
+    number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+    ws ::= [ \t\n\r]*
+    """#
+
+    private static let chapterJSONGrammar = #"""
+    root ::= "{" ws "\"chapters\"" ws ":" ws "[" ws (chapter ("," ws chapter)*)? "]" ws "}" ws
+    chapter ::= "{" ws "\"startSeconds\"" ws ":" ws integer "," ws "\"endSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws string "," ws "\"isSponsor\"" ws ":" ws boolean ws "}" ws
+    string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
+    integer ::= ("-"? ([0-9] | [1-9] [0-9]*)) ws
+    boolean ::= ("true" | "false") ws
+    ws ::= [ \t\n\r]*
+    """#
+
+    private static let markerJSONGrammar = #"""
+    root ::= "{" ws "\"markers\"" ws ":" ws "[" ws (marker ("," ws marker)*)? "]" ws "}" ws
+    marker ::= "{" ws "\"timeSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws string ws "}" ws
+    string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
+    integer ::= ("-"? ([0-9] | [1-9] [0-9]*)) ws
+    ws ::= [ \t\n\r]*
+    """#
+
+    private static func grammarString(for grammar: LocalGGUFJSONGrammar) -> String {
+        switch grammar {
+        case .genericJSON:
+            return jsonGrammar
+        case .chapters:
+            return chapterJSONGrammar
+        case .markers:
+            return markerJSONGrammar
+        }
     }
 
     var maxInputTokens: Int {
@@ -124,6 +249,11 @@ actor LocalGGUFModelRunner {
 
     func cancel() {
         shouldCancel = true
+        cancellationState.cancel()
+    }
+
+    nonisolated func requestCancel() {
+        cancellationState.cancel()
     }
 
     func tokenCount(system: String, user: String) throws -> Int {
@@ -133,10 +263,14 @@ actor LocalGGUFModelRunner {
     func generate(system: String,
                   user: String,
                   maxNewTokens: Int,
-                  stopSequences: [String] = ["</s>", "<end_of_turn>", "<|end_of_text|>"]) async throws -> String {
+                  grammar: LocalGGUFJSONGrammar = .genericJSON,
+                  stopSequences: [String] = ["</s>", "<end_of_turn>", "<|end_of_text|>"],
+                  stopAfterFirstJSONObject: Bool = false) async throws -> String {
         shouldCancel = false
+        cancellationState.reset()
         pendingUTF8.removeAll()
         llama_memory_clear(llama_get_memory(handle.context), true)
+        try handle.installSampler(grammar: Self.grammarString(for: grammar))
         llama_sampler_reset(handle.sampler)
 
         let prompt = formattedChatPrompt(system: system, user: user)
@@ -169,12 +303,15 @@ actor LocalGGUFModelRunner {
             try checkCancellation()
 
             let nextToken = llama_sampler_sample(handle.sampler, handle.context, handle.batch.n_tokens - 1)
-            llama_sampler_accept(handle.sampler, nextToken)
             if llama_vocab_is_eog(handle.vocab, nextToken) {
                 break
             }
 
             output += piece(for: nextToken)
+            if stopAfterFirstJSONObject, let json = Self.firstJSONObject(in: output) {
+                output = json
+                break
+            }
             if let stop = stopSequences.first(where: { output.contains($0) }) {
                 output = output.components(separatedBy: stop).first ?? output
                 break
@@ -294,6 +431,9 @@ actor LocalGGUFModelRunner {
 
     private func decodeCurrentBatch() throws {
         let result = llama_decode(handle.context, handle.batch)
+        if result == 2 {
+            throw LocalGGUFModelError.cancelled
+        }
         guard result == 0 else {
             throw LocalGGUFModelError.decodeFailed(result)
         }
@@ -320,6 +460,43 @@ actor LocalGGUFModelRunner {
         }
         return ""
     }
+
+    private static func firstJSONObject(in text: String) -> String? {
+        var objectStart: String.Index?
+        var depth = 0
+        var inString = false
+        var isEscaped = false
+
+        for index in text.indices {
+            let character = text[index]
+            if inString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                continue
+            }
+
+            if character == "\"" {
+                inString = true
+            } else if character == "{" {
+                if depth == 0 {
+                    objectStart = index
+                }
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0, let start = objectStart {
+                    return String(text[start...index])
+                }
+            }
+        }
+
+        return nil
+    }
 }
 
 #else
@@ -333,8 +510,9 @@ actor LocalGGUFModelRunner {
     static func recommendedContextTokens() -> Int32 { 0 }
     var maxInputTokens: Int { 0 }
     func cancel() {}
+    nonisolated func requestCancel() {}
     func tokenCount(system: String, user: String) throws -> Int { 0 }
-    func generate(system: String, user: String, maxNewTokens: Int, stopSequences: [String] = []) async throws -> String { "" }
+    func generate(system: String, user: String, maxNewTokens: Int, stopSequences: [String] = [], stopAfterFirstJSONObject: Bool = false) async throws -> String { "" }
 }
 
 #endif

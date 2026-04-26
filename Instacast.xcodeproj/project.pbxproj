@@ -302,6 +302,7 @@
 		C0691268298A0CCA194483D5 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0928A49F1B9CA94B7FA4B7B8 /* WhisperKit */; };
 		C300DED378385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
 		C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */; };
+		D04E8A14E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04E8A15E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift */; };
 		C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */; };
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
@@ -847,6 +848,7 @@
 		55B48241CC8542159B525C5D /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = SOURCE_ROOT; };
 		5645886712DE345E4E7D3055 /* Instacast-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "Instacast-Bridging-Header.h"; sourceTree = "<group>"; };
 		62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChapterGenerator.swift; sourceTree = "<group>"; };
+		D04E8A15E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ICTranscriptionDebugAutomation.swift; sourceTree = "<group>"; };
 		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
 		6D294C45DC205F05467440EC /* SharedConstants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
 		6FA31224D071849FE16A7472 /* StatsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StatsWidget.swift; sourceTree = "<group>"; };
@@ -1084,6 +1086,7 @@
 				B874ED55A5A0F6ED98DD872E /* TranscriptionEngine.swift */,
 				309F5FF890FC8186D9DA11BD /* AudioAnalyzer.swift */,
 				62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */,
+				D04E8A15E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift */,
 				8091F01C47CD4B72B3981202 /* LocalGGUFModelRunner.swift */,
 				534123C112215367E937C1E7 /* TranscriptionQueue.swift */,
 				FE0ABE1118AA6011E195F7E3 /* TranscriptionSettingsViewController.h */,
@@ -2515,6 +2518,7 @@
 				165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */,
 				3F95B365F085435221B62942 /* AudioAnalyzer.swift in Sources */,
 				C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */,
+				D04E8A14E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift in Sources */,
 				EA0EAB67BB9A49BDB816D31E /* LocalGGUFModelRunner.swift in Sources */,
 				FB242F4261A8102DA6E1EF81 /* TranscriptionQueue.swift in Sources */,
 				8AE904639392BCD06F5EAFD2 /* TranscriptionSettingsViewController.m in Sources */,

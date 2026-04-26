@@ -72,6 +72,13 @@ require(
 )
 
 require(
+    "cleanedSegmentText" in backend_source
+    and "<\\|[^>]+\\|>" in backend_source
+    and "let text = cleanedSegmentText(segment.text)" in backend_source,
+    "Live Whisper checkpoints still persist raw Whisper control/timestamp tokens before final post-processing.",
+)
+
+require(
     "Musik-Timeline wird aus Cache geladen" not in queue_source
     and "Musik-Timeline aus Cache geladen" not in queue_source
     and "Audioanalyse gestartet (SoundAnalysis)" in queue_source,

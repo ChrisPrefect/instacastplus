@@ -220,11 +220,31 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
+    NSMutableArray* URLDescriptions = [NSMutableArray arrayWithCapacity:URLContexts.count];
+    for (UIOpenURLContext *context in URLContexts) {
+        NSURL* url = context.URL;
+        [URLDescriptions addObject:@{
+            @"scheme": url.scheme ?: @"",
+            @"host": url.host ?: @"",
+            @"path": url.path ?: @"",
+            @"absoluteString": url.absoluteString ?: @""
+        }];
+    }
+    [[ICDiagnosticLogger shared] recordLifecycle:@"sceneOpenURLContexts"
+                                        metadata:@{
+                                            @"role": scene.session.role ?: @"",
+                                            @"urlContextCount": @(URLContexts.count),
+                                            @"urls": URLDescriptions,
+                                        }];
+
     for (UIOpenURLContext *context in URLContexts) {
         NSURL *url = context.URL;
         NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
         
-        if ([[url scheme] isEqualToString:@"instacastplus"]) {
+        if ([ICTranscriptionDebugAutomation handle:url]) {
+            continue;
+        }
+        else if ([[url scheme] isEqualToString:@"instacastplus"]) {
             [self _handleWidgetDeepLink:url];
         }
         else if ([[url scheme] isEqualToString:@"instacast"] && [[url host] isEqualToString:@"share-episode"]) {

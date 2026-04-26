@@ -432,6 +432,9 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     // and WidgetKitHelper skips internally — iOS widgets don't work there.
     [[WidgetDataExporter sharedExporter] startObserving];
     [WidgetKitHelper startListeningForWidgetActions];
+
+    [ICTranscriptionDebugAutomation startCommandProcessing];
+    [ICTranscriptionDebugAutomation handleLaunchArguments];
 }
 
 
@@ -440,9 +443,20 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 
 - (BOOL)application:(UIApplication *)app openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey,id> *)options
 {
+    [[ICDiagnosticLogger shared] recordLifecycle:@"applicationOpenURL"
+                                        metadata:@{
+                                            @"scheme": url.scheme ?: @"",
+                                            @"host": url.host ?: @"",
+                                            @"path": url.path ?: @"",
+                                            @"absoluteString": url.absoluteString ?: @"",
+                                        }];
+
     NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
     
-    if ([subscribeSchemes containsObject:[url scheme]]) {
+    if ([ICTranscriptionDebugAutomation handle:url]) {
+        return YES;
+    }
+    else if ([subscribeSchemes containsObject:[url scheme]]) {
         [self _handlePcastURL:url];
     }
     else if ([url isFileURL] && [[[url path] pathExtension] compare:@"opml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
@@ -898,9 +912,14 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 
 - (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
     (void)application;
-    (void)options;
 
     UISceneSessionRole role = connectingSceneSession.role;
+    [[ICDiagnosticLogger shared] recordLifecycle:@"configurationForConnectingSceneSession"
+                                        metadata:@{
+                                            @"role": role ?: @"",
+                                            @"urlContextCount": @(options.URLContexts.count),
+                                            @"userActivityCount": @(options.userActivities.count),
+                                        }];
 
     if ([role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication]) {
         UISceneConfiguration* configuration = [UISceneConfiguration configurationWithName:@"CarPlay" sessionRole:role];
