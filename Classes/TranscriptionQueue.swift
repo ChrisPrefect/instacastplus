@@ -186,11 +186,32 @@ private struct PersistedQueue: Codable {
     private var chapterGen: ChapterGenerator { ChapterGenerator.shared }
 
     private var currentTask: Task<Void, Never>?
+    private var currentProcessingRunID: UUID?
     private var chapterTask: Task<Void, Never>?  // Tracked separately so cancelAll/dequeue can stop it
     private var pendingDownloadHashes: Set<String> = [] // Tracks episodes being auto-downloaded
     private var backgroundContinuationTask: UIBackgroundTaskIdentifier = .invalid
     private var backgroundPausedEpisodeHashes: Set<String> = []
     private var completedPruneScheduled = false
+
+    private func beginProcessingRun() -> UUID {
+        let runID = UUID()
+        currentProcessingRunID = runID
+        return runID
+    }
+
+    private func processingRunIsCurrent(_ runID: UUID) -> Bool {
+        currentProcessingRunID == runID
+    }
+
+    private func clearProcessingRun(_ runID: UUID) {
+        if currentProcessingRunID == runID {
+            currentProcessingRunID = nil
+        }
+    }
+
+    private func invalidateProcessingRun() {
+        currentProcessingRunID = nil
+    }
 
     // Crash-loop protection: set before model loading, cleared on success/normal failure.
     // If still set on next launch → app was killed during model loading → don't auto-resume.
@@ -309,6 +330,7 @@ private struct PersistedQueue: Codable {
             shouldCleanupBrokenArtifacts = item.status == .failed || (item.status == .queued && item.error != nil)
             cleanupAsChapterArtifacts = item.chapterOnly || engine.hasSRT(for: item.episodeHash)
             if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel {
+                invalidateProcessingRun()
                 currentTask?.cancel()
                 currentTask = nil
                 engine.cancelTranscription()
@@ -319,6 +341,7 @@ private struct PersistedQueue: Codable {
                 // Chapter generation can run inside currentTask (auto after transcription)
                 // OR in chapterTask (standalone via generateChapters API). Cancel both
                 // because we can't tell from here which one owns the active step.
+                invalidateProcessingRun()
                 currentTask?.cancel()
                 currentTask = nil
                 chapterTask?.cancel()
@@ -353,6 +376,7 @@ private struct PersistedQueue: Codable {
 
     /// Remove all items from the queue and cancel current transcription.
     @objc func cancelAll() {
+        invalidateProcessingRun()
         currentTask?.cancel()
         currentTask = nil
         chapterTask?.cancel()
@@ -1101,6 +1125,7 @@ private struct PersistedQueue: Codable {
         item.statusDetail = nil
         item.statusStartedAt = nil
         item.error = NSLocalizedString("Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", comment: "")
+        invalidateProcessingRun()
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
@@ -1124,6 +1149,7 @@ private struct PersistedQueue: Codable {
 
     private func processNext() {
         guard !isProcessing else { return }
+        guard currentProcessingRunID == nil else { return }
         guard chapterTask == nil else { return }
         guard !shouldPauseWhisperKitForBackground else { return }
 
@@ -1221,6 +1247,7 @@ private struct PersistedQueue: Codable {
 
         guard let item = item, let audioURL = resolvedAudioURL else { return }
 
+        backgroundPausedEpisodeHashes.remove(item.episodeHash)
         isProcessing = true
         refreshBackgroundContinuation(reason: "pipeline-started")
         let episodeHash = item.episodeHash
@@ -1238,6 +1265,7 @@ private struct PersistedQueue: Codable {
         // must explicitly tap to retry.
         UserDefaults.standard.set(true, forKey: TranscriptionQueue.crashGuardKey)
 
+        let runID = beginProcessingRun()
         currentTask = Task { [weak self] in
             guard let self = self else { return }
             ICDiagnosticLogger.shared.logEvent("queue", message: "Pipeline gestartet", metadata: [
@@ -1265,6 +1293,8 @@ private struct PersistedQueue: Codable {
             } catch {
                 if error is CancellationError || Task.isCancelled {
                     await MainActor.run {
+                        guard self.processingRunIsCurrent(runID) else { return }
+                        self.clearProcessingRun(runID)
                         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                         self.isProcessing = false
                         self.refreshBackgroundContinuation(reason: "pipeline-cancelled-during-audio-analysis")
@@ -1280,6 +1310,7 @@ private struct PersistedQueue: Codable {
                 musicSegments = nil
             }
             await MainActor.run {
+                guard self.processingRunIsCurrent(runID) else { return }
                 let elapsed = -musicStart.timeIntervalSinceNow
                 let musicCount = (musicSegments ?? []).filter { $0.type == "music" }.count
                 TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "music",
@@ -1289,6 +1320,8 @@ private struct PersistedQueue: Codable {
 
             guard !Task.isCancelled else {
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
+                    self.clearProcessingRun(runID)
                     UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                     self.isProcessing = false
                     self.refreshBackgroundContinuation(reason: "pipeline-cancelled-after-audio-analysis")
@@ -1298,6 +1331,7 @@ private struct PersistedQueue: Codable {
             }
 
             let pausedBeforeModelLoad = await MainActor.run { () -> Bool in
+                guard self.processingRunIsCurrent(runID) else { return true }
                 guard self.shouldPauseWhisperKitForBackground else { return false }
                 self.finishBackgroundPause(for: item, reason: "pipeline-background-before-model-load")
                 return true
@@ -1311,6 +1345,7 @@ private struct PersistedQueue: Codable {
             // Task.detached ensures it runs off MainActor at lower priority.
             if self.engine.engineType == .whisperKit {
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     self.beginStep(for: item,
                                    status: .downloadingModel,
                                    detail: NSLocalizedString("Modell wird vorbereitet.", comment: ""))
@@ -1330,6 +1365,7 @@ private struct PersistedQueue: Codable {
                     }.value
                 } catch {
                     await MainActor.run {
+                        guard self.processingRunIsCurrent(runID) else { return }
                         if TranscriptionEngine.isBackgroundGPUExecutionError(error) {
                             self.finishBackgroundPause(for: item, reason: "model-load-background-gpu-error", error: error)
                             return
@@ -1342,6 +1378,7 @@ private struct PersistedQueue: Codable {
                         item.statusStartedAt = nil
                         item.error = errMsg
                         // Normal error path — the pipeline terminates cleanly so clear the guard.
+                        self.clearProcessingRun(runID)
                         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                         self.isProcessing = false
                         self.refreshBackgroundContinuation(reason: "pipeline-model-load-failed")
@@ -1351,6 +1388,7 @@ private struct PersistedQueue: Codable {
                     return
                 }
 
+                guard await MainActor.run(body: { self.processingRunIsCurrent(runID) }) else { return }
                 await MainActor.run {
                     let elapsed = -modelStart.timeIntervalSinceNow
                     TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "model",
@@ -1360,6 +1398,8 @@ private struct PersistedQueue: Codable {
 
                 guard !Task.isCancelled else {
                     await MainActor.run {
+                        guard self.processingRunIsCurrent(runID) else { return }
+                        self.clearProcessingRun(runID)
                         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                         self.isProcessing = false
                         self.refreshBackgroundContinuation(reason: "pipeline-cancelled-during-model-load")
@@ -1373,6 +1413,7 @@ private struct PersistedQueue: Codable {
             }
 
             let pausedBeforeTranscription = await MainActor.run { () -> Bool in
+                guard self.processingRunIsCurrent(runID) else { return true }
                 guard self.shouldPauseWhisperKitForBackground else { return false }
                 self.finishBackgroundPause(for: item, reason: "pipeline-background-before-transcription")
                 return true
@@ -1383,6 +1424,7 @@ private struct PersistedQueue: Codable {
 
             // Step 3: Transcription — model is already in memory, this starts immediately
             await MainActor.run {
+                guard self.processingRunIsCurrent(runID) else { return }
                 self.beginStep(for: item,
                                status: .transcribing,
                                detail: NSLocalizedString("Warte auf das erste erkannte Transkriptsegment.", comment: ""))
@@ -1401,6 +1443,7 @@ private struct PersistedQueue: Codable {
                     progress: { [weak self] progress, status in
                         NSLog("[TranscriptionQueue] Progress received: %.1f%% status=%ld", progress * 100, status.rawValue)
                         DispatchQueue.main.async {
+                            guard self?.processingRunIsCurrent(runID) == true else { return }
                             item.progress = progress
                             item.status = status
                             self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: status)
@@ -1415,13 +1458,21 @@ private struct PersistedQueue: Codable {
                 )
             }
 
+            guard await MainActor.run(body: { self.processingRunIsCurrent(runID) }) else {
+                await MainActor.run {
+                    _ = self.backgroundPausedEpisodeHashes.remove(episodeHash)
+                }
+                return
+            }
             if let error = transcriptionOutcome.error {
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     if TranscriptionEngine.isBackgroundGPUExecutionError(error) {
                         self.finishBackgroundPause(for: item, reason: "transcription-background-gpu-error", error: error)
                         return
                     }
                     if self.backgroundPausedEpisodeHashes.remove(episodeHash) != nil {
+                        self.clearProcessingRun(runID)
                         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                         self.isProcessing = false
                         self.currentTask = nil
@@ -1437,6 +1488,7 @@ private struct PersistedQueue: Codable {
                     item.statusDetail = nil
                     item.statusStartedAt = nil
                     item.error = errMsg
+                    self.clearProcessingRun(runID)
                     UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                     self.isProcessing = false
                     self.currentTask = nil
@@ -1449,7 +1501,9 @@ private struct PersistedQueue: Codable {
 
             guard let transcriptCues = transcriptionOutcome.cues, !Task.isCancelled else {
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     if self.backgroundPausedEpisodeHashes.remove(episodeHash) != nil {
+                        self.clearProcessingRun(runID)
                         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                         self.isProcessing = false
                         self.currentTask = nil
@@ -1464,6 +1518,7 @@ private struct PersistedQueue: Codable {
                         item.error = NSLocalizedString("Transkription fehlgeschlagen.", comment: "")
                     }
                     // Normal error/cancel path — pipeline terminated cleanly.
+                    self.clearProcessingRun(runID)
                     UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                     self.isProcessing = false
                     self.refreshBackgroundContinuation(reason: "pipeline-transcription-failed")
@@ -1474,6 +1529,7 @@ private struct PersistedQueue: Codable {
             }
 
             await MainActor.run {
+                guard self.processingRunIsCurrent(runID) else { return }
                 let elapsed = -transcribeStart.timeIntervalSinceNow
                 let charCount = transcriptCues.reduce(0) { $0 + $1.text.count }
                 TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "transcribe",
@@ -1491,6 +1547,7 @@ private struct PersistedQueue: Codable {
                 shouldGenerateChapters = false
                 NSLog("[TranscriptionQueue] Chapter model is not downloaded")
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "chapters",
                                                       message: "Kapitelerstellung übersprungen",
                                                       detailText: NSLocalizedString("Kapitelmodell ist nicht geladen.", comment: ""))
@@ -1503,6 +1560,7 @@ private struct PersistedQueue: Codable {
                     if hasExistingChapters {
                         NSLog("[TranscriptionQueue] Episode has %d existing chapters, skipping generation", episode.chapters?.count ?? 0)
                         await MainActor.run {
+                            guard self.processingRunIsCurrent(runID) else { return }
                             TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "chapters",
                                                               message: "Kapitelerstellung übersprungen",
                                                               detailText: NSLocalizedString("Folge hat bereits Kapitel.", comment: ""))
@@ -1515,6 +1573,7 @@ private struct PersistedQueue: Codable {
                 shouldGenerateChapters = false
                 NSLog("[TranscriptionQueue] ChapterGenerator not available: %@", ICDownloadableModelStore.selectedChapterModelUnavailableReason())
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "chapters",
                                                       message: "Kapitelerstellung übersprungen",
                                                       detailText: ICDownloadableModelStore.selectedChapterModelUnavailableReason())
@@ -1533,6 +1592,7 @@ private struct PersistedQueue: Codable {
                                                    ] as NSDictionary)
                 let musicCount = (musicSegments ?? []).filter { $0.type == "music" }.count
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     self.beginStep(for: item,
                                    status: .generatingChapters,
                                    detail: NSLocalizedString("Transkript wird für die Kapitel-Erstellung vorbereitet.", comment: ""))
@@ -1552,6 +1612,7 @@ private struct PersistedQueue: Codable {
                         musicSegments: musicSegments,
                         status: detailUpdater,
                         progress: { [weak self] progress, chunkIndex, totalChunks in
+                            guard self?.processingRunIsCurrent(runID) == true else { return }
                             item.progress = progress
                             self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
                         },
@@ -1562,6 +1623,8 @@ private struct PersistedQueue: Codable {
                     chapters = nil
                     if error is CancellationError || Task.isCancelled {
                         await MainActor.run {
+                            guard self.processingRunIsCurrent(runID) else { return }
+                            self.clearProcessingRun(runID)
                             UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                             self.isProcessing = false
                             self.refreshBackgroundContinuation(reason: "pipeline-cancelled-during-chapter-generation")
@@ -1576,6 +1639,7 @@ private struct PersistedQueue: Codable {
                     chapterGenerationError = error
                     NSLog("[TranscriptionQueue] Chapter generation error: %@", error.localizedDescription)
                     await MainActor.run {
+                        guard self.processingRunIsCurrent(runID) else { return }
                         TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "error",
                                                           message: "Kapitelerstellung fehlgeschlagen",
                                                           detailText: TranscriptionQueue.detailedErrorMessage(for: error))
@@ -1584,6 +1648,8 @@ private struct PersistedQueue: Codable {
 
                 guard !Task.isCancelled else {
                     await MainActor.run {
+                        guard self.processingRunIsCurrent(runID) else { return }
+                        self.clearProcessingRun(runID)
                         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                         self.isProcessing = false
                         self.refreshBackgroundContinuation(reason: "pipeline-cancelled-after-chapter-generation")
@@ -1602,6 +1668,7 @@ private struct PersistedQueue: Codable {
                     } catch {
                         chapterGenerationError = error
                         await MainActor.run {
+                            guard self.processingRunIsCurrent(runID) else { return }
                             TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "error",
                                                               message: "Kapitel konnten nicht gespeichert werden",
                                                               detailText: TranscriptionQueue.detailedErrorMessage(for: error))
@@ -1609,6 +1676,7 @@ private struct PersistedQueue: Codable {
                     }
                 }
                 await MainActor.run {
+                    guard self.processingRunIsCurrent(runID) else { return }
                     let elapsed = -chapterStart.timeIntervalSinceNow
                     let count = savedChapters.count
                     let sponsors = savedChapters.filter { $0.isSponsor }.count
@@ -1629,7 +1697,9 @@ private struct PersistedQueue: Codable {
 
             // Done!
             await MainActor.run {
+                guard self.processingRunIsCurrent(runID) else { return }
                 // Success — pipeline completed cleanly, drop the crash guard.
+                self.clearProcessingRun(runID)
                 UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                 if let chapterGenerationError {
                     let headline = NSLocalizedString("Transkription abgeschlossen, Kapitel fehlgeschlagen.", comment: "")
@@ -1803,6 +1873,7 @@ private struct PersistedQueue: Codable {
     @objc func handleEpisodeDeleted(episodeHash: String) {
         if let item = items.first(where: { $0.episodeHash == episodeHash }) {
             if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel {
+                invalidateProcessingRun()
                 currentTask?.cancel()
                 currentTask = nil
                 engine.cancelTranscription()

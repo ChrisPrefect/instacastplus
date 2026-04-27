@@ -976,8 +976,18 @@ private struct ChaptersFile: Codable {
     }
 
     private static func deterministicMarkerTitle(from text: String) -> String {
-        let leadingMusicCuePrefixPattern = #"(?i)^(musik|music|musica|música|musique)\s+"#
-        let cleaned = text.replacingOccurrences(
+        let cleaned = transcriptCueTextForTitle(text)
+        guard !cleaned.isEmpty else { return "" }
+
+        let prefix = isSponsorCueText(cleaned) ? "Sponsor: " : ""
+        let words = cleaned.split(separator: " ")
+        let snippet = words.prefix(16).joined(separator: " ")
+        return String((prefix + snippet).prefix(140))
+    }
+
+    private static func transcriptCueTextForTitle(_ text: String) -> String {
+        let leadingMusicCuePrefixPattern = #"(?i)^(musik|music|musica|música|musique)\b[\s,;:.-]*"#
+        return text.replacingOccurrences(
             of: #"<\|[^>]+\|>"#,
             with: "",
             options: .regularExpression
@@ -986,12 +996,6 @@ private struct ChaptersFile: Codable {
         // Spektrum produced mixed cues like "Musik Ja, ..."; keep the speech and remove only the leading marker word.
         .replacingOccurrences(of: leadingMusicCuePrefixPattern, with: "", options: .regularExpression)
         .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return "" }
-
-        let prefix = isSponsorCueText(cleaned) ? "Sponsor: " : ""
-        let words = cleaned.split(separator: " ")
-        let snippet = words.prefix(16).joined(separator: " ")
-        return String((prefix + snippet).prefix(140))
     }
 
     private static func isSponsorCueText(_ text: String) -> Bool {
@@ -2365,13 +2369,7 @@ private struct ChaptersFile: Codable {
     }
 
     private static func conciseContentTitle(from text: String, preserveTeaserPrefix: Bool) -> String? {
-        let cleaned = text.replacingOccurrences(
-            of: #"<\|[^>]+\|>"#,
-            with: "",
-            options: .regularExpression
-        )
-        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-        .trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = transcriptCueTextForTitle(text)
         guard !cleaned.isEmpty else { return nil }
 
         let normalized = cleaned
@@ -2420,6 +2418,9 @@ private struct ChaptersFile: Codable {
             .filter { !$0.isEmpty }
         let source = fragments
             .max { contentKeywordScore($0) < contentKeywordScore($1) } ?? text
+        if let phrase = keywordPhraseTitle(from: source) {
+            return phrase
+        }
         let words = source
             .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
             .split(separator: " ")
@@ -2441,7 +2442,48 @@ private struct ChaptersFile: Codable {
             }
         }
         guard !unique.isEmpty else { return nil }
-        return unique.prefix(3).joined(separator: " und ")
+        return unique.prefix(2).joined(separator: " und ")
+    }
+
+    private static func keywordPhraseTitle(from text: String) -> String? {
+        let words = text
+            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
+            .split(separator: " ")
+            .map(String.init)
+        var runs: [[String]] = []
+        var current: [String] = []
+        for word in words {
+            let normalized = word
+                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .lowercased()
+            if word.count >= 4 && !contentTitleStopwords.contains(normalized) {
+                current.append(word)
+            } else if !current.isEmpty {
+                runs.append(current)
+                current = []
+            }
+        }
+        if !current.isEmpty {
+            runs.append(current)
+        }
+
+        guard let bestRun = runs.max(by: { contentPhraseScore($0) < contentPhraseScore($1) }) else {
+            return nil
+        }
+        guard bestRun.count >= 2 else { return nil }
+        var titleWords = Array(bestRun.prefix(4))
+        if titleWords.count > 2,
+           let last = titleWords.last,
+           let previous = titleWords.dropLast().last,
+           last.first?.isLowercase == true,
+           previous.first?.isUppercase == true {
+            titleWords.removeLast()
+        }
+        return titleWords.joined(separator: " ")
+    }
+
+    private static func contentPhraseScore(_ words: [String]) -> Int {
+        words.count * 10 + words.reduce(0) { $0 + min($1.count, 12) }
     }
 
     private static func contentKeywordScore(_ text: String) -> Int {
@@ -2470,11 +2512,11 @@ private struct ChaptersFile: Codable {
         "aber", "alle", "also", "auch", "auf", "aus", "bei", "beim", "bin", "bis", "bist",
         "dann", "das", "dass", "den", "denn", "der", "des", "die", "dies", "diese", "dieser",
         "doch", "durch", "ein", "eine", "einem", "einen", "einer", "einfach", "eigentlich",
-        "euch", "fuer", "fur", "ganz", "geht", "genau", "gibt", "habe", "haben", "habt",
-        "halt", "heißt", "heisst", "hier", "ich", "ihm", "ihn", "ihr", "ihre", "immer", "ist", "jetzt",
+        "egal", "euch", "fuer", "fur", "ganz", "geht", "genau", "gibt", "habe", "haben", "habt",
+        "halt", "heißt", "heisst", "heraus", "hier", "ich", "ihm", "ihn", "ihr", "ihre", "immer", "ist", "jetzt",
         "kann", "kaum", "kein", "keine", "klar", "mal", "man", "mehr", "mein", "mich",
-        "mit", "muss", "musste", "muesste", "müsste", "macht", "nach", "noch", "oder", "ohne", "schon", "sehr",
-        "sich", "sind", "so", "thema", "ueber", "über", "und", "uns", "unser", "vom", "von", "war",
+        "mit", "muss", "musste", "muesste", "müsste", "macht", "nach", "natürlich", "natuerlich", "noch", "oder", "ohne", "schon", "schnitt", "sehr",
+        "sich", "sind", "so", "tatsächlich", "tatsaechlich", "thema", "ueber", "über", "und", "uns", "unser", "unserer", "beiden", "vom", "von", "war",
         "was", "wenn", "wer", "wie", "wird", "wirklich", "wir", "wo", "wohl", "wuerde", "würde", "zu", "zum", "zur",
         "ende", "reinen", "rechnung", "addieren", "darunter", "verstehen",
     ]
