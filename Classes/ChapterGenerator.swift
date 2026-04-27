@@ -595,9 +595,9 @@ private struct ChaptersFile: Codable {
 
         NSLog("[ChapterGenerator] Pass 2: prompt %d chars from %d marker(s)", finalPrompt.count, finalMarkers.count)
         await MainActor.run {
-            status?(NSLocalizedString("Pass 2/2: Finale Kapitelstruktur wird erstellt.", comment: ""))
+            status?(NSLocalizedString("Pass 2/2: Kapitelmodell erstellt die finale JSON-Struktur. Das kann mehrere Minuten dauern.", comment: ""))
         }
-        await MainActor.run { progress?(0.98, totalSegments, totalSegments + 1) }
+        await MainActor.run { progress?(0.95, totalSegments, totalSegments + 1) }
 
         let session = LanguageModelSession()
         let response = try await session.respond(to: finalPrompt, generating: GeneratedChaptersList.self)
@@ -794,10 +794,15 @@ private struct ChaptersFile: Codable {
         debugTrace?.recordFinalPrompt(markerCount: finalMarkers.count)
 
         NSLog("[ChapterGenerator] Local pass 2: prompt %d chars from %d marker(s)", finalPrompt.count, finalMarkers.count)
-        status?(NSLocalizedString("Pass 2/2: Finale Kapitelstruktur wird erstellt.", comment: ""))
-        progress?(0.98, totalSegments, totalSegments + 1)
-
         let finalGenerationStart = Date()
+        status?(NSLocalizedString("Pass 2/2: Kapitelmodell erstellt die finale JSON-Struktur. Das kann mehrere Minuten dauern.", comment: ""))
+        progress?(0.95, totalSegments, totalSegments + 1)
+        debugTrace?.recordPerformance("local-pass2-started",
+                                      metadata: [
+                                        "finalMarkerCount": finalMarkers.count,
+                                        "promptCharacters": finalPrompt.count,
+                                      ])
+
         let output: String
         do {
             output = try await generateLocalJSONObject(runner: runner,
@@ -943,12 +948,34 @@ private struct ChaptersFile: Codable {
         .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return "" }
 
-        let sponsorTerms = ["werbung", "sponsor", "sponsoring", "anzeige", "ad break", "presented by"]
-        let lowercased = cleaned.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE")).lowercased()
-        let prefix = sponsorTerms.contains { lowercased.contains($0) } ? "Sponsor: " : ""
+        let prefix = isSponsorCueText(cleaned) ? "Sponsor: " : ""
         let words = cleaned.split(separator: " ")
         let snippet = words.prefix(16).joined(separator: " ")
         return String((prefix + snippet).prefix(140))
+    }
+
+    private static func isSponsorCueText(_ text: String) -> Bool {
+        let normalized = text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .lowercased()
+        let compact = normalized.replacingOccurrences(of: #"[^a-z0-9]+"#,
+                                                       with: " ",
+                                                       options: .regularExpression)
+        let explicitTerms = [
+            "sponsor",
+            "sponsoring",
+            "werbepartner",
+            "werbung fuer",
+            "werbung fur",
+            "anzeige von",
+            "praesentiert von",
+            "prasentiert von",
+            "presented by",
+            "ad break",
+            "rabattcode",
+            "gutscheincode",
+        ]
+        return explicitTerms.contains { compact.contains($0) }
     }
 
     private static func isOutroCueText(_ text: String) -> Bool {
@@ -1875,14 +1902,42 @@ private struct ChaptersFile: Codable {
                     && !isMusicOnlyCue($0)
             }
             .sorted { $0.start < $1.start }
-        guard let cue = overlappingSpeech.first else { return nil }
-        let title = deterministicMarkerTitle(from: cue.text)
-        guard !title.isEmpty,
-              !isStructuralChapterTitle(title),
-              !isGenericChapterTitle(title) else {
-            return nil
+        let titles = overlappingSpeech.compactMap { cue -> String? in
+            let title = deterministicMarkerTitle(from: cue.text)
+            guard !title.isEmpty,
+                  !isStructuralChapterTitle(title),
+                  !isGenericChapterTitle(title) else {
+                return nil
+            }
+            return title
         }
-        return title
+        return titles.first { !isWeakChapterTitle($0) } ?? titles.first
+    }
+
+    private static func isWeakChapterTitle(_ title: String) -> Bool {
+        var normalized = title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .lowercased()
+        if normalized.hasPrefix("sponsor:") {
+            normalized = normalized
+                .replacingOccurrences(of: #"^sponsor:\s*"#, with: "", options: .regularExpression)
+        }
+        let weakPrefixes = [
+            "ja ",
+            "ja,",
+            "also ",
+            "genau ",
+            "nun ",
+            "okay ",
+            "ok ",
+            "und ",
+            "aber ",
+            "oder ",
+            "egal ob",
+            "die sache ist",
+        ]
+        return weakPrefixes.contains { normalized.hasPrefix($0) }
     }
 
     private static func chaptersByRemovingTerminalGenericChapters(_ chapters: [ICGeneratedChapter],
@@ -2219,8 +2274,18 @@ private struct ChaptersFile: Codable {
         _chaptersCache.removeValue(forKey: episodeHash)
     }
 
+    @objc(removeGeneratedChaptersForEpisodeHash:)
+    func removeGeneratedChapters(forEpisodeHash episodeHash: String) {
+        guard !episodeHash.isEmpty else { return }
+        removeGeneratedChapters(forEpisodeHash: episodeHash, episode: findEpisode(hash: episodeHash))
+    }
+
     @objc func removeGeneratedChapters(for episode: CDEpisode) {
         guard let episodeHash = episode.objectHash, !episodeHash.isEmpty else { return }
+        removeGeneratedChapters(forEpisodeHash: episodeHash, episode: episode)
+    }
+
+    private func removeGeneratedChapters(forEpisodeHash episodeHash: String, episode: CDEpisode?) {
         let generated = loadChapters(for: episodeHash) ?? []
         let url = ICTranscriptionPaths.chaptersJSONURL(for: episodeHash)
         if FileManager.default.fileExists(atPath: url.path) {
@@ -2252,8 +2317,12 @@ private struct ChaptersFile: Codable {
                                                    ] as NSDictionary)
         }
         _chaptersCache[episodeHash] = false
+        removeChapterDebug(for: episodeHash)
 
-        guard !generated.isEmpty else { return }
+        guard let episode, !generated.isEmpty else {
+            ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "chapters-removed")
+            return
+        }
         let generatedMatches = generated.map { generatedChapter in
             (start: generatedChapter.start, title: generatedChapter.title)
         }
@@ -2276,6 +2345,42 @@ private struct ChaptersFile: Codable {
                                             "deletedDatabaseChapters": deletedChapterCount,
                                            ] as NSDictionary)
         ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "chapters-removed")
+    }
+
+    private func removeChapterDebug(for episodeHash: String) {
+        let url = ICTranscriptionPaths.transcriptCacheDirectory()
+            .appendingPathComponent("\(episodeHash)_chapter_debug.json")
+        if FileManager.default.fileExists(atPath: url.path) {
+            do {
+                try FileManager.default.removeItem(at: url)
+                ICDiagnosticLogger.shared.logFileEvent("file-delete",
+                                                       message: "Chapter-Debug entfernt",
+                                                       path: url.path,
+                                                       metadata: [
+                                                        "episodeHash": episodeHash,
+                                                       ] as NSDictionary)
+            } catch {
+                ICDiagnosticLogger.shared.logFileEvent("file-delete",
+                                                       message: "Chapter-Debug konnte nicht entfernt werden",
+                                                       path: url.path,
+                                                       metadata: [
+                                                        "episodeHash": episodeHash,
+                                                        "error": error.localizedDescription,
+                                                       ] as NSDictionary)
+            }
+        }
+    }
+
+    private func findEpisode(hash: String) -> CDEpisode? {
+        guard let dmanager = DatabaseManager.shared() else { return nil }
+        for feed in dmanager.feeds as? [CDFeed] ?? [] {
+            for episode in feed.episodes as? Set<CDEpisode> ?? [] {
+                if episode.objectHash == hash {
+                    return episode
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: - Sponsor Skip Integration

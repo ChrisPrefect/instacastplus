@@ -121,3 +121,18 @@ require(
     and "Kapitel aus Musikgrenzen ergänzt" in chapter_source,
     "Detected intro/outro music segments are not converted into structural chapter boundaries.",
 )
+require(
+    "let chapterOnly: Bool?" in queue_source
+    and "item.chapterOnly || (item.status == .generatingChapters && engine.hasSRT(for: item.episodeHash))" in queue_source
+    and "item.chapterOnly = true" in queue_source
+    and "if candidate.chapterOnly {" in queue_source
+    and "startChapterGenerationTask(for: candidate" in queue_source,
+    "Chapter-only and in-progress chapter jobs are not persisted and resumed after app termination.",
+)
+require(
+    "previousSessionEndedUnexpectedly" in engine_source
+    and "TranscriptionQueue.crashGuardKey" in queue_source
+    and "ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly" in queue_source
+    and "Crash-Guard nach erwartetem Lifecycle-Ende ignoriert" in queue_source,
+    "Crash guard still blocks resume after expected background/terminate lifecycle endings.",
+)

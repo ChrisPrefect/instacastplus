@@ -73,6 +73,12 @@ require(
     "Foreground/unlock must resume queued transcription work instead of only refreshing background state.",
 )
 require(
+    "dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC))" not in scene_delegate_source
+    and "dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC))" not in scene_delegate_source
+    and "Resume transcription queue after the initial scene setup has yielded once." in scene_delegate_source,
+    "Transcription resume is still delayed for several seconds after launch or foregrounding.",
+)
+require(
     "private func beginStep(for item: ICTranscriptionQueueItem," in queue_source,
     "Transcription queue is missing the shared step-transition helper.",
 )
@@ -165,7 +171,7 @@ require(
 )
 require(
     "Pass 1/2: Themenwechsel in Abschnitt %d von %d werden extrahiert." in chapter_source and
-    "Pass 2/2: Finale Kapitelstruktur wird erstellt." in chapter_source,
+    "Pass 2/2: Kapitelmodell erstellt die finale JSON-Struktur. Das kann mehrere Minuten dauern." in chapter_source,
     "Chapter generator lost the detailed multi-pass progress messages.",
 )
 require(
@@ -297,12 +303,51 @@ require(
     "_presentFailureDetailsForItem" in controller_source,
     "Queue UI no longer composes detailed status text, elapsed time, and failure alerts.",
 )
+require(
+    "_presentRecoveryActionsForItem:" in controller_source
+    and "_deleteFailedOrInterruptedItem:" in controller_source
+    and "Neustarten" in controller_source
+    and "Aus Liste löschen" in controller_source
+    and "[[TranscriptionQueue shared] retryProcessing]" not in controller_source,
+    "Tapping a failed/interrupted transcription row must ask whether to restart or delete instead of retrying immediately.",
+)
+require(
+    "item.status == ICTranscriptionStatusQueued && item.error.length > 0" in controller_source
+    and "item.status == ICTranscriptionStatusFailed" in controller_source
+    and "[self _presentRecoveryActionsForItem:item]" in controller_source,
+    "Failed and interrupted queue rows are not routed through the same restart/delete action sheet.",
+)
+require(
+    "_statusDetail:(NSString*)detail duplicatesHeadline:" in controller_source
+    and "stringByReplacingOccurrencesOfString:@\"\\\\([^)]*%[^)]*\\\\)\"" in controller_source,
+    "Queue rows can still show near-duplicate headline/detail status text.",
+)
+require(
+    "cleanupBrokenArtifacts(for item: ICTranscriptionQueueItem)" in queue_source
+    and "ChapterGenerator.shared.removeGeneratedChapters(forEpisodeHash: episodeHash)" in queue_source
+    and "engine.removeSRT(for: episodeHash)" in queue_source,
+    "Retry/delete of failed queue rows does not clean broken transcript or chapter artifacts first.",
+)
+require(
+    "removeTranscriptCacheFiles(for episodeHash: String)" in engine_source
+    and 'pathExtension == "trcache"' in engine_source,
+    "Removing a broken transcript no longer deletes stale .trcache transcript cache files.",
+)
+require(
+    "@objc(removeGeneratedChaptersForEpisodeHash:)" in chapter_source
+    and "_chapter_debug.json" in chapter_source
+    and "Chapter-Debug entfernt" in chapter_source,
+    "Removing broken generated chapters does not clean the chapter JSON and chapter debug artifact by episode hash.",
+)
 
 for text in [
     "Modell wird vorbereitet.",
     "Transkription läuft.",
     "Kapitel werden erstellt (%d%%)",
     "Transkriptionsfehler",
+    "Job neu starten?",
+    "Neustarten",
+    "Aus Liste löschen",
 ]:
     require(f'"{text}" =' in de_strings, f"German localization is missing '{text}'.")
     require(f'"{text}" =' in en_strings, f"English localization is missing '{text}'.")

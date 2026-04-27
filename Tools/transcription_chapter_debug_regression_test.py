@@ -42,6 +42,7 @@ require(
     "performanceEvents" in chapter_source
     and "chapter-performance" in chapter_source
     and "local-pass1-segment-derived" in chapter_source
+    and "local-pass2-started" in chapter_source
     and "local-pass2-completed" in chapter_source
     and "durationSeconds" in chapter_source,
     "Chapter diagnostics still do not expose per-model-call timing and memory-sampled performance events.",
@@ -90,6 +91,12 @@ require(
 )
 
 require(
+    "Kapitelmodell erstellt die finale JSON-Struktur" in chapter_source
+    and "progress?(0.95, totalSegments, totalSegments + 1)" in chapter_source,
+    "The long final chapter pass still looks like a stuck 98% operation instead of exposing a realistic user-facing status.",
+)
+
+require(
     "llama_set_abort_callback" in runner_source
     and "CancellationState" in runner_source
     and "nonisolated func requestCancel()" in runner_source
@@ -120,6 +127,14 @@ require(
 )
 
 require(
+    "isSponsorCueText" in chapter_source
+    and "werbepartner" in chapter_source
+    and "werbung fuer" in chapter_source
+    and "rabattcode" in chapter_source,
+    "Chapter title derivation still marks generic mentions of ads as sponsor chapters instead of requiring explicit ad-read language.",
+)
+
+require(
     "isOutroCueText" in chapter_source
     and "duration >= 4" in chapter_source
     and "gesamtdauer" in chapter_source
@@ -131,6 +146,7 @@ require(
     "sanitizeUnevidencedStructuralChapters" in chapter_source
     and "matchingMusicBoundary(" in chapter_source
     and "contentTitleForChapter(" in chapter_source
+    and "isWeakChapterTitle" in chapter_source
     and "Strukturkapitel ohne Musikgrenze normalisiert" in chapter_source
     and "nicht fuer gesprochenen Teaser oder normale Inhaltsabschnitte" in chapter_source,
     "Final chapter generation still allows the model to label spoken cold opens or short music blips as Intro/Jingle/Outro without a matching music boundary.",
@@ -212,9 +228,10 @@ require(
 require(
     "@objc var chapterOnly = false" in queue_source
     and "item.chapterOnly = true" in queue_source
-    and "if item.chapterOnly { return nil }" in queue_source
+    and "if candidate.chapterOnly {" in queue_source
+    and "startChapterGenerationTask(for: candidate" in queue_source
     and "guard chapterTask == nil else" in queue_source,
-    "Chapter-only queue items can still be resumed as full transcription work after app lifecycle events.",
+    "Chapter-only queue items are not resumed through the chapter-generation path after app lifecycle events.",
 )
 
 require(
@@ -245,4 +262,14 @@ require(
     and "[ICTranscriptionDebugAutomation startCommandProcessing]" in app_delegate_source
     and "[ICTranscriptionDebugAutomation handleLaunchArguments]" in app_delegate_source,
     "Debug automation cannot be driven reliably from simulator launch arguments or a live command file.",
+)
+
+require(
+    "ICTranscriptionDebugAutomationLastCommandID" in automation_source
+    and "duplicateResponse" in automation_source
+    and '"duplicate": true' in automation_source
+    and '"ignored": true' in automation_source
+    and "removeCommandFile" in automation_source
+    and "matching originalData" in automation_source,
+    "Debug automation still replays a stale command.json after app restart instead of consuming command files idempotently.",
 )

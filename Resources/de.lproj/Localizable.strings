@@ -1213,3 +1213,9 @@
 "Die Folge ist zu lang für dieses Kapitelmodell." = "Die Folge ist zu lang für dieses Kapitelmodell.";
 "Kapitelmodell konnte die Kapitel nicht erstellen." = "Kapitelmodell konnte die Kapitel nicht erstellen.";
 "Kapitelmodell ist in dieser App-Version nicht verfügbar." = "Kapitelmodell ist in dieser App-Version nicht verfügbar.";
+"Modell kann gerade nicht geändert werden" = "Modell kann gerade nicht geändert werden";
+"Ein laufender Transkriptions- oder Kapitel-Job verwendet diesen Modellbereich. Beende oder brich den Job ab, bevor du das Modell änderst." = "Ein laufender Transkriptions- oder Kapitel-Job verwendet diesen Modellbereich. Beende oder brich den Job ab, bevor du das Modell änderst.";
+"Tippe für Optionen." = "Tippe für Optionen.";
+"Job neu starten?" = "Job neu starten?";
+"Neustarten" = "Neustarten";
+"Aus Liste löschen" = "Aus Liste löschen";

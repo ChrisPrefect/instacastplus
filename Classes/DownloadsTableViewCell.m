@@ -89,9 +89,13 @@
 	if (multilineStatus) {
         CGFloat timeWidth = ([self.timeLabel.text length] == 0) ? 0 : 54;
         CGFloat spacing = (timeWidth > 0) ? 6 : 0;
-        CGFloat progressWidth = MAX(0, width - timeWidth - spacing);
+        CGFloat infoColumnWidth = (self.accessoryView != nil) ? 44 : 0;
+        CGFloat progressWidth = MAX(0, width - ((infoColumnWidth > 0) ? 0 : (timeWidth + spacing)));
         self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, progressWidth, 10);
-        if (timeWidth > 0) {
+        if (timeWidth > 0 && infoColumnWidth > 0) {
+            self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - infoColumnWidth, 47, infoColumnWidth, 16);
+            self.timeLabel.hidden = NO;
+        } else if (timeWidth > 0) {
             self.timeLabel.frame = CGRectMake(CGRectGetMaxX(self.progressView.frame) + 6, 30, timeWidth, 16);
             self.timeLabel.hidden = NO;
         } else {

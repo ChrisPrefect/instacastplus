@@ -279,6 +279,10 @@ typedef NS_ENUM(NSInteger, TSSection) {
     if (busy) {
         return [NSString stringWithFormat:@"%@: %@\n%@", NSLocalizedString(@"Wird geladen", nil), [self _downloadProgressTextForModel:model], model.detail];
     }
+    NSString *blockedReason = [[TranscriptionQueue shared] modelMutationBlockReasonForRole:model.role];
+    if (blockedReason.length > 0) {
+        return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Modell kann gerade nicht geändert werden", nil), model.detail];
+    }
     if (!model.requiresDownload) {
         return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Kein Download erforderlich.", nil), model.detail];
     }
@@ -319,6 +323,11 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     ICDownloadableModel *model = [self _modelsForSection:indexPath.section][indexPath.row];
+    NSString *blockedReason = [[TranscriptionQueue shared] modelMutationBlockReasonForRole:model.role];
+    if (blockedReason.length > 0) {
+        [self _showError:blockedReason];
+        return;
+    }
     [ICDownloadableModelStore selectModel:model];
 
     if (model.requiresDownload && ![ICDownloadableModelStore isDownloadedModel:model]) {
@@ -343,6 +352,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
     if ([self.busyModelIDs containsObject:model.identifier]) return nil;
     if (!model.requiresDownload) return nil;
+    if ([[TranscriptionQueue shared] modelMutationBlockReasonForRole:model.role].length > 0) return nil;
 
     NSMutableArray<UIContextualAction *> *actions = [NSMutableArray array];
     BOOL downloaded = [ICDownloadableModelStore isDownloadedModel:model];

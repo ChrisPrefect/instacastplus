@@ -192,8 +192,8 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
             // Auto-refresh feeds on app launch
             [self _autoRefreshFeedsIfNeeded];
 
-            // Resume transcription queue (delayed to not block app launch)
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            // Resume transcription queue after the initial scene setup has yielded once.
+            dispatch_async(dispatch_get_main_queue(), ^{
                 [[TranscriptionQueue shared] resumeIfNeeded];
             });
 
@@ -509,8 +509,8 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     // Auto-refresh feeds if last refresh was more than 30 minutes ago
     [self _autoRefreshFeedsIfNeeded];
 
-    // Resume transcription queue (delayed to not block UI)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // Resume transcription queue after the foreground transition has yielded once.
+    dispatch_async(dispatch_get_main_queue(), ^{
         [[TranscriptionQueue shared] resumeIfNeeded];
     });
 }

@@ -177,3 +177,21 @@ require(
     and "isModelDownloadedSync(modelName:" in backend_source,
     "WhisperKit backend cannot manage individual voice models from the shared model page.",
 )
+require(
+    "modelMutationBlockReason(for role: ICDownloadableModelRole)" in queue_source
+    and "modelDeletionBlockReason(for model: ICDownloadableModel)" in queue_source
+    and "ICDownloadableModelStore.deleteModelBlocked" in engine_source
+    and "Modell-Löschung blockiert" in engine_source,
+    "Model deletion is not blocked while active transcription/chapter jobs can still use that model role.",
+)
+require(
+    "modelMutationBlockReasonForRole" in settings_source
+    and "Modell kann gerade nicht geändert werden" in settings_source
+    and "return nil;" in settings_source,
+    "The model settings UI still allows model selection or destructive actions while that model role is active.",
+)
+require(
+    'case "deleteChapterModel":' in (ROOT / "Classes" / "ICTranscriptionDebugAutomation.swift").read_text()
+    and '"deleteBlockedReason"' in (ROOT / "Classes" / "ICTranscriptionDebugAutomation.swift").read_text(),
+    "Remote transcription automation cannot exercise blocked chapter-model deletion during a live job.",
+)

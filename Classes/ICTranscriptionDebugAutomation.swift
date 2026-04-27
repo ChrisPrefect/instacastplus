@@ -13,6 +13,7 @@ import Foundation
     private static var commandTimer: Timer?
     private static var didStartCommandProcessing = false
     private static var lastCommandIdentifier: String?
+    private static let lastProcessedCommandIDKey = "ICTranscriptionDebugAutomationLastCommandID"
 
     @objc static func startCommandProcessing() {
         guard !didStartCommandProcessing else { return }
@@ -74,14 +75,13 @@ import Foundation
                 let response = errorResponse(action: "commandFile", message: "command.json ist kein JSON-Objekt")
                 _ = writeResponse(response, action: "commandFile")
             }
+            removeCommandFile(commandURL, matching: data)
             return
         }
 
         let commandID = object["id"] as? String ?? rawCommand
-        guard commandID != lastCommandIdentifier else { return }
-        lastCommandIdentifier = commandID
-
         _ = handleCommandDictionary(object, source: "commandFile", commandID: commandID)
+        removeCommandFile(commandURL, matching: data)
     }
 
     private static func commandFromLaunchArguments(_ arguments: [String]) -> NSDictionary? {
@@ -135,6 +135,27 @@ import Foundation
     }
 
     private static func handleCommandDictionary(_ command: NSDictionary, source: String, commandID: String?) -> Bool {
+        let actionName = commandAction(command)
+        if commandWasProcessed(commandID) {
+            let commandID = normalizedCommandID(commandID) ?? ""
+            let response = duplicateResponse(action: actionName, source: source, commandID: commandID)
+            let outputURL = writeResponse(response, action: actionName)
+            var metadata: [String: String] = [
+                "action": actionName,
+                "commandID": commandID,
+                "source": source,
+                "duplicate": "true",
+            ]
+            if let outputURL {
+                metadata["outputPath"] = outputURL.path
+            }
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "Doppelter Transkriptionsbefehl ignoriert",
+                                               metadata: metadata as NSDictionary)
+            return true
+        }
+        markCommandProcessed(commandID)
+
         if let urlString = stringValue(command["url"]), let url = URL(string: urlString) {
             guard url.scheme == "instacastplus", url.host == "transcription-debug" else {
                 let response = errorResponse(action: "command", message: "URL ist kein Transkriptions-Debug-Befehl")
@@ -154,6 +175,35 @@ import Foundation
         let action = parameters["action"] ?? "status"
         handleAutomation(action: action, parameters: parameters, source: source, commandID: commandID)
         return true
+    }
+
+    private static func commandAction(_ command: NSDictionary) -> String {
+        if let urlString = stringValue(command["url"]),
+           let url = URL(string: urlString),
+           url.scheme == "instacastplus",
+           url.host == "transcription-debug" {
+            let parameters = queryParameters(from: url)
+            return parameters["action"] ?? pathAction(from: url) ?? "status"
+        }
+        return stringValue(command["action"]) ?? "status"
+    }
+
+    private static func commandWasProcessed(_ commandID: String?) -> Bool {
+        guard let commandID = normalizedCommandID(commandID) else { return false }
+        if lastCommandIdentifier == commandID { return true }
+        return UserDefaults.standard.string(forKey: lastProcessedCommandIDKey) == commandID
+    }
+
+    private static func markCommandProcessed(_ commandID: String?) {
+        guard let commandID = normalizedCommandID(commandID) else { return }
+        lastCommandIdentifier = commandID
+        UserDefaults.standard.set(commandID, forKey: lastProcessedCommandIDKey)
+    }
+
+    private static func normalizedCommandID(_ commandID: String?) -> String? {
+        guard let commandID else { return nil }
+        let trimmed = commandID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func handleAutomationURL(_ url: URL, source: String, commandID: String?) -> Bool {
@@ -217,6 +267,12 @@ import Foundation
                 response = errorResponse(action: action, message: "Kapitelmodell nicht gefunden")
                 break
             }
+            if let blockedReason = queue.modelMutationBlockReason(for: model.role) {
+                response["downloadStarted"] = false
+                response["mutationBlockedReason"] = blockedReason
+                response["model"] = modelDictionary(model)
+                break
+            }
             response["downloadStarted"] = startModelDownloadIfNeeded(model)
             response["model"] = modelDictionary(model)
         case "cancelChapterModelDownload":
@@ -226,6 +282,24 @@ import Foundation
             }
             ICDownloadableModelStore.cancelDownload(for: model)
             response["cancelled"] = true
+            response["model"] = modelDictionary(model)
+        case "deleteChapterModel":
+            guard let model = requestedChapterModel(parameters: parameters) else {
+                response = errorResponse(action: action, message: "Kapitelmodell nicht gefunden")
+                break
+            }
+            let blockedReason = queue.modelDeletionBlockReason(for: model)
+            ICDownloadableModelStore.delete(model: model) { error in
+                var metadata: [String: Any] = ["model": model.identifier]
+                if let error {
+                    metadata["error"] = error.localizedDescription
+                }
+                ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                                   message: error == nil ? "Kapitelmodell-Löschung angefordert" : "Kapitelmodell-Löschung fehlgeschlagen",
+                                                   metadata: metadata as NSDictionary)
+            }
+            response["deleteRequested"] = blockedReason == nil
+            response["deleteBlockedReason"] = blockedReason ?? ""
             response["model"] = modelDictionary(model)
         case "retry":
             if let episodeHash {
@@ -328,6 +402,7 @@ import Foundation
             "downloaded": ICDownloadableModelStore.isDownloaded(model: model),
             "downloading": ICDownloadableModelStore.isDownloading(model: model),
             "sizeOnDiskBytes": ICDownloadableModelStore.sizeOnDisk(model: model),
+            "deleteBlockedReason": TranscriptionQueue.shared.modelDeletionBlockReason(for: model) ?? "",
         ]
         if let progress = ICDownloadableModelStore.downloadProgress(for: model) {
             result["progress"] = [
@@ -393,6 +468,18 @@ import Foundation
         ]
     }
 
+    private static func duplicateResponse(action: String, source: String, commandID: String) -> [String: Any] {
+        [
+            "ok": true,
+            "action": action,
+            "source": source,
+            "timestamp": timestampString(Date()),
+            "commandID": commandID,
+            "duplicate": true,
+            "ignored": true,
+        ]
+    }
+
     @discardableResult
     private static func writeResponse(_ response: [String: Any], action: String) -> URL? {
         guard JSONSerialization.isValidJSONObject(response),
@@ -423,6 +510,27 @@ import Foundation
     private static func automationDirectory() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             .appendingPathComponent("TranscriptionAutomation", isDirectory: true)
+    }
+
+    private static func removeCommandFile(_ commandURL: URL, matching originalData: Data) {
+        guard let currentData = try? Data(contentsOf: commandURL), currentData == originalData else {
+            return
+        }
+
+        do {
+            try FileManager.default.removeItem(at: commandURL)
+        } catch {
+            let nsError = error as NSError
+            guard nsError.domain != NSCocoaErrorDomain || nsError.code != NSFileNoSuchFileError else {
+                return
+            }
+            ICDiagnosticLogger.shared.logEvent("debug-automation",
+                                               message: "Command-Datei konnte nicht entfernt werden",
+                                               metadata: [
+                                                "path": commandURL.path,
+                                                "error": error.localizedDescription,
+                                               ] as NSDictionary)
+        }
     }
 
     private static func timestampString(_ date: Date) -> String {

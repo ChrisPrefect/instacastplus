@@ -156,6 +156,7 @@ private struct PersistedQueue: Codable {
         let language: String?
         let statusRawValue: Int?
         let completedAt: Date?
+        let chapterOnly: Bool?
     }
 }
 
@@ -301,7 +302,11 @@ private struct PersistedQueue: Codable {
         // If dequeuing the currently processing item, cancel its transcription
         var needsProcessNext = false
         var didCancelCurrent = false
+        var shouldCleanupBrokenArtifacts = false
+        var cleanupAsChapterArtifacts = false
         if let item = items.first(where: { $0.episodeHash == episodeHash }) {
+            shouldCleanupBrokenArtifacts = item.status == .failed || (item.status == .queued && item.error != nil)
+            cleanupAsChapterArtifacts = item.chapterOnly || engine.hasSRT(for: item.episodeHash)
             if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel {
                 currentTask?.cancel()
                 currentTask = nil
@@ -331,6 +336,9 @@ private struct PersistedQueue: Codable {
             analyzer.cancelAnalysis()
             UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
             refreshBackgroundContinuation(reason: "dequeue-cancelled-active-item")
+        }
+        if shouldCleanupBrokenArtifacts {
+            cleanupBrokenArtifacts(episodeHash: episodeHash, chapterOnly: cleanupAsChapterArtifacts)
         }
         persistQueue()
         postQueueChangeNotification()
@@ -517,12 +525,18 @@ private struct PersistedQueue: Codable {
             language: nil
         )
         item.chapterOnly = true
+        items.append(item)
+        startChapterGenerationTask(for: item, srtURL: srtURL, startReason: "chapter-task-enqueued")
+        return true
+    }
+
+    private func startChapterGenerationTask(for item: ICTranscriptionQueueItem, srtURL: URL, startReason: String) {
+        let episodeHash = item.episodeHash
         beginStep(for: item,
                   status: .generatingChapters,
                   detail: NSLocalizedString("Transkript wird für die Kapitel-Erstellung vorbereitet.", comment: ""))
-        items.append(item)
         postQueueChangeNotification()
-        refreshBackgroundContinuation(reason: "chapter-task-enqueued")
+        refreshBackgroundContinuation(reason: startReason)
 
         chapterTask = Task {
             await MainActor.run {
@@ -539,6 +553,7 @@ private struct PersistedQueue: Codable {
                     item.statusDetail = nil
                     item.statusStartedAt = nil
                     item.error = NSLocalizedString("Transkript konnte nicht geladen werden.", comment: "")
+                    self.persistQueue()
                     self.postQueueChangeNotification()
                     self.refreshBackgroundContinuation(reason: "chapter-task-no-cues")
                     self.releaseModelIfIdle(reason: "chapter-task-no-cues")
@@ -559,6 +574,7 @@ private struct PersistedQueue: Codable {
                             await MainActor.run {
                                 self.chapterTask = nil
                                 self.items.removeAll { $0 === item }
+                                self.persistQueue()
                                 self.postQueueChangeNotification()
                                 self.refreshBackgroundContinuation(reason: "chapter-task-cancelled")
                                 self.releaseModelIfIdle(reason: "chapter-task-cancelled")
@@ -603,6 +619,7 @@ private struct PersistedQueue: Codable {
                 await MainActor.run {
                     self.chapterTask = nil
                     self.items.removeAll { $0 === item }
+                    self.persistQueue()
                     self.postQueueChangeNotification()
                     self.refreshBackgroundContinuation(reason: "chapter-task-cancelled-after-generation")
                     self.releaseModelIfIdle(reason: "chapter-task-cancelled-after-generation")
@@ -633,6 +650,7 @@ private struct PersistedQueue: Codable {
                     item.statusStartedAt = nil
                     item.error = chapterError.map { TranscriptionQueue.detailedErrorMessage(for: $0) } ?? NSLocalizedString("Kapitelerkennung fehlgeschlagen.", comment: "")
                 }
+                self.persistQueue()
                 self.postQueueChangeNotification()
                 self.refreshBackgroundContinuation(reason: "chapter-task-finished")
                 NotificationCenter.default.post(name: NSNotification.Name("ICTranscriptionDidChangeNotification"), object: nil, userInfo: ["episodeHash": episodeHash])
@@ -640,7 +658,6 @@ private struct PersistedQueue: Codable {
                 self.releaseModelIfIdle(reason: "chapter-task-finished")
             }
         }
-        return true
     }
 
     /// Parse SRT file into transcript cues
@@ -702,31 +719,35 @@ private struct PersistedQueue: Codable {
             return
         }
 
-        // Crash-loop protection: if the app was killed during model loading last time,
-        // don't auto-resume. Mark items as interrupted so the user can decide to retry.
-        // We do NOT change models or engines automatically — kills can be user-initiated
-        // (force-close), not bugs, and changing models would silently re-download data
-        // and override the user's settings.
         if UserDefaults.standard.bool(forKey: TranscriptionQueue.crashGuardKey) {
-            NSLog("[TranscriptionQueue] Crash guard active — last run was killed before completing")
-            ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard aktiv", metadata: [
-                "queueCount": items.count,
-            ] as NSDictionary)
-            for item in items {
-                if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel || item.status == .generatingChapters {
-                    TranscriptionLogger.shared.append(episodeHash: item.episodeHash, phase: "error",
-                                                      message: "Vorheriger Durchlauf wurde abgebrochen (App-Beendigung oder Crash)", detailText: nil)
-                    item.status = .queued
-                    item.progress = 0
-                    item.statusDetail = nil
-                    item.statusStartedAt = nil
-                    item.error = NSLocalizedString("Unterbrochen. Tippe zum Fortsetzen.", comment: "")
+            if ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly {
+                NSLog("[TranscriptionQueue] Crash guard active — last run was killed before completing")
+                ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard aktiv", metadata: [
+                    "queueCount": items.count,
+                    "previousSessionState": ICDiagnosticLogger.shared.previousSessionState ?? "",
+                ] as NSDictionary)
+                for item in items {
+                    if item.status == .queued || item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel || item.status == .generatingChapters {
+                        TranscriptionLogger.shared.append(episodeHash: item.episodeHash, phase: "error",
+                                                          message: "Vorheriger Durchlauf wurde abgebrochen (App-Beendigung oder Crash)", detailText: nil)
+                        item.status = .queued
+                        item.progress = 0
+                        item.statusDetail = nil
+                        item.statusStartedAt = nil
+                        item.error = NSLocalizedString("Unterbrochen. Tippe zum Fortsetzen.", comment: "")
+                    }
                 }
+                // Guard stays SET so duplicate resumeIfNeeded calls can't bypass it.
+                // Cleared by explicit user retry via retryProcessing().
+                postQueueChangeNotification()
+                return
             }
-            // Guard stays SET so duplicate resumeIfNeeded calls can't bypass it.
-            // Cleared by explicit user retry via retryProcessing().
-            postQueueChangeNotification()
-            return
+
+            UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
+            ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard nach erwartetem Lifecycle-Ende ignoriert", metadata: [
+                "queueCount": items.count,
+                "previousSessionState": ICDiagnosticLogger.shared.previousSessionState ?? "",
+            ] as NSDictionary)
         }
 
         // Reset any stuck items back to queued
@@ -767,7 +788,14 @@ private struct PersistedQueue: Codable {
 
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
         backgroundPausedEpisodeHashes.remove(episodeHash)
+        cleanupBrokenArtifacts(for: item)
         engine.resetCheckpointFailureCounter(for: episodeHash)
+        if item.chapterOnly || engine.hasSRT(for: episodeHash) {
+            item.chapterOnly = true
+            item.audioURL = nil
+        } else {
+            item.chapterOnly = false
+        }
         item.status = .queued
         item.progress = 0
         item.error = nil
@@ -781,11 +809,62 @@ private struct PersistedQueue: Codable {
         }
     }
 
+    private func cleanupBrokenArtifacts(for item: ICTranscriptionQueueItem) {
+        cleanupBrokenArtifacts(episodeHash: item.episodeHash,
+                               chapterOnly: item.chapterOnly || engine.hasSRT(for: item.episodeHash))
+    }
+
+    private func cleanupBrokenArtifacts(episodeHash: String) {
+        cleanupBrokenArtifacts(episodeHash: episodeHash,
+                               chapterOnly: engine.hasSRT(for: episodeHash))
+    }
+
+    private func cleanupBrokenArtifacts(episodeHash: String, chapterOnly: Bool) {
+        if chapterOnly {
+            ChapterGenerator.shared.removeGeneratedChapters(forEpisodeHash: episodeHash)
+            return
+        }
+        engine.removeSRT(for: episodeHash)
+    }
+
     /// Number of items currently queued (including active)
     @objc var count: Int { items.count }
 
     @objc var activeItemCount: Int {
         items.filter { $0.status != .completed && $0.status != .failed }.count
+    }
+
+    @objc(modelMutationBlockReasonForRole:)
+    func modelMutationBlockReason(for role: ICDownloadableModelRole) -> String? {
+        let blocksRole = items.contains { item in
+            guard item.status != .completed && item.status != .failed else { return false }
+            switch role {
+            case .voiceToText:
+                return !item.chapterOnly && (
+                    item.status == .queued ||
+                    item.status == .analyzingMusic ||
+                    item.status == .downloadingModel ||
+                    item.status == .transcribing
+                )
+            case .textToChapters:
+                return item.chapterOnly ||
+                    item.status == .queued ||
+                    item.status == .analyzingMusic ||
+                    item.status == .downloadingModel ||
+                    item.status == .transcribing ||
+                    item.status == .generatingChapters
+            @unknown default:
+                return false
+            }
+        }
+        guard blocksRole else { return nil }
+        return NSLocalizedString("Ein laufender Transkriptions- oder Kapitel-Job verwendet diesen Modellbereich. Beende oder brich den Job ab, bevor du das Modell änderst.", comment: "")
+    }
+
+    @objc(modelDeletionBlockReasonForModel:)
+    func modelDeletionBlockReason(for model: ICDownloadableModel) -> String? {
+        guard model.requiresDownload else { return nil }
+        return modelMutationBlockReason(for: model.role)
     }
 
     @objc var hasVisibleItems: Bool {
@@ -1038,6 +1117,7 @@ private struct PersistedQueue: Codable {
 
     private func processNext() {
         guard !isProcessing else { return }
+        guard chapterTask == nil else { return }
         guard !shouldPauseWhisperKitForBackground else { return }
 
         // Iteratively skip failed items (no recursion, no stack growth)
@@ -1054,6 +1134,31 @@ private struct PersistedQueue: Codable {
                 }
                 refreshBackgroundContinuation(reason: "queue-idle")
                 releaseModelIfIdle(reason: "queue-idle")
+                return
+            }
+
+            if candidate.chapterOnly {
+                let srtURL = TranscriptionEngine.shared.srtURL(for: candidate.episodeHash)
+                guard FileManager.default.fileExists(atPath: srtURL.path) else {
+                    candidate.status = .failed
+                    candidate.statusDetail = nil
+                    candidate.statusStartedAt = nil
+                    candidate.error = NSLocalizedString("Transkript konnte nicht geladen werden.", comment: "")
+                    persistQueue()
+                    postQueueChangeNotification()
+                    continue
+                }
+                guard ICDownloadableModelStore.selectedChapterModelIsReady(),
+                      ICDownloadableModelStore.selectedChapterModelCanGenerate() else {
+                    candidate.status = .failed
+                    candidate.statusDetail = nil
+                    candidate.statusStartedAt = nil
+                    candidate.error = ICDownloadableModelStore.selectedChapterModelUnavailableReason()
+                    persistQueue()
+                    postQueueChangeNotification()
+                    continue
+                }
+                startChapterGenerationTask(for: candidate, srtURL: srtURL, startReason: "chapter-task-resumed")
                 return
             }
 
@@ -1718,7 +1823,7 @@ private struct PersistedQueue: Codable {
         let persistable = PersistedQueue(
             items: items.compactMap { item -> PersistedQueue.PersistedItem? in
                 if item.status == .failed { return nil }
-                if item.chapterOnly { return nil }
+                let shouldResumeAsChapterOnly = item.chapterOnly || (item.status == .generatingChapters && engine.hasSRT(for: item.episodeHash))
                 if item.status == .completed {
                     guard let completedAt = item.completedAt,
                           now.timeIntervalSince(completedAt) < Self.completedItemRetentionInterval else { return nil }
@@ -1727,14 +1832,16 @@ private struct PersistedQueue: Codable {
                                  feedTitle: item.feedTitle,
                                  language: item.language,
                                  statusRawValue: item.status.rawValue,
-                                 completedAt: completedAt)
+                                 completedAt: completedAt,
+                                 chapterOnly: item.chapterOnly)
                 }
                 return .init(episodeHash: item.episodeHash,
                              episodeTitle: item.episodeTitle,
                              feedTitle: item.feedTitle,
                              language: item.language,
-                             statusRawValue: ICTranscriptionStatus.queued.rawValue,
-                             completedAt: nil)
+                             statusRawValue: item.status.rawValue,
+                             completedAt: nil,
+                             chapterOnly: shouldResumeAsChapterOnly)
             }
         )
         if let data = try? JSONEncoder().encode(persistable) {
@@ -1763,6 +1870,26 @@ private struct PersistedQueue: Codable {
                 item.status = .completed
                 item.progress = 1.0
                 item.completedAt = completedAt
+                items.append(item)
+                continue
+            }
+
+            if pItem.chapterOnly == true {
+                guard engine.hasSRT(for: pItem.episodeHash) else {
+                    ICDiagnosticLogger.shared.logEvent("queue", message: "Persistierter Kapitel-Job ohne Transkript übersprungen", metadata: [
+                        "episodeHash": pItem.episodeHash,
+                    ] as NSDictionary)
+                    continue
+                }
+                let item = ICTranscriptionQueueItem(
+                    episodeHash: pItem.episodeHash,
+                    episodeTitle: pItem.episodeTitle,
+                    feedTitle: pItem.feedTitle,
+                    audioURL: nil,
+                    language: pItem.language
+                )
+                item.chapterOnly = true
+                item.status = .queued
                 items.append(item)
                 continue
             }
@@ -1806,6 +1933,7 @@ private struct PersistedQueue: Codable {
             "status": "\(status.rawValue)",
             "detail": detail ?? "",
         ] as NSDictionary)
+        persistQueue()
     }
 
     private func updateStatusDetail(for episodeHash: String, detail: String) {

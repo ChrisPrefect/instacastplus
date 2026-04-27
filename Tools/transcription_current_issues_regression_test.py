@@ -49,8 +49,9 @@ require(
 
 require(
     "cell.sizeLabel.numberOfLines = 2" in controller_source
-    and "self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, progressWidth, 10)" in cell_source,
-    "Transcription rows do not keep status text full-width with elapsed time beside the progress bar.",
+    and "CGFloat infoColumnWidth = (self.accessoryView != nil) ? 44 : 0;" in cell_source
+    and "self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - infoColumnWidth" in cell_source,
+    "Transcription rows no longer place elapsed time under the right-side info button.",
 )
 require(
     "((self.accessoryView != nil) ? 49 : 0)" in cell_source,

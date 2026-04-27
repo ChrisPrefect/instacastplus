@@ -132,6 +132,8 @@ private struct ICDiagnosticLogLine: Encodable {
 @objc class ICDiagnosticLogger: NSObject, @unchecked Sendable {
     private static let _shared = ICDiagnosticLogger()
     @objc static var shared: ICDiagnosticLogger { _shared }
+    private static let previousSessionEndedUnexpectedlyKey = "ICDiagnosticPreviousSessionEndedUnexpectedly"
+    private static let previousSessionStateKey = "ICDiagnosticPreviousSessionState"
 
     private let queue = DispatchQueue(label: "ICDiagnosticLogger.queue")
     private let encoder = JSONEncoder()
@@ -145,7 +147,7 @@ private struct ICDiagnosticLogLine: Encodable {
     }
 
     @objc func start() {
-        queue.async {
+        queue.sync {
             self.ensureStartedLocked()
         }
     }
@@ -169,6 +171,14 @@ private struct ICDiagnosticLogLine: Encodable {
             self.writeSessionStateLocked(state: state)
             self.appendLocked(category: "lifecycle", message: state, metadata: convertedMetadata)
         }
+    }
+
+    @objc var previousSessionEndedUnexpectedly: Bool {
+        UserDefaults.standard.bool(forKey: Self.previousSessionEndedUnexpectedlyKey)
+    }
+
+    @objc var previousSessionState: String? {
+        UserDefaults.standard.string(forKey: Self.previousSessionStateKey)
     }
 
     @objc func logStorageLayout(_ reason: String) {
@@ -235,6 +245,9 @@ private struct ICDiagnosticLogLine: Encodable {
         didStart = true
 
         if let previousState = loadPreviousSessionStateLocked() {
+            let endedUnexpectedly = Self.didPreviousSessionEndUnexpectedly(previousState.lastState)
+            UserDefaults.standard.set(endedUnexpectedly, forKey: Self.previousSessionEndedUnexpectedlyKey)
+            UserDefaults.standard.set(previousState.lastState, forKey: Self.previousSessionStateKey)
             appendLocked(
                 category: "session",
                 message: "Vorherige Session gefunden",
@@ -242,9 +255,12 @@ private struct ICDiagnosticLogLine: Encodable {
                     "previousSessionID": previousState.sessionID,
                     "previousState": previousState.lastState,
                     "previousTimestamp": Self.timestampString(from: Date(timeIntervalSince1970: previousState.timestamp)),
-                    "previousEndedUnexpectedly": Self.didPreviousSessionEndUnexpectedly(previousState.lastState) ? "true" : "false",
+                    "previousEndedUnexpectedly": endedUnexpectedly ? "true" : "false",
                 ]
             )
+        } else {
+            UserDefaults.standard.set(false, forKey: Self.previousSessionEndedUnexpectedlyKey)
+            UserDefaults.standard.removeObject(forKey: Self.previousSessionStateKey)
         }
 
         writeSessionStateLocked(state: "launching")
@@ -903,10 +919,41 @@ private struct TranscriptionCheckpoint: Codable {
                                                    ] as NSDictionary)
         }
         invalidateSRTCache(for: episodeHash)
+        removeTranscriptCacheFiles(for: episodeHash)
         TranscriptionLogger.shared.clearLog(episodeHash: episodeHash)
         ChapterGenerator.shared.invalidateChaptersCache(for: episodeHash)
         removeCheckpoint(for: episodeHash)
         ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "transcript-removed")
+    }
+
+    private func removeTranscriptCacheFiles(for episodeHash: String) {
+        let directory = transcriptCacheDirectory()
+        let prefix = "\(episodeHash)_"
+        let fileURLs = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        var removedCount = 0
+        for fileURL in fileURLs {
+            guard fileURL.lastPathComponent.hasPrefix(prefix),
+                  fileURL.pathExtension == "trcache" else { continue }
+            do {
+                try FileManager.default.removeItem(at: fileURL)
+                removedCount += 1
+            } catch {
+                ICDiagnosticLogger.shared.logFileEvent("file-delete",
+                                                       message: "Transcript-Cache konnte nicht entfernt werden",
+                                                       path: fileURL.path,
+                                                       metadata: [
+                                                        "episodeHash": episodeHash,
+                                                        "error": error.localizedDescription,
+                                                       ] as NSDictionary)
+            }
+        }
+        ICDiagnosticLogger.shared.logDirectoryEvent("file-delete",
+                                                   message: "Transcript-Cache-Artefakte entfernt",
+                                                   path: directory.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "removedFiles": removedCount,
+                                                   ] as NSDictionary)
     }
 
     // MARK: - WhisperKit Backend
@@ -2074,6 +2121,7 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         }
     }
 
+    @MainActor
     @objc(deleteModel:completion:)
     static func delete(model: ICDownloadableModel,
                        completion: @escaping (NSError?) -> Void) {
@@ -2083,6 +2131,18 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         }
 
         let selectedModel = model
+        if let blockedReason = TranscriptionQueue.shared.modelDeletionBlockReason(for: selectedModel) {
+            let error = NSError(domain: "ICDownloadableModelStore.deleteModelBlocked", code: 1,
+                                userInfo: [NSLocalizedDescriptionKey: blockedReason])
+            ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Löschung blockiert", metadata: [
+                "model": selectedModel.identifier,
+                "role": selectedModel.roleTitle,
+                "reason": blockedReason,
+            ] as NSDictionary)
+            completion(error)
+            return
+        }
+
         nonisolated(unsafe) let completionCallback = completion
         Task.detached {
             do {

@@ -564,7 +564,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             } else if (item.error.length > 0 && ![TranscriptionQueue shared].isProcessing) {
                 headline = NSLocalizedString(@"Unterbrochen", nil);
                 if ([item.error isEqualToString:NSLocalizedString(@"Unterbrochen. Tippe zum Fortsetzen.", nil)]) {
-                    detail = NSLocalizedString(@"Tippe zum Fortsetzen.", nil);
+                    detail = NSLocalizedString(@"Tippe für Optionen.", nil);
                 } else {
                     detail = item.error;
                 }
@@ -651,14 +651,9 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) return;
     ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
 
-    // Tapping a queued item with an error (e.g. after crash guard) retries processing
-    if (item.status == ICTranscriptionStatusQueued && item.error != nil && ![TranscriptionQueue shared].isProcessing) {
-        [[TranscriptionQueue shared] retryProcessing];
-        return;
-    }
-
-    if (item.status == ICTranscriptionStatusFailed) {
-        [self _presentFailureDetailsForItem:item];
+    if ((item.status == ICTranscriptionStatusQueued && item.error.length > 0 && ![TranscriptionQueue shared].isProcessing) ||
+        item.status == ICTranscriptionStatusFailed) {
+        [self _presentRecoveryActionsForItem:item];
         return;
     }
 
@@ -796,10 +791,35 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     NSString* trimmedHeadline = [headline stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSString* trimmedDetail = [detail stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
-    if (trimmedDetail.length == 0) {
+    if (trimmedDetail.length == 0 || [self _statusDetail:trimmedDetail duplicatesHeadline:trimmedHeadline]) {
         return trimmedHeadline;
     }
     return [NSString stringWithFormat:@"%@\n%@", trimmedHeadline, trimmedDetail];
+}
+
+- (BOOL)_statusDetail:(NSString*)detail duplicatesHeadline:(NSString*)headline {
+    NSString* normalizedDetail = [self _normalizedStatusText:detail];
+    NSString* normalizedHeadline = [self _normalizedStatusText:headline];
+    if (normalizedDetail.length == 0 || normalizedHeadline.length == 0) return NO;
+    if ([normalizedDetail isEqualToString:normalizedHeadline]) return YES;
+    return [normalizedHeadline hasPrefix:normalizedDetail] || [normalizedDetail hasPrefix:normalizedHeadline];
+}
+
+- (NSString*)_normalizedStatusText:(NSString*)text {
+    NSString* normalized = [[text lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"\\([^)]*%[^)]*\\)"
+                                                       withString:@""
+                                                          options:NSRegularExpressionSearch
+                                                            range:NSMakeRange(0, normalized.length)];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"[[:punct:]]+"
+                                                       withString:@" "
+                                                          options:NSRegularExpressionSearch
+                                                            range:NSMakeRange(0, normalized.length)];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"\\s+"
+                                                       withString:@" "
+                                                          options:NSRegularExpressionSearch
+                                                            range:NSMakeRange(0, normalized.length)];
+    return [normalized stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
 - (NSString*)_elapsedTextForItem:(ICTranscriptionQueueItem*)item {
@@ -831,15 +851,28 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 }
 
 - (void)_presentFailureDetailsForItem:(ICTranscriptionQueueItem*)item {
+    [self _presentRecoveryActionsForItem:item];
+}
+
+- (void)_presentRecoveryActionsForItem:(ICTranscriptionQueueItem*)item {
     NSString* message = item.error ?: NSLocalizedString(@"Transkription fehlgeschlagen.", nil);
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Transkriptionsfehler", nil)
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Job neu starten?", nil)
                                                                   message:message
                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Erneut versuchen", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Neustarten", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         [self _retryWithEpisodeHash:item.episodeHash];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Aus Liste löschen", nil) style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [self _deleteFailedOrInterruptedItem:item];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)_deleteFailedOrInterruptedItem:(ICTranscriptionQueueItem*)item {
+    if (item.episodeHash.length == 0) return;
+    [[TranscriptionQueue shared] dequeueWithEpisodeHash:item.episodeHash];
+    [self.tableView reloadData];
 }
 
 - (void)_retryWithEpisodeHash:(NSString*)episodeHash {
