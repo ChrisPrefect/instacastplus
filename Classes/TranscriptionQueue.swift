@@ -157,6 +157,7 @@ private struct PersistedQueue: Codable {
         let statusRawValue: Int?
         let completedAt: Date?
         let chapterOnly: Bool?
+        let error: String?
     }
 }
 
@@ -526,7 +527,12 @@ private struct PersistedQueue: Codable {
         )
         item.chapterOnly = true
         items.append(item)
-        startChapterGenerationTask(for: item, srtURL: srtURL, startReason: "chapter-task-enqueued")
+        persistQueue()
+        postQueueChangeNotification()
+
+        if !isProcessing && chapterTask == nil && !shouldPauseWhisperKitForBackground {
+            startChapterGenerationTask(for: item, srtURL: srtURL, startReason: "chapter-task-enqueued")
+        }
         return true
     }
 
@@ -801,6 +807,7 @@ private struct PersistedQueue: Codable {
         item.error = nil
         item.statusDetail = nil
         item.statusStartedAt = nil
+        item.completedAt = nil
         persistQueue()
         postQueueChangeNotification()
 
@@ -1093,7 +1100,7 @@ private struct PersistedQueue: Codable {
         item.progress = 0
         item.statusDetail = nil
         item.statusStartedAt = nil
-        item.error = NSLocalizedString("Transkription im Hintergrund pausiert. Tippe zum Fortsetzen.", comment: "")
+        item.error = NSLocalizedString("Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", comment: "")
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedGPUBackgroundActiveKey)
@@ -1822,8 +1829,17 @@ private struct PersistedQueue: Codable {
         let now = Date()
         let persistable = PersistedQueue(
             items: items.compactMap { item -> PersistedQueue.PersistedItem? in
-                if item.status == .failed { return nil }
                 let shouldResumeAsChapterOnly = item.chapterOnly || (item.status == .generatingChapters && engine.hasSRT(for: item.episodeHash))
+                if item.status == .failed {
+                    return .init(episodeHash: item.episodeHash,
+                                 episodeTitle: item.episodeTitle,
+                                 feedTitle: item.feedTitle,
+                                 language: item.language,
+                                 statusRawValue: item.status.rawValue,
+                                 completedAt: item.completedAt ?? now,
+                                 chapterOnly: shouldResumeAsChapterOnly,
+                                 error: item.error)
+                }
                 if item.status == .completed {
                     guard let completedAt = item.completedAt,
                           now.timeIntervalSince(completedAt) < Self.completedItemRetentionInterval else { return nil }
@@ -1833,7 +1849,8 @@ private struct PersistedQueue: Codable {
                                  language: item.language,
                                  statusRawValue: item.status.rawValue,
                                  completedAt: completedAt,
-                                 chapterOnly: item.chapterOnly)
+                                 chapterOnly: item.chapterOnly,
+                                 error: nil)
                 }
                 return .init(episodeHash: item.episodeHash,
                              episodeTitle: item.episodeTitle,
@@ -1841,7 +1858,8 @@ private struct PersistedQueue: Codable {
                              language: item.language,
                              statusRawValue: item.status.rawValue,
                              completedAt: nil,
-                             chapterOnly: shouldResumeAsChapterOnly)
+                             chapterOnly: shouldResumeAsChapterOnly,
+                             error: item.error)
             }
         )
         if let data = try? JSONEncoder().encode(persistable) {
@@ -1857,6 +1875,25 @@ private struct PersistedQueue: Codable {
 
         // Reconstruct items - audio URLs need to be resolved from CacheManager
         for pItem in persisted.items {
+            if pItem.statusRawValue == ICTranscriptionStatus.failed.rawValue {
+                guard let failedAt = pItem.completedAt,
+                      Date().timeIntervalSince(failedAt) < Self.completedItemRetentionInterval else { continue }
+                let item = ICTranscriptionQueueItem(
+                    episodeHash: pItem.episodeHash,
+                    episodeTitle: pItem.episodeTitle,
+                    feedTitle: pItem.feedTitle,
+                    audioURL: nil,
+                    language: pItem.language
+                )
+                item.status = .failed
+                item.progress = 0
+                item.completedAt = failedAt
+                item.chapterOnly = pItem.chapterOnly == true
+                item.error = pItem.error
+                items.append(item)
+                continue
+            }
+
             if pItem.statusRawValue == ICTranscriptionStatus.completed.rawValue {
                 guard let completedAt = pItem.completedAt,
                       Date().timeIntervalSince(completedAt) < Self.completedItemRetentionInterval else { continue }
@@ -1870,6 +1907,7 @@ private struct PersistedQueue: Codable {
                 item.status = .completed
                 item.progress = 1.0
                 item.completedAt = completedAt
+                item.chapterOnly = pItem.chapterOnly == true
                 items.append(item)
                 continue
             }

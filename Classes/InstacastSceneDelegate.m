@@ -450,6 +450,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
                                         metadata:@{
                                             @"role": scene.session.role ?: @"",
                                         }];
+    [[TranscriptionQueue shared] resumeIfNeeded];
 #if !TARGET_OS_MACCATALYST
     // iPadOS Stage Manager: maximumSize freigeben (war startSize für initiale Grösse)
     if ([scene isKindOfClass:[UIWindowScene class]]) {

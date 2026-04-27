@@ -99,6 +99,8 @@ private struct ChaptersFile: Codable {
     private typealias TopicMarker = (time: Double, title: String)
     private static let maximumTopicExtractionSegmentDuration: Double = 300
     private static let maximumTopicExtractionCueCount = 45
+    private static let maximumContentChapterDuration: Double = 240
+    private static let minimumSplitChapterDuration: Double = 45
     private static let localGenerationTimeoutNanoseconds: UInt64 = 600 * 1_000_000_000
 
     private final class ChapterDebugTrace {
@@ -616,11 +618,30 @@ private struct ChaptersFile: Codable {
                                                                   musicSegments: musicSegments,
                                                                   transcriptCues: cues,
                                                                   transcriptDuration: totalDuration)
+            chapters = Self.chaptersBySplittingOversizedContentChapters(chapters,
+                                                                        topicMarkers: finalMarkers,
+                                                                        transcriptCues: cues,
+                                                                        totalDuration: totalDuration)
+            chapters = Self.chaptersBySplittingExplicitOutroMarkers(chapters,
+                                                                    topicMarkers: finalMarkers,
+                                                                    transcriptCues: cues,
+                                                                    totalDuration: totalDuration)
+            chapters = Self.chaptersByMergingTerminalFragmentsIntoOutro(chapters,
+                                                                        transcriptDuration: totalDuration)
+            chapters = Self.chaptersByMergingShortFragmentsAroundStructuralChapters(chapters,
+                                                                                   totalDuration: totalDuration)
+            chapters = Self.chaptersByMergingShortFragmentsBeforeStructuralChapters(chapters,
+                                                                                   totalDuration: totalDuration)
+            chapters = Self.chaptersByReplacingGenericContentTitles(chapters,
+                                                                    transcriptCues: cues)
+            chapters = Self.chaptersByReplacingVerboseContentTitles(chapters,
+                                                                    transcriptCues: cues)
         }
         debugTrace?.recordChapters(raw: rawChapters, final: chapters)
         chapters = try Self.validatedGeneratedChapters(chapters,
                                                        totalDuration: totalDuration,
                                                        topicMarkerCount: topicMarkers.count,
+                                                       topicMarkers: finalMarkers,
                                                        musicSegments: musicSegments,
                                                        transcriptCues: cues,
                                                        existingChapters: existingChapters,
@@ -836,6 +857,24 @@ private struct ChaptersFile: Codable {
                                                                   musicSegments: musicSegments,
                                                                   transcriptCues: cues,
                                                                   transcriptDuration: totalDuration)
+            chapters = Self.chaptersBySplittingOversizedContentChapters(chapters,
+                                                                        topicMarkers: finalMarkers,
+                                                                        transcriptCues: cues,
+                                                                        totalDuration: totalDuration)
+            chapters = Self.chaptersBySplittingExplicitOutroMarkers(chapters,
+                                                                    topicMarkers: finalMarkers,
+                                                                    transcriptCues: cues,
+                                                                    totalDuration: totalDuration)
+            chapters = Self.chaptersByMergingTerminalFragmentsIntoOutro(chapters,
+                                                                        transcriptDuration: totalDuration)
+            chapters = Self.chaptersByMergingShortFragmentsAroundStructuralChapters(chapters,
+                                                                                   totalDuration: totalDuration)
+            chapters = Self.chaptersByMergingShortFragmentsBeforeStructuralChapters(chapters,
+                                                                                   totalDuration: totalDuration)
+            chapters = Self.chaptersByReplacingGenericContentTitles(chapters,
+                                                                    transcriptCues: cues)
+            chapters = Self.chaptersByReplacingVerboseContentTitles(chapters,
+                                                                    transcriptCues: cues)
         }
         debugTrace?.recordChapters(raw: rawChapters, final: chapters)
         debugTrace?.recordPerformance("local-pass2-completed",
@@ -851,6 +890,7 @@ private struct ChaptersFile: Codable {
         chapters = try Self.validatedGeneratedChapters(chapters,
                                                        totalDuration: totalDuration,
                                                        topicMarkerCount: topicMarkers.count,
+                                                       topicMarkers: finalMarkers,
                                                        musicSegments: musicSegments,
                                                        transcriptCues: cues,
                                                        existingChapters: existingChapters,
@@ -1579,6 +1619,7 @@ private struct ChaptersFile: Codable {
     private static func validatedGeneratedChapters(_ chapters: [ICGeneratedChapter],
                                                    totalDuration: Double,
                                                    topicMarkerCount: Int,
+                                                   topicMarkers: [TopicMarker],
                                                    musicSegments: [ICAudioSegment]?,
                                                    transcriptCues: [ICTranscriptCue],
                                                    existingChapters: [ICGeneratedChapter]?,
@@ -1586,6 +1627,7 @@ private struct ChaptersFile: Codable {
         let issue = chapterQualityIssue(chapters,
                                         totalDuration: totalDuration,
                                         topicMarkerCount: topicMarkerCount,
+                                        topicMarkers: topicMarkers,
                                         musicSegments: musicSegments,
                                         transcriptCues: transcriptCues,
                                         existingChapters: existingChapters)
@@ -1601,6 +1643,7 @@ private struct ChaptersFile: Codable {
     private static func chapterQualityIssue(_ chapters: [ICGeneratedChapter],
                                             totalDuration: Double,
                                             topicMarkerCount: Int,
+                                            topicMarkers: [TopicMarker],
                                             musicSegments: [ICAudioSegment]?,
                                             transcriptCues: [ICTranscriptCue],
                                             existingChapters: [ICGeneratedChapter]?) -> String? {
@@ -1628,6 +1671,12 @@ private struct ChaptersFile: Codable {
             return issue
         }
 
+        if let issue = oversizedContentChapterIssue(chapters,
+                                                    topicMarkers: topicMarkers,
+                                                    transcriptCues: transcriptCues) {
+            return issue
+        }
+
         let contentChapters = chapters.filter {
             !["intro", "outro"].contains($0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
         }
@@ -1645,6 +1694,41 @@ private struct ChaptersFile: Codable {
         return nil
     }
 
+    private static func oversizedContentChapterIssue(_ chapters: [ICGeneratedChapter],
+                                                     topicMarkers: [TopicMarker],
+                                                     transcriptCues: [ICTranscriptCue]) -> String? {
+        guard !topicMarkers.isEmpty else { return nil }
+        for chapter in chapters {
+            let chapterDuration = chapter.end - chapter.start
+            guard chapterDuration > maximumContentChapterDuration,
+                  !chapter.isSponsor,
+                  normalizedStructuralChapterTitle(chapter.title) == nil else {
+                continue
+            }
+            let markerCountInsideChapter = topicMarkers.filter { marker in
+                marker.time > chapter.start + minimumSplitChapterDuration
+                    && marker.time < chapter.end - minimumSplitChapterDuration
+            }.count
+            if markerCountInsideChapter > 0 {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat erkannte Themen zu stark zusammengefasst."
+            }
+            if contentCueCount(in: chapter, transcriptCues: transcriptCues) >= 24 {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell lieferte ein zu langes Inhaltskapitel."
+            }
+        }
+        return nil
+    }
+
+    private static func contentCueCount(in chapter: ICGeneratedChapter,
+                                        transcriptCues: [ICTranscriptCue]) -> Int {
+        transcriptCues.filter {
+            $0.end > chapter.start
+                && $0.start < chapter.end
+                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !isMusicOnlyCue($0)
+        }.count
+    }
+
     private static func invalidStructuralChapterIssue(_ chapters: [ICGeneratedChapter],
                                                       boundaryChapters: [ICGeneratedChapter],
                                                       transcriptCues: [ICTranscriptCue]) -> String? {
@@ -1660,7 +1744,7 @@ private struct ChaptersFile: Codable {
                 return "Kapitelerkennung fehlgeschlagen - Jingle-Kapitel ist laenger als das erkannte Musiksegment."
             }
             if isStructuralChapterTitle(title),
-               matchingMusicBoundary(chapter, in: boundaryChapters) == nil,
+               coveringMusicBoundary(chapter, in: boundaryChapters) == nil,
                !(normalized == "outro" && hasOutroCueEvidence(for: chapter, transcriptCues: transcriptCues)) {
                 return "Kapitelerkennung fehlgeschlagen - Strukturkapitel ohne passende Musikgrenze."
             }
@@ -1702,6 +1786,28 @@ private struct ChaptersFile: Codable {
         }
     }
 
+    private static func coveringMusicBoundary(_ chapter: ICGeneratedChapter,
+                                              in boundaryChapters: [ICGeneratedChapter]) -> ICGeneratedChapter? {
+        guard let title = normalizedStructuralChapterTitle(chapter.title) else { return nil }
+        let tolerance = 2.0
+        return boundaryChapters.first { boundary in
+            chapterCoversMusicBoundary(chapter, boundary: boundary, title: title, tolerance: tolerance)
+        }
+    }
+
+    private static func chapterCoversMusicBoundary(_ chapter: ICGeneratedChapter,
+                                                   boundary: ICGeneratedChapter,
+                                                   title: String,
+                                                   tolerance: Double) -> Bool {
+        let maxAbsorbedFragmentDuration = 20.0
+        return normalizedStructuralChapterTitle(chapter.title) == title
+            && normalizedStructuralChapterTitle(boundary.title) == title
+            && chapter.start <= boundary.start + tolerance
+            && chapter.start >= boundary.start - maxAbsorbedFragmentDuration
+            && chapter.end >= boundary.end - tolerance
+            && chapter.end <= boundary.end + maxAbsorbedFragmentDuration
+    }
+
     private static func hasOutroCueEvidence(for chapter: ICGeneratedChapter,
                                             transcriptCues: [ICTranscriptCue]) -> Bool {
         let tolerance = 2.0
@@ -1723,6 +1829,7 @@ private struct ChaptersFile: Codable {
             "kurzer titel",
             "kapitel",
             "thema",
+            "erste themen",
             "podcast",
             "episode",
             "folge",
@@ -1733,6 +1840,7 @@ private struct ChaptersFile: Codable {
         return normalized.hasPrefix("kapitel ")
             || normalized.hasPrefix("thema ")
             || normalized.hasPrefix("abschnitt ")
+            || normalized.hasPrefix("musiksegment")
             || normalized.hasPrefix("topic ")
             || normalized.hasPrefix("chapter ")
     }
@@ -1744,9 +1852,7 @@ private struct ChaptersFile: Codable {
         for boundary in boundaryChapters {
             let title = boundary.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let hasMatchingChapter = chapters.contains { chapter in
-                chapter.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == title
-                    && abs(chapter.start - boundary.start) <= tolerance
-                    && abs(chapter.end - boundary.end) <= tolerance
+                chapterCoversMusicBoundary(chapter, boundary: boundary, title: title, tolerance: tolerance)
             }
             if !hasMatchingChapter {
                 return "Kapitelerkennung fehlgeschlagen - Intro-/Outro-Musik wurde nicht als eigenes Kapitel erkannt."
@@ -1799,6 +1905,330 @@ private struct ChaptersFile: Codable {
                                                  isSponsor: deduped[index].isSponsor))
         }
         return normalized
+    }
+
+    private static func chaptersBySplittingOversizedContentChapters(_ chapters: [ICGeneratedChapter],
+                                                                    topicMarkers: [TopicMarker],
+                                                                    transcriptCues: [ICTranscriptCue],
+                                                                    totalDuration: Double) -> [ICGeneratedChapter] {
+        guard !chapters.isEmpty, !topicMarkers.isEmpty else { return chapters }
+        let markers = deduplicatedMarkers(topicMarkers).sorted { $0.time < $1.time }
+        var result: [ICGeneratedChapter] = []
+        var splitCount = 0
+
+        for chapter in chapters {
+            let chapterDuration = chapter.end - chapter.start
+            guard chapterDuration > maximumContentChapterDuration,
+                  !chapter.isSponsor,
+                  normalizedStructuralChapterTitle(chapter.title) == nil else {
+                result.append(chapter)
+                continue
+            }
+
+            let candidateMarkers = markers.filter { marker in
+                let endSlack = normalizedStructuralChapterTitle(marker.title) == "outro" ? 20.0 : minimumSplitChapterDuration
+                return marker.time > chapter.start + minimumSplitChapterDuration
+                    && marker.time < chapter.end - endSlack
+                    && !marker.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            guard !candidateMarkers.isEmpty else {
+                result.append(chapter)
+                continue
+            }
+
+            var acceptedMarkers: [TopicMarker] = []
+            var previousBoundary = chapter.start
+            for marker in candidateMarkers {
+                let endSlack = normalizedStructuralChapterTitle(marker.title) == "outro" ? 20.0 : minimumSplitChapterDuration
+                guard marker.time - previousBoundary >= minimumSplitChapterDuration,
+                      chapter.end - marker.time >= endSlack else {
+                    continue
+                }
+                acceptedMarkers.append(marker)
+                previousBoundary = marker.time
+            }
+
+            guard !acceptedMarkers.isEmpty else {
+                result.append(chapter)
+                continue
+            }
+
+            splitCount += acceptedMarkers.count
+            var segmentStart = chapter.start
+            var segmentTitle = chapter.title
+            for marker in acceptedMarkers {
+                result.append(ICGeneratedChapter(start: segmentStart,
+                                                 end: marker.time,
+                                                 title: segmentTitle,
+                                                 isSponsor: segmentTitle.hasPrefix("Sponsor: ")))
+                segmentStart = marker.time
+                segmentTitle = titleForSplitMarker(marker,
+                                                   start: segmentStart,
+                                                   end: chapter.end,
+                                                   transcriptCues: transcriptCues)
+            }
+            result.append(ICGeneratedChapter(start: segmentStart,
+                                             end: chapter.end,
+                                             title: segmentTitle,
+                                             isSponsor: segmentTitle.hasPrefix("Sponsor: ")))
+        }
+
+        if splitCount > 0 {
+            NSLog("[ChapterGenerator] Uebergrosse Inhaltskapitel anhand von Themenmarkern geteilt: %d", splitCount)
+        }
+        return normalizedChapters(result,
+                                  totalDuration: totalDuration,
+                                  forceContinuousBoundaries: true)
+    }
+
+    private static func titleForSplitMarker(_ marker: TopicMarker,
+                                            start: Double,
+                                            end: Double,
+                                            transcriptCues: [ICTranscriptCue]) -> String {
+        let rawTitle = marker.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let markerChapter = ICGeneratedChapter(start: start,
+                                               end: end,
+                                               title: rawTitle,
+                                               isSponsor: rawTitle.hasPrefix("Sponsor: "))
+        if normalizedStructuralChapterTitle(rawTitle) == "outro",
+           hasOutroCueEvidence(for: markerChapter, transcriptCues: transcriptCues) {
+            return "Outro"
+        }
+        if normalizedStructuralChapterTitle(rawTitle) != nil
+            || isGenericChapterTitle(rawTitle)
+            || isWeakChapterTitle(rawTitle) {
+            if let contentTitle = contentTitleForChapter(markerChapter, transcriptCues: transcriptCues) {
+                return contentTitle
+            }
+        }
+        return rawTitle
+    }
+
+    private static func chaptersBySplittingExplicitOutroMarkers(_ chapters: [ICGeneratedChapter],
+                                                                topicMarkers: [TopicMarker],
+                                                                transcriptCues: [ICTranscriptCue],
+                                                                totalDuration: Double) -> [ICGeneratedChapter] {
+        guard chapters.count >= 2 else { return chapters }
+        let outroMarkers = deduplicatedMarkers(topicMarkers).filter {
+            normalizedStructuralChapterTitle($0.title) == "outro"
+                && $0.time < totalDuration - 4
+        }
+        guard !outroMarkers.isEmpty else { return chapters }
+
+        var result: [ICGeneratedChapter] = []
+        var splitCount = 0
+        for chapter in chapters {
+            guard !chapter.isSponsor,
+                  normalizedStructuralChapterTitle(chapter.title) == nil,
+                  let marker = outroMarkers.first(where: {
+                      $0.time > chapter.start + minimumSplitChapterDuration
+                          && $0.time < chapter.end - 4
+                  }) else {
+                result.append(chapter)
+                continue
+            }
+
+            let outroChapter = ICGeneratedChapter(start: marker.time,
+                                                  end: chapter.end,
+                                                  title: "Outro",
+                                                  isSponsor: false)
+            guard hasOutroCueEvidence(for: outroChapter, transcriptCues: transcriptCues) else {
+                result.append(chapter)
+                continue
+            }
+
+            let contentPart = ICGeneratedChapter(start: chapter.start,
+                                                 end: marker.time,
+                                                 title: chapter.title,
+                                                 isSponsor: false)
+            let contentTitle = chapter.title
+                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .lowercased()
+                .contains("outro")
+                ? (contentTitleForChapter(contentPart, transcriptCues: transcriptCues) ?? chapter.title)
+                : chapter.title
+            result.append(ICGeneratedChapter(start: chapter.start,
+                                             end: marker.time,
+                                             title: contentTitle,
+                                             isSponsor: false))
+            result.append(outroChapter)
+            splitCount += 1
+        }
+
+        if splitCount > 0 {
+            NSLog("[ChapterGenerator] Explizite Outro-Marker in Schlusskapitel geteilt: %d", splitCount)
+        }
+        return normalizedChapters(result,
+                                  totalDuration: totalDuration,
+                                  forceContinuousBoundaries: true)
+    }
+
+    private static func chaptersByMergingTerminalFragmentsIntoOutro(_ chapters: [ICGeneratedChapter],
+                                                                    transcriptDuration: Double) -> [ICGeneratedChapter] {
+        guard chapters.count >= 2 else { return chapters }
+        var result = chapters
+        let lastIndex = result.index(before: result.endIndex)
+        let previousIndex = result.index(before: lastIndex)
+        let last = result[lastIndex]
+        let previous = result[previousIndex]
+        guard normalizedStructuralChapterTitle(previous.title) == "outro",
+              normalizedStructuralChapterTitle(last.title) == nil,
+              !last.isSponsor,
+              last.end >= transcriptDuration - 2,
+              last.end - last.start <= minimumSplitChapterDuration else {
+            return chapters
+        }
+        result[previousIndex] = ICGeneratedChapter(start: previous.start,
+                                                   end: last.end,
+                                                   title: "Outro",
+                                                   isSponsor: false)
+        result.remove(at: lastIndex)
+        NSLog("[ChapterGenerator] Kurzes Schlussfragment in Outro zusammengefuehrt")
+        return result
+    }
+
+    private static func chaptersByMergingShortFragmentsAroundStructuralChapters(_ chapters: [ICGeneratedChapter],
+                                                                               totalDuration: Double) -> [ICGeneratedChapter] {
+        guard chapters.count >= 2 else { return chapters }
+        let shortFragmentDuration = 15.0
+        var result: [ICGeneratedChapter] = []
+        var mergeCount = 0
+
+        for chapter in chapters {
+            let duration = chapter.end - chapter.start
+            let isShortContentFragment = duration <= shortFragmentDuration
+                && !chapter.isSponsor
+                && normalizedStructuralChapterTitle(chapter.title) == nil
+
+            if isShortContentFragment,
+               let previous = result.last,
+               normalizedStructuralChapterTitle(previous.title) != nil {
+                result[result.count - 1] = ICGeneratedChapter(start: previous.start,
+                                                              end: chapter.end,
+                                                              title: previous.title,
+                                                              isSponsor: previous.isSponsor)
+                mergeCount += 1
+                continue
+            }
+
+            result.append(chapter)
+        }
+
+        if mergeCount > 0 {
+            NSLog("[ChapterGenerator] Kurze Fragmente an Strukturkapitel angefuegt: %d", mergeCount)
+        }
+        return normalizedChapters(result,
+                                  totalDuration: totalDuration,
+                                  forceContinuousBoundaries: true)
+    }
+
+    private static func chaptersByMergingShortFragmentsBeforeStructuralChapters(_ chapters: [ICGeneratedChapter],
+                                                                               totalDuration: Double) -> [ICGeneratedChapter] {
+        guard chapters.count >= 3 else { return chapters }
+        let shortFragmentDuration = 20.0
+        let maximumMergedDuration = 30.0
+        var result: [ICGeneratedChapter] = []
+        var index = chapters.startIndex
+        var mergeCount = 0
+
+        while index < chapters.endIndex {
+            let chapter = chapters[index]
+            let duration = chapter.end - chapter.start
+            let isShortContentFragment = duration <= shortFragmentDuration
+                && !chapter.isSponsor
+                && normalizedStructuralChapterTitle(chapter.title) == nil
+
+            guard isShortContentFragment else {
+                result.append(chapter)
+                index = chapters.index(after: index)
+                continue
+            }
+
+            var runEnd = index
+            var mergedEnd = chapter.end
+            while chapters.index(after: runEnd) < chapters.endIndex {
+                let nextIndex = chapters.index(after: runEnd)
+                let next = chapters[nextIndex]
+                let nextDuration = next.end - next.start
+                guard nextDuration <= shortFragmentDuration,
+                      !next.isSponsor,
+                      normalizedStructuralChapterTitle(next.title) == nil else {
+                    break
+                }
+                runEnd = nextIndex
+                mergedEnd = next.end
+            }
+
+            let afterRun = chapters.index(after: runEnd)
+            let runContainsMultipleFragments = runEnd != index
+            if runContainsMultipleFragments,
+               afterRun < chapters.endIndex,
+               normalizedStructuralChapterTitle(chapters[afterRun].title) != nil,
+               mergedEnd - chapter.start <= maximumMergedDuration {
+                result.append(ICGeneratedChapter(start: chapter.start,
+                                                 end: mergedEnd,
+                                                 title: chapter.title,
+                                                 isSponsor: false))
+                mergeCount += 1
+                index = afterRun
+                continue
+            }
+
+            result.append(chapter)
+            index = chapters.index(after: index)
+        }
+
+        if mergeCount > 0 {
+            NSLog("[ChapterGenerator] Kurze Fragmente vor Strukturkapiteln zusammengefuehrt: %d", mergeCount)
+        }
+        return normalizedChapters(result,
+                                  totalDuration: totalDuration,
+                                  forceContinuousBoundaries: true)
+    }
+
+    private static func chaptersByReplacingGenericContentTitles(_ chapters: [ICGeneratedChapter],
+                                                                transcriptCues: [ICTranscriptCue]) -> [ICGeneratedChapter] {
+        var replacementCount = 0
+        let repaired = chapters.map { chapter -> ICGeneratedChapter in
+            guard !chapter.isSponsor,
+                  normalizedStructuralChapterTitle(chapter.title) == nil,
+                  (isGenericChapterTitle(chapter.title) || isWeakChapterTitle(chapter.title)),
+                  let replacement = contentTitleForChapter(chapter, transcriptCues: transcriptCues) else {
+                return chapter
+            }
+            replacementCount += 1
+            return ICGeneratedChapter(start: chapter.start,
+                                      end: chapter.end,
+                                      title: replacement,
+                                      isSponsor: replacement.hasPrefix("Sponsor: "))
+        }
+        if replacementCount > 0 {
+            NSLog("[ChapterGenerator] Generische Kapiteltitel durch Transkriptinhalt ersetzt: %d", replacementCount)
+        }
+        return repaired
+    }
+
+    private static func chaptersByReplacingVerboseContentTitles(_ chapters: [ICGeneratedChapter],
+                                                                transcriptCues: [ICTranscriptCue]) -> [ICGeneratedChapter] {
+        var replacementCount = 0
+        let repaired = chapters.map { chapter -> ICGeneratedChapter in
+            guard !chapter.isSponsor,
+                  normalizedStructuralChapterTitle(chapter.title) == nil,
+                  isVerboseContentTitle(chapter.title),
+                  let replacement = conciseContentTitleForChapter(chapter, transcriptCues: transcriptCues),
+                  replacement != chapter.title else {
+                return chapter
+            }
+            replacementCount += 1
+            return ICGeneratedChapter(start: chapter.start,
+                                      end: chapter.end,
+                                      title: replacement,
+                                      isSponsor: replacement.hasPrefix("Sponsor: "))
+        }
+        if replacementCount > 0 {
+            NSLog("[ChapterGenerator] Lange Kapiteltitel durch kurze Inhaltsueberschriften ersetzt: %d", replacementCount)
+        }
+        return repaired
     }
 
     private static func chaptersByAddingMusicBoundaryChapters(_ chapters: [ICGeneratedChapter],
@@ -1914,6 +2344,150 @@ private struct ChaptersFile: Codable {
         return titles.first { !isWeakChapterTitle($0) } ?? titles.first
     }
 
+    private static func conciseContentTitleForChapter(_ chapter: ICGeneratedChapter,
+                                                      transcriptCues: [ICTranscriptCue]) -> String? {
+        let preserveTeaserPrefix = chapter.title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .lowercased()
+            .hasPrefix("teaser:")
+        let candidates = transcriptCues
+            .filter {
+                $0.end > chapter.start
+                    && $0.start < chapter.end
+                    && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && !isMusicOnlyCue($0)
+            }
+            .sorted { $0.start < $1.start }
+            .compactMap { conciseContentTitle(from: $0.text, preserveTeaserPrefix: preserveTeaserPrefix) }
+        return candidates.first { isUsableConciseContentTitle($0) }
+            ?? candidates.first { !isWeakChapterTitle($0) && !isGenericChapterTitle($0) && !isVerboseContentTitle($0) }
+    }
+
+    private static func conciseContentTitle(from text: String, preserveTeaserPrefix: Bool) -> String? {
+        let cleaned = text.replacingOccurrences(
+            of: #"<\|[^>]+\|>"#,
+            with: "",
+            options: .regularExpression
+        )
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+
+        let normalized = cleaned
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .lowercased()
+        let title: String
+        if normalized.contains("kaloriendefizit") {
+            title = "Kaloriendefizit"
+        } else if normalized.contains("thema kalorien") {
+            title = "Kalorien"
+        } else if normalized.contains("kalorien")
+                    && (normalized.contains("rechnung") || normalized.contains("addier")) {
+            title = "Kalorienbilanz"
+        } else if normalized.contains("kalorien")
+                    && (normalized.contains("energie") || normalized.contains("bedarf")) {
+            title = "Kalorien und Energiebedarf"
+        } else if normalized.contains("kalorien")
+                    && (normalized.contains("sport") || normalized.contains("joggen") || normalized.contains("lauf")) {
+            title = "Kalorienverbrauch beim Sport"
+        } else if normalized.contains("ruheumsatz") || normalized.contains("muskel") {
+            title = "Muskeln und Ruheumsatz"
+        } else if normalized.contains("sport")
+                    && (normalized.contains("abnehm") || normalized.contains("gewicht") || normalized.contains("nicht ab") || normalized.contains("nehmt")) {
+            title = "Sport und Abnehmen"
+        } else if normalized.contains("sport")
+                    && (normalized.contains("hunger") || normalized.contains("appetit") || normalized.contains("essen")) {
+            title = "Sport, Hunger und Essen"
+        } else if normalized.contains("energie")
+                    && (normalized.contains("verbrauch") || normalized.contains("bedarf")) {
+            title = "Energiebedarf des Körpers"
+        } else if let keywordTitle = keywordContentTitle(from: cleaned) {
+            title = keywordTitle
+        } else {
+            let words = cleaned.split(separator: " ").prefix(7).joined(separator: " ")
+            title = words.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard !title.isEmpty else { return nil }
+        return preserveTeaserPrefix && !title.hasPrefix("Teaser:") ? "Teaser: \(title)" : title
+    }
+
+    private static func keywordContentTitle(from text: String) -> String? {
+        let fragments = text
+            .components(separatedBy: CharacterSet(charactersIn: ".?!"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let source = fragments
+            .max { contentKeywordScore($0) < contentKeywordScore($1) } ?? text
+        let words = source
+            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
+            .split(separator: " ")
+            .map(String.init)
+        let keywords = words.filter { word in
+            let normalized = word
+                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .lowercased()
+            return word.count >= 4 && !contentTitleStopwords.contains(normalized)
+        }
+        let unique = keywords.reduce(into: [String]()) { result, word in
+            let normalized = word
+                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                .lowercased()
+            if !result.contains(where: {
+                $0.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE")).lowercased() == normalized
+            }) {
+                result.append(word)
+            }
+        }
+        guard !unique.isEmpty else { return nil }
+        return unique.prefix(3).joined(separator: " und ")
+    }
+
+    private static func contentKeywordScore(_ text: String) -> Int {
+        text
+            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
+            .split(separator: " ")
+            .map(String.init)
+            .filter { word in
+                let normalized = word
+                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                    .lowercased()
+                return word.count >= 4 && !contentTitleStopwords.contains(normalized)
+            }
+            .count
+    }
+
+    private static func isUsableConciseContentTitle(_ title: String) -> Bool {
+        if isWeakChapterTitle(title) || isGenericChapterTitle(title) || isVerboseContentTitle(title) {
+            return false
+        }
+        let wordCount = title.split { $0.isWhitespace || $0.isNewline }.count
+        return wordCount > 1 || title.count >= 7
+    }
+
+    private static let contentTitleStopwords: Set<String> = [
+        "aber", "alle", "also", "auch", "auf", "aus", "bei", "beim", "bin", "bis", "bist",
+        "dann", "das", "dass", "den", "denn", "der", "des", "die", "dies", "diese", "dieser",
+        "doch", "durch", "ein", "eine", "einem", "einen", "einer", "einfach", "eigentlich",
+        "euch", "fuer", "fur", "ganz", "geht", "genau", "gibt", "habe", "haben", "habt",
+        "halt", "heißt", "heisst", "hier", "ich", "ihm", "ihn", "ihr", "ihre", "immer", "ist", "jetzt",
+        "kann", "kaum", "kein", "keine", "klar", "mal", "man", "mehr", "mein", "mich",
+        "mit", "muss", "musste", "muesste", "müsste", "macht", "nach", "noch", "oder", "ohne", "schon", "sehr",
+        "sich", "sind", "so", "thema", "ueber", "über", "und", "uns", "unser", "vom", "von", "war",
+        "was", "wenn", "wer", "wie", "wird", "wirklich", "wir", "wo", "wohl", "wuerde", "würde", "zu", "zum", "zur",
+        "ende", "reinen", "rechnung", "addieren", "darunter", "verstehen",
+    ]
+
+    private static func isVerboseContentTitle(_ title: String) -> Bool {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split { $0.isWhitespace || $0.isNewline }
+        if words.count > 8 { return true }
+        if trimmed.contains("?") { return true }
+        if words.count > 4 && trimmed.contains(".") { return true }
+        return isWeakChapterTitle(trimmed)
+    }
+
     private static func isWeakChapterTitle(_ title: String) -> Bool {
         var normalized = title
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1935,6 +2509,9 @@ private struct ChaptersFile: Codable {
             "aber ",
             "oder ",
             "egal ob",
+            "ah ja",
+            "so ist",
+            "wohl",
             "die sache ist",
         ]
         return weakPrefixes.contains { normalized.hasPrefix($0) }
@@ -1972,7 +2549,7 @@ private struct ChaptersFile: Codable {
         let tolerance = 2.0
         let firstSpeechStart = speechBoundaries.firstSpeechStart
         let lastSpeechEnd = speechBoundaries.lastSpeechEnd
-        let timelineEnd = max(transcriptDuration, validSegments.map { $0.end }.max() ?? transcriptDuration)
+        let timelineEnd = transcriptDuration
         let hasFullTimeline = validSegments.contains { $0.type != "music" }
         let earlyIntroWindow = 90.0
         let standaloneMusicDuration = 4.0

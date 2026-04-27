@@ -51,6 +51,17 @@ require(
     "Completed queue items must persist as completed rows for the 30-minute retention window without being restarted.",
 )
 require(
+    "item.chapterOnly = pItem.chapterOnly == true" in queue_source,
+    "Completed chapter-only queue rows lose their chapterOnly flag after app restart, which makes remote/UI inspection misleading.",
+)
+require(
+    "pItem.statusRawValue == ICTranscriptionStatus.failed.rawValue" in queue_source
+    and "item.status = .failed" in queue_source
+    and "item.error = pItem.error" in queue_source
+    and "item.completedAt = nil" in queue_source,
+    "Failed queue rows are not persisted/restored for retry after app restart, or retry does not clear their retained timestamp.",
+)
+require(
     "items.removeAll { $0.status == .completed }" not in queue_source,
     "Completed queue items are still removed immediately.",
 )
@@ -71,6 +82,14 @@ require(
     "applicationWillEnterForeground" in queue_source
     and "self?.resumeIfNeeded()" in queue_source,
     "Foreground/unlock must resume queued transcription work instead of only refreshing background state.",
+)
+scene_active_start = scene_delegate_source.find("- (void)sceneDidBecomeActive:")
+scene_active_end = scene_delegate_source.find("- (void)sceneWillResignActive:", scene_active_start)
+scene_active_block = scene_delegate_source[scene_active_start:scene_active_end]
+require(
+    'recordLifecycle:@"sceneDidBecomeActive"' in scene_active_block
+    and "[[TranscriptionQueue shared] resumeIfNeeded];" in scene_active_block,
+    "Foreground resume must also run when the scene becomes active, after applicationState leaves background.",
 )
 require(
     "dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC))" not in scene_delegate_source
@@ -158,6 +177,14 @@ require(
 require(
     "try await self.chapterGen.generateChaptersAsync(" in queue_source,
     "Transcription queue is no longer awaiting chapter generation directly, so cancel/remove can leave stale LLM work running.",
+)
+require(
+    "item.chapterOnly = true\n        items.append(item)\n        persistQueue()\n        postQueueChangeNotification()\n\n        if !isProcessing && chapterTask == nil && !shouldPauseWhisperKitForBackground {\n            startChapterGenerationTask(for: item, srtURL: srtURL, startReason: \"chapter-task-enqueued\")\n        }" in queue_source,
+    "Chapter-only debug/UI jobs must stay queued behind an active transcription instead of starting a second model task concurrently.",
+)
+require(
+    "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." in queue_source,
+    "Background-paused jobs still tell users to tap even though foreground resume should restart them automatically.",
 )
 require(
     "func analyzeAsync(audioURL: URL, episodeHash: String) async throws -> [ICAudioSegment]" in audio_source and

@@ -167,6 +167,61 @@ require(
 )
 
 require(
+    "chaptersBySplittingOversizedContentChapters" in chapter_source
+    and "oversizedContentChapterIssue" in chapter_source
+    and "topicMarkers:" in chapter_source
+    and "chapterDuration > maximumContentChapterDuration" in chapter_source
+    and "marker.time > chapter.start" in chapter_source,
+    "Chapter generation still accepts one huge content chapter even when deterministic topic markers exist inside it.",
+)
+
+require(
+    'normalizedStructuralChapterTitle(marker.title) == "outro"' in chapter_source
+    and '"ah ja"' in chapter_source
+    and '"so ist"' in chapter_source
+    and "chaptersByMergingTerminalFragmentsIntoOutro" in chapter_source,
+    "Marker-based chapter repair still drops short spoken outros or keeps weak filler titles.",
+)
+
+require(
+    "chaptersBySplittingExplicitOutroMarkers" in chapter_source
+    and "Explizite Outro-Marker in Schlusskapitel geteilt" in chapter_source
+    and "hasOutroCueEvidence(for: outroChapter" in chapter_source,
+    "Final chapter repair still leaves spoken outro markers buried inside the preceding content chapter.",
+)
+
+require(
+    "chaptersByMergingShortFragmentsAroundStructuralChapters" in chapter_source
+    and "Kurze Fragmente an Strukturkapitel angefuegt" in chapter_source
+    and "duration <= shortFragmentDuration" in chapter_source,
+    "Final chapter repair still saves tiny hallucinated fragments directly after intro or jingle chapters.",
+)
+
+require(
+    "chaptersByMergingShortFragmentsBeforeStructuralChapters" in chapter_source
+    and "Kurze Fragmente vor Strukturkapiteln zusammengefuehrt" in chapter_source
+    and "maximumMergedDuration = 30.0" in chapter_source,
+    "Final chapter repair still keeps multiple tiny spoken teaser fragments before an intro instead of merging them.",
+)
+
+require(
+    "chaptersByReplacingGenericContentTitles" in chapter_source
+    and "Generische Kapiteltitel durch Transkriptinhalt ersetzt" in chapter_source
+    and '"erste themen"' in chapter_source
+    and 'normalized.hasPrefix("musiksegment")' in chapter_source,
+    "Final chapter repair still preserves generic local-model titles instead of replacing them from transcript content.",
+)
+
+require(
+    "chaptersByReplacingVerboseContentTitles" in chapter_source
+    and "isVerboseContentTitle" in chapter_source
+    and "conciseContentTitleForChapter" in chapter_source
+    and "isUsableConciseContentTitle" in chapter_source
+    and "Lange Kapiteltitel durch kurze Inhaltsueberschriften ersetzt" in chapter_source,
+    "Final chapter repair still preserves whole transcript sentences as chapter titles.",
+)
+
+require(
     '"startedAt": Self.timestampString(Date())' in chapter_source
     and '"completedAt": Self.timestampString(Date())' in chapter_source,
     "Chapter debug traces still do not show exactly which model call is active or completed.",
@@ -188,14 +243,22 @@ require(
 
 require(
     "isMusicOnlyCue" in chapter_source
+    and "let timelineEnd = transcriptDuration" in chapter_source
     and "speechEnd <= lastMusic.start + tolerance" in chapter_source,
-    "Outro boundaries still treat transcript-only music placeholders as speech and can create a sub-second outro.",
+    "Outro boundaries still use music segments beyond the transcript duration and can demand an impossible outro chapter.",
 )
 
 require(
     "missingMusicBoundaryIssue" in chapter_source
     and "Intro-/Outro-Musik wurde nicht als eigenes Kapitel erkannt" in chapter_source,
     "Chapter validation does not reject missing or incorrectly bounded intro/outro music chapters.",
+)
+
+require(
+    "coveringMusicBoundary(" in chapter_source
+    and "chapterCoversMusicBoundary(" in chapter_source
+    and "maxAbsorbedFragmentDuration = 20.0" in chapter_source,
+    "Chapter validation still rejects structural chapters that correctly cover a music boundary plus a tiny adjacent transcript fragment.",
 )
 
 require(
