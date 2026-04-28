@@ -52,9 +52,39 @@ require(
     "Failed transcription rows cannot be restarted cleanly.",
 )
 require(
+    "shouldPreserveTranscriptCheckpoint" in queue_source
+    and "if !shouldPreserveTranscriptCheckpoint {" in queue_source
+    and "cleanupBrokenArtifacts(for: item)" in queue_source.split("shouldPreserveTranscriptCheckpoint", 1)[1],
+    "Retry after a killed transcription still deletes the existing checkpoint instead of resuming it.",
+)
+require(
+    "currentTranscriptionRunID" in engine_source
+    and "let transcriptionRunID = UUID()" in engine_source
+    and "currentTranscriptionRunID = transcriptionRunID" in engine_source
+    and "guard self.currentTranscriptionRunID == transcriptionRunID" in engine_source
+    and "completion(allCues, nil)" not in engine_source,
+    "TranscriptionEngine can still invoke the same completion twice after cancel/resume races.",
+)
+require(
     "segmentCallback: liveSegmentCallback" in backend_source
     and "deliveredSegmentKeys" in backend_source,
     "WhisperKit segments are still only delivered after the full transcription returns.",
+)
+require(
+    "progress(p)" not in backend_source.split("func deliverSegmentIfNeeded", 1)[1].split("let liveSegmentCallback", 1)[0],
+    "WhisperKit segment delivery still reports duplicate progress through both segmentCallback and progress.",
+)
+require(
+    "modelLoadTask" in backend_source
+    and "if let modelLoadTask" in backend_source
+    and "modelLoadGeneration" in backend_source,
+    "Concurrent resume attempts can still start multiple WhisperKit/Core ML model loads after a stopped transcription.",
+)
+model_load_block = queue_source.split("// Step 2: Pre-load WhisperKit model", 1)[1].split("guard await MainActor.run", 1)[0]
+require(
+    "try await WhisperKitBackend.shared.prepareModel(statusUpdate: detailUpdater)" in model_load_block
+    and "Task.detached" not in model_load_block,
+    "Model preparation is still launched through an untracked detached task, so pause/resume cancellation can leave an orphaned Core ML load running.",
 )
 require(
     "prewarm: true" in backend_source

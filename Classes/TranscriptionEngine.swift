@@ -559,6 +559,7 @@ private struct TranscriptionCheckpoint: Codable {
 
     private var currentTask: Task<Void, Never>?
     private var currentCompletion: (([ICTranscriptCue]?, Error?) -> Void)?
+    private var currentTranscriptionRunID: UUID?
 
     nonisolated static func isBackgroundGPUExecutionError(_ error: Error) -> Bool {
         var errors: [NSError] = []
@@ -637,9 +638,11 @@ private struct TranscriptionCheckpoint: Codable {
             return
         }
 
+        let transcriptionRunID = UUID()
         isTranscribing = true
         currentProgress = 0
         currentCompletion = completion
+        currentTranscriptionRunID = transcriptionRunID
 
         // Load checkpoint if exists
         let checkpoint = loadCheckpoint(for: episodeHash)
@@ -754,16 +757,21 @@ private struct TranscriptionCheckpoint: Codable {
                 self.resetFailureCounter(for: episodeHash)
 
                 await MainActor.run {
+                    guard self.currentTranscriptionRunID == transcriptionRunID,
+                          let completionHandler = self.currentCompletion else { return }
                     self.isTranscribing = false
                     self.currentStatus = .completed
                     self.currentProgress = 1.0
+                    self.currentTask = nil
                     self.currentCompletion = nil
+                    self.currentTranscriptionRunID = nil
                     progress(1.0, .completed)
-                    completion(allCues, nil)
+                    completionHandler(allCues, nil)
                 }
 
             } catch {
                 await MainActor.run {
+                    guard self.currentTranscriptionRunID == transcriptionRunID else { return }
                     let wasCancelled = (self.currentCompletion == nil) || error is CancellationError || Task.isCancelled
                     // Increment failure counter only for real errors, not cancellation
                     if !wasCancelled && !Self.isBackgroundGPUExecutionError(error) {
@@ -772,10 +780,14 @@ private struct TranscriptionCheckpoint: Codable {
 
                     self.isTranscribing = false
                     self.currentStatus = wasCancelled ? .none : .failed
+                    self.currentTask = nil
                     // Only call completion if not already called by cancelTranscription()
-                    if self.currentCompletion != nil {
+                    if let completionHandler = self.currentCompletion {
                         self.currentCompletion = nil
-                        completion(nil, error)
+                        self.currentTranscriptionRunID = nil
+                        completionHandler(nil, error)
+                    } else {
+                        self.currentTranscriptionRunID = nil
                     }
                 }
             }
@@ -785,6 +797,7 @@ private struct TranscriptionCheckpoint: Codable {
     @objc func cancelTranscription() {
         let cb = currentCompletion
         currentCompletion = nil
+        currentTranscriptionRunID = nil
         currentTask?.cancel()
         currentTask = nil
         isTranscribing = false

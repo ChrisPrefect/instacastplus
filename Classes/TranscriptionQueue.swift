@@ -818,7 +818,12 @@ private struct PersistedQueue: Codable {
 
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
         backgroundPausedEpisodeHashes.remove(episodeHash)
-        cleanupBrokenArtifacts(for: item)
+        let shouldPreserveTranscriptCheckpoint = !item.chapterOnly
+            && !engine.hasSRT(for: episodeHash)
+            && engine.hasCheckpoint(for: episodeHash)
+        if !shouldPreserveTranscriptCheckpoint {
+            cleanupBrokenArtifacts(for: item)
+        }
         engine.resetCheckpointFailureCounter(for: episodeHash)
         if item.chapterOnly || engine.hasSRT(for: episodeHash) {
             item.chapterOnly = true
@@ -1340,9 +1345,8 @@ private struct PersistedQueue: Codable {
                 return
             }
 
-            // Step 2: Pre-load WhisperKit model at low priority (utility QoS).
-            // Model loading is CPU-heavy (CoreML) and must not compete with UI work.
-            // Task.detached ensures it runs off MainActor at lower priority.
+            // Step 2: Pre-load WhisperKit model. The backend coalesces concurrent
+            // resume attempts so CoreML never opens the same model twice.
             if self.engine.engineType == .whisperKit {
                 await MainActor.run {
                     guard self.processingRunIsCurrent(runID) else { return }
@@ -1360,9 +1364,7 @@ private struct PersistedQueue: Codable {
 
                 let modelStart = Date()
                 do {
-                    try await Task.detached(priority: .utility) {
-                        try await WhisperKitBackend.shared.prepareModel(statusUpdate: detailUpdater)
-                    }.value
+                    try await WhisperKitBackend.shared.prepareModel(statusUpdate: detailUpdater)
                 } catch {
                     await MainActor.run {
                         guard self.processingRunIsCurrent(runID) else { return }

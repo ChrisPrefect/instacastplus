@@ -93,3 +93,20 @@ require(
     and 'title: "Outro"' in chapter_source,
     "Generated Intro/Outro chapters are not constrained by transcript cue boundaries, so they can include spoken text.",
 )
+
+require(
+    "isMostlyCoveredByMusic" in chapter_source
+    and "speechBoundaries(from: transcriptCues, musicSegments: musicSegments)" in chapter_source,
+    "Trailing music chapters can still be lost when Whisper hallucinates speech over the outro music segment.",
+)
+
+require(
+    "isLowInformationContentTitle" in chapter_source
+    and '"wollte"' in chapter_source
+    and '"wissen"' in chapter_source
+    and '"soll"' in chapter_source
+    and '"sein"' in chapter_source
+    and '"fangen"' in chapter_source
+    and '"aktuellen"' in chapter_source,
+    "Chapter titles can still be low-information sentence fragments like 'wollte wissen' or 'fangen und aktuellen'.",
+)

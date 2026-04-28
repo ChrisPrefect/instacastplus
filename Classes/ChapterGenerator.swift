@@ -1031,6 +1031,7 @@ private struct ChaptersFile: Codable {
             "vielen dank fürs zuhoren",
             "vielen dank euch fürs zuhoren",
             "bis dahin",
+            "bis demnaechst",
             "macht's gut",
             "macht es gut",
             "tschuss",
@@ -2510,14 +2511,16 @@ private struct ChaptersFile: Codable {
 
     private static let contentTitleStopwords: Set<String> = [
         "aber", "alle", "also", "auch", "auf", "aus", "bei", "beim", "bin", "bis", "bist",
-        "dann", "das", "dass", "den", "denn", "der", "des", "die", "dies", "diese", "dieser",
+        "aktuell", "aktuelle", "aktuellen", "aktueller", "aktuelles", "anfangen", "fangen",
+        "beginnen", "beginn", "kommen", "nahe", "starten",
+        "alles", "dabei", "dann", "das", "dass", "dauert", "den", "denn", "der", "des", "die", "dies", "diese", "dieser",
         "doch", "durch", "ein", "eine", "einem", "einen", "einer", "einfach", "eigentlich",
-        "egal", "euch", "fuer", "fur", "ganz", "geht", "genau", "gibt", "habe", "haben", "habt",
-        "halt", "heißt", "heisst", "heraus", "hier", "ich", "ihm", "ihn", "ihr", "ihre", "immer", "ist", "jetzt",
-        "kann", "kaum", "kein", "keine", "klar", "mal", "man", "mehr", "mein", "mich",
-        "mit", "muss", "musste", "muesste", "müsste", "macht", "nach", "natürlich", "natuerlich", "noch", "oder", "ohne", "schon", "schnitt", "sehr",
-        "sich", "sind", "so", "tatsächlich", "tatsaechlich", "thema", "ueber", "über", "und", "uns", "unser", "unserer", "beiden", "vom", "von", "war",
-        "was", "wenn", "wer", "wie", "wird", "wirklich", "wir", "wo", "wohl", "wuerde", "würde", "zu", "zum", "zur",
+        "egal", "etwas", "euch", "existiert", "fuer", "fur", "ganz", "geben", "geht", "gemacht", "genau", "gerade", "gibt", "habe", "haben", "habt",
+        "halt", "heißt", "heisst", "heraus", "hier", "hochladen", "ich", "ihm", "ihn", "ihr", "ihre", "immer", "interessant", "ist", "jetzt",
+        "kann", "kaum", "kein", "keine", "klar", "koennen", "können", "kurz", "lange", "mal", "man", "mehr", "mein", "mich",
+        "mit", "muss", "musste", "muesste", "müsste", "macht", "nach", "natürlich", "natuerlich", "nicht", "noch", "nochmal", "oder", "ohne", "quasi", "schon", "schluss", "schnitt", "sehr",
+        "sein", "sich", "sind", "so", "soll", "sollen", "tatsächlich", "tatsaechlich", "thema", "ueber", "über", "uebrigens", "übrigens", "und", "uns", "unser", "unserer", "beiden", "vom", "von", "war",
+        "was", "wenn", "wer", "werden", "wie", "wird", "wirklich", "wir", "wissen", "wo", "wohl", "wollte", "wollten", "wollen", "wuerde", "würde", "zu", "zum", "zur",
         "ende", "reinen", "rechnung", "addieren", "darunter", "verstehen",
     ]
 
@@ -2526,6 +2529,7 @@ private struct ChaptersFile: Codable {
         let words = trimmed.split { $0.isWhitespace || $0.isNewline }
         if words.count > 8 { return true }
         if trimmed.contains("?") { return true }
+        if words.count > 4 && trimmed.contains(",") { return true }
         if words.count > 4 && trimmed.contains(".") { return true }
         return isWeakChapterTitle(trimmed)
     }
@@ -2557,6 +2561,22 @@ private struct ChaptersFile: Codable {
             "die sache ist",
         ]
         return weakPrefixes.contains { normalized.hasPrefix($0) }
+            || isLowInformationContentTitle(normalized)
+    }
+
+    private static func isLowInformationContentTitle(_ title: String) -> Bool {
+        let words = title
+            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
+            .split(separator: " ")
+            .map { word in
+                String(word)
+                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                    .lowercased()
+            }
+        guard !words.isEmpty, words.count <= 4 else { return false }
+        return !words.contains { word in
+            word.count >= 4 && !contentTitleStopwords.contains(word)
+        }
     }
 
     private static func chaptersByRemovingTerminalGenericChapters(_ chapters: [ICGeneratedChapter],
@@ -2586,7 +2606,8 @@ private struct ChaptersFile: Codable {
             .filter { $0.end > $0.start && $0.end > 0 }
             .sorted { $0.start < $1.start }
         let music = validSegments.filter { $0.type == "music" }
-        guard !music.isEmpty, let speechBoundaries = speechBoundaries(from: transcriptCues) else { return [] }
+        guard !music.isEmpty,
+              let speechBoundaries = speechBoundaries(from: transcriptCues, musicSegments: musicSegments) else { return [] }
 
         let tolerance = 2.0
         let firstSpeechStart = speechBoundaries.firstSpeechStart
@@ -2645,15 +2666,31 @@ private struct ChaptersFile: Codable {
         return chapters
     }
 
-    private static func speechBoundaries(from cues: [ICTranscriptCue]) -> (firstSpeechStart: Double, lastSpeechEnd: Double)? {
+    private static func speechBoundaries(from cues: [ICTranscriptCue],
+                                         musicSegments: [ICAudioSegment]?) -> (firstSpeechStart: Double, lastSpeechEnd: Double)? {
         let spokenCues = cues
             .filter {
                 !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     && !isMusicOnlyCue($0)
+                    && !isMostlyCoveredByMusic($0, musicSegments: musicSegments)
             }
             .sorted { $0.start < $1.start }
         guard let first = spokenCues.first, let last = spokenCues.last else { return nil }
         return (first.start, last.end)
+    }
+
+    private static func isMostlyCoveredByMusic(_ cue: ICTranscriptCue,
+                                               musicSegments: [ICAudioSegment]?) -> Bool {
+        let duration = cue.end - cue.start
+        guard duration > 0 else { return false }
+        let overlap = (musicSegments ?? [])
+            .filter { $0.type == "music" }
+            .reduce(0.0) { total, segment in
+                let start = max(cue.start, segment.start)
+                let end = min(cue.end, segment.end)
+                return total + max(0, end - start)
+            }
+        return overlap / duration >= 0.5
     }
 
     private static func isMusicOnlyCue(_ cue: ICTranscriptCue) -> Bool {

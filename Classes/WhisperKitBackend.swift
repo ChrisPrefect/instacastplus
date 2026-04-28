@@ -22,6 +22,14 @@ actor WhisperKitBackend {
     static let shared = WhisperKitBackend()
 
     private var whisperKit: WhisperKit?
+    private var modelLoadTask: Task<Void, Error>?
+    private var modelLoadGeneration = 0
+
+    private func invalidateModelLoadTask() {
+        modelLoadGeneration += 1
+        modelLoadTask?.cancel()
+        modelLoadTask = nil
+    }
 
     // MARK: - Model Name
 
@@ -293,8 +301,8 @@ actor WhisperKitBackend {
         return nil
     }
 
-    private func installStatusLogger(on wk: WhisperKit,
-                                     statusUpdate: @escaping @Sendable (String) -> Void) {
+    private nonisolated static func installStatusLogger(on wk: WhisperKit,
+                                                        statusUpdate: @escaping @Sendable (String) -> Void) {
         wk.loggingCallback { message in
             if let status = WhisperKitBackend.userVisibleStatus(fromWhisperLog: message) {
                 statusUpdate(status)
@@ -305,7 +313,7 @@ actor WhisperKitBackend {
     /// Overwrite the per-instance logging callback with a no-op so a stale closure
     /// (capturing a cancelled episode's detail sink) can't keep firing notifications
     /// between operations. The next call to installStatusLogger(on:) replaces this.
-    private func clearStatusLogger(on wk: WhisperKit) {
+    private nonisolated static func clearStatusLogger(on wk: WhisperKit) {
         wk.loggingCallback { _ in }
     }
 
@@ -318,7 +326,7 @@ actor WhisperKitBackend {
         NSLog("[WhisperKitBackend] Existing WhisperKit instance in state %@, loading models now",
               String(describing: wk.modelState))
         statusUpdate(NSLocalizedString("Modell wird vorbereitet.", comment: ""))
-        installStatusLogger(on: wk, statusUpdate: statusUpdate)
+        WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
         do {
             nonisolated(unsafe) let whisper = wk
             try await whisper.loadModels()
@@ -395,7 +403,7 @@ actor WhisperKitBackend {
         )
         statusUpdate(NSLocalizedString("Whisper-Modell vorgewärmt.", comment: ""))
         WhisperKitBackend.removeOriginalModelSources(in: WhisperKitBackend.modelFolderURL(modelName: modelName))
-        installStatusLogger(on: wk, statusUpdate: statusUpdate)
+        WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
         nonisolated(unsafe) let whisper = wk
         try await whisper.loadModels()
         whisperKit = wk // keep the ready instance
@@ -403,7 +411,7 @@ actor WhisperKitBackend {
         // this caller's statusUpdate, and if we leave it in place WhisperKit's internal
         // log lines between operations would keep firing notifications for an already-
         // finished download context.
-        clearStatusLogger(on: wk)
+        WhisperKitBackend.clearStatusLogger(on: wk)
         NSLog("[WhisperKitBackend] Model ready: %@", modelName)
         ICDiagnosticLogger.shared.logEvent("model", message: "Whisper-Modell bereit", metadata: [
             "modelName": modelName,
@@ -417,6 +425,15 @@ actor WhisperKitBackend {
     func getOrCreateWhisperKit(statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws -> WhisperKit {
         if let existing = whisperKit {
             return try await ensureModelLoaded(existing, statusUpdate: statusUpdate)
+        }
+        if let modelLoadTask {
+            let loadGeneration = modelLoadGeneration
+            statusUpdate(NSLocalizedString("Modell wird bereits vorbereitet.", comment: ""))
+            try await modelLoadTask.value
+            guard modelLoadGeneration == loadGeneration, let wk = whisperKit else {
+                throw CancellationError()
+            }
+            return wk
         }
         guard let folder = localModelFolder() else {
             throw NSError(domain: "WhisperKitBackend", code: 1,
@@ -448,43 +465,59 @@ actor WhisperKitBackend {
             "physicalMemoryBytes": memBefore,
         ] as NSDictionary)
 
-        NSLog("[WhisperKitBackend] Starting WhisperKit init...")
-        let previousLogger = Logging.shared.loggingCallback
-        Logging.shared.loggingCallback = { message in
-            if let status = WhisperKitBackend.userVisibleStatus(fromWhisperLog: message) {
-                statusUpdate(status)
+        let loadGeneration = modelLoadGeneration
+        let task = Task(priority: .utility) { () throws -> Void in
+            NSLog("[WhisperKitBackend] Starting WhisperKit init...")
+            let previousLogger = Logging.shared.loggingCallback
+            Logging.shared.loggingCallback = { message in
+                if let status = WhisperKitBackend.userVisibleStatus(fromWhisperLog: message) {
+                    statusUpdate(status)
+                }
+            }
+            defer {
+                Logging.shared.loggingCallback = previousLogger
+            }
+            let wk: WhisperKit
+            do {
+                wk = try await WhisperKit(
+                    modelFolder: folder,
+                    computeOptions: WhisperKitBackend.inferenceComputeOptions(),
+                    verbose: true,
+                    logLevel: .debug,
+                    prewarm: true,
+                    load: false
+                )
+                statusUpdate(NSLocalizedString("Whisper-Modell vorgewärmt.", comment: ""))
+                WhisperKitBackend.removeOriginalModelSources(in: folderURL)
+                WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
+                nonisolated(unsafe) let whisper = wk
+                try await whisper.loadModels()
+            } catch {
+                let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+                NSLog("[WhisperKitBackend] Model loading FAILED after %.1fs: %@", elapsed, error.localizedDescription)
+                throw WhisperKitBackend.wrappedModelLoadError(error)
+            }
+            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+            NSLog("[WhisperKitBackend] Model loaded in %.1fs", elapsed)
+            ICDiagnosticLogger.shared.logEvent("model", message: "WhisperKit-Load beendet", metadata: [
+                "modelFolder": folder,
+                "elapsedSeconds": String(format: "%.1f", elapsed),
+            ] as NSDictionary)
+            guard self.modelLoadGeneration == loadGeneration else {
+                throw CancellationError()
+            }
+            self.whisperKit = wk
+        }
+        modelLoadTask = task
+        defer {
+            if modelLoadGeneration == loadGeneration {
+                modelLoadTask = nil
             }
         }
-        defer {
-            Logging.shared.loggingCallback = previousLogger
+        try await task.value
+        guard modelLoadGeneration == loadGeneration, let wk = whisperKit else {
+            throw CancellationError()
         }
-        let wk: WhisperKit
-        do {
-            wk = try await WhisperKit(
-                modelFolder: folder,
-                computeOptions: WhisperKitBackend.inferenceComputeOptions(),
-                verbose: true,
-                logLevel: .debug,
-                prewarm: true,
-                load: false
-            )
-            statusUpdate(NSLocalizedString("Whisper-Modell vorgewärmt.", comment: ""))
-            WhisperKitBackend.removeOriginalModelSources(in: folderURL)
-            installStatusLogger(on: wk, statusUpdate: statusUpdate)
-            nonisolated(unsafe) let whisper = wk
-            try await whisper.loadModels()
-        } catch {
-            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-            NSLog("[WhisperKitBackend] Model loading FAILED after %.1fs: %@", elapsed, error.localizedDescription)
-            throw WhisperKitBackend.wrappedModelLoadError(error)
-        }
-        let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-        NSLog("[WhisperKitBackend] Model loaded in %.1fs", elapsed)
-        ICDiagnosticLogger.shared.logEvent("model", message: "WhisperKit-Load beendet", metadata: [
-            "modelFolder": folder,
-            "elapsedSeconds": String(format: "%.1f", elapsed),
-        ] as NSDictionary)
-        whisperKit = wk
         return wk
     }
 
@@ -495,18 +528,20 @@ actor WhisperKitBackend {
         let wk = try await getOrCreateWhisperKit(statusUpdate: statusUpdate)
         // Release the per-instance callback so a stale closure (capturing this episode's
         // detail sink) can't keep firing between prepareModel and the next transcribe.
-        clearStatusLogger(on: wk)
+        WhisperKitBackend.clearStatusLogger(on: wk)
     }
 
     func prepareModel(modelName: String,
                       statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         let oldModelName = UserDefaults.standard.string(forKey: "TranscriptionWhisperModel")
         if oldModelName != modelName {
+            invalidateModelLoadTask()
             whisperKit = nil
             UserDefaults.standard.set(modelName, forKey: "TranscriptionWhisperModel")
         }
         defer {
             if let oldModelName, oldModelName != modelName {
+                invalidateModelLoadTask()
                 UserDefaults.standard.set(oldModelName, forKey: "TranscriptionWhisperModel")
                 whisperKit = nil
             }
@@ -516,7 +551,7 @@ actor WhisperKitBackend {
             "modelName": modelName,
         ] as NSDictionary)
         let wk = try await getOrCreateWhisperKit(statusUpdate: statusUpdate)
-        clearStatusLogger(on: wk)
+        WhisperKitBackend.clearStatusLogger(on: wk)
     }
 
     // MARK: - Memory Management
@@ -533,11 +568,13 @@ actor WhisperKitBackend {
     // MARK: - Delete
 
     func deleteModel() {
+        invalidateModelLoadTask()
         whisperKit = nil
         deleteModel(modelName: WhisperKitBackend.resolvedModelName())
     }
 
     func deleteModel(modelName: String) {
+        invalidateModelLoadTask()
         whisperKit = nil
         try? FileManager.default.removeItem(at: WhisperKitBackend.modelFolderURL(modelName: modelName))
         // Also clean up any stale Documents copy (pre-migration).
@@ -559,11 +596,11 @@ actor WhisperKitBackend {
                     segmentCallback: @escaping @Sendable (ICTranscriptCue) -> Void) async throws -> [ICTranscriptCue] {
 
         let wk = try await getOrCreateWhisperKit(statusUpdate: statusUpdate)
-        installStatusLogger(on: wk, statusUpdate: statusUpdate)
+        WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
         defer {
             // Clear the per-instance callback once transcription finishes so it can't
             // outlive the episode's detail sink and fire notifications for a stale context.
-            clearStatusLogger(on: wk)
+            WhisperKitBackend.clearStatusLogger(on: wk)
         }
 
         var options = DecodingOptions()
@@ -615,12 +652,6 @@ actor WhisperKitBackend {
             guard deliveredSegmentKeys.insert(key).inserted else { return }
 
             segmentCallback(cue)
-
-            // Report absolute progress from the segment end position.
-            if totalDuration > 0 {
-                let p = min(Float(cue.end / totalDuration), 0.99)
-                progress(p)
-            }
         }
 
         let liveSegmentCallback: SegmentDiscoveryCallback = { segments in
