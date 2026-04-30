@@ -12,6 +12,7 @@ import Foundation
 import AVFoundation
 import UIKit
 import Darwin.Mach
+import Security
 #if canImport(Speech)
 import Speech
 #endif
@@ -1486,6 +1487,14 @@ private struct TranscriptionCheckpoint: Codable {
     case textToChapters = 1
 }
 
+@objc enum ICChapterModelProvider: Int {
+    case localGGUF = 0
+    case appleFoundation = 1
+    case openAIAPI = 2
+    case openAICodexOAuth = 3
+    case anthropicAPI = 4
+}
+
 @objc class ICDownloadableModel: NSObject, @unchecked Sendable {
     @objc let identifier: String
     @objc let title: String
@@ -1497,6 +1506,8 @@ private struct TranscriptionCheckpoint: Codable {
     @objc let supportsCompilation: Bool
     @objc let remoteURLString: String?
     @objc let fileName: String?
+    @objc let chapterProvider: ICChapterModelProvider
+    @objc let remoteModelName: String?
     let whisperModelName: String?
 
     init(identifier: String,
@@ -1509,6 +1520,8 @@ private struct TranscriptionCheckpoint: Codable {
          supportsCompilation: Bool,
          remoteURLString: String? = nil,
          fileName: String? = nil,
+         chapterProvider: ICChapterModelProvider = .localGGUF,
+         remoteModelName: String? = nil,
          whisperModelName: String? = nil) {
         self.identifier = identifier
         self.title = title
@@ -1520,6 +1533,8 @@ private struct TranscriptionCheckpoint: Codable {
         self.supportsCompilation = supportsCompilation
         self.remoteURLString = remoteURLString
         self.fileName = fileName
+        self.chapterProvider = chapterProvider
+        self.remoteModelName = remoteModelName
         self.whisperModelName = whisperModelName
         super.init()
     }
@@ -1539,6 +1554,15 @@ private struct TranscriptionCheckpoint: Codable {
             return NSLocalizedString("Text zu Kapitel", comment: "")
         @unknown default:
             return ""
+        }
+    }
+
+    @objc var usesRemoteChapterService: Bool {
+        switch chapterProvider {
+        case .openAIAPI, .openAICodexOAuth, .anthropicAPI:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -1633,6 +1657,369 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
 
     @objc func cancel() {
         cancellationBox.cancel()
+    }
+}
+
+@objc final class ICOpenAIDeviceCodeInfo: NSObject, @unchecked Sendable {
+    @objc let verificationURL: String
+    @objc let userCode: String
+    let deviceAuthID: String
+    let interval: UInt64
+
+    init(verificationURL: String, userCode: String, deviceAuthID: String, interval: UInt64) {
+        self.verificationURL = verificationURL
+        self.userCode = userCode
+        self.deviceAuthID = deviceAuthID
+        self.interval = interval
+        super.init()
+    }
+}
+
+@objc class ICRemoteChapterCredentialStore: NSObject {
+    private static let service = "com.vemedio.instacastplus.remote-chapters"
+    private static let openAIAPIKeyAccount = "openai-api-key"
+    private static let anthropicAPIKeyAccount = "anthropic-api-key"
+    private static let openAIAccessTokenAccount = "openai-oauth-access-token"
+    private static let openAIRefreshTokenAccount = "openai-oauth-refresh-token"
+    private static let openAIIDTokenAccount = "openai-oauth-id-token"
+    private static let openAIAccountIDAccount = "openai-oauth-account-id"
+    private static let openAIAccountEmailAccount = "openai-oauth-email"
+    private static let openAIFedRAMPAccount = "openai-oauth-fedramp"
+    private static let openAIClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+    private static let openAIIssuer = "https://auth.openai.com"
+
+    @objc static func hasOpenAIAPIKey() -> Bool {
+        return !(openAIAPIKey() ?? "").isEmpty
+    }
+
+    static func openAIAPIKey() -> String? {
+        return secret(account: openAIAPIKeyAccount)
+    }
+
+    @objc(setOpenAIAPIKey:)
+    static func setOpenAIAPIKey(_ value: String?) {
+        setSecret(trimmedSecret(value), account: openAIAPIKeyAccount)
+    }
+
+    @objc static func openAIAPIKeyPreview() -> String {
+        return preview(secret(account: openAIAPIKeyAccount))
+    }
+
+    @objc static func hasAnthropicAPIKey() -> Bool {
+        return !(anthropicAPIKey() ?? "").isEmpty
+    }
+
+    static func anthropicAPIKey() -> String? {
+        return secret(account: anthropicAPIKeyAccount)
+    }
+
+    @objc(setAnthropicAPIKey:)
+    static func setAnthropicAPIKey(_ value: String?) {
+        setSecret(trimmedSecret(value), account: anthropicAPIKeyAccount)
+    }
+
+    @objc static func anthropicAPIKeyPreview() -> String {
+        return preview(secret(account: anthropicAPIKeyAccount))
+    }
+
+    @objc static func hasOpenAIOAuthCredentials() -> Bool {
+        return !(openAIOAuthAccessToken() ?? "").isEmpty
+            && !(openAIOAuthAccountID() ?? "").isEmpty
+    }
+
+    static func openAIOAuthAccessToken() -> String? {
+        return secret(account: openAIAccessTokenAccount)
+    }
+
+    static func openAIOAuthAccountID() -> String? {
+        return secret(account: openAIAccountIDAccount)
+    }
+
+    static func openAIOAuthIsFedRAMPAccount() -> Bool {
+        return secret(account: openAIFedRAMPAccount) == "true"
+    }
+
+    @objc static func openAIOAuthAccountLabel() -> String {
+        if let email = secret(account: openAIAccountEmailAccount), !email.isEmpty {
+            return email
+        }
+        if hasOpenAIOAuthCredentials() {
+            return NSLocalizedString("Angemeldet", comment: "")
+        }
+        return NSLocalizedString("Nicht angemeldet", comment: "")
+    }
+
+    @objc static func clearOpenAIOAuthCredentials() {
+        setSecret(nil, account: openAIAccessTokenAccount)
+        setSecret(nil, account: openAIRefreshTokenAccount)
+        setSecret(nil, account: openAIIDTokenAccount)
+        setSecret(nil, account: openAIAccountIDAccount)
+        setSecret(nil, account: openAIAccountEmailAccount)
+        setSecret(nil, account: openAIFedRAMPAccount)
+    }
+
+    @objc(requestOpenAIDeviceCodeWithCompletion:)
+    static func requestOpenAIDeviceCode(completion: @escaping (ICOpenAIDeviceCodeInfo?, NSError?) -> Void) {
+        nonisolated(unsafe) let completionCallback = completion
+        Task.detached {
+            do {
+                let info = try await requestOpenAIDeviceCode()
+                DispatchQueue.main.async { completionCallback(info, nil) }
+            } catch {
+                DispatchQueue.main.async { completionCallback(nil, error as NSError) }
+            }
+        }
+    }
+
+    @objc(completeOpenAIDeviceLoginWithDeviceCode:completion:)
+    static func completeOpenAIDeviceLogin(deviceCode: ICOpenAIDeviceCodeInfo,
+                                          completion: @escaping (NSError?) -> Void) {
+        nonisolated(unsafe) let completionCallback = completion
+        Task.detached {
+            do {
+                try await completeOpenAIDeviceLogin(deviceCode: deviceCode)
+                DispatchQueue.main.async { completionCallback(nil) }
+            } catch {
+                DispatchQueue.main.async { completionCallback(error as NSError) }
+            }
+        }
+    }
+
+    static func refreshedOpenAIOAuthAccessToken() async throws -> String {
+        if let token = openAIOAuthAccessToken(), !token.isEmpty {
+            return token
+        }
+        return try await refreshOpenAIOAuthAccessToken()
+    }
+
+    static func refreshOpenAIOAuthAccessToken() async throws -> String {
+        guard let refreshToken = secret(account: openAIRefreshTokenAccount), !refreshToken.isEmpty else {
+            throw error(code: 41, message: NSLocalizedString("ChatGPT Login fehlt.", comment: ""))
+        }
+
+        var request = URLRequest(url: URL(string: "\(openAIIssuer)/oauth/token")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "client_id": openAIClientID,
+            "grant_type": "refresh_token",
+            "refresh_token": refreshToken,
+        ])
+
+        let data = try await data(for: request, expectedStatusCodes: 200..<300)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let accessToken = object["access_token"] as? String,
+              !accessToken.isEmpty else {
+            throw error(code: 42, message: NSLocalizedString("ChatGPT Login konnte nicht erneuert werden.", comment: ""))
+        }
+        storeOpenAITokens(accessToken: accessToken,
+                          refreshToken: object["refresh_token"] as? String ?? refreshToken,
+                          idToken: object["id_token"] as? String)
+        return accessToken
+    }
+
+    private static func requestOpenAIDeviceCode() async throws -> ICOpenAIDeviceCodeInfo {
+        var request = URLRequest(url: URL(string: "\(openAIIssuer)/api/accounts/deviceauth/usercode")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "client_id": openAIClientID,
+        ])
+
+        let data = try await data(for: request, expectedStatusCodes: 200..<300)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let deviceAuthID = object["device_auth_id"] as? String,
+              let userCode = (object["user_code"] as? String) ?? (object["usercode"] as? String) else {
+            throw error(code: 43, message: NSLocalizedString("ChatGPT Gerätecode konnte nicht gelesen werden.", comment: ""))
+        }
+        let interval = intervalSeconds(from: object["interval"]) ?? 5
+        return ICOpenAIDeviceCodeInfo(verificationURL: "\(openAIIssuer)/codex/device",
+                                      userCode: userCode,
+                                      deviceAuthID: deviceAuthID,
+                                      interval: interval)
+    }
+
+    private static func completeOpenAIDeviceLogin(deviceCode: ICOpenAIDeviceCodeInfo) async throws {
+        let codeResponse = try await pollOpenAIDeviceCode(deviceCode)
+        guard let authorizationCode = codeResponse["authorization_code"] as? String,
+              let codeVerifier = codeResponse["code_verifier"] as? String else {
+            throw error(code: 44, message: NSLocalizedString("ChatGPT Anmeldung lieferte keinen Autorisierungscode.", comment: ""))
+        }
+
+        var request = URLRequest(url: URL(string: "\(openAIIssuer)/oauth/token")!)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = formURLEncoded([
+            "grant_type": "authorization_code",
+            "code": authorizationCode,
+            "redirect_uri": "\(openAIIssuer)/deviceauth/callback",
+            "client_id": openAIClientID,
+            "code_verifier": codeVerifier,
+        ])
+
+        let data = try await data(for: request, expectedStatusCodes: 200..<300)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let accessToken = object["access_token"] as? String,
+              let refreshToken = object["refresh_token"] as? String else {
+            throw error(code: 45, message: NSLocalizedString("ChatGPT Anmeldung konnte keine Tokens speichern.", comment: ""))
+        }
+        storeOpenAITokens(accessToken: accessToken,
+                          refreshToken: refreshToken,
+                          idToken: object["id_token"] as? String)
+    }
+
+    private static func pollOpenAIDeviceCode(_ deviceCode: ICOpenAIDeviceCodeInfo) async throws -> [String: Any] {
+        let deadline = Date().addingTimeInterval(15 * 60)
+        let sleepSeconds = max(deviceCode.interval, 1)
+
+        while Date() < deadline {
+            var request = URLRequest(url: URL(string: "\(openAIIssuer)/api/accounts/deviceauth/token")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "device_auth_id": deviceCode.deviceAuthID,
+                "user_code": deviceCode.userCode,
+            ])
+
+            let (data, statusCode) = try await dataAndStatusCode(for: request)
+            if (200..<300).contains(statusCode),
+               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return object
+            }
+            if statusCode != 403 && statusCode != 404 {
+                throw error(code: statusCode, message: String(format: NSLocalizedString("ChatGPT Gerätecode wurde abgelehnt. HTTP %d", comment: ""), statusCode))
+            }
+            try await Task.sleep(nanoseconds: sleepSeconds * 1_000_000_000)
+        }
+
+        throw error(code: 46, message: NSLocalizedString("ChatGPT Gerätecode ist abgelaufen.", comment: ""))
+    }
+
+    private static func storeOpenAITokens(accessToken: String, refreshToken: String, idToken: String?) {
+        setSecret(accessToken, account: openAIAccessTokenAccount)
+        setSecret(refreshToken, account: openAIRefreshTokenAccount)
+        if let idToken, !idToken.isEmpty {
+            setSecret(idToken, account: openAIIDTokenAccount)
+            let claims = jwtClaims(idToken)
+            let authClaims = claims?["https://api.openai.com/auth"] as? [String: Any]
+            let profileClaims = claims?["https://api.openai.com/profile"] as? [String: Any]
+            let accountID = (authClaims?["chatgpt_account_id"] as? String)
+                ?? (claims?["chatgpt_account_id"] as? String)
+            let email = (profileClaims?["email"] as? String)
+                ?? (claims?["email"] as? String)
+            let isFedRAMP = (authClaims?["chatgpt_account_is_fedramp"] as? Bool) ?? false
+            setSecret(accountID, account: openAIAccountIDAccount)
+            setSecret(email, account: openAIAccountEmailAccount)
+            setSecret(isFedRAMP ? "true" : nil, account: openAIFedRAMPAccount)
+        }
+    }
+
+    private static func data(for request: URLRequest, expectedStatusCodes: Range<Int>) async throws -> Data {
+        let (data, statusCode) = try await dataAndStatusCode(for: request)
+        guard expectedStatusCodes.contains(statusCode) else {
+            throw error(code: statusCode, message: String(format: NSLocalizedString("Remote-Anfrage fehlgeschlagen. HTTP %d", comment: ""), statusCode))
+        }
+        return data
+    }
+
+    private static func dataAndStatusCode(for request: URLRequest) async throws -> (Data, Int) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 15 * 60
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw error(code: 47, message: NSLocalizedString("Remote-Anfrage lieferte keine HTTP-Antwort.", comment: ""))
+        }
+        return (data, http.statusCode)
+    }
+
+    private static func secret(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func setSecret(_ value: String?, account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+
+        guard let value = trimmedSecret(value), !value.isEmpty else { return }
+        let attributes: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecValueData as String: Data(value.utf8),
+        ]
+        SecItemAdd(attributes as CFDictionary, nil)
+    }
+
+    private static func trimmedSecret(_ value: String?) -> String? {
+        return value?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func preview(_ value: String?) -> String {
+        guard let value, !value.isEmpty else {
+            return NSLocalizedString("Nicht eingerichtet", comment: "")
+        }
+        if value.count <= 8 {
+            return NSLocalizedString("Eingerichtet", comment: "")
+        }
+        let suffix = value.suffix(4)
+        return "•••• \(suffix)"
+    }
+
+    private static func intervalSeconds(from value: Any?) -> UInt64? {
+        if let number = value as? NSNumber { return number.uint64Value }
+        if let string = value as? String { return UInt64(string.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return nil
+    }
+
+    private static func formURLEncoded(_ values: [String: String]) -> Data {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        let encoded = values.map { key, value in
+            let encodedKey = key.addingPercentEncoding(withAllowedCharacters: allowed) ?? key
+            let encodedValue = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+            return "\(encodedKey)=\(encodedValue)"
+        }.joined(separator: "&")
+        return Data(encoded.utf8)
+    }
+
+    private static func jwtClaims(_ jwt: String) -> [String: Any]? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = payload.count % 4
+        if remainder > 0 {
+            payload += String(repeating: "=", count: 4 - remainder)
+        }
+        guard let data = Data(base64Encoded: payload),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object
+    }
+
+    private static func error(code: Int, message: String) -> NSError {
+        return NSError(domain: "ICRemoteChapterCredentialStore", code: code,
+                       userInfo: [NSLocalizedDescriptionKey: message])
     }
 }
 
@@ -1756,10 +2143,14 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
 
 @objc class ICDownloadableModelStore: NSObject {
     private static let chapterModelKey = "ChapterGenerationModel"
+    private static let defaultChapterModelIdentifier = "gemma-4-e2b-it-q4-k"
+    private static let removedTextModelIdentifiers: Set<String> = ["granite-3.3-2b-instruct-q4-k-m"]
     private static let modelRootDirectoryName = "DownloadedModels"
     private static let downloadStateLock = NSLock()
+    private static let removedModelCleanupLock = NSLock()
     private nonisolated(unsafe) static var activeDownloadTasksByModelID: [String: ICModelDownloadTask] = [:]
     private nonisolated(unsafe) static var activeDownloadProgressByModelID: [String: ICModelDownloadProgress] = [:]
+    private nonisolated(unsafe) static var didScheduleRemovedTextModelCleanup = false
 
     private static let models: [ICDownloadableModel] = [
         ICDownloadableModel(
@@ -1807,18 +2198,6 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             fileName: "gemma-4-E2B-it-Q4_K.gguf"
         ),
         ICDownloadableModel(
-            identifier: "granite-3.3-2b-instruct-q4-k-m",
-            title: "Granite 3.3 2B Instruct",
-            shortTitle: "Granite 3.3",
-            detail: NSLocalizedString("Kleinerer Download für Kapitel.", comment: ""),
-            role: .textToChapters,
-            downloadSizeBytes: 1_545_303_328,
-            requiresDownload: true,
-            supportsCompilation: false,
-            remoteURLString: "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct-GGUF/resolve/main/granite-3.3-2b-instruct-Q4_K_M.gguf",
-            fileName: "granite-3.3-2b-instruct-Q4_K_M.gguf"
-        ),
-        ICDownloadableModel(
             identifier: "apple-foundation-models",
             title: NSLocalizedString("Apple Intelligence", comment: ""),
             shortTitle: "Apple",
@@ -1826,17 +2205,56 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
-            supportsCompilation: false
+            supportsCompilation: false,
+            chapterProvider: .appleFoundation
+        ),
+        ICDownloadableModel(
+            identifier: "openai-chatgpt-5.5-api-key",
+            title: "OpenAI ChatGPT 5.5",
+            shortTitle: "ChatGPT 5.5",
+            detail: NSLocalizedString("Sendet das vollständige Transkript an OpenAI. OpenAI API-Key erforderlich.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false,
+            chapterProvider: .openAIAPI,
+            remoteModelName: "gpt-5.5"
+        ),
+        ICDownloadableModel(
+            identifier: "openai-chatgpt-5.5-oauth",
+            title: "OpenAI ChatGPT 5.5 (ChatGPT Login)",
+            shortTitle: "ChatGPT 5.5 Login",
+            detail: NSLocalizedString("Sendet das vollständige Transkript über den ChatGPT/Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false,
+            chapterProvider: .openAICodexOAuth,
+            remoteModelName: "gpt-5.5"
+        ),
+        ICDownloadableModel(
+            identifier: "anthropic-claude-opus-4.7-api-key",
+            title: "Anthropic Claude Opus 4.7",
+            shortTitle: "Claude Opus 4.7",
+            detail: NSLocalizedString("Sendet das vollständige Transkript an Anthropic. Anthropic API-Key erforderlich.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false,
+            chapterProvider: .anthropicAPI,
+            remoteModelName: "claude-opus-4-7"
         ),
     ]
 
     @objc static func allModels() -> [ICDownloadableModel] {
-        models
+        cleanupRemovedTextModelsIfNeeded()
+        return models
     }
 
     @objc(modelsForRole:)
     static func models(for role: ICDownloadableModelRole) -> [ICDownloadableModel] {
-        models.filter { $0.role == role }
+        cleanupRemovedTextModelsIfNeeded()
+        return models.filter { $0.role == role }
     }
 
     @objc(modelWithIdentifier:)
@@ -1846,6 +2264,7 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
 
     @objc(selectedModelForRole:)
     static func selectedModel(for role: ICDownloadableModelRole) -> ICDownloadableModel {
+        cleanupRemovedTextModelsIfNeeded()
         switch role {
         case .voiceToText:
             let engine = UserDefaults.standard.string(forKey: "TranscriptionEngine") ?? ""
@@ -1858,8 +2277,12 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             }
             return model(identifier: "whisperkit-small")!
         case .textToChapters:
-            let identifier = UserDefaults.standard.string(forKey: chapterModelKey) ?? "granite-3.3-2b-instruct-q4-k-m"
-            return model(identifier: identifier) ?? model(identifier: "granite-3.3-2b-instruct-q4-k-m")!
+            if let identifier = UserDefaults.standard.string(forKey: chapterModelKey),
+               let selectedModel = model(identifier: identifier) {
+                return selectedModel
+            }
+            UserDefaults.standard.set(defaultChapterModelIdentifier, forKey: chapterModelKey)
+            return model(identifier: defaultChapterModelIdentifier)!
         @unknown default:
             return models.first!
         }
@@ -1898,10 +2321,18 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
     @objc static func selectedChapterModelCanGenerate() -> Bool {
         let model = selectedModel(for: .textToChapters)
         guard isDownloaded(model: model) else { return false }
-        if model.identifier == "apple-foundation-models" {
+        switch model.chapterProvider {
+        case .appleFoundation:
             return ChapterGenerator.isAvailable()
+        case .openAIAPI:
+            return ICRemoteChapterCredentialStore.hasOpenAIAPIKey()
+        case .openAICodexOAuth:
+            return ICRemoteChapterCredentialStore.hasOpenAIOAuthCredentials()
+        case .anthropicAPI:
+            return ICRemoteChapterCredentialStore.hasAnthropicAPIKey()
+        case .localGGUF:
+            return model.role == .textToChapters && modelFileURL(for: model) != nil
         }
-        return model.role == .textToChapters && modelFileURL(for: model) != nil
     }
 
     @MainActor
@@ -1910,10 +2341,18 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         if !isDownloaded(model: model) {
             return NSLocalizedString("Kapitelmodell ist nicht geladen.", comment: "")
         }
-        if model.identifier == "apple-foundation-models" {
+        switch model.chapterProvider {
+        case .appleFoundation:
             return ChapterGenerator.unavailabilityReason() ?? NSLocalizedString("Apple Intelligence nicht verfügbar.", comment: "")
+        case .openAIAPI:
+            return NSLocalizedString("OpenAI API-Key fehlt.", comment: "")
+        case .openAICodexOAuth:
+            return NSLocalizedString("ChatGPT Login fehlt.", comment: "")
+        case .anthropicAPI:
+            return NSLocalizedString("Anthropic API-Key fehlt.", comment: "")
+        case .localGGUF:
+            return NSLocalizedString("Kapitelmodell ist nicht bereit.", comment: "")
         }
-        return NSLocalizedString("Kapitelmodell ist nicht bereit.", comment: "")
     }
 
     @objc(isDownloadedModel:)
@@ -2243,10 +2682,46 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
     }
 
     private static func modelDirectory(for model: ICDownloadableModel) -> URL {
+        return modelRootDirectory()
+            .appendingPathComponent(model.identifier, isDirectory: true)
+    }
+
+    private static func modelRootDirectory() -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport
             .appendingPathComponent(modelRootDirectoryName, isDirectory: true)
-            .appendingPathComponent(model.identifier, isDirectory: true)
+    }
+
+    private static func cleanupRemovedTextModelsIfNeeded() {
+        removedModelCleanupLock.lock()
+        if didScheduleRemovedTextModelCleanup {
+            removedModelCleanupLock.unlock()
+            return
+        }
+        didScheduleRemovedTextModelCleanup = true
+        removedModelCleanupLock.unlock()
+
+        let identifiers = removedTextModelIdentifiers
+        Task.detached {
+            let root = modelRootDirectory()
+            for identifier in identifiers {
+                let directory = root.appendingPathComponent(identifier, isDirectory: true)
+                guard FileManager.default.fileExists(atPath: directory.path) else { continue }
+                do {
+                    try FileManager.default.removeItem(at: directory)
+                    ICDiagnosticLogger.shared.logEvent("model", message: "Entferntes Kapitelmodell gelöscht", metadata: [
+                        "model": identifier,
+                        "path": directory.path,
+                    ] as NSDictionary)
+                } catch {
+                    ICDiagnosticLogger.shared.logEvent("model", message: "Entferntes Kapitelmodell konnte nicht gelöscht werden", metadata: [
+                        "model": identifier,
+                        "path": directory.path,
+                        "error": error.localizedDescription,
+                    ] as NSDictionary)
+                }
+            }
+        }
     }
 
     private static func directorySize(at url: URL) -> Int64 {

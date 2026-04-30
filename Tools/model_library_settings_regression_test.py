@@ -21,15 +21,11 @@ local_runner_source = (ROOT / "Classes" / "LocalGGUFModelRunner.swift").read_tex
 project_source = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 de_strings = (ROOT / "Resources" / "de.lproj" / "Localizable.strings").read_text()
 en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
+model_catalog_source = engine_source.split(
+    "private static let models: [ICDownloadableModel] = [", 1
+)[1].split("\n    ]", 1)[0]
 
 
-require(
-    "Granite 3.3 2B Instruct" in engine_source
-    and "shortTitle: \"Granite 3.3\"" in engine_source
-    and "granite-3.3-2b-instruct-GGUF/resolve/main/granite-3.3-2b-instruct-Q4_K_M.gguf" in engine_source
-    and "1_545_303_328" in engine_source,
-    "Granite 3.3 2B is missing from the downloadable chapter model catalog.",
-)
 require(
     "Gemma 4 E2B-it" in engine_source
     and "shortTitle: \"Gemma 4\"" in engine_source
@@ -37,11 +33,39 @@ require(
     and "2_629_991_680" in engine_source,
     "Gemma 4 E2B-it is missing from the downloadable chapter model catalog.",
 )
-gemma_index = engine_source.find('identifier: "gemma-4-e2b-it-q4-k"')
-granite_index = engine_source.find('identifier: "granite-3.3-2b-instruct-q4-k-m"')
 require(
-    gemma_index != -1 and granite_index != -1 and gemma_index < granite_index,
-    "Gemma 4 must be listed above Granite in the chapter model list.",
+    "ICChapterModelProvider" in engine_source
+    and "openai-chatgpt-5.5-api-key" in engine_source
+    and 'remoteModelName: "gpt-5.5"' in engine_source
+    and "openai-chatgpt-5.5-oauth" in engine_source
+    and "anthropic-claude-opus-4.7-api-key" in engine_source
+    and 'remoteModelName: "claude-opus-4-7"' in engine_source,
+    "Remote chapter models for OpenAI API key, OpenAI ChatGPT login, and Anthropic Claude Opus 4.7 must be present in the model catalog.",
+)
+require(
+    "ICRemoteChapterCredentialStore" in engine_source
+    and "kSecClassGenericPassword" in engine_source
+    and "requestOpenAIDeviceCodeWithCompletion" in engine_source
+    and "completeOpenAIDeviceLoginWithDeviceCode" in engine_source
+    and "ChatGPT-Account-ID" in chapter_source,
+    "Remote chapter credentials must be stored in Keychain and ChatGPT OAuth must use device-code login with the Codex account header.",
+)
+require(
+    "granite-3.3-2b-instruct-q4-k-m" not in model_catalog_source
+    and "Granite 3.3" not in model_catalog_source
+    and "granite-3.3-2b-instruct-GGUF" not in model_catalog_source,
+    "Granite must not be offered as a chapter model because it produced unreliable chapters in simulator tests.",
+)
+require(
+    'private static let defaultChapterModelIdentifier = "gemma-4-e2b-it-q4-k"' in engine_source
+    and "UserDefaults.standard.set(defaultChapterModelIdentifier, forKey: chapterModelKey)" in engine_source,
+    "Gemma 4 must be the chapter default, including migration from removed stored chapter models.",
+)
+require(
+    'private static let removedTextModelIdentifiers: Set<String> = ["granite-3.3-2b-instruct-q4-k-m"]' in engine_source
+    and "cleanupRemovedTextModelsIfNeeded()" in engine_source
+    and "Entferntes Kapitelmodell gelöscht" in engine_source,
+    "Removing Granite from the catalog must also clean up already-downloaded Granite files that the UI can no longer show.",
 )
 require(
     "ICDownloadableModelRole" in engine_source
@@ -94,6 +118,21 @@ require(
     "case TSSectionModels: return 2;" in settings_source
     and "Modelle verwalten" not in settings_source,
     "Settings should open separate voice/text model pages directly instead of showing a separate manage-models row.",
+)
+require(
+    "TSSectionCloud" in settings_source
+    and "Cloud-Zugänge" in settings_source
+    and "_showOpenAIAPIKeyEditor" in settings_source
+    and "_showOpenAIOAuthLogin" in settings_source
+    and "_showAnthropicAPIKeyEditor" in settings_source,
+    "Settings must expose separate credential management for OpenAI API key, ChatGPT OAuth, and Anthropic API key.",
+)
+require(
+    "Gerätecode erstellen" in settings_source
+    and "https://platform.openai.com/api-keys" in settings_source
+    and "https://console.anthropic.com/settings/keys" in settings_source
+    and "Key erstellen" in settings_source,
+    "Cloud credential UI must let users create a ChatGPT device code and jump directly to provider API key pages.",
 )
 require(
     "GGUF" not in settings_source
@@ -155,12 +194,29 @@ require(
 )
 require(
     "selectedChapterModelCanGenerate" in engine_source
-    and "model.identifier == \"apple-foundation-models\"" in engine_source
+    and "case .appleFoundation:" in engine_source
+    and "ICRemoteChapterCredentialStore.hasOpenAIAPIKey()" in engine_source
+    and "ICRemoteChapterCredentialStore.hasOpenAIOAuthCredentials()" in engine_source
+    and "ICRemoteChapterCredentialStore.hasAnthropicAPIKey()" in engine_source
     and "modelFileURL(for: model) != nil" in engine_source
     and "selectedChapterModelCanGenerate" in episode_source
     and "selectedChapterModelCanGenerate" in episodes_source
     and "selectedChapterModelCanGenerate" in queue_source,
-    "Downloaded GGUF chapter models must be allowed only when their local model file is present.",
+    "Chapter generation readiness must validate local GGUF files, Apple availability, and remote credentials per provider.",
+)
+require(
+    "generateWithRemoteChapterModel" in chapter_source
+    and "https://api.openai.com/v1/responses" in chapter_source
+    and "https://chatgpt.com/backend-api/codex/responses" in chapter_source
+    and "https://api.anthropic.com/v1/messages" in chapter_source
+    and "buildLocalDirectChaptersPrompt(cues: cues" in chapter_source
+    and "remoteChapterStartsSchema" in chapter_source,
+    "Remote chapter generation must send the full transcript prompt to OpenAI, ChatGPT OAuth, or Anthropic and request structured chapter JSON.",
+)
+require(
+    '"tool_choice": "auto"' in chapter_source
+    and "configuration.timeoutIntervalForRequest = 5 * 60" in chapter_source,
+    "Remote chapter requests must match the Responses request shape used by Codex and allow long full-transcript runs.",
 )
 require(
     "generateWithLocalGGUF" in chapter_source

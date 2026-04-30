@@ -216,6 +216,13 @@ private struct PersistedQueue: Codable {
     // Crash-loop protection: set before model loading, cleared on success/normal failure.
     // If still set on next launch → app was killed during model loading → don't auto-resume.
     private static let crashGuardKey = "TranscriptionQueue_ModelLoadingInProgress"
+    private static let crashGuardProtectedStatuses: Set<ICTranscriptionStatus> = [
+        .queued,
+        .analyzingMusic,
+        .downloadingModel,
+        .transcribing,
+        .generatingChapters,
+    ]
 
     override init() {
         super.init()
@@ -562,6 +569,7 @@ private struct PersistedQueue: Codable {
 
     private func startChapterGenerationTask(for item: ICTranscriptionQueueItem, srtURL: URL, startReason: String) {
         let episodeHash = item.episodeHash
+        UserDefaults.standard.set(true, forKey: TranscriptionQueue.crashGuardKey)
         beginStep(for: item,
                   status: .generatingChapters,
                   detail: NSLocalizedString("Transkript wird für die Kapitel-Erstellung vorbereitet.", comment: ""))
@@ -579,6 +587,7 @@ private struct PersistedQueue: Codable {
             guard !cues.isEmpty else {
                 await MainActor.run {
                     self.chapterTask = nil
+                    UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                     item.status = .failed
                     item.statusDetail = nil
                     item.statusStartedAt = nil
@@ -586,6 +595,7 @@ private struct PersistedQueue: Codable {
                     self.persistQueue()
                     self.postQueueChangeNotification()
                     self.refreshBackgroundContinuation(reason: "chapter-task-no-cues")
+                    self.processNext()
                     self.releaseModelIfIdle(reason: "chapter-task-no-cues")
                 }
                 return
@@ -603,6 +613,7 @@ private struct PersistedQueue: Codable {
                         if error is CancellationError || Task.isCancelled {
                             await MainActor.run {
                                 self.chapterTask = nil
+                                UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                                 self.items.removeAll { $0 === item }
                                 self.persistQueue()
                                 self.postQueueChangeNotification()
@@ -637,7 +648,9 @@ private struct PersistedQueue: Codable {
                         item.progress = progress
                         self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
                     },
-                    debugEpisodeHash: episodeHash
+                    debugEpisodeHash: episodeHash,
+                    episodeTitle: item.episodeTitle,
+                    feedTitle: item.feedTitle
                 )
             } catch {
                 chapterError = error
@@ -648,6 +661,7 @@ private struct PersistedQueue: Codable {
             guard !Task.isCancelled else {
                 await MainActor.run {
                     self.chapterTask = nil
+                    UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                     self.items.removeAll { $0 === item }
                     self.persistQueue()
                     self.postQueueChangeNotification()
@@ -659,6 +673,7 @@ private struct PersistedQueue: Codable {
 
             await MainActor.run {
                 self.chapterTask = nil
+                UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
                 if let chapters = chapters, !chapters.isEmpty {
                     do {
                         try self.chapterGen.saveChaptersThrowing(chapters, for: episodeHash)
@@ -685,6 +700,7 @@ private struct PersistedQueue: Codable {
                 self.refreshBackgroundContinuation(reason: "chapter-task-finished")
                 NotificationCenter.default.post(name: NSNotification.Name("ICTranscriptionDidChangeNotification"), object: nil, userInfo: ["episodeHash": episodeHash])
                 self.scheduleCompletedItemPrune()
+                self.processNext()
                 self.releaseModelIfIdle(reason: "chapter-task-finished")
             }
         }
@@ -750,25 +766,40 @@ private struct PersistedQueue: Codable {
         }
 
         if UserDefaults.standard.bool(forKey: TranscriptionQueue.crashGuardKey) {
-            if ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly {
+            let previousEndedUnexpectedly = ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly
+            let hasCrashGuardProtectedItems = items.contains {
+                Self.crashGuardProtectedStatuses.contains($0.status)
+            }
+            if previousEndedUnexpectedly || hasCrashGuardProtectedItems {
                 NSLog("[TranscriptionQueue] Crash guard active — last run was killed before completing")
                 ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard aktiv", metadata: [
                     "queueCount": items.count,
                     "previousSessionState": ICDiagnosticLogger.shared.previousSessionState ?? "",
+                    "previousEndedUnexpectedly": previousEndedUnexpectedly,
+                    "hasCrashGuardProtectedItems": hasCrashGuardProtectedItems,
                 ] as NSDictionary)
+                let interruptedMessage = NSLocalizedString("Unterbrochen. Tippe zum Fortsetzen.", comment: "")
+                var didMarkInterruptedItem = false
                 for item in items {
-                    if item.status == .queued || item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel || item.status == .generatingChapters {
-                        TranscriptionLogger.shared.append(episodeHash: item.episodeHash, phase: "error",
-                                                          message: "Vorheriger Durchlauf wurde abgebrochen (App-Beendigung oder Crash)", detailText: nil)
+                    if Self.crashGuardProtectedStatuses.contains(item.status) {
+                        let alreadyMarkedInterrupted = item.status == .queued && item.error == interruptedMessage
+                        if !alreadyMarkedInterrupted {
+                            TranscriptionLogger.shared.append(episodeHash: item.episodeHash, phase: "error",
+                                                              message: "Vorheriger Durchlauf wurde abgebrochen (App-Beendigung oder Crash)", detailText: nil)
+                            didMarkInterruptedItem = true
+                        }
                         item.status = .queued
                         item.progress = 0
                         item.statusDetail = nil
                         item.statusStartedAt = nil
-                        item.error = NSLocalizedString("Unterbrochen. Tippe zum Fortsetzen.", comment: "")
+                        item.error = interruptedMessage
                     }
                 }
                 // Guard stays SET so duplicate resumeIfNeeded calls can't bypass it.
                 // Cleared by explicit user retry via retryProcessing().
+                if didMarkInterruptedItem {
+                    persistQueue()
+                }
                 postQueueChangeNotification()
                 return
             }
@@ -857,7 +888,7 @@ private struct PersistedQueue: Codable {
 
     private func cleanupBrokenArtifacts(episodeHash: String, chapterOnly: Bool) {
         if chapterOnly {
-            ChapterGenerator.shared.removeGeneratedChapters(forEpisodeHash: episodeHash)
+            ChapterGenerator.shared.invalidateChaptersCache(for: episodeHash)
             return
         }
         engine.removeSRT(for: episodeHash)
@@ -1618,7 +1649,9 @@ private struct PersistedQueue: Codable {
                             item.progress = progress
                             self?.postProgressNotification(episodeHash: episodeHash, progress: progress, status: .generatingChapters)
                         },
-                        debugEpisodeHash: episodeHash
+                        debugEpisodeHash: episodeHash,
+                        episodeTitle: item.episodeTitle,
+                        feedTitle: item.feedTitle
                     )
                     NSLog("[TranscriptionQueue] Generated %d chapters", chapters?.count ?? 0)
                 } catch {

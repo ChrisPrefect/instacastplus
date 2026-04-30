@@ -1,0 +1,626 @@
+{
+  "version": 1,
+  "policy": {
+    "skipCandidate": "true marks segments a listener should be able to skip, such as intro, music, outro, sponsorship, self-promotion, support calls, shop calls, paid access, event promotion, ratings/follow calls, or cross-promotion.",
+    "isSponsor": "true marks skip-worthy promotion, including self-promotion and calls to action. Pure intro, outro, music, and sound samples are skipCandidate true but isSponsor false unless they are themselves promotional.",
+    "titles": "Titles should be useful in a chapter picker: concrete topic, object, question, method, place, person, claim, or promotion target."
+  },
+  "episodes": [
+    {
+      "id": "556e0d217009cd27e02e48be67e1b3f4",
+      "label": "Spektrum: Lichtverschmutzung",
+      "durationSeconds": 939,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 48,
+          "title": "Intro und Jingle: Lichtverschmutzung als Thema",
+          "kind": "intro",
+          "skipCandidate": true,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 48,
+          "endSeconds": 97,
+          "title": "Warum kuenstliches Licht nachts Tiere und Pflanzen stoert",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 97,
+          "endSeconds": 211,
+          "title": "Definition, Zunahme und Folgen der Lichtverschmutzung",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 211,
+          "endSeconds": 378,
+          "title": "Insekten: Fototaxis, Lichtkorridore und getrennte Populationen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 378,
+          "endSeconds": 482,
+          "title": "Fledermaeuse: Licht lockt Beute an, schadet aber langsamen Arten",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 482,
+          "endSeconds": 561,
+          "title": "Pflanzen: verschobene Bluete, Laubfall und Wasserbedarf",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 561,
+          "endSeconds": 661,
+          "title": "Oekosysteme: Bestaeubung, Nahrungsketten und Kettenreaktionen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 661,
+          "endSeconds": 810,
+          "title": "Technische Loesungen: dimmen, abschirmen, Bewegungsmelder und Spektrum",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 810,
+          "endSeconds": 893,
+          "title": "Politik und Planung: Naturschutzgesetz, Zusammenarbeit und Dunkelinseln",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 893,
+          "endSeconds": 939,
+          "title": "Outro und Eigenpromo: Spektrum.de, Abo, Bewertung und Teilen",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        }
+      ]
+    },
+    {
+      "id": "71125330ea95cf32dd0d9d3859164f18",
+      "label": "Sternengeschichten: alte Folgen und Das Universum",
+      "durationSeconds": 196,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 23,
+          "title": "Intro: alte Folgen und neuer Podcast ueber das Universum",
+          "kind": "intro",
+          "skipCandidate": true,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 23,
+          "endSeconds": 88,
+          "title": "Servicehinweis: alte Folgen, Feedwechsel und neue Feed-Adresse",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 88,
+          "endSeconds": 116,
+          "title": "Podcast-Apps, YouTube und Drittanbieter mit altem Feed",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 116,
+          "endSeconds": 160,
+          "title": "Eigenpromo: neuer Podcast Das Universum mit Ruth Kruetzbauch",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 160,
+          "endSeconds": 196,
+          "title": "Outro-Musik",
+          "kind": "music",
+          "skipCandidate": true,
+          "isSponsor": false
+        }
+      ]
+    },
+    {
+      "id": "8b1d39ffeb338154ed2ad4126164eef6",
+      "label": "Sternengeschichten: TOI 700d",
+      "durationSeconds": 820,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 74,
+          "title": "TOI 700d: Folge 700 und ein zuerst falsch eingeschaetzter Exoplanet",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 74,
+          "endSeconds": 173,
+          "title": "TOI 700: roter Zwerg, Suedhimmel und TESS-Mission",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 173,
+          "endSeconds": 309,
+          "title": "Wie TESS Exoplaneten ueber Helligkeitsabfaelle findet",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 309,
+          "endSeconds": 414,
+          "title": "Warum TOI 700d zuerst mit falschen Sonnenwerten berechnet wurde",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 414,
+          "endSeconds": 493,
+          "title": "Drei Planeten, kurze Umlaufzeiten und die habitable Zone",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 493,
+          "endSeconds": 605,
+          "title": "Bestaetigung, Masse und hohe Dichte von TOI 700d",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 605,
+          "endSeconds": 720,
+          "title": "Temperatur, moegliche Atmosphaere und Aktivitaet des roten Zwergs",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 720,
+          "endSeconds": 790,
+          "title": "Gebundene Rotation, Tag-Nacht-Seiten und Wolken auf TOI 700d",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 790,
+          "endSeconds": 820,
+          "title": "Fazit: spektakulaere Welt, aber Atmosphaere noch unbekannt",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        }
+      ]
+    },
+    {
+      "id": "aea6055589f75375459d85d41f1345ae",
+      "label": "Sternengeschichten: Live-Show Ankuendigung",
+      "durationSeconds": 137,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 69,
+          "title": "Eigenpromo: Premiere der Sternengeschichten-Live-Show in der Schwarzkaue",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 69,
+          "endSeconds": 94,
+          "title": "Eigenpromo: Zusatztermin am 29. Maerz und Kartenverfuegbarkeit",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 94,
+          "endSeconds": 121,
+          "title": "Eigenpromo: Ticketlinks und Das-Universum-Folge-100-Hinweis",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 121,
+          "endSeconds": 137,
+          "title": "Eigenpromo: Ausblick auf weitere Live-Shows",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        }
+      ]
+    },
+    {
+      "id": "b8f609e765737131ee5c32a13431c43b",
+      "label": "Spektrum: Sport und Abnehmen",
+      "durationSeconds": 720,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 18,
+          "title": "Intro und Jingle: Sport, Abnehmen und Frust auf der Waage",
+          "kind": "intro",
+          "skipCandidate": true,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 18,
+          "endSeconds": 69,
+          "title": "Warum Sport beim Abnehmen oft weniger sichtbar ist als erwartet",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 69,
+          "endSeconds": 182,
+          "title": "Kalorien, Kaloriendefizit und Energie aus Nahrung",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 182,
+          "endSeconds": 256,
+          "title": "Messmethoden fuer Energieverbrauch: Kalorimetrie und markiertes Wasser",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 256,
+          "endSeconds": 412,
+          "title": "Ueberschaetzter Sporteffekt: Verbrauch, Nachbrennen und Muskelmasse",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 412,
+          "endSeconds": 572,
+          "title": "Koerperliche Gegenreaktionen: begrenzter Energieumsatz, Hunger und Belohnung",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 572,
+          "endSeconds": 660,
+          "title": "Wie Sport trotzdem hilft: Gewicht halten, Insulinreaktion und Gesundheit",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 660,
+          "endSeconds": 720,
+          "title": "Outro und Eigenpromo: Spektrum-Themenwoche, Abo, Kommentare und Teilen",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        }
+      ]
+    },
+    {
+      "id": "ba8f6f5c71cfd36c8a665ff2674edf1b",
+      "label": "Spektrum: DMT",
+      "durationSeconds": 1282,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 48,
+          "title": "Intro und Jingle: DMT als koerpereigene Droge beim Sterben",
+          "kind": "intro",
+          "skipCandidate": true,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 48,
+          "endSeconds": 121,
+          "title": "Ayahuasca-Hook: DMT, Rauschberichte und Frage nach dem Sterben",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 121,
+          "endSeconds": 226,
+          "title": "Ayahuasca: Pflanzenmischung, DMT und verlaengerte Wirkung",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 226,
+          "endSeconds": 450,
+          "title": "Psychedelika: LSD, Ketamin, Psilocybin und Therapien gegen Depressionen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 450,
+          "endSeconds": 630,
+          "title": "DMT im Koerper: Blut, Liquor, Gehirn und Enzym-Hinweise",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 630,
+          "endSeconds": 810,
+          "title": "DMT-Regulation und Schutz von Nervenzellen bei Sauerstoffmangel",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 810,
+          "endSeconds": 1027,
+          "title": "Entzuendungshemmung, Neuroplastizitaet und Nahtoderfahrungen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1027,
+          "endSeconds": 1170,
+          "title": "Therapeutische DMT-Ansaetze nach Schlaganfall und bei psychischen Stoerungen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1170,
+          "endSeconds": 1260,
+          "title": "Forschungshuerden: DMT im Gehirn messen, Traeume und Kreativitaet",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1260,
+          "endSeconds": 1282,
+          "title": "Outro und Eigenpromo: Artikel, Abo, Bewertung und Teilen",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        }
+      ]
+    },
+    {
+      "id": "e059eda4ec325e7503284c95109044b2",
+      "label": "Spektrum: Muschelseide",
+      "durationSeconds": 1285,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 49,
+          "title": "Intro und Jingle: Muschelseide zwischen Goldglanz und Legende",
+          "kind": "intro",
+          "skipCandidate": true,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 49,
+          "endSeconds": 90,
+          "title": "Legende: Bibel, Koenige, Pharaonen und moeglicher Irrtum",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 90,
+          "endSeconds": 214,
+          "title": "Material: Buessosfaeden der Steckmuschel und goldener Glanz",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 214,
+          "endSeconds": 277,
+          "title": "Historische Belege: Luxusstatus im Roemischen Reich und Grabfund",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 277,
+          "endSeconds": 450,
+          "title": "Warum Muschelseide ohne Farbstoff golden schimmert",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 450,
+          "endSeconds": 630,
+          "title": "Widersprueche: verlorenes Geheimnis und Mumien aus Leinen statt Muschelseide",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 630,
+          "endSeconds": 720,
+          "title": "Recherche: Legendenbildung und Trennung von richtigen und falschen Quellen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 720,
+          "endSeconds": 990,
+          "title": "Uebersetzungsfehler: Buessos, Aristoteles und Renaissance-Missverstaendnis",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 990,
+          "endSeconds": 1080,
+          "title": "Begriffsverwirrung: Bibel, Italienisch und ausgeschmueckte Sardinien-Erzaehlungen",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1080,
+          "endSeconds": 1170,
+          "title": "Zusammenfassung: Wie feines Leinen zur Muschelseiden-Legende wurde",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1170,
+          "endSeconds": 1260,
+          "title": "Moderne Perspektive: koreanische Aquakultur und Muschelfaser als Abfallstoff",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1260,
+          "endSeconds": 1285,
+          "title": "Outro und Eigenpromo: Spektrum-Artikel, Abo, Bewertung und Teilen",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        }
+      ]
+    },
+    {
+      "id": "e4696cc65b28cdfd8d437acd1afb7bcc",
+      "label": "Sternengeschichten Spezial April 2026",
+      "durationSeconds": 2091,
+      "chapters": [
+        {
+          "startSeconds": 0,
+          "endSeconds": 91,
+          "title": "Intro: Spezialfolge, Forschung, Podcast-Hintergrund und Hoererfrage",
+          "kind": "intro",
+          "skipCandidate": true,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 91,
+          "endSeconds": 270,
+          "title": "Thorne-Zytkow-Objekte: Neutronenstern im Inneren eines Sterns",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 270,
+          "endSeconds": 556,
+          "title": "LMC X-4: Simulation der Verschmelzung bis zum schwarzen Loch",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 556,
+          "endSeconds": 649,
+          "title": "Warum ein verschluckter Neutronenstern nur kurz im Stern ueberlebt",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 649,
+          "endSeconds": 990,
+          "title": "Podcast-Fehler: Schnittfehler, Quito/Bogota und Korrekturpolitik",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 990,
+          "endSeconds": 1091,
+          "title": "Eigenpromo/Support: PayPal, Patreon, Steady und Vero-Zahlungen",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 1091,
+          "endSeconds": 1386,
+          "title": "Eigenpromo: Buecher, Live-Shows und Wissenschaftskommunikations-Workshops",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 1386,
+          "endSeconds": 1533,
+          "title": "Eigenpromo: Kosmik-Latte-Buch, Planetarium Wien und Thalia-Termin",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        },
+        {
+          "startSeconds": 1533,
+          "endSeconds": 1800,
+          "title": "Hoererfrage: Clickbait ueber interstellare Tunnel und falsche Wissenschaftsbilder",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1800,
+          "endSeconds": 1912,
+          "title": "Echte Studie: Roentgendaten, Local Hot Bubble und Tunnel-Metapher",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 1912,
+          "endSeconds": 2026,
+          "title": "Raumkruemmung: Gravitation, Schnellstrassen-Metapher und Missionsplanung",
+          "kind": "content",
+          "skipCandidate": false,
+          "isSponsor": false
+        },
+        {
+          "startSeconds": 2026,
+          "endSeconds": 2091,
+          "title": "Outro und Eigenpromo: Fragen einschicken, naechste Folgen und Musik",
+          "kind": "promo",
+          "skipCandidate": true,
+          "isSponsor": true
+        }
+      ]
+    }
+  ]
+}

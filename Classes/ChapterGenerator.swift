@@ -33,10 +33,10 @@ struct GeneratedChapterOut {
     @Guide(description: "Endzeit des Kapitels in Sekunden ab Podcast-Anfang (Ganzzahl). Das end eines Kapitels ist der start des nächsten Kapitels.")
     let endSeconds: Int
 
-    @Guide(description: "Kurzer beschreibender Kapitel-Titel in der Sprache des Podcasts. Bei Werbe- und Sponsoring-Kapiteln als 'Sponsor: MARKENNAME'.")
+    @Guide(description: "Kurzer beschreibender Kapitel-Titel in der Sprache des Podcasts. Skip-wuerdige Werbe-, Sponsoring-, Eigenpromo-, Abo-/Mitgliedschafts-, Shop-, Spenden-, Bewertungs- oder Cross-Promo-Segmente mit 'Sponsor: ...' betiteln. Bei belegten Audio-Kapiteln exakt 'Jingle' oder 'Sound-Sample'.")
     let title: String
 
-    @Guide(description: "true wenn dieses Kapitel ein Werbe- oder Sponsoring-Segment ist (brought to you by, sponsored by, presented by, powered by, Rabattcode, Promo-Code, URL/Link, kostenlos testen).")
+    @Guide(description: "true, wenn dieses Kapitel semantisch ein skip-wuerdiges Werbe-, Sponsoring-, Eigenpromo-, Abo-/Mitgliedschafts-, Shop-, Spenden-, Bewertungs- oder Cross-Promo-Segment ist; unabhaengig von Sprache oder konkreter Formulierung.")
     let isSponsor: Bool
 }
 
@@ -54,7 +54,7 @@ struct GeneratedTopicMarker {
     @Guide(description: "Zeitpunkt des Themenwechsels in Sekunden ab Podcast-Anfang (Ganzzahl).")
     let timeSeconds: Int
 
-    @Guide(description: "Kurzer Titel des Themas in der Sprache des Podcasts. Bei Werbe-/Sponsoring-Segmenten als 'Sponsor: MARKENNAME'.")
+    @Guide(description: "Kurzer Titel des Themas in der Sprache des Podcasts. Skip-wuerdige Werbe-, Sponsoring-, Eigenpromo-, Abo-/Mitgliedschafts-, Shop-, Spenden-, Bewertungs- oder Cross-Promo-Segmente mit 'Sponsor: ...' betiteln. Bei belegten Audiohinweisen exakt 'Jingle' oder 'Sound-Sample'.")
     let title: String
 }
 
@@ -97,11 +97,22 @@ private struct ChaptersFile: Codable {
     private static let _shared = ChapterGenerator()
     @objc static var shared: ChapterGenerator { _shared }
     private typealias TopicMarker = (time: Double, title: String)
-    private static let maximumTopicExtractionSegmentDuration: Double = 300
-    private static let maximumTopicExtractionCueCount = 45
-    private static let maximumContentChapterDuration: Double = 240
+    private struct TranscriptContextWindow {
+        let cues: [ICTranscriptCue]
+
+        var start: Double { cues.first?.start ?? 0 }
+        var end: Double { cues.last?.end ?? 0 }
+    }
+
     private static let minimumSplitChapterDuration: Double = 45
+    private static let minimumAudioContextDuration: Double = 3
+    private static let maximumAudioInterludeChapterDuration: Double = 90
+    private static let targetContextWindowOverlapDuration: Double = 45 * 60
+    private static let targetInputContextRatio = 0.85
     private static let localGenerationTimeoutNanoseconds: UInt64 = 600 * 1_000_000_000
+    private static let sponsorRecognitionRule = "- Behandle isSponsor als skip-wuerdige Promotion, nicht nur als externe Werbung: Sponsoring, Eigenpromo, bezahlte Angebote, Mitgliedschaften/Abos, Shops/Merch, Spenden/Support, Bewertungs-/Follow-Aufrufe, Cross-Promotion sowie kommerzielle oder monetaere Calls-to-Action fuer eigene Produkte, Events oder Services. Wenn ein Abschnitt hauptsaechlich dazu auffordert, ausserhalb des redaktionellen Inhalts etwas zu kaufen, zu abonnieren, zu unterstuetzen, zu bewerten/folgen, ein Event zu besuchen, einen Shop/Link zu nutzen oder ein anderes Angebot zu konsumieren, ist er Promotion. Bezahlter oder limitierter Zugang zu einem eigenen Angebot, ein Link in Shownotes zu diesem Angebot oder die Aufforderung, ein eigenes Event, Produkt, Abo oder anderes eigenes Format zu nutzen, ist Promotion auch dann, wenn es informativ formuliert ist. Kapitel, die nur Details eines eigenen Angebots, Events, Produkts, Abos oder anderen eigenen Formats liefern, sind ebenfalls Promotion, auch wenn der konkrete Kauf- oder Nutzungsaufruf erst in einem benachbarten Kapitel steht. Neutrale Erwaehnungen von Plattformen, Tools, Apps, Diensten oder Anbietern sind keine Promotion, wenn sie nur erklaert werden und nicht dazu auffordern, sie zu kaufen, zu abonnieren, zu unterstuetzen oder zu nutzen. Behandle eigene Angebote, eigene Events und andere eigene Podcasts genauso als Promotion; sie sind nicht redaktionell, nur weil sie vom Podcast selbst stammen. Erkenne das semantisch in jeder Sprache; Titel dafuer 'Sponsor: ...' und isSponsor true, auch wenn der Promo-Abschnitt am Anfang, Ende oder ueber fast die ganze kurze Folge laeuft. isSponsor false ist nur fuer redaktionellen Inhalt ohne solches Call-to-Action-Ziel erlaubt.\n"
+    private static let timelineCoverageRule = "- Kapitel muessen die komplette Zeitachse lueckenlos abdecken: keine Sekundenluecken zwischen endSeconds und dem naechsten startSeconds, auch nicht fuer Pausen, Musik oder Stille.\n"
+    private static let promotionSegmentationRule = "- Wenn redaktioneller Inhalt in Promotion, Eigenpromo oder einen Call-to-Action uebergeht, beginne dort ein eigenes Sponsor-Kapitel; mische redaktionellen Inhalt und Promotion nicht im selben Kapitel.\n"
 
     private final class ChapterDebugTrace {
         private let episodeHash: String?
@@ -119,6 +130,7 @@ private struct ChaptersFile: Codable {
         private var markerCountAfterDedup = 0
         private var finalMarkerCount = 0
         private var localFinalOutput: String?
+        private var localSponsorOutput: String?
         private var rawChapters: [[String: Any]] = []
         private var finalChapters: [[String: Any]] = []
         private var validation: [String: Any] = [:]
@@ -214,6 +226,11 @@ private struct ChaptersFile: Codable {
             write(reason: "local-final-output")
         }
 
+        func recordLocalSponsorOutput(_ output: String) {
+            localSponsorOutput = Self.limited(output)
+            write(reason: "local-sponsor-output")
+        }
+
         func recordChapters(raw: [ICGeneratedChapter], final: [ICGeneratedChapter]) {
             rawChapters = raw.map(Self.chapterDictionary)
             finalChapters = final.map(Self.chapterDictionary)
@@ -276,6 +293,7 @@ private struct ChaptersFile: Codable {
                 "markerCountAfterDedup": markerCountAfterDedup,
                 "finalMarkerCount": finalMarkerCount,
                 "localFinalOutput": localFinalOutput ?? "",
+                "localSponsorOutput": localSponsorOutput ?? "",
                 "rawChapters": rawChapters,
                 "finalChapters": finalChapters,
                 "validation": validation,
@@ -404,7 +422,9 @@ private struct ChaptersFile: Codable {
                                musicSegments: [ICAudioSegment]?,
                                status: ((String) -> Void)? = nil,
                                progress: ((Float, Int, Int) -> Void)? = nil,
-                               debugEpisodeHash: String? = nil) async throws -> [ICGeneratedChapter] {
+                               debugEpisodeHash: String? = nil,
+                               episodeTitle: String? = nil,
+                               feedTitle: String? = nil) async throws -> [ICGeneratedChapter] {
         guard !cues.isEmpty else {
             throw NSError(domain: "ChapterGenerator", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "No transcript cues provided"])
@@ -416,14 +436,29 @@ private struct ChaptersFile: Codable {
                                            cueCount: cues.count,
                                            musicSegments: musicSegments,
                                            existingChapters: nil)
-        if selectedModel.identifier == "apple-foundation-models" {
+        switch selectedModel.chapterProvider {
+        case .appleFoundation:
             guard ChapterGenerator.isAvailable() else {
                 throw NSError(domain: "ChapterGenerator", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence not available"])
             }
             return try await self.generateWithLLM(cues: cues, musicSegments: musicSegments,
                                                   existingChapters: nil, status: status, progress: progress,
-                                                  debugTrace: debugTrace)
+                                                  debugTrace: debugTrace,
+                                                  episodeTitle: episodeTitle,
+                                                  feedTitle: feedTitle)
+        case .openAIAPI, .openAICodexOAuth, .anthropicAPI:
+            return try await self.generateWithRemoteChapterModel(model: selectedModel,
+                                                                 cues: cues,
+                                                                 musicSegments: musicSegments,
+                                                                 existingChapters: nil,
+                                                                 status: status,
+                                                                 progress: progress,
+                                                                 debugTrace: debugTrace,
+                                                                 episodeTitle: episodeTitle,
+                                                                 feedTitle: feedTitle)
+        case .localGGUF:
+            break
         }
 
         return try await self.generateWithLocalGGUF(model: selectedModel,
@@ -432,7 +467,9 @@ private struct ChaptersFile: Codable {
                                                     existingChapters: nil,
                                                     status: status,
                                                     progress: progress,
-                                                    debugTrace: debugTrace)
+                                                    debugTrace: debugTrace,
+                                                    episodeTitle: episodeTitle,
+                                                    feedTitle: feedTitle)
     }
 
     /// Detect sponsor segments from transcript using existing chapters as context.
@@ -444,7 +481,8 @@ private struct ChaptersFile: Codable {
             do {
                 let selectedModel = ICDownloadableModelStore.selectedModel(for: .textToChapters)
                 let chapters: [ICGeneratedChapter]
-                if selectedModel.identifier == "apple-foundation-models" {
+                switch selectedModel.chapterProvider {
+                case .appleFoundation:
                     guard ChapterGenerator.isAvailable() else {
                         throw NSError(domain: "ChapterGenerator", code: 1,
                                       userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence not available"])
@@ -452,7 +490,13 @@ private struct ChaptersFile: Codable {
                     chapters = try await self.generateWithLLM(cues: cues, musicSegments: nil,
                                                               existingChapters: existingChapters,
                                                               debugTrace: nil)
-                } else {
+                case .openAIAPI, .openAICodexOAuth, .anthropicAPI:
+                    chapters = try await self.generateWithRemoteChapterModel(model: selectedModel,
+                                                                             cues: cues,
+                                                                             musicSegments: nil,
+                                                                             existingChapters: existingChapters,
+                                                                             debugTrace: nil)
+                case .localGGUF:
                     chapters = try await self.generateWithLocalGGUF(model: selectedModel,
                                                                     cues: cues,
                                                                     musicSegments: nil,
@@ -477,7 +521,9 @@ private struct ChaptersFile: Codable {
                                  existingChapters: [ICGeneratedChapter]?,
                                  status: ((String) -> Void)? = nil,
                                  progress: ((Float, Int, Int) -> Void)? = nil,
-                                 debugTrace: ChapterDebugTrace?) async throws -> [ICGeneratedChapter] {
+                                 debugTrace: ChapterDebugTrace?,
+                                 episodeTitle: String? = nil,
+                                 feedTitle: String? = nil) async throws -> [ICGeneratedChapter] {
         guard #available(iOS 26, *) else {
             throw NSError(domain: "ChapterGenerator", code: 3,
                           userInfo: [NSLocalizedDescriptionKey: "iOS 26 required"])
@@ -486,26 +532,28 @@ private struct ChaptersFile: Codable {
         #if canImport(FoundationModels)
         let model = SystemLanguageModel.default
         let contextSize = model.contextSize
-        // Reserve half for response
-        let maxInputTokens = contextSize / 2
+        let maxInputTokens = max(1, Int(Double(contextSize) * Self.targetInputContextRatio))
 
         NSLog("[ChapterGenerator] Context window: %d tokens, max input: %d tokens", contextSize, maxInputTokens)
 
-        // Split transcript into segments that each fit the actual model context window.
-        // The token check is the guardrail; character counts alone undercount Whisper markup
-        // and non-English text badly enough to overflow Foundation Models.
-        let segments = try await splitTranscriptIntoModelChunks(cues,
-                                                                model: model,
-                                                                maxInputTokens: maxInputTokens)
-        let totalSegments = segments.count
+        // The chapter model must see the full transcript to avoid local chunk boundaries
+        // becoming artificial chapter boundaries.
         let totalDuration = max(cues.last?.end ?? 0, 1)
+        let windows = try await transcriptContextWindowsForModel(cues,
+                                                                 musicSegments: musicSegments,
+                                                                 totalDuration: totalDuration,
+                                                                 model: model,
+                                                                 maxInputTokens: maxInputTokens,
+                                                                 episodeTitle: episodeTitle,
+                                                                 feedTitle: feedTitle)
+        let totalSegments = windows.count
         debugTrace?.recordPreparation(engine: "foundation-models",
                                       totalDuration: totalDuration,
                                       segmentCount: totalSegments)
 
-        NSLog("[ChapterGenerator] %d cues → %d segment(s), total duration %.0fs", cues.count, totalSegments, totalDuration)
+        NSLog("[ChapterGenerator] %d cues → %d context window(s), total duration %.0fs", cues.count, totalSegments, totalDuration)
         await MainActor.run {
-            status?(NSLocalizedString("Transkript wird in verarbeitbare Abschnitte aufgeteilt.", comment: ""))
+            status?(NSLocalizedString("Transkript wird mit maximalem Kontext für das Kapitelmodell vorbereitet.", comment: ""))
         }
         await MainActor.run { progress?(0.05, 0, totalSegments + 1) }
 
@@ -513,17 +561,25 @@ private struct ChaptersFile: Codable {
         // The LLM returns a typed GeneratedTopicMarkersList — no string parsing needed.
         var topicMarkers: [TopicMarker] = []
 
-        for (index, segment) in segments.enumerated() {
+        for (index, window) in windows.enumerated() {
+            let segment = window.cues
             guard !Task.isCancelled else { throw CancellationError() }
 
-            let segStart = segment.first?.start ?? 0
-            let segEnd = segment.last?.end ?? 0
-            let prompt = buildTopicExtractionPrompt(cues: segment, segStart: segStart, segEnd: segEnd)
+            let segStart = window.start
+            let segEnd = window.end
+            let prompt = buildTopicExtractionPrompt(cues: segment,
+                                                    allCues: cues,
+                                                    musicSegments: musicSegments,
+                                                    segStart: segStart,
+                                                    segEnd: segEnd,
+                                                    totalDuration: totalDuration,
+                                                    episodeTitle: episodeTitle,
+                                                    feedTitle: feedTitle)
 
             NSLog("[ChapterGenerator] Pass 1 %d/%d [%@–%@]: %d cues, %d chars",
                   index + 1, totalSegments, formatTime(segStart), formatTime(segEnd), segment.count, prompt.count)
             await MainActor.run {
-                status?(String(format: NSLocalizedString("Pass 1/2: Themenwechsel in Abschnitt %d von %d werden extrahiert.", comment: ""), index + 1, totalSegments))
+                status?(String(format: NSLocalizedString("Pass 1/2: Themenwechsel in Kontextfenster %d von %d werden extrahiert.", comment: ""), index + 1, totalSegments))
             }
             guard await promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens) else {
                 throw NSError(domain: "ChapterGenerator", code: 16,
@@ -540,7 +596,7 @@ private struct ChaptersFile: Codable {
             let response = try await session.respond(to: prompt, generating: GeneratedTopicMarkersList.self)
             NSLog("[ChapterGenerator] Pass 1 %d returned %d markers", index + 1, response.content.markers.count)
 
-            var segmentMarkers: [TopicMarker] = []
+            var rawSegmentMarkers: [TopicMarker] = []
             for m in response.content.markers {
                 var t = Double(m.timeSeconds)
                 // Clamp — the LLM occasionally hallucinates timestamps outside the segment range
@@ -548,11 +604,13 @@ private struct ChaptersFile: Codable {
                 if t > segEnd { t = segEnd }
                 let title = m.title.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !title.isEmpty {
-                    let marker = (time: t, title: title)
-                    topicMarkers.append(marker)
-                    segmentMarkers.append(marker)
+                    rawSegmentMarkers.append((time: t, title: title))
                 }
             }
+            let segmentMarkers = Self.normalizedTopicMarkers(rawSegmentMarkers,
+                                                             segmentStart: segStart,
+                                                             segmentEnd: segEnd)
+            topicMarkers.append(contentsOf: segmentMarkers)
             debugTrace?.recordPass1Segment(index: index + 1,
                                            start: segStart,
                                            end: segEnd,
@@ -583,8 +641,8 @@ private struct ChaptersFile: Codable {
         // Pass 2: Consolidate topic markers into final chapter structure via @Generable.
         let finalMarkers = try await markersFittingFinalPrompt(markers: topicMarkers,
                                                                totalDuration: totalDuration,
-                                                               musicSegments: musicSegments,
                                                                existingChapters: existingChapters,
+                                                               transcriptCues: cues,
                                                                model: model,
                                                                maxInputTokens: maxInputTokens,
                                                                status: status,
@@ -592,7 +650,8 @@ private struct ChaptersFile: Codable {
                                                                progressTotal: totalSegments + 1)
         let finalPrompt = buildFinalChaptersPrompt(
             markers: finalMarkers, totalDuration: totalDuration,
-            musicSegments: musicSegments, existingChapters: existingChapters)
+            existingChapters: existingChapters,
+            transcriptCues: cues)
         debugTrace?.recordFinalPrompt(markerCount: finalMarkers.count)
 
         NSLog("[ChapterGenerator] Pass 2: prompt %d chars from %d marker(s)", finalPrompt.count, finalMarkers.count)
@@ -610,6 +669,10 @@ private struct ChaptersFile: Codable {
                                       end: Double($0.endSeconds),
                                       title: $0.title,
                                       isSponsor: $0.isSponsor) }
+        try Self.validateRawGeneratedChapterTiming(rawChapters,
+                                                   totalDuration: totalDuration,
+                                                   existingChapters: existingChapters,
+                                                   debugTrace: debugTrace)
         var chapters = Self.normalizedChapters(rawChapters,
                                                totalDuration: totalDuration,
                                                forceContinuousBoundaries: existingChapters == nil)
@@ -618,20 +681,15 @@ private struct ChaptersFile: Codable {
                                                                   musicSegments: musicSegments,
                                                                   transcriptCues: cues,
                                                                   transcriptDuration: totalDuration)
-            chapters = Self.chaptersBySplittingOversizedContentChapters(chapters,
-                                                                        topicMarkers: finalMarkers,
-                                                                        transcriptCues: cues,
-                                                                        totalDuration: totalDuration)
-            chapters = Self.chaptersBySplittingExplicitOutroMarkers(chapters,
-                                                                    topicMarkers: finalMarkers,
-                                                                    transcriptCues: cues,
-                                                                    totalDuration: totalDuration)
             chapters = Self.chaptersByMergingTerminalFragmentsIntoOutro(chapters,
                                                                         transcriptDuration: totalDuration)
             chapters = Self.chaptersByMergingShortFragmentsAroundStructuralChapters(chapters,
                                                                                    totalDuration: totalDuration)
             chapters = Self.chaptersByMergingShortFragmentsBeforeStructuralChapters(chapters,
                                                                                    totalDuration: totalDuration)
+            chapters = Self.chaptersByApplyingEpisodeTitleToSingleContentChapter(chapters,
+                                                                                 episodeTitle: episodeTitle,
+                                                                                 transcriptCues: cues)
             chapters = Self.chaptersByReplacingGenericContentTitles(chapters,
                                                                     transcriptCues: cues)
             chapters = Self.chaptersByReplacingVerboseContentTitles(chapters,
@@ -679,9 +737,439 @@ private struct ChaptersFile: Codable {
         let isSponsor: Bool
     }
 
+    private struct LocalChapterStartsResponse: Decodable {
+        let chapters: [LocalChapterStart]
+    }
+
+    private struct LocalChapterStart: Decodable {
+        let startSeconds: Int
+        let title: String
+        let isSponsor: Bool
+    }
+
     private static let localChapterSystemPrompt = """
     Du bist ein praeziser Podcast-Kapitelgenerator. Arbeite nur mit den angegebenen Zeiten und Texten. Erfinde keine Inhalte. Antworte ausschliesslich mit validem JSON, ohne Markdown und ohne Erklaertext.
     """
+
+    private static let remoteChapterStartsSchema: [String: Any] = [
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chapters"],
+        "properties": [
+            "chapters": [
+                "type": "array",
+                "items": [
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["startSeconds", "title", "isSponsor"],
+                    "properties": [
+                        "startSeconds": ["type": "integer"],
+                        "title": ["type": "string"],
+                        "isSponsor": ["type": "boolean"],
+                    ],
+                ],
+            ],
+        ],
+    ]
+
+    private func generateWithRemoteChapterModel(model: ICDownloadableModel,
+                                                cues: [ICTranscriptCue],
+                                                musicSegments: [ICAudioSegment]?,
+                                                existingChapters: [ICGeneratedChapter]?,
+                                                status: ((String) -> Void)? = nil,
+                                                progress: ((Float, Int, Int) -> Void)? = nil,
+                                                debugTrace: ChapterDebugTrace?,
+                                                episodeTitle: String? = nil,
+                                                feedTitle: String? = nil) async throws -> [ICGeneratedChapter] {
+        let totalDuration = max(cues.last?.end ?? 0, 1)
+        debugTrace?.recordPreparation(engine: "remote-\(model.identifier)",
+                                      totalDuration: totalDuration,
+                                      segmentCount: 1)
+
+        if let existingChapters {
+            let prompt = buildLocalSponsorClassificationPrompt(chapters: existingChapters,
+                                                               cues: cues,
+                                                               totalDuration: totalDuration,
+                                                               episodeTitle: episodeTitle,
+                                                               feedTitle: feedTitle)
+            status?(String(format: NSLocalizedString("%@ prüft Sponsor- und Eigenpromo-Segmente.", comment: ""), model.title))
+            progress?(0.2, 0, 1)
+            let output = try await generateRemoteJSONObject(model: model, prompt: prompt, responseShape: .chapters)
+            let response = try decodeLocalJSON(LocalChaptersResponse.self, from: output)
+            let chapters = response.chapters.map {
+                ICGeneratedChapter(start: Double($0.startSeconds),
+                                   end: Double($0.endSeconds),
+                                   title: $0.title,
+                                   isSponsor: $0.isSponsor)
+            }
+            progress?(1.0, 1, 1)
+            return chapters
+        }
+
+        let prompt = buildLocalDirectChaptersPrompt(cues: cues,
+                                                    allCues: cues,
+                                                    musicSegments: musicSegments,
+                                                    totalDuration: totalDuration,
+                                                    episodeTitle: episodeTitle,
+                                                    feedTitle: feedTitle)
+        let started = Date()
+        status?(String(format: NSLocalizedString("%@ erstellt Kapitel aus dem vollständigen Transkript.", comment: ""), model.title))
+        progress?(0.05, 0, 1)
+        debugTrace?.recordPerformance("remote-chapter-started",
+                                      metadata: [
+                                        "modelIdentifier": model.identifier,
+                                        "modelTitle": model.title,
+                                        "provider": model.chapterProvider.rawValue,
+                                        "promptCharacters": prompt.count,
+                                        "cueCount": cues.count,
+                                        "musicSegmentCount": musicSegments?.count ?? 0,
+                                      ])
+
+        let output = try await generateRemoteJSONObject(model: model, prompt: prompt, responseShape: .chapterStarts)
+        debugTrace?.recordLocalFinalOutput(output)
+        let response = try decodeLocalJSON(LocalChapterStartsResponse.self, from: output)
+        let rawChapters = Self.chaptersFromGeneratedStarts(response.chapters, totalDuration: totalDuration)
+        try Self.validateRawGeneratedChapterTiming(rawChapters,
+                                                   totalDuration: totalDuration,
+                                                   existingChapters: nil,
+                                                   debugTrace: debugTrace)
+        let markers = rawChapters.map { (time: $0.start, title: $0.title) }
+        var chapters = Self.normalizedChapters(rawChapters,
+                                               totalDuration: totalDuration,
+                                               forceContinuousBoundaries: true)
+        chapters = try Self.validatedGeneratedChapters(chapters,
+                                                       totalDuration: totalDuration,
+                                                       topicMarkerCount: markers.count,
+                                                       topicMarkers: markers,
+                                                       musicSegments: musicSegments,
+                                                       transcriptCues: cues,
+                                                       existingChapters: nil,
+                                                       debugTrace: debugTrace)
+        guard !chapters.isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 18,
+                          userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — das Kapitelmodell hat keine Kapitel erzeugt."])
+        }
+
+        debugTrace?.recordChapters(raw: rawChapters, final: chapters)
+        debugTrace?.recordPerformance("remote-chapter-completed",
+                                      metadata: [
+                                        "modelIdentifier": model.identifier,
+                                        "chapterCount": chapters.count,
+                                        "sponsorChapterCount": chapters.filter { $0.isSponsor }.count,
+                                        "outputCharacters": output.count,
+                                        "durationSeconds": String(format: "%.3f", -started.timeIntervalSinceNow),
+                                      ])
+        progress?(1.0, 1, 1)
+        return chapters
+    }
+
+    private enum RemoteResponseShape {
+        case chapterStarts
+        case chapters
+    }
+
+    private func generateRemoteJSONObject(model: ICDownloadableModel,
+                                          prompt: String,
+                                          responseShape: RemoteResponseShape) async throws -> String {
+        let modelName = model.remoteModelName ?? model.identifier
+        switch model.chapterProvider {
+        case .openAIAPI:
+            guard let apiKey = ICRemoteChapterCredentialStore.openAIAPIKey(), !apiKey.isEmpty else {
+                throw NSError(domain: "ChapterGenerator", code: 30,
+                              userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("OpenAI API-Key fehlt.", comment: "")])
+            }
+            return try await generateOpenAIAPIJSONObject(modelName: modelName,
+                                                         apiKey: apiKey,
+                                                         prompt: prompt,
+                                                         responseShape: responseShape)
+        case .openAICodexOAuth:
+            return try await generateOpenAICodexOAuthJSONObject(modelName: modelName,
+                                                                prompt: prompt,
+                                                                responseShape: responseShape)
+        case .anthropicAPI:
+            guard let apiKey = ICRemoteChapterCredentialStore.anthropicAPIKey(), !apiKey.isEmpty else {
+                throw NSError(domain: "ChapterGenerator", code: 31,
+                              userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Anthropic API-Key fehlt.", comment: "")])
+            }
+            return try await generateAnthropicJSONObject(modelName: modelName,
+                                                         apiKey: apiKey,
+                                                         prompt: prompt,
+                                                         responseShape: responseShape)
+        default:
+            throw NSError(domain: "ChapterGenerator", code: 32,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Remote-Kapitelmodell ist ungültig.", comment: "")])
+        }
+    }
+
+    private func generateOpenAIAPIJSONObject(modelName: String,
+                                             apiKey: String,
+                                             prompt: String,
+                                             responseShape: RemoteResponseShape) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: openAIResponsesBody(modelName: modelName,
+                                                                                          prompt: prompt,
+                                                                                          stream: false,
+                                                                                          responseShape: responseShape))
+
+        let (data, statusCode) = try await remoteDataAndStatusCode(for: request)
+        guard (200..<300).contains(statusCode) else {
+            throw remoteHTTPError(statusCode: statusCode, data: data, provider: "OpenAI")
+        }
+        return try Self.openAIOutputText(from: data)
+    }
+
+    private func generateOpenAICodexOAuthJSONObject(modelName: String,
+                                                    prompt: String,
+                                                    responseShape: RemoteResponseShape) async throws -> String {
+        let token = try await ICRemoteChapterCredentialStore.refreshedOpenAIOAuthAccessToken()
+        do {
+            return try await generateOpenAICodexOAuthJSONObject(modelName: modelName,
+                                                                token: token,
+                                                                prompt: prompt,
+                                                                responseShape: responseShape)
+        } catch let error as NSError where error.domain == "ChapterGenerator.RemoteHTTP" && error.code == 401 {
+            let refreshedToken = try await ICRemoteChapterCredentialStore.refreshOpenAIOAuthAccessToken()
+            return try await generateOpenAICodexOAuthJSONObject(modelName: modelName,
+                                                                token: refreshedToken,
+                                                                prompt: prompt,
+                                                                responseShape: responseShape)
+        }
+    }
+
+    private func generateOpenAICodexOAuthJSONObject(modelName: String,
+                                                    token: String,
+                                                    prompt: String,
+                                                    responseShape: RemoteResponseShape) async throws -> String {
+        guard let accountID = ICRemoteChapterCredentialStore.openAIOAuthAccountID(), !accountID.isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 33,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("ChatGPT Login enthält keine Account-ID.", comment: "")])
+        }
+        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/codex/responses")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-ID")
+        if ICRemoteChapterCredentialStore.openAIOAuthIsFedRAMPAccount() {
+            request.setValue("true", forHTTPHeaderField: "X-OpenAI-Fedramp")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: openAIResponsesBody(modelName: modelName,
+                                                                                          prompt: prompt,
+                                                                                          stream: true,
+                                                                                          responseShape: responseShape))
+
+        let (data, statusCode) = try await remoteDataAndStatusCode(for: request)
+        guard (200..<300).contains(statusCode) else {
+            throw remoteHTTPError(statusCode: statusCode, data: data, provider: "ChatGPT")
+        }
+        return try Self.openAIOutputText(fromSSEData: data)
+    }
+
+    private func generateAnthropicJSONObject(modelName: String,
+                                             apiKey: String,
+                                             prompt: String,
+                                             responseShape: RemoteResponseShape) async throws -> String {
+        let userPrompt = prompt + anthropicJSONResponseInstruction(responseShape)
+        var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "model": modelName,
+            "max_tokens": 8192,
+            "temperature": 0,
+            "system": Self.localChapterSystemPrompt,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": userPrompt,
+                ],
+            ],
+        ])
+
+        let (data, statusCode) = try await remoteDataAndStatusCode(for: request)
+        guard (200..<300).contains(statusCode) else {
+            throw remoteHTTPError(statusCode: statusCode, data: data, provider: "Anthropic")
+        }
+        return try Self.anthropicOutputText(from: data)
+    }
+
+    private func openAIResponsesBody(modelName: String,
+                                     prompt: String,
+                                     stream: Bool,
+                                     responseShape: RemoteResponseShape) -> [String: Any] {
+        return [
+            "model": modelName,
+            "instructions": Self.localChapterSystemPrompt,
+            "input": [
+                [
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "input_text",
+                            "text": prompt,
+                        ],
+                    ],
+                ],
+            ],
+            "tools": [],
+            "tool_choice": "auto",
+            "parallel_tool_calls": false,
+            "store": false,
+            "stream": stream,
+            "include": [],
+            "text": [
+                "format": [
+                    "type": "json_schema",
+                    "name": responseShape == .chapterStarts ? "podcast_chapter_starts" : "podcast_chapters",
+                    "strict": true,
+                    "schema": responseShape == .chapterStarts ? Self.remoteChapterStartsSchema : Self.remoteChaptersSchema,
+                ],
+            ],
+        ]
+    }
+
+    private static let remoteChaptersSchema: [String: Any] = [
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chapters"],
+        "properties": [
+            "chapters": [
+                "type": "array",
+                "items": [
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["startSeconds", "endSeconds", "title", "isSponsor"],
+                    "properties": [
+                        "startSeconds": ["type": "integer"],
+                        "endSeconds": ["type": "integer"],
+                        "title": ["type": "string"],
+                        "isSponsor": ["type": "boolean"],
+                    ],
+                ],
+            ],
+        ],
+    ]
+
+    private func anthropicJSONResponseInstruction(_ responseShape: RemoteResponseShape) -> String {
+        switch responseShape {
+        case .chapterStarts:
+            return "\n\nAntworte nur mit JSON im Format {\"chapters\":[{\"startSeconds\":0,\"title\":\"...\",\"isSponsor\":false}]}. Keine Markdown-Blöcke."
+        case .chapters:
+            return "\n\nAntworte nur mit JSON im Format {\"chapters\":[{\"startSeconds\":0,\"endSeconds\":60,\"title\":\"...\",\"isSponsor\":false}]}. Keine Markdown-Blöcke."
+        }
+    }
+
+    private func remoteDataAndStatusCode(for request: URLRequest) async throws -> (Data, Int) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 5 * 60
+        configuration.timeoutIntervalForResource = 30 * 60
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw NSError(domain: "ChapterGenerator", code: 34,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Remote-Kapitelmodell lieferte keine HTTP-Antwort.", comment: "")])
+        }
+        return (data, http.statusCode)
+    }
+
+    private func remoteHTTPError(statusCode: Int, data: Data, provider: String) -> NSError {
+        let body = String(data: data, encoding: .utf8) ?? ""
+        let snippet = body.trimmingCharacters(in: .whitespacesAndNewlines).prefix(240)
+        let message = snippet.isEmpty
+            ? String(format: NSLocalizedString("%@ Kapitelmodell fehlgeschlagen. HTTP %d", comment: ""), provider, statusCode)
+            : String(format: NSLocalizedString("%@ Kapitelmodell fehlgeschlagen. HTTP %d: %@", comment: ""), provider, statusCode, String(snippet))
+        return NSError(domain: "ChapterGenerator.RemoteHTTP", code: statusCode,
+                       userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private static func openAIOutputText(from data: Data) throws -> String {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let text = openAIOutputText(fromJSONObject: object),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 35,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("OpenAI Kapitelmodell lieferte keinen Text.", comment: "")])
+        }
+        return text
+    }
+
+    private static func openAIOutputText(fromSSEData data: Data) throws -> String {
+        guard let sse = String(data: data, encoding: .utf8) else {
+            throw NSError(domain: "ChapterGenerator", code: 36,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("ChatGPT Kapitelmodell lieferte keine lesbare Antwort.", comment: "")])
+        }
+
+        var output = ""
+        var completedResponse: [String: Any]?
+        for rawLine in sse.components(separatedBy: .newlines) {
+            guard rawLine.hasPrefix("data: ") else { continue }
+            let payload = String(rawLine.dropFirst(6))
+            guard payload != "[DONE]", let data = payload.data(using: .utf8),
+                  let event = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                continue
+            }
+            if event["type"] as? String == "response.output_text.delta",
+               let delta = event["delta"] as? String {
+                output += delta
+            } else if event["type"] as? String == "response.completed",
+                      let response = event["response"] as? [String: Any] {
+                completedResponse = response
+            } else if event["type"] as? String == "response.output_item.done",
+                      let item = event["item"] as? [String: Any],
+                      let text = openAIOutputText(fromJSONObject: ["output": [item]]) {
+                output += text
+            }
+        }
+
+        if output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let completedResponse,
+           let text = openAIOutputText(fromJSONObject: completedResponse) {
+            output = text
+        }
+
+        guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 37,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("ChatGPT Kapitelmodell lieferte keinen Text.", comment: "")])
+        }
+        return output
+    }
+
+    private static func openAIOutputText(fromJSONObject object: [String: Any]) -> String? {
+        if let text = object["output_text"] as? String {
+            return text
+        }
+        guard let output = object["output"] as? [[String: Any]] else { return nil }
+        var text = ""
+        for item in output {
+            guard let content = item["content"] as? [[String: Any]] else { continue }
+            for contentItem in content {
+                if let value = contentItem["text"] as? String {
+                    text += value
+                }
+            }
+        }
+        return text.isEmpty ? nil : text
+    }
+
+    private static func anthropicOutputText(from data: Data) throws -> String {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = object["content"] as? [[String: Any]] else {
+            throw NSError(domain: "ChapterGenerator", code: 38,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Anthropic Kapitelmodell lieferte keine lesbare Antwort.", comment: "")])
+        }
+        let text = content.compactMap { $0["text"] as? String }.joined()
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 39,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Anthropic Kapitelmodell lieferte keinen Text.", comment: "")])
+        }
+        return text
+    }
 
     private func generateWithLocalGGUF(model: ICDownloadableModel,
                                        cues: [ICTranscriptCue],
@@ -689,7 +1177,9 @@ private struct ChaptersFile: Codable {
                                        existingChapters: [ICGeneratedChapter]?,
                                        status: ((String) -> Void)? = nil,
                                        progress: ((Float, Int, Int) -> Void)? = nil,
-                                       debugTrace: ChapterDebugTrace?) async throws -> [ICGeneratedChapter] {
+                                       debugTrace: ChapterDebugTrace?,
+                                       episodeTitle: String? = nil,
+                                       feedTitle: String? = nil) async throws -> [ICGeneratedChapter] {
         guard ICDownloadableModelStore.isDownloaded(model: model),
               let modelURL = ICDownloadableModelStore.modelFileURL(for: model),
               FileManager.default.fileExists(atPath: modelURL.path) else {
@@ -697,28 +1187,45 @@ private struct ChaptersFile: Codable {
                           userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Kapitelmodell ist nicht geladen.", comment: "")])
         }
 
+        let totalDuration = max(cues.last?.end ?? 0, 1)
+        let fullPrompt = buildLocalTopicExtractionPrompt(cues: cues,
+                                                         allCues: cues,
+                                                         musicSegments: musicSegments,
+                                                         segStart: cues.first?.start ?? 0,
+                                                         segEnd: cues.last?.end ?? totalDuration,
+                                                         totalDuration: totalDuration,
+                                                         episodeTitle: episodeTitle,
+                                                         feedTitle: feedTitle)
+        let requestedContextTokens = Self.localContextTokens(forPromptCharacters: fullPrompt.count)
+
         status?(String(format: NSLocalizedString("%@ wird geladen.", comment: ""), model.title))
         progress?(0.01, 0, 1)
 
         let modelLoadStart = Date()
         let runner = try await Task.detached(priority: .userInitiated) {
-            try LocalGGUFModelRunner.create(modelURL: modelURL)
+            try LocalGGUFModelRunner.create(modelURL: modelURL, contextTokens: requestedContextTokens)
         }.value
+        let contextWindowTokens = await runner.contextWindowTokens
         let maxInputTokens = await runner.maxInputTokens
-        NSLog("[ChapterGenerator] Local GGUF context max input: %d tokens", maxInputTokens)
+        NSLog("[ChapterGenerator] Local GGUF context window: %d tokens, max input: %d tokens", contextWindowTokens, maxInputTokens)
         debugTrace?.recordPerformance("local-model-loaded",
                                       metadata: [
                                         "modelIdentifier": model.identifier,
                                         "modelTitle": model.title,
                                         "durationSeconds": String(format: "%.3f", -modelLoadStart.timeIntervalSinceNow),
+                                        "requestedContextTokens": requestedContextTokens,
+                                        "contextWindowTokens": contextWindowTokens,
                                         "maxInputTokens": maxInputTokens,
                                       ])
 
-        let segments = try await splitTranscriptIntoLocalChunks(cues,
-                                                                runner: runner,
-                                                                maxInputTokens: maxInputTokens)
-        let totalSegments = segments.count
-        let totalDuration = max(cues.last?.end ?? 0, 1)
+        let windows = try await transcriptContextWindowsForLocalModel(cues,
+                                                                      musicSegments: musicSegments,
+                                                                      totalDuration: totalDuration,
+                                                                      runner: runner,
+                                                                      maxInputTokens: maxInputTokens,
+                                                                      episodeTitle: episodeTitle,
+                                                                      feedTitle: feedTitle)
+        let totalSegments = windows.count
         debugTrace?.recordPreparation(engine: "local-gguf",
                                       totalDuration: totalDuration,
                                       segmentCount: totalSegments)
@@ -728,35 +1235,171 @@ private struct ChaptersFile: Codable {
                                         "musicSegmentCount": musicSegments?.count ?? 0,
                                         "segmentCount": totalSegments,
                                         "totalDurationSeconds": String(format: "%.3f", totalDuration),
+                                        "requestedContextTokens": requestedContextTokens,
+                                        "contextWindowTokens": contextWindowTokens,
                                         "maxInputTokens": maxInputTokens,
                                         "existingChapterCount": existingChapters?.count ?? 0,
                                       ])
+
+        if existingChapters == nil, totalSegments == 1, let window = windows.first {
+            let directPrompt = buildLocalDirectChaptersPrompt(cues: window.cues,
+                                                              allCues: cues,
+                                                              musicSegments: musicSegments,
+                                                              totalDuration: totalDuration,
+                                                              episodeTitle: episodeTitle,
+                                                              feedTitle: feedTitle)
+            if try await localPromptFitsContext(directPrompt, runner: runner, maxInputTokens: maxInputTokens) {
+                let directStart = Date()
+                status?(NSLocalizedString("Pass 1/1: Kapitelmodell erstellt Kapitel aus dem vollstaendigen Transkript.", comment: ""))
+                progress?(0.05, 0, 1)
+                debugTrace?.recordPass1SegmentStarted(index: 1,
+                                                      start: window.start,
+                                                      end: window.end,
+                                                      cueCount: window.cues.count,
+                                                      prompt: directPrompt,
+                                                      promptCharacters: directPrompt.count)
+                debugTrace?.recordPerformance("local-direct-chapters-started",
+                                              metadata: [
+                                                "cueCount": window.cues.count,
+                                                "promptCharacters": directPrompt.count,
+                                              ])
+                let output = try await generateLocalJSONObject(runner: runner,
+                                                               prompt: directPrompt,
+                                                               grammar: .chapterStarts,
+                                                               maxNewTokens: localDirectChapterMaxNewTokens(duration: totalDuration))
+                debugTrace?.recordLocalFinalOutput(output)
+                let response = try decodeLocalJSON(LocalChapterStartsResponse.self, from: output)
+                let rawChapters = Self.chaptersFromGeneratedStarts(response.chapters, totalDuration: totalDuration)
+                try Self.validateRawGeneratedChapterTiming(rawChapters,
+                                                           totalDuration: totalDuration,
+                                                           existingChapters: existingChapters,
+                                                           debugTrace: debugTrace)
+                let directMarkers = rawChapters.map { (time: $0.start, title: $0.title) }
+                debugTrace?.recordPass1Segment(index: 1,
+                                               start: window.start,
+                                               end: window.end,
+                                               cueCount: window.cues.count,
+                                               prompt: directPrompt,
+                                               promptCharacters: directPrompt.count,
+                                               markerCount: directMarkers.count,
+                                               markers: directMarkers,
+                                               rawOutput: output)
+                debugTrace?.recordMarkers(beforeDedup: directMarkers.count,
+                                          afterDedup: directMarkers.count)
+                debugTrace?.recordFinalPrompt(markerCount: directMarkers.count)
+
+                var chapters = Self.normalizedChapters(rawChapters,
+                                                       totalDuration: totalDuration,
+                                                       forceContinuousBoundaries: true)
+                chapters = Self.chaptersByAddingMusicBoundaryChapters(chapters,
+                                                                      musicSegments: musicSegments,
+                                                                      transcriptCues: cues,
+                                                                      transcriptDuration: totalDuration)
+                chapters = Self.chaptersByMergingTerminalFragmentsIntoOutro(chapters,
+                                                                            transcriptDuration: totalDuration)
+                chapters = Self.chaptersByMergingShortFragmentsAroundStructuralChapters(chapters,
+                                                                                       totalDuration: totalDuration)
+                chapters = Self.chaptersByMergingShortFragmentsBeforeStructuralChapters(chapters,
+                                                                                       totalDuration: totalDuration)
+                chapters = Self.chaptersByApplyingEpisodeTitleToSingleContentChapter(chapters,
+                                                                                     episodeTitle: episodeTitle,
+                                                                                     transcriptCues: cues)
+                chapters = Self.chaptersByReplacingGenericContentTitles(chapters,
+                                                                        transcriptCues: cues)
+                chapters = Self.chaptersByReplacingVerboseContentTitles(chapters,
+                                                                        transcriptCues: cues)
+                chapters = try await localChaptersByClassifyingSponsors(chapters,
+                                                                        cues: cues,
+                                                                        totalDuration: totalDuration,
+                                                                        runner: runner,
+                                                                        maxInputTokens: maxInputTokens,
+                                                                        status: status,
+                                                                        progress: progress,
+                                                                        episodeTitle: episodeTitle,
+                                                                        feedTitle: feedTitle,
+                                                                        debugTrace: debugTrace)
+                debugTrace?.recordChapters(raw: rawChapters, final: chapters)
+                debugTrace?.recordPerformance("local-direct-chapters-completed",
+                                              metadata: [
+                                                "promptCharacters": directPrompt.count,
+                                                "outputCharacters": output.count,
+                                                "rawChapterCount": rawChapters.count,
+                                                "finalChapterCount": chapters.count,
+                                                "sponsorChapterCount": chapters.filter { $0.isSponsor }.count,
+                                                "durationSeconds": String(format: "%.3f", -directStart.timeIntervalSinceNow),
+                                              ])
+                chapters = try Self.validatedGeneratedChapters(chapters,
+                                                               totalDuration: totalDuration,
+                                                               topicMarkerCount: directMarkers.count,
+                                                               topicMarkers: directMarkers,
+                                                               musicSegments: musicSegments,
+                                                               transcriptCues: cues,
+                                                               existingChapters: existingChapters,
+                                                               debugTrace: debugTrace)
+
+                guard !chapters.isEmpty else {
+                    throw NSError(domain: "ChapterGenerator", code: 18,
+                                  userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — das Kapitelmodell hat keine Kapitel erzeugt."])
+                }
+
+                debugTrace?.recordPerformance("local-chapter-completed",
+                                              metadata: [
+                                                "chapterCount": chapters.count,
+                                                "sponsorChapterCount": chapters.filter { $0.isSponsor }.count,
+                                                "topicMarkerCount": directMarkers.count,
+                                                "segmentCount": totalSegments,
+                                                "mode": "direct-full-transcript",
+                                              ])
+                progress?(1.0, 1, 1)
+                return chapters
+            }
+        }
+
         var topicMarkers: [TopicMarker] = []
 
-        status?(NSLocalizedString("Themenmarker werden aus Transkript und Musik abgeleitet.", comment: ""))
+        status?(NSLocalizedString("Pass 1/2: Kapitelmodell liest das Transkript mit maximalem Kontext und erkennt Themenwechsel.", comment: ""))
         progress?(0.05, 0, totalSegments + 1)
 
-        for (index, segment) in segments.enumerated() {
+        for (index, window) in windows.enumerated() {
+            let segment = window.cues
             guard !Task.isCancelled else {
                 await runner.cancel()
                 throw CancellationError()
             }
 
-            let segStart = segment.first?.start ?? 0
-            let segEnd = segment.last?.end ?? 0
-            let prompt = buildDeterministicMarkerDebugText(cues: segment, segStart: segStart, segEnd: segEnd)
+            let segStart = window.start
+            let segEnd = window.end
+            let prompt = buildLocalTopicExtractionPrompt(cues: segment,
+                                                         allCues: cues,
+                                                         musicSegments: musicSegments,
+                                                         segStart: segStart,
+                                                         segEnd: segEnd,
+                                                         totalDuration: totalDuration,
+                                                         episodeTitle: episodeTitle,
+                                                         feedTitle: feedTitle)
             let segmentStart = Date()
+            status?(String(format: NSLocalizedString("Pass 1/2: Themenwechsel in Kontextfenster %d von %d werden extrahiert.", comment: ""), index + 1, totalSegments))
             debugTrace?.recordPass1SegmentStarted(index: index + 1,
                                                   start: segStart,
                                                   end: segEnd,
                                                   cueCount: segment.count,
                                                   prompt: prompt,
                                                   promptCharacters: prompt.count)
-            let segmentMarkers = deterministicLocalTopicMarkers(cues: segment,
-                                                                musicSegments: musicSegments,
-                                                                segmentStart: segStart,
-                                                                segmentEnd: segEnd,
-                                                                totalDuration: totalDuration)
+            let output = try await generateLocalJSONObject(runner: runner,
+                                                           prompt: prompt,
+                                                           grammar: .markers,
+                                                           maxNewTokens: localMarkerMaxNewTokens(cueCount: segment.count,
+                                                                                                 duration: segEnd - segStart))
+            let response = try decodeLocalJSON(LocalTopicMarkersResponse.self, from: output)
+            let rawSegmentMarkers = response.markers.compactMap { marker -> TopicMarker? in
+                let title = marker.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty else { return nil }
+                let time = min(max(Double(marker.timeSeconds), segStart), segEnd)
+                return (time: time, title: title)
+            }
+            let segmentMarkers = Self.normalizedTopicMarkers(rawSegmentMarkers,
+                                                             segmentStart: segStart,
+                                                             segmentEnd: segEnd)
             topicMarkers.append(contentsOf: segmentMarkers)
             debugTrace?.recordPass1Segment(index: index + 1,
                                            start: segStart,
@@ -766,12 +1409,13 @@ private struct ChaptersFile: Codable {
                                            promptCharacters: prompt.count,
                                            markerCount: segmentMarkers.count,
                                            markers: segmentMarkers)
-            debugTrace?.recordPerformance("local-pass1-segment-derived",
+            debugTrace?.recordPerformance("local-pass1-segment-generated",
                                           metadata: [
                                             "index": index + 1,
                                             "segmentCount": totalSegments,
                                             "cueCount": segment.count,
                                             "promptCharacters": prompt.count,
+                                            "outputCharacters": output.count,
                                             "markerCount": segmentMarkers.count,
                                             "durationSeconds": String(format: "%.3f", -segmentStart.timeIntervalSinceNow),
                                           ])
@@ -794,99 +1438,144 @@ private struct ChaptersFile: Codable {
         topicMarkers = Self.deduplicatedMarkers(topicMarkers)
         debugTrace?.recordMarkers(beforeDedup: markerCountBeforeDedup,
                                   afterDedup: topicMarkers.count)
-        debugTrace?.recordPerformance("local-deterministic-markers",
+        debugTrace?.recordPerformance("local-pass1-markers",
                                       metadata: [
                                         "markerCountBeforeDedup": markerCountBeforeDedup,
                                         "markerCountAfterDedup": topicMarkers.count,
                                       ])
-        let finalMarkers = try await localMarkersFittingFinalPrompt(markers: topicMarkers,
+
+        let finalMarkers: [TopicMarker]
+        let rawChapters: [ICGeneratedChapter]
+        let finalGenerationStart = Date()
+        var pass2CompletionMetadata: [String: Any]
+
+        if existingChapters == nil {
+            finalMarkers = topicMarkers
+            debugTrace?.recordFinalPrompt(markerCount: finalMarkers.count)
+            status?(NSLocalizedString("Pass 2/2: Kapitelstruktur wird aus den erkannten Themenmarkern erstellt.", comment: ""))
+            progress?(0.95, totalSegments, totalSegments + 1)
+            debugTrace?.recordPerformance("local-pass2-started",
+                                          metadata: [
+                                            "mode": "topic-markers",
+                                            "finalMarkerCount": finalMarkers.count,
+                                            "promptCharacters": 0,
+                                          ])
+            rawChapters = Self.chaptersFromTopicMarkers(finalMarkers,
+                                                        totalDuration: totalDuration)
+            pass2CompletionMetadata = [
+                "mode": "topic-markers",
+                "finalMarkerCount": finalMarkers.count,
+                "promptCharacters": 0,
+                "outputCharacters": 0,
+                "rawChapterCount": rawChapters.count,
+            ]
+        } else {
+            finalMarkers = try await localMarkersFittingFinalPrompt(markers: topicMarkers,
                                                                     totalDuration: totalDuration,
-                                                                    musicSegments: musicSegments,
                                                                     existingChapters: existingChapters,
+                                                                    transcriptCues: cues,
                                                                     runner: runner,
                                                                     maxInputTokens: maxInputTokens,
                                                                     status: status,
                                                                     progress: progress,
                                                                     progressTotal: totalSegments + 1)
-        let finalPrompt = buildLocalFinalChaptersPrompt(markers: finalMarkers,
-                                                        totalDuration: totalDuration,
-                                                        musicSegments: musicSegments,
-                                                        existingChapters: existingChapters)
-        debugTrace?.recordFinalPrompt(markerCount: finalMarkers.count)
+            let finalPrompt = buildLocalFinalChaptersPrompt(markers: finalMarkers,
+                                                            totalDuration: totalDuration,
+                                                            existingChapters: existingChapters,
+                                                            transcriptCues: cues)
+            debugTrace?.recordFinalPrompt(markerCount: finalMarkers.count)
 
-        NSLog("[ChapterGenerator] Local pass 2: prompt %d chars from %d marker(s)", finalPrompt.count, finalMarkers.count)
-        let finalGenerationStart = Date()
-        status?(NSLocalizedString("Pass 2/2: Kapitelmodell erstellt die finale JSON-Struktur. Das kann mehrere Minuten dauern.", comment: ""))
-        progress?(0.95, totalSegments, totalSegments + 1)
-        debugTrace?.recordPerformance("local-pass2-started",
-                                      metadata: [
-                                        "finalMarkerCount": finalMarkers.count,
-                                        "promptCharacters": finalPrompt.count,
-                                      ])
-
-        let output: String
-        do {
-            output = try await generateLocalJSONObject(runner: runner,
-                                                       prompt: finalPrompt,
-                                                       grammar: .chapters,
-                                                       maxNewTokens: existingChapters == nil ? 1_536 : 768)
-        } catch {
-            debugTrace?.recordPerformance("local-pass2-failed",
+            NSLog("[ChapterGenerator] Local pass 2: prompt %d chars from %d marker(s)", finalPrompt.count, finalMarkers.count)
+            status?(NSLocalizedString("Pass 2/2: Kapitelmodell erstellt die finale JSON-Struktur. Das kann mehrere Minuten dauern.", comment: ""))
+            progress?(0.95, totalSegments, totalSegments + 1)
+            debugTrace?.recordPerformance("local-pass2-started",
                                           metadata: [
+                                            "mode": "local-json",
                                             "finalMarkerCount": finalMarkers.count,
                                             "promptCharacters": finalPrompt.count,
-                                            "durationSeconds": String(format: "%.3f", -finalGenerationStart.timeIntervalSinceNow),
-                                            "error": error.localizedDescription,
                                           ])
-            throw error
-        }
-        debugTrace?.recordLocalFinalOutput(output)
-        let response = try decodeLocalJSON(LocalChaptersResponse.self, from: output)
-        let rawChapters = response.chapters.map {
-            ICGeneratedChapter(start: Double($0.startSeconds),
-                               end: Double($0.endSeconds),
-                               title: $0.title,
-                               isSponsor: $0.isSponsor)
+
+            let output: String
+            do {
+                output = try await generateLocalJSONObject(runner: runner,
+                                                           prompt: finalPrompt,
+                                                           grammar: .chapters,
+                                                           maxNewTokens: localChapterMaxNewTokens(markerCount: finalMarkers.count,
+                                                                                                  existingChapters: existingChapters))
+            } catch {
+                debugTrace?.recordPerformance("local-pass2-failed",
+                                              metadata: [
+                                                "mode": "local-json",
+                                                "finalMarkerCount": finalMarkers.count,
+                                                "promptCharacters": finalPrompt.count,
+                                                "durationSeconds": String(format: "%.3f", -finalGenerationStart.timeIntervalSinceNow),
+                                                "error": error.localizedDescription,
+                                              ])
+                throw error
+            }
+            debugTrace?.recordLocalFinalOutput(output)
+            let response = try decodeLocalJSON(LocalChaptersResponse.self, from: output)
+            rawChapters = response.chapters.map {
+                ICGeneratedChapter(start: Double($0.startSeconds),
+                                   end: Double($0.endSeconds),
+                                   title: $0.title,
+                                   isSponsor: $0.isSponsor)
+            }
+            pass2CompletionMetadata = [
+                "mode": "local-json",
+                "finalMarkerCount": finalMarkers.count,
+                "promptCharacters": finalPrompt.count,
+                "outputCharacters": output.count,
+                "rawChapterCount": rawChapters.count,
+            ]
         }
 
+        try Self.validateRawGeneratedChapterTiming(rawChapters,
+                                                   totalDuration: totalDuration,
+                                                   existingChapters: existingChapters,
+                                                   debugTrace: debugTrace)
         var chapters = Self.normalizedChapters(rawChapters,
                                                totalDuration: totalDuration,
                                                forceContinuousBoundaries: existingChapters == nil)
+        let preserveTopicMarkerTitles = existingChapters == nil
+            && (pass2CompletionMetadata["mode"] as? String) == "topic-markers"
         if existingChapters == nil {
             chapters = Self.chaptersByAddingMusicBoundaryChapters(chapters,
                                                                   musicSegments: musicSegments,
                                                                   transcriptCues: cues,
                                                                   transcriptDuration: totalDuration)
-            chapters = Self.chaptersBySplittingOversizedContentChapters(chapters,
-                                                                        topicMarkers: finalMarkers,
-                                                                        transcriptCues: cues,
-                                                                        totalDuration: totalDuration)
-            chapters = Self.chaptersBySplittingExplicitOutroMarkers(chapters,
-                                                                    topicMarkers: finalMarkers,
-                                                                    transcriptCues: cues,
-                                                                    totalDuration: totalDuration)
             chapters = Self.chaptersByMergingTerminalFragmentsIntoOutro(chapters,
                                                                         transcriptDuration: totalDuration)
             chapters = Self.chaptersByMergingShortFragmentsAroundStructuralChapters(chapters,
                                                                                    totalDuration: totalDuration)
             chapters = Self.chaptersByMergingShortFragmentsBeforeStructuralChapters(chapters,
                                                                                    totalDuration: totalDuration)
-            chapters = Self.chaptersByReplacingGenericContentTitles(chapters,
-                                                                    transcriptCues: cues)
-            chapters = Self.chaptersByReplacingVerboseContentTitles(chapters,
-                                                                    transcriptCues: cues)
+                chapters = Self.chaptersByApplyingEpisodeTitleToSingleContentChapter(chapters,
+                                                                                 episodeTitle: episodeTitle,
+                                                                                 transcriptCues: cues)
+            if !preserveTopicMarkerTitles {
+                chapters = Self.chaptersByReplacingGenericContentTitles(chapters,
+                                                                        transcriptCues: cues)
+                chapters = Self.chaptersByReplacingVerboseContentTitles(chapters,
+                                                                        transcriptCues: cues)
+            }
+            chapters = try await localChaptersByClassifyingSponsors(chapters,
+                                                                    cues: cues,
+                                                                    totalDuration: totalDuration,
+                                                                    runner: runner,
+                                                                    maxInputTokens: maxInputTokens,
+                                                                    status: status,
+                                                                    progress: progress,
+                                                                    episodeTitle: episodeTitle,
+                                                                    feedTitle: feedTitle,
+                                                                    debugTrace: debugTrace)
         }
         debugTrace?.recordChapters(raw: rawChapters, final: chapters)
+        pass2CompletionMetadata["finalChapterCount"] = chapters.count
+        pass2CompletionMetadata["sponsorChapterCount"] = chapters.filter { $0.isSponsor }.count
+        pass2CompletionMetadata["durationSeconds"] = String(format: "%.3f", -finalGenerationStart.timeIntervalSinceNow)
         debugTrace?.recordPerformance("local-pass2-completed",
-                                      metadata: [
-                                        "finalMarkerCount": finalMarkers.count,
-                                        "promptCharacters": finalPrompt.count,
-                                        "outputCharacters": output.count,
-                                        "rawChapterCount": rawChapters.count,
-                                        "finalChapterCount": chapters.count,
-                                        "sponsorChapterCount": chapters.filter { $0.isSponsor }.count,
-                                        "durationSeconds": String(format: "%.3f", -finalGenerationStart.timeIntervalSinceNow),
-                                      ])
+                                      metadata: pass2CompletionMetadata)
         chapters = try Self.validatedGeneratedChapters(chapters,
                                                        totalDuration: totalDuration,
                                                        topicMarkerCount: topicMarkers.count,
@@ -912,77 +1601,119 @@ private struct ChaptersFile: Codable {
         return chapters
     }
 
-    private func buildLocalTopicExtractionPrompt(cues: [ICTranscriptCue], segStart: Double, segEnd: Double) -> String {
-        var prompt = buildTopicExtractionPrompt(cues: cues, segStart: segStart, segEnd: segEnd)
+    private func buildLocalTopicExtractionPrompt(cues: [ICTranscriptCue],
+                                                 allCues: [ICTranscriptCue],
+                                                 musicSegments: [ICAudioSegment]?,
+                                                 segStart: Double,
+                                                 segEnd: Double,
+                                                 totalDuration: Double,
+                                                 episodeTitle: String?,
+                                                 feedTitle: String?) -> String {
+        var prompt = buildTopicExtractionPrompt(cues: cues,
+                                                allCues: allCues,
+                                                musicSegments: musicSegments,
+                                                segStart: segStart,
+                                                segEnd: segEnd,
+                                                totalDuration: totalDuration,
+                                                episodeTitle: episodeTitle,
+                                                feedTitle: feedTitle)
         prompt += "\nRegeln fuer lokale Erkennung:\n"
-        prompt += "- Maximal 6 Marker pro Abschnitt.\n"
-        prompt += "- Nur klare neue Themen, keine Detailwechsel innerhalb desselben Themas.\n"
+        prompt += "- Ein zusammenhaengendes Thema darf sehr lang sein; unterteile nie nur wegen der Dauer.\n"
         prompt += "- Nutze nur Zeitpunkte aus dem Transkript oder den Abschnittsanfang.\n"
-        prompt += "\n\nAntworte ausschliesslich mit JSON in diesem Schema:\n"
-        prompt += "{\"markers\":[{\"timeSeconds\":123,\"title\":\"Kurzer Titel\"}]}\n"
-        prompt += "Nutze timeSeconds als Ganzzahl ab Podcast-Anfang."
+        prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"markers\" als Array. Jeder Eintrag enthaelt \"timeSeconds\" als Ganzzahl ab Podcast-Anfang und \"title\" als nicht leeren String. Verwende keine Beispielwerte.\n"
         return prompt
     }
 
-    private func buildDeterministicMarkerDebugText(cues: [ICTranscriptCue], segStart: Double, segEnd: Double) -> String {
-        var text = "Deterministische Themenmarker (\(formatTime(segStart))-\(formatTime(segEnd))):\n"
-        for cue in cues {
-            text += "[\(formatTime(cue.start))] \(cue.text)\n"
-        }
-        return text
-    }
-
-    private func deterministicLocalTopicMarkers(cues: [ICTranscriptCue],
+    private func buildLocalDirectChaptersPrompt(cues: [ICTranscriptCue],
+                                                allCues: [ICTranscriptCue],
                                                 musicSegments: [ICAudioSegment]?,
-                                                segmentStart: Double,
-                                                segmentEnd: Double,
-                                                totalDuration: Double) -> [TopicMarker] {
-        var markers: [TopicMarker] = []
-        let speechCues = cues
-            .filter { !Self.isMusicOnlyCue($0) }
-            .sorted { $0.start < $1.start }
-        var lastSpeechMarker = -Double.infinity
-        let markerInterval = 90.0
-
-        for cue in speechCues {
-            let title = cue.start >= totalDuration - 70 || Self.isOutroCueText(cue.text)
-                ? "Outro"
-                : Self.deterministicMarkerTitle(from: cue.text)
-            guard !title.isEmpty else { continue }
-            if markers.isEmpty || cue.start - lastSpeechMarker >= markerInterval {
-                markers.append((time: max(cue.start, segmentStart), title: title))
-                lastSpeechMarker = cue.start
-            }
-        }
-
-        let earlyIntroWindow = 90.0
-        for segment in (musicSegments ?? []) where segment.type == "music" && segment.end > segment.start {
-            guard segment.end >= segmentStart && segment.start <= segmentEnd else { continue }
-            let duration = segment.end - segment.start
-            let title: String
-            if segment.start <= earlyIntroWindow && duration >= 4 {
-                title = "Intro"
-            } else if segment.end >= totalDuration - 20 && duration >= 4 {
-                title = "Outro"
-            } else if duration >= 4 {
-                title = "Jingle"
-            } else {
-                continue
-            }
-            markers.append((time: max(segment.start, segmentStart), title: title))
-        }
-
-        return Self.deduplicatedMarkers(markers)
+                                                totalDuration: Double,
+                                                episodeTitle: String?,
+                                                feedTitle: String?) -> String {
+        var prompt = buildDirectChaptersPrompt(cues: cues,
+                                               allCues: allCues,
+                                               musicSegments: musicSegments,
+                                               totalDuration: totalDuration,
+                                               episodeTitle: episodeTitle,
+                                               feedTitle: feedTitle)
+        prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"chapters\" als Array. Jeder Eintrag enthaelt nur \"startSeconds\" als Ganzzahl ab Podcast-Anfang, \"title\" als nicht leeren String und \"isSponsor\" als Boolean. Erzeuge kein \"endSeconds\"-Feld; Kapitelenden werden aus dem naechsten startSeconds berechnet. Verwende keine Beispielwerte.\n"
+        return prompt
     }
 
-    private static func deterministicMarkerTitle(from text: String) -> String {
+    private static func localContextTokens(forPromptCharacters _: Int) -> Int32 {
+        return LocalGGUFModelRunner.recommendedContextTokens()
+    }
+
+    private static func transcriptCueTitle(from text: String) -> String {
         let cleaned = transcriptCueTextForTitle(text)
         guard !cleaned.isEmpty else { return "" }
 
-        let prefix = isSponsorCueText(cleaned) ? "Sponsor: " : ""
+        if let concise = conciseContentTitle(from: cleaned, preserveTeaserPrefix: false),
+           isUsableConciseContentTitle(concise) {
+            return String(concise.prefix(140))
+        }
         let words = cleaned.split(separator: " ")
         let snippet = words.prefix(16).joined(separator: " ")
-        return String((prefix + snippet).prefix(140))
+        return String(snippet.prefix(140))
+    }
+
+    private static func audioContextMarkers(musicSegments: [ICAudioSegment]?,
+                                            transcriptCues: [ICTranscriptCue],
+                                            segmentStart: Double,
+                                            segmentEnd: Double,
+                                            totalDuration: Double) -> [TopicMarker] {
+        let boundaryChapters = standaloneIntroOutroMusicChapters(from: musicSegments,
+                                                                 transcriptCues: transcriptCues,
+                                                                 transcriptDuration: totalDuration)
+        let music = (musicSegments ?? [])
+            .filter {
+                $0.type == "music"
+                    && $0.end > $0.start
+                    && $0.end - $0.start >= minimumAudioContextDuration
+                    && $0.start >= segmentStart - 20.0
+                    && $0.start <= segmentEnd + 20.0
+            }
+            .sorted { $0.start < $1.start }
+
+        return music.compactMap { segment -> TopicMarker? in
+            let start = max(segment.start, 0)
+            let end = min(segment.end, totalDuration)
+            guard end - start >= minimumAudioContextDuration else { return nil }
+            let overlapsBoundary = boundaryChapters.contains {
+                overlapDuration(start, end, $0.start, $0.end) >= minimumAudioContextDuration
+            }
+            guard !overlapsBoundary else { return nil }
+
+            let before = previousSpeechSnippet(before: start, transcriptCues: transcriptCues) ?? "-"
+            let after = nextSpeechSnippet(after: end, transcriptCues: transcriptCues) ?? "-"
+            let title = "Audiohinweis: Musik/Sound \(Int(start))-\(Int(end)); davor: \(before); danach: \(after)"
+            return (time: start, title: String(title.prefix(180)))
+        }
+    }
+
+    private static func previousSpeechSnippet(before time: Double,
+                                              transcriptCues: [ICTranscriptCue]) -> String? {
+        meaningfulSpeechCues(from: transcriptCues)
+            .last { $0.end <= time + 1.0 }
+            .flatMap { audioContextSnippet(from: $0.text) }
+    }
+
+    private static func nextSpeechSnippet(after time: Double,
+                                          transcriptCues: [ICTranscriptCue]) -> String? {
+        meaningfulSpeechCues(from: transcriptCues)
+            .first { $0.start >= time - 1.0 }
+            .flatMap { audioContextSnippet(from: $0.text) }
+    }
+
+    private static func audioContextSnippet(from text: String) -> String? {
+        if let concise = conciseContentTitle(from: text, preserveTeaserPrefix: false),
+           isUsableConciseContentTitle(concise) {
+            return concise
+        }
+        let cleaned = transcriptCueTextForTitle(text)
+        guard !cleaned.isEmpty else { return nil }
+        let words = cleaned.split(separator: " ").prefix(7).joined(separator: " ")
+        return words.isEmpty ? nil : words
     }
 
     private static func transcriptCueTextForTitle(_ text: String) -> String {
@@ -998,59 +1729,163 @@ private struct ChaptersFile: Codable {
         .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func isSponsorCueText(_ text: String) -> Bool {
-        let normalized = text
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-            .lowercased()
-        let compact = normalized.replacingOccurrences(of: #"[^a-z0-9]+"#,
-                                                       with: " ",
-                                                       options: .regularExpression)
-        let explicitTerms = [
-            "sponsor",
-            "sponsoring",
-            "werbepartner",
-            "werbung fuer",
-            "werbung fur",
-            "anzeige von",
-            "praesentiert von",
-            "prasentiert von",
-            "presented by",
-            "ad break",
-            "rabattcode",
-            "gutscheincode",
-        ]
-        return explicitTerms.contains { compact.contains($0) }
-    }
-
-    private static func isOutroCueText(_ text: String) -> Bool {
-        let normalized = text
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-            .lowercased()
-        let phrases = [
-            "das war",
-            "vielen dank fürs zuhoren",
-            "vielen dank euch fürs zuhoren",
-            "bis dahin",
-            "bis demnaechst",
-            "macht's gut",
-            "macht es gut",
-            "tschuss",
-        ]
-        return phrases.contains { normalized.contains($0) }
-    }
-
     private func buildLocalFinalChaptersPrompt(markers: [TopicMarker],
                                                totalDuration: Double,
-                                               musicSegments: [ICAudioSegment]?,
-                                               existingChapters: [ICGeneratedChapter]?) -> String {
+                                               existingChapters: [ICGeneratedChapter]?,
+                                               transcriptCues: [ICTranscriptCue]?) -> String {
         var prompt = buildFinalChaptersPrompt(markers: markers,
                                               totalDuration: totalDuration,
-                                              musicSegments: musicSegments,
-                                              existingChapters: existingChapters)
-        prompt += "\n\nAntworte ausschliesslich mit JSON in diesem Schema:\n"
-        prompt += "{\"chapters\":[{\"startSeconds\":0,\"endSeconds\":123,\"title\":\"Kurzer Titel\",\"isSponsor\":false}]}\n"
-        prompt += "Bei Intro-/Outro-Musik ohne Sprache sollen Titel exakt \"Intro\" oder \"Outro\" sein."
+                                              existingChapters: existingChapters,
+                                              transcriptCues: transcriptCues)
+        prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"chapters\" als Array. Jeder Eintrag enthaelt \"startSeconds\" und \"endSeconds\" als Ganzzahlen ab Podcast-Anfang, \"title\" als nicht leeren String und \"isSponsor\" als Boolean. Verwende keine Beispielwerte.\n"
         return prompt
+    }
+
+    private func buildLocalSponsorClassificationPrompt(chapters: [ICGeneratedChapter],
+                                                       cues: [ICTranscriptCue],
+                                                       totalDuration: Double,
+                                                       episodeTitle: String?,
+                                                       feedTitle: String?) -> String {
+        var prompt = "Klassifiziere die bestehenden Podcast-Kapitel semantisch als skip-wuerdige Promotion oder redaktionellen Inhalt.\n"
+        prompt += "Gesamtdauer: \(Int(totalDuration)) Sekunden.\n\n"
+        prompt += "Regeln:\n"
+        prompt += "- Aendere keine Kapitelgrenzen und lasse die Anzahl der Kapitel exakt gleich.\n"
+        prompt += "- Nutze startSeconds und endSeconds exakt wie in der bestehenden Kapitel-Liste.\n"
+        prompt += "- Nutze das Transkript als Kontext; erfinde keine Inhalte.\n"
+        prompt += Self.sponsorRecognitionRule
+        prompt += "- Fuer Promotion: isSponsor true und Titel mit 'Sponsor: ...'.\n"
+        prompt += "- Fuer redaktionellen Inhalt: isSponsor false und keinen Sponsor-Prefix.\n"
+        prompt += "- Audio-Kapitel wie Intro, Jingle oder Sound-Sample bleiben isSponsor false, ausser der umgebende Transkript-Kontext macht sie selbst zur Promotion.\n\n"
+
+        let cleanEpisodeTitle = episodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanFeedTitle = feedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanEpisodeTitle?.isEmpty == false || cleanFeedTitle?.isEmpty == false {
+            prompt += "Podcast-Kontext:\n"
+            if let cleanFeedTitle, !cleanFeedTitle.isEmpty {
+                prompt += "Podcast: \(cleanFeedTitle)\n"
+            }
+            if let cleanEpisodeTitle, !cleanEpisodeTitle.isEmpty {
+                prompt += "Episode: \(cleanEpisodeTitle)\n"
+            }
+            prompt += "Nutze diesen Kontext nur, wenn der Transkriptabschnitt ihn stuetzt.\n\n"
+        }
+
+        prompt += "Bestehende Kapitel:\n"
+        for chapter in chapters {
+            prompt += "[\(formatModelSecondRange(chapter.start, chapter.end))] \(chapter.title), isSponsor: \(chapter.isSponsor)\n"
+        }
+
+        prompt += "\nTranskript (0s-\(formatModelSecond(totalDuration))):\n"
+        for cue in cues {
+            prompt += "[\(formatModelSecond(cue.start))] \(cue.text)\n"
+        }
+
+        prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"chapters\" als Array. Jeder Eintrag enthaelt \"startSeconds\" und \"endSeconds\" unveraendert aus der bestehenden Kapitel-Liste, \"title\" als nicht leeren String und \"isSponsor\" als Boolean. Verwende keine Beispielwerte.\n"
+        return prompt
+    }
+
+    private func localChaptersByClassifyingSponsors(_ chapters: [ICGeneratedChapter],
+                                                    cues: [ICTranscriptCue],
+                                                    totalDuration: Double,
+                                                    runner: LocalGGUFModelRunner,
+                                                    maxInputTokens: Int,
+                                                    status: ((String) -> Void)?,
+                                                    progress: ((Float, Int, Int) -> Void)?,
+                                                    episodeTitle: String?,
+                                                    feedTitle: String?,
+                                                    debugTrace: ChapterDebugTrace?) async throws -> [ICGeneratedChapter] {
+        guard !chapters.isEmpty else { return chapters }
+
+        let prompt = buildLocalSponsorClassificationPrompt(chapters: chapters,
+                                                           cues: cues,
+                                                           totalDuration: totalDuration,
+                                                           episodeTitle: episodeTitle,
+                                                           feedTitle: feedTitle)
+        guard try await localPromptFitsContext(prompt, runner: runner, maxInputTokens: maxInputTokens) else {
+            throw NSError(domain: "ChapterGenerator", code: 22,
+                          userInfo: [NSLocalizedDescriptionKey: "Sponsor-Klassifizierung fehlgeschlagen - das Transkript passt nicht in das Kontextfenster des Kapitelmodells."])
+        }
+
+        let start = Date()
+        status?(NSLocalizedString("Sponsor- und Eigenpromo-Segmente werden semantisch geprueft.", comment: ""))
+        progress?(0.97, 1, 2)
+        debugTrace?.recordPerformance("local-sponsor-classification-started",
+                                      metadata: [
+                                        "chapterCount": chapters.count,
+                                        "promptCharacters": prompt.count,
+                                      ])
+        let output = try await generateLocalJSONObject(runner: runner,
+                                                       prompt: prompt,
+                                                       grammar: .chapters,
+                                                       maxNewTokens: localSponsorClassificationMaxNewTokens(chapterCount: chapters.count))
+        debugTrace?.recordLocalSponsorOutput(output)
+        let response = try decodeLocalJSON(LocalChaptersResponse.self, from: output)
+        let classified = response.chapters.map {
+            ICGeneratedChapter(start: Double($0.startSeconds),
+                               end: Double($0.endSeconds),
+                               title: $0.title,
+                               isSponsor: $0.isSponsor)
+        }
+
+        guard classified.count == chapters.count else {
+            debugTrace?.recordPerformance("local-sponsor-classification-failed",
+                                          metadata: [
+                                            "reason": "chapter-count-changed",
+                                            "expectedChapterCount": chapters.count,
+                                            "actualChapterCount": classified.count,
+                                            "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
+                                          ])
+            throw NSError(domain: "ChapterGenerator", code: 23,
+                          userInfo: [NSLocalizedDescriptionKey: "Sponsor-Klassifizierung fehlgeschlagen - das Kapitelmodell hat die Kapitelanzahl veraendert."])
+        }
+
+        var result: [ICGeneratedChapter] = []
+        for (original, candidate) in zip(chapters, classified) {
+            guard abs(original.start - candidate.start) <= 1.0,
+                  abs(original.end - candidate.end) <= 1.0 else {
+                debugTrace?.recordPerformance("local-sponsor-classification-failed",
+                                              metadata: [
+                                                "reason": "chapter-boundaries-changed",
+                                                "expectedStart": String(format: "%.3f", original.start),
+                                                "expectedEnd": String(format: "%.3f", original.end),
+                                                "actualStart": String(format: "%.3f", candidate.start),
+                                                "actualEnd": String(format: "%.3f", candidate.end),
+                                                "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
+                                              ])
+                throw NSError(domain: "ChapterGenerator", code: 24,
+                              userInfo: [NSLocalizedDescriptionKey: "Sponsor-Klassifizierung fehlgeschlagen - das Kapitelmodell hat Kapitelgrenzen veraendert."])
+            }
+
+            let candidateTitle = candidate.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isSponsor = candidate.isSponsor || candidateTitle.hasPrefix("Sponsor: ")
+            let title: String
+            if isSponsor {
+                if candidateTitle.hasPrefix("Sponsor: ") {
+                    title = candidateTitle
+                } else if original.title.hasPrefix("Sponsor: ") {
+                    title = original.title
+                } else {
+                    title = "Sponsor: \(original.title)"
+                }
+            } else if original.title.hasPrefix("Sponsor: ") {
+                title = String(original.title.dropFirst("Sponsor: ".count))
+            } else {
+                title = original.title
+            }
+            result.append(ICGeneratedChapter(start: original.start,
+                                             end: original.end,
+                                             title: title,
+                                             isSponsor: isSponsor))
+        }
+
+        debugTrace?.recordPerformance("local-sponsor-classification-completed",
+                                      metadata: [
+                                        "chapterCount": result.count,
+                                        "sponsorChapterCount": result.filter { $0.isSponsor }.count,
+                                        "outputCharacters": output.count,
+                                        "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
+                                      ])
+        return result
     }
 
     private func buildLocalMarkerConsolidationPrompt(markers: [TopicMarker],
@@ -1059,15 +1894,66 @@ private struct ChaptersFile: Codable {
         var prompt = buildMarkerConsolidationPrompt(markers: markers,
                                                     totalDuration: totalDuration,
                                                     round: round)
-        prompt += "\n\nAntworte ausschliesslich mit JSON in diesem Schema:\n"
-        prompt += "{\"markers\":[{\"timeSeconds\":123,\"title\":\"Kurzer Titel\"}]}"
+        prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"markers\" als Array. Jeder Eintrag enthaelt \"timeSeconds\" als Ganzzahl ab Podcast-Anfang und \"title\" als nicht leeren String. Verwende keine Beispielwerte."
         return prompt
+    }
+
+    private func localChapterMaxNewTokens(markerCount: Int,
+                                          existingChapters: [ICGeneratedChapter]?) -> Int {
+        guard existingChapters == nil else { return 1_024 }
+        return min(4_096, max(2_048, markerCount * 180))
+    }
+
+    private func localDirectChapterMaxNewTokens(duration: Double) -> Int {
+        4_096
+    }
+
+    private func localSponsorClassificationMaxNewTokens(chapterCount: Int) -> Int {
+        min(2_048, max(512, chapterCount * 120))
+    }
+
+    private func localMarkerMaxNewTokens(cueCount _: Int, duration: Double) -> Int {
+        2_048
+    }
+
+    private static func isTerminalOnlyMarker(time: Double, segmentStart: Double, segmentEnd: Double) -> Bool {
+        return time >= segmentEnd - 1.0 && time > segmentStart + 10.0
+    }
+
+    private static func normalizedTopicMarkers(_ markers: [TopicMarker],
+                                               segmentStart: Double,
+                                               segmentEnd: Double) -> [TopicMarker] {
+        let cleaned = markers
+            .map { (time: min(max($0.time, segmentStart), segmentEnd),
+                    title: $0.title.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            .filter { !$0.title.isEmpty }
+            .sorted { $0.time < $1.time }
+        guard !cleaned.isEmpty else { return [] }
+
+        let nonTerminal = cleaned.filter {
+            !isTerminalOnlyMarker(time: $0.time, segmentStart: segmentStart, segmentEnd: segmentEnd)
+        }
+        if !nonTerminal.isEmpty {
+            return nonTerminal
+        }
+
+        guard let first = cleaned.first,
+              isContentTopicMarkerTitle(first.title) else {
+            return []
+        }
+        return [(time: segmentStart, title: first.title)]
+    }
+
+    private static func isContentTopicMarkerTitle(_ title: String) -> Bool {
+        !isGenericChapterTitle(title)
+            && !isStructuralChapterTitle(title)
+            && normalizedAudioInterludeTitle(title) == nil
     }
 
     private func localMarkersFittingFinalPrompt(markers: [TopicMarker],
                                                 totalDuration: Double,
-                                                musicSegments: [ICAudioSegment]?,
                                                 existingChapters: [ICGeneratedChapter]?,
+                                                transcriptCues: [ICTranscriptCue]?,
                                                 runner: LocalGGUFModelRunner,
                                                 maxInputTokens: Int,
                                                 status: ((String) -> Void)?,
@@ -1084,8 +1970,8 @@ private struct ChaptersFile: Codable {
 
             let finalPrompt = buildLocalFinalChaptersPrompt(markers: current,
                                                             totalDuration: totalDuration,
-                                                            musicSegments: musicSegments,
-                                                            existingChapters: existingChapters)
+                                                            existingChapters: existingChapters,
+                                                            transcriptCues: transcriptCues)
             if try await localPromptFitsContext(finalPrompt, runner: runner, maxInputTokens: maxInputTokens) {
                 return current
             }
@@ -1158,61 +2044,80 @@ private struct ChaptersFile: Codable {
         }
     }
 
-    private func splitTranscriptIntoLocalChunks(_ cues: [ICTranscriptCue],
-                                                runner: LocalGGUFModelRunner,
-                                                maxInputTokens: Int) async throws -> [[ICTranscriptCue]] {
+    private func transcriptContextWindowsForLocalModel(_ cues: [ICTranscriptCue],
+                                                       musicSegments: [ICAudioSegment]?,
+                                                       totalDuration: Double,
+                                                       runner: LocalGGUFModelRunner,
+                                                       maxInputTokens: Int,
+                                                       episodeTitle: String?,
+                                                       feedTitle: String?) async throws -> [TranscriptContextWindow] {
         guard !cues.isEmpty else { return [] }
+        guard !Task.isCancelled else {
+            await runner.cancel()
+            throw CancellationError()
+        }
 
-        var chunks: [[ICTranscriptCue]] = []
-        var current: [ICTranscriptCue] = []
+        let segStart = cues.first?.start ?? 0
+        let segEnd = cues.last?.end ?? totalDuration
+        let prompt = buildLocalTopicExtractionPrompt(cues: cues,
+                                                     allCues: cues,
+                                                     musicSegments: musicSegments,
+                                                     segStart: segStart,
+                                                     segEnd: segEnd,
+                                                     totalDuration: totalDuration,
+                                                     episodeTitle: episodeTitle,
+                                                     feedTitle: feedTitle)
+        if try await localPromptFitsContext(prompt, runner: runner, maxInputTokens: maxInputTokens) {
+            NSLog("[ChapterGenerator] Local full-context transcript: %d cues -> 1 context window", cues.count)
+            return [TranscriptContextWindow(cues: cues)]
+        }
 
-        for cue in cues {
+        var windows: [TranscriptContextWindow] = []
+        var startIndex = 0
+        while startIndex < cues.count {
             guard !Task.isCancelled else {
                 await runner.cancel()
                 throw CancellationError()
             }
 
-            let candidate = current + [cue]
-            let segStart = candidate.first?.start ?? 0
-            let segEnd = candidate.last?.end ?? 0
-            if !current.isEmpty,
-               current.count >= Self.maximumTopicExtractionCueCount || segEnd - segStart > Self.maximumTopicExtractionSegmentDuration {
-                chunks.append(current)
-                current = [cue]
-                let singlePrompt = buildLocalTopicExtractionPrompt(cues: current, segStart: cue.start, segEnd: cue.end)
-                guard try await localPromptFitsContext(singlePrompt, runner: runner, maxInputTokens: maxInputTokens) else {
-                    throw NSError(domain: "ChapterGenerator", code: 16,
-                                  userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — die Folge ist zu lang für dieses Kapitelmodell."])
+            var low = startIndex + 1
+            var high = cues.count
+            var bestEndIndex: Int?
+            while low <= high {
+                let mid = (low + high) / 2
+                let candidate = Array(cues[startIndex..<mid])
+                let candidatePrompt = buildLocalTopicExtractionPrompt(cues: candidate,
+                                                                      allCues: cues,
+                                                                      musicSegments: musicSegments,
+                                                                      segStart: candidate.first?.start ?? 0,
+                                                                      segEnd: candidate.last?.end ?? totalDuration,
+                                                                      totalDuration: totalDuration,
+                                                                      episodeTitle: episodeTitle,
+                                                                      feedTitle: feedTitle)
+                if try await localPromptFitsContext(candidatePrompt, runner: runner, maxInputTokens: maxInputTokens) {
+                    bestEndIndex = mid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
                 }
-                continue
             }
 
-            let prompt = buildLocalTopicExtractionPrompt(cues: candidate, segStart: segStart, segEnd: segEnd)
-            if try await localPromptFitsContext(prompt, runner: runner, maxInputTokens: maxInputTokens) {
-                current = candidate
-                continue
-            }
-
-            if current.isEmpty {
+            guard let endIndex = bestEndIndex, endIndex > startIndex else {
                 throw NSError(domain: "ChapterGenerator", code: 16,
-                              userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — die Folge ist zu lang für dieses Kapitelmodell."])
+                              userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein einzelner Transkriptbereich passt nicht in das Kontextfenster dieses Kapitelmodells."])
             }
 
-            chunks.append(current)
-            current = [cue]
-            let singlePrompt = buildLocalTopicExtractionPrompt(cues: current, segStart: cue.start, segEnd: cue.end)
-            guard try await localPromptFitsContext(singlePrompt, runner: runner, maxInputTokens: maxInputTokens) else {
-                throw NSError(domain: "ChapterGenerator", code: 16,
-                              userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — die Folge ist zu lang für dieses Kapitelmodell."])
-            }
+            let windowCues = Array(cues[startIndex..<endIndex])
+            windows.append(TranscriptContextWindow(cues: windowCues))
+            guard endIndex < cues.count else { break }
+
+            startIndex = Self.nextContextWindowStartIndex(cues: cues,
+                                                          currentStartIndex: startIndex,
+                                                          currentEndIndex: endIndex)
         }
 
-        if !current.isEmpty {
-            chunks.append(current)
-        }
-
-        NSLog("[ChapterGenerator] Local token split: %d cues -> %d segment(s)", cues.count, chunks.count)
-        return chunks
+        NSLog("[ChapterGenerator] Local overlapping context windows: %d cues -> %d window(s)", cues.count, windows.count)
+        return windows
     }
 
     private func localPromptFitsContext(_ prompt: String,
@@ -1317,16 +2222,115 @@ private struct ChaptersFile: Codable {
         return nil
     }
 
+    private func buildDirectChaptersPrompt(cues: [ICTranscriptCue],
+                                           allCues: [ICTranscriptCue],
+                                           musicSegments: [ICAudioSegment]?,
+                                           totalDuration: Double,
+                                           episodeTitle: String?,
+                                           feedTitle: String?) -> String {
+        var prompt = "Erstelle die finale Kapitel-Liste aus dem vollstaendigen Podcast-Transkript.\n"
+        prompt += "Gesamtdauer: \(Int(totalDuration)) Sekunden.\n\n"
+        prompt += "Regeln:\n"
+        prompt += "- Nutze das gesamte Transkript als Kontext; erfinde keine Inhalte.\n"
+        prompt += "- Ein Kapitel darf sehr lang sein, auch 40 Minuten oder laenger, wenn der Inhalt wirklich ein zusammenhaengender Themenblock ist.\n"
+        prompt += "- Unterteile nicht nach Dauer, sondern nur bei echten, fuer Hoerer nuetzlichen Themen-, Segment- oder Skip-Wechseln.\n"
+        prompt += "- Erzeuge keine eigenen Kapitelstarts fuer kurze Begruessungen, Meta-Einleitungen, Ueberleitungen, Fuellsaetze oder einzelne Service-Details, wenn sie zum selben Nutzenthema gehoeren.\n"
+        prompt += "- Ein einzelnes Kapitel ueber fast die ganze Folge ist nur erlaubt, wenn das Transkript wirklich keinen eigenen Nutzensprung, keine neue Hauptfrage, kein Fazit und kein skip-wuerdiges Segment enthaelt.\n"
+        prompt += "- Wenn ein Gespraech mehrere Hauptfragen, Argumente, Methoden, Studien, konkrete Beispiele, Empfehlungen oder ein Schlusssegment behandelt, muessen die Kapitelstarts diese Wechsel sichtbar machen.\n"
+        prompt += Self.sponsorRecognitionRule
+        prompt += Self.promotionSegmentationRule
+        prompt += "- Audiohinweise sind neutrale SoundAnalysis-Zeitbereiche. Erzeuge daraus nur dann ein Kapitel mit Titel exakt 'Jingle' oder 'Sound-Sample', wenn der umgebende Transkript-Kontext das belegt. Erzeuge daraus nie geratenes Intro oder Outro.\n"
+        prompt += "- Titel in der Sprache des Transkripts.\n"
+        prompt += "- Titel muessen fuer Hoerer bei der Kapitelauswahl nuetzlich sein: konkrete Sache, Person, Ort, Frage, Messwert, Methode oder zentrale These nennen.\n"
+        prompt += "- Keine reinen Kategorie-, Schlagwort- oder Oberbegriff-Titel; der Titel muss erkennen lassen, welche konkrete Frage, Behauptung, Ursache, Folge oder Entscheidung im Abschnitt behandelt wird.\n"
+        prompt += "- Beschreibe nicht den Sprechakt wie Begruessung, Einleitung, Ankuendigung, Ueberblick oder Diskussion, wenn der Abschnitt konkrete Inhalte nennt; benenne dann die angekuendigte Sache selbst.\n"
+        prompt += "- Keine vagen Meta-Titel und keine einzelnen Satzfragmente.\n"
+        prompt += "- startSeconds als Sekunden ab Podcast-Anfang (Ganzzahl).\n"
+        prompt += "- Das erste Kapitel beginnt bei 0; das letzte Kapitel endet automatisch bei der Gesamtdauer \(Int(totalDuration)).\n"
+        prompt += "- Gib nur Kapitelstarts aus; Endzeiten werden deterministisch aus dem naechsten startSeconds berechnet.\n\n"
+
+        let cleanEpisodeTitle = episodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanFeedTitle = feedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanEpisodeTitle?.isEmpty == false || cleanFeedTitle?.isEmpty == false {
+            prompt += "Podcast-Kontext:\n"
+            if let cleanFeedTitle, !cleanFeedTitle.isEmpty {
+                prompt += "Podcast: \(cleanFeedTitle)\n"
+            }
+            if let cleanEpisodeTitle, !cleanEpisodeTitle.isEmpty {
+                prompt += "Episode: \(cleanEpisodeTitle)\n"
+            }
+            prompt += "Nutze diesen Kontext nur, wenn der Transkriptabschnitt ihn stuetzt.\n\n"
+        }
+
+        prompt += "Transkript (0s-\(formatModelSecond(totalDuration))):\n"
+        for cue in cues {
+            prompt += "[\(formatModelSecond(cue.start))] \(cue.text)\n"
+        }
+
+        let audioMarkers = Self.audioContextMarkers(musicSegments: musicSegments,
+                                                    transcriptCues: allCues,
+                                                    segmentStart: 0,
+                                                    segmentEnd: totalDuration,
+                                                    totalDuration: totalDuration)
+        if !audioMarkers.isEmpty {
+            prompt += "\nAudiohinweise:\n"
+            for marker in audioMarkers {
+                prompt += "[\(formatModelSecond(marker.time))] \(marker.title)\n"
+            }
+        }
+        return prompt
+    }
+
     /// Pass 1 prompt: Identify topic changes in a transcript segment.
     /// Output is produced via @Generable GeneratedTopicMarkersList — no format instructions in prompt.
-    private func buildTopicExtractionPrompt(cues: [ICTranscriptCue], segStart: Double, segEnd: Double) -> String {
+    private func buildTopicExtractionPrompt(cues: [ICTranscriptCue],
+                                            allCues: [ICTranscriptCue],
+                                            musicSegments: [ICAudioSegment]?,
+                                            segStart: Double,
+                                            segEnd: Double,
+                                            totalDuration: Double,
+                                            episodeTitle: String?,
+                                            feedTitle: String?) -> String {
         var prompt = "Identifiziere Themenwechsel in diesem Podcast-Abschnitt.\n"
-        prompt += "Für jeden klaren Themenwechsel einen Marker mit Zeitpunkt (in Sekunden) und kurzem Titel.\n"
-        prompt += "Wenn Werbung/Sponsoring erkannt wird, beginne Titel mit 'Sponsor: MARKENNAME'.\n"
-        prompt += "Titel in der Sprache des Transkripts.\n\n"
-        prompt += "Transkript (\(formatTime(segStart))–\(formatTime(segEnd))):\n"
+        prompt += "Erzeuge Marker mit Zeitpunkt (in Sekunden) und kurzem Titel nur dort, wo der Transkriptinhalt einen echten Themen-, Segment- oder Skip-Wechsel belegt.\n"
+        prompt += "Marker sind Startpunkte von Themenbloecken, keine Zusammenfassung am Abschnittsende.\n"
+        prompt += "Der erste Marker muss am Abschnittsanfang \(Int(segStart.rounded())) liegen, wenn dort ein neues oder fortlaufendes Thema beschrieben wird.\n"
+        prompt += "Setze timeSeconds nie ans Abschnittsende, nur weil der Text dort endet.\n"
+        prompt += "Ein zusammenhaengendes Thema darf sehr lang sein, auch 40 Minuten oder laenger. Erzwinge keine Unterteilung nach Dauer.\n"
+        prompt += Self.sponsorRecognitionRule
+        prompt += Self.promotionSegmentationRule
+        prompt += "Audiohinweise sind neutrale SoundAnalysis-Zeitbereiche. Erzeuge daraus nur dann einen Marker mit Titel exakt 'Jingle' oder 'Sound-Sample', wenn der umgebende Transkript-Kontext das belegt. Erzeuge daraus nie Intro oder Outro.\n"
+        prompt += "Titel in der Sprache des Transkripts.\n"
+        prompt += "Titel muessen fuer Hoerer bei der Kapitelauswahl nuetzlich sein: konkrete Sache, Person, Ort, Frage oder These nennen.\n"
+        prompt += "Keine reinen Kategorie-, Schlagwort- oder Oberbegriff-Titel; der Titel muss erkennen lassen, welche konkrete Frage, Behauptung, Ursache, Folge oder Entscheidung im Abschnitt behandelt wird.\n"
+        prompt += "Beschreibe nicht den Sprechakt wie Begruessung, Einleitung, Ankuendigung, Ueberblick oder Diskussion, wenn der Abschnitt konkrete Inhalte nennt; benenne dann die angekuendigte Sache selbst mit Namen, Datum, Ort, Angebot oder zentraler These.\n"
+        prompt += "Keine vagen Meta-Titel und keine einzelnen Satzfragmente.\n\n"
+        let cleanEpisodeTitle = episodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanFeedTitle = feedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanEpisodeTitle?.isEmpty == false || cleanFeedTitle?.isEmpty == false {
+            prompt += "Podcast-Kontext:\n"
+            if let cleanFeedTitle, !cleanFeedTitle.isEmpty {
+                prompt += "Podcast: \(cleanFeedTitle)\n"
+            }
+            if let cleanEpisodeTitle, !cleanEpisodeTitle.isEmpty {
+                prompt += "Episode: \(cleanEpisodeTitle)\n"
+            }
+            prompt += "Nutze diesen Kontext, um kurze oder mehrdeutige Transkriptstellen zu deuten; Kapiteltitel muessen trotzdem durch den Transkriptabschnitt gedeckt sein.\n\n"
+        }
+        prompt += "Transkript (\(formatModelSecond(segStart))-\(formatModelSecond(segEnd))):\n"
         for cue in cues {
-            prompt += "[\(formatTime(cue.start))] \(cue.text)\n"
+            prompt += "[\(formatModelSecond(cue.start))] \(cue.text)\n"
+        }
+        let audioMarkers = Self.audioContextMarkers(musicSegments: musicSegments,
+                                                    transcriptCues: allCues,
+                                                    segmentStart: segStart,
+                                                    segmentEnd: segEnd,
+                                                    totalDuration: totalDuration)
+        if !audioMarkers.isEmpty {
+            prompt += "\nAudiohinweise:\n"
+            for marker in audioMarkers {
+                prompt += "[\(formatModelSecond(marker.time))] \(marker.title)\n"
+            }
         }
         return prompt
     }
@@ -1335,8 +2339,8 @@ private struct ChaptersFile: Codable {
     @available(iOS 26, *)
     private func markersFittingFinalPrompt(markers: [TopicMarker],
                                            totalDuration: Double,
-                                           musicSegments: [ICAudioSegment]?,
                                            existingChapters: [ICGeneratedChapter]?,
+                                           transcriptCues: [ICTranscriptCue]?,
                                            model: SystemLanguageModel,
                                            maxInputTokens: Int,
                                            status: ((String) -> Void)?,
@@ -1350,8 +2354,8 @@ private struct ChaptersFile: Codable {
             let finalPrompt = buildFinalChaptersPrompt(
                 markers: current,
                 totalDuration: totalDuration,
-                musicSegments: musicSegments,
-                existingChapters: existingChapters)
+                existingChapters: existingChapters,
+                transcriptCues: transcriptCues)
             if await promptFitsContext(finalPrompt, model: model, maxInputTokens: maxInputTokens) {
                 return current
             }
@@ -1432,63 +2436,97 @@ private struct ChaptersFile: Codable {
 
     #if canImport(FoundationModels)
     @available(iOS 26, *)
-    private func splitTranscriptIntoModelChunks(_ cues: [ICTranscriptCue],
-                                                model: SystemLanguageModel,
-                                                maxInputTokens: Int) async throws -> [[ICTranscriptCue]] {
+    private func transcriptContextWindowsForModel(_ cues: [ICTranscriptCue],
+                                                  musicSegments: [ICAudioSegment]?,
+                                                  totalDuration: Double,
+                                                  model: SystemLanguageModel,
+                                                  maxInputTokens: Int,
+                                                  episodeTitle: String?,
+                                                  feedTitle: String?) async throws -> [TranscriptContextWindow] {
         guard !cues.isEmpty else { return [] }
+        guard !Task.isCancelled else { throw CancellationError() }
 
-        var chunks: [[ICTranscriptCue]] = []
-        var current: [ICTranscriptCue] = []
+        let segStart = cues.first?.start ?? 0
+        let segEnd = cues.last?.end ?? totalDuration
+        let prompt = buildTopicExtractionPrompt(cues: cues,
+                                                allCues: cues,
+                                              musicSegments: musicSegments,
+                                              segStart: segStart,
+                                              segEnd: segEnd,
+                                              totalDuration: totalDuration,
+                                              episodeTitle: episodeTitle,
+                                              feedTitle: feedTitle)
+        if await promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens) {
+            NSLog("[ChapterGenerator] Full-context transcript: %d cues -> 1 context window", cues.count)
+            return [TranscriptContextWindow(cues: cues)]
+        }
 
-        for cue in cues {
+        var windows: [TranscriptContextWindow] = []
+        var startIndex = 0
+        while startIndex < cues.count {
             guard !Task.isCancelled else { throw CancellationError() }
 
-            let candidate = current + [cue]
-            let segStart = candidate.first?.start ?? 0
-            let segEnd = candidate.last?.end ?? 0
-            if !current.isEmpty,
-               current.count >= Self.maximumTopicExtractionCueCount || segEnd - segStart > Self.maximumTopicExtractionSegmentDuration {
-                chunks.append(current)
-                current = [cue]
-
-                let singlePrompt = buildTopicExtractionPrompt(cues: current, segStart: cue.start, segEnd: cue.end)
-                guard await promptFitsContext(singlePrompt, model: model, maxInputTokens: maxInputTokens) else {
-                    throw NSError(domain: "ChapterGenerator", code: 16,
-                                  userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein einzelner Transkriptabschnitt passt nicht in das Kontextfenster."])
+            var low = startIndex + 1
+            var high = cues.count
+            var bestEndIndex: Int?
+            while low <= high {
+                let mid = (low + high) / 2
+                let candidate = Array(cues[startIndex..<mid])
+                let candidatePrompt = buildTopicExtractionPrompt(cues: candidate,
+                                                                 allCues: cues,
+                                                                  musicSegments: musicSegments,
+                                                                  segStart: candidate.first?.start ?? 0,
+                                                                  segEnd: candidate.last?.end ?? totalDuration,
+                                                                  totalDuration: totalDuration,
+                                                                  episodeTitle: episodeTitle,
+                                                                  feedTitle: feedTitle)
+                if await promptFitsContext(candidatePrompt, model: model, maxInputTokens: maxInputTokens) {
+                    bestEndIndex = mid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
                 }
-                continue
             }
 
-            let prompt = buildTopicExtractionPrompt(cues: candidate, segStart: segStart, segEnd: segEnd)
-
-            if await promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens) {
-                current = candidate
-                continue
-            }
-
-            if current.isEmpty {
+            guard let endIndex = bestEndIndex, endIndex > startIndex else {
                 throw NSError(domain: "ChapterGenerator", code: 16,
-                              userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein einzelner Transkriptabschnitt passt nicht in das Kontextfenster."])
+                              userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein einzelner Transkriptbereich passt nicht in das Kontextfenster dieses Kapitelmodells."])
             }
 
-            chunks.append(current)
-            current = [cue]
+            let windowCues = Array(cues[startIndex..<endIndex])
+            windows.append(TranscriptContextWindow(cues: windowCues))
+            guard endIndex < cues.count else { break }
 
-            let singlePrompt = buildTopicExtractionPrompt(cues: current, segStart: cue.start, segEnd: cue.end)
-            guard await promptFitsContext(singlePrompt, model: model, maxInputTokens: maxInputTokens) else {
-                throw NSError(domain: "ChapterGenerator", code: 16,
-                              userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein einzelner Transkriptabschnitt passt nicht in das Kontextfenster."])
-            }
+            startIndex = Self.nextContextWindowStartIndex(cues: cues,
+                                                          currentStartIndex: startIndex,
+                                                          currentEndIndex: endIndex)
         }
 
-        if !current.isEmpty {
-            chunks.append(current)
-        }
-
-        NSLog("[ChapterGenerator] Token split: %d cues → %d segment(s)", cues.count, chunks.count)
-        return chunks
+        NSLog("[ChapterGenerator] Overlapping context windows: %d cues -> %d window(s)", cues.count, windows.count)
+        return windows
     }
     #endif
+
+    private static func nextContextWindowStartIndex(cues: [ICTranscriptCue],
+                                                    currentStartIndex: Int,
+                                                    currentEndIndex: Int) -> Int {
+        guard currentEndIndex > currentStartIndex + 1 else {
+            return min(currentStartIndex + 1, cues.count)
+        }
+
+        let windowStart = cues[currentStartIndex].start
+        let windowEnd = cues[currentEndIndex - 1].end
+        let windowDuration = max(1, windowEnd - windowStart)
+        let overlapDuration = min(targetContextWindowOverlapDuration, windowDuration * 0.75)
+        let desiredStartTime = max(windowStart + 1, windowEnd - overlapDuration)
+
+        if let timedIndex = cues.indices[currentStartIndex + 1..<currentEndIndex].first(where: { cues[$0].start >= desiredStartTime }) {
+            return timedIndex
+        }
+
+        let halfWindowIndex = currentStartIndex + max(1, (currentEndIndex - currentStartIndex) / 2)
+        return min(max(currentStartIndex + 1, halfWindowIndex), currentEndIndex - 1)
+    }
 
     private func splitMarkersIntoConsolidationChunks(_ markers: [TopicMarker], maxPromptChars: Int) -> [[TopicMarker]] {
         var chunks: [[TopicMarker]] = []
@@ -1517,7 +2555,7 @@ private struct ChaptersFile: Codable {
                                                 round: Int) -> String {
         var prompt = "Konsolidiere diese chronologischen Themenmarker zu Kapitel-Kandidaten.\n"
         prompt += "Runde: \(round)\n"
-        prompt += "Gesamtdauer: \(formatTime(totalDuration)) (\(Int(totalDuration)) Sekunden)\n\n"
+        prompt += "Gesamtdauer: \(Int(totalDuration)) Sekunden.\n\n"
         prompt += "Regeln:\n"
         prompt += "- Betrachte jeden Marker; erfinde keine Themen außerhalb dieser Liste.\n"
         prompt += "- Fasse direkt benachbarte Marker zusammen, wenn sie zum selben zusammenhängenden Themenblock gehören.\n"
@@ -1526,7 +2564,7 @@ private struct ChaptersFile: Codable {
         prompt += "- Gib weniger Marker zurück, wenn Zusammenfassungen inhaltlich möglich sind.\n\n"
         prompt += "Marker:\n"
         for marker in markers {
-            prompt += "\(Int(marker.time)) - \(marker.title)\n"
+            prompt += "\(Int(marker.time))s - \(marker.title)\n"
         }
         return prompt
     }
@@ -1536,73 +2574,126 @@ private struct ChaptersFile: Codable {
     private func buildFinalChaptersPrompt(
         markers: [TopicMarker],
         totalDuration: Double,
-        musicSegments: [ICAudioSegment]?,
-        existingChapters: [ICGeneratedChapter]?
+        existingChapters: [ICGeneratedChapter]?,
+        transcriptCues: [ICTranscriptCue]? = nil
     ) -> String {
         var prompt = ""
-        let durationStr = formatTime(totalDuration)
-
         if let chapters = existingChapters, !chapters.isEmpty {
             // Mode B: Sponsor detection — return only sponsor chapters
             prompt += "Finde Werbe- und Sponsoring-Segmente in diesem Podcast.\n"
-            prompt += "Gesamtdauer: \(durationStr) (\(Int(totalDuration)) Sekunden)\n\n"
+            prompt += "Gesamtdauer: \(Int(totalDuration)) Sekunden.\n\n"
             prompt += "Gib NUR die erkannten Sponsor-Kapitel zurück (Titel als 'Sponsor: MARKENNAME', isSponsor: true).\n"
             prompt += "Falls keine Werbung erkennbar ist, gib eine leere Liste zurück.\n\n"
 
             prompt += "Bestehende Kapitel:\n"
             for ch in chapters {
                 let marker = ch.isSponsor ? " [Sponsor]" : ""
-                prompt += "[\(formatTime(ch.start))-\(formatTime(ch.end))] \(ch.title)\(marker)\n"
+                prompt += "[\(formatModelSecondRange(ch.start, ch.end))] \(ch.title)\(marker)\n"
             }
             prompt += "\n"
         } else {
             // Mode A: Chapter generation
             prompt += "Erstelle die finale Kapitel-Liste aus diesen erkannten Themen.\n"
-            prompt += "Gesamtdauer: \(durationStr) (\(Int(totalDuration)) Sekunden)\n\n"
+            prompt += "Gesamtdauer: \(Int(totalDuration)) Sekunden.\n\n"
             prompt += "Regeln:\n"
+            prompt += "- Erzeuge nur Inhaltskapitel aus den erkannten Themenmarkern.\n"
+            prompt += "- Verwende Intro und Outro nicht; Randmusik wird separat aus der Audioanalyse eingefuegt.\n"
+            prompt += "- Audiohinweis-Marker sind neutrale Zeitbereiche aus der Audioanalyse, keine Kapitelvorgaben.\n"
+            prompt += "- Erzeuge ein eigenes Audio-Kapitel nur, wenn ein Audiohinweis-Marker plus umgebender Transkript-Kontext einen echten Trenner oder ein abgespieltes Sample belegt.\n"
+            prompt += "- Titel solcher Audio-Kapitel exakt 'Jingle' oder 'Sound-Sample'; isSponsor dafuer false.\n"
             prompt += "- Verwandte/ähnliche aufeinanderfolgende Themen zusammenfassen.\n"
-            prompt += "- Gib kein einzelnes Gesamtkapitel zurueck, wenn mehrere Themenmarker vorhanden sind.\n"
-            let minimumChapters = minimumExpectedChapterCount(totalDuration: totalDuration,
-                                                              markerCount: markers.count,
-                                                              musicSegments: musicSegments)
-            prompt += "- Du MUSST mindestens \(minimumChapters) Kapitel liefern; weniger ist ungueltig.\n"
+            prompt += "- Ein Kapitel darf sehr lang sein, auch 40 Minuten oder laenger, wenn der Transkriptkontext ein zusammenhaengendes Thema bildet.\n"
+            prompt += "- Unterteile nur bei echten, fuer Hoerer nuetzlichen Themen-, Segment- oder Skip-Wechseln.\n"
+            prompt += "- Gib kein einzelnes Gesamtkapitel zurueck, wenn mehrere Themenmarker klar unterschiedliche Themen oder skip-wuerdige Segmente belegen.\n"
+            let allowedStarts = Self.allowedChapterStartSeconds(from: markers)
             prompt += "- Nutze die Markerzeiten als Kapitelstarts; ueberspringe keine langen Abschnitte zwischen Markern.\n"
-            prompt += "- Normale Inhaltskapitel duerfen nicht laenger als 240 Sekunden sein, ausser die Marker enthalten wirklich kein neues Thema.\n"
-            prompt += "- Musik am Anfang oder Ende als eigenes Kapitel mit Titel exakt 'Intro' oder 'Outro' verwenden.\n"
-            prompt += "- Ein Intro darf nach einem kurzen gesprochenen Teaser beginnen.\n"
-            prompt += "- Musik/Jingles in der Mitte als eigenes kurzes Kapitel mit Titel 'Jingle' verwenden, wenn das Musiksegment ein klarer Trenner ist.\n"
-            prompt += "- Die Titel 'Intro', 'Jingle' und 'Outro' sind nur fuer die gelisteten Musik-Segmente reserviert, nicht fuer gesprochenen Teaser oder normale Inhaltsabschnitte.\n"
-            prompt += "- Titel kurz und beschreibend, in der Sprache des Podcasts.\n"
+            prompt += "- Erlaubte startSeconds: \(allowedStarts.map(String.init).joined(separator: ", ")). Nutze keine anderen Startwerte.\n"
+            prompt += "- Erlaubte endSeconds sind jeweils der naechste erlaubte startSeconds-Wert oder die Gesamtdauer \(Int(totalDuration)); endSeconds darf nie groesser als \(Int(totalDuration)) sein.\n"
+            prompt += "- Wenn zwei benachbarte erlaubte Startwerte unterschiedliche konkrete Themen benennen, muessen daraus getrennte Kapitel entstehen.\n"
+            prompt += "- Titel kurz, konkret und beschreibend, in der Sprache des Podcasts.\n"
+            prompt += "- Jeder Titel muss mindestens einen konkreten Namen, Gegenstand, Messwert, Methode oder die zentrale Aussage aus dem jeweiligen Transkriptabschnitt nennen.\n"
+            prompt += "- Uebernimm Marker-Titel nur, wenn sie bereits konkret genug sind; sonst formuliere mit dem Transkriptkontext neu.\n"
+            prompt += "- Folgennummern, Podcasttitel oder Meta-Einleitungen duerfen nicht der Haupttitel sein; benenne stattdessen das eigentliche Thema des Abschnitts.\n"
+            prompt += "- Keine reinen Oberbegriffe; schreibe konkret, welche Sache betroffen ist und warum sie relevant ist.\n"
+            prompt += "- Titel muessen bei der Kapitelauswahl erkennen lassen, worum es geht; keine vagen Satzfragmente oder Meta-Titel.\n"
+            prompt += "- Nutze den Transkriptkontext unten, um konkrete Kapitel-Titel zu formulieren; kopiere keine vagen Marker-Titel.\n"
+            prompt += "- Der Transkriptkontext pro Marker umfasst den Abschnitt bis zum naechsten Marker mit Grenzkontext und ist massgeblich fuer den Titel.\n"
             prompt += "- startSeconds und endSeconds als Sekunden ab Podcast-Anfang (Ganzzahl).\n"
             prompt += "- end eines Kapitels = start des nächsten Kapitels.\n"
             prompt += "- Letztes Kapitel end = Gesamtdauer (\(Int(totalDuration))).\n"
-            prompt += "- Sponsor-Segmente als 'Sponsor: MARKENNAME' (isSponsor: true).\n\n"
-        }
-
-        if let music = musicSegments?.filter({ $0.type == "music" }), !music.isEmpty {
-            prompt += "Musik-Segmente:\n"
-            for seg in music {
-                prompt += "[\(Int(seg.start))-\(Int(seg.end))]\n"
-            }
-            prompt += "\n"
+            prompt += Self.sponsorRecognitionRule + "\n"
+            prompt += Self.timelineCoverageRule
+            prompt += Self.promotionSegmentationRule + "\n"
         }
 
         prompt += "Erkannte Themen:\n"
         for m in markers {
-            prompt += "\(Int(m.time)) - \(m.title)\n"
+            prompt += "\(Int(m.time))s - \(m.title)\n"
+        }
+
+        if let transcriptCues, !transcriptCues.isEmpty {
+            prompt += "\nTranskriptkontext zu den Themen:\n"
+            for (index, marker) in markers.enumerated() {
+                let nextMarkerTime = index + 1 < markers.count ? markers[index + 1].time : totalDuration
+                if let context = Self.transcriptContextSnippet(from: marker.time,
+                                                               to: nextMarkerTime,
+                                                               transcriptCues: transcriptCues) {
+                    prompt += "[\(formatModelSecond(marker.time))] \(marker.title): \(context)\n"
+                }
+            }
         }
 
         return prompt
     }
 
-    private func minimumExpectedChapterCount(totalDuration: Double,
-                                             markerCount: Int,
-                                             musicSegments: [ICAudioSegment]?) -> Int {
-        let boundaryCount = (musicSegments ?? []).filter { $0.type == "music" }.prefix(1).count
-            + ((musicSegments ?? []).filter { $0.type == "music" }.count > 1 ? 1 : 0)
-        let durationBased = Int(totalDuration / 150) + 1
-        let markerBased = Int((Double(markerCount) * 0.6).rounded(.down))
-        return min(max(4, min(markerCount, max(durationBased + boundaryCount, markerBased))), 12)
+    private static func allowedChapterStartSeconds(from markers: [TopicMarker]) -> [Int] {
+        let starts = ([0] + markers.map { Int($0.time.rounded()) })
+            .filter { $0 >= 0 }
+            .sorted()
+        var result: [Int] = []
+        for start in starts where result.last != start {
+            result.append(start)
+        }
+        return result
+    }
+
+    private static func chaptersFromTopicMarkers(_ markers: [TopicMarker],
+                                                 totalDuration: Double) -> [ICGeneratedChapter] {
+        let cleaned = deduplicatedMarkers(markers)
+            .filter { $0.time < totalDuration - 1.0 }
+        guard !cleaned.isEmpty else { return [] }
+
+        var chapters: [ICGeneratedChapter] = []
+        for index in cleaned.indices {
+            let marker = cleaned[index]
+            let nextIndex = cleaned.index(after: index)
+            let nextStart = nextIndex < cleaned.endIndex ? cleaned[nextIndex].time : totalDuration
+            let start = min(max(marker.time, 0), totalDuration)
+            let end = min(max(nextStart, 0), totalDuration)
+            let title = marker.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard end > start, !title.isEmpty else { continue }
+            chapters.append(ICGeneratedChapter(start: start,
+                                               end: end,
+                                               title: title,
+                                               isSponsor: title.hasPrefix("Sponsor: ")))
+        }
+        return chapters
+    }
+
+    private static func transcriptContextSnippet(from startTime: Double,
+                                                 to endTime: Double,
+                                                 transcriptCues: [ICTranscriptCue]) -> String? {
+        let windowStart = max(0, startTime - 20)
+        let resolvedEnd = endTime > startTime ? endTime : startTime + 90
+        let windowEnd = max(resolvedEnd, startTime + 20)
+        let cues = transcriptCues
+            .filter { $0.end >= windowStart && $0.start <= windowEnd }
+        let text = cues
+            .map { transcriptCueTextForTitle($0.text) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !text.isEmpty else { return nil }
+        return text
     }
 
     private static func deduplicatedMarkers(_ markers: [TopicMarker]) -> [TopicMarker] {
@@ -1619,6 +2710,73 @@ private struct ChaptersFile: Codable {
             deduped.append(marker)
         }
         return deduped
+    }
+
+    private static func chaptersFromGeneratedStarts(_ starts: [LocalChapterStart],
+                                                    totalDuration: Double) -> [ICGeneratedChapter] {
+        starts.enumerated().map { index, chapter in
+            let end = index + 1 < starts.count ? Double(starts[index + 1].startSeconds) : totalDuration
+            return ICGeneratedChapter(start: Double(chapter.startSeconds),
+                                      end: end,
+                                      title: chapter.title,
+                                      isSponsor: chapter.isSponsor)
+        }
+    }
+
+    private static func validateRawGeneratedChapterTiming(_ rawChapters: [ICGeneratedChapter],
+                                                          totalDuration: Double,
+                                                          existingChapters: [ICGeneratedChapter]?,
+                                                          debugTrace: ChapterDebugTrace?) throws {
+        guard let issue = rawGeneratedChapterTimingIssue(rawChapters,
+                                                         totalDuration: totalDuration,
+                                                         existingChapters: existingChapters) else {
+            return
+        }
+        debugTrace?.recordPerformance("chapter-raw-validation-failed",
+                                      metadata: [
+                                        "issue": issue,
+                                        "rawChapterCount": rawChapters.count,
+                                        "totalDurationSeconds": String(format: "%.3f", totalDuration),
+                                      ])
+        NSLog("[ChapterGenerator] Raw chapter timing validation failed: %@", issue)
+        throw NSError(domain: "ChapterGenerator", code: 23,
+                      userInfo: [NSLocalizedDescriptionKey: issue])
+    }
+
+    private static func rawGeneratedChapterTimingIssue(_ rawChapters: [ICGeneratedChapter],
+                                                       totalDuration: Double,
+                                                       existingChapters: [ICGeneratedChapter]?) -> String? {
+        guard existingChapters == nil else { return nil }
+        guard !rawChapters.isEmpty else { return nil }
+
+        let boundaryTolerance = max(2.0, min(6.0, totalDuration * 0.0025))
+        let sorted = rawChapters.sorted { $0.start < $1.start }
+
+        guard let first = sorted.first, first.start <= boundaryTolerance else {
+            return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat den Anfang der Folge nicht abgedeckt."
+        }
+
+        for chapter in sorted {
+            if chapter.start < -boundaryTolerance || chapter.end > totalDuration + boundaryTolerance {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat Kapitelzeiten ausserhalb der Transkriptdauer geliefert."
+            }
+            if chapter.end <= chapter.start {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat ungueltige Kapitelzeiten geliefert."
+            }
+        }
+
+        for pair in zip(sorted, sorted.dropFirst()) {
+            if abs(pair.0.end - pair.1.start) > boundaryTolerance {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat nicht zusammenhaengende Kapitelgrenzen geliefert."
+            }
+        }
+
+        if let last = sorted.last,
+           abs(last.end - totalDuration) > boundaryTolerance {
+            return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat die Folge nicht bis zum Ende abgedeckt."
+        }
+
+        return nil
     }
 
     private static func validatedGeneratedChapters(_ chapters: [ICGeneratedChapter],
@@ -1653,6 +2811,7 @@ private struct ChaptersFile: Codable {
                                             transcriptCues: [ICTranscriptCue],
                                             existingChapters: [ICGeneratedChapter]?) -> String? {
         guard existingChapters == nil else { return nil }
+
         guard totalDuration >= 300, transcriptCues.count >= 20 else { return nil }
 
         if chapters.count == 1,
@@ -1663,80 +2822,94 @@ private struct ChaptersFile: Codable {
             return "Kapitelerkennung fehlgeschlagen - Kapitelmodell lieferte nur ein generisches Gesamtkapitel."
         }
 
-        let boundaryChapters = musicBoundaryChapters(from: musicSegments,
-                                                     transcriptCues: transcriptCues,
-                                                     transcriptDuration: totalDuration)
+        if let issue = singleChapterUndersegmentationIssue(chapters,
+                                                           totalDuration: totalDuration,
+                                                           transcriptCues: transcriptCues) {
+            return issue
+        }
+
+        let boundaryChapters = standaloneIntroOutroMusicChapters(from: musicSegments,
+                                                                 transcriptCues: transcriptCues,
+                                                                 transcriptDuration: totalDuration)
         if let issue = missingMusicBoundaryIssue(chapters, boundaryChapters: boundaryChapters) {
             return issue
         }
 
         if let issue = invalidStructuralChapterIssue(chapters,
-                                                     boundaryChapters: boundaryChapters,
-                                                     transcriptCues: transcriptCues) {
+                                                     boundaryChapters: boundaryChapters) {
             return issue
         }
 
-        if let issue = oversizedContentChapterIssue(chapters,
-                                                    topicMarkers: topicMarkers,
-                                                    transcriptCues: transcriptCues) {
+        if let issue = invalidAudioInterludeChapterIssue(chapters,
+                                                         musicSegments: musicSegments) {
             return issue
         }
 
-        let contentChapters = chapters.filter {
-            !["intro", "outro"].contains($0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-        }
-
-        if totalDuration >= 600, topicMarkerCount >= 4, contentChapters.count < 2 {
-            return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat erkannte Themen zu stark zusammengefasst."
-        }
-
-        let musicBoundaryCount = boundaryChapters.count
-        let minimumChapterCount = max(3, min(8, Int(totalDuration / 360) + 1 + musicBoundaryCount))
-        if topicMarkerCount >= minimumChapterCount, chapters.count < minimumChapterCount {
-            return "Kapitelerkennung fehlgeschlagen - Kapitelmodell lieferte zu wenige Kapitel fuer die erkannten Themen."
+        if let issue = repeatedAdjacentContentTitleIssue(chapters) {
+            return issue
         }
 
         return nil
     }
 
-    private static func oversizedContentChapterIssue(_ chapters: [ICGeneratedChapter],
-                                                     topicMarkers: [TopicMarker],
-                                                     transcriptCues: [ICTranscriptCue]) -> String? {
-        guard !topicMarkers.isEmpty else { return nil }
-        for chapter in chapters {
-            let chapterDuration = chapter.end - chapter.start
-            guard chapterDuration > maximumContentChapterDuration,
-                  !chapter.isSponsor,
-                  normalizedStructuralChapterTitle(chapter.title) == nil else {
+    private static func singleChapterUndersegmentationIssue(_ chapters: [ICGeneratedChapter],
+                                                            totalDuration: Double,
+                                                            transcriptCues: [ICTranscriptCue]) -> String? {
+        guard chapters.count == 1,
+              let only = chapters.first,
+              !only.isSponsor,
+              normalizedStructuralChapterTitle(only.title) == nil,
+              normalizedAudioInterludeTitle(only.title) == nil,
+              totalDuration >= 600,
+              transcriptCues.count >= 50,
+              only.start <= 1,
+              only.end >= totalDuration * 0.85 else {
+            return nil
+        }
+
+        let questionCueCount = transcriptCues.reduce(0) { count, cue in
+            transcriptCueTextForTitle(cue.text).contains("?") ? count + 1 : count
+        }
+        if questionCueCount >= 3 {
+            return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat ein dialogisches Transkript zu einem einzelnen Gesamtkapitel reduziert."
+        }
+        return nil
+    }
+
+    private static func repeatedAdjacentContentTitleIssue(_ chapters: [ICGeneratedChapter]) -> String? {
+        for pair in zip(chapters, chapters.dropFirst()) {
+            let lhs = pair.0
+            let rhs = pair.1
+            guard !lhs.isSponsor,
+                  !rhs.isSponsor,
+                  normalizedStructuralChapterTitle(lhs.title) == nil,
+                  normalizedStructuralChapterTitle(rhs.title) == nil else {
                 continue
             }
-            let markerCountInsideChapter = topicMarkers.filter { marker in
-                marker.time > chapter.start + minimumSplitChapterDuration
-                    && marker.time < chapter.end - minimumSplitChapterDuration
-            }.count
-            if markerCountInsideChapter > 0 {
-                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat erkannte Themen zu stark zusammengefasst."
-            }
-            if contentCueCount(in: chapter, transcriptCues: transcriptCues) >= 24 {
-                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell lieferte ein zu langes Inhaltskapitel."
+            let lhsSignature = contentTitleSignature(lhs.title)
+            let rhsSignature = contentTitleSignature(rhs.title)
+            guard lhsSignature.count >= 2, rhsSignature.count >= 2 else { continue }
+            let overlap = lhsSignature.intersection(rhsSignature).count
+            let union = lhsSignature.union(rhsSignature).count
+            if union > 0, Double(overlap) / Double(union) >= 0.75 {
+                return "Kapitelerkennung fehlgeschlagen - benachbarte Inhaltskapitel haben zu aehnliche Titel."
             }
         }
         return nil
     }
 
-    private static func contentCueCount(in chapter: ICGeneratedChapter,
-                                        transcriptCues: [ICTranscriptCue]) -> Int {
-        transcriptCues.filter {
-            $0.end > chapter.start
-                && $0.start < chapter.end
-                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !isMusicOnlyCue($0)
-        }.count
+    private static func contentTitleSignature(_ title: String) -> Set<String> {
+        let normalized = title
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .lowercased()
+        return Set(normalized
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count > 2 })
     }
 
     private static func invalidStructuralChapterIssue(_ chapters: [ICGeneratedChapter],
-                                                      boundaryChapters: [ICGeneratedChapter],
-                                                      transcriptCues: [ICTranscriptCue]) -> String? {
+                                                      boundaryChapters: [ICGeneratedChapter]) -> String? {
         for chapter in chapters {
             let title = chapter.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let normalized = title
@@ -1749,8 +2922,7 @@ private struct ChaptersFile: Codable {
                 return "Kapitelerkennung fehlgeschlagen - Jingle-Kapitel ist laenger als das erkannte Musiksegment."
             }
             if isStructuralChapterTitle(title),
-               coveringMusicBoundary(chapter, in: boundaryChapters) == nil,
-               !(normalized == "outro" && hasOutroCueEvidence(for: chapter, transcriptCues: transcriptCues)) {
+               coveringMusicBoundary(chapter, in: boundaryChapters) == nil {
                 return "Kapitelerkennung fehlgeschlagen - Strukturkapitel ohne passende Musikgrenze."
             }
             if chapter.isSponsor && isStructuralChapterTitle(title) {
@@ -1768,6 +2940,35 @@ private struct ChaptersFile: Codable {
         return nil
     }
 
+    private static func invalidAudioInterludeChapterIssue(_ chapters: [ICGeneratedChapter],
+                                                          musicSegments: [ICAudioSegment]?) -> String? {
+        for chapter in chapters {
+            guard normalizedAudioInterludeTitle(chapter.title) != nil else { continue }
+            let duration = chapter.end - chapter.start
+            if duration > maximumAudioInterludeChapterDuration {
+                return "Kapitelerkennung fehlgeschlagen - Audio-Kapitel ist laenger als das erkannte Musik-/Soundsegment."
+            }
+            if !audioChapterHasMatchingMusicSegment(chapter, musicSegments: musicSegments) {
+                return "Kapitelerkennung fehlgeschlagen - Audio-Kapitel ohne passende Audioanalyse-Grenze."
+            }
+            if chapter.isSponsor {
+                return "Kapitelerkennung fehlgeschlagen - Audio-Kapitel wurde faelschlich als Werbung markiert."
+            }
+        }
+        return nil
+    }
+
+    private static func audioChapterHasMatchingMusicSegment(_ chapter: ICGeneratedChapter,
+                                                            musicSegments: [ICAudioSegment]?) -> Bool {
+        let chapterDuration = max(0, chapter.end - chapter.start)
+        guard chapterDuration > 0 else { return false }
+        let requiredOverlap = min(3.0, max(1.0, chapterDuration * 0.35))
+        return (musicSegments ?? []).contains { segment in
+            guard segment.type == "music", segment.end > segment.start else { return false }
+            return overlapDuration(chapter.start, chapter.end, segment.start, segment.end) >= requiredOverlap
+        }
+    }
+
     private static func isStructuralChapterTitle(_ title: String) -> Bool {
         normalizedStructuralChapterTitle(title) != nil
     }
@@ -1777,7 +2978,32 @@ private struct ChaptersFile: Codable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
             .lowercased()
-        return ["intro", "outro", "jingle"].contains(normalized) ? normalized : nil
+        return ["intro", "outro"].contains(normalized) ? normalized : nil
+    }
+
+    private static func normalizedAudioInterludeTitle(_ title: String) -> String? {
+        let normalized = title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#,
+                                  with: " ",
+                                  options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized == "jingle" {
+            return "jingle"
+        }
+        if ["sound sample", "soundsample", "audio sample", "sample"].contains(normalized) {
+            return "sound-sample"
+        }
+        return nil
+    }
+
+    private static func overlapDuration(_ startA: Double,
+                                        _ endA: Double,
+                                        _ startB: Double,
+                                        _ endB: Double) -> Double {
+        max(0, min(endA, endB) - max(startA, startB))
     }
 
     private static func matchingMusicBoundary(_ chapter: ICGeneratedChapter,
@@ -1811,16 +3037,6 @@ private struct ChaptersFile: Codable {
             && chapter.start >= boundary.start - maxAbsorbedFragmentDuration
             && chapter.end >= boundary.end - tolerance
             && chapter.end <= boundary.end + maxAbsorbedFragmentDuration
-    }
-
-    private static func hasOutroCueEvidence(for chapter: ICGeneratedChapter,
-                                            transcriptCues: [ICTranscriptCue]) -> Bool {
-        let tolerance = 2.0
-        return transcriptCues.contains { cue in
-            cue.end > chapter.start - tolerance
-                && cue.start < chapter.end + tolerance
-                && isOutroCueText(cue.text)
-        }
     }
 
     private static func isGenericChapterTitle(_ title: String) -> Bool {
@@ -1910,162 +3126,6 @@ private struct ChaptersFile: Codable {
                                                  isSponsor: deduped[index].isSponsor))
         }
         return normalized
-    }
-
-    private static func chaptersBySplittingOversizedContentChapters(_ chapters: [ICGeneratedChapter],
-                                                                    topicMarkers: [TopicMarker],
-                                                                    transcriptCues: [ICTranscriptCue],
-                                                                    totalDuration: Double) -> [ICGeneratedChapter] {
-        guard !chapters.isEmpty, !topicMarkers.isEmpty else { return chapters }
-        let markers = deduplicatedMarkers(topicMarkers).sorted { $0.time < $1.time }
-        var result: [ICGeneratedChapter] = []
-        var splitCount = 0
-
-        for chapter in chapters {
-            let chapterDuration = chapter.end - chapter.start
-            guard chapterDuration > maximumContentChapterDuration,
-                  !chapter.isSponsor,
-                  normalizedStructuralChapterTitle(chapter.title) == nil else {
-                result.append(chapter)
-                continue
-            }
-
-            let candidateMarkers = markers.filter { marker in
-                let endSlack = normalizedStructuralChapterTitle(marker.title) == "outro" ? 20.0 : minimumSplitChapterDuration
-                return marker.time > chapter.start + minimumSplitChapterDuration
-                    && marker.time < chapter.end - endSlack
-                    && !marker.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            }
-            guard !candidateMarkers.isEmpty else {
-                result.append(chapter)
-                continue
-            }
-
-            var acceptedMarkers: [TopicMarker] = []
-            var previousBoundary = chapter.start
-            for marker in candidateMarkers {
-                let endSlack = normalizedStructuralChapterTitle(marker.title) == "outro" ? 20.0 : minimumSplitChapterDuration
-                guard marker.time - previousBoundary >= minimumSplitChapterDuration,
-                      chapter.end - marker.time >= endSlack else {
-                    continue
-                }
-                acceptedMarkers.append(marker)
-                previousBoundary = marker.time
-            }
-
-            guard !acceptedMarkers.isEmpty else {
-                result.append(chapter)
-                continue
-            }
-
-            splitCount += acceptedMarkers.count
-            var segmentStart = chapter.start
-            var segmentTitle = chapter.title
-            for marker in acceptedMarkers {
-                result.append(ICGeneratedChapter(start: segmentStart,
-                                                 end: marker.time,
-                                                 title: segmentTitle,
-                                                 isSponsor: segmentTitle.hasPrefix("Sponsor: ")))
-                segmentStart = marker.time
-                segmentTitle = titleForSplitMarker(marker,
-                                                   start: segmentStart,
-                                                   end: chapter.end,
-                                                   transcriptCues: transcriptCues)
-            }
-            result.append(ICGeneratedChapter(start: segmentStart,
-                                             end: chapter.end,
-                                             title: segmentTitle,
-                                             isSponsor: segmentTitle.hasPrefix("Sponsor: ")))
-        }
-
-        if splitCount > 0 {
-            NSLog("[ChapterGenerator] Uebergrosse Inhaltskapitel anhand von Themenmarkern geteilt: %d", splitCount)
-        }
-        return normalizedChapters(result,
-                                  totalDuration: totalDuration,
-                                  forceContinuousBoundaries: true)
-    }
-
-    private static func titleForSplitMarker(_ marker: TopicMarker,
-                                            start: Double,
-                                            end: Double,
-                                            transcriptCues: [ICTranscriptCue]) -> String {
-        let rawTitle = marker.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let markerChapter = ICGeneratedChapter(start: start,
-                                               end: end,
-                                               title: rawTitle,
-                                               isSponsor: rawTitle.hasPrefix("Sponsor: "))
-        if normalizedStructuralChapterTitle(rawTitle) == "outro",
-           hasOutroCueEvidence(for: markerChapter, transcriptCues: transcriptCues) {
-            return "Outro"
-        }
-        if normalizedStructuralChapterTitle(rawTitle) != nil
-            || isGenericChapterTitle(rawTitle)
-            || isWeakChapterTitle(rawTitle) {
-            if let contentTitle = contentTitleForChapter(markerChapter, transcriptCues: transcriptCues) {
-                return contentTitle
-            }
-        }
-        return rawTitle
-    }
-
-    private static func chaptersBySplittingExplicitOutroMarkers(_ chapters: [ICGeneratedChapter],
-                                                                topicMarkers: [TopicMarker],
-                                                                transcriptCues: [ICTranscriptCue],
-                                                                totalDuration: Double) -> [ICGeneratedChapter] {
-        guard chapters.count >= 2 else { return chapters }
-        let outroMarkers = deduplicatedMarkers(topicMarkers).filter {
-            normalizedStructuralChapterTitle($0.title) == "outro"
-                && $0.time < totalDuration - 4
-        }
-        guard !outroMarkers.isEmpty else { return chapters }
-
-        var result: [ICGeneratedChapter] = []
-        var splitCount = 0
-        for chapter in chapters {
-            guard !chapter.isSponsor,
-                  normalizedStructuralChapterTitle(chapter.title) == nil,
-                  let marker = outroMarkers.first(where: {
-                      $0.time > chapter.start + minimumSplitChapterDuration
-                          && $0.time < chapter.end - 4
-                  }) else {
-                result.append(chapter)
-                continue
-            }
-
-            let outroChapter = ICGeneratedChapter(start: marker.time,
-                                                  end: chapter.end,
-                                                  title: "Outro",
-                                                  isSponsor: false)
-            guard hasOutroCueEvidence(for: outroChapter, transcriptCues: transcriptCues) else {
-                result.append(chapter)
-                continue
-            }
-
-            let contentPart = ICGeneratedChapter(start: chapter.start,
-                                                 end: marker.time,
-                                                 title: chapter.title,
-                                                 isSponsor: false)
-            let contentTitle = chapter.title
-                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-                .lowercased()
-                .contains("outro")
-                ? (contentTitleForChapter(contentPart, transcriptCues: transcriptCues) ?? chapter.title)
-                : chapter.title
-            result.append(ICGeneratedChapter(start: chapter.start,
-                                             end: marker.time,
-                                             title: contentTitle,
-                                             isSponsor: false))
-            result.append(outroChapter)
-            splitCount += 1
-        }
-
-        if splitCount > 0 {
-            NSLog("[ChapterGenerator] Explizite Outro-Marker in Schlusskapitel geteilt: %d", splitCount)
-        }
-        return normalizedChapters(result,
-                                  totalDuration: totalDuration,
-                                  forceContinuousBoundaries: true)
     }
 
     private static func chaptersByMergingTerminalFragmentsIntoOutro(_ chapters: [ICGeneratedChapter],
@@ -2215,6 +3275,13 @@ private struct ChaptersFile: Codable {
 
     private static func chaptersByReplacingVerboseContentTitles(_ chapters: [ICGeneratedChapter],
                                                                 transcriptCues: [ICTranscriptCue]) -> [ICGeneratedChapter] {
+        let contentChapterCount = chapters.filter {
+            !$0.isSponsor
+                && normalizedStructuralChapterTitle($0.title) == nil
+                && normalizedAudioInterludeTitle($0.title) == nil
+        }.count
+        guard contentChapterCount > 1 else { return chapters }
+
         var replacementCount = 0
         let repaired = chapters.map { chapter -> ICGeneratedChapter in
             guard !chapter.isSponsor,
@@ -2240,9 +3307,9 @@ private struct ChaptersFile: Codable {
                                                               musicSegments: [ICAudioSegment]?,
                                                               transcriptCues: [ICTranscriptCue],
                                                               transcriptDuration: Double) -> [ICGeneratedChapter] {
-        let boundaryChapters = musicBoundaryChapters(from: musicSegments,
-                                                     transcriptCues: transcriptCues,
-                                                     transcriptDuration: transcriptDuration)
+        let boundaryChapters = standaloneIntroOutroMusicChapters(from: musicSegments,
+                                                                 transcriptCues: transcriptCues,
+                                                                 transcriptDuration: transcriptDuration)
         guard !chapters.isEmpty else { return chapters }
 
         var result = chapters
@@ -2255,7 +3322,7 @@ private struct ChaptersFile: Codable {
                 } else if boundary.title == "Outro" {
                     outcome = chaptersByAddingOutro(boundary, to: result)
                 } else {
-                    outcome = chaptersByInsertingMusicChapter(boundary, to: result)
+                    outcome = chaptersByInsertingMusicChapter(boundary, to: result, transcriptCues: transcriptCues)
                 }
                 result = outcome.0
                 if outcome.1 {
@@ -2295,16 +3362,6 @@ private struct ChaptersFile: Codable {
                                           title: boundary.title,
                                           isSponsor: false)
             }
-            if structuralTitle == "outro",
-               hasOutroCueEvidence(for: chapter, transcriptCues: transcriptCues) {
-                if chapter.isSponsor {
-                    changed = true
-                }
-                return ICGeneratedChapter(start: chapter.start,
-                                          end: chapter.end,
-                                          title: chapter.title,
-                                          isSponsor: false)
-            }
             guard var title = contentTitleForChapter(chapter, transcriptCues: transcriptCues) else {
                 return chapter
             }
@@ -2338,7 +3395,7 @@ private struct ChaptersFile: Codable {
             }
             .sorted { $0.start < $1.start }
         let titles = overlappingSpeech.compactMap { cue -> String? in
-            let title = deterministicMarkerTitle(from: cue.text)
+            let title = transcriptCueTitle(from: cue.text)
             guard !title.isEmpty,
                   !isStructuralChapterTitle(title),
                   !isGenericChapterTitle(title) else {
@@ -2346,7 +3403,7 @@ private struct ChaptersFile: Codable {
             }
             return title
         }
-        return titles.first { !isWeakChapterTitle($0) } ?? titles.first
+        return titles.first { !isWeakChapterTitle($0) }
     }
 
     private static func conciseContentTitleForChapter(_ chapter: ICGeneratedChapter,
@@ -2373,135 +3430,24 @@ private struct ChaptersFile: Codable {
         let cleaned = transcriptCueTextForTitle(text)
         guard !cleaned.isEmpty else { return nil }
 
-        let normalized = cleaned
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-            .lowercased()
-        let title: String
-        if normalized.contains("kaloriendefizit") {
-            title = "Kaloriendefizit"
-        } else if normalized.contains("thema kalorien") {
-            title = "Kalorien"
-        } else if normalized.contains("kalorien")
-                    && (normalized.contains("rechnung") || normalized.contains("addier")) {
-            title = "Kalorienbilanz"
-        } else if normalized.contains("kalorien")
-                    && (normalized.contains("energie") || normalized.contains("bedarf")) {
-            title = "Kalorien und Energiebedarf"
-        } else if normalized.contains("kalorien")
-                    && (normalized.contains("sport") || normalized.contains("joggen") || normalized.contains("lauf")) {
-            title = "Kalorienverbrauch beim Sport"
-        } else if normalized.contains("ruheumsatz") || normalized.contains("muskel") {
-            title = "Muskeln und Ruheumsatz"
-        } else if normalized.contains("sport")
-                    && (normalized.contains("abnehm") || normalized.contains("gewicht") || normalized.contains("nicht ab") || normalized.contains("nehmt")) {
-            title = "Sport und Abnehmen"
-        } else if normalized.contains("sport")
-                    && (normalized.contains("hunger") || normalized.contains("appetit") || normalized.contains("essen")) {
-            title = "Sport, Hunger und Essen"
-        } else if normalized.contains("energie")
-                    && (normalized.contains("verbrauch") || normalized.contains("bedarf")) {
-            title = "Energiebedarf des Körpers"
-        } else if let keywordTitle = keywordContentTitle(from: cleaned) {
-            title = keywordTitle
-        } else {
-            let words = cleaned.split(separator: " ").prefix(7).joined(separator: " ")
-            title = words.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        let title = shortTranscriptTitle(from: cleaned)
 
         guard !title.isEmpty else { return nil }
         return preserveTeaserPrefix && !title.hasPrefix("Teaser:") ? "Teaser: \(title)" : title
     }
 
-    private static func keywordContentTitle(from text: String) -> String? {
+    private static func shortTranscriptTitle(from text: String) -> String {
         let fragments = text
             .components(separatedBy: CharacterSet(charactersIn: ".?!"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let source = fragments
-            .max { contentKeywordScore($0) < contentKeywordScore($1) } ?? text
-        if let phrase = keywordPhraseTitle(from: source) {
-            return phrase
-        }
-        let words = source
-            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
-            .split(separator: " ")
-            .map(String.init)
-        let keywords = words.filter { word in
-            let normalized = word
-                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-                .lowercased()
-            return word.count >= 4 && !contentTitleStopwords.contains(normalized)
-        }
-        let unique = keywords.reduce(into: [String]()) { result, word in
-            let normalized = word
-                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-                .lowercased()
-            if !result.contains(where: {
-                $0.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE")).lowercased() == normalized
-            }) {
-                result.append(word)
-            }
-        }
-        guard !unique.isEmpty else { return nil }
-        return unique.prefix(2).joined(separator: " und ")
-    }
-
-    private static func keywordPhraseTitle(from text: String) -> String? {
-        let words = text
-            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
-            .split(separator: " ")
-            .map(String.init)
-        var runs: [[String]] = []
-        var current: [String] = []
-        for word in words {
-            let normalized = word
-                .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-                .lowercased()
-            if word.count >= 4 && !contentTitleStopwords.contains(normalized) {
-                current.append(word)
-            } else if !current.isEmpty {
-                runs.append(current)
-                current = []
-            }
-        }
-        if !current.isEmpty {
-            runs.append(current)
-        }
-
-        guard let bestRun = runs.max(by: { contentPhraseScore($0) < contentPhraseScore($1) }) else {
-            return nil
-        }
-        guard bestRun.count >= 2 else { return nil }
-        var titleWords = Array(bestRun.prefix(4))
-        if titleWords.count > 2,
-           let last = titleWords.last,
-           let previous = titleWords.dropLast().last,
-           last.first?.isLowercase == true,
-           previous.first?.isUppercase == true {
-            titleWords.removeLast()
-        }
-        return titleWords.joined(separator: " ")
-    }
-
-    private static func contentPhraseScore(_ words: [String]) -> Int {
-        words.count * 10 + words.reduce(0) { $0 + min($1.count, 12) }
-    }
-
-    private static func contentKeywordScore(_ text: String) -> Int {
-        text
-            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
-            .split(separator: " ")
-            .map(String.init)
-            .filter { word in
-                let normalized = word
-                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
-                    .lowercased()
-                return word.count >= 4 && !contentTitleStopwords.contains(normalized)
-            }
-            .count
+            .filter { hasMeaningfulTitleCharacter($0) }
+        let source = fragments.first ?? text
+        let words = source.split { $0.isWhitespace || $0.isNewline }
+        return words.prefix(8).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func isUsableConciseContentTitle(_ title: String) -> Bool {
+        guard hasMeaningfulTitleCharacter(title) else { return false }
         if isWeakChapterTitle(title) || isGenericChapterTitle(title) || isVerboseContentTitle(title) {
             return false
         }
@@ -2509,25 +3455,14 @@ private struct ChaptersFile: Codable {
         return wordCount > 1 || title.count >= 7
     }
 
-    private static let contentTitleStopwords: Set<String> = [
-        "aber", "alle", "also", "auch", "auf", "aus", "bei", "beim", "bin", "bis", "bist",
-        "aktuell", "aktuelle", "aktuellen", "aktueller", "aktuelles", "anfangen", "fangen",
-        "beginnen", "beginn", "kommen", "nahe", "starten",
-        "alles", "dabei", "dann", "das", "dass", "dauert", "den", "denn", "der", "des", "die", "dies", "diese", "dieser",
-        "doch", "durch", "ein", "eine", "einem", "einen", "einer", "einfach", "eigentlich",
-        "egal", "etwas", "euch", "existiert", "fuer", "fur", "ganz", "geben", "geht", "gemacht", "genau", "gerade", "gibt", "habe", "haben", "habt",
-        "halt", "heißt", "heisst", "heraus", "hier", "hochladen", "ich", "ihm", "ihn", "ihr", "ihre", "immer", "interessant", "ist", "jetzt",
-        "kann", "kaum", "kein", "keine", "klar", "koennen", "können", "kurz", "lange", "mal", "man", "mehr", "mein", "mich",
-        "mit", "muss", "musste", "muesste", "müsste", "macht", "nach", "natürlich", "natuerlich", "nicht", "noch", "nochmal", "oder", "ohne", "quasi", "schon", "schluss", "schnitt", "sehr",
-        "sein", "sich", "sind", "so", "soll", "sollen", "tatsächlich", "tatsaechlich", "thema", "ueber", "über", "uebrigens", "übrigens", "und", "uns", "unser", "unserer", "beiden", "vom", "von", "war",
-        "was", "wenn", "wer", "werden", "wie", "wird", "wirklich", "wir", "wissen", "wo", "wohl", "wollte", "wollten", "wollen", "wuerde", "würde", "zu", "zum", "zur",
-        "ende", "reinen", "rechnung", "addieren", "darunter", "verstehen",
-    ]
+    private static func hasMeaningfulTitleCharacter(_ title: String) -> Bool {
+        title.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+    }
 
     private static func isVerboseContentTitle(_ title: String) -> Bool {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let words = trimmed.split { $0.isWhitespace || $0.isNewline }
-        if words.count > 8 { return true }
+        if words.count > 14 { return true }
         if trimmed.contains("?") { return true }
         if words.count > 4 && trimmed.contains(",") { return true }
         if words.count > 4 && trimmed.contains(".") { return true }
@@ -2537,46 +3472,75 @@ private struct ChaptersFile: Codable {
     private static func isWeakChapterTitle(_ title: String) -> Bool {
         var normalized = title
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
             .lowercased()
+        guard hasMeaningfulTitleCharacter(normalized) else { return true }
         if normalized.hasPrefix("sponsor:") {
             normalized = normalized
                 .replacingOccurrences(of: #"^sponsor:\s*"#, with: "", options: .regularExpression)
         }
-        let weakPrefixes = [
-            "ja ",
-            "ja,",
-            "also ",
-            "genau ",
-            "nun ",
-            "okay ",
-            "ok ",
-            "und ",
-            "aber ",
-            "oder ",
-            "egal ob",
-            "ah ja",
-            "so ist",
-            "wohl",
-            "die sache ist",
-        ]
-        return weakPrefixes.contains { normalized.hasPrefix($0) }
-            || isLowInformationContentTitle(normalized)
+        return isLowInformationContentTitle(normalized)
     }
 
     private static func isLowInformationContentTitle(_ title: String) -> Bool {
         let words = title
-            .replacingOccurrences(of: #"[^A-Za-zÄÖÜäöüß0-9]+"#, with: " ", options: .regularExpression)
-            .split(separator: " ")
+            .split { !$0.isLetter && !$0.isNumber }
             .map { word in
                 String(word)
-                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
+                    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
                     .lowercased()
             }
         guard !words.isEmpty, words.count <= 4 else { return false }
-        return !words.contains { word in
-            word.count >= 4 && !contentTitleStopwords.contains(word)
+        let letterOrNumberCount = words.joined().unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+        }.count
+        return letterOrNumberCount < 7
+    }
+
+    private static func chaptersByApplyingEpisodeTitleToSingleContentChapter(_ chapters: [ICGeneratedChapter],
+                                                                             episodeTitle: String?,
+                                                                             transcriptCues: [ICTranscriptCue]) -> [ICGeneratedChapter] {
+        guard let episodeTitle = episodeTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !episodeTitle.isEmpty,
+              !isGenericChapterTitle(episodeTitle),
+              !isWeakChapterTitle(episodeTitle) else {
+            return chapters
         }
+        let contentIndices = chapters.indices.filter { index in
+            let chapter = chapters[index]
+            return !chapter.isSponsor
+                && normalizedStructuralChapterTitle(chapter.title) == nil
+                && normalizedAudioInterludeTitle(chapter.title) == nil
+        }
+        guard contentIndices.count == 1,
+              let contentIndex = contentIndices.first else {
+            return chapters
+        }
+
+        let episodeSignals = episodeTitleNumberSignals(in: episodeTitle)
+        guard !episodeSignals.isEmpty else { return chapters }
+
+        let transcriptText = transcriptCues.map(\.text).joined(separator: " ")
+        let transcriptSignals = episodeTitleNumberSignals(in: transcriptText)
+        guard !episodeSignals.isDisjoint(with: transcriptSignals) else { return chapters }
+
+        let currentSignals = episodeTitleNumberSignals(in: chapters[contentIndex].title)
+        guard episodeSignals.count > currentSignals.count else { return chapters }
+
+        var result = chapters
+        let chapter = result[contentIndex]
+        result[contentIndex] = ICGeneratedChapter(start: chapter.start,
+                                                  end: chapter.end,
+                                                  title: episodeTitle,
+                                                  isSponsor: chapter.isSponsor)
+        return result
+    }
+
+    private static func episodeTitleNumberSignals(in text: String) -> Set<String> {
+        Set(text
+            .split { !$0.isNumber }
+            .map(String.init)
+            .filter { !$0.isEmpty })
     }
 
     private static func chaptersByRemovingTerminalGenericChapters(_ chapters: [ICGeneratedChapter],
@@ -2599,15 +3563,16 @@ private struct ChaptersFile: Codable {
         return result
     }
 
-    private static func musicBoundaryChapters(from musicSegments: [ICAudioSegment]?,
-                                              transcriptCues: [ICTranscriptCue],
-                                              transcriptDuration: Double) -> [ICGeneratedChapter] {
+    private static func standaloneIntroOutroMusicChapters(from musicSegments: [ICAudioSegment]?,
+                                                          transcriptCues: [ICTranscriptCue],
+                                                          transcriptDuration: Double) -> [ICGeneratedChapter] {
         let validSegments = (musicSegments ?? [])
             .filter { $0.end > $0.start && $0.end > 0 }
             .sorted { $0.start < $1.start }
         let music = validSegments.filter { $0.type == "music" }
         guard !music.isEmpty,
-              let speechBoundaries = speechBoundaries(from: transcriptCues, musicSegments: musicSegments) else { return [] }
+              let speechBoundaries = speechBoundaries(from: transcriptCues,
+                                                      excludingMusicSegments: music) else { return [] }
 
         let tolerance = 2.0
         let firstSpeechStart = speechBoundaries.firstSpeechStart
@@ -2619,10 +3584,14 @@ private struct ChaptersFile: Codable {
 
         var chapters: [ICGeneratedChapter] = []
         if let earlyIntro = music.first(where: { $0.start <= earlyIntroWindow && $0.end - $0.start >= standaloneMusicDuration }) {
-            chapters.append(ICGeneratedChapter(start: max(0, earlyIntro.start),
-                                               end: min(earlyIntro.end, timelineEnd),
-                                               title: "Intro",
-                                               isSponsor: false))
+            if let intro = trimmedStandaloneMusicChapter(earlyIntro,
+                                                         title: "Intro",
+                                                         transcriptCues: transcriptCues,
+                                                         timelineEnd: timelineEnd,
+                                                         excludingMusicSegments: music,
+                                                         minimumDuration: standaloneMusicDuration) {
+                chapters.append(intro)
+            }
         } else if let firstMusic = music.first {
             let isFirstNonSilence = hasFullTimeline
                 && sameSegment(validSegments.first { $0.type != "silence" }, as: firstMusic, tolerance: tolerance)
@@ -2630,22 +3599,16 @@ private struct ChaptersFile: Codable {
             if isFirstNonSilence || startsAtBeginning {
                 let leadingMusicEnd = min(firstMusic.end, timelineEnd)
                 let end = firstSpeechStart <= tolerance ? leadingMusicEnd : min(leadingMusicEnd, firstSpeechStart)
-                if end > 0 {
-                    chapters.append(ICGeneratedChapter(start: 0, end: end, title: "Intro", isSponsor: false))
+                let segment = ICAudioSegment(type: "music", start: 0, end: end, confidence: firstMusic.confidence)
+                if let intro = trimmedStandaloneMusicChapter(segment,
+                                                             title: "Intro",
+                                                             transcriptCues: transcriptCues,
+                                                             timelineEnd: timelineEnd,
+                                                             excludingMusicSegments: music,
+                                                             minimumDuration: standaloneMusicDuration) {
+                    chapters.append(intro)
                 }
             }
-        }
-
-        let middleMusic = music.filter { segment in
-            segment.end - segment.start >= standaloneMusicDuration
-                && segment.start > earlyIntroWindow
-                && segment.end < transcriptDuration - 20
-        }
-        for segment in middleMusic {
-            chapters.append(ICGeneratedChapter(start: segment.start,
-                                               end: segment.end,
-                                               title: "Jingle",
-                                               isSponsor: false))
         }
 
         if let lastMusic = music.last {
@@ -2654,11 +3617,20 @@ private struct ChaptersFile: Codable {
             let endsAtKnownEnd = !hasFullTimeline && lastMusic.end >= transcriptDuration - tolerance
             if isLastNonSilence || endsAtKnownEnd {
                 let speechEnd = min(lastSpeechEnd, timelineEnd)
-                let trailingMusicStart = speechEnd <= lastMusic.start + tolerance ? lastMusic.start : max(lastMusic.start, speechEnd, 0)
-                let start = trailingMusicStart
-                let overlapsExistingBoundary = chapters.contains { start < $0.end && timelineEnd > $0.start }
-                if timelineEnd > start && !overlapsExistingBoundary {
-                    chapters.append(ICGeneratedChapter(start: start, end: timelineEnd, title: "Outro", isSponsor: false))
+                let trailingMusicStart = max(lastMusic.start, speechEnd, 0)
+                let segment = ICAudioSegment(type: "music",
+                                             start: trailingMusicStart,
+                                             end: timelineEnd,
+                                             confidence: lastMusic.confidence)
+                let overlapsExistingBoundary = chapters.contains { segment.start < $0.end && segment.end > $0.start }
+                if !overlapsExistingBoundary,
+                   let outro = trimmedStandaloneMusicChapter(segment,
+                                                             title: "Outro",
+                                                             transcriptCues: transcriptCues,
+                                                             timelineEnd: timelineEnd,
+                                                             excludingMusicSegments: music,
+                                                             minimumDuration: standaloneMusicDuration) {
+                    chapters.append(outro)
                 }
             }
         }
@@ -2667,30 +3639,89 @@ private struct ChaptersFile: Codable {
     }
 
     private static func speechBoundaries(from cues: [ICTranscriptCue],
-                                         musicSegments: [ICAudioSegment]?) -> (firstSpeechStart: Double, lastSpeechEnd: Double)? {
-        let spokenCues = cues
-            .filter {
-                !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    && !isMusicOnlyCue($0)
-                    && !isMostlyCoveredByMusic($0, musicSegments: musicSegments)
-            }
-            .sorted { $0.start < $1.start }
+                                         excludingMusicSegments musicSegments: [ICAudioSegment]? = nil) -> (firstSpeechStart: Double, lastSpeechEnd: Double)? {
+        let spokenCues = meaningfulSpeechCues(from: cues,
+                                              excludingMusicSegments: musicSegments)
         guard let first = spokenCues.first, let last = spokenCues.last else { return nil }
         return (first.start, last.end)
     }
 
-    private static func isMostlyCoveredByMusic(_ cue: ICTranscriptCue,
-                                               musicSegments: [ICAudioSegment]?) -> Bool {
+    private static func meaningfulSpeechCues(from cues: [ICTranscriptCue],
+                                             excludingMusicSegments musicSegments: [ICAudioSegment]? = nil) -> [ICTranscriptCue] {
+        cues
+            .filter {
+                isMeaningfulSpeechText($0.text)
+                    && !isMusicOnlyCue($0)
+                    && !isDominatedByMusic($0, musicSegments: musicSegments)
+            }
+            .sorted { $0.start < $1.start }
+    }
+
+    private static func isDominatedByMusic(_ cue: ICTranscriptCue,
+                                           musicSegments: [ICAudioSegment]?) -> Bool {
+        guard let musicSegments,
+              !musicSegments.isEmpty else { return false }
         let duration = cue.end - cue.start
         guard duration > 0 else { return false }
-        let overlap = (musicSegments ?? [])
-            .filter { $0.type == "music" }
-            .reduce(0.0) { total, segment in
-                let start = max(cue.start, segment.start)
-                let end = min(cue.end, segment.end)
-                return total + max(0, end - start)
-            }
-        return overlap / duration >= 0.5
+        let musicOverlap = musicSegments.reduce(0.0) { total, segment in
+            guard segment.type == "music",
+                  segment.end > segment.start else { return total }
+            return total + overlapDuration(cue.start, cue.end, segment.start, segment.end)
+        }
+        return musicOverlap / duration >= 0.5
+    }
+
+    private static func trimmedStandaloneMusicChapter(_ segment: ICAudioSegment,
+                                                      title: String,
+                                                      transcriptCues: [ICTranscriptCue],
+                                                      timelineEnd: Double,
+                                                      excludingMusicSegments musicSegments: [ICAudioSegment],
+                                                      minimumDuration: Double) -> ICGeneratedChapter? {
+        var start = max(0, segment.start)
+        var end = min(segment.end, timelineEnd)
+        let overlappingSpeech = meaningfulSpeechCues(from: transcriptCues,
+                                                     excludingMusicSegments: musicSegments)
+            .filter { $0.end > start && $0.start < end }
+        if let firstSpeech = overlappingSpeech.first,
+           firstSpeech.start <= start + 1.0 {
+            return nil
+        }
+        if let firstSpeech = overlappingSpeech.first {
+            end = min(end, firstSpeech.start)
+        }
+        if let lastSpeech = overlappingSpeech.last,
+           lastSpeech.end >= end - 1.0 {
+            start = max(start, lastSpeech.end)
+        }
+        guard end - start >= minimumDuration else { return nil }
+        guard meaningfulSpeechOverlapDuration(start: start,
+                                              end: end,
+                                              transcriptCues: transcriptCues,
+                                              excludingMusicSegments: musicSegments) <= 1.0 else {
+            return nil
+        }
+        return ICGeneratedChapter(start: start, end: end, title: title, isSponsor: false)
+    }
+
+    private static func meaningfulSpeechOverlapDuration(start: Double,
+                                                        end: Double,
+                                                        transcriptCues: [ICTranscriptCue],
+                                                        excludingMusicSegments musicSegments: [ICAudioSegment]? = nil) -> Double {
+        meaningfulSpeechCues(from: transcriptCues,
+                             excludingMusicSegments: musicSegments).reduce(0.0) { total, cue in
+            let overlapStart = max(start, cue.start)
+            let overlapEnd = min(end, cue.end)
+            return total + max(0, overlapEnd - overlapStart)
+        }
+    }
+
+    private static func isMeaningfulSpeechText(_ text: String) -> Bool {
+        let cleaned = transcriptCueTextForTitle(text)
+        guard !cleaned.isEmpty else { return false }
+        let alphanumericCount = cleaned.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+        }.count
+        return alphanumericCount >= 3
     }
 
     private static func isMusicOnlyCue(_ cue: ICTranscriptCue) -> Bool {
@@ -2704,6 +3735,11 @@ private struct ChaptersFile: Codable {
         let tokens = tokenText.split(separator: " ").map(String.init)
         guard !tokens.isEmpty else { return false }
         let musicTokens: Set<String> = ["musik", "music", "musica", "musique"]
+        if let firstToken = tokens.first,
+           musicTokens.contains(firstToken),
+           tokens.count <= 12 {
+            return true
+        }
         return tokens.allSatisfy { musicTokens.contains($0) }
     }
 
@@ -2745,7 +3781,8 @@ private struct ChaptersFile: Codable {
     }
 
     private static func chaptersByInsertingMusicChapter(_ music: ICGeneratedChapter,
-                                                        to chapters: [ICGeneratedChapter]) -> ([ICGeneratedChapter], Bool) {
+                                                        to chapters: [ICGeneratedChapter],
+                                                        transcriptCues: [ICTranscriptCue]) -> ([ICGeneratedChapter], Bool) {
         let tolerance = 2.0
         if chapters.contains(where: {
             $0.title == music.title
@@ -2768,20 +3805,24 @@ private struct ChaptersFile: Codable {
             }
 
             if chapter.start < music.start {
-                result.append(ICGeneratedChapter(start: chapter.start,
-                                                 end: music.start,
-                                                 title: chapter.title,
-                                                 isSponsor: chapter.isSponsor))
+                result.append(titleForBoundarySplitFragment(chapter,
+                                                            start: chapter.start,
+                                                            end: music.start,
+                                                            transcriptCues: transcriptCues,
+                                                            prefixTeaser: music.title == "Intro",
+                                                            preferSourceTitle: false))
             }
             if !inserted {
                 result.append(music)
                 inserted = true
             }
             if chapter.end > music.end {
-                result.append(ICGeneratedChapter(start: music.end,
-                                                 end: chapter.end,
-                                                 title: chapter.title,
-                                                 isSponsor: chapter.isSponsor))
+                result.append(titleForBoundarySplitFragment(chapter,
+                                                            start: music.end,
+                                                            end: chapter.end,
+                                                            transcriptCues: transcriptCues,
+                                                            prefixTeaser: false,
+                                                            preferSourceTitle: true))
             }
         }
 
@@ -2790,6 +3831,44 @@ private struct ChaptersFile: Codable {
             inserted = true
         }
         return (result.filter { $0.end > $0.start }, inserted)
+    }
+
+    private static func titleForBoundarySplitFragment(_ source: ICGeneratedChapter,
+                                                      start: Double,
+                                                      end: Double,
+                                                      transcriptCues: [ICTranscriptCue],
+                                                      prefixTeaser: Bool,
+                                                      preferSourceTitle: Bool = false) -> ICGeneratedChapter {
+        let fragment = ICGeneratedChapter(start: start,
+                                          end: end,
+                                          title: source.title,
+                                          isSponsor: source.isSponsor)
+        var title = (preferSourceTitle ? usableSourceTitleForBoundarySplit(source) : nil)
+            ?? conciseContentTitleForChapter(fragment, transcriptCues: transcriptCues)
+            ?? contentTitleForChapter(fragment, transcriptCues: transcriptCues)
+            ?? source.title
+        if prefixTeaser && !title.hasPrefix("Teaser:") && !title.hasPrefix("Sponsor:") {
+            title = "Teaser: \(title)"
+        }
+        return ICGeneratedChapter(start: start,
+                                  end: end,
+                                  title: title,
+                                  isSponsor: source.isSponsor || title.hasPrefix("Sponsor: "))
+    }
+
+    private static func usableSourceTitleForBoundarySplit(_ source: ICGeneratedChapter) -> String? {
+        let title = source.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty,
+              !source.isSponsor,
+              !title.hasPrefix("Sponsor: "),
+              normalizedStructuralChapterTitle(title) == nil,
+              normalizedAudioInterludeTitle(title) == nil,
+              !isGenericChapterTitle(title),
+              !isWeakChapterTitle(title),
+              !isVerboseContentTitle(title) else {
+            return nil
+        }
+        return title
     }
 
     private static func sameSegment(_ segment: ICAudioSegment?,
@@ -2801,34 +3880,6 @@ private struct ChaptersFile: Codable {
             && abs(segment.end - other.end) <= tolerance
     }
 
-    // MARK: - Transcript Chunking
-
-    /// Split transcript into non-overlapping segments that each fit the LLM context window.
-    /// Every cue is included in exactly one segment — no sampling, no data loss.
-    private static func splitTranscriptIntoChunks(_ cues: [ICTranscriptCue], maxTranscriptChars: Int) -> [[ICTranscriptCue]] {
-        guard !cues.isEmpty else { return [] }
-
-        let totalChars = cues.reduce(0) { $0 + $1.text.count + 15 }
-        if totalChars <= maxTranscriptChars {
-            return [cues]
-        }
-
-        let avgCharsPerCue = max(totalChars / cues.count, 1)
-        let cuesPerChunk = max(maxTranscriptChars / avgCharsPerCue, 20)
-
-        var chunks: [[ICTranscriptCue]] = []
-        var startIndex = 0
-
-        while startIndex < cues.count {
-            let endIndex = min(startIndex + cuesPerChunk, cues.count)
-            chunks.append(Array(cues[startIndex..<endIndex]))
-            startIndex = endIndex
-        }
-
-        NSLog("[ChapterGenerator] Split: %d cues → %d segments of ~%d cues", cues.count, chunks.count, cuesPerChunk)
-        return chunks
-    }
-
     private func formatTime(_ seconds: Double) -> String {
         let h = Int(seconds) / 3600
         let m = (Int(seconds) % 3600) / 60
@@ -2837,6 +3888,14 @@ private struct ChaptersFile: Codable {
             return String(format: "%d:%02d:%02d", h, m, s)
         }
         return String(format: "%d:%02d", m, s)
+    }
+
+    private func formatModelSecond(_ seconds: Double) -> String {
+        "\(Int(seconds.rounded()))s"
+    }
+
+    private func formatModelSecondRange(_ start: Double, _ end: Double) -> String {
+        "\(formatModelSecond(start))-\(formatModelSecond(end))"
     }
 
     // MARK: - Persistence

@@ -86,6 +86,12 @@ require(
     and "Task.detached" not in model_load_block,
     "Model preparation is still launched through an untracked detached task, so pause/resume cancellation can leave an orphaned Core ML load running.",
 )
+release_model_body = backend_source.split("func releaseModel()", 1)[1].split("// MARK: - Delete", 1)[0]
+require(
+    "invalidateModelLoadTask()" in release_model_body
+    and "catch is CancellationError" in backend_source,
+    "Cancelling an idle queue can still leave an in-flight Core ML model load running and later installing/logging as ready.",
+)
 require(
     "prewarm: true" in backend_source
     and "removeOriginalModelSources" in backend_source
@@ -147,7 +153,7 @@ require(
     "Swipe-to-delete still allows progress reloads during the swipe gesture.",
 )
 require(
-    "musicBoundaryChapters" in chapter_source
+    "standaloneIntroOutroMusicChapters" in chapter_source
     and "Kapitel aus Musikgrenzen ergänzt" in chapter_source,
     "Detected intro/outro music segments are not converted into structural chapter boundaries.",
 )
@@ -162,7 +168,30 @@ require(
 require(
     "previousSessionEndedUnexpectedly" in engine_source
     and "TranscriptionQueue.crashGuardKey" in queue_source
+    and "UserDefaults.standard.set(true, forKey: TranscriptionQueue.crashGuardKey)" in queue_source.split("private func startChapterGenerationTask", 1)[1].split("chapterTask = Task", 1)[0]
     and "ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly" in queue_source
-    and "Crash-Guard nach erwartetem Lifecycle-Ende ignoriert" in queue_source,
-    "Crash guard still blocks resume after expected background/terminate lifecycle endings.",
+    and "crashGuardProtectedStatuses" in queue_source
+    and "previousEndedUnexpectedly || hasCrashGuardProtectedItems" in queue_source,
+    "Crash guard still treats an app kill during an active transcription/chapter run as expected lifecycle and silently auto-resumes.",
+)
+require(
+    "let interruptedMessage = NSLocalizedString(\"Unterbrochen. Tippe zum Fortsetzen.\"" in queue_source
+    and "alreadyMarkedInterrupted" in queue_source
+    and "if !alreadyMarkedInterrupted" in queue_source
+    and "didMarkInterruptedItem" in queue_source
+    and "persistQueue()" in queue_source.split("if didMarkInterruptedItem", 1)[1].split("postQueueChangeNotification()", 1)[0],
+    "Crash guard still appends duplicate interruption log entries when resumeIfNeeded is invoked more than once after an app kill.",
+)
+chapter_task_source = queue_source.split("private func startChapterGenerationTask", 1)[1].split("/// Parse SRT file", 1)[0]
+chapter_no_cues_block = chapter_task_source.split("guard !cues.isEmpty else {", 1)[1].split("return", 1)[0]
+chapter_finished_block = chapter_task_source.split('self.refreshBackgroundContinuation(reason: "chapter-task-finished")', 1)[1].split("}", 1)[0]
+require(
+    "self.processNext()" in chapter_no_cues_block
+    and chapter_no_cues_block.index("self.processNext()") < chapter_no_cues_block.index('self.releaseModelIfIdle(reason: "chapter-task-no-cues")'),
+    "A chapter-only job with an unreadable transcript still leaves later queued chapter jobs stuck.",
+)
+require(
+    "self.processNext()" in chapter_finished_block
+    and chapter_finished_block.index("self.processNext()") < chapter_finished_block.index('self.releaseModelIfIdle(reason: "chapter-task-finished")'),
+    "Completed chapter-only jobs still do not continue the queue, so only the first queued transcript gets chapters.",
 )

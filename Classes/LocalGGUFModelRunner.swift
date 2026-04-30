@@ -13,6 +13,7 @@ import Foundation
 enum LocalGGUFJSONGrammar {
     case genericJSON
     case chapters
+    case chapterStarts
     case markers
 }
 
@@ -52,6 +53,8 @@ private enum LocalGGUFModelError: LocalizedError {
 }
 
 actor LocalGGUFModelRunner {
+    private static let targetInputContextRatio = 0.85
+
     private final class CancellationState: @unchecked Sendable {
         let flag: UnsafeMutablePointer<Int32>
 
@@ -169,8 +172,18 @@ actor LocalGGUFModelRunner {
             throw LocalGGUFModelError.modelLoadFailed(modelURL.path)
         }
 
+        let trainedContextTokens = llama_model_n_ctx_train(model)
+        let resolvedContextTokens: Int32
+        if trainedContextTokens > 0 {
+            resolvedContextTokens = min(contextTokens, trainedContextTokens)
+        } else {
+            resolvedContextTokens = contextTokens
+        }
+        NSLog("[LocalGGUFModelRunner] Context window: requested %d, trained %d, using %d",
+              contextTokens, trainedContextTokens, resolvedContextTokens)
+
         var contextParams = llama_context_default_params()
-        contextParams.n_ctx = UInt32(contextTokens)
+        contextParams.n_ctx = UInt32(resolvedContextTokens)
         contextParams.n_batch = 512
         contextParams.n_ubatch = 512
         let threadCount = max(2, min(ProcessInfo.processInfo.processorCount - 1, 6))
@@ -198,11 +211,11 @@ actor LocalGGUFModelRunner {
         }
         return LocalGGUFModelRunner(handle: handle,
                                    cancellationState: cancellationState,
-                                   contextTokens: Int(contextTokens))
+                                   contextTokens: Int(resolvedContextTokens))
     }
 
     static func recommendedContextTokens() -> Int32 {
-        8_192
+        32_768
     }
 
     private static let jsonGrammar = #"""
@@ -217,17 +230,26 @@ actor LocalGGUFModelRunner {
 
     private static let chapterJSONGrammar = #"""
     root ::= "{" ws "\"chapters\"" ws ":" ws "[" ws (chapter ("," ws chapter)*)? "]" ws "}" ws
-    chapter ::= "{" ws "\"startSeconds\"" ws ":" ws integer "," ws "\"endSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws string "," ws "\"isSponsor\"" ws ":" ws boolean ws "}" ws
-    string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
+    chapter ::= "{" ws "\"startSeconds\"" ws ":" ws integer "," ws "\"endSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws nonemptystring "," ws "\"isSponsor\"" ws ":" ws boolean ws "}" ws
+    nonemptystring ::= "\"" [^"\\] ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
+    integer ::= ("-"? ([0-9] | [1-9] [0-9]*)) ws
+    boolean ::= ("true" | "false") ws
+    ws ::= [ \t\n\r]*
+    """#
+
+    private static let chapterStartsJSONGrammar = #"""
+    root ::= "{" ws "\"chapters\"" ws ":" ws "[" ws (chapter ("," ws chapter)*)? "]" ws "}" ws
+    chapter ::= "{" ws "\"startSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws nonemptystring "," ws "\"isSponsor\"" ws ":" ws boolean ws "}" ws
+    nonemptystring ::= "\"" [^"\\] ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
     integer ::= ("-"? ([0-9] | [1-9] [0-9]*)) ws
     boolean ::= ("true" | "false") ws
     ws ::= [ \t\n\r]*
     """#
 
     private static let markerJSONGrammar = #"""
-    root ::= "{" ws "\"markers\"" ws ":" ws "[" ws (marker ("," ws marker)*)? "]" ws "}" ws
-    marker ::= "{" ws "\"timeSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws string ws "}" ws
-    string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
+    root ::= "{" ws "\"markers\"" ws ":" ws "[" ws marker ("," ws marker)* "]" ws "}" ws
+    marker ::= "{" ws "\"timeSeconds\"" ws ":" ws integer "," ws "\"title\"" ws ":" ws nonemptystring ws "}" ws
+    nonemptystring ::= "\"" [^"\\] ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\"" ws
     integer ::= ("-"? ([0-9] | [1-9] [0-9]*)) ws
     ws ::= [ \t\n\r]*
     """#
@@ -238,13 +260,19 @@ actor LocalGGUFModelRunner {
             return jsonGrammar
         case .chapters:
             return chapterJSONGrammar
+        case .chapterStarts:
+            return chapterStartsJSONGrammar
         case .markers:
             return markerJSONGrammar
         }
     }
 
     var maxInputTokens: Int {
-        max(contextTokens - 2_048, contextTokens / 2)
+        max(1, Int(Double(contextTokens) * Self.targetInputContextRatio))
+    }
+
+    var contextWindowTokens: Int {
+        contextTokens
     }
 
     func cancel() {
@@ -501,18 +529,30 @@ actor LocalGGUFModelRunner {
 
 #else
 
+enum LocalGGUFJSONGrammar {
+    case genericJSON
+    case chapters
+    case markers
+}
+
 actor LocalGGUFModelRunner {
     static func create(modelURL: URL, contextTokens: Int32 = LocalGGUFModelRunner.recommendedContextTokens()) throws -> LocalGGUFModelRunner {
         throw NSError(domain: "LocalGGUFModelRunner", code: 1,
                       userInfo: [NSLocalizedDescriptionKey: "Kapitelmodell ist in dieser App-Version nicht verfügbar."])
     }
 
-    static func recommendedContextTokens() -> Int32 { 0 }
+    static func recommendedContextTokens() -> Int32 { 32_768 }
     var maxInputTokens: Int { 0 }
+    var contextWindowTokens: Int { 0 }
     func cancel() {}
     nonisolated func requestCancel() {}
     func tokenCount(system: String, user: String) throws -> Int { 0 }
-    func generate(system: String, user: String, maxNewTokens: Int, stopSequences: [String] = [], stopAfterFirstJSONObject: Bool = false) async throws -> String { "" }
+    func generate(system: String,
+                  user: String,
+                  maxNewTokens: Int,
+                  grammar: LocalGGUFJSONGrammar = .genericJSON,
+                  stopSequences: [String] = [],
+                  stopAfterFirstJSONObject: Bool = false) async throws -> String { "" }
 }
 
 #endif

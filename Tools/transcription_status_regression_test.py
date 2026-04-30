@@ -29,6 +29,10 @@ bundle_source = (ROOT / "VemedioKit" / "NSBundle+VMFoundation.m").read_text()
 de_strings = (ROOT / "Resources" / "de.lproj" / "Localizable.strings").read_text()
 en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 
+cleanup_start = queue_source.find("private func cleanupBrokenArtifacts(episodeHash: String, chapterOnly: Bool)")
+cleanup_end = queue_source.find("/// Number of items currently queued", cleanup_start)
+cleanup_body = queue_source[cleanup_start:cleanup_end]
+
 require(
     "ICTranscriptionInternalStatusDetailNotification" in queue_source,
     "Transcription queue no longer has an internal status-detail notification bridge.",
@@ -197,7 +201,7 @@ require(
     "Removing a queued item can again cancel the active audio analysis for another episode.",
 )
 require(
-    "Pass 1/2: Themenwechsel in Abschnitt %d von %d werden extrahiert." in chapter_source and
+    "Pass 1/2: Themenwechsel in Kontextfenster %d von %d werden extrahiert." in chapter_source and
     "Pass 2/2: Kapitelmodell erstellt die finale JSON-Struktur. Das kann mehrere Minuten dauern." in chapter_source,
     "Chapter generator lost the detailed multi-pass progress messages.",
 )
@@ -351,9 +355,10 @@ require(
 )
 require(
     "cleanupBrokenArtifacts(for item: ICTranscriptionQueueItem)" in queue_source
-    and "ChapterGenerator.shared.removeGeneratedChapters(forEpisodeHash: episodeHash)" in queue_source
+    and "ChapterGenerator.shared.invalidateChaptersCache(for: episodeHash)" in cleanup_body
+    and "removeGeneratedChapters" not in cleanup_body
     and "engine.removeSRT(for: episodeHash)" in queue_source,
-    "Retry/delete of failed queue rows does not clean broken transcript or chapter artifacts first.",
+    "Retry/delete of failed rows must clean broken transcripts without deleting the last good generated chapters.",
 )
 require(
     "removeTranscriptCacheFiles(for episodeHash: String)" in engine_source

@@ -12,9 +12,71 @@ def require(condition: bool, message: str) -> None:
 chapter_source = (ROOT / "Classes" / "ChapterGenerator.swift").read_text()
 queue_source = (ROOT / "Classes" / "TranscriptionQueue.swift").read_text()
 runner_source = (ROOT / "Classes" / "LocalGGUFModelRunner.swift").read_text()
-scene_delegate_source = (ROOT / "Classes" / "InstacastSceneDelegate.m").read_text()
 app_delegate_source = (ROOT / "Classes" / "InstacastAppDelegate.m").read_text()
-project_source = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
+
+
+def source_slice(source: str, start_marker: str, end_marker: str) -> str:
+    start = source.find(start_marker)
+    end = source.find(end_marker, start + len(start_marker)) if start != -1 else -1
+    require(start != -1 and end != -1, f"Could not locate source slice {start_marker!r}.")
+    return source[start:end]
+
+
+local_generation_body = source_slice(
+    chapter_source,
+    "private func generateWithLocalGGUF",
+    "private func buildLocalTopicExtractionPrompt",
+)
+local_topic_prompt_body = source_slice(
+    chapter_source,
+    "private func buildLocalTopicExtractionPrompt",
+    "private static func transcriptCueTitle",
+)
+sponsor_classifier_prompt_body = source_slice(
+    chapter_source,
+    "private func buildLocalSponsorClassificationPrompt",
+    "private func localChaptersByClassifyingSponsors",
+)
+local_marker_budget_body = source_slice(
+    chapter_source,
+    "private func localMarkerMaxNewTokens",
+    "private static func isTerminalOnlyMarker",
+)
+topic_prompt_body = source_slice(
+    chapter_source,
+    "private func buildTopicExtractionPrompt",
+    "private func markersFittingFinalPrompt",
+)
+final_prompt_body = source_slice(
+    chapter_source,
+    "private func buildFinalChaptersPrompt",
+    "private static func allowedChapterStartSeconds",
+)
+local_chunk_body = source_slice(
+    chapter_source,
+    "private func transcriptContextWindowsForLocalModel",
+    "private func localPromptFitsContext",
+)
+model_chunk_body = source_slice(
+    chapter_source,
+    "private func transcriptContextWindowsForModel",
+    "private static func nextContextWindowStartIndex",
+)
+transcript_context_body = source_slice(
+    chapter_source,
+    "private static func transcriptContextSnippet",
+    "private static func deduplicatedMarkers",
+)
+retry_body = source_slice(
+    queue_source,
+    "@objc func retry(episodeHash: String)",
+    "private func cleanupBrokenArtifacts(for item:",
+)
+cleanup_body = source_slice(
+    queue_source,
+    "private func cleanupBrokenArtifacts(episodeHash: String, chapterOnly: Bool)",
+    "/// Number of items currently queued",
+)
 
 
 require(
@@ -25,6 +87,13 @@ require(
 )
 
 require(
+    "singleChapterUndersegmentationIssue" in chapter_source
+    and "questionCueCount >= 3" in chapter_source
+    and "dialogisches Transkript zu einem einzelnen Gesamtkapitel reduziert" in chapter_source,
+    "Chapter generation still saves the observed one-chapter Gemma output for a multi-question dialogue transcript.",
+)
+
+require(
     "validatedGeneratedChapters(" in chapter_source
     and "topicMarkerCount:" in chapter_source
     and "existingChapters == nil" in chapter_source,
@@ -32,52 +101,144 @@ require(
 )
 
 require(
-    "_chapter_debug.json" in chapter_source
-    and "recordLocalFinalOutput" in chapter_source
-    and "recordValidation" in chapter_source,
-    "Chapter generation does not persist enough debug trace data to inspect prompts, raw model output, and validation.",
+    "validateRawGeneratedChapterTiming(rawChapters" in chapter_source
+    and "rawGeneratedChapterTimingIssue" in chapter_source
+    and "Kapitelmodell hat die Folge nicht bis zum Ende abgedeckt" in chapter_source
+    and "Kapitelzeiten ausserhalb der Transkriptdauer" in chapter_source
+    and chapter_source.count("validateRawGeneratedChapterTiming(rawChapters") >= 3,
+    "Raw model chapter times are still normalized before contract violations are rejected.",
 )
 
 require(
-    "performanceEvents" in chapter_source
+    "_chapter_debug.json" in chapter_source
+    and "recordLocalFinalOutput" in chapter_source
+    and "recordValidation" in chapter_source
+    and "performanceEvents" in chapter_source
     and "chapter-performance" in chapter_source
-    and "local-pass1-segment-derived" in chapter_source
+    and "local-pass1-segment-generated" in chapter_source
     and "local-pass2-started" in chapter_source
-    and "local-pass2-completed" in chapter_source
-    and "durationSeconds" in chapter_source,
-    "Chapter diagnostics still do not expose per-model-call timing and memory-sampled performance events.",
+    and "local-pass2-completed" in chapter_source,
+    "Chapter diagnostics still do not persist prompts, validation, and per-model-call timing.",
 )
 
 require(
     "recordPass1SegmentStarted" in chapter_source
     and "promptPreview" in chapter_source
     and "pass1-\\(index)-started" in chapter_source,
-    "Chapter debugging still cannot show which local prompt is blocking before the model returns.",
+    "Chapter debugging still cannot show which local prompt is active before the model returns.",
 )
 
 require(
-    "static func recommendedContextTokens() -> Int32 {\n        8_192\n    }" in runner_source
+    "static func recommendedContextTokens() -> Int32 {\n        32_768\n    }" in runner_source
+    and "llama_model_n_ctx_train(model)" in runner_source
+    and "targetInputContextRatio" in runner_source
     and "stopAfterFirstJSONObject" in runner_source
     and "firstJSONObject(in:" in runner_source
-    and "maxNewTokens: 384" in chapter_source,
-    "Local GGUF chapter generation still allocates an oversized context or decodes too long past the completed JSON object.",
+    and "localMarkerMaxNewTokens" in chapter_source,
+    "Local GGUF chapter generation still wastes Gemma's context window or decodes past completed JSON.",
+)
+
+require(
+    "localContextTokens(forPromptCharacters:" in chapter_source
+    and "contextTokens: requestedContextTokens" in chapter_source
+    and "LocalGGUFModelRunner.recommendedContextTokens()" in chapter_source
+    and "8_192" not in chapter_source
+    and "16_384" not in chapter_source,
+    "Local GGUF chapter generation still downshifts context instead of giving the model the largest available context window.",
+)
+
+require(
+    "buildLocalDirectChaptersPrompt" in chapter_source
+    and "buildDirectChaptersPrompt" in chapter_source
+    and "existingChapters == nil, totalSegments == 1" in local_generation_body
+    and "local-direct-chapters-started" in local_generation_body
+    and "direct-full-transcript" in local_generation_body
+    and "grammar: .chapterStarts" in local_generation_body
+    and "chaptersFromGeneratedStarts" in chapter_source
+    and "Ein einzelnes Kapitel ueber fast die ganze Folge ist nur erlaubt" in chapter_source
+    and "eigenen Nutzensprung" in chapter_source,
+    "Local GGUF still asks the model for redundant direct end times instead of deriving ends from recognized chapter starts.",
+)
+
+require(
+    "sponsorRecognitionRule" in chapter_source
+    and "nicht nur als externe Werbung" in chapter_source
+    and "Calls-to-Action fuer eigene Produkte, Events oder Services" in chapter_source
+    and "Bezahlter oder limitierter Zugang zu einem eigenen Angebot" in chapter_source
+    and "nur Details eines eigenen Angebots" in chapter_source
+    and "Neutrale Erwaehnungen von Plattformen" in chapter_source
+    and "eigene Angebote, eigene Events und andere eigene Podcasts" in chapter_source
+    and "ueber fast die ganze kurze Folge" in chapter_source,
+    "Sponsor/promo prompting still lets the model treat creator-owned paid announcements as normal content.",
+)
+
+require(
+    "buildLocalSponsorClassificationPrompt" in chapter_source
+    and "localChaptersByClassifyingSponsors" in chapter_source
+    and "local-sponsor-classification-started" in chapter_source
+    and "local-sponsor-classification-completed" in chapter_source
+    and "local-sponsor-classification-failed" in chapter_source
+    and "Sponsor- und Eigenpromo-Segmente werden semantisch geprueft." in chapter_source
+    and "localSponsorOutput" in chapter_source,
+    "Local chapter generation still mixes boundary generation and sponsor classification in one unreliable model task.",
 )
 
 require(
     "llama_sampler_init_grammar" in runner_source
     and "jsonGrammar" in runner_source
     and "chapterJSONGrammar" in runner_source
+    and "chapterStartsJSONGrammar" in runner_source
     and "markerJSONGrammar" in runner_source
     and "installSampler(grammar:" in runner_source
+    and "grammar: .chapterStarts" in chapter_source
     and "grammar: .chapters" in chapter_source
-    and "grammar: .markers" in chapter_source
-    and "case grammarLoadFailed" in runner_source,
-    "Local GGUF chapter generation is not constrained to the expected JSON schema at the sampler level, so small local models can emit malformed chapter keys.",
+    and "grammar: .markers" in chapter_source,
+    "Local GGUF chapter generation is not constrained to the expected JSON schema at the sampler level.",
+)
+
+require(
+    '\\"endSeconds\\":123' not in chapter_source
+    and '\\"timeSeconds\\":123' not in chapter_source
+    and '\\"title\\":\\"Kurzer Titel\\"' not in chapter_source,
+    "Local prompts still include concrete sample JSON values that bias models into copying fake chapter times or titles.",
+)
+
+require(
+    "formatModelSecond" in chapter_source
+    and "Transkript (0:00-" not in chapter_source
+    and "prompt += \"Gesamtdauer: \\(formatTime" not in chapter_source,
+    "Model prompts still use clock-formatted timestamps that models can misread as seconds, e.g. 15:38 -> 1538.",
+)
+
+require(
+    "timelineCoverageRule" in chapter_source
+    and "Kapitel muessen die komplette Zeitachse lueckenlos abdecken" in chapter_source
+    and "promotionSegmentationRule" in chapter_source
+    and "mische redaktionellen Inhalt und Promotion nicht im selben Kapitel" in chapter_source,
+    "Local prompts do not explicitly require gap-free chapter coverage and separate sponsor/promo chapters.",
+)
+
+require(
+    "maximumTopicMarkerCount" not in chapter_source
+    and "minimumTopicMarkerCount" not in chapter_source
+    and "maximumReasonableChapterCount" not in chapter_source
+    and "shortInternalContentChapterIssue" not in chapter_source
+    and "Erzeuge hoechstens" not in chapter_source
+    and "Erzeuge \\(minimumMarkers) bis \\(maximumMarkers) Marker" not in chapter_source
+    and "Kleinstkapitel" not in chapter_source
+    and "zu kurzes Inhaltskapitel" not in chapter_source,
+    "Chapter generation still contains mechanical count or duration rules instead of leaving semantic chapter decisions to the model.",
+)
+
+require(
+    '"markers\\"" ws ":" ws "[" ws marker ("," ws marker)* "]"' in runner_source
+    and '"markers\\"" ws ":" ws "[" ws (marker ("," ws marker)*)?' not in runner_source,
+    "Local marker grammar still permits empty marker arrays.",
 )
 
 require(
     "llama_sampler_accept(handle.sampler, nextToken)" not in runner_source,
-    "Local GGUF generation manually accepts tokens after llama_sampler_sample, which already accepts them and crashes grammar sampling.",
+    "Local GGUF generation manually accepts tokens after llama_sampler_sample, which already accepts them and can crash grammar sampling.",
 )
 
 require(
@@ -85,15 +246,201 @@ require(
     and "withThrowingTaskGroup" in chapter_source
     and "localGenerationTimeoutNanoseconds" in chapter_source
     and "600 * 1_000_000_000" in chapter_source
-    and "3_600 * 1_000_000_000" not in chapter_source
     and "Kapitelmodell hat nicht rechtzeitig geantwortet" in chapter_source,
     "Local GGUF chapter calls can still hang indefinitely instead of failing with an explicit timeout.",
 )
 
 require(
-    "Kapitelmodell erstellt die finale JSON-Struktur" in chapter_source
-    and "progress?(0.95, totalSegments, totalSegments + 1)" in chapter_source,
-    "The long final chapter pass still looks like a stuck 98% operation instead of exposing a realistic user-facing status.",
+    "cueCount * 4" not in local_marker_budget_body
+    and "2_048" in local_marker_budget_body,
+    "Local marker generation still scales output budget with raw cue count or semantic chapter-count guesses.",
+)
+
+require(
+    "cleanupBrokenArtifacts(for: item)" in retry_body
+    and "removeGeneratedChapters" not in cleanup_body,
+    "Retrying an interrupted chapter-only job still deletes the last good chapters before replacement chapters are saved.",
+)
+
+require(
+    "maximumTopicExtractionSegmentDuration" not in chapter_source
+    and "maximumTopicExtractionCueCount" not in chapter_source
+    and "minimumTopicExtractionCueCountForDurationSplit" not in chapter_source
+    and "targetContextWindowOverlapDuration" in chapter_source
+    and "nextContextWindowStartIndex" in chapter_source
+    and "windows.append(TranscriptContextWindow" in local_chunk_body
+    and "windows.append(TranscriptContextWindow" in model_chunk_body
+    and "return [TranscriptContextWindow(cues: cues)]" in local_chunk_body
+    and "return [TranscriptContextWindow(cues: cues)]" in model_chunk_body
+    and "das vollständige Transkript passt nicht in das Kontextfenster" not in chapter_source,
+    "Pass 1 still uses artificial short chunks or aborts long transcripts instead of large overlapping context windows.",
+)
+
+require(
+    "splitUndersegmentedTopicSegment" not in chapter_source
+    and "undersegmentedTopicSegmentIssue" not in chapter_source
+    and "pass1-segment-undersegmented" not in chapter_source
+    and "local-pass1-segment-undersegmented" not in chapter_source,
+    "Pass 1 still retries by splitting undersegmented chunks instead of letting the full-context model decide chapter granularity.",
+)
+
+require(
+    "Ein zusammenhaengendes Thema darf sehr lang sein" in local_topic_prompt_body
+    and "Ein zusammenhaengendes Thema darf sehr lang sein" in topic_prompt_body
+    and "Sprechakt" in topic_prompt_body
+    and "angekuendigte Sache" in topic_prompt_body
+    and "Keine reinen Kategorie-, Schlagwort- oder Oberbegriff-Titel" in topic_prompt_body
+    and "Die JSON-Liste MUSS mindestens" not in chapter_source
+    and "ein langer Podcast-Abschnitt mit nur einem Marker ist ungueltig" not in chapter_source
+    and "ein langer Abschnitt mit nur einem Marker ist ungueltig" not in chapter_source,
+    "Pass 1 still forces duration-based subchapters instead of allowing long coherent chapters.",
+)
+
+require(
+    "generateLocalJSONObject(runner: runner" in local_generation_body
+    and "grammar: .markers" in local_generation_body
+    and "decodeLocalJSON(LocalTopicMarkersResponse.self" in local_generation_body
+    and "deterministicLocalTopicMarkers" not in local_generation_body,
+    "Local Pass 1 still bypasses the chapter model instead of asking it for semantic markers.",
+)
+
+require(
+    "Podcast-Kontext" in topic_prompt_body
+    and "episodeTitle:" in chapter_source
+    and "feedTitle:" in chapter_source
+    and "chaptersByApplyingEpisodeTitleToSingleContentChapter" in chapter_source
+    and "episodeTitleNumberSignals" in chapter_source
+    and "episodeTitle: item.episodeTitle" in queue_source
+    and "feedTitle: item.feedTitle" in queue_source,
+    "Chapter prompts still omit episode/feed metadata that the model needs to title short announcements and ambiguous transcript spans.",
+)
+
+require(
+    "chaptersFromTopicMarkers" in chapter_source
+    and '"mode": "topic-markers"' in chapter_source
+    and "finalMarkers = topicMarkers" in chapter_source
+    and "rawChapters = Self.chaptersFromTopicMarkers(finalMarkers" in chapter_source,
+    "Local new-chapter generation still lets a final JSON pass drop concrete topic markers or rewrite titles into vague fragments.",
+)
+
+require(
+    "preserveTopicMarkerTitles" in chapter_source
+    and "if !preserveTopicMarkerTitles" in chapter_source
+    and "chaptersByReplacingVerboseContentTitles" in chapter_source.split("if !preserveTopicMarkerTitles", 1)[1].split("chapters = Self.chaptersByAddingMusicBoundaryChapters", 1)[0],
+    "Marker-built local chapters still run through transcript-snippet title repairs that can replace concrete model titles.",
+)
+
+require(
+    "contentChapterCount > 1" in chapter_source
+    and "words.count > 14" in chapter_source
+    and "words.count > 8" not in chapter_source,
+    "Verbose title repair can still replace a single model-generated full-episode title with the first transcript sentence.",
+)
+
+require(
+    chapter_source.count("chapters = Self.chaptersByAddingMusicBoundaryChapters(chapters") == 3,
+    "Music boundary insertion still runs more than once per chapter-generation path.",
+)
+
+require(
+    "minimumExpectedChapterCount" not in chapter_source
+    and "Du MUSST mindestens" not in chapter_source
+    and "nicht laenger als 240 Sekunden" not in chapter_source
+    and "maximumContentChapterDuration" not in chapter_source
+    and "chaptersBySplittingOversizedContentChapters" not in chapter_source
+    and "oversizedContentChapterIssue" not in chapter_source
+    and "Ein Kapitel darf sehr lang sein" in final_prompt_body,
+    "Final chapter generation still contains downstream max-duration or minimum-count workarounds.",
+)
+
+require(
+    "promotionSkipTitle" not in chapter_source
+    and "isSponsorCueText" not in chapter_source
+    and "titleLooksPromotional" not in chapter_source
+    and "chaptersByInsertingPromotionChapters" not in chapter_source
+    and "chaptersByClearingModelSponsorClaims" not in chapter_source
+    and "chaptersByReplacingUnsupportedPromotionalTitles" not in chapter_source
+    and "paypal" not in chapter_source
+    and "das universum" not in chapter_source.lower()
+    and "Sponsor: PLUS-Abo" not in chapter_source,
+    "Swift still contains language-specific sponsor/promo detectors instead of leaving semantic detection to the model.",
+)
+
+require(
+    "isSponsor: $0.isSponsor" in chapter_source
+    and "isSponsor: title.hasPrefix(\"Sponsor: \")" in chapter_source
+    and "isSponsor: false" in chapter_source,
+    "Model sponsor decisions are no longer preserved from structured output or Sponsor-prefixed semantic markers.",
+)
+
+require(
+    "contentTitleStopwords" not in chapter_source
+    and "Alte Folgen der Sternengeschichten" not in chapter_source
+    and "kaloriendefizit" not in chapter_source.lower()
+    and '"hallo liebe"' not in chapter_source
+    and "shortTranscriptTitle" in chapter_source
+    and "A-Za-zÄÖÜ" not in chapter_source,
+    "Chapter title repair still contains podcast-, German-, or topic-specific hardcoded title rules.",
+)
+
+require(
+    "Transkriptkontext pro Marker umfasst den Abschnitt bis zum naechsten Marker mit Grenzkontext" in final_prompt_body
+    and ".prefix(14)" not in transcript_context_body
+    and "text.prefix(1200)" not in transcript_context_body
+    and "return text" in transcript_context_body,
+    "Final chapter titles are still based on tiny context snippets instead of the full marker interval.",
+)
+
+require(
+    "buildTopicExtractionPrompt(cues: cues,\n                                                allCues: allCues,\n                                                musicSegments: musicSegments" in local_topic_prompt_body
+    and "audioContextMarkers" in topic_prompt_body
+    and "Erzeuge nur Inhaltskapitel" in final_prompt_body
+    and "Verwende Intro und Outro nicht" in final_prompt_body
+    and "Audiohinweis-Marker" in final_prompt_body
+    and "Sound-Sample" in final_prompt_body,
+    "Chapter recognition still feeds guessed structural labels instead of neutral audio markers for Jingle/Sound-Sample decisions.",
+)
+
+require(
+    "chaptersByRemovingTerminalGenericChapters" in chapter_source
+    and "Generische Schlusskapitel entfernt" in chapter_source
+    and '"ende"' in chapter_source,
+    "Final chapter generation still saves terminal garbage chapters such as 'Gesamtdauer' or 'Ende' after the real outro.",
+)
+
+require(
+    "Marker sind Startpunkte von Themenbloecken" in chapter_source
+    and "Der erste Marker muss am Abschnittsanfang" in chapter_source
+    and "Setze timeSeconds nie ans Abschnittsende" in chapter_source,
+    "Pass 1 prompt still describes vague topic changes instead of enforcing chapter-start markers.",
+)
+
+require(
+    "chaptersByMergingAdjacentStructuralChapters" not in chapter_source
+    and "Strukturkapitel zusammengefuehrt" not in chapter_source
+    and "isSingleShortIntroLeadIn" not in chapter_source,
+    "Duplicate structural chapters are still hidden by downstream merging instead of being prevented at recognition/validation.",
+)
+
+require(
+    "standaloneMusicDuration = 4.0" in chapter_source
+    and "invalidStructuralChapterIssue" in chapter_source
+    and "invalidAudioInterludeChapterIssue" in chapter_source
+    and "audioChapterHasMatchingMusicSegment" in chapter_source,
+    "Chapter validation still accepts short music blips or unsupported audio chapters.",
+)
+
+require(
+    "if let firstToken = tokens.first" in chapter_source
+    and "musicTokens.contains(firstToken)" in chapter_source
+    and "tokens.count <= 12" in chapter_source,
+    "Short music-led jingle/lyric cues are still treated as meaningful speech and can block outro chapter recognition.",
+)
+
+require(
+    "leadingMusicCuePrefixPattern" in chapter_source
+    and "Musik Ja" in chapter_source,
+    "Chapter title derivation still leaks leading Whisper music marker text into spoken-content chapter titles.",
 )
 
 require(
@@ -105,234 +452,10 @@ require(
 )
 
 require(
-    "maximumTopicExtractionSegmentDuration" in chapter_source
-    and "maximumTopicExtractionCueCount" in chapter_source
-    and "maximumTopicExtractionSegmentDuration: Double = 300" in chapter_source
-    and "maximumTopicExtractionCueCount = 45" in chapter_source
-    and "segEnd - segStart > Self.maximumTopicExtractionSegmentDuration" in chapter_source,
-    "Pass 1 still creates oversized single transcript prompts instead of bounded topic-extraction segments.",
+    "UIApplication.shared.beginBackgroundTask(withName: \"InstacastPlus.TranscriptionQueue\")" in queue_source
+    and "backgroundContinuationTask" in queue_source
+    and "endBackgroundContinuationIfNeeded" in queue_source,
+    "TranscriptionQueue still has no UIKit background task while model/transcription/chapter work is active.",
 )
 
-require(
-    "deterministicLocalTopicMarkers" in chapter_source
-    and "deterministicMarkerTitle" in chapter_source
-    and "local-deterministic-markers" in chapter_source,
-    "Local Pass 1 still depends on slow model calls instead of deterministic transcript and music markers.",
-)
-
-require(
-    "leadingMusicCuePrefixPattern" in chapter_source
-    and "Musik Ja" in chapter_source,
-    "Chapter title derivation still leaks leading Whisper music marker text into spoken-content chapter titles.",
-)
-
-require(
-    "isSponsorCueText" in chapter_source
-    and "werbepartner" in chapter_source
-    and "werbung fuer" in chapter_source
-    and "rabattcode" in chapter_source,
-    "Chapter title derivation still marks generic mentions of ads as sponsor chapters instead of requiring explicit ad-read language.",
-)
-
-require(
-    "isOutroCueText" in chapter_source
-    and "duration >= 4" in chapter_source
-    and "gesamtdauer" in chapter_source
-    and "invalidStructuralChapterIssue" in chapter_source,
-    "Chapter validation still accepts short music blips as full jingles or generic/outro garbage chapters.",
-)
-
-require(
-    "sanitizeUnevidencedStructuralChapters" in chapter_source
-    and "matchingMusicBoundary(" in chapter_source
-    and "contentTitleForChapter(" in chapter_source
-    and "isWeakChapterTitle" in chapter_source
-    and "Strukturkapitel ohne Musikgrenze normalisiert" in chapter_source
-    and "nicht fuer gesprochenen Teaser oder normale Inhaltsabschnitte" in chapter_source,
-    "Final chapter generation still allows the model to label spoken cold opens or short music blips as Intro/Jingle/Outro without a matching music boundary.",
-)
-
-require(
-    "chaptersByRemovingTerminalGenericChapters" in chapter_source
-    and "Generische Schlusskapitel entfernt" in chapter_source
-    and '"ende"' in chapter_source,
-    "Final chapter generation still saves terminal garbage chapters such as 'Gesamtdauer' or 'Ende' after the real outro.",
-)
-
-require(
-    "Du MUSST mindestens" in chapter_source
-    and "nicht laenger als 240 Sekunden" in chapter_source
-    and "Nutze die Markerzeiten als Kapitelstarts" in chapter_source,
-    "Final chapter generation still lets the local model collapse many detected topic markers into one oversized content chapter.",
-)
-
-require(
-    "chaptersBySplittingOversizedContentChapters" in chapter_source
-    and "oversizedContentChapterIssue" in chapter_source
-    and "topicMarkers:" in chapter_source
-    and "chapterDuration > maximumContentChapterDuration" in chapter_source
-    and "marker.time > chapter.start" in chapter_source,
-    "Chapter generation still accepts one huge content chapter even when deterministic topic markers exist inside it.",
-)
-
-require(
-    'normalizedStructuralChapterTitle(marker.title) == "outro"' in chapter_source
-    and '"ah ja"' in chapter_source
-    and '"so ist"' in chapter_source
-    and "chaptersByMergingTerminalFragmentsIntoOutro" in chapter_source,
-    "Marker-based chapter repair still drops short spoken outros or keeps weak filler titles.",
-)
-
-require(
-    "chaptersBySplittingExplicitOutroMarkers" in chapter_source
-    and "Explizite Outro-Marker in Schlusskapitel geteilt" in chapter_source
-    and "hasOutroCueEvidence(for: outroChapter" in chapter_source,
-    "Final chapter repair still leaves spoken outro markers buried inside the preceding content chapter.",
-)
-
-require(
-    "chaptersByMergingShortFragmentsAroundStructuralChapters" in chapter_source
-    and "Kurze Fragmente an Strukturkapitel angefuegt" in chapter_source
-    and "duration <= shortFragmentDuration" in chapter_source,
-    "Final chapter repair still saves tiny hallucinated fragments directly after intro or jingle chapters.",
-)
-
-require(
-    "chaptersByMergingShortFragmentsBeforeStructuralChapters" in chapter_source
-    and "Kurze Fragmente vor Strukturkapiteln zusammengefuehrt" in chapter_source
-    and "maximumMergedDuration = 30.0" in chapter_source,
-    "Final chapter repair still keeps multiple tiny spoken teaser fragments before an intro instead of merging them.",
-)
-
-require(
-    "chaptersByReplacingGenericContentTitles" in chapter_source
-    and "Generische Kapiteltitel durch Transkriptinhalt ersetzt" in chapter_source
-    and '"erste themen"' in chapter_source
-    and 'normalized.hasPrefix("musiksegment")' in chapter_source,
-    "Final chapter repair still preserves generic local-model titles instead of replacing them from transcript content.",
-)
-
-require(
-    "chaptersByReplacingVerboseContentTitles" in chapter_source
-    and "isVerboseContentTitle" in chapter_source
-    and "conciseContentTitleForChapter" in chapter_source
-    and "isUsableConciseContentTitle" in chapter_source
-    and "Lange Kapiteltitel durch kurze Inhaltsueberschriften ersetzt" in chapter_source,
-    "Final chapter repair still preserves whole transcript sentences as chapter titles.",
-)
-
-require(
-    '"startedAt": Self.timestampString(Date())' in chapter_source
-    and '"completedAt": Self.timestampString(Date())' in chapter_source,
-    "Chapter debug traces still do not show exactly which model call is active or completed.",
-)
-
-require(
-    "musicBoundaryChapters(from:" in chapter_source
-    and "leadingMusicEnd" in chapter_source
-    and "trailingMusicStart" in chapter_source,
-    "Intro/outro chapter insertion still depends only on transcript speech boundaries and misses music-led boundaries.",
-)
-
-require(
-    "earlyIntroWindow" in chapter_source
-    and "chaptersByInsertingMusicChapter" in chapter_source
-    and 'title: "Jingle"' in chapter_source,
-    "Music-led chapter insertion still misses intro jingles after a cold open or meaningful mid-episode jingles.",
-)
-
-require(
-    "isMusicOnlyCue" in chapter_source
-    and "let timelineEnd = transcriptDuration" in chapter_source
-    and "speechEnd <= lastMusic.start + tolerance" in chapter_source,
-    "Outro boundaries still use music segments beyond the transcript duration and can demand an impossible outro chapter.",
-)
-
-require(
-    "missingMusicBoundaryIssue" in chapter_source
-    and "Intro-/Outro-Musik wurde nicht als eigenes Kapitel erkannt" in chapter_source,
-    "Chapter validation does not reject missing or incorrectly bounded intro/outro music chapters.",
-)
-
-require(
-    "coveringMusicBoundary(" in chapter_source
-    and "chapterCoversMusicBoundary(" in chapter_source
-    and "maxAbsorbedFragmentDuration = 20.0" in chapter_source,
-    "Chapter validation still rejects structural chapters that correctly cover a music boundary plus a tiny adjacent transcript fragment.",
-)
-
-require(
-    "hasChapterBoundary(" not in chapter_source
-    and "result.append(outro)" in chapter_source,
-    "Music-led intro/outro insertion still refuses to replace model chapters that already start on the music boundary.",
-)
-
-require(
-    "@objc func enqueueExistingEpisode" in queue_source
-    and "@objc func debugQueueSnapshot" in queue_source
-    and "@objc func debugInspection" in queue_source,
-    "TranscriptionQueue does not expose the narrow control/inspection hooks needed for remote debugging.",
-)
-
-require(
-    "@objc func generateChaptersForExistingEpisode" in queue_source
-    and "guard ICDownloadableModelStore.selectedChapterModelIsReady()" in queue_source
-    and "Kapitelmodell fuer Kapitelerstellung nicht bereit" in queue_source,
-    "Remote chapter generation reports success even when the chapter model cannot actually run.",
-)
-
-require(
-    "func generateChapters(episodeHash: String, episodeTitle: String, feedTitle: String) -> Bool" in queue_source
-    and "activeStatuses.contains($0.status)" in queue_source
-    and "items.removeAll { $0.episodeHash == episodeHash && ($0.status == .completed || $0.status == .failed) }" in queue_source,
-    "Completed queue entries still block remote chapter-only generation for an existing transcript.",
-)
-
-require(
-    "@objc var chapterOnly = false" in queue_source
-    and "item.chapterOnly = true" in queue_source
-    and "if candidate.chapterOnly {" in queue_source
-    and "startChapterGenerationTask(for: candidate" in queue_source
-    and "guard chapterTask == nil else" in queue_source,
-    "Chapter-only queue items are not resumed through the chapter-generation path after app lifecycle events.",
-)
-
-require(
-    "Whisper-Modell vor Kapitelerstellung freigegeben" in queue_source
-    and "before-chapter-generation" in queue_source
-    and "await WhisperKitBackend.shared.releaseModel()" in queue_source,
-    "The queue still keeps WhisperKit resident while loading the local chapter model, causing avoidable memory spikes.",
-)
-
-require(
-    "ICTranscriptionDebugAutomation.swift" in project_source
-    and "[ICTranscriptionDebugAutomation handle:" in scene_delegate_source
-    and "[ICTranscriptionDebugAutomation handle:" in app_delegate_source,
-    "Debug automation is not compiled and wired into both scene and app URL entry points.",
-)
-
-automation_source = (ROOT / "Classes" / "ICTranscriptionDebugAutomation.swift").read_text()
-
-require(
-    "startCommandProcessing()" in automation_source
-    and "handleLaunchArguments()" in automation_source
-    and "command.json" in automation_source
-    and "handleCommandDictionary" in automation_source
-    and "chapterModelUnavailableReason" in automation_source
-    and "downloadChapterModel" in automation_source
-    and "modelStatus" in automation_source
-    and "startModelDownloadIfNeeded" in automation_source
-    and "[ICTranscriptionDebugAutomation startCommandProcessing]" in app_delegate_source
-    and "[ICTranscriptionDebugAutomation handleLaunchArguments]" in app_delegate_source,
-    "Debug automation cannot be driven reliably from simulator launch arguments or a live command file.",
-)
-
-require(
-    "ICTranscriptionDebugAutomationLastCommandID" in automation_source
-    and "duplicateResponse" in automation_source
-    and '"duplicate": true' in automation_source
-    and '"ignored": true' in automation_source
-    and "removeCommandFile" in automation_source
-    and "matching originalData" in automation_source,
-    "Debug automation still replays a stale command.json after app restart instead of consuming command files idempotently.",
-)
+print("ok")

@@ -492,10 +492,15 @@ actor WhisperKitBackend {
                 WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
                 nonisolated(unsafe) let whisper = wk
                 try await whisper.loadModels()
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 let elapsed = CFAbsoluteTimeGetCurrent() - startTime
                 NSLog("[WhisperKitBackend] Model loading FAILED after %.1fs: %@", elapsed, error.localizedDescription)
                 throw WhisperKitBackend.wrappedModelLoadError(error)
+            }
+            guard self.modelLoadGeneration == loadGeneration else {
+                throw CancellationError()
             }
             let elapsed = CFAbsoluteTimeGetCurrent() - startTime
             NSLog("[WhisperKitBackend] Model loaded in %.1fs", elapsed)
@@ -503,9 +508,6 @@ actor WhisperKitBackend {
                 "modelFolder": folder,
                 "elapsedSeconds": String(format: "%.1f", elapsed),
             ] as NSDictionary)
-            guard self.modelLoadGeneration == loadGeneration else {
-                throw CancellationError()
-            }
             self.whisperKit = wk
         }
         modelLoadTask = task
@@ -559,6 +561,7 @@ actor WhisperKitBackend {
     /// Release the in-memory WhisperKit instance to free ~200-600 MB.
     /// Called after transcription queue completes or on memory warning.
     func releaseModel() {
+        invalidateModelLoadTask()
         if whisperKit != nil {
             whisperKit = nil
             NSLog("[WhisperKitBackend] Model released from memory")
