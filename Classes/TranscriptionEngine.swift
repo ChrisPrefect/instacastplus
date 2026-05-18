@@ -1493,6 +1493,7 @@ private struct TranscriptionCheckpoint: Codable {
     case openAIAPI = 2
     case openAICodexOAuth = 3
     case anthropicAPI = 4
+    case kimiAPI = 5
 }
 
 @objc class ICDownloadableModel: NSObject, @unchecked Sendable {
@@ -1559,7 +1560,7 @@ private struct TranscriptionCheckpoint: Codable {
 
     @objc var usesRemoteChapterService: Bool {
         switch chapterProvider {
-        case .openAIAPI, .openAICodexOAuth, .anthropicAPI:
+        case .openAIAPI, .openAICodexOAuth, .anthropicAPI, .kimiAPI:
             return true
         default:
             return false
@@ -1679,6 +1680,13 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
     private static let service = "com.vemedio.instacastplus.remote-chapters"
     private static let openAIAPIKeyAccount = "openai-api-key"
     private static let anthropicAPIKeyAccount = "anthropic-api-key"
+    private static let kimiAPIKeyAccount = "kimi-api-key"
+    private static let kimiBuiltinEnvResourceName = "KimiBuiltin"
+    private static let kimiBuiltinEnvResourceExtension = "env"
+    private static let kimiBuiltinEnvKey = "KIMI_BUILTIN_API_KEY"
+    private static let kimiBuiltinKeyLock = NSLock()
+    private nonisolated(unsafe) static var didLoadKimiBuiltinAPIKey = false
+    private nonisolated(unsafe) static var cachedKimiBuiltinAPIKey: String?
     private static let openAIAccessTokenAccount = "openai-oauth-access-token"
     private static let openAIRefreshTokenAccount = "openai-oauth-refresh-token"
     private static let openAIIDTokenAccount = "openai-oauth-id-token"
@@ -1720,6 +1728,40 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
 
     @objc static func anthropicAPIKeyPreview() -> String {
         return preview(secret(account: anthropicAPIKeyAccount))
+    }
+
+    @objc static func hasKimiAPIKey() -> Bool {
+        return !(kimiAPIKey() ?? "").isEmpty
+    }
+
+    @objc static func hasKimiUserAPIKey() -> Bool {
+        return !(kimiUserAPIKey() ?? "").isEmpty
+    }
+
+    static func kimiAPIKey() -> String? {
+        if let userKey = kimiUserAPIKey(), !userKey.isEmpty {
+            return userKey
+        }
+        return kimiBuiltinAPIKey()
+    }
+
+    static func kimiUserAPIKey() -> String? {
+        return secret(account: kimiAPIKeyAccount)
+    }
+
+    @objc(setKimiAPIKey:)
+    static func setKimiAPIKey(_ value: String?) {
+        setSecret(trimmedSecret(value), account: kimiAPIKeyAccount)
+    }
+
+    @objc static func kimiAPIKeyPreview() -> String {
+        if hasKimiUserAPIKey() {
+            return preview(kimiUserAPIKey())
+        }
+        if let builtinKey = kimiBuiltinAPIKey(), !builtinKey.isEmpty {
+            return NSLocalizedString("Integrierter Zugang", comment: "")
+        }
+        return preview(nil)
     }
 
     @objc static func hasOpenAIOAuthCredentials() -> Bool {
@@ -1794,7 +1836,7 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
 
     static func refreshOpenAIOAuthAccessToken() async throws -> String {
         guard let refreshToken = secret(account: openAIRefreshTokenAccount), !refreshToken.isEmpty else {
-            throw error(code: 41, message: NSLocalizedString("ChatGPT Login fehlt.", comment: ""))
+            throw error(code: 41, message: NSLocalizedString("Codex Login fehlt.", comment: ""))
         }
 
         var request = URLRequest(url: URL(string: "\(openAIIssuer)/oauth/token")!)
@@ -1810,7 +1852,7 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accessToken = object["access_token"] as? String,
               !accessToken.isEmpty else {
-            throw error(code: 42, message: NSLocalizedString("ChatGPT Login konnte nicht erneuert werden.", comment: ""))
+            throw error(code: 42, message: NSLocalizedString("Codex Login konnte nicht erneuert werden.", comment: ""))
         }
         storeOpenAITokens(accessToken: accessToken,
                           refreshToken: object["refresh_token"] as? String ?? refreshToken,
@@ -1830,7 +1872,7 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let deviceAuthID = object["device_auth_id"] as? String,
               let userCode = (object["user_code"] as? String) ?? (object["usercode"] as? String) else {
-            throw error(code: 43, message: NSLocalizedString("ChatGPT Gerätecode konnte nicht gelesen werden.", comment: ""))
+            throw error(code: 43, message: NSLocalizedString("Codex Gerätecode konnte nicht gelesen werden.", comment: ""))
         }
         let interval = intervalSeconds(from: object["interval"]) ?? 5
         return ICOpenAIDeviceCodeInfo(verificationURL: "\(openAIIssuer)/codex/device",
@@ -1887,12 +1929,12 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
                 return object
             }
             if statusCode != 403 && statusCode != 404 {
-                throw error(code: statusCode, message: String(format: NSLocalizedString("ChatGPT Gerätecode wurde abgelehnt. HTTP %d", comment: ""), statusCode))
+                throw error(code: statusCode, message: String(format: NSLocalizedString("Codex Gerätecode wurde abgelehnt. HTTP %d", comment: ""), statusCode))
             }
             try await Task.sleep(nanoseconds: sleepSeconds * 1_000_000_000)
         }
 
-        throw error(code: 46, message: NSLocalizedString("ChatGPT Gerätecode ist abgelaufen.", comment: ""))
+        throw error(code: 46, message: NSLocalizedString("Codex Gerätecode ist abgelaufen.", comment: ""))
     }
 
     private static func storeOpenAITokens(accessToken: String, refreshToken: String, idToken: String?) {
@@ -1981,6 +2023,49 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
         }
         let suffix = value.suffix(4)
         return "•••• \(suffix)"
+    }
+
+    private static func kimiBuiltinAPIKey() -> String? {
+        kimiBuiltinKeyLock.lock()
+        if didLoadKimiBuiltinAPIKey {
+            let cached = cachedKimiBuiltinAPIKey
+            kimiBuiltinKeyLock.unlock()
+            return cached
+        }
+        didLoadKimiBuiltinAPIKey = true
+        kimiBuiltinKeyLock.unlock()
+
+        var loadedKey: String?
+        if let url = Bundle.main.url(forResource: kimiBuiltinEnvResourceName,
+                                     withExtension: kimiBuiltinEnvResourceExtension),
+           let text = try? String(contentsOf: url, encoding: .utf8) {
+            loadedKey = envValue(named: kimiBuiltinEnvKey, in: text)
+        }
+
+        kimiBuiltinKeyLock.lock()
+        cachedKimiBuiltinAPIKey = loadedKey
+        kimiBuiltinKeyLock.unlock()
+        return loadedKey
+    }
+
+    private static func envValue(named name: String, in text: String) -> String? {
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+            let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  parts[0].trimmingCharacters(in: .whitespacesAndNewlines) == name else {
+                continue
+            }
+            var value = String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.count >= 2,
+               ((value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'"))) {
+                value.removeFirst()
+                value.removeLast()
+            }
+            return trimmedSecret(value)
+        }
+        return nil
     }
 
     private static func intervalSeconds(from value: Any?) -> UInt64? {
@@ -2221,16 +2306,28 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             remoteModelName: "gpt-5.5"
         ),
         ICDownloadableModel(
-            identifier: "openai-chatgpt-5.5-oauth",
-            title: "OpenAI ChatGPT 5.5 (ChatGPT Login)",
-            shortTitle: "ChatGPT 5.5 Login",
-            detail: NSLocalizedString("Sendet das vollständige Transkript über den ChatGPT/Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
+            identifier: "openai-codex-oauth",
+            title: "OpenAI Codex",
+            shortTitle: "Codex",
+            detail: NSLocalizedString("Sendet das vollständige Transkript über den Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
             chapterProvider: .openAICodexOAuth,
             remoteModelName: "gpt-5.5"
+        ),
+        ICDownloadableModel(
+            identifier: "kimi-k2.6-api-key",
+            title: "Kimi K2.6",
+            shortTitle: "Kimi K2.6",
+            detail: NSLocalizedString("Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false,
+            chapterProvider: .kimiAPI,
+            remoteModelName: "kimi-k2.6"
         ),
         ICDownloadableModel(
             identifier: "anthropic-claude-opus-4.7-api-key",
@@ -2277,9 +2374,15 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             }
             return model(identifier: "whisperkit-small")!
         case .textToChapters:
-            if let identifier = UserDefaults.standard.string(forKey: chapterModelKey),
-               let selectedModel = model(identifier: identifier) {
-                return selectedModel
+            if let identifier = UserDefaults.standard.string(forKey: chapterModelKey) {
+                if identifier == "openai-chatgpt-5.5-oauth",
+                   let selectedModel = model(identifier: "openai-codex-oauth") {
+                    UserDefaults.standard.set(selectedModel.identifier, forKey: chapterModelKey)
+                    return selectedModel
+                }
+                if let selectedModel = model(identifier: identifier) {
+                    return selectedModel
+                }
             }
             UserDefaults.standard.set(defaultChapterModelIdentifier, forKey: chapterModelKey)
             return model(identifier: defaultChapterModelIdentifier)!
@@ -2330,6 +2433,8 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             return ICRemoteChapterCredentialStore.hasOpenAIOAuthCredentials()
         case .anthropicAPI:
             return ICRemoteChapterCredentialStore.hasAnthropicAPIKey()
+        case .kimiAPI:
+            return ICRemoteChapterCredentialStore.hasKimiAPIKey()
         case .localGGUF:
             return model.role == .textToChapters && modelFileURL(for: model) != nil
         }
@@ -2347,9 +2452,11 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         case .openAIAPI:
             return NSLocalizedString("OpenAI API-Key fehlt.", comment: "")
         case .openAICodexOAuth:
-            return NSLocalizedString("ChatGPT Login fehlt.", comment: "")
+            return NSLocalizedString("Codex Login fehlt.", comment: "")
         case .anthropicAPI:
             return NSLocalizedString("Anthropic API-Key fehlt.", comment: "")
+        case .kimiAPI:
+            return NSLocalizedString("Kimi Zugang fehlt.", comment: "")
         case .localGGUF:
             return NSLocalizedString("Kapitelmodell ist nicht bereit.", comment: "")
         }

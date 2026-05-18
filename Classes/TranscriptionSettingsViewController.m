@@ -6,6 +6,7 @@
 //
 
 #import "TranscriptionSettingsViewController.h"
+#import "TranscriptionQueueViewController.h"
 #import "InstacastPlus-Swift.h"
 
 @interface ICModelLibraryViewController : UITableViewController
@@ -91,7 +92,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
         case TSSectionModels: return 2;
-        case TSSectionCloud: return 3;
+        case TSSectionCloud: return 4;
         case TSSectionChapters: return 1;
         case TSSectionAuto: return 2;
         default: return 0;
@@ -153,12 +154,16 @@ typedef NS_ENUM(NSInteger, TSSection) {
             cell.detailTextLabel.text = [ICRemoteChapterCredentialStore openAIAPIKeyPreview];
             break;
         case 1:
-            cell.textLabel.text = @"OpenAI ChatGPT Login";
+            cell.textLabel.text = @"OpenAI Codex Login";
             cell.detailTextLabel.text = [ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials] ? [ICRemoteChapterCredentialStore openAIOAuthAccountLabel] : NSLocalizedString(@"Gerätecode erstellen", nil);
             break;
         case 2:
             cell.textLabel.text = @"Anthropic API-Key";
             cell.detailTextLabel.text = [ICRemoteChapterCredentialStore anthropicAPIKeyPreview];
+            break;
+        case 3:
+            cell.textLabel.text = @"Kimi API-Key";
+            cell.detailTextLabel.text = [ICRemoteChapterCredentialStore kimiAPIKeyPreview];
             break;
     }
     return cell;
@@ -187,6 +192,19 @@ typedef NS_ENUM(NSInteger, TSSection) {
         [ICRemoteChapterCredentialStore setAnthropicAPIKey:value];
     } deleteHandler:^{
         [ICRemoteChapterCredentialStore setAnthropicAPIKey:nil];
+    }];
+}
+
+- (void)_showKimiAPIKeyEditor {
+    [self _showAPIKeyEditorWithTitle:@"Kimi API-Key"
+                              message:NSLocalizedString(@"Eigener Key wird im iOS-Keychain gespeichert und überschreibt den integrierten Kimi-Zugang.", nil)
+                          placeholder:@"sk-..."
+                  keyCreationURLString:@"https://platform.kimi.ai/console/api-keys"
+                         isConfigured:[ICRemoteChapterCredentialStore hasKimiUserAPIKey]
+                          saveHandler:^(NSString *value) {
+        [ICRemoteChapterCredentialStore setKimiAPIKey:value];
+    } deleteHandler:^{
+        [ICRemoteChapterCredentialStore setKimiAPIKey:nil];
     }];
 }
 
@@ -233,7 +251,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (void)_showOpenAIOAuthLogin {
     if ([ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials]) {
-        UIAlertController *existing = [UIAlertController alertControllerWithTitle:@"OpenAI ChatGPT Login"
+        UIAlertController *existing = [UIAlertController alertControllerWithTitle:@"OpenAI Codex Login"
                                                                           message:[ICRemoteChapterCredentialStore openAIOAuthAccountLabel]
                                                                    preferredStyle:UIAlertControllerStyleAlert];
         [existing addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Neu anmelden", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -251,7 +269,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (void)_requestOpenAIDeviceCode {
-    self.navigationItem.prompt = NSLocalizedString(@"ChatGPT Gerätecode wird geladen…", nil);
+    self.navigationItem.prompt = NSLocalizedString(@"Codex Gerätecode wird geladen…", nil);
     [ICRemoteChapterCredentialStore requestOpenAIDeviceCodeWithCompletion:^(ICOpenAIDeviceCodeInfo *info, NSError *error) {
         self.navigationItem.prompt = nil;
         if (error) {
@@ -268,9 +286,15 @@ typedef NS_ENUM(NSInteger, TSSection) {
                          info.verificationURL,
                          info.userCode,
                          NSLocalizedString(@"Nach dem Login wartet die App bis zu 15 Minuten auf die Freigabe.", nil)];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"ChatGPT Login", nil)
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Codex Login", nil)
                                                                    message:message
                                                             preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Code kopieren", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        UIPasteboard.generalPasteboard.string = info.userCode;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self _showOpenAIDeviceCode:info];
+        });
+    }]];
     [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Browser öffnen", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSURL *url = [NSURL URLWithString:info.verificationURL];
         if (url) {
@@ -286,7 +310,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (void)_completeOpenAIDeviceLogin:(ICOpenAIDeviceCodeInfo *)info {
-    self.navigationItem.prompt = NSLocalizedString(@"Warte auf ChatGPT Login…", nil);
+    self.navigationItem.prompt = NSLocalizedString(@"Warte auf Codex Login…", nil);
     [ICRemoteChapterCredentialStore completeOpenAIDeviceLoginWithDeviceCode:info completion:^(NSError *error) {
         self.navigationItem.prompt = nil;
         if (error) {
@@ -349,6 +373,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
         if (indexPath.row == 0) [self _showOpenAIAPIKeyEditor];
         else if (indexPath.row == 1) [self _showOpenAIOAuthLogin];
         else if (indexPath.row == 2) [self _showAnthropicAPIKeyEditor];
+        else if (indexPath.row == 3) [self _showKimiAPIKeyEditor];
         return;
     }
     if (indexPath.section != TSSectionModels) return;
@@ -382,6 +407,9 @@ typedef NS_ENUM(NSInteger, TSSection) {
     if ([self _hasBusyModels]) {
         [self _startRefreshTimerIfNeeded];
     }
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_reload)
+                                                 name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
+    [self _updateBlockedHeader];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -389,11 +417,18 @@ typedef NS_ENUM(NSInteger, TSSection) {
     if ([self _hasBusyModels]) {
         [self _startRefreshTimerIfNeeded];
     }
+    [self _updateBlockedHeader];
     [self.tableView reloadData];
 }
 
 - (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
     [self.refreshTimer invalidate];
+}
+
+- (void)_reload {
+    [self _updateBlockedHeader];
+    [self.tableView reloadData];
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
@@ -460,7 +495,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
     }
     NSString *blockedReason = [[TranscriptionQueue shared] modelMutationBlockReasonForRole:model.role];
     if (blockedReason.length > 0) {
-        return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Modell kann gerade nicht geändert werden", nil), model.detail];
+        return model.detail;
     }
     if (model.usesRemoteChapterService) {
         NSString *credentialState = [self _remoteCredentialsReadyForModel:model]
@@ -515,7 +550,9 @@ typedef NS_ENUM(NSInteger, TSSection) {
     }
     [ICDownloadableModelStore selectModel:model];
     if (model.usesRemoteChapterService && ![self _remoteCredentialsReadyForModel:model]) {
-        [self _showError:NSLocalizedString(@"Zugangsdaten fehlen. Richte sie in den Transkriptions-Einstellungen unter Cloud-Zugänge ein.", nil)];
+        [self _showCredentialSetupForModel:model];
+        [self.tableView reloadData];
+        return;
     }
 
     if (model.requiresDownload && ![ICDownloadableModelStore isDownloadedModel:model]) {
@@ -674,6 +711,48 @@ typedef NS_ENUM(NSInteger, TSSection) {
     return NO;
 }
 
+- (NSString *)_modelMutationBlockedMessage {
+    NSString *blockedReason = [[TranscriptionQueue shared] modelMutationBlockReasonForRole:self.modelRole];
+    if (blockedReason.length == 0) return nil;
+    return NSLocalizedString(@"Modell kann während der Transkription nicht geändert werden.", nil);
+}
+
+- (void)_updateBlockedHeader {
+    NSString *message = [self _modelMutationBlockedMessage];
+    if (message.length == 0) {
+        self.tableView.tableHeaderView = nil;
+        return;
+    }
+
+    CGFloat width = CGRectGetWidth(self.tableView.bounds);
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, 62)];
+    header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(16, 8, MAX(0, width - 32), 22)];
+    label.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    label.textColor = ICMutedTextColor;
+    label.text = message;
+    label.numberOfLines = 0;
+    [header addSubview:label];
+
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.frame = CGRectMake(16, 32, MAX(0, width - 32), 24);
+    button.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    button.titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    [button setTitle:NSLocalizedString(@"Transkription", nil) forState:UIControlStateNormal];
+    [button addTarget:self action:@selector(_openTranscriptionQueue) forControlEvents:UIControlEventTouchUpInside];
+    [header addSubview:button];
+
+    self.tableView.tableHeaderView = header;
+}
+
+- (void)_openTranscriptionQueue {
+    TranscriptionQueueViewController *controller = [[TranscriptionQueueViewController alloc] initWithStyle:UITableViewStylePlain];
+    [self.navigationController pushViewController:controller animated:YES];
+}
+
 - (BOOL)_remoteCredentialsReadyForModel:(ICDownloadableModel *)model {
     switch (model.chapterProvider) {
         case ICChapterModelProviderOpenAIAPI:
@@ -682,9 +761,169 @@ typedef NS_ENUM(NSInteger, TSSection) {
             return [ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials];
         case ICChapterModelProviderAnthropicAPI:
             return [ICRemoteChapterCredentialStore hasAnthropicAPIKey];
+        case ICChapterModelProviderKimiAPI:
+            return [ICRemoteChapterCredentialStore hasKimiAPIKey];
         default:
             return YES;
     }
+}
+
+- (void)_showCredentialSetupForModel:(ICDownloadableModel *)model {
+    switch (model.chapterProvider) {
+        case ICChapterModelProviderOpenAIAPI:
+            [self _showAPIKeyEditorWithTitle:@"OpenAI API-Key"
+                                      message:NSLocalizedString(@"Der Key wird im iOS-Keychain gespeichert und nur für OpenAI Kapitelmodelle verwendet.", nil)
+                                  placeholder:@"sk-..."
+                          keyCreationURLString:@"https://platform.openai.com/api-keys"
+                                 isConfigured:[ICRemoteChapterCredentialStore hasOpenAIAPIKey]
+                                  saveHandler:^(NSString *value) {
+                [ICRemoteChapterCredentialStore setOpenAIAPIKey:value];
+            } deleteHandler:^{
+                [ICRemoteChapterCredentialStore setOpenAIAPIKey:nil];
+            }];
+            break;
+        case ICChapterModelProviderOpenAICodexOAuth:
+            [self _showOpenAIOAuthLogin];
+            break;
+        case ICChapterModelProviderAnthropicAPI:
+            [self _showAPIKeyEditorWithTitle:@"Anthropic API-Key"
+                                      message:NSLocalizedString(@"Der Key wird im iOS-Keychain gespeichert und nur für Anthropic Kapitelmodelle verwendet.", nil)
+                                  placeholder:@"sk-ant-..."
+                          keyCreationURLString:@"https://console.anthropic.com/settings/keys"
+                                 isConfigured:[ICRemoteChapterCredentialStore hasAnthropicAPIKey]
+                                  saveHandler:^(NSString *value) {
+                [ICRemoteChapterCredentialStore setAnthropicAPIKey:value];
+            } deleteHandler:^{
+                [ICRemoteChapterCredentialStore setAnthropicAPIKey:nil];
+            }];
+            break;
+        case ICChapterModelProviderKimiAPI:
+            [self _showAPIKeyEditorWithTitle:@"Kimi API-Key"
+                                      message:NSLocalizedString(@"Eigener Key wird im iOS-Keychain gespeichert und überschreibt den integrierten Kimi-Zugang.", nil)
+                                  placeholder:@"sk-..."
+                          keyCreationURLString:@"https://platform.kimi.ai/console/api-keys"
+                                 isConfigured:[ICRemoteChapterCredentialStore hasKimiUserAPIKey]
+                                  saveHandler:^(NSString *value) {
+                [ICRemoteChapterCredentialStore setKimiAPIKey:value];
+            } deleteHandler:^{
+                [ICRemoteChapterCredentialStore setKimiAPIKey:nil];
+            }];
+            break;
+        default:
+            break;
+    }
+}
+
+- (void)_showAPIKeyEditorWithTitle:(NSString *)title
+                           message:(NSString *)message
+                       placeholder:(NSString *)placeholder
+               keyCreationURLString:(NSString *)keyCreationURLString
+                      isConfigured:(BOOL)isConfigured
+                       saveHandler:(void (^)(NSString *value))saveHandler
+                     deleteHandler:(void (^)(void))deleteHandler {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = placeholder;
+        textField.secureTextEntry = YES;
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Speichern", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *value = alert.textFields.firstObject.text ?: @"";
+        saveHandler(value);
+        [self.tableView reloadData];
+    }]];
+    if (isConfigured) {
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Entfernen", nil) style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            deleteHandler();
+            [self.tableView reloadData];
+        }]];
+    }
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Key erstellen", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self _openURLString:keyCreationURLString];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)_openURLString:(NSString *)urlString {
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) return;
+    [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+}
+
+- (void)_showOpenAIOAuthLogin {
+    if ([ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials]) {
+        UIAlertController *existing = [UIAlertController alertControllerWithTitle:@"OpenAI Codex Login"
+                                                                          message:[ICRemoteChapterCredentialStore openAIOAuthAccountLabel]
+                                                                   preferredStyle:UIAlertControllerStyleAlert];
+        [existing addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Neu anmelden", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self _requestOpenAIDeviceCode];
+        }]];
+        [existing addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abmelden", nil) style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            [ICRemoteChapterCredentialStore clearOpenAIOAuthCredentials];
+            [self.tableView reloadData];
+        }]];
+        [existing addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:existing animated:YES completion:nil];
+        return;
+    }
+    [self _requestOpenAIDeviceCode];
+}
+
+- (void)_requestOpenAIDeviceCode {
+    self.navigationItem.prompt = NSLocalizedString(@"Codex Gerätecode wird geladen…", nil);
+    [ICRemoteChapterCredentialStore requestOpenAIDeviceCodeWithCompletion:^(ICOpenAIDeviceCodeInfo *info, NSError *error) {
+        self.navigationItem.prompt = nil;
+        if (error) {
+            [self _showError:error.localizedDescription];
+            return;
+        }
+        if (!info) return;
+        [self _showOpenAIDeviceCode:info];
+    }];
+}
+
+- (void)_showOpenAIDeviceCode:(ICOpenAIDeviceCodeInfo *)info {
+    NSString *message = [NSString stringWithFormat:@"%@\n\n%@\n\n%@",
+                         info.verificationURL,
+                         info.userCode,
+                         NSLocalizedString(@"Nach dem Login wartet die App bis zu 15 Minuten auf die Freigabe.", nil)];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Codex Login", nil)
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Code kopieren", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        UIPasteboard.generalPasteboard.string = info.userCode;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self _showOpenAIDeviceCode:info];
+        });
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Browser öffnen", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSURL *url = [NSURL URLWithString:info.verificationURL];
+        if (url) {
+            [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+        }
+        [self _completeOpenAIDeviceLogin:info];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Ich habe den Code eingegeben", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self _completeOpenAIDeviceLogin:info];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)_completeOpenAIDeviceLogin:(ICOpenAIDeviceCodeInfo *)info {
+    self.navigationItem.prompt = NSLocalizedString(@"Warte auf Codex Login…", nil);
+    [ICRemoteChapterCredentialStore completeOpenAIDeviceLoginWithDeviceCode:info completion:^(NSError *error) {
+        self.navigationItem.prompt = nil;
+        if (error) {
+            [self _showError:error.localizedDescription];
+        }
+        [self.tableView reloadData];
+    }];
 }
 
 - (void)_showError:(NSString *)message {

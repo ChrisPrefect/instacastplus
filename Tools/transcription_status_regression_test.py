@@ -329,7 +329,7 @@ require(
     "Queue UI/status code still exposes technical Core ML model-loading text.",
 )
 require(
-    "_combinedStatusTextWithHeadline" in controller_source and
+    "_singleStatusTextWithHeadline" in controller_source and
     "_elapsedTextForItem" in controller_source and
     "_presentFailureDetailsForItem" in controller_source,
     "Queue UI no longer composes detailed status text, elapsed time, and failure alerts.",
@@ -374,6 +374,10 @@ require(
 
 for text in [
     "Modell wird vorbereitet.",
+    "Spracherkennungsmodell wird vorbereitet",
+    "Spracherkennungsmodell wird geladen.",
+    "Spracherkennungsmodell wird kompiliert.",
+    "Spracherkennungsmodell wird heruntergeladen.",
     "Transkription läuft.",
     "Kapitel werden erstellt (%d%%)",
     "Transkriptionsfehler",

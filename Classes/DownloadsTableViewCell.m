@@ -21,6 +21,18 @@
 
 @implementation DownloadsTableViewCell
 
+- (void)setRightContentAccessoryView:(UIView *)rightContentAccessoryView {
+    if (_rightContentAccessoryView == rightContentAccessoryView) {
+        return;
+    }
+    [_rightContentAccessoryView removeFromSuperview];
+    _rightContentAccessoryView = rightContentAccessoryView;
+    if (_rightContentAccessoryView) {
+        [self.contentView addSubview:_rightContentAccessoryView];
+    }
+    [self setNeedsLayout];
+}
+
 - (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
     
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
@@ -71,11 +83,13 @@
 	CGRect textLabelRect = self.textLabel.frame;
     CGRect imageViewRect = CGRectMake(10, 7, 56, 56);
     BOOL showsPlayButton = (self.playAccessoryButton.superview == self.contentView);
+    BOOL showsRightContentAccessory = (self.rightContentAccessoryView.superview == self.contentView);
+    CGFloat rightContentAccessoryWidth = showsRightContentAccessory ? 44 : 0;
     
 
     self.imageView.frame = imageViewRect;
     CGFloat textLeft = CGRectGetMaxX(imageViewRect) + (showsPlayButton ? 25 : 10);
-    CGFloat rightInset = showsPlayButton ? 44 : ((self.accessoryView != nil) ? 49 : 0);
+    CGFloat rightInset = showsPlayButton ? 44 : (showsRightContentAccessory ? rightContentAccessoryWidth + 5 : ((self.accessoryView != nil) ? 49 : 0));
 	CGFloat width = MAX(0, CGRectGetWidth(bounds)-textLeft-rightInset);
     
     textLabelRect.origin.x = textLeft;
@@ -89,11 +103,10 @@
 	if (multilineStatus) {
         CGFloat timeWidth = ([self.timeLabel.text length] == 0) ? 0 : 54;
         CGFloat spacing = (timeWidth > 0) ? 6 : 0;
-        CGFloat infoColumnWidth = (self.accessoryView != nil) ? 44 : 0;
-        CGFloat progressWidth = MAX(0, width - ((infoColumnWidth > 0) ? 0 : (timeWidth + spacing)));
+        CGFloat progressWidth = MAX(0, width - ((rightContentAccessoryWidth > 0) ? 0 : (timeWidth + spacing)));
         self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, progressWidth, 10);
-        if (timeWidth > 0 && infoColumnWidth > 0) {
-            self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - infoColumnWidth, 47, infoColumnWidth, 16);
+        if (timeWidth > 0 && rightContentAccessoryWidth > 0) {
+            self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - rightContentAccessoryWidth, 47, rightContentAccessoryWidth, 16);
             self.timeLabel.hidden = NO;
         } else if (timeWidth > 0) {
             self.timeLabel.frame = CGRectMake(CGRectGetMaxX(self.progressView.frame) + 6, 30, timeWidth, 16);
@@ -118,6 +131,9 @@
 	}
 	
     self.playAccessoryButton.frame = CGRectMake(CGRectGetMaxX(bounds)-44, floorf((CGRectGetHeight(bounds)-44)/2), 44, 44);
+    if (showsRightContentAccessory) {
+        self.rightContentAccessoryView.frame = CGRectMake(CGRectGetMaxX(bounds)-rightContentAccessoryWidth, 4, rightContentAccessoryWidth, 44);
+    }
 }
 
 

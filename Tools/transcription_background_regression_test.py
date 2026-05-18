@@ -35,15 +35,21 @@ require(
     "Transcription still silently changes model/engine after failures.",
 )
 require(
-    "pauseWhisperKitForBackgroundIfNeeded()" in queue_source
-    and "Transkription im Hintergrund pausiert" in queue_source
-    and "applicationDidEnterBackground" in queue_source,
-    "WhisperKit transcription is not paused when the app enters background.",
+    "refreshBackgroundContinuation(reason: \"applicationDidEnterBackground\")" in queue_source
+    and "pauseWhisperKitForBackgroundIfNeeded(reason: \"background-task-expired\")" in queue_source
+    and "backgroundContinuationTask == .invalid" in queue_source.split("private var shouldPauseWhisperKitForBackground", 1)[1].split("@objc(activateBackgroundExecutionPathWithPath:detail:)", 1)[0],
+    "WhisperKit still pauses immediately on background instead of using the short UIApplication background window first.",
 )
 require(
     "TranscriptionEngine.isBackgroundGPUExecutionError(error)" in queue_source
     and "finishBackgroundPause" in queue_source,
     "Queue does not turn the known background-GPU error into a resumable pause.",
+)
+require(
+    "isProcessing || chapterTask != nil || !pendingDownloadHashes.isEmpty" in queue_source
+    and "UIApplication.shared.applicationState == .background" in queue_source
+    and "engine.engineType != .whisperKit" not in queue_source.split("private func refreshBackgroundContinuation", 1)[1].split("private func beginBackgroundContinuationIfNeeded", 1)[0],
+    "Short background continuation does not cover downloads, music analysis, WhisperKit work, and chapter generation uniformly.",
 )
 require(
     "@objc func retry(episodeHash: String)" in queue_source
@@ -71,7 +77,7 @@ require(
     "WhisperKit segments are still only delivered after the full transcription returns.",
 )
 require(
-    "progress(p)" not in backend_source.split("func deliverSegmentIfNeeded", 1)[1].split("let liveSegmentCallback", 1)[0],
+    "progress(p)" not in backend_source.split("func deliverIfNeeded", 1)[1].split("nonisolated(unsafe) let liveSegmentCallback", 1)[0],
     "WhisperKit segment delivery still reports duplicate progress through both segmentCallback and progress.",
 )
 require(
@@ -95,7 +101,7 @@ require(
 require(
     "prewarm: true" in backend_source
     and "removeOriginalModelSources" in backend_source
-    and "Whisper-Modell vorgewärmt" in backend_source,
+    and "Spracherkennungsmodell wird kompiliert." in backend_source,
     "Model download/load does not enforce post-download prewarm and raw-source cleanup.",
 )
 require(
@@ -134,8 +140,8 @@ require(
 require(
     "CGRect bounds = self.contentView.bounds;" in cell_source
     and "CGFloat textLeft = CGRectGetMaxX(imageViewRect) + (showsPlayButton ? 25 : 10);" in cell_source
-    and "CGFloat rightInset = showsPlayButton ? 44 : ((self.accessoryView != nil) ? 49 : 0);" in cell_source
-    and "timeLabel.frame = CGRectMake(CGRectGetMaxX(self.progressView.frame) + 6" in cell_source
+    and "rightContentAccessoryWidth + 5" in cell_source
+    and "self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - rightContentAccessoryWidth" in cell_source
     and "accessoryReservedWidth" not in cell_source,
     "Download/transcription cell layout still double-reserves accessory space or keeps elapsed time on the status text row.",
 )

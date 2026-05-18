@@ -54,6 +54,20 @@ require(
     "Whisper model migration is no longer per-model and could delete a stale Documents model when another model already exists in Application Support.",
 )
 
+require(
+    "prepareModelDirectoryForCoreML(in: modelDir)" in SOURCE
+    and "NSFileProtectionCompleteUntilFirstUserAuthentication" in SOURCE
+    and "compiledModelValidationIssue(in: modelDir)" in SOURCE,
+    "Whisper model folders are not normalized for Core ML mmap access before load/download readiness checks.",
+)
+
+require(
+    "coreMLFileCanBeMemoryMapped" in SOURCE
+    and "Data(contentsOf: url, options: [.mappedIfSafe])" in SOURCE
+    and "weightBin" in SOURCE,
+    "Whisper model validation still does not exercise the same mmap-style file access that Core ML needs for weight.bin.",
+)
+
 helper_block = block_between(
     "private func ensureModelLoaded(_ wk: WhisperKit,",
     "// MARK: - Download",

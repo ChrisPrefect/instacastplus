@@ -17,4 +17,5 @@
 @property (nonatomic, readonly, strong) UILabel* sizeLabel;
 @property (nonatomic, readonly, strong) UILabel* timeLabel;
 @property (nonatomic, strong, readonly) EpisodePlayComboButton* playAccessoryButton;
+@property (nonatomic, strong) UIView* rightContentAccessoryView;
 @end

@@ -447,7 +447,7 @@ private struct ChaptersFile: Codable {
                                                   debugTrace: debugTrace,
                                                   episodeTitle: episodeTitle,
                                                   feedTitle: feedTitle)
-        case .openAIAPI, .openAICodexOAuth, .anthropicAPI:
+        case .openAIAPI, .openAICodexOAuth, .anthropicAPI, .kimiAPI:
             return try await self.generateWithRemoteChapterModel(model: selectedModel,
                                                                  cues: cues,
                                                                  musicSegments: musicSegments,
@@ -490,7 +490,7 @@ private struct ChaptersFile: Codable {
                     chapters = try await self.generateWithLLM(cues: cues, musicSegments: nil,
                                                               existingChapters: existingChapters,
                                                               debugTrace: nil)
-                case .openAIAPI, .openAICodexOAuth, .anthropicAPI:
+                case .openAIAPI, .openAICodexOAuth, .anthropicAPI, .kimiAPI:
                     chapters = try await self.generateWithRemoteChapterModel(model: selectedModel,
                                                                              cues: cues,
                                                                              musicSegments: nil,
@@ -748,7 +748,7 @@ private struct ChaptersFile: Codable {
     }
 
     private static let localChapterSystemPrompt = """
-    Du bist ein praeziser Podcast-Kapitelgenerator. Arbeite nur mit den angegebenen Zeiten und Texten. Erfinde keine Inhalte. Antworte ausschliesslich mit validem JSON, ohne Markdown und ohne Erklaertext.
+    Du bist ein praeziser Podcast-Kapitelgenerator. Arbeite sprachunabhaengig nur mit den angegebenen Zeiten, Texten und Audiohinweisen. Nutze den ganzen gelieferten Kontext. Erfinde keine Inhalte, Sprecher, Marken, Intros, Outros, Jingles, Sponsoren oder Themen. Audiohinweise sind nur Hinweise auf SoundAnalysis-Zeitbereiche; verwende sie nur, wenn das Transkript in der Umgebung ihre Bedeutung stuetzt. Erkenne skip-wuerdige Promotion semantisch in jeder Sprache und trenne sie als eigenes Sponsor-Kapitel. Kapitel-Titel muessen fuer Hoerer konkret genug sein, um die Auswahl oder das Ueberspringen zu entscheiden. Antworte ausschliesslich mit validem JSON, ohne Markdown und ohne Erklaertext.
     """
 
     private static let remoteChapterStartsSchema: [String: Any] = [
@@ -793,7 +793,7 @@ private struct ChaptersFile: Codable {
                                                                episodeTitle: episodeTitle,
                                                                feedTitle: feedTitle)
             status?(String(format: NSLocalizedString("%@ prüft Sponsor- und Eigenpromo-Segmente.", comment: ""), model.title))
-            progress?(0.2, 0, 1)
+            progress?(0, 0, 1)
             let output = try await generateRemoteJSONObject(model: model, prompt: prompt, responseShape: .chapters)
             let response = try decodeLocalJSON(LocalChaptersResponse.self, from: output)
             let chapters = response.chapters.map {
@@ -814,7 +814,7 @@ private struct ChaptersFile: Codable {
                                                     feedTitle: feedTitle)
         let started = Date()
         status?(String(format: NSLocalizedString("%@ erstellt Kapitel aus dem vollständigen Transkript.", comment: ""), model.title))
-        progress?(0.05, 0, 1)
+        progress?(0, 0, 1)
         debugTrace?.recordPerformance("remote-chapter-started",
                                       metadata: [
                                         "modelIdentifier": model.identifier,
@@ -841,7 +841,7 @@ private struct ChaptersFile: Codable {
                                                        totalDuration: totalDuration,
                                                        topicMarkerCount: markers.count,
                                                        topicMarkers: markers,
-                                                       musicSegments: musicSegments,
+                                                       musicSegments: nil,
                                                        transcriptCues: cues,
                                                        existingChapters: nil,
                                                        debugTrace: debugTrace)
@@ -895,6 +895,15 @@ private struct ChaptersFile: Codable {
                                                          apiKey: apiKey,
                                                          prompt: prompt,
                                                          responseShape: responseShape)
+        case .kimiAPI:
+            guard let apiKey = ICRemoteChapterCredentialStore.kimiAPIKey(), !apiKey.isEmpty else {
+                throw NSError(domain: "ChapterGenerator", code: 40,
+                              userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Kimi Zugang fehlt.", comment: "")])
+            }
+            return try await generateKimiJSONObject(modelName: modelName,
+                                                    apiKey: apiKey,
+                                                    prompt: prompt,
+                                                    responseShape: responseShape)
         default:
             throw NSError(domain: "ChapterGenerator", code: 32,
                           userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Remote-Kapitelmodell ist ungültig.", comment: "")])
@@ -945,7 +954,7 @@ private struct ChaptersFile: Codable {
                                                     responseShape: RemoteResponseShape) async throws -> String {
         guard let accountID = ICRemoteChapterCredentialStore.openAIOAuthAccountID(), !accountID.isEmpty else {
             throw NSError(domain: "ChapterGenerator", code: 33,
-                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("ChatGPT Login enthält keine Account-ID.", comment: "")])
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Codex Login enthält keine Account-ID.", comment: "")])
         }
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/codex/responses")!)
         request.httpMethod = "POST"
@@ -998,6 +1007,25 @@ private struct ChaptersFile: Codable {
         return try Self.anthropicOutputText(from: data)
     }
 
+    private func generateKimiJSONObject(modelName: String,
+                                        apiKey: String,
+                                        prompt: String,
+                                        responseShape: RemoteResponseShape) async throws -> String {
+        var request = URLRequest(url: URL(string: "https://api.moonshot.ai/v1/chat/completions")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: kimiChatCompletionsBody(modelName: modelName,
+                                                                                              prompt: prompt,
+                                                                                              responseShape: responseShape))
+
+        let (data, statusCode) = try await remoteDataAndStatusCode(for: request)
+        guard (200..<300).contains(statusCode) else {
+            throw remoteHTTPError(statusCode: statusCode, data: data, provider: "Kimi")
+        }
+        return try Self.openAIChatCompletionOutputText(from: data, provider: "Kimi")
+    }
+
     private func openAIResponsesBody(modelName: String,
                                      prompt: String,
                                      stream: Bool,
@@ -1026,6 +1054,36 @@ private struct ChaptersFile: Codable {
             "text": [
                 "format": [
                     "type": "json_schema",
+                    "name": responseShape == .chapterStarts ? "podcast_chapter_starts" : "podcast_chapters",
+                    "strict": true,
+                    "schema": responseShape == .chapterStarts ? Self.remoteChapterStartsSchema : Self.remoteChaptersSchema,
+                ],
+            ],
+        ]
+    }
+
+    private func kimiChatCompletionsBody(modelName: String,
+                                         prompt: String,
+                                         responseShape: RemoteResponseShape) -> [String: Any] {
+        return [
+            "model": modelName,
+            "messages": [
+                [
+                    "role": "system",
+                    "content": Self.localChapterSystemPrompt,
+                ],
+                [
+                    "role": "user",
+                    "content": prompt,
+                ],
+            ],
+            "max_tokens": 8192,
+            "temperature": 0,
+            "stream": false,
+            "thinking": ["type": "disabled"],
+            "response_format": [
+                "type": "json_schema",
+                "json_schema": [
                     "name": responseShape == .chapterStarts ? "podcast_chapter_starts" : "podcast_chapters",
                     "strict": true,
                     "schema": responseShape == .chapterStarts ? Self.remoteChapterStartsSchema : Self.remoteChaptersSchema,
@@ -1155,6 +1213,34 @@ private struct ChaptersFile: Codable {
             }
         }
         return text.isEmpty ? nil : text
+    }
+
+    private static func openAIChatCompletionOutputText(from data: Data, provider: String) throws -> String {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = object["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any] else {
+            throw NSError(domain: "ChapterGenerator", code: 41,
+                          userInfo: [NSLocalizedDescriptionKey: String(format: NSLocalizedString("%@ Kapitelmodell lieferte keine lesbare Antwort.", comment: ""), provider)])
+        }
+
+        let text: String
+        if let content = message["content"] as? String {
+            text = content
+        } else if let content = message["content"] as? [[String: Any]] {
+            text = content.compactMap { item in
+                if let value = item["text"] as? String { return value }
+                if let value = item["content"] as? String { return value }
+                return nil
+            }.joined()
+        } else {
+            text = ""
+        }
+
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "ChapterGenerator", code: 42,
+                          userInfo: [NSLocalizedDescriptionKey: String(format: NSLocalizedString("%@ Kapitelmodell lieferte keinen Text.", comment: ""), provider)])
+        }
+        return text
     }
 
     private static func anthropicOutputText(from data: Data) throws -> String {

@@ -52,6 +52,11 @@ final_prompt_body = source_slice(
     "private func buildFinalChaptersPrompt",
     "private static func allowedChapterStartSeconds",
 )
+remote_generation_body = source_slice(
+    chapter_source,
+    "private func generateWithRemoteChapterModel",
+    "private enum RemoteResponseShape",
+)
 local_chunk_body = source_slice(
     chapter_source,
     "private func transcriptContextWindowsForLocalModel",
@@ -248,6 +253,14 @@ require(
     and "600 * 1_000_000_000" in chapter_source
     and "Kapitelmodell hat nicht rechtzeitig geantwortet" in chapter_source,
     "Local GGUF chapter calls can still hang indefinitely instead of failing with an explicit timeout.",
+)
+
+require(
+    "progress?(0, 0, 1)" in remote_generation_body
+    and "progress?(0.05, 0, 1)" not in remote_generation_body
+    and "progress?(0.2, 0, 1)" not in remote_generation_body
+    and "musicSegments: nil" in remote_generation_body.split("chapters = try Self.validatedGeneratedChapters(chapters", 1)[1],
+    "Remote chapter generation still shows fake percentage progress or rejects model output with local music-boundary validation.",
 )
 
 require(

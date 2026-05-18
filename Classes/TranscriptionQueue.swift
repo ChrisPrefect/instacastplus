@@ -188,6 +188,8 @@ private struct PersistedQueue: Codable {
     private var currentTask: Task<Void, Never>?
     private var currentProcessingRunID: UUID?
     private var chapterTask: Task<Void, Never>?  // Tracked separately so cancelAll/dequeue can stop it
+    private var speechModelPreparationTask: Task<Void, Never>?
+    private var speechModelPreparationRunID: UUID?
     private var pendingDownloadHashes: Set<String> = [] // Tracks episodes being auto-downloaded
     private var backgroundContinuationTask: UIBackgroundTaskIdentifier = .invalid
     private var backgroundPausedEpisodeHashes: Set<String> = []
@@ -264,7 +266,6 @@ private struct PersistedQueue: Codable {
 
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                self?.pauseWhisperKitForBackgroundIfNeeded()
                 self?.refreshBackgroundContinuation(reason: "applicationDidEnterBackground")
             }
         }
@@ -365,8 +366,12 @@ private struct PersistedQueue: Codable {
         // aborted" on next launch.
         if didCancelCurrent {
             analyzer.cancelAnalysis()
+            cancelSpeechModelPreparation(reason: "dequeue-cancelled-active-item")
             UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
             refreshBackgroundContinuation(reason: "dequeue-cancelled-active-item")
+        }
+        if pendingDownloadHashes.isEmpty && !items.contains(where: { $0.status == .queued || $0.status == .analyzingMusic || $0.status == .downloadingModel || $0.status == .transcribing }) {
+            cancelSpeechModelPreparation(reason: "dequeue-no-pending-transcription")
         }
         if shouldCleanupBrokenArtifacts {
             cleanupBrokenArtifacts(episodeHash: episodeHash, chapterOnly: cleanupAsChapterArtifacts)
@@ -388,6 +393,7 @@ private struct PersistedQueue: Codable {
         currentTask = nil
         chapterTask?.cancel()
         chapterTask = nil
+        cancelSpeechModelPreparation(reason: "cancelAll")
         engine.cancelTranscription()
         analyzer.cancelAnalysis()
         items.removeAll()
@@ -954,13 +960,11 @@ private struct PersistedQueue: Codable {
     }
 
     private var hasLifecycleManagedWork: Bool {
-        isProcessing || chapterTask != nil
+        isProcessing || chapterTask != nil || !pendingDownloadHashes.isEmpty
     }
 
     private func refreshBackgroundContinuation(reason: String) {
-        let shouldContinueInBackground = backgroundProcessingEnabled &&
-            hasLifecycleManagedWork &&
-            engine.engineType != .whisperKit &&
+        let shouldContinueInBackground = hasLifecycleManagedWork &&
             UIApplication.shared.applicationState == .background
 
         if shouldContinueInBackground {
@@ -980,7 +984,8 @@ private struct PersistedQueue: Codable {
                     "reason": reason,
                     "queueCount": self.items.count,
                 ] as NSDictionary)
-                self.endBackgroundContinuationIfNeeded(reason: "expired")
+                self.endBackgroundContinuationIfNeeded(reason: "background-task-expired")
+                _ = self.pauseWhisperKitForBackgroundIfNeeded(reason: "background-task-expired")
             }
         }
 
@@ -1085,7 +1090,8 @@ private struct PersistedQueue: Codable {
     private var shouldPauseWhisperKitForBackground: Bool {
         engine.engineType == .whisperKit &&
             UIApplication.shared.applicationState == .background &&
-            !continuedGPUBackgroundActive
+            !continuedGPUBackgroundActive &&
+            backgroundContinuationTask == .invalid
     }
 
     @objc(activateBackgroundExecutionPathWithPath:detail:)
@@ -1183,6 +1189,56 @@ private struct PersistedQueue: Codable {
 
     // MARK: - Processing
 
+    private func startSpeechModelPreparationIfNeeded(episodeHash: String, reason: String) {
+        guard engine.engineType == .whisperKit else { return }
+        guard WhisperKitBackend.shared.isModelDownloadedSync() else { return }
+        guard speechModelPreparationTask == nil else { return }
+
+        let runID = UUID()
+        speechModelPreparationRunID = runID
+        ICDiagnosticLogger.shared.logEvent("model", message: "Sprachmodell-Vorbereitung vorgezogen", metadata: [
+            "episodeHash": episodeHash,
+            "reason": reason,
+        ] as NSDictionary)
+
+        speechModelPreparationTask = Task { [weak self] in
+            do {
+                try await WhisperKitBackend.shared.prepareModel()
+                ICDiagnosticLogger.shared.logEvent("model", message: "Vorgezogene Sprachmodell-Vorbereitung abgeschlossen", metadata: [
+                    "episodeHash": episodeHash,
+                    "reason": reason,
+                ] as NSDictionary)
+            } catch is CancellationError {
+                ICDiagnosticLogger.shared.logEvent("model", message: "Vorgezogene Sprachmodell-Vorbereitung abgebrochen", metadata: [
+                    "episodeHash": episodeHash,
+                    "reason": reason,
+                ] as NSDictionary)
+            } catch {
+                ICDiagnosticLogger.shared.logEvent("model", message: "Vorgezogene Sprachmodell-Vorbereitung fehlgeschlagen", metadata: [
+                    "episodeHash": episodeHash,
+                    "reason": reason,
+                    "error": error.localizedDescription,
+                ] as NSDictionary)
+            }
+
+            await MainActor.run {
+                guard let self = self, self.speechModelPreparationRunID == runID else { return }
+                self.speechModelPreparationRunID = nil
+                self.speechModelPreparationTask = nil
+            }
+        }
+    }
+
+    private func cancelSpeechModelPreparation(reason: String) {
+        guard speechModelPreparationTask != nil else { return }
+        speechModelPreparationTask?.cancel()
+        speechModelPreparationTask = nil
+        speechModelPreparationRunID = nil
+        ICDiagnosticLogger.shared.logEvent("model", message: "Vorgezogene Sprachmodell-Vorbereitung abgebrochen", metadata: [
+            "reason": reason,
+        ] as NSDictionary)
+    }
+
     private func processNext() {
         guard !isProcessing else { return }
         guard currentProcessingRunID == nil else { return }
@@ -1240,8 +1296,13 @@ private struct PersistedQueue: Codable {
             } else {
                 // Audio not available — try auto-downloading
                 NSLog("[TranscriptionQueue] Audio not cached for %@, attempting auto-download", candidate.episodeHash)
+                startSpeechModelPreparationIfNeeded(episodeHash: candidate.episodeHash, reason: "auto-download")
                 if autoDownloadEpisode(hash: candidate.episodeHash) {
-                    candidate.statusDetail = NSLocalizedString("Automatischer Download wurde gestartet.", comment: "")
+                    if engine.engineType == .whisperKit && WhisperKitBackend.shared.isModelDownloadedSync() {
+                        candidate.statusDetail = NSLocalizedString("Episode wird heruntergeladen. Spracherkennungsmodell wird vorbereitet.", comment: "")
+                    } else {
+                        candidate.statusDetail = NSLocalizedString("Automatischer Download wurde gestartet.", comment: "")
+                    }
                     candidate.error = NSLocalizedString("Episode wird heruntergeladen...", comment: "")
                     TranscriptionLogger.shared.append(episodeHash: candidate.episodeHash, phase: "download",
                                                       message: "Automatischer Download gestartet", detailText: nil)
@@ -1867,6 +1928,7 @@ private struct PersistedQueue: Codable {
 
         pendingDownloadHashes.insert(hash)
         cman.cacheEpisode(episode, overwriteCellularLock: true)
+        refreshBackgroundContinuation(reason: "auto-download-started")
         return true
     }
 

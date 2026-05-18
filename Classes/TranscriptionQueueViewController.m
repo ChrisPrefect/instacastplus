@@ -483,9 +483,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     cell.backgroundColor = tableView.backgroundColor;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.sizeLabel.numberOfLines = 2;
+    cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
     cell.timeLabel.textAlignment = NSTextAlignmentRight;
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = nil;
+    cell.rightContentAccessoryView = nil;
     // Remove play button and reclaim its space.
     [cell.playAccessoryButton removeFromSuperview];
 
@@ -502,7 +504,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     logButton.imageEdgeInsets = UIEdgeInsetsMake(8, 0, -8, 0);
     logButton.tag = indexPath.row;
     [logButton addTarget:self action:@selector(_showLogFromAccessoryButton:) forControlEvents:UIControlEventTouchUpInside];
-    cell.accessoryView = logButton;
+    cell.rightContentAccessoryView = logButton;
 
     // Title — same as Downloads: cleaned episode title
     CDEpisode* episode = [self _episodeForHash:item.episodeHash];
@@ -584,8 +586,14 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             break;
         }
         case ICTranscriptionStatusDownloadingModel: {
-            headline = [NSString stringWithFormat:NSLocalizedString(@"%@ wird vorbereitet", nil), [self _activeEngineLabel]];
-            detail = detail ?: NSLocalizedString(@"Modell wird vorbereitet.", nil);
+            headline = NSLocalizedString(@"Spracherkennungsmodell wird vorbereitet", nil);
+            if (detail.length > 0 &&
+                ![detail isEqualToString:NSLocalizedString(@"Modell wird vorbereitet.", nil)]) {
+                headline = detail;
+                detail = nil;
+            } else {
+                detail = nil;
+            }
             cell.progressView.progress = 0;
             cell.progressView.hidden = YES;
             cell.timeLabel.text = elapsedText ?: @"";
@@ -622,7 +630,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             }
             detail = detail ?: NSLocalizedString(@"Kapitel werden aus dem Transkript erstellt.", nil);
             cell.progressView.progress = item.progress;
-            cell.progressView.hidden = NO;
+            cell.progressView.hidden = !(item.progress > 0 && item.progress < 1);
             cell.timeLabel.text = elapsedText ?: @"";
             break;
         }
@@ -643,7 +651,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             break;
     }
 
-    cell.sizeLabel.text = [self _combinedStatusTextWithHeadline:headline detail:detail];
+    cell.sizeLabel.text = [self _singleStatusTextWithHeadline:headline detail:detail];
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -787,14 +795,21 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     self.elapsedTimer = nil;
 }
 
-- (NSString*)_combinedStatusTextWithHeadline:(NSString*)headline detail:(NSString*)detail {
+- (NSString*)_singleStatusTextWithHeadline:(NSString*)headline detail:(NSString*)detail {
     NSString* trimmedHeadline = [headline stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     NSString* trimmedDetail = [detail stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
     if (trimmedDetail.length == 0 || [self _statusDetail:trimmedDetail duplicatesHeadline:trimmedHeadline]) {
         return trimmedHeadline;
     }
-    return [NSString stringWithFormat:@"%@\n%@", trimmedHeadline, trimmedDetail];
+    if ([trimmedHeadline containsString:@"%"]) {
+        return trimmedHeadline;
+    }
+    if ([trimmedHeadline isEqualToString:NSLocalizedString(@"Fehler", nil)] ||
+        [trimmedHeadline isEqualToString:NSLocalizedString(@"Unterbrochen", nil)]) {
+        return [NSString stringWithFormat:@"%@ - %@", trimmedHeadline, trimmedDetail];
+    }
+    return trimmedDetail;
 }
 
 - (BOOL)_statusDetail:(NSString*)detail duplicatesHeadline:(NSString*)headline {
@@ -855,9 +870,8 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 }
 
 - (void)_presentRecoveryActionsForItem:(ICTranscriptionQueueItem*)item {
-    NSString* message = item.error ?: NSLocalizedString(@"Transkription fehlgeschlagen.", nil);
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Job neu starten?", nil)
-                                                                  message:message
+                                                                  message:nil
                                                            preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Neustarten", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         [self _retryWithEpisodeHash:item.episodeHash];

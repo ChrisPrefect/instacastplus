@@ -31,8 +31,10 @@
 #import "PlaybackDefines.h"
 #import "ICSidebarPanGestureRecognizer.h"
 #import "UpNextTableViewController.h"
+#import "PortraitNavigationController.h"
 #import "InstacastAppDelegate.h"
 #import "TranscriptionSettingsViewController.h"
+#import "ICEpisodeUIConfig.h"
 #import "InstacastPlus-Swift.h"
 
 NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeUID";
@@ -413,7 +415,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
     BOOL hasSelection = (selectedCount > 0);
 
-    self.selectAllItem.title = (selectedCount < rowCount) ? @"All".ls : @"Deselect".ls;
+    self.selectAllItem.title = ICEpisodeSelectionToggleTitleKey(selectedCount, rowCount).ls;
     self.editItem.enabled = hasSelection;
     self.playItem.enabled = hasSelection;
     self.downloadItem.enabled = hasSelection;
@@ -561,7 +563,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         NSInteger selectedCellsCount = [[self.tableView indexPathsForSelectedRows] count];
         NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
 
-        self.selectAllItem.title = (selectedCellsCount < rowCount) ? @"All".ls : @"Deselect".ls;
+        self.selectAllItem.title = ICEpisodeSelectionToggleTitleKey(selectedCellsCount, rowCount).ls;
         self.editItem.enabled = (selectedCellsCount > 0);
         self.playItem.enabled = (selectedCellsCount > 0);
         self.downloadItem.enabled = (selectedCellsCount > 0);
@@ -934,11 +936,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             name = episode.starred ? @"star.slash" : @"star";
             break;
         case ICEpisodeSwipeActionDownload:
-            name = @"square.and.arrow.down";
-            break;
+            return [self _downloadStartActionImage];
         case ICEpisodeSwipeActionAddToPlayNext:
-            name = @"list.bullet.indent";
-            break;
+            return [self _playNextActionImageForEpisode:episode configuration:config];
         case ICEpisodeSwipeActionDelete:
             name = @"trash";
             break;
@@ -954,6 +954,75 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
     UIImage* image = [UIImage systemImageNamed:name withConfiguration:config];
     return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+- (UIImage*) _downloadStartActionImage
+{
+    NSString* imageName = ICEpisodeDownloadActionStartIconName();
+    UIImage* image = ICEpisodeDownloadActionStartUsesAssetImage() ? [UIImage imageNamed:imageName] : [UIImage systemImageNamed:imageName];
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+- (NSString*) _playNextActionTitleForEpisode:(CDEpisode*)episode
+{
+    return [[AudioSession sharedAudioSession].playlist containsObject:episode] ? @"Remove from Play Next" : @"Add to Play Next";
+}
+
+- (UIImage*) _playNextActionImageForEpisode:(CDEpisode*)episode configuration:(UIImageSymbolConfiguration*)configuration
+{
+    UIImage* baseImage = [UIImage systemImageNamed:ICEpisodePlayNextMenuSymbolName() withConfiguration:configuration];
+    baseImage = [baseImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    if (![[AudioSession sharedAudioSession].playlist containsObject:episode]) {
+        return baseImage;
+    }
+
+    CGFloat iconSide = MAX(baseImage.size.width, baseImage.size.height);
+    CGFloat badgeSide = ceil(iconSide * 0.38f);
+    CGRect canvasRect = CGRectMake(0, 0, baseImage.size.width, baseImage.size.height);
+    CGRect badgeRect = CGRectMake(-badgeSide * 0.05f,
+                                  baseImage.size.height - badgeSide * 0.78f,
+                                  badgeSide,
+                                  badgeSide);
+    UIImageSymbolConfiguration* badgeConfig = [UIImageSymbolConfiguration configurationWithPointSize:badgeSide weight:UIImageSymbolWeightSemibold];
+    UIImage* badgeImage = [[UIImage systemImageNamed:@"xmark.circle.fill" withConfiguration:badgeConfig] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+
+    UIGraphicsImageRenderer* renderer = [[UIGraphicsImageRenderer alloc] initWithSize:canvasRect.size];
+    UIImage* rendered = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [ICMutedTextColor setFill];
+        [baseImage drawInRect:canvasRect];
+        [ICMutedTextColor setFill];
+        [badgeImage drawInRect:badgeRect];
+    }];
+    return [rendered imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+}
+
+- (void) _togglePlayNextForEpisode:(CDEpisode*)episode
+{
+    BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
+    NSString* toastText;
+
+    if (inUpNext) {
+        [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+        toastText = @"Removed from Play Next".ls;
+    } else {
+        [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
+        toastText = @"Added to Play Next".ls;
+    }
+    AudioServicesPlaySystemSound(1519);
+    [self _showPlayNextToastWithText:toastText added:!inUpNext];
+}
+
+- (void) _presentPlayNextViewController
+{
+    UpNextTableViewController* controller = [UpNextTableViewController viewController];
+    PortraitNavigationController* navigationController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+    navigationController.modalPresentationStyle = UIModalPresentationPageSheet;
+    [self presentViewController:navigationController animated:YES completion:nil];
+}
+
+- (void) _openPlayNextOverlayAction:(id)sender
+{
+    [self _presentPlayNextViewController];
 }
 
 - (UIColor*) _tintColorForSwipeAction:(ICEpisodeSwipeAction)action episode:(CDEpisode*)episode
@@ -1009,15 +1078,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     label.textColor = [UIColor whiteColor];
     label.font = [UIFont systemFontOfSize:ICFontSize(14)];
 
-    UIButton* showButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [showButton setTitle:@"Show".ls forState:UIControlStateNormal];
-    showButton.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(14)];
-    [showButton setTitleColor:ICTintColor forState:UIControlStateNormal];
+    UIButton* button = [UIButton buttonWithType:UIButtonTypeSystem];
+    [button setTitle:@"Play Next".ls forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(14)];
+    [button setTitleColor:ICTintColor forState:UIControlStateNormal];
 
     // Only show "Anzeigen" button when adding (navigating to empty list on remove makes no sense)
-    showButton.hidden = !added;
+    button.hidden = !added;
 
-    UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[label, showButton]];
+    UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[label, button]];
     stack.axis = UILayoutConstraintAxisHorizontal;
     stack.spacing = 12;
     stack.alignment = UIStackViewAlignmentCenter;
@@ -1039,19 +1108,17 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     ]];
 
     // Tap on "Anzeigen" navigates to Up Next
-    [showButton addAction:[UIAction actionWithHandler:^(__unused UIAction* action) {
+    [button addAction:[UIAction actionWithHandler:^(UIAction* action) {
         // Dismiss toast immediately
         [blurView removeFromSuperview];
-
-        InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)[UIApplication sharedApplication].delegate;
-        [appDelegate.mainViewController showUpNext];
+        [self _openPlayNextOverlayAction:action];
     }] forControlEvents:UIControlEventTouchUpInside];
 
     // Animate in, wait 3 seconds, animate out
     [UIView animateWithDuration:0.3 animations:^{
         blurView.alpha = 1.0;
     } completion:^(BOOL finished) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(ICEpisodePlayNextOverlayDisplayDuration() * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [UIView animateWithDuration:0.3 animations:^{
                 blurView.alpha = 0;
             } completion:^(BOOL finished) {
@@ -1190,18 +1257,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         }
         case ICEpisodeSwipeActionAddToPlayNext:
         {
-            BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
-            NSString* toastText;
-
-            if (inUpNext) {
-                [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
-                toastText = @"Removed from Play Next".ls;
-            } else {
-                [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
-                toastText = @"Added to Play Next".ls;
-            }
-            AudioServicesPlaySystemSound(1519);
-            [self _showPlayNextToastWithText:toastText added:!inUpNext];
+            [self _togglePlayNextForEpisode:episode];
             break;
         }
         case ICEpisodeSwipeActionDelete:
@@ -1384,26 +1440,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     // Add to / Remove from Play Next
     {
-        BOOL inUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
-        NSString* title = inUpNext ? @"Remove from Play Next".ls : @"Add to Play Next".ls;
-        UIImage* icon = [UIImage systemImageNamed:@"list.bullet.indent"];
-        if (inUpNext) {
-            icon = [icon imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal];
-        }
-        UIAction* playNextAction = [UIAction actionWithTitle:title
-                                                       image:icon
+        UIAction* playNextAction = [UIAction actionWithTitle:[self _playNextActionTitleForEpisode:episode].ls
+                                                       image:[self _playNextActionImageForEpisode:episode configuration:nil]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
-                                                         BOOL wasInUpNext = [[AudioSession sharedAudioSession].playlist containsObject:episode];
-                                                         if (wasInUpNext) {
-                                                             [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
-                                                             AudioServicesPlaySystemSound(1519);
-                                                             [weakSelf _showPlayNextToastWithText:@"Removed from Play Next".ls added:NO];
-                                                         } else {
-                                                             [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
-                                                             AudioServicesPlaySystemSound(1519);
-                                                             [weakSelf _showPlayNextToastWithText:@"Added to Play Next".ls added:YES];
-                                                         }
+                                                         [weakSelf _togglePlayNextForEpisode:episode];
                                                      }];
         [actions addObject:playNextAction];
     }
@@ -1412,7 +1453,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     CacheManager* cman = [CacheManager sharedCacheManager];
     if (![cman episodeIsCached:episode] && ![cman isCachingEpisode:episode]) {
         UIAction* downloadAction = [UIAction actionWithTitle:@"Download".ls
-                                                       image:[UIImage systemImageNamed:@"square.and.arrow.down"]
+                                                       image:[self _downloadStartActionImage]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
                                                          [weakSelf _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {
@@ -1426,9 +1467,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [actions addObject:downloadAction];
     }
 
-    // Delete File (only if cached)
+    // Delete Download (only if cached)
     if ([cman episodeIsCached:episode]) {
-        UIAction* deleteFileAction = [UIAction actionWithTitle:@"Delete File".ls
+        UIAction* deleteFileAction = [UIAction actionWithTitle:@"Delete Download".ls
                                                          image:[[UIImage systemImageNamed:@"square.and.arrow.down"] imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {

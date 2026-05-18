@@ -34,13 +34,23 @@ require(
     "Gemma 4 E2B-it is missing from the downloadable chapter model catalog.",
 )
 require(
+    "MARKETING_VERSION = 3.4;" in project_source
+    and "MARKETING_VERSION = 3.3;" not in project_source
+    and "Developer: Opus, Codex" in (ROOT / "Classes" / "OptionsViewController.m").read_text()
+    and "Claude Code Opus" not in (ROOT / "Classes" / "OptionsViewController.m").read_text(),
+    "Version must be 3.4 and the options footer must name Opus and Codex without the old Opus version.",
+)
+require(
     "ICChapterModelProvider" in engine_source
     and "openai-chatgpt-5.5-api-key" in engine_source
     and 'remoteModelName: "gpt-5.5"' in engine_source
-    and "openai-chatgpt-5.5-oauth" in engine_source
-    and "anthropic-claude-opus-4.7-api-key" in engine_source
-    and 'remoteModelName: "claude-opus-4-7"' in engine_source,
-    "Remote chapter models for OpenAI API key, OpenAI ChatGPT login, and Anthropic Claude Opus 4.7 must be present in the model catalog.",
+    and "openai-codex-oauth" in engine_source
+    and "OpenAI Codex" in engine_source
+    and "anthropic-claude-opus-4.7-api-key" in model_catalog_source
+    and 'remoteModelName: "claude-opus-4-7"' in model_catalog_source
+    and "kimi-k2.6-api-key" in model_catalog_source
+    and 'remoteModelName: "kimi-k2.6"' in model_catalog_source,
+    "Remote chapter models must offer OpenAI API key, OpenAI Codex login, Anthropic Claude Opus 4.7, and Kimi K2.6.",
 )
 require(
     "ICRemoteChapterCredentialStore" in engine_source
@@ -124,15 +134,30 @@ require(
     and "Cloud-Zugänge" in settings_source
     and "_showOpenAIAPIKeyEditor" in settings_source
     and "_showOpenAIOAuthLogin" in settings_source
-    and "_showAnthropicAPIKeyEditor" in settings_source,
-    "Settings must expose separate credential management for OpenAI API key, ChatGPT OAuth, and Anthropic API key.",
+    and "_showAnthropicAPIKeyEditor" in settings_source
+    and "_showKimiAPIKeyEditor" in settings_source
+    and "case TSSectionCloud: return 4;" in settings_source
+    and "OpenAI Codex Login" in settings_source
+    and "Anthropic API-Key" in settings_source,
+    "Settings must expose OpenAI API key, Codex login, Anthropic API key, and Kimi API key credentials.",
 )
 require(
     "Gerätecode erstellen" in settings_source
+    and "Code kopieren" in settings_source
+    and "UIPasteboard.generalPasteboard.string = info.userCode" in settings_source
     and "https://platform.openai.com/api-keys" in settings_source
     and "https://console.anthropic.com/settings/keys" in settings_source
+    and "https://platform.kimi.ai/console/api-keys" in settings_source
     and "Key erstellen" in settings_source,
-    "Cloud credential UI must let users create a ChatGPT device code and jump directly to provider API key pages.",
+    "Cloud credential UI must let users create a Codex device code and jump directly to provider API key pages.",
+)
+require(
+    "_showCredentialSetupForModel:model" in settings_source
+    and "case ICChapterModelProviderOpenAIAPI:" in settings_source
+    and "case ICChapterModelProviderOpenAICodexOAuth:" in settings_source
+    and "case ICChapterModelProviderAnthropicAPI:" in settings_source
+    and "case ICChapterModelProviderKimiAPI:" in settings_source,
+    "Selecting a remote chapter model with missing credentials must open the matching API key or Codex device-code dialog immediately.",
 )
 require(
     "GGUF" not in settings_source
@@ -198,6 +223,7 @@ require(
     and "ICRemoteChapterCredentialStore.hasOpenAIAPIKey()" in engine_source
     and "ICRemoteChapterCredentialStore.hasOpenAIOAuthCredentials()" in engine_source
     and "ICRemoteChapterCredentialStore.hasAnthropicAPIKey()" in engine_source
+    and "ICRemoteChapterCredentialStore.hasKimiAPIKey()" in engine_source
     and "modelFileURL(for: model) != nil" in engine_source
     and "selectedChapterModelCanGenerate" in episode_source
     and "selectedChapterModelCanGenerate" in episodes_source
@@ -209,9 +235,10 @@ require(
     and "https://api.openai.com/v1/responses" in chapter_source
     and "https://chatgpt.com/backend-api/codex/responses" in chapter_source
     and "https://api.anthropic.com/v1/messages" in chapter_source
+    and "https://api.moonshot.ai/v1/chat/completions" in chapter_source
     and "buildLocalDirectChaptersPrompt(cues: cues" in chapter_source
     and "remoteChapterStartsSchema" in chapter_source,
-    "Remote chapter generation must send the full transcript prompt to OpenAI, ChatGPT OAuth, or Anthropic and request structured chapter JSON.",
+    "Remote chapter generation must send the full transcript prompt to OpenAI API key, Codex OAuth, Anthropic, or Kimi and request structured chapter JSON.",
 )
 require(
     '"tool_choice": "auto"' in chapter_source
@@ -242,9 +269,11 @@ require(
 )
 require(
     "modelMutationBlockReasonForRole" in settings_source
-    and "Modell kann gerade nicht geändert werden" in settings_source
-    and "return nil;" in settings_source,
-    "The model settings UI still allows model selection or destructive actions while that model role is active.",
+    and "_updateBlockedHeader" in settings_source
+    and "Modell kann während der Transkription nicht geändert werden." in settings_source
+    and "TranscriptionQueueViewController" in settings_source
+    and "return model.detail;" in settings_source,
+    "The model settings UI still puts the mutation block warning in model rows or lacks a link back to the transcription queue.",
 )
 require(
     'case "deleteChapterModel":' in (ROOT / "Classes" / "ICTranscriptionDebugAutomation.swift").read_text()

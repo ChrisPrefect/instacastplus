@@ -330,7 +330,7 @@ enum {
         footerLabel.textAlignment = NSTextAlignmentLeft;
         [footerLabel setTextColor:[UIColor grayColor]];
         footerLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
-        footerLabel.text = [NSString stringWithFormat:@"\nVersion %@\nPublisher: Chris Thomann \nDeveloper: Claude Code Opus 4.6\nDevendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion]];
+        footerLabel.text = [NSString stringWithFormat:@"\nVersion %@\nPublisher: Chris Thomann \nDeveloper: Opus, Codex\nDevendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion]];
 
         [footerView addSubview:footerLabel];
         return footerView;
