@@ -53,6 +53,7 @@
 #import "FeedEpisodesTableViewController.h"
 #import "PlayerSpeedButton.h"
 #import "Defines.h"
+#import "AppleWatchSyncManager.h"
 
 extern NSString* MainMenuListUIDsDidChangeNotification;
 
@@ -196,6 +197,8 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[TranscriptionQueue shared] resumeIfNeeded];
             });
+
+            [[AppleWatchSyncManager sharedManager] start];
 
 
             // Handle URL that launched the app

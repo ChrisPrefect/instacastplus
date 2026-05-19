@@ -155,14 +155,28 @@ require(
 require(
     "buildLocalDirectChaptersPrompt" in chapter_source
     and "buildDirectChaptersPrompt" in chapter_source
+    and "transcriptPromptBlockLines" in chapter_source
+    and "Transkript-Bloecke" in chapter_source
+    and "cue.end > blockStart" in chapter_source
     and "existingChapters == nil, totalSegments == 1" in local_generation_body
     and "local-direct-chapters-started" in local_generation_body
     and "direct-full-transcript" in local_generation_body
     and "grammar: .chapterStarts" in local_generation_body
     and "chaptersFromGeneratedStarts" in chapter_source
     and "Ein einzelnes Kapitel ueber fast die ganze Folge ist nur erlaubt" in chapter_source
-    and "eigenen Nutzensprung" in chapter_source,
+    and "eigenen Nutzensprung" in chapter_source
+    and "Promotion wieder in redaktionellen Inhalt uebergeht" in chapter_source
+    and "Ein Oberthema reicht nicht als Kapitel" in chapter_source,
     "Local GGUF still asks the model for redundant direct end times instead of deriving ends from recognized chapter starts.",
+)
+
+require(
+    "validateRemoteChapterStartEvidence" in chapter_source
+    and "rawChapterStartEvidenceIssue" in chapter_source
+    and "evidenceText(evidence, matchesTranscriptContext: context)" in chapter_source
+    and "remote-chapter-evidence-validation-failed" in chapter_source
+    and "remote-chapter-evidence-retry-started" in chapter_source,
+    "Remote chapter starts are not grounded against their evidence text, so a later sponsor can still be saved at an earlier editorial start.",
 )
 
 require(
@@ -182,7 +196,8 @@ require(
     and "localChaptersByClassifyingSponsors" in chapter_source
     and "local-sponsor-classification-started" in chapter_source
     and "local-sponsor-classification-completed" in chapter_source
-    and "local-sponsor-classification-failed" in chapter_source
+    and 'eventPrefix: "local-sponsor-classification"' in chapter_source
+    and "chaptersByApplyingSponsorClassification" in chapter_source
     and "Sponsor- und Eigenpromo-Segmente werden semantisch geprueft." in chapter_source
     and "localSponsorOutput" in chapter_source,
     "Local chapter generation still mixes boundary generation and sponsor classification in one unreliable model task.",
@@ -219,7 +234,7 @@ require(
     "timelineCoverageRule" in chapter_source
     and "Kapitel muessen die komplette Zeitachse lueckenlos abdecken" in chapter_source
     and "promotionSegmentationRule" in chapter_source
-    and "mische redaktionellen Inhalt und Promotion nicht im selben Kapitel" in chapter_source,
+    and "Mische redaktionellen Inhalt und Promotion in keiner Richtung im selben Kapitel" in chapter_source,
     "Local prompts do not explicitly require gap-free chapter coverage and separate sponsor/promo chapters.",
 )
 

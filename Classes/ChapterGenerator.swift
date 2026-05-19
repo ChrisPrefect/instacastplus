@@ -107,12 +107,14 @@ private struct ChaptersFile: Codable {
     private static let minimumSplitChapterDuration: Double = 45
     private static let minimumAudioContextDuration: Double = 3
     private static let maximumAudioInterludeChapterDuration: Double = 90
+    private static let transcriptPromptBlockDuration: Double = 30
     private static let targetContextWindowOverlapDuration: Double = 45 * 60
     private static let targetInputContextRatio = 0.85
     private static let localGenerationTimeoutNanoseconds: UInt64 = 600 * 1_000_000_000
     private static let sponsorRecognitionRule = "- Behandle isSponsor als skip-wuerdige Promotion, nicht nur als externe Werbung: Sponsoring, Eigenpromo, bezahlte Angebote, Mitgliedschaften/Abos, Shops/Merch, Spenden/Support, Bewertungs-/Follow-Aufrufe, Cross-Promotion sowie kommerzielle oder monetaere Calls-to-Action fuer eigene Produkte, Events oder Services. Wenn ein Abschnitt hauptsaechlich dazu auffordert, ausserhalb des redaktionellen Inhalts etwas zu kaufen, zu abonnieren, zu unterstuetzen, zu bewerten/folgen, ein Event zu besuchen, einen Shop/Link zu nutzen oder ein anderes Angebot zu konsumieren, ist er Promotion. Bezahlter oder limitierter Zugang zu einem eigenen Angebot, ein Link in Shownotes zu diesem Angebot oder die Aufforderung, ein eigenes Event, Produkt, Abo oder anderes eigenes Format zu nutzen, ist Promotion auch dann, wenn es informativ formuliert ist. Kapitel, die nur Details eines eigenen Angebots, Events, Produkts, Abos oder anderen eigenen Formats liefern, sind ebenfalls Promotion, auch wenn der konkrete Kauf- oder Nutzungsaufruf erst in einem benachbarten Kapitel steht. Neutrale Erwaehnungen von Plattformen, Tools, Apps, Diensten oder Anbietern sind keine Promotion, wenn sie nur erklaert werden und nicht dazu auffordern, sie zu kaufen, zu abonnieren, zu unterstuetzen oder zu nutzen. Behandle eigene Angebote, eigene Events und andere eigene Podcasts genauso als Promotion; sie sind nicht redaktionell, nur weil sie vom Podcast selbst stammen. Erkenne das semantisch in jeder Sprache; Titel dafuer 'Sponsor: ...' und isSponsor true, auch wenn der Promo-Abschnitt am Anfang, Ende oder ueber fast die ganze kurze Folge laeuft. isSponsor false ist nur fuer redaktionellen Inhalt ohne solches Call-to-Action-Ziel erlaubt.\n"
     private static let timelineCoverageRule = "- Kapitel muessen die komplette Zeitachse lueckenlos abdecken: keine Sekundenluecken zwischen endSeconds und dem naechsten startSeconds, auch nicht fuer Pausen, Musik oder Stille.\n"
-    private static let promotionSegmentationRule = "- Wenn redaktioneller Inhalt in Promotion, Eigenpromo oder einen Call-to-Action uebergeht, beginne dort ein eigenes Sponsor-Kapitel; mische redaktionellen Inhalt und Promotion nicht im selben Kapitel.\n"
+    private static let promotionSegmentationRule = "- Wenn redaktioneller Inhalt in Promotion, Eigenpromo oder einen Call-to-Action uebergeht, beginne dort ein eigenes Sponsor-Kapitel. Wenn Promotion wieder in redaktionellen Inhalt uebergeht, beginne dort ein eigenes redaktionelles Kapitel. Mische redaktionellen Inhalt und Promotion in keiner Richtung im selben Kapitel.\n"
+    private static let promotionAuditRule = "- Pruefe vor der Ausgabe jeden Kapitelkandidaten noch einmal nach seinem Hauptzweck: Wenn der Abschnitt primaer ein Angebot, Produkt, Event, Kurs, Buch, Mitgliedschaft, Spende, Shop, Ticket, Newsletter, Account, Bewertungs-/Follow-Handlung, Link oder einen anderen externen Nutzungsschritt bewirbt, ist er Promotion. Das gilt auch fuer eigene Angebote und auch dann, wenn die Ansage wie eine normale Information klingt. Dann muss isSponsor true sein und der Titel mit 'Sponsor: ' beginnen.\n"
 
     private final class ChapterDebugTrace {
         private let episodeHash: String?
@@ -745,6 +747,7 @@ private struct ChaptersFile: Codable {
         let startSeconds: Int
         let title: String
         let isSponsor: Bool
+        let evidenceText: String?
     }
 
     private static let localChapterSystemPrompt = """
@@ -761,11 +764,12 @@ private struct ChaptersFile: Codable {
                 "items": [
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["startSeconds", "title", "isSponsor"],
+                    "required": ["startSeconds", "title", "isSponsor", "evidenceText"],
                     "properties": [
                         "startSeconds": ["type": "integer"],
                         "title": ["type": "string"],
                         "isSponsor": ["type": "boolean"],
+                        "evidenceText": ["type": "string"],
                     ],
                 ],
             ],
@@ -806,12 +810,12 @@ private struct ChaptersFile: Codable {
             return chapters
         }
 
-        let prompt = buildLocalDirectChaptersPrompt(cues: cues,
-                                                    allCues: cues,
-                                                    musicSegments: musicSegments,
-                                                    totalDuration: totalDuration,
-                                                    episodeTitle: episodeTitle,
-                                                    feedTitle: feedTitle)
+        let prompt = buildRemoteDirectChaptersPrompt(cues: cues,
+                                                     allCues: cues,
+                                                     musicSegments: musicSegments,
+                                                     totalDuration: totalDuration,
+                                                     episodeTitle: episodeTitle,
+                                                     feedTitle: feedTitle)
         let started = Date()
         status?(String(format: NSLocalizedString("%@ erstellt Kapitel aus dem vollständigen Transkript.", comment: ""), model.title))
         progress?(0, 0, 1)
@@ -825,9 +829,30 @@ private struct ChaptersFile: Codable {
                                         "musicSegmentCount": musicSegments?.count ?? 0,
                                       ])
 
-        let output = try await generateRemoteJSONObject(model: model, prompt: prompt, responseShape: .chapterStarts)
+        var output = try await generateRemoteJSONObject(model: model, prompt: prompt, responseShape: .chapterStarts)
+        var response = try decodeLocalJSON(LocalChapterStartsResponse.self, from: output)
+        if let evidenceIssue = Self.rawChapterStartEvidenceIssue(response.chapters, transcriptCues: cues) {
+            debugTrace?.recordPerformance("remote-chapter-evidence-validation-failed",
+                                          metadata: [
+                                            "issue": evidenceIssue,
+                                            "chapterCount": response.chapters.count,
+                                            "outputCharacters": output.count,
+                                            "durationSeconds": String(format: "%.3f", -started.timeIntervalSinceNow),
+                                          ])
+            let retryPrompt = buildRemoteEvidenceRetryPrompt(originalPrompt: prompt, evidenceIssue: evidenceIssue)
+            status?(String(format: NSLocalizedString("%@ korrigiert Kapitelstarts anhand der Belegstellen.", comment: ""), model.title))
+            debugTrace?.recordPerformance("remote-chapter-evidence-retry-started",
+                                          metadata: [
+                                            "modelIdentifier": model.identifier,
+                                            "promptCharacters": retryPrompt.count,
+                                          ])
+            output = try await generateRemoteJSONObject(model: model, prompt: retryPrompt, responseShape: .chapterStarts)
+            response = try decodeLocalJSON(LocalChapterStartsResponse.self, from: output)
+        }
         debugTrace?.recordLocalFinalOutput(output)
-        let response = try decodeLocalJSON(LocalChapterStartsResponse.self, from: output)
+        try Self.validateRemoteChapterStartEvidence(response.chapters,
+                                                    transcriptCues: cues,
+                                                    debugTrace: debugTrace)
         let rawChapters = Self.chaptersFromGeneratedStarts(response.chapters, totalDuration: totalDuration)
         try Self.validateRawGeneratedChapterTiming(rawChapters,
                                                    totalDuration: totalDuration,
@@ -845,6 +870,15 @@ private struct ChaptersFile: Codable {
                                                        transcriptCues: cues,
                                                        existingChapters: nil,
                                                        debugTrace: debugTrace)
+        chapters = try await remoteChaptersByClassifyingSponsors(chapters,
+                                                                 model: model,
+                                                                 cues: cues,
+                                                                 totalDuration: totalDuration,
+                                                                 status: status,
+                                                                 progress: progress,
+                                                                 episodeTitle: episodeTitle,
+                                                                 feedTitle: feedTitle,
+                                                                 debugTrace: debugTrace)
         guard !chapters.isEmpty else {
             throw NSError(domain: "ChapterGenerator", code: 18,
                           userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — das Kapitelmodell hat keine Kapitel erzeugt."])
@@ -1078,7 +1112,6 @@ private struct ChaptersFile: Codable {
                 ],
             ],
             "max_tokens": 8192,
-            "temperature": 0,
             "stream": false,
             "thinking": ["type": "disabled"],
             "response_format": [
@@ -1117,7 +1150,7 @@ private struct ChaptersFile: Codable {
     private func anthropicJSONResponseInstruction(_ responseShape: RemoteResponseShape) -> String {
         switch responseShape {
         case .chapterStarts:
-            return "\n\nAntworte nur mit JSON im Format {\"chapters\":[{\"startSeconds\":0,\"title\":\"...\",\"isSponsor\":false}]}. Keine Markdown-Blöcke."
+            return "\n\nAntworte nur mit JSON im Format {\"chapters\":[{\"startSeconds\":0,\"title\":\"...\",\"isSponsor\":false,\"evidenceText\":\"kurzer Beleg direkt nach startSeconds\"}]}. Keine Markdown-Blöcke."
         case .chapters:
             return "\n\nAntworte nur mit JSON im Format {\"chapters\":[{\"startSeconds\":0,\"endSeconds\":60,\"title\":\"...\",\"isSponsor\":false}]}. Keine Markdown-Blöcke."
         }
@@ -1726,6 +1759,31 @@ private struct ChaptersFile: Codable {
         return prompt
     }
 
+    private func buildRemoteDirectChaptersPrompt(cues: [ICTranscriptCue],
+                                                 allCues: [ICTranscriptCue],
+                                                 musicSegments: [ICAudioSegment]?,
+                                                 totalDuration: Double,
+                                                 episodeTitle: String?,
+                                                 feedTitle: String?) -> String {
+        var prompt = buildDirectChaptersPrompt(cues: cues,
+                                               allCues: allCues,
+                                               musicSegments: musicSegments,
+                                               totalDuration: totalDuration,
+                                               episodeTitle: episodeTitle,
+                                               feedTitle: feedTitle)
+        prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"chapters\" als Array. Jeder Eintrag enthaelt \"startSeconds\" als Ganzzahl ab Podcast-Anfang, \"title\" als nicht leeren String, \"isSponsor\" als Boolean und \"evidenceText\" als kurzes Textfragment mit 6 bis 25 Woertern aus dem Block direkt nach startSeconds. Der Titel muss den Inhalt direkt ab startSeconds beschreiben, nicht ein spaeteres Thema. Wenn keine passende Belegstelle direkt nach startSeconds existiert, verschiebe startSeconds auf den belegten Themenbeginn oder aendere den Titel. Erzeuge kein \"endSeconds\"-Feld; Kapitelenden werden aus dem naechsten startSeconds berechnet. Verwende keine Beispielwerte.\n"
+        prompt += "Pruefe vor der Ausgabe fuer jedes Kapitel: Passt evidenceText zum Titel und liegt diese Belegstelle direkt nach startSeconds? Wenn nicht, korrigiere Startzeit oder Titel. Ein Sponsor-Kapitel darf nie vor der ersten Sponsor-Belegstelle beginnen; wenn vorher redaktioneller Inhalt laeuft, braucht dieser einen eigenen nicht-Sponsor-Kapitelstart.\n"
+        return prompt
+    }
+
+    private func buildRemoteEvidenceRetryPrompt(originalPrompt: String,
+                                                evidenceIssue: String) -> String {
+        var prompt = originalPrompt
+        prompt += "\n\nDie vorige Kapitel-Liste wurde verworfen: \(evidenceIssue)\n"
+        prompt += "Erstelle die komplette Kapitel-Liste neu. evidenceText muss im Transkript direkt beim angegebenen startSeconds vorkommen, nicht spaeter im selben Kapitel. Wenn die Belegstelle zu einem spaeteren Thema gehoert, beginne dort ein neues Kapitel und lasse den vorherigen Abschnitt mit einem eigenen passenden Titel stehen. Sponsor-Kapitel beginnen exakt dort, wo die Sponsor-, Eigenpromo- oder Call-to-Action-Belegstelle beginnt.\n"
+        return prompt
+    }
+
     private static func localContextTokens(forPromptCharacters _: Int) -> Int32 {
         return LocalGGUFModelRunner.recommendedContextTokens()
     }
@@ -1741,6 +1799,57 @@ private struct ChaptersFile: Codable {
         let words = cleaned.split(separator: " ")
         let snippet = words.prefix(16).joined(separator: " ")
         return String(snippet.prefix(140))
+    }
+
+    private func transcriptPromptBlockLines(cues: [ICTranscriptCue],
+                                            totalDuration: Double) -> [String] {
+        let sortedCues = cues.sorted { $0.start < $1.start }
+        guard !sortedCues.isEmpty else { return [] }
+
+        let blockDuration = Self.transcriptPromptBlockDuration
+        var lines: [String] = []
+        var blockStart = 0.0
+        var cueIndex = 0
+
+        while blockStart < totalDuration {
+            let blockEnd = min(blockStart + blockDuration, totalDuration)
+            while cueIndex < sortedCues.count && sortedCues[cueIndex].end <= blockStart {
+                cueIndex += 1
+            }
+
+            var blockTexts: [String] = []
+            var scanIndex = cueIndex
+            while scanIndex < sortedCues.count && sortedCues[scanIndex].start < blockEnd {
+                let cue = sortedCues[scanIndex]
+                if cue.end > blockStart {
+                    let text = Self.transcriptCueTextForPrompt(cue.text)
+                    if !text.isEmpty {
+                        blockTexts.append(text)
+                    }
+                }
+                scanIndex += 1
+            }
+
+            let text = blockTexts.joined(separator: " ")
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                lines.append("[\(formatModelSecondRange(blockStart, blockEnd))] \(text)")
+            }
+
+            blockStart += blockDuration
+        }
+        return lines
+    }
+
+    private static func transcriptCueTextForPrompt(_ text: String) -> String {
+        text.replacingOccurrences(
+            of: #"<\|[^>]+\|>"#,
+            with: "",
+            options: .regularExpression
+        )
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func audioContextMarkers(musicSegments: [ICAudioSegment]?,
@@ -1839,6 +1948,7 @@ private struct ChaptersFile: Codable {
         prompt += "- Nutze startSeconds und endSeconds exakt wie in der bestehenden Kapitel-Liste.\n"
         prompt += "- Nutze das Transkript als Kontext; erfinde keine Inhalte.\n"
         prompt += Self.sponsorRecognitionRule
+        prompt += Self.promotionAuditRule
         prompt += "- Fuer Promotion: isSponsor true und Titel mit 'Sponsor: ...'.\n"
         prompt += "- Fuer redaktionellen Inhalt: isSponsor false und keinen Sponsor-Prefix.\n"
         prompt += "- Audio-Kapitel wie Intro, Jingle oder Sound-Sample bleiben isSponsor false, ausser der umgebende Transkript-Kontext macht sie selbst zur Promotion.\n\n"
@@ -1861,13 +1971,66 @@ private struct ChaptersFile: Codable {
             prompt += "[\(formatModelSecondRange(chapter.start, chapter.end))] \(chapter.title), isSponsor: \(chapter.isSponsor)\n"
         }
 
-        prompt += "\nTranskript (0s-\(formatModelSecond(totalDuration))):\n"
-        for cue in cues {
-            prompt += "[\(formatModelSecond(cue.start))] \(cue.text)\n"
+        prompt += "\nTranskript-Bloecke (0s-\(formatModelSecond(totalDuration))):\n"
+        for line in transcriptPromptBlockLines(cues: cues, totalDuration: totalDuration) {
+            prompt += "\(line)\n"
         }
 
         prompt += "\n\nAntworte ausschliesslich mit einem JSON-Objekt. Es enthaelt genau ein Feld \"chapters\" als Array. Jeder Eintrag enthaelt \"startSeconds\" und \"endSeconds\" unveraendert aus der bestehenden Kapitel-Liste, \"title\" als nicht leeren String und \"isSponsor\" als Boolean. Verwende keine Beispielwerte.\n"
         return prompt
+    }
+
+    private func remoteChaptersByClassifyingSponsors(_ chapters: [ICGeneratedChapter],
+                                                     model: ICDownloadableModel,
+                                                     cues: [ICTranscriptCue],
+                                                     totalDuration: Double,
+                                                     status: ((String) -> Void)?,
+                                                     progress: ((Float, Int, Int) -> Void)?,
+                                                     episodeTitle: String?,
+                                                     feedTitle: String?,
+                                                     debugTrace: ChapterDebugTrace?) async throws -> [ICGeneratedChapter] {
+        guard !chapters.isEmpty else { return chapters }
+
+        let prompt = buildLocalSponsorClassificationPrompt(chapters: chapters,
+                                                           cues: cues,
+                                                           totalDuration: totalDuration,
+                                                           episodeTitle: episodeTitle,
+                                                           feedTitle: feedTitle)
+        let start = Date()
+        status?(NSLocalizedString("Sponsor- und Eigenpromo-Segmente werden semantisch geprueft.", comment: ""))
+        progress?(0, 0, 1)
+        debugTrace?.recordPerformance("remote-sponsor-classification-started",
+                                      metadata: [
+                                        "modelIdentifier": model.identifier,
+                                        "chapterCount": chapters.count,
+                                        "promptCharacters": prompt.count,
+                                      ])
+
+        let output = try await generateRemoteJSONObject(model: model,
+                                                        prompt: prompt,
+                                                        responseShape: .chapters)
+        let response = try decodeLocalJSON(LocalChaptersResponse.self, from: output)
+        let classified = response.chapters.map {
+            ICGeneratedChapter(start: Double($0.startSeconds),
+                               end: Double($0.endSeconds),
+                               title: $0.title,
+                               isSponsor: $0.isSponsor)
+        }
+        let result = try Self.chaptersByApplyingSponsorClassification(classified,
+                                                                      to: chapters,
+                                                                      debugTrace: debugTrace,
+                                                                      start: start,
+                                                                      eventPrefix: "remote-sponsor-classification",
+                                                                      changedCountCode: 43,
+                                                                      changedBoundaryCode: 44)
+        debugTrace?.recordPerformance("remote-sponsor-classification-completed",
+                                      metadata: [
+                                        "chapterCount": result.count,
+                                        "sponsorChapterCount": result.filter { $0.isSponsor }.count,
+                                        "outputCharacters": output.count,
+                                        "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
+                                      ])
+        return result
     }
 
     private func localChaptersByClassifyingSponsors(_ chapters: [ICGeneratedChapter],
@@ -1912,16 +2075,40 @@ private struct ChaptersFile: Codable {
                                title: $0.title,
                                isSponsor: $0.isSponsor)
         }
+        let result = try Self.chaptersByApplyingSponsorClassification(classified,
+                                                                      to: chapters,
+                                                                      debugTrace: debugTrace,
+                                                                      start: start,
+                                                                      eventPrefix: "local-sponsor-classification",
+                                                                      changedCountCode: 23,
+                                                                      changedBoundaryCode: 24)
 
+        debugTrace?.recordPerformance("local-sponsor-classification-completed",
+                                      metadata: [
+                                        "chapterCount": result.count,
+                                        "sponsorChapterCount": result.filter { $0.isSponsor }.count,
+                                        "outputCharacters": output.count,
+                                        "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
+                                      ])
+        return result
+    }
+
+    private static func chaptersByApplyingSponsorClassification(_ classified: [ICGeneratedChapter],
+                                                               to chapters: [ICGeneratedChapter],
+                                                               debugTrace: ChapterDebugTrace?,
+                                                               start: Date,
+                                                               eventPrefix: String,
+                                                               changedCountCode: Int,
+                                                               changedBoundaryCode: Int) throws -> [ICGeneratedChapter] {
         guard classified.count == chapters.count else {
-            debugTrace?.recordPerformance("local-sponsor-classification-failed",
+            debugTrace?.recordPerformance("\(eventPrefix)-failed",
                                           metadata: [
                                             "reason": "chapter-count-changed",
                                             "expectedChapterCount": chapters.count,
                                             "actualChapterCount": classified.count,
                                             "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
                                           ])
-            throw NSError(domain: "ChapterGenerator", code: 23,
+            throw NSError(domain: "ChapterGenerator", code: changedCountCode,
                           userInfo: [NSLocalizedDescriptionKey: "Sponsor-Klassifizierung fehlgeschlagen - das Kapitelmodell hat die Kapitelanzahl veraendert."])
         }
 
@@ -1929,7 +2116,7 @@ private struct ChaptersFile: Codable {
         for (original, candidate) in zip(chapters, classified) {
             guard abs(original.start - candidate.start) <= 1.0,
                   abs(original.end - candidate.end) <= 1.0 else {
-                debugTrace?.recordPerformance("local-sponsor-classification-failed",
+                debugTrace?.recordPerformance("\(eventPrefix)-failed",
                                               metadata: [
                                                 "reason": "chapter-boundaries-changed",
                                                 "expectedStart": String(format: "%.3f", original.start),
@@ -1938,7 +2125,7 @@ private struct ChaptersFile: Codable {
                                                 "actualEnd": String(format: "%.3f", candidate.end),
                                                 "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
                                               ])
-                throw NSError(domain: "ChapterGenerator", code: 24,
+                throw NSError(domain: "ChapterGenerator", code: changedBoundaryCode,
                               userInfo: [NSLocalizedDescriptionKey: "Sponsor-Klassifizierung fehlgeschlagen - das Kapitelmodell hat Kapitelgrenzen veraendert."])
             }
 
@@ -1963,14 +2150,6 @@ private struct ChaptersFile: Codable {
                                              title: title,
                                              isSponsor: isSponsor))
         }
-
-        debugTrace?.recordPerformance("local-sponsor-classification-completed",
-                                      metadata: [
-                                        "chapterCount": result.count,
-                                        "sponsorChapterCount": result.filter { $0.isSponsor }.count,
-                                        "outputCharacters": output.count,
-                                        "durationSeconds": String(format: "%.3f", -start.timeIntervalSinceNow),
-                                      ])
         return result
     }
 
@@ -2318,13 +2497,16 @@ private struct ChaptersFile: Codable {
         prompt += "Gesamtdauer: \(Int(totalDuration)) Sekunden.\n\n"
         prompt += "Regeln:\n"
         prompt += "- Nutze das gesamte Transkript als Kontext; erfinde keine Inhalte.\n"
+        prompt += "- Das Transkript ist in 30-Sekunden-Bloecke gruppiert. Ein Kapitelstart muss zu dem Block passen, dessen Inhalt direkt danach beschrieben wird.\n"
         prompt += "- Ein Kapitel darf sehr lang sein, auch 40 Minuten oder laenger, wenn der Inhalt wirklich ein zusammenhaengender Themenblock ist.\n"
         prompt += "- Unterteile nicht nach Dauer, sondern nur bei echten, fuer Hoerer nuetzlichen Themen-, Segment- oder Skip-Wechseln.\n"
         prompt += "- Erzeuge keine eigenen Kapitelstarts fuer kurze Begruessungen, Meta-Einleitungen, Ueberleitungen, Fuellsaetze oder einzelne Service-Details, wenn sie zum selben Nutzenthema gehoeren.\n"
         prompt += "- Ein einzelnes Kapitel ueber fast die ganze Folge ist nur erlaubt, wenn das Transkript wirklich keinen eigenen Nutzensprung, keine neue Hauptfrage, kein Fazit und kein skip-wuerdiges Segment enthaelt.\n"
         prompt += "- Wenn ein Gespraech mehrere Hauptfragen, Argumente, Methoden, Studien, konkrete Beispiele, Empfehlungen oder ein Schlusssegment behandelt, muessen die Kapitelstarts diese Wechsel sichtbar machen.\n"
+        prompt += "- Ein Oberthema reicht nicht als Kapitel, wenn darunter mehrere klar benannte eigenstaendige Gegenstaende, Projekte, Produkte, Dienste, Picks, Fragen oder Entscheidungen nacheinander behandelt werden. Beginne dann beim Wechsel ein eigenes Kapitel, damit Hoerer den Abschnitt gezielt auswaehlen oder ueberspringen koennen.\n"
         prompt += Self.sponsorRecognitionRule
         prompt += Self.promotionSegmentationRule
+        prompt += Self.promotionAuditRule
         prompt += "- Audiohinweise sind neutrale SoundAnalysis-Zeitbereiche. Erzeuge daraus nur dann ein Kapitel mit Titel exakt 'Jingle' oder 'Sound-Sample', wenn der umgebende Transkript-Kontext das belegt. Erzeuge daraus nie geratenes Intro oder Outro.\n"
         prompt += "- Titel in der Sprache des Transkripts.\n"
         prompt += "- Titel muessen fuer Hoerer bei der Kapitelauswahl nuetzlich sein: konkrete Sache, Person, Ort, Frage, Messwert, Methode oder zentrale These nennen.\n"
@@ -2348,9 +2530,9 @@ private struct ChaptersFile: Codable {
             prompt += "Nutze diesen Kontext nur, wenn der Transkriptabschnitt ihn stuetzt.\n\n"
         }
 
-        prompt += "Transkript (0s-\(formatModelSecond(totalDuration))):\n"
-        for cue in cues {
-            prompt += "[\(formatModelSecond(cue.start))] \(cue.text)\n"
+        prompt += "Transkript-Bloecke (0s-\(formatModelSecond(totalDuration))):\n"
+        for line in transcriptPromptBlockLines(cues: cues, totalDuration: totalDuration) {
+            prompt += "\(line)\n"
         }
 
         let audioMarkers = Self.audioContextMarkers(musicSegments: musicSegments,
@@ -2385,6 +2567,7 @@ private struct ChaptersFile: Codable {
         prompt += "Ein zusammenhaengendes Thema darf sehr lang sein, auch 40 Minuten oder laenger. Erzwinge keine Unterteilung nach Dauer.\n"
         prompt += Self.sponsorRecognitionRule
         prompt += Self.promotionSegmentationRule
+        prompt += Self.promotionAuditRule
         prompt += "Audiohinweise sind neutrale SoundAnalysis-Zeitbereiche. Erzeuge daraus nur dann einen Marker mit Titel exakt 'Jingle' oder 'Sound-Sample', wenn der umgebende Transkript-Kontext das belegt. Erzeuge daraus nie Intro oder Outro.\n"
         prompt += "Titel in der Sprache des Transkripts.\n"
         prompt += "Titel muessen fuer Hoerer bei der Kapitelauswahl nuetzlich sein: konkrete Sache, Person, Ort, Frage oder These nennen.\n"
@@ -2827,6 +3010,68 @@ private struct ChaptersFile: Codable {
         NSLog("[ChapterGenerator] Raw chapter timing validation failed: %@", issue)
         throw NSError(domain: "ChapterGenerator", code: 23,
                       userInfo: [NSLocalizedDescriptionKey: issue])
+    }
+
+    private static func validateRemoteChapterStartEvidence(_ starts: [LocalChapterStart],
+                                                           transcriptCues: [ICTranscriptCue],
+                                                           debugTrace: ChapterDebugTrace?) throws {
+        guard let issue = rawChapterStartEvidenceIssue(starts, transcriptCues: transcriptCues) else {
+            return
+        }
+        debugTrace?.recordPerformance("remote-chapter-evidence-validation-failed",
+                                      metadata: [
+                                        "issue": issue,
+                                        "chapterCount": starts.count,
+                                      ])
+        NSLog("[ChapterGenerator] Remote chapter evidence validation failed: %@", issue)
+        throw NSError(domain: "ChapterGenerator", code: 45,
+                      userInfo: [NSLocalizedDescriptionKey: issue])
+    }
+
+    private static func rawChapterStartEvidenceIssue(_ starts: [LocalChapterStart],
+                                                     transcriptCues: [ICTranscriptCue]) -> String? {
+        guard transcriptCues.count >= 20 else { return nil }
+
+        for chapter in starts {
+            let evidence = chapter.evidenceText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !evidence.isEmpty else {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat keine Belegstelle fuer startSeconds \(chapter.startSeconds) geliefert."
+            }
+
+            let start = Double(chapter.startSeconds)
+            let context = transcriptContextSnippet(from: max(0, start - 90),
+                                                   to: start + 90,
+                                                   transcriptCues: transcriptCues) ?? ""
+            guard evidenceText(evidence, matchesTranscriptContext: context) else {
+                return "Kapitelerkennung fehlgeschlagen - Kapitelmodell hat eine Belegstelle nicht am Kapitelstart \(chapter.startSeconds)s geliefert."
+            }
+        }
+
+        return nil
+    }
+
+    private static func evidenceText(_ evidence: String,
+                                     matchesTranscriptContext context: String) -> Bool {
+        let evidenceTokens = Self.evidenceTokens(from: evidence)
+        guard evidenceTokens.count >= 4 else { return false }
+        let contextTokens = Set(Self.evidenceTokens(from: context))
+        guard !contextTokens.isEmpty else { return false }
+
+        let checkedTokens = Array(evidenceTokens.prefix(18))
+        let requiredMatches = max(4, Int(ceil(Double(checkedTokens.count) * 0.65)))
+        let matchCount = checkedTokens.reduce(0) { count, token in
+            contextTokens.contains(token) ? count + 1 : count
+        }
+        return matchCount >= requiredMatches
+    }
+
+    private static func evidenceTokens(from text: String) -> [String] {
+        text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+            .lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { $0.count >= 4 }
     }
 
     private static func rawGeneratedChapterTimingIssue(_ rawChapters: [ICGeneratedChapter],

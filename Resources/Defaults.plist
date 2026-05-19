@@ -102,6 +102,10 @@
 	<true/>
 	<key>AutoDownloadWhileStreaming</key>
 	<true/>
+	<key>AppleWatchSendLatestCount</key>
+	<integer>0</integer>
+	<key>AppleWatchOnlyUnplayed</key>
+	<true/>
 	<key>AmazonAffiliateEnabled</key>
 	<true/>
 </dict>

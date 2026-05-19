@@ -14,3 +14,4 @@
 #import "CDChapter.h"
 #import "CDFeedProperty.h"
 #import "CDEpisodeList.h"
+#import "AppleWatchEpisodeState.h"

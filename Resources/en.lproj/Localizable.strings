@@ -1208,6 +1208,30 @@
 "Ausgewählt, noch nicht geladen" = "Selected, not downloaded yet";
 "Download" = "Download";
 "Laden" = "Download";
+
+/* Apple Watch */
+"Neueste Episoden senden" = "Send Latest Episodes";
+"Nur ungespielte Episoden" = "Only Unplayed Episodes";
+"Die Apple Watch lädt ausgewählte Audiodateien selbst über WLAN oder Mobilfunk." = "Apple Watch downloads selected audio files itself over Wi-Fi or cellular.";
+"An Apple Watch senden" = "Send to Apple Watch";
+"Von Apple Watch entfernen" = "Remove from Apple Watch";
+"Priorisiert auf Watch laden" = "Prioritize Download on Watch";
+"Auf Apple Watch" = "On Apple Watch";
+"Laedt auf Apple Watch" = "Loading on Apple Watch";
+"Fehler beim Laden" = "Download Error";
+"Wird entfernt" = "Removing";
+"Wartet auf Apple Watch" = "Waiting for Apple Watch";
+"Jetzt synchronisieren" = "Sync Now";
+"Apple Watch ist auf diesem Gerät nicht verfügbar." = "Apple Watch is not available on this device.";
+"Keine Apple Watch gekoppelt." = "No Apple Watch paired.";
+"Die Instacast-Watch-App ist noch nicht installiert." = "The Instacast Watch app is not installed yet.";
+"%ld auf der Watch\n%ld werden geladen" = "%ld on Watch\n%ld downloading";
+"Letzte Synchronisierung: nie" = "Last Sync: never";
+"Letzte Synchronisierung" = "Last Sync";
+"Kopple eine Apple Watch, um Episoden für die Watch auszuwählen." = "Pair an Apple Watch to select episodes for Watch.";
+"Installiere die Instacast-Watch-App auf deiner Apple Watch." = "Install the Instacast Watch app on your Apple Watch.";
+"Keine Episoden für die Apple Watch ausgewählt." = "No episodes selected for Apple Watch.";
+"Einrichten" = "Set Up";
 "Löschen" = "Delete";
 "Vorbereiten" = "Prepare";
 "Modell ist nicht geladen." = "Model is not downloaded.";

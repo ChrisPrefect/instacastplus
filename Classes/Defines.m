@@ -101,6 +101,8 @@ NSString* AutoDeleteNewsMode = @"AutoDeleteNewsMode";
 NSString* KeepNewestEpisodesCount = @"KeepNewestEpisodesCount";
 NSString* ContinuousPlayFromFeed = @"ContinuousPlayFromFeed";
 NSString* AutoDownloadWhileStreaming = @"AutoDownloadWhileStreaming";
+NSString* AppleWatchSendLatestCount = @"AppleWatchSendLatestCount";
+NSString* AppleWatchOnlyUnplayed = @"AppleWatchOnlyUnplayed";
 
 NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 

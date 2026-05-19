@@ -12,6 +12,7 @@
 #import "UIManager.h"
 #import "InstacastPlus-Swift.h"
 #import "TranscriptionSettingsViewController.h"
+#import "AppleWatchSyncManager.h"
 
 #import "InstacastAppDelegate.h"
 #import "PlaybackViewController.h"
@@ -1311,6 +1312,29 @@
             }
             AudioServicesPlaySystemSound(1519);
         }]];
+    }
+
+    AppleWatchSyncManager* watchManager = [AppleWatchSyncManager sharedManager];
+    if ([watchManager canSendEpisodeToWatch:self.episode]) {
+        BOOL selectedForWatch = [watchManager isEpisodeSelectedForWatch:self.episode];
+        NSString* watchTitle = selectedForWatch ? @"Von Apple Watch entfernen".ls : @"An Apple Watch senden".ls;
+        NSString* watchIcon = selectedForWatch ? @"applewatch.slash" : @"applewatch";
+        [actions addObject:[UIAction actionWithTitle:watchTitle image:[UIImage systemImageNamed:watchIcon] identifier:nil handler:^(__unused UIAction* action) {
+            STRONG_SELF
+            if (selectedForWatch) {
+                [watchManager removeEpisodeFromWatch:self.episode];
+            }
+            else {
+                [watchManager sendEpisodeToWatch:self.episode];
+            }
+        }]];
+
+        if (selectedForWatch && ![watchManager isEpisodeDownloadedOnWatch:self.episode]) {
+            [actions addObject:[UIAction actionWithTitle:@"Priorisiert auf Watch laden".ls image:[UIImage systemImageNamed:@"arrow.down.circle"] identifier:nil handler:^(__unused UIAction* action) {
+                STRONG_SELF
+                [watchManager prioritizeEpisodeOnWatch:self.episode];
+            }]];
+        }
     }
 
     // 4. Download (if not cached and not currently caching)

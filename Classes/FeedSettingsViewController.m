@@ -17,6 +17,7 @@
 #import "SettingInputViewController.h"
 #import "ChapterSkipListViewController.h"
 #import "SkipTimeCell.h"
+#import "AppleWatchSyncManager.h"
 
 enum {
     kEpisodesSection,
@@ -25,6 +26,7 @@ enum {
     kNewsModeSection,
     kAggregateUnavailableEpisodesSection,
     kAutoDownloadSettingsSection,
+    kAppleWatchSection,
     kAutoDeleteSettingsSection,
     kPlaybackSection,
     kRestoreDeletedSection,
@@ -35,6 +37,9 @@ enum {
 
 @interface FeedSettingsViewController () <UITextFieldDelegate>
 @property (nonatomic, strong) CDFeed* feed;
+@property (nonatomic) BOOL appleWatchSettingsSnapshotValid;
+@property (nonatomic) NSInteger appleWatchSendLatestCountSnapshot;
+@property (nonatomic) BOOL appleWatchOnlyUnplayedSnapshot;
 
 @end
 
@@ -97,6 +102,7 @@ enum {
 {
     [super viewWillAppear:animated];
     [self updateAppearance];
+    [self syncAppleWatchSettingsIfNeeded];
     [self.navigationController setToolbarHidden:YES animated:YES];
 }
 
@@ -157,6 +163,8 @@ enum {
         case kAggregateUnavailableEpisodesSection:
             return 1;
         case kAutoDownloadSettingsSection:
+            return 2;
+        case kAppleWatchSection:
             return 2;
         case kAutoDeleteSettingsSection:
             return 4;
@@ -308,6 +316,37 @@ enum {
         [control addTarget:self action:@selector(toggleDownloadSettings:) forControlEvents:UIControlEventValueChanged];
         
         return cell;
+    }
+
+    else if (indexPath.section == kAppleWatchSection)
+    {
+        if (indexPath.row == 0)
+        {
+            cell.accessoryView = nil;
+            cell = [self detailCell];
+            cell.textLabel.text = @"Neueste Episoden senden".ls;
+            NSInteger count = [self.feed integerForKey:AppleWatchSendLatestCount];
+            if (count <= 0) {
+                cell.detailTextLabel.text = @"Off".ls;
+            }
+            else if (count == 1) {
+                cell.detailTextLabel.text = @"1 Episode".ls;
+            }
+            else {
+                cell.detailTextLabel.text = [NSString stringWithFormat:@"%d Episodes".ls, (int)count];
+            }
+        }
+        else
+        {
+            cell.accessoryView = nil;
+            UITableViewCell* cell = [self switchCell];
+            UISwitch* control = (UISwitch*)cell.accessoryView;
+            cell.textLabel.text = @"Nur ungespielte Episoden".ls;
+            control.on = [self.feed boolForKey:AppleWatchOnlyUnplayed];
+            control.tag = indexPath.row;
+            [control addTarget:self action:@selector(toggleAppleWatchSettings:) forControlEvents:UIControlEventValueChanged];
+            return cell;
+        }
     }
     
     else if (indexPath.section == kAutoDeleteSettingsSection)
@@ -549,6 +588,8 @@ enum {
             return @"Auto Skip".ls;
         case kAutoDownloadSettingsSection:
             return @"Auto-Download Content".ls;
+        case kAppleWatchSection:
+            return @"Apple Watch".ls;
         case kAutoDeleteSettingsSection:
             return @"Auto-Delete Content".ls;
         case kPlaybackSection:
@@ -669,6 +710,24 @@ enum {
                 [NSString stringWithFormat:@"%d Episodes".ls, 10],
                 [NSString stringWithFormat:@"%d Episodes".ls, 11],
                 [NSString stringWithFormat:@"%d Episodes".ls, 12] ];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+    }
+    else if (indexPath.section == kAppleWatchSection)
+    {
+        if (indexPath.row == 0)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = AppleWatchSendLatestCount;
+            controller.title = @"Neueste Episoden senden".ls;
+            controller.values = @[ @(0), @(1), @(2), @(3), @(5), @(10) ];
+            controller.titles = @[ @"Off".ls, @"1 Episode".ls,
+                [NSString stringWithFormat:@"%d Episodes".ls, 2],
+                [NSString stringWithFormat:@"%d Episodes".ls, 3],
+                [NSString stringWithFormat:@"%d Episodes".ls, 5],
+                [NSString stringWithFormat:@"%d Episodes".ls, 10] ];
             [self.navigationController pushViewController:controller animated:YES];
         }
     }
@@ -808,6 +867,9 @@ enum {
     else if (section == kNewsModeSection) {
         return @"Enable News Mode to only keep the most recent episode(s) of a podcast.".ls;
     }
+    else if (section == kAppleWatchSection) {
+        return @"Die Apple Watch lädt ausgewählte Audiodateien selbst über WLAN oder Mobilfunk.".ls;
+    }
     else if (section == kAggregateUnavailableEpisodesSection) {
         return @"Enable to show all episodes regardless of whether or not they are still available on the publisher's server.".ls;
     }
@@ -881,6 +943,41 @@ enum {
     }
 
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void) toggleAppleWatchSettings:(UISwitch*)sender
+{
+    if (sender.tag == 1) {
+        [self setBool:sender.on forKey:AppleWatchOnlyUnplayed];
+        [[AppleWatchSyncManager sharedManager] rebuildAutomaticSelectionsAndSync];
+        [self storeAppleWatchSettingsSnapshot];
+    }
+
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];
+}
+
+- (void)storeAppleWatchSettingsSnapshot
+{
+    self.appleWatchSendLatestCountSnapshot = [self.feed integerForKey:AppleWatchSendLatestCount];
+    self.appleWatchOnlyUnplayedSnapshot = [self.feed boolForKey:AppleWatchOnlyUnplayed];
+    self.appleWatchSettingsSnapshotValid = YES;
+}
+
+- (void)syncAppleWatchSettingsIfNeeded
+{
+    NSInteger latestCount = [self.feed integerForKey:AppleWatchSendLatestCount];
+    BOOL onlyUnplayed = [self.feed boolForKey:AppleWatchOnlyUnplayed];
+    if (!self.appleWatchSettingsSnapshotValid) {
+        [self storeAppleWatchSettingsSnapshot];
+        return;
+    }
+
+    if (latestCount == self.appleWatchSendLatestCountSnapshot && onlyUnplayed == self.appleWatchOnlyUnplayedSnapshot) {
+        return;
+    }
+
+    [self storeAppleWatchSettingsSnapshot];
+    [[AppleWatchSyncManager sharedManager] rebuildAutomaticSelectionsAndSync];
 }
 
 

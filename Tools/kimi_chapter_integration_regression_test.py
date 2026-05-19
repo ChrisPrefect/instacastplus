@@ -15,6 +15,7 @@ chapter_source = (ROOT / "Classes" / "ChapterGenerator.swift").read_text()
 project_source = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 gitignore = (ROOT / ".gitignore").read_text()
 script_source = (ROOT / "Scripts" / "copy_kimi_builtin_env.sh").read_text() if (ROOT / "Scripts" / "copy_kimi_builtin_env.sh").exists() else ""
+kimi_body_source = chapter_source.split("private func kimiChatCompletionsBody", 1)[1].split("private static let remoteChaptersSchema", 1)[0]
 
 
 require(
@@ -54,10 +55,26 @@ require(
     "https://api.moonshot.ai/v1/chat/completions" in chapter_source
     and "generateKimiJSONObject" in chapter_source
     and "openAIChatCompletionOutputText" in chapter_source
+    and "buildRemoteDirectChaptersPrompt" in chapter_source
+    and "evidenceText" in chapter_source
+    and "Transkript-Bloecke" in chapter_source
+    and "transcriptPromptBlockDuration" in chapter_source
+    and "cue.end > blockStart" in chapter_source
+    and "Promotion wieder in redaktionellen Inhalt uebergeht" in chapter_source
+    and "Ein Oberthema reicht nicht als Kapitel" in chapter_source
+    and "validateRemoteChapterStartEvidence" in chapter_source
+    and "rawChapterStartEvidenceIssue" in chapter_source
+    and "remote-chapter-evidence-retry-started" in chapter_source
     and '"response_format"' in chapter_source
     and '"json_schema"' in chapter_source
     and '"thinking": ["type": "disabled"]' in chapter_source,
-    "Kimi generation must use Moonshot's OpenAI-compatible Chat Completions endpoint with structured JSON output.",
+    "Kimi generation must use Moonshot's Chat Completions endpoint with grounded full-transcript block prompts and structured JSON output.",
+)
+
+require(
+    '"temperature"' not in kimi_body_source
+    and '"top_p"' not in kimi_body_source,
+    "Kimi K2.6 rejects non-default sampling parameters in non-thinking mode; the app must not send them.",
 )
 
 env_path = ROOT / ".env"

@@ -22,6 +22,8 @@
 #import "MainActivityViewController.h"
 #import "StatusBarFixingViewController.h"
 #import "DirectorySearchViewController.h"
+#import "AppleWatchEpisodesViewController.h"
+#import "AppleWatchSyncManager.h"
 
 #import "VDModalInfo.h"
 #import "OnboardScreenVC.h"
@@ -42,6 +44,7 @@ typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemFavorites       = 11,
     kMainSidebarItemStarted         = 12,
     kMainSidebarItemTranscription   = 13,
+    kMainSidebarItemAppleWatch      = 14,
 };
 
 NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNotification";
@@ -113,6 +116,16 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(_cacheManagerDidUpdate:)
                                                      name:CacheManagerDidEndCachingNotification
+                                                   object:nil];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_appleWatchStateDidChange:)
+                                                     name:ICAppleWatchSyncManagerStateDidChangeNotification
+                                                   object:nil];
+
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_appleWatchStateDidChange:)
+                                                     name:ICAppleWatchEpisodeStatesDidChangeNotification
                                                    object:nil];
 
         _observing = YES;
@@ -537,6 +550,14 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [self.sidebarController.tableView reloadData];
 }
 
+- (void) _appleWatchStateDidChange:(NSNotification*)notification
+{
+    (void)notification;
+    [self _rebuildSidebarItems];
+    [self.sidebarController.tableView reloadData];
+    [self.sidebarController updateRowSelectionForSelectedItemTag];
+}
+
 - (NSInteger) _tagForListUID:(NSString*)uid
 {
     // Map known default UIDs to their existing enum tags for backward compatibility
@@ -648,6 +669,28 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     };
 
     NSMutableArray* section2Items = [NSMutableArray arrayWithObject:downloadsItem];
+    AppleWatchSyncManager* watchManager = [AppleWatchSyncManager sharedManager];
+    if (watchManager.paired || [watchManager allEpisodeStates].count > 0) {
+        MainSidebarItem* appleWatchItem = [MainSidebarItem itemWithTitle:@"Apple Watch".ls
+                                                                     tag:kMainSidebarItemAppleWatch
+                                                                   image:[UIImage systemImageNamed:@"applewatch"]
+                                                           selectedImage:[UIImage systemImageNamed:@"applewatch"]];
+        appleWatchItem.subtitle = ^NSString*{
+            if (!watchManager.watchAppInstalled) {
+                return @"Einrichten".ls;
+            }
+            NSInteger downloading = 0;
+            for (AppleWatchEpisodeState* state in [watchManager allEpisodeStates]) {
+                if ([state.watchStatus isEqualToString:ICAppleWatchStatusDownloading] ||
+                    [state.watchStatus isEqualToString:ICAppleWatchStatusQueuedOnWatch] ||
+                    [state.watchStatus isEqualToString:ICAppleWatchStatusManifestSent]) {
+                    downloading += 1;
+                }
+            }
+            return downloading > 0 ? [@(downloading) stringValue] : nil;
+        };
+        [section2Items addObject:appleWatchItem];
+    }
     if ([TranscriptionQueue shared].hasVisibleItems) {
         [section2Items addObject:transcriptionItem];
     }
@@ -806,6 +849,17 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
             navController.view.tintColor = ICTintColor;
             self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
             navController.toolbarHidden = NO;
+            return YES;
+        }
+        case kMainSidebarItemAppleWatch:
+        {
+            AppleWatchEpisodesViewController* controller = [AppleWatchEpisodesViewController viewController];
+            controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+
+            PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+            navController.view.tintColor = ICTintColor;
+            self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+            navController.toolbarHidden = YES;
             return YES;
         }
 

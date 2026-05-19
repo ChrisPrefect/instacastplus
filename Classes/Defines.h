@@ -104,6 +104,8 @@ extern NSString* AutoDeleteNewsMode;
 extern NSString* KeepNewestEpisodesCount;
 extern NSString* ContinuousPlayFromFeed;
 extern NSString* AutoDownloadWhileStreaming;
+extern NSString* AppleWatchSendLatestCount;
+extern NSString* AppleWatchOnlyUnplayed;
 
 extern NSString* kDefaultShowUnavailableEpisodes;
 
@@ -146,7 +148,8 @@ typedef NS_ENUM(NSInteger, ICEpisodeSwipeAction) {
     ICEpisodeSwipeActionAddToPlayNext,
     ICEpisodeSwipeActionDelete,
     ICEpisodeSwipeActionEpisodeInfo,
-    ICEpisodeSwipeActionTranscribe
+    ICEpisodeSwipeActionTranscribe,
+    ICEpisodeSwipeActionSendToAppleWatch
 };
 
 extern NSString* EnabledPlaybackSpeedsKey;

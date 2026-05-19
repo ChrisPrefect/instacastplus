@@ -28,6 +28,7 @@
 #import "EpisodeLoadingManager.h"
 #import "WidgetDataExporter.h"
 #import "InstacastPlus-Swift.h"
+#import "AppleWatchSyncManager.h"
 
 #import "MainViewController_4.h"
 #import "SubscriptionsTableViewController.h"
@@ -432,6 +433,8 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     // and WidgetKitHelper skips internally — iOS widgets don't work there.
     [[WidgetDataExporter sharedExporter] startObserving];
     [WidgetKitHelper startListeningForWidgetActions];
+
+    [[AppleWatchSyncManager sharedManager] start];
 
     [ICTranscriptionDebugAutomation startCommandProcessing];
     [ICTranscriptionDebugAutomation handleLaunchArguments];

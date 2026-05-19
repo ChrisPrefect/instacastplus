@@ -29,7 +29,7 @@
 #import "FSCrossbucketConnection.h"
 
 
-#define MODEL_VERSION 4
+#define MODEL_VERSION 5
 NSTimeInterval kTrialReferenceDate = 0;
 
 static DatabaseManager* gSharedDatabaseManager = nil;

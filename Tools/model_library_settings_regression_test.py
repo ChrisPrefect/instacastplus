@@ -236,7 +236,7 @@ require(
     and "https://chatgpt.com/backend-api/codex/responses" in chapter_source
     and "https://api.anthropic.com/v1/messages" in chapter_source
     and "https://api.moonshot.ai/v1/chat/completions" in chapter_source
-    and "buildLocalDirectChaptersPrompt(cues: cues" in chapter_source
+    and "buildRemoteDirectChaptersPrompt(cues: cues" in chapter_source
     and "remoteChapterStartsSchema" in chapter_source,
     "Remote chapter generation must send the full transcript prompt to OpenAI API key, Codex OAuth, Anthropic, or Kimi and request structured chapter JSON.",
 )

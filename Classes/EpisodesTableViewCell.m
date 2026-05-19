@@ -15,6 +15,7 @@
 #import "GradientProgressView.h"
 #import "PlaybackManager.h"
 #import "InstacastPlus-Swift.h"
+#import "AppleWatchSyncManager.h"
 
 
 @interface EpisodesTableViewCell ()
@@ -37,6 +38,8 @@
 @property (nonatomic, readwrite, strong) UIImageView* videoIndicator;
 @property (nonatomic, strong) UIImageView* transcriptIndicator;
 @property (nonatomic) BOOL transcriptIndicatorVisible; // cached, updated in setObjectValue/updateTranscriptState
+@property (nonatomic, strong) UIImageView* watchIndicator;
+@property (nonatomic) BOOL watchIndicatorVisible;
 @property (nonatomic, strong) UIView* starredIndicator;
 @property (nonatomic, strong, readwrite) EpisodePlayComboButton* playAccessoryButton;
 @property (nonatomic, strong, readwrite) UIPanGestureRecognizer* panRecognizer;
@@ -101,6 +104,13 @@
         _transcriptIndicator.contentMode = UIViewContentModeScaleAspectFit;
         _transcriptIndicator.hidden = YES;
         [self.panningContentView addSubview:_transcriptIndicator];
+
+        _watchIndicator = [[UIImageView alloc] initWithFrame:CGRectZero];
+        _watchIndicator.image = [[UIImage systemImageNamed:@"applewatch" withConfiguration:config] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        _watchIndicator.tintColor = ICTintColor;
+        _watchIndicator.contentMode = UIViewContentModeScaleAspectFit;
+        _watchIndicator.hidden = YES;
+        [self.panningContentView addSubview:_watchIndicator];
 
 		_videoIndicator = [[UIImageView alloc] initWithFrame:CGRectZero];
 		_videoIndicator.image = [[UIImage imageNamed:@"Episode Video"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -200,6 +210,8 @@
     self.leftSwipeTintProvider = nil;
     self.rightSwipeImageProvider = nil;
     self.rightSwipeTintProvider = nil;
+    self.watchIndicatorVisible = NO;
+    self.watchIndicator.hidden = YES;
 
     [self.multipleSelectionBackgroundView removeFromSuperview];
     
@@ -286,6 +298,7 @@
         [self updatePlayComboButtonState];
         [self updatePlayedAndStarredState];
         [self updateTranscriptIndicatorState];
+        [self updateWatchIndicatorState];
 
     }
 }
@@ -476,6 +489,19 @@
     }
 }
 
+- (void) updateWatchIndicatorState
+{
+    CDEpisode* episode = (CDEpisode*)self.objectValue;
+    self.watchIndicatorVisible = NO;
+    self.watchIndicator.hidden = YES;
+
+    if (episode.objectHash.length > 0 && [[AppleWatchSyncManager sharedManager] isEpisodeDownloadedOnWatch:episode]) {
+        self.watchIndicatorVisible = YES;
+        self.watchIndicator.hidden = NO;
+        self.watchIndicator.tintColor = ICTintColor;
+    }
+}
+
 - (UIScrollView*) _cellScrollView
 {
     UIScrollView* scrollView = nil;
@@ -627,7 +653,15 @@
 
     // Transcript indicator — state is cached in transcriptIndicatorVisible (updated in setObjectValue)
     _transcriptIndicator.hidden = !self.transcriptIndicatorVisible;
-    _transcriptIndicator.frame = CGRectMake(consumeIndicatorFrame.origin.x - 2, detailLabelRect.origin.y + 1, 14, 11);
+    CGFloat indicatorX = consumeIndicatorFrame.origin.x - 2;
+    CGFloat indicatorY = detailLabelRect.origin.y + 1;
+    _transcriptIndicator.frame = CGRectMake(indicatorX, indicatorY, 14, 11);
+    if (self.transcriptIndicatorVisible) {
+        indicatorY = CGRectGetMaxY(_transcriptIndicator.frame) + 3;
+    }
+
+    _watchIndicator.hidden = !self.watchIndicatorVisible;
+    _watchIndicator.frame = CGRectMake(indicatorX, indicatorY, 14, 12);
 
     self.videoIndicator.frame = videoIndicatorFrame;
     

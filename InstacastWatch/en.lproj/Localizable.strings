@@ -1,0 +1,16 @@
+"Keine Episoden" = "No Episodes";
+"Entfernen" = "Remove";
+"Nicht verfügbar" = "Not Available";
+"Aktualisieren" = "Refresh";
+"Fehler" = "Error";
+"Wird entfernt" = "Removing";
+"Wartet" = "Waiting";
+"Download erneut versuchen" = "Retry Download";
+"Von Watch entfernen" = "Remove from Watch";
+"Episode" = "Episode";
+"Pause" = "Pause";
+"Abspielen" = "Play";
+"Download fehlgeschlagen: HTTP %ld." = "Download failed: HTTP %ld.";
+"Geladene Datei ist leer." = "Downloaded file is empty.";
+"Geladene Audiodatei konnte nicht validiert werden." = "Downloaded audio file could not be validated.";
+"Audiodatei konnte nicht abgespielt werden." = "Audio file could not be played.";

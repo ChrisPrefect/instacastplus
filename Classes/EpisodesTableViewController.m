@@ -36,6 +36,7 @@
 #import "TranscriptionSettingsViewController.h"
 #import "ICEpisodeUIConfig.h"
 #import "InstacastPlus-Swift.h"
+#import "AppleWatchSyncManager.h"
 
 NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeUID";
 
@@ -103,6 +104,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                  selector:@selector(_playbackEpisodeDidChange:)
                                                      name:PlaybackManagerDidEndNotification
                                                    object:nil];
+        [nc addObserver:self
+               selector:@selector(_appleWatchEpisodeStatesDidChange:)
+                   name:ICAppleWatchEpisodeStatesDidChangeNotification
+                 object:nil];
 
         _observing = YES;
         [self _setNeedsPlayComboButtonUpdate];
@@ -121,6 +126,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
 - (void) _playbackEpisodeDidChange:(NSNotification*)notification
 {
+    if (self.tableView.window) {
+        [self.tableView reloadData];
+    }
+}
+
+- (void) _appleWatchEpisodeStatesDidChange:(NSNotification*)notification
+{
+    (void)notification;
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
@@ -948,6 +961,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         case ICEpisodeSwipeActionTranscribe:
             name = @"captions.bubble";
             break;
+        case ICEpisodeSwipeActionSendToAppleWatch:
+            name = [[AppleWatchSyncManager sharedManager] isEpisodeSelectedForWatch:episode] ? @"applewatch.slash" : @"applewatch";
+            break;
         default:
             name = @"circle";
             break;
@@ -1056,6 +1072,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             return accentColor;
         case ICEpisodeSwipeActionTranscribe:
             return [[TranscriptionEngine shared] hasSRTFor:episode.objectHash] ? deleteColor : accentColor;
+        case ICEpisodeSwipeActionSendToAppleWatch:
+            if (![[AppleWatchSyncManager sharedManager] canSendEpisodeToWatch:episode]) {
+                return grayColor;
+            }
+            return [[AppleWatchSyncManager sharedManager] isEpisodeSelectedForWatch:episode] ? grayColor : accentColor;
         default:
             return grayColor;
     }
@@ -1290,6 +1311,22 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             [self _transcribeEpisode:episode];
             break;
         }
+        case ICEpisodeSwipeActionSendToAppleWatch:
+        {
+            AppleWatchSyncManager* watchManager = [AppleWatchSyncManager sharedManager];
+            if (![watchManager canSendEpisodeToWatch:episode]) {
+                break;
+            }
+            if ([watchManager isEpisodeSelectedForWatch:episode]) {
+                [watchManager removeEpisodeFromWatch:episode];
+                PlaySoundFile(@"AffirmOut", NO);
+            }
+            else {
+                [watchManager sendEpisodeToWatch:episode];
+                PlaySoundFile(@"AffirmIn", NO);
+            }
+            break;
+        }
     }
 }
 
@@ -1447,6 +1484,35 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                          [weakSelf _togglePlayNextForEpisode:episode];
                                                      }];
         [actions addObject:playNextAction];
+    }
+
+    AppleWatchSyncManager* watchManager = [AppleWatchSyncManager sharedManager];
+    if ([watchManager canSendEpisodeToWatch:episode]) {
+        BOOL selectedForWatch = [watchManager isEpisodeSelectedForWatch:episode];
+        NSString* watchTitle = selectedForWatch ? @"Von Apple Watch entfernen".ls : @"An Apple Watch senden".ls;
+        NSString* watchIcon = selectedForWatch ? @"applewatch.slash" : @"applewatch";
+        UIAction* watchAction = [UIAction actionWithTitle:watchTitle
+                                                    image:[UIImage systemImageNamed:watchIcon]
+                                               identifier:nil
+                                                  handler:^(__unused UIAction* action) {
+                                                      if (selectedForWatch) {
+                                                          [watchManager removeEpisodeFromWatch:episode];
+                                                      }
+                                                      else {
+                                                          [watchManager sendEpisodeToWatch:episode];
+                                                      }
+                                                  }];
+        [actions addObject:watchAction];
+
+        if (selectedForWatch && ![watchManager isEpisodeDownloadedOnWatch:episode]) {
+            UIAction* prioritizeAction = [UIAction actionWithTitle:@"Priorisiert auf Watch laden".ls
+                                                             image:[UIImage systemImageNamed:@"arrow.down.circle"]
+                                                        identifier:nil
+                                                           handler:^(__unused UIAction* action) {
+                                                               [watchManager prioritizeEpisodeOnWatch:episode];
+                                                           }];
+            [actions addObject:prioritizeAction];
+        }
     }
 
     // Download (only if not cached and not currently caching)

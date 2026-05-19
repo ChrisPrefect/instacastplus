@@ -670,7 +670,8 @@ API_AVAILABLE(ios(14.0)){
             @(ICEpisodeSwipeActionAddToPlayNext),
             @(ICEpisodeSwipeActionDelete),
             @(ICEpisodeSwipeActionEpisodeInfo),
-            @(ICEpisodeSwipeActionTranscribe)
+            @(ICEpisodeSwipeActionTranscribe),
+            @(ICEpisodeSwipeActionSendToAppleWatch)
         ];
         controller.titles = @[
             @"Mark as Played".ls,
@@ -679,7 +680,8 @@ API_AVAILABLE(ios(14.0)){
             @"Add to Play Next".ls,
             @"Delete Episode from List".ls,
             @"Show Show Notes".ls,
-            @"Transcribe".ls
+            @"Transcribe".ls,
+            @"An Apple Watch senden".ls
         ];
         UIImageSymbolConfiguration* symbolConfig = [UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleMedium];
         controller.images = @[
@@ -690,6 +692,7 @@ API_AVAILABLE(ios(14.0)){
             [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
             [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
             [UIImage systemImageNamed:@"captions.bubble" withConfiguration:symbolConfig],
+            [UIImage systemImageNamed:@"applewatch" withConfiguration:symbolConfig],
         ];
         controller.footerText = @"Swipe Action Toggle Info".ls;
         [self.navigationController pushViewController:controller animated:YES];
@@ -818,6 +821,7 @@ API_AVAILABLE(ios(14.0)){
         case ICEpisodeSwipeActionDelete: return @"Delete Episode from List".ls;
         case ICEpisodeSwipeActionEpisodeInfo: return @"Show Show Notes".ls;
         case ICEpisodeSwipeActionTranscribe: return @"Transcribe".ls;
+        case ICEpisodeSwipeActionSendToAppleWatch: return @"An Apple Watch senden".ls;
         default: return @"Mark as Played".ls;
     }
 }
