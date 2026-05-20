@@ -62,6 +62,7 @@
     if (self)
     {
         // Initialization code.
+        _showsPlaybackProgress = YES;
 		self.multipleSelectionBackgroundView = [[UIView alloc] initWithFrame:CGRectZero];
         self.selectedBackgroundView = [[UIView alloc] initWithFrame:CGRectZero];
         
@@ -435,7 +436,7 @@
         devideTemp = (double)episode.position / (double)episode.duration;
     }
     double progressPercentage = (episode.duration > 0) ? devideTemp : 0;
-    progressView.hidden = self.consumeIndicator2.hidden;
+    progressView.hidden = !self.showsPlaybackProgress || self.consumeIndicator2.hidden;
 
     PlaybackManager* pman = [PlaybackManager playbackManager];
     AudioSession* session = [AudioSession sharedAudioSession];
@@ -689,6 +690,7 @@
 //    } else {
 //        self.panningContentView.backgroundColor = [UIColor clearColor];
 //    }
+    progressView.hidden = !self.showsPlaybackProgress || self.consumeIndicator2.hidden;
     progressView.frame = CGRectMake(0, CGRectGetHeight([[self panningContentView] bounds]) - 2.0f, CGRectGetWidth([[self panningContentView] bounds]), 2.0f);
 }
 

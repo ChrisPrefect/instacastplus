@@ -8,6 +8,7 @@
 #import "DatabaseManager.h"
 #import "PlaybackManager.h"
 #import "AudioSession.h"
+#import "ICAppearanceManager.h"
 
 #import <TargetConditionals.h>
 
@@ -26,6 +27,7 @@ static NSString* const ICAppleWatchManifestReplace = @"manifest.replace";
 static NSString* const ICAppleWatchManifestRemoveEpisodes = @"manifest.removeEpisodes";
 static NSString* const ICAppleWatchDownloadPrioritize = @"download.prioritize";
 static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
+static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICAppleWatchSuppressedAutomaticEpisodeHashes";
 
 @interface AppleWatchSyncManager ()
 #if IC_WATCH_CONNECTIVITY_ENABLED
@@ -39,8 +41,15 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 @property (nonatomic, strong, readwrite) NSDate* lastSyncDate;
 @property (nonatomic, strong, readwrite) NSDate* lastWatchStatusDate;
 @property (nonatomic, readwrite) int64_t watchFreeBytes;
+@property (nonatomic, readwrite) int64_t watchUsedBytes;
+@property (nonatomic, readwrite) int64_t watchTotalBytes;
 @property (nonatomic, readwrite) int64_t watchDownloadBytes;
+@property (nonatomic, copy, readwrite) NSString* currentWatchDownloadTitle;
+@property (nonatomic, copy) NSString* currentWatchDownloadHash;
+@property (nonatomic, readwrite) int64_t currentWatchDownloadedBytes;
+@property (nonatomic, readwrite) int64_t currentWatchExpectedBytes;
 @property (nonatomic) BOOL started;
+@property (nonatomic) BOOL needsManifestSyncAfterActivation;
 
 @end
 
@@ -93,6 +102,10 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
                                              selector:@selector(_playbackDidUpdate:)
                                                  name:PlaybackManagerEpisodeDidFinishNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_appearanceDidUpdate:)
+                                                 name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
 
 #if IC_WATCH_CONNECTIVITY_ENABLED
     if ([WCSession isSupported]) {
@@ -121,12 +134,6 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
     return [states sortedArrayUsingComparator:^NSComparisonResult(AppleWatchEpisodeState* first, AppleWatchEpisodeState* second) {
         CDEpisode* firstEpisode = [DMANAGER episodeWithObjectHash:first.episodeHash];
         CDEpisode* secondEpisode = [DMANAGER episodeWithObjectHash:second.episodeHash];
-
-        BOOL firstConsumed = first.watchConsumed || firstEpisode.consumed;
-        BOOL secondConsumed = second.watchConsumed || secondEpisode.consumed;
-        if (firstConsumed != secondConsumed) {
-            return firstConsumed ? NSOrderedDescending : NSOrderedAscending;
-        }
 
         NSDate* firstDate = [self _sortDateForState:first episode:firstEpisode];
         NSDate* secondDate = [self _sortDateForState:second episode:secondEpisode];
@@ -199,6 +206,7 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
     state.feedIdentifier = [self _feedIdentifierForFeed:episode.feed];
     state.lastPhonePosition = episode.position;
     state.lastPhonePositionDate = [NSDate date];
+    [self _unsuppressAutomaticEpisodeHash:episode.objectHash];
 
     [DMANAGER save];
     [self _postEpisodeStatesChanged];
@@ -230,6 +238,22 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
                           @"episodeHash": episode.objectHash ?: @"" }];
 }
 
+- (void)moveEpisodeAtIndex:(NSUInteger)fromIndex toIndex:(NSUInteger)toIndex
+{
+    NSMutableArray<AppleWatchEpisodeState*>* states = [[self visibleEpisodeStates] mutableCopy];
+    if (fromIndex >= states.count || toIndex >= states.count || fromIndex == toIndex) {
+        return;
+    }
+
+    AppleWatchEpisodeState* state = states[fromIndex];
+    [states removeObjectAtIndex:fromIndex];
+    [states insertObject:state atIndex:toIndex];
+    [self _assignWatchOrderDatesForStates:states];
+    [DMANAGER save];
+    [self _postEpisodeStatesChanged];
+    [self syncNow];
+}
+
 - (void)rebuildAutomaticSelectionsAndSync
 {
     [self _rebuildAutomaticSelections];
@@ -243,19 +267,21 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
     NSDictionary* payload = @{
         ICAppleWatchMessageTypeKey: ICAppleWatchManifestReplace,
         @"createdAt": [self _stringFromDate:[NSDate date]],
+        @"accentColorHex": [self _currentAccentColorHex],
         @"episodes": entries,
     };
 
-    for (AppleWatchEpisodeState* state in [self allEpisodeStates]) {
-        if (state.removingFromWatch || state.downloadedOnWatch || [state.watchStatus isEqualToString:ICAppleWatchStatusDownloading]) {
-            continue;
+    BOOL didSend = [self _sendManifestPayload:payload];
+    if (didSend) {
+        for (AppleWatchEpisodeState* state in [self allEpisodeStates]) {
+            if (state.removingFromWatch || state.downloadedOnWatch || [state.watchStatus isEqualToString:ICAppleWatchStatusDownloading]) {
+                continue;
+            }
+            state.watchStatus = ICAppleWatchStatusManifestSent;
         }
-        state.watchStatus = ICAppleWatchStatusManifestSent;
+        self.lastSyncDate = [NSDate date];
     }
-
-    self.lastSyncDate = [NSDate date];
     [DMANAGER save];
-    [self _transferUserInfo:payload];
     [self _postEpisodeStatesChanged];
     [self _refreshSessionStateAndNotify:YES];
 }
@@ -263,6 +289,7 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 - (void)_rebuildAutomaticSelections
 {
     NSMutableSet<NSString*>* desiredAutomaticHashes = [NSMutableSet set];
+    NSSet<NSString*>* suppressedAutomaticHashes = [self _suppressedAutomaticEpisodeHashes];
 
     for (CDFeed* feed in DMANAGER.feeds) {
         NSInteger latestCount = [feed integerForKey:AppleWatchSendLatestCount];
@@ -281,6 +308,9 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
                 break;
             }
             if (![self canSendEpisodeToWatch:episode]) {
+                continue;
+            }
+            if ([suppressedAutomaticHashes containsObject:episode.objectHash ?: @""]) {
                 continue;
             }
             if (onlyUnplayed && episode.consumed) {
@@ -316,16 +346,19 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 - (NSArray<NSDictionary*>*)_manifestEntries
 {
     NSMutableArray<NSDictionary*>* entries = [NSMutableArray array];
+    NSUInteger playbackOrder = 0;
 
-    for (AppleWatchEpisodeState* state in [self allEpisodeStates]) {
+    for (AppleWatchEpisodeState* state in [self visibleEpisodeStates]) {
         if (state.removingFromWatch) {
             continue;
         }
 
         CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
-        NSDictionary* entry = [self _manifestEntryForEpisode:episode state:state];
+        NSMutableDictionary* entry = [[self _manifestEntryForEpisode:episode state:state] mutableCopy];
         if (entry) {
+            entry[@"playbackOrder"] = @(playbackOrder);
             [entries addObject:entry];
+            playbackOrder += 1;
         }
     }
 
@@ -342,12 +375,16 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
     NSString* feedIdentifier = [self _feedIdentifierForFeed:episode.feed];
     NSDate* pubDate = episode.pubDate ?: [NSDate dateWithTimeIntervalSince1970:0];
     NSDate* addedDate = state.watchAddedDate ?: [NSDate date];
+    NSInteger skipForwardSeconds = [self _skipSecondsForEpisode:episode key:PlayerSkipForwardPeriod fallback:30];
+    NSInteger skipBackwardSeconds = [self _skipSecondsForEpisode:episode key:PlayerSkipBackPeriod fallback:30];
 
     return @{
         @"episodeHash": episode.objectHash ?: @"",
         @"feedIdentifier": feedIdentifier ?: @"",
         @"title": episode.title ?: @"",
         @"podcastTitle": episode.feed.displayTitle ?: episode.feed.title ?: @"",
+        @"subtitle": episode.subtitle ?: episode.summary ?: @"",
+        @"imageURL": episode.imageURL.absoluteString ?: episode.feed.imageURL.absoluteString ?: @"",
         @"pubDate": [self _stringFromDate:pubDate],
         @"durationHint": @(MAX(0, episode.duration)),
         @"position": @(MAX(0, episode.position)),
@@ -355,7 +392,18 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
         @"mediaURL": mediaURL ?: @"",
         @"selectionSource": state.selectionSource ?: ICAppleWatchSelectionSourceManual,
         @"watchAddedDate": [self _stringFromDate:addedDate],
+        @"skipForwardSeconds": @(skipForwardSeconds),
+        @"skipBackwardSeconds": @(skipBackwardSeconds),
     };
+}
+
+- (NSInteger)_skipSecondsForEpisode:(CDEpisode*)episode key:(NSString*)key fallback:(NSInteger)fallback
+{
+    NSInteger seconds = [episode.feed integerForKey:key];
+    if (seconds <= 0) {
+        seconds = [USER_DEFAULTS integerForKey:key];
+    }
+    return seconds > 0 ? seconds : fallback;
 }
 
 - (NSString*)_mediaURLStringForEpisode:(CDEpisode*)episode
@@ -380,6 +428,74 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
         return state.watchAddedDate ?: episode.pubDate ?: [NSDate distantPast];
     }
     return episode.pubDate ?: state.watchAddedDate ?: [NSDate distantPast];
+}
+
+- (void)_assignWatchOrderDatesForStates:(NSArray<AppleWatchEpisodeState*>*)states
+{
+    NSDate* baseDate = [NSDate date];
+    [states enumerateObjectsUsingBlock:^(AppleWatchEpisodeState* state, NSUInteger index, BOOL* stop) {
+        (void)stop;
+        state.watchAddedDate = [baseDate dateByAddingTimeInterval:-(NSTimeInterval)index];
+    }];
+}
+
+- (NSSet<NSString*>*)_suppressedAutomaticEpisodeHashes
+{
+    NSArray* storedHashes = [[NSUserDefaults standardUserDefaults] arrayForKey:ICAppleWatchSuppressedAutomaticEpisodeHashesKey];
+    return [NSSet setWithArray:storedHashes ?: @[]];
+}
+
+- (void)_setSuppressedAutomaticEpisodeHashes:(NSSet<NSString*>*)hashes
+{
+    NSArray* sortedHashes = [[hashes allObjects] sortedArrayUsingSelector:@selector(compare:)];
+    [[NSUserDefaults standardUserDefaults] setObject:sortedHashes forKey:ICAppleWatchSuppressedAutomaticEpisodeHashesKey];
+}
+
+- (void)_suppressAutomaticEpisodeHash:(NSString*)episodeHash
+{
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    NSMutableSet* hashes = [[self _suppressedAutomaticEpisodeHashes] mutableCopy];
+    [hashes addObject:episodeHash];
+    [self _setSuppressedAutomaticEpisodeHashes:hashes];
+}
+
+- (void)_unsuppressAutomaticEpisodeHash:(NSString*)episodeHash
+{
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    NSMutableSet* hashes = [[self _suppressedAutomaticEpisodeHashes] mutableCopy];
+    if (![hashes containsObject:episodeHash]) {
+        return;
+    }
+    [hashes removeObject:episodeHash];
+    [self _setSuppressedAutomaticEpisodeHashes:hashes];
+}
+
+- (NSString*)_currentAccentColorHex
+{
+    UIColor* color = ICTintColor ?: [UIColor colorWithRed:1.f green:83/255.f blue:0.f alpha:1.f];
+    UIColor* resolvedColor = [color resolvedColorWithTraitCollection:UIScreen.mainScreen.traitCollection] ?: color;
+    CGFloat red = 1.f;
+    CGFloat green = 83/255.f;
+    CGFloat blue = 0.f;
+    CGFloat alpha = 1.f;
+    if (![resolvedColor getRed:&red green:&green blue:&blue alpha:&alpha]) {
+        CGFloat white = 0.f;
+        if ([resolvedColor getWhite:&white alpha:&alpha]) {
+            red = white;
+            green = white;
+            blue = white;
+        }
+    }
+    return [NSString stringWithFormat:@"#%02X%02X%02X",
+            (int)lrint(MAX(0.f, MIN(1.f, red)) * 255.f),
+            (int)lrint(MAX(0.f, MIN(1.f, green)) * 255.f),
+            (int)lrint(MAX(0.f, MIN(1.f, blue)) * 255.f)];
 }
 
 - (void)_playbackDidUpdate:(NSNotification*)notification
@@ -407,6 +523,14 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
         @"timestamp": [self _stringFromDate:now],
     };
     [self _sendCurrentStateMessage:payload];
+}
+
+- (void)_appearanceDidUpdate:(NSNotification*)notification
+{
+    (void)notification;
+    if ([self allEpisodeStates].count > 0) {
+        [self syncNow];
+    }
 }
 
 - (void)_sendCommand:(NSDictionary*)command
@@ -448,6 +572,38 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 #endif
 }
 
+- (BOOL)_sendManifestPayload:(NSDictionary*)payload
+{
+#if IC_WATCH_CONNECTIVITY_ENABLED
+    if (![WCSession isSupported]) {
+        return NO;
+    }
+
+    WCSession* session = WCSession.defaultSession;
+    if (session.activationState != WCSessionActivationStateActivated || !session.watchAppInstalled) {
+        self.needsManifestSyncAfterActivation = YES;
+        return NO;
+    }
+
+    NSError* contextError = nil;
+    [session updateApplicationContext:payload error:&contextError];
+    if (contextError) {
+        [self _transferUserInfo:payload];
+    }
+
+    if (session.reachable) {
+        [session sendMessage:payload replyHandler:nil errorHandler:^(__unused NSError* error) {
+            [self _transferUserInfo:payload];
+        }];
+    }
+
+    self.needsManifestSyncAfterActivation = NO;
+    return YES;
+#else
+    return NO;
+#endif
+}
+
 - (void)_transferUserInfo:(NSDictionary*)payload
 {
 #if IC_WATCH_CONNECTIVITY_ENABLED
@@ -477,6 +633,7 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 - (void)_handleIncomingPayloadOnMainThread:(NSDictionary*)payload type:(NSString*)type
 {
     self.lastWatchStatusDate = [NSDate date];
+    BOOL shouldSyncAfterHandling = NO;
 
     if ([type isEqualToString:@"watch.ackManifest"]) {
         NSArray* episodeHashes = [payload[@"episodeHashes"] isKindOfClass:[NSArray class]] ? payload[@"episodeHashes"] : @[];
@@ -492,34 +649,58 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
         [self _updateStateForPayload:payload status:ICAppleWatchStatusQueuedOnWatch error:nil];
     }
     else if ([type isEqualToString:@"watch.downloadProgress"]) {
-        [self _updateStateForPayload:payload status:ICAppleWatchStatusDownloading error:nil];
+        AppleWatchEpisodeState* state = [self _updateStateForPayload:payload status:ICAppleWatchStatusDownloading error:nil];
+        [self _updateCurrentWatchDownloadFromPayload:payload state:state];
     }
     else if ([type isEqualToString:@"watch.downloaded"]) {
         AppleWatchEpisodeState* state = [self _updateStateForPayload:payload status:ICAppleWatchStatusDownloaded error:nil];
-        state.watchDownloadedDate = [self _dateFromPayload:payload key:@"timestamp"] ?: [NSDate date];
-        state.watchActualDuration = [payload[@"actualDuration"] intValue];
-        state.watchActualFileSize = [payload[@"actualFileSize"] longLongValue];
+        if (state) {
+            state.watchDownloadedDate = [self _dateFromPayload:payload key:@"timestamp"] ?: [NSDate date];
+            state.watchActualDuration = [payload[@"actualDuration"] intValue];
+            state.watchActualFileSize = [payload[@"actualFileSize"] longLongValue];
+            [self _clearCurrentWatchDownloadIfMatchesHash:state.episodeHash];
+        }
+        else {
+            [self _clearCurrentWatchDownloadIfMatchesHash:payload[@"episodeHash"]];
+        }
     }
     else if ([type isEqualToString:@"watch.downloadFailed"]) {
         NSString* error = [payload[@"error"] isKindOfClass:[NSString class]] ? payload[@"error"] : @"";
-        [self _updateStateForPayload:payload status:ICAppleWatchStatusFailed error:error];
+        AppleWatchEpisodeState* state = [self _updateStateForPayload:payload status:ICAppleWatchStatusFailed error:error];
+        [self _clearCurrentWatchDownloadIfMatchesHash:state.episodeHash ?: payload[@"episodeHash"]];
     }
     else if ([type isEqualToString:@"watch.deleted"]) {
         NSString* episodeHash = [payload[@"episodeHash"] isKindOfClass:[NSString class]] ? payload[@"episodeHash"] : nil;
         AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
+        [self _clearCurrentWatchDownloadIfMatchesHash:episodeHash];
         if (state) {
             if (state.removingFromWatch) {
                 [DMANAGER.objectContext deleteObject:state];
             }
             else {
-                state.watchStatus = ICAppleWatchStatusSelected;
-                state.watchDownloadedDate = nil;
-                state.watchActualFileSize = 0;
+                if ([state.selectionSource isEqualToString:ICAppleWatchSelectionSourceLatestRule]) {
+                    [self _suppressAutomaticEpisodeHash:episodeHash];
+                }
+                [DMANAGER.objectContext deleteObject:state];
+                shouldSyncAfterHandling = YES;
             }
+        }
+    }
+    else if ([type isEqualToString:@"watch.downloadEvicted"]) {
+        NSString* episodeHash = [payload[@"episodeHash"] isKindOfClass:[NSString class]] ? payload[@"episodeHash"] : nil;
+        AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
+        [self _clearCurrentWatchDownloadIfMatchesHash:episodeHash];
+        if (state) {
+            state.watchStatus = ICAppleWatchStatusQueuedOnWatch;
+            state.watchDownloadedDate = nil;
+            state.watchActualFileSize = 0;
+            state.watchActualDuration = 0;
         }
     }
     else if ([type isEqualToString:@"watch.storageStatus"]) {
         self.watchFreeBytes = [payload[@"freeBytes"] longLongValue];
+        self.watchUsedBytes = [payload[@"usedBytes"] longLongValue];
+        self.watchTotalBytes = [payload[@"totalBytes"] longLongValue];
         self.watchDownloadBytes = [payload[@"instacastWatchDownloadBytes"] longLongValue];
     }
     else if ([type isEqualToString:@"playback.watchPosition"] || [type isEqualToString:@"playback.watchFinished"]) {
@@ -529,6 +710,9 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
     [DMANAGER save];
     [self _postEpisodeStatesChanged];
     [self _refreshSessionStateAndNotify:YES];
+    if (shouldSyncAfterHandling) {
+        [self syncNow];
+    }
 }
 
 - (AppleWatchEpisodeState*)_updateStateForPayload:(NSDictionary*)payload status:(NSString*)status error:(NSString*)error
@@ -542,6 +726,33 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
     state.watchLastSeenDate = [self _dateFromPayload:payload key:@"timestamp"] ?: [NSDate date];
     state.watchLastError = error;
     return state;
+}
+
+- (void)_updateCurrentWatchDownloadFromPayload:(NSDictionary*)payload state:(AppleWatchEpisodeState*)state
+{
+    if (!state) {
+        return;
+    }
+
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    self.currentWatchDownloadHash = state.episodeHash;
+    self.currentWatchDownloadTitle = episode.title ?: @"";
+    self.currentWatchDownloadedBytes = MAX((int64_t)0, [payload[@"downloadedBytes"] longLongValue]);
+    self.currentWatchExpectedBytes = MAX((int64_t)0, [payload[@"expectedBytes"] longLongValue]);
+}
+
+- (void)_clearCurrentWatchDownloadIfMatchesHash:(NSString*)episodeHash
+{
+    if (![episodeHash isKindOfClass:[NSString class]] || episodeHash.length == 0) {
+        return;
+    }
+    if (self.currentWatchDownloadHash.length > 0 && ![self.currentWatchDownloadHash isEqualToString:episodeHash]) {
+        return;
+    }
+    self.currentWatchDownloadHash = nil;
+    self.currentWatchDownloadTitle = nil;
+    self.currentWatchDownloadedBytes = 0;
+    self.currentWatchExpectedBytes = 0;
 }
 
 - (void)_mergeWatchPlaybackPayload:(NSDictionary*)payload finished:(BOOL)finished
@@ -648,7 +859,7 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self _refreshSessionStateAndNotify:YES];
-        if (activationState == WCSessionActivationStateActivated && session.watchAppInstalled) {
+        if (activationState == WCSessionActivationStateActivated && session.watchAppInstalled && (self.needsManifestSyncAfterActivation || [self allEpisodeStates].count > 0)) {
             [self syncNow];
         }
     });
@@ -677,6 +888,9 @@ static NSString* const ICAppleWatchPlaybackPhoneState = @"playback.phoneState";
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self _refreshSessionStateAndNotify:YES];
+        if (session.watchAppInstalled && self.needsManifestSyncAfterActivation) {
+            [self syncNow];
+        }
     });
 }
 

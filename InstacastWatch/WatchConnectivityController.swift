@@ -54,6 +54,8 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
     func sendStorageStatus() {
         send(type: "watch.storageStatus", payload: [
             "freeBytes": WatchStorageManager.shared.freeBytes(),
+            "usedBytes": WatchStorageManager.shared.usedBytes(),
+            "totalBytes": WatchStorageManager.shared.totalBytes(),
             "instacastWatchDownloadBytes": WatchStorageManager.shared.downloadBytes(),
             "episodeCount": WatchManifestStore.shared.episodes.count,
             "lastCleanupDate": dateFormatter.string(from: Date()),
@@ -95,6 +97,7 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
 
     private func handle(payload: [String: Any]) {
         guard let type = payload["type"] as? String else { return }
+        WatchManifestStore.shared.updateAccentColorHex(payload["accentColorHex"] as? String)
 
         switch type {
         case "manifest.replace":

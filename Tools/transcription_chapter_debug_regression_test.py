@@ -166,7 +166,11 @@ require(
     and "Ein einzelnes Kapitel ueber fast die ganze Folge ist nur erlaubt" in chapter_source
     and "eigenen Nutzensprung" in chapter_source
     and "Promotion wieder in redaktionellen Inhalt uebergeht" in chapter_source
-    and "Ein Oberthema reicht nicht als Kapitel" in chapter_source,
+    and "Ein Oberthema reicht nicht als Kapitel" in chapter_source
+    and "Vermeide Sammelkapitel" in chapter_source
+    and "Ticketverfuegbarkeit" in chapter_source
+    and "zusammenhaengenden Unterstuetzungs-, Abo-, Spenden-, Preis-, Zahlungs- oder Mitgliedschaftsblocks" in chapter_source
+    and "Reine Servicehinweise zum bestehenden Podcast" in chapter_source,
     "Local GGUF still asks the model for redundant direct end times instead of deriving ends from recognized chapter starts.",
 )
 
@@ -177,6 +181,12 @@ require(
     and "remote-chapter-evidence-validation-failed" in chapter_source
     and "remote-chapter-evidence-retry-started" in chapter_source,
     "Remote chapter starts are not grounded against their evidence text, so a later sponsor can still be saved at an earlier editorial start.",
+)
+
+require(
+    "zwei verschiedene Promotion-Segmente nacheinander" in chapter_source
+    and "spaetere Sponsoren auf deren eigene Startzeit" in chapter_source,
+    "Evidence retry still lets a later sponsor brand be reused for an earlier adjacent promotion segment.",
 )
 
 require(

@@ -4,92 +4,176 @@ import Foundation
 struct WatchEpisodeListView: View {
     @EnvironmentObject private var store: WatchManifestStore
     @EnvironmentObject private var player: WatchPlayerController
+    @State private var playerPath: [String] = []
+
+    private var accentColor: Color {
+        Color(hex: store.accentColorHex)
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
+        NavigationStack(path: $playerPath) {
+            List {
+                Text("InstacastPlus")
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .foregroundStyle(accentColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .allowsTightening(true)
+                    .listRowBackground(Color.clear)
+
                 if store.sortedEpisodes.isEmpty {
-                    UnavailableWatchView(title: "Keine Episoden", systemImage: "applewatch")
+                    UnavailableWatchView(title: "Keine Episoden", systemImage: "tray")
+                        .listRowBackground(Color.clear)
                 } else {
-                    List(store.sortedEpisodes) { episode in
-                        NavigationLink(value: episode.episodeHash) {
-                            WatchEpisodeRow(episode: episode)
+                    ForEach(store.sortedEpisodes) { episode in
+                        Button {
+                            handleTap(episode)
+                        } label: {
+                            WatchEpisodeRow(
+                                episode: episode,
+                                accentColor: accentColor,
+                                playbackPosition: playbackPosition(for: episode),
+                                isCurrent: player.playingEpisodeHash == episode.episodeHash
+                            )
                         }
+                        .buttonStyle(.plain)
                         .swipeActions {
                             Button(role: .destructive) {
                                 WatchDownloadManager.shared.removeEpisode(hash: episode.episodeHash)
                             } label: {
-                                Label("Entfernen", systemImage: "trash")
+                                Label("Von Watch entfernen", systemImage: "trash")
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Instacast")
-            .navigationDestination(for: String.self) { hash in
-                if let episode = store.episode(hash: hash) {
-                    WatchEpisodeDetailView(episodeHash: episode.episodeHash)
+            .tint(accentColor)
+            .navigationDestination(for: String.self) { episodeHash in
+                if let episode = store.episode(hash: episodeHash) {
+                    WatchPlayerView(episode: episode, accentColor: accentColor)
                 } else {
                     UnavailableWatchView(title: "Nicht verfügbar", systemImage: "exclamationmark.triangle")
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        WatchDownloadManager.shared.startQueuedDownloads()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .accessibilityLabel("Aktualisieren")
-                }
-            }
         }
+    }
+
+    private func handleTap(_ episode: WatchEpisode) {
+        if episode.status == .downloaded, episode.localFileURL != nil {
+            if player.play(episode) {
+                playerPath = [episode.episodeHash]
+            }
+        } else {
+            WatchDownloadManager.shared.prioritizeEpisode(hash: episode.episodeHash)
+        }
+    }
+
+    private func playbackPosition(for episode: WatchEpisode) -> Int {
+        if player.playingEpisodeHash == episode.episodeHash {
+            return max(0, Int(player.currentPosition.rounded()))
+        }
+        return episode.lastPlaybackPosition
     }
 }
 
 private struct WatchEpisodeRow: View {
     let episode: WatchEpisode
+    let accentColor: Color
+    let playbackPosition: Int
+    let isCurrent: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(episode.title)
-                .font(.headline)
-                .lineLimit(2)
-            Text(episode.podcastTitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            HStack(spacing: 6) {
-                statusIcon
-                Text(statusText)
-                    .font(.caption2)
+        HStack(alignment: .top, spacing: 8) {
+            WatchArtworkView(imageURL: episode.imageURL)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    playedIndicator
+                    Text(episode.title)
+                        .font(.headline)
+                        .lineLimit(2)
+                        .foregroundStyle(episode.consumed ? .secondary : .primary)
+                }
+
+                Text(secondaryText)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                if let fraction = progressFraction {
+                    ProgressView(value: fraction)
+                        .tint(progressTint)
+                }
+
+                statusLine
+                    .font(.caption2)
             }
         }
-        .opacity(episode.consumed ? 0.65 : 1)
+        .opacity(episode.consumed ? 0.72 : 1)
     }
 
     @ViewBuilder
-    private var statusIcon: some View {
+    private var playedIndicator: some View {
+        if episode.consumed {
+            Image(systemName: "checkmark.circle")
+                .foregroundStyle(.secondary)
+        } else {
+            Image(systemName: "circle.fill")
+                .foregroundStyle(accentColor)
+                .font(.system(size: 9, weight: .semibold))
+        }
+    }
+
+    private var secondaryText: String {
+        if let subtitle = episode.subtitle, !subtitle.isEmpty {
+            return subtitle
+        }
+        return episode.podcastTitle
+    }
+
+    private var progressFraction: Double? {
+        if episode.status == .downloading {
+            return episode.progressFraction
+        }
+        let duration = episode.displayDuration
+        guard duration > 0, playbackPosition > 0 || isCurrent else { return nil }
+        return min(1.0, max(0.0, Double(playbackPosition) / Double(duration)))
+    }
+
+    private var progressTint: Color {
+        episode.status == .downloading ? .blue : accentColor
+    }
+
+    @ViewBuilder
+    private var statusLine: some View {
         switch episode.status {
         case .downloaded:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            Text(playbackText)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         case .downloading:
-            Image(systemName: "arrow.down.circle").foregroundStyle(.blue)
+            Label(statusText, systemImage: "arrow.down.circle")
+                .foregroundStyle(.blue)
+                .lineLimit(1)
         case .failed:
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Label(statusText, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .lineLimit(1)
         case .removing:
-            Image(systemName: "trash").foregroundStyle(.secondary)
+            Label(statusText, systemImage: "trash")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         case .queued:
-            Image(systemName: "clock").foregroundStyle(.secondary)
+            Label(statusText, systemImage: "clock")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
     private var statusText: String {
         switch episode.status {
         case .downloaded:
-            return remainingText
+            return playbackText
         case .downloading:
             if let fraction = episode.progressFraction {
                 return "\(Int(fraction * 100)) %"
@@ -104,87 +188,147 @@ private struct WatchEpisodeRow: View {
         }
     }
 
-    private var remainingText: String {
-        let seconds = episode.consumed ? episode.displayDuration : episode.remainingSeconds
-        return formatDuration(seconds)
+    private var playbackText: String {
+        if episode.consumed {
+            return NSLocalizedString("Gespielt", comment: "")
+        }
+        return "\(formatClock(playbackPosition)) / \(formatDuration(episode.displayDuration))"
     }
 }
 
-struct WatchEpisodeDetailView: View {
-    @EnvironmentObject private var store: WatchManifestStore
+private struct WatchArtworkView: View {
+    let imageURL: URL?
+
+    var body: some View {
+        AsyncImage(url: imageURL) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFill()
+            default:
+                Image(systemName: "waveform")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.quaternary)
+            }
+        }
+        .frame(width: 42, height: 42)
+        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+}
+
+private struct WatchPlayerView: View {
     @EnvironmentObject private var player: WatchPlayerController
 
-    let episodeHash: String
+    let episode: WatchEpisode
+    let accentColor: Color
 
-    private var episode: WatchEpisode? {
-        store.episode(hash: episodeHash)
+    private var duration: Double {
+        max(1, Double(episode.displayDuration))
+    }
+
+    private var currentPosition: Double {
+        if player.playingEpisodeHash == episode.episodeHash {
+            return min(duration, max(0, player.currentPosition))
+        }
+        return min(duration, max(0, Double(episode.lastPlaybackPosition)))
+    }
+
+    private var playerProgressFraction: Double {
+        min(1.0, max(0.0, currentPosition / duration))
     }
 
     var body: some View {
-        Group {
-            if let episode {
-                List {
-                    Section {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(episode.title)
-                                .font(.headline)
-                            Text(episode.podcastTitle)
-                                .foregroundStyle(.secondary)
-                            Text(formatDuration(episode.remainingSeconds))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 7) {
+            Text(episode.title)
+                .font(.headline)
+                .fontWeight(.semibold)
+                .lineLimit(3)
+                .minimumScaleFactor(0.78)
+                .fixedSize(horizontal: false, vertical: true)
 
-                    Section {
-                        if episode.status == .downloaded {
-                            Button {
-                                player.togglePlayback(for: episode)
-                            } label: {
-                                Label(player.playingEpisodeHash == episode.episodeHash && player.isPlaying ? "Pause" : "Abspielen",
-                                      systemImage: player.playingEpisodeHash == episode.episodeHash && player.isPlaying ? "pause.fill" : "play.fill")
-                            }
-                        }
+            Text(episode.podcastTitle)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
-                        if episode.status == .failed || episode.status == .queued {
-                            Button {
-                                WatchDownloadManager.shared.prioritizeEpisode(hash: episode.episodeHash)
-                            } label: {
-                                Label("Download erneut versuchen", systemImage: "arrow.clockwise")
-                            }
-                        }
+            ProgressView(value: playerProgressFraction)
+                .progressViewStyle(.linear)
+                .tint(accentColor)
+                .scaleEffect(x: 1, y: 0.45, anchor: .center)
 
-                        Button(role: .destructive) {
-                            WatchDownloadManager.shared.removeEpisode(hash: episode.episodeHash)
-                        } label: {
-                            Label("Von Watch entfernen", systemImage: "trash")
-                        }
-                    }
+            HStack {
+                Text(formatClock(Int(currentPosition.rounded())))
+                Spacer()
+                Text("-\(formatClock(max(0, Int((duration - currentPosition).rounded()))))")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
 
-                    if episode.status == .downloading {
-                        Section {
-                            if let fraction = episode.progressFraction {
-                                ProgressView(value: fraction)
-                            } else {
-                                Text(byteText(episode.downloadedBytes))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    if let error = episode.lastError, !error.isEmpty {
-                        Section {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+            HStack(alignment: .center) {
+                CompactSkipButton(
+                    forward: false,
+                    seconds: episode.skipBackwardSeconds,
+                    accentColor: accentColor
+                ) {
+                    player.seek(by: -Double(episode.skipBackwardSeconds))
                 }
-                .navigationTitle("Episode")
-            } else {
-                UnavailableWatchView(title: "Nicht verfügbar", systemImage: "exclamationmark.triangle")
+
+                Spacer(minLength: 8)
+
+                Button {
+                    player.togglePlayback(for: episode)
+                } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 30, weight: .semibold))
+                        .frame(width: 52, height: 44)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(accentColor)
+
+                Spacer(minLength: 8)
+
+                CompactSkipButton(
+                    forward: true,
+                    seconds: episode.skipForwardSeconds,
+                    accentColor: accentColor
+                ) {
+                    player.seek(by: Double(episode.skipForwardSeconds))
+                }
             }
         }
+        .padding(.horizontal, 8)
+        .padding(.top, -2)
+        .onAppear {
+            if episode.status == .downloaded, episode.localFileURL != nil, player.playingEpisodeHash != episode.episodeHash {
+                _ = player.play(episode)
+            }
+        }
+    }
+}
+
+private struct CompactSkipButton: View {
+    let forward: Bool
+    let seconds: Int
+    let accentColor: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 1) {
+                Image(systemName: forward ? "goforward" : "gobackward")
+                    .font(.system(size: 19, weight: .medium))
+                Text(shortSkipText(seconds))
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .frame(width: 42, height: 38)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(accentColor)
+        .accessibilityLabel(NSLocalizedString(forward ? "Skipping Forward" : "Skipping Back", comment: ""))
+        .accessibilityValue(shortSkipText(seconds))
     }
 }
 
@@ -201,7 +345,7 @@ private struct UnavailableWatchView: View {
                 .font(.headline)
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 120)
     }
 }
 
@@ -215,6 +359,40 @@ private func formatDuration(_ totalSeconds: Int) -> String {
     return "\(minutes) min"
 }
 
+private func formatClock(_ totalSeconds: Int) -> String {
+    let seconds = max(0, totalSeconds)
+    let hours = seconds / 3600
+    let minutes = (seconds % 3600) / 60
+    let remainingSeconds = seconds % 60
+    if hours > 0 {
+        return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+    }
+    return String(format: "%d:%02d", minutes, remainingSeconds)
+}
+
 private func byteText(_ bytes: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+}
+
+private func shortSkipText(_ seconds: Int) -> String {
+    let value = max(1, seconds)
+    if value >= 60, value % 60 == 0 {
+        return "\(value / 60)m"
+    }
+    return "\(value)s"
+}
+
+private extension Color {
+    init(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        guard cleaned.count == 6, let value = Int(cleaned, radix: 16) else {
+            self = Color(red: 1.0, green: 83.0 / 255.0, blue: 0.0)
+            return
+        }
+        self = Color(
+            red: Double((value >> 16) & 0xFF) / 255.0,
+            green: Double((value >> 8) & 0xFF) / 255.0,
+            blue: Double(value & 0xFF) / 255.0
+        )
+    }
 }

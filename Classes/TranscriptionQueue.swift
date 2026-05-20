@@ -226,6 +226,12 @@ private struct PersistedQueue: Codable {
         .generatingChapters,
     ]
 
+    private func canAutoResumeRemoteChapterJobAfterUnexpectedTermination(_ item: ICTranscriptionQueueItem) -> Bool {
+        guard item.chapterOnly else { return false }
+        guard engine.hasSRT(for: item.episodeHash) else { return false }
+        return ICDownloadableModelStore.selectedModel(for: .textToChapters).usesRemoteChapterService
+    }
+
     override init() {
         super.init()
         loadPersistedQueue()
@@ -773,8 +779,13 @@ private struct PersistedQueue: Codable {
 
         if UserDefaults.standard.bool(forKey: TranscriptionQueue.crashGuardKey) {
             let previousEndedUnexpectedly = ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly
+            let autoResumableRemoteChapterItems = items.filter {
+                Self.crashGuardProtectedStatuses.contains($0.status)
+                    && canAutoResumeRemoteChapterJobAfterUnexpectedTermination($0)
+            }
             let hasCrashGuardProtectedItems = items.contains {
                 Self.crashGuardProtectedStatuses.contains($0.status)
+                    && !canAutoResumeRemoteChapterJobAfterUnexpectedTermination($0)
             }
             if previousEndedUnexpectedly || hasCrashGuardProtectedItems {
                 NSLog("[TranscriptionQueue] Crash guard active — last run was killed before completing")
@@ -783,11 +794,27 @@ private struct PersistedQueue: Codable {
                     "previousSessionState": ICDiagnosticLogger.shared.previousSessionState ?? "",
                     "previousEndedUnexpectedly": previousEndedUnexpectedly,
                     "hasCrashGuardProtectedItems": hasCrashGuardProtectedItems,
+                    "autoResumableRemoteChapterItems": autoResumableRemoteChapterItems.count,
                 ] as NSDictionary)
                 let interruptedMessage = NSLocalizedString("Unterbrochen. Tippe zum Fortsetzen.", comment: "")
                 var didMarkInterruptedItem = false
+                var didPrepareAutoResumeItem = false
                 for item in items {
                     if Self.crashGuardProtectedStatuses.contains(item.status) {
+                        if canAutoResumeRemoteChapterJobAfterUnexpectedTermination(item) {
+                            item.status = .queued
+                            item.progress = 0
+                            item.statusDetail = nil
+                            item.statusStartedAt = nil
+                            item.error = nil
+                            didPrepareAutoResumeItem = true
+                            ICDiagnosticLogger.shared.logEvent("queue",
+                                                               message: "Crash-Guard: Cloud-Kapiteljob wird automatisch fortgesetzt",
+                                                               metadata: [
+                                                                "episodeHash": item.episodeHash,
+                                                               ] as NSDictionary)
+                            continue
+                        }
                         let alreadyMarkedInterrupted = item.status == .queued && item.error == interruptedMessage
                         if !alreadyMarkedInterrupted {
                             TranscriptionLogger.shared.append(episodeHash: item.episodeHash, phase: "error",
@@ -801,20 +828,30 @@ private struct PersistedQueue: Codable {
                         item.error = interruptedMessage
                     }
                 }
-                // Guard stays SET so duplicate resumeIfNeeded calls can't bypass it.
-                // Cleared by explicit user retry via retryProcessing().
-                if didMarkInterruptedItem {
+                if didMarkInterruptedItem || didPrepareAutoResumeItem {
                     persistQueue()
                 }
                 postQueueChangeNotification()
-                return
-            }
+                if hasCrashGuardProtectedItems {
+                    // Guard stays SET so duplicate resumeIfNeeded calls can't bypass it.
+                    // Cleared by explicit user retry via retryProcessing().
+                    return
+                }
 
-            UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
-            ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard nach erwartetem Lifecycle-Ende ignoriert", metadata: [
-                "queueCount": items.count,
-                "previousSessionState": ICDiagnosticLogger.shared.previousSessionState ?? "",
-            ] as NSDictionary)
+                UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
+                ICDiagnosticLogger.shared.logEvent("queue",
+                                                   message: "Crash-Guard fuer Cloud-Kapiteljobs freigegeben",
+                                                   metadata: [
+                                                    "queueCount": items.count,
+                                                    "autoResumableRemoteChapterItems": autoResumableRemoteChapterItems.count,
+                                                   ] as NSDictionary)
+            } else {
+                UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
+                ICDiagnosticLogger.shared.logEvent("queue", message: "Crash-Guard nach erwartetem Lifecycle-Ende ignoriert", metadata: [
+                    "queueCount": items.count,
+                    "previousSessionState": ICDiagnosticLogger.shared.previousSessionState ?? "",
+                ] as NSDictionary)
+            }
         }
 
         // Reset any stuck items back to queued

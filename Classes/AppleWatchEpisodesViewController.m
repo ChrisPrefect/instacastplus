@@ -7,7 +7,9 @@
 #import "AppleWatchSyncManager.h"
 #import "CDModel.h"
 #import "DatabaseManager.h"
-#import "EpisodeViewController.h"
+#import "EpisodePlayComboButton.h"
+#import "EpisodesTableViewCell.h"
+#import "ImageCacheManager.h"
 
 static NSString* const ICAppleWatchEpisodeCellIdentifier = @"AppleWatchEpisodeCell";
 static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCell";
@@ -16,9 +18,10 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 
 @property (nonatomic, strong) NSArray<AppleWatchEpisodeState*>* states;
 @property (nonatomic, strong) UIView* headerContainerView;
-@property (nonatomic, strong) UILabel* titleLabel;
 @property (nonatomic, strong) UILabel* summaryLabel;
 @property (nonatomic, strong) UILabel* syncLabel;
+@property (nonatomic, strong) UILabel* storageLabel;
+@property (nonatomic, strong) UIProgressView* storageProgressView;
 @property (nonatomic, strong) UIButton* syncButton;
 
 @end
@@ -36,7 +39,9 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 
     self.title = @"Apple Watch".ls;
     self.clearsSelectionOnViewWillAppear = YES;
+    self.navigationItem.rightBarButtonItem = self.editButtonItem;
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:ICAppleWatchMessageCellIdentifier];
+    [self.tableView registerClass:[EpisodesTableViewCell class] forCellReuseIdentifier:ICAppleWatchEpisodeCellIdentifier];
 
     self.refreshControl = [[UIRefreshControl alloc] init];
     [self.refreshControl addTarget:self action:@selector(syncAction:) forControlEvents:UIControlEventValueChanged];
@@ -77,13 +82,6 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     UIView* header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 140)];
     header.backgroundColor = ICBackgroundColor;
 
-    UILabel* titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(28)];
-    titleLabel.textColor = ICTextColor;
-    titleLabel.text = @"Apple Watch".ls;
-    [header addSubview:titleLabel];
-    self.titleLabel = titleLabel;
-
     UILabel* summaryLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     summaryLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     summaryLabel.textColor = ICTextColor;
@@ -94,12 +92,32 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     UILabel* syncLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     syncLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
     syncLabel.textColor = ICMutedTextColor;
+    syncLabel.numberOfLines = 2;
     [header addSubview:syncLabel];
     self.syncLabel = syncLabel;
 
+    UILabel* storageLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    storageLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
+    storageLabel.textColor = ICMutedTextColor;
+    storageLabel.numberOfLines = 1;
+    [header addSubview:storageLabel];
+    self.storageLabel = storageLabel;
+
+    UIProgressView* storageProgressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+    storageProgressView.progressTintColor = ICTintColor;
+    storageProgressView.trackTintColor = ICGroupCellSelectedBackgroundColor;
+    [header addSubview:storageProgressView];
+    self.storageProgressView = storageProgressView;
+
     UIButton* button = [UIButton buttonWithType:UIButtonTypeSystem];
-    [button setTitle:@"Jetzt synchronisieren".ls forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(15)];
+    UIButtonConfiguration* configuration = [UIButtonConfiguration tintedButtonConfiguration];
+    configuration.image = [UIImage systemImageNamed:@"arrow.clockwise"];
+    configuration.buttonSize = UIButtonConfigurationSizeSmall;
+    configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+    configuration.baseForegroundColor = ICTintColor;
+    configuration.baseBackgroundColor = [ICTintColor colorWithAlphaComponent:0.16];
+    button.configuration = configuration;
+    button.accessibilityLabel = @"Jetzt synchronisieren".ls;
     [button addTarget:self action:@selector(syncAction:) forControlEvents:UIControlEventTouchUpInside];
     [header addSubview:button];
     self.syncButton = button;
@@ -118,19 +136,23 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 {
     CGFloat contentWidth = MAX(0, width - 32);
     CGFloat y = 18;
-    self.titleLabel.frame = CGRectMake(16, y, contentWidth, 34);
-    y += 40;
+    CGFloat buttonSize = 34;
+    CGFloat textWidth = MAX(0, contentWidth - buttonSize - 10);
 
-    CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
-    self.summaryLabel.frame = CGRectMake(16, y, contentWidth, ceil(summarySize.height));
-    y += ceil(summarySize.height) + 8;
+    CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)];
+    self.summaryLabel.frame = CGRectMake(16, y, textWidth, ceil(summarySize.height));
+    self.syncButton.frame = CGRectMake(width - 16 - buttonSize, y, buttonSize, buttonSize);
+    y += MAX(ceil(summarySize.height), buttonSize) + 8;
 
-    self.syncLabel.frame = CGRectMake(16, y, contentWidth, 18);
-    y += 26;
+    CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
+    self.syncLabel.frame = CGRectMake(16, y, contentWidth, MIN(36, ceil(syncSize.height)));
+    y += CGRectGetHeight(self.syncLabel.frame) + 8;
 
-    CGSize buttonSize = [self.syncButton sizeThatFits:CGSizeMake(contentWidth, 44)];
-    self.syncButton.frame = CGRectMake(16, y, MIN(contentWidth, ceil(buttonSize.width)), 36);
-    y += 48;
+    self.storageLabel.frame = CGRectMake(16, y, contentWidth, 18);
+    y += 21;
+
+    self.storageProgressView.frame = CGRectMake(16, y, contentWidth, 3);
+    y += 22;
 
     CGRect headerFrame = self.headerContainerView.frame;
     headerFrame.size.width = width;
@@ -146,10 +168,13 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     self.headerContainerView.backgroundColor = ICBackgroundColor;
-    self.titleLabel.textColor = ICTextColor;
     self.summaryLabel.textColor = ICTextColor;
     self.syncLabel.textColor = ICMutedTextColor;
+    self.storageLabel.textColor = ICMutedTextColor;
+    self.storageProgressView.progressTintColor = ICTintColor;
+    self.storageProgressView.trackTintColor = ICGroupCellSelectedBackgroundColor;
     self.syncButton.tintColor = ICTintColor;
+    [self _updateSyncButtonConfiguration];
     [self.tableView reloadData];
 }
 
@@ -171,15 +196,9 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 {
     AppleWatchSyncManager* manager = [AppleWatchSyncManager sharedManager];
     NSInteger downloadedCount = 0;
-    NSInteger loadingCount = 0;
     for (AppleWatchEpisodeState* state in self.states) {
         if (state.downloadedOnWatch) {
             downloadedCount += 1;
-        }
-        else if ([state.watchStatus isEqualToString:ICAppleWatchStatusDownloading] ||
-                 [state.watchStatus isEqualToString:ICAppleWatchStatusQueuedOnWatch] ||
-                 [state.watchStatus isEqualToString:ICAppleWatchStatusManifestSent]) {
-            loadingCount += 1;
         }
     }
 
@@ -190,21 +209,17 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
         self.summaryLabel.text = @"Keine Apple Watch gekoppelt.".ls;
     }
     else if (!manager.watchAppInstalled) {
-        self.summaryLabel.text = @"Die Instacast-Watch-App ist noch nicht installiert.".ls;
+        self.summaryLabel.text = @"Die InstacastPlus-Watch-App ist noch nicht installiert.".ls;
     }
     else {
-        self.summaryLabel.text = [NSString stringWithFormat:@"%ld auf der Watch\n%ld werden geladen".ls, (long)downloadedCount, (long)loadingCount];
+        self.summaryLabel.text = [NSString stringWithFormat:@"%ld auf der Watch".ls, (long)downloadedCount];
     }
 
-    NSString* syncText = @"Letzte Synchronisierung: nie".ls;
-    if (manager.lastSyncDate) {
-        NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
-        formatter.timeStyle = NSDateFormatterShortStyle;
-        formatter.dateStyle = NSDateFormatterNoStyle;
-        syncText = [NSString stringWithFormat:@"%@ %@", @"Letzte Synchronisierung".ls, [formatter stringFromDate:manager.lastSyncDate]];
-    }
-    self.syncLabel.text = syncText;
+    self.syncLabel.text = [self _statusTextForManager:manager];
+    self.storageLabel.text = [self _storageTextForManager:manager];
+    [self _updateStorageProgressForManager:manager];
     self.syncButton.enabled = manager.supported && manager.paired && manager.watchAppInstalled;
+    [self _updateSyncButtonConfiguration];
     [self _layoutHeaderForWidth:CGRectGetWidth(self.tableView.bounds)];
 }
 
@@ -212,6 +227,60 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 {
     (void)sender;
     [[AppleWatchSyncManager sharedManager] syncNow];
+}
+
+- (void)_updateSyncButtonConfiguration
+{
+    UIButtonConfiguration* configuration = self.syncButton.configuration ?: [UIButtonConfiguration tintedButtonConfiguration];
+    configuration.image = [UIImage systemImageNamed:@"arrow.clockwise"];
+    configuration.buttonSize = UIButtonConfigurationSizeSmall;
+    configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+    configuration.baseForegroundColor = self.syncButton.enabled ? ICTintColor : ICMutedTextColor;
+    configuration.baseBackgroundColor = [(self.syncButton.enabled ? ICTintColor : ICMutedTextColor) colorWithAlphaComponent:0.16];
+    self.syncButton.configuration = configuration;
+    self.syncButton.alpha = self.syncButton.enabled ? 1.0 : 0.55;
+}
+
+- (NSString*)_storageTextForManager:(AppleWatchSyncManager*)manager
+{
+    if (!manager.lastWatchStatusDate) {
+        return @"Watch-Speicher: wird geladen".ls;
+    }
+
+    NSString* used = [self _byteStringForBytes:manager.watchUsedBytes];
+    NSString* free = [self _byteStringForBytes:manager.watchFreeBytes];
+    return [NSString stringWithFormat:@"Watch-Speicher: %@ belegt, %@ frei".ls, used, free];
+}
+
+- (NSString*)_statusTextForManager:(AppleWatchSyncManager*)manager
+{
+    if (manager.currentWatchDownloadTitle.length > 0 && manager.currentWatchExpectedBytes > 0) {
+        NSString* downloaded = [self _byteStringForBytes:manager.currentWatchDownloadedBytes];
+        NSString* expected = [self _byteStringForBytes:manager.currentWatchExpectedBytes];
+        return [NSString stringWithFormat:@"Watch lädt \"%@\" (%@/%@)".ls, manager.currentWatchDownloadTitle, downloaded, expected];
+    }
+
+    if (manager.lastSyncDate) {
+        NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
+        formatter.timeStyle = NSDateFormatterShortStyle;
+        formatter.dateStyle = NSDateFormatterNoStyle;
+        return [NSString stringWithFormat:@"%@ %@", @"Letzte Synchronisierung".ls, [formatter stringFromDate:manager.lastSyncDate]];
+    }
+    return @"Letzte Synchronisierung: nie".ls;
+}
+
+- (void)_updateStorageProgressForManager:(AppleWatchSyncManager*)manager
+{
+    float progress = 0.f;
+    if (manager.watchTotalBytes > 0) {
+        progress = (float)MIN(1.0, MAX(0.0, (double)manager.watchUsedBytes / (double)manager.watchTotalBytes));
+    }
+    [self.storageProgressView setProgress:progress animated:NO];
+}
+
+- (NSString*)_byteStringForBytes:(int64_t)bytes
+{
+    return [NSByteCountFormatter stringFromByteCount:MAX((int64_t)0, bytes) countStyle:NSByteCountFormatterCountStyleFile];
 }
 
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section
@@ -234,26 +303,45 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
         return cell;
     }
 
-    UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchEpisodeCellIdentifier];
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:ICAppleWatchEpisodeCellIdentifier];
-    }
     AppleWatchEpisodeState* state = self.states[indexPath.row];
     CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    if (!episode) {
+        UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchMessageCellIdentifier forIndexPath:indexPath];
+        cell.textLabel.textColor = ICMutedTextColor;
+        cell.textLabel.numberOfLines = 0;
+        cell.textLabel.text = @"Nicht verfügbar".ls;
+        cell.backgroundColor = ICBackgroundColor;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.imageView.image = nil;
+        return cell;
+    }
 
-    cell.backgroundColor = ICBackgroundColor;
-    cell.textLabel.textColor = episode.consumed ? ICMutedTextColor : ICTextColor;
-    cell.detailTextLabel.textColor = ICMutedTextColor;
-    cell.textLabel.numberOfLines = 2;
-    cell.detailTextLabel.numberOfLines = 2;
-    cell.textLabel.text = episode.title ?: @"No Title".ls;
-    cell.detailTextLabel.text = [NSString stringWithFormat:@"%@\n%@", episode.feed.displayTitle ?: episode.feed.title ?: @"", [state localizedStatusText]];
-    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    EpisodesTableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchEpisodeCellIdentifier forIndexPath:indexPath];
+    cell.backgroundColor = self.tableView.backgroundColor;
+    cell.tintColor = self.view.tintColor;
+    cell.embedded = NO;
+    cell.upNextStyle = NO;
+    cell.showsPlaybackProgress = NO;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.panRecognizer.enabled = NO;
+    cell.topSeparator = (indexPath.row > 0);
+    [cell.playAccessoryButton removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
+    cell.playAccessoryButton.userInteractionEnabled = NO;
+    cell.playAccessoryButton.userInfo = nil;
+    cell.objectValue = episode;
+    cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
 
-    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightRegular];
-    UIImage* image = [UIImage systemImageNamed:@"applewatch" withConfiguration:config];
-    cell.imageView.image = [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-    cell.imageView.tintColor = state.downloadedOnWatch ? ICTintColor : ICMutedTextColor;
+    NSURL* imageURL = episode.imageURL ?: episode.feed.imageURL;
+    ImageCacheManager* imageCacheManager = [ImageCacheManager sharedImageCacheManager];
+    __weak EpisodesTableViewCell* weakCell = cell;
+    [imageCacheManager imageForURL:imageURL size:56 grayscale:episode.consumed sender:cell completion:^(UIImage* image) {
+        EpisodesTableViewCell* strongCell = weakCell;
+        if (!strongCell || !image || strongCell.objectValue != episode) {
+            return;
+        }
+        strongCell.iconView.image = image;
+    }];
 
     return cell;
 }
@@ -268,27 +356,131 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
         return @"Kopple eine Apple Watch, um Episoden für die Watch auszuwählen.".ls;
     }
     if (!manager.watchAppInstalled) {
-        return @"Installiere die Instacast-Watch-App auf deiner Apple Watch.".ls;
+        return @"Installiere die InstacastPlus-Watch-App auf deiner Apple Watch.".ls;
     }
     return @"Keine Episoden für die Apple Watch ausgewählt.".ls;
 }
 
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath
 {
-    if (self.states.count == 0) {
-        [tableView deselectRowAtIndexPath:indexPath animated:YES];
-        return;
+    (void)indexPath;
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+}
+
+- (CGFloat)tableView:(UITableView*)tableView estimatedHeightForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    (void)indexPath;
+    return self.states.count == 0 ? 64.f : 72.f;
+}
+
+- (CGFloat)tableView:(UITableView*)tableView heightForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (self.states.count == 0 || indexPath.row >= self.states.count) {
+        return UITableViewAutomaticDimension;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
     CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
     if (!episode) {
+        return UITableViewAutomaticDimension;
+    }
+
+    return [EpisodesTableViewCell proposedHeightWithObjectValue:episode
+                                                      tableSize:tableView.bounds.size
+                                                      imageSize:CGSizeMake(56, 56)
+                                                       embedded:NO
+                                                        editing:tableView.editing];
+}
+
+- (BOOL)tableView:(UITableView*)tableView canEditRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    return self.states.count > 0 && indexPath.row < self.states.count;
+}
+
+- (UITableViewCellEditingStyle)tableView:(UITableView*)tableView editingStyleForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    (void)indexPath;
+    return UITableViewCellEditingStyleNone;
+}
+
+- (BOOL)tableView:(UITableView*)tableView shouldIndentWhileEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    (void)indexPath;
+    return NO;
+}
+
+- (BOOL)tableView:(UITableView*)tableView canMoveRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    return self.states.count > 0 && indexPath.row < self.states.count;
+}
+
+- (void)tableView:(UITableView*)tableView moveRowAtIndexPath:(NSIndexPath*)sourceIndexPath toIndexPath:(NSIndexPath*)destinationIndexPath
+{
+    (void)tableView;
+    if (sourceIndexPath.row == destinationIndexPath.row) {
         return;
     }
 
-    EpisodeViewController* controller = [EpisodeViewController episodeViewController];
-    controller.episode = episode;
-    [self.navigationController pushViewController:controller animated:YES];
+    NSMutableArray<AppleWatchEpisodeState*>* states = [self.states mutableCopy];
+    AppleWatchEpisodeState* state = states[sourceIndexPath.row];
+    [states removeObjectAtIndex:sourceIndexPath.row];
+    [states insertObject:state atIndex:destinationIndexPath.row];
+    self.states = states;
+    [[AppleWatchSyncManager sharedManager] moveEpisodeAtIndex:sourceIndexPath.row toIndex:destinationIndexPath.row];
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    if (self.states.count == 0 || indexPath.row >= self.states.count) {
+        return nil;
+    }
+
+    AppleWatchEpisodeState* state = self.states[indexPath.row];
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    if (!episode) {
+        return nil;
+    }
+
+    UIContextualAction* removeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                                               title:@"Entfernen".ls
+                                                                             handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+                                                                                 [[AppleWatchSyncManager sharedManager] removeEpisodeFromWatch:episode];
+                                                                                 completionHandler(YES);
+                                                                             }];
+    removeAction.image = [UIImage systemImageNamed:@"trash"];
+
+    return [UISwipeActionsConfiguration configurationWithActions:@[removeAction]];
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    (void)tableView;
+    if (self.states.count == 0 || indexPath.row >= self.states.count) {
+        return nil;
+    }
+
+    AppleWatchEpisodeState* state = self.states[indexPath.row];
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    if (!episode || state.downloadedOnWatch || state.removingFromWatch) {
+        return nil;
+    }
+
+    UIContextualAction* prioritizeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal
+                                                                                  title:@"Laden".ls
+                                                                                handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+                                                                                    [[AppleWatchSyncManager sharedManager] prioritizeEpisodeOnWatch:episode];
+                                                                                    completionHandler(YES);
+                                                                                }];
+    prioritizeAction.image = [UIImage systemImageNamed:@"arrow.down.circle"];
+    prioritizeAction.backgroundColor = ICTintColor;
+
+    return [UISwipeActionsConfiguration configurationWithActions:@[prioritizeAction]];
 }
 
 - (UIContextMenuConfiguration*)tableView:(UITableView*)tableView contextMenuConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath point:(CGPoint)point

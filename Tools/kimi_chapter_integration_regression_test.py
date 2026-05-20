@@ -62,9 +62,14 @@ require(
     and "cue.end > blockStart" in chapter_source
     and "Promotion wieder in redaktionellen Inhalt uebergeht" in chapter_source
     and "Ein Oberthema reicht nicht als Kapitel" in chapter_source
+    and "Vermeide Sammelkapitel" in chapter_source
+    and "Ticketverfuegbarkeit" in chapter_source
+    and "zusammenhaengenden Unterstuetzungs-, Abo-, Spenden-, Preis-, Zahlungs- oder Mitgliedschaftsblocks" in chapter_source
+    and "Reine Servicehinweise zum bestehenden Podcast" in chapter_source
     and "validateRemoteChapterStartEvidence" in chapter_source
     and "rawChapterStartEvidenceIssue" in chapter_source
     and "remote-chapter-evidence-retry-started" in chapter_source
+    and "zwei verschiedene Promotion-Segmente nacheinander" in chapter_source
     and '"response_format"' in chapter_source
     and '"json_schema"' in chapter_source
     and '"thinking": ["type": "disabled"]' in chapter_source,

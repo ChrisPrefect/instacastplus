@@ -188,6 +188,13 @@ require(
     and "persistQueue()" in queue_source.split("if didMarkInterruptedItem", 1)[1].split("postQueueChangeNotification()", 1)[0],
     "Crash guard still appends duplicate interruption log entries when resumeIfNeeded is invoked more than once after an app kill.",
 )
+require(
+    "canAutoResumeRemoteChapterJobAfterUnexpectedTermination" in queue_source
+    and "selectedModel(for: .textToChapters).usesRemoteChapterService" in queue_source
+    and "autoResumableRemoteChapterItems" in queue_source
+    and "Crash-Guard: Cloud-Kapiteljob wird automatisch fortgesetzt" in queue_source,
+    "Crash guard still blocks cloud-only chapter generation after an app kill even though no local model load can crash-loop.",
+)
 chapter_task_source = queue_source.split("private func startChapterGenerationTask", 1)[1].split("/// Parse SRT file", 1)[0]
 chapter_no_cues_block = chapter_task_source.split("guard !cues.isEmpty else {", 1)[1].split("return", 1)[0]
 chapter_finished_block = chapter_task_source.split('self.refreshBackgroundContinuation(reason: "chapter-task-finished")', 1)[1].split("}", 1)[0]

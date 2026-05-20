@@ -45,6 +45,17 @@ final class WatchStorageManager {
         return Int64(values?.volumeAvailableCapacity ?? 0)
     }
 
+    func totalBytes() -> Int64 {
+        let values = try? downloadsDirectory.resourceValues(forKeys: [.volumeTotalCapacityKey])
+        return Int64(values?.volumeTotalCapacity ?? 0)
+    }
+
+    func usedBytes() -> Int64 {
+        let total = totalBytes()
+        guard total > 0 else { return 0 }
+        return max(0, total - freeBytes())
+    }
+
     func cleanupIfNeeded(bytesNeeded: Int64, excluding episodeHash: String?) -> [WatchEpisode] {
         var removed: [WatchEpisode] = []
         let minimumFreeBytes = max(bytesNeeded, 50 * 1024 * 1024)
@@ -55,12 +66,16 @@ final class WatchStorageManager {
         let candidates = WatchManifestStore.shared.episodes
             .filter { $0.episodeHash != episodeHash && $0.localFileURL != nil }
             .sorted { first, second in
-                let firstRank = cleanupRank(first)
-                let secondRank = cleanupRank(second)
-                if firstRank != secondRank {
-                    return firstRank < secondRank
+                switch (first.playbackOrder, second.playbackOrder) {
+                case let (.some(firstOrder), .some(secondOrder)) where firstOrder != secondOrder:
+                    return firstOrder > secondOrder
+                case (.some, .none):
+                    return false
+                case (.none, .some):
+                    return true
+                default:
+                    return first.sortDate < second.sortDate
                 }
-                return first.sortDate < second.sortDate
             }
 
         for episode in candidates where freeBytes() < minimumFreeBytes {
@@ -78,13 +93,4 @@ final class WatchStorageManager {
         return removed
     }
 
-    private func cleanupRank(_ episode: WatchEpisode) -> Int {
-        if episode.consumed {
-            return 0
-        }
-        if episode.selectionSource == .latestRule {
-            return 1
-        }
-        return 2
-    }
 }

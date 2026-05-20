@@ -22,7 +22,12 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchEpisodeStatesDidChangeNotification
 @property (nonatomic, strong, readonly, nullable) NSDate* lastSyncDate;
 @property (nonatomic, strong, readonly, nullable) NSDate* lastWatchStatusDate;
 @property (nonatomic, readonly) int64_t watchFreeBytes;
+@property (nonatomic, readonly) int64_t watchUsedBytes;
+@property (nonatomic, readonly) int64_t watchTotalBytes;
 @property (nonatomic, readonly) int64_t watchDownloadBytes;
+@property (nonatomic, copy, readonly, nullable) NSString* currentWatchDownloadTitle;
+@property (nonatomic, readonly) int64_t currentWatchDownloadedBytes;
+@property (nonatomic, readonly) int64_t currentWatchExpectedBytes;
 
 + (instancetype)sharedManager;
 
@@ -41,6 +46,7 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchEpisodeStatesDidChangeNotification
 - (void)sendEpisodeToWatch:(CDEpisode*)episode;
 - (void)removeEpisodeFromWatch:(CDEpisode*)episode;
 - (void)prioritizeEpisodeOnWatch:(CDEpisode*)episode;
+- (void)moveEpisodeAtIndex:(NSUInteger)fromIndex toIndex:(NSUInteger)toIndex;
 
 @end
 

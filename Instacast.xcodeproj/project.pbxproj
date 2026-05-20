@@ -304,6 +304,7 @@
 		95A7FECEA2CCB0FFDE27A33A /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; };
 		9D90BCCD4EF3BA1D08035323 /* InstacastWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 48154178CFD061C4CD5ED6B0 /* InstacastWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A11E00000000000000000001 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A11E00000000000000000004 /* Localizable.strings */; };
+		A12F00000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A12F00000000000000000002 /* Assets.xcassets */; };
 		9EA6F144FB33329DD4241431 /* InstacastBackupImportViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */; };
 		A06C5A9B9EE34AEE5C2EE3AE /* WatchEpisode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D97762C4DA733C845EACD81 /* WatchEpisode.swift */; };
 		A09342B69F23219DCA42408C /* InstacastBackupData.m in Sources */ = {isa = PBXBuildFile; fileRef = 9B172640A841BB0E33457ED9 /* InstacastBackupData.m */; };
@@ -414,7 +415,7 @@
 		EFAEAAA76182FA4C1D421935 /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = "";
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
 				9D90BCCD4EF3BA1D08035323 /* InstacastWatch.app in Embed Watch Content */,
@@ -922,6 +923,7 @@
 		A1B2C3D4E5F6A7B800000002 /* ApplePodcastChartsClient.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ApplePodcastChartsClient.m; sourceTree = "<group>"; };
 		A11E00000000000000000002 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = InstacastWatch/en.lproj/Localizable.strings; sourceTree = SOURCE_ROOT; };
 		A11E00000000000000000003 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = InstacastWatch/de.lproj/Localizable.strings; sourceTree = SOURCE_ROOT; };
+		A12F00000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
 		AB544047FF0C40A785F5223F /* Model.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model.xcdatamodel; sourceTree = "<group>"; };
 		AC519BE7A07B9059ECA1F6BA /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -2042,6 +2044,7 @@
 				4DA77CE3DBE6C0B97B4D3DD1 /* WatchDownloadManager.swift */,
 				54593D5847CEE5BF017F34C3 /* WatchPlayerController.swift */,
 				09CFAABC00E1EE7CBF631F30 /* WatchEpisodeViews.swift */,
+				A12F00000000000000000002 /* Assets.xcassets */,
 				45F3B4B9152876BA7CBCD5E7 /* Info.plist */,
 				A11E00000000000000000004 /* Localizable.strings */,
 			);
@@ -2336,6 +2339,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A12F00000000000000000001 /* Assets.xcassets in Resources */,
 				A11E00000000000000000001 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2736,6 +2740,7 @@
 		13BC2FE48259A6E10C5641E1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
@@ -2958,6 +2963,7 @@
 		403B609E67C4C0EA525720A6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;

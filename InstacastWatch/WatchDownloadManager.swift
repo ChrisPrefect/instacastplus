@@ -53,7 +53,7 @@ final class WatchDownloadManager: NSObject, ObservableObject {
 
         let removed = WatchStorageManager.shared.cleanupIfNeeded(bytesNeeded: episode.expectedBytes, excluding: episode.episodeHash)
         for removedEpisode in removed {
-            WatchConnectivityController.shared.send(type: "watch.deleted", payload: [
+            WatchConnectivityController.shared.send(type: "watch.downloadEvicted", payload: [
                 "episodeHash": removedEpisode.episodeHash,
                 "timestamp": timestamp(),
             ])
@@ -226,19 +226,34 @@ final class WatchDownloadManager: NSObject, ObservableObject {
 extension WatchDownloadManager: URLSessionDownloadDelegate {
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         let hash = downloadTask.taskDescription ?? ""
+        let stagedLocation = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InstacastWatchDownload-\(UUID().uuidString)")
+        do {
+            try FileManager.default.moveItem(at: location, to: stagedLocation)
+        } catch {
+            Task { @MainActor in
+                markDownloadFailed(hash: hash, error: error.localizedDescription)
+            }
+            return
+        }
+
         Task { @MainActor in
-            guard let episode = WatchManifestStore.shared.episode(hash: hash) else { return }
-            if let error = downloadValidationError(for: downloadTask, fileURL: location) {
-                try? FileManager.default.removeItem(at: location)
+            guard let episode = WatchManifestStore.shared.episode(hash: hash) else {
+                try? FileManager.default.removeItem(at: stagedLocation)
+                return
+            }
+            if let error = downloadValidationError(for: downloadTask, fileURL: stagedLocation) {
+                try? FileManager.default.removeItem(at: stagedLocation)
                 markDownloadFailed(hash: hash, error: error)
                 return
             }
 
-            let destination = WatchStorageManager.shared.localFileURL(for: episode, temporaryURL: location)
+            let destination = WatchStorageManager.shared.localFileURL(for: episode, temporaryURL: stagedLocation)
             try? FileManager.default.removeItem(at: destination)
             do {
-                try FileManager.default.moveItem(at: location, to: destination)
+                try FileManager.default.moveItem(at: stagedLocation, to: destination)
             } catch {
+                try? FileManager.default.removeItem(at: stagedLocation)
                 markDownloadFailed(hash: hash, error: error.localizedDescription)
                 return
             }

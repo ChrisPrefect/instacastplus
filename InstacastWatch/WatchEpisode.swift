@@ -18,6 +18,8 @@ struct WatchManifestEntry {
     let feedIdentifier: String
     let title: String
     let podcastTitle: String
+    let subtitle: String?
+    let imageURL: URL?
     let pubDate: Date
     let durationHint: Int
     let position: Int
@@ -25,6 +27,9 @@ struct WatchManifestEntry {
     let mediaURL: URL
     let selectionSource: WatchSelectionSource
     let watchAddedDate: Date
+    let playbackOrder: Int?
+    let skipForwardSeconds: Int
+    let skipBackwardSeconds: Int
 }
 
 struct WatchEpisode: Codable, Identifiable, Equatable {
@@ -34,11 +39,14 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     var feedIdentifier: String
     var title: String
     var podcastTitle: String
+    var subtitle: String?
+    var imageURL: URL?
     var pubDate: Date
     var durationHint: Int
     var mediaURL: URL
     var selectionSource: WatchSelectionSource
     var watchAddedDate: Date
+    var playbackOrder: Int?
     var status: WatchEpisodeStatus
     var localFileURL: URL?
     var actualFileSize: Int64
@@ -49,6 +57,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     var lastError: String?
     var downloadedBytes: Int64
     var expectedBytes: Int64
+    var skipForwardSeconds: Int
+    var skipBackwardSeconds: Int
 
     var sortDate: Date {
         selectionSource == .manual ? watchAddedDate : pubDate
@@ -65,6 +75,61 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     var progressFraction: Double? {
         guard status == .downloading, expectedBytes > 0 else { return nil }
         return min(1.0, max(0.0, Double(downloadedBytes) / Double(expectedBytes)))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case episodeHash
+        case feedIdentifier
+        case title
+        case podcastTitle
+        case subtitle
+        case imageURL
+        case pubDate
+        case durationHint
+        case mediaURL
+        case selectionSource
+        case watchAddedDate
+        case playbackOrder
+        case status
+        case localFileURL
+        case actualFileSize
+        case actualDuration
+        case lastPlaybackPosition
+        case lastPlaybackDate
+        case consumed
+        case lastError
+        case downloadedBytes
+        case expectedBytes
+        case skipForwardSeconds
+        case skipBackwardSeconds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        episodeHash = try container.decode(String.self, forKey: .episodeHash)
+        feedIdentifier = try container.decode(String.self, forKey: .feedIdentifier)
+        title = try container.decode(String.self, forKey: .title)
+        podcastTitle = try container.decode(String.self, forKey: .podcastTitle)
+        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+        imageURL = try container.decodeIfPresent(URL.self, forKey: .imageURL)
+        pubDate = try container.decode(Date.self, forKey: .pubDate)
+        durationHint = try container.decode(Int.self, forKey: .durationHint)
+        mediaURL = try container.decode(URL.self, forKey: .mediaURL)
+        selectionSource = try container.decode(WatchSelectionSource.self, forKey: .selectionSource)
+        watchAddedDate = try container.decode(Date.self, forKey: .watchAddedDate)
+        playbackOrder = try container.decodeIfPresent(Int.self, forKey: .playbackOrder)
+        status = try container.decode(WatchEpisodeStatus.self, forKey: .status)
+        localFileURL = try container.decodeIfPresent(URL.self, forKey: .localFileURL)
+        actualFileSize = try container.decode(Int64.self, forKey: .actualFileSize)
+        actualDuration = try container.decode(Int.self, forKey: .actualDuration)
+        lastPlaybackPosition = try container.decode(Int.self, forKey: .lastPlaybackPosition)
+        lastPlaybackDate = try container.decodeIfPresent(Date.self, forKey: .lastPlaybackDate)
+        consumed = try container.decode(Bool.self, forKey: .consumed)
+        lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        downloadedBytes = try container.decode(Int64.self, forKey: .downloadedBytes)
+        expectedBytes = try container.decode(Int64.self, forKey: .expectedBytes)
+        skipForwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipForwardSeconds) ?? 30)
+        skipBackwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipBackwardSeconds) ?? 30)
     }
 }
 
@@ -91,6 +156,12 @@ extension WatchManifestEntry {
         self.feedIdentifier = feedIdentifier
         self.title = title
         self.podcastTitle = podcastTitle
+        self.subtitle = (dictionary["subtitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let imageURLString = dictionary["imageURL"] as? String, !imageURLString.isEmpty {
+            self.imageURL = URL(string: imageURLString)
+        } else {
+            self.imageURL = nil
+        }
         self.pubDate = pubDate
         self.durationHint = (dictionary["durationHint"] as? NSNumber)?.intValue ?? 0
         self.position = (dictionary["position"] as? NSNumber)?.intValue ?? 0
@@ -98,6 +169,9 @@ extension WatchManifestEntry {
         self.mediaURL = mediaURL
         self.selectionSource = selectionSource
         self.watchAddedDate = watchAddedDate
+        self.playbackOrder = (dictionary["playbackOrder"] as? NSNumber)?.intValue
+        self.skipForwardSeconds = max(1, (dictionary["skipForwardSeconds"] as? NSNumber)?.intValue ?? 30)
+        self.skipBackwardSeconds = max(1, (dictionary["skipBackwardSeconds"] as? NSNumber)?.intValue ?? 30)
     }
 }
 
@@ -108,11 +182,14 @@ extension WatchEpisode {
         self.feedIdentifier = entry.feedIdentifier
         self.title = entry.title
         self.podcastTitle = entry.podcastTitle
+        self.subtitle = entry.subtitle
+        self.imageURL = entry.imageURL
         self.pubDate = entry.pubDate
         self.durationHint = entry.durationHint
         self.mediaURL = entry.mediaURL
         self.selectionSource = entry.selectionSource
         self.watchAddedDate = entry.watchAddedDate
+        self.playbackOrder = entry.playbackOrder
         self.status = canReuseDownload ? (existing?.status ?? .queued) : .queued
         self.localFileURL = canReuseDownload ? existing?.localFileURL : nil
         self.actualFileSize = canReuseDownload ? (existing?.actualFileSize ?? 0) : 0
@@ -123,5 +200,7 @@ extension WatchEpisode {
         self.lastError = canReuseDownload ? existing?.lastError : nil
         self.downloadedBytes = canReuseDownload ? (existing?.downloadedBytes ?? 0) : 0
         self.expectedBytes = canReuseDownload ? (existing?.expectedBytes ?? 0) : 0
+        self.skipForwardSeconds = entry.skipForwardSeconds
+        self.skipBackwardSeconds = entry.skipBackwardSeconds
     }
 }

@@ -11,6 +11,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
     private var player: AVAudioPlayer?
     private var timer: Timer?
+    private var lastAutomaticReportDate: Date?
     private let dateFormatter = ISO8601DateFormatter()
 
     private override init() {
@@ -22,12 +23,13 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         if playingEpisodeHash == episode.episodeHash, isPlaying {
             pause()
         } else {
-            play(episode)
+            _ = play(episode)
         }
     }
 
-    func play(_ episode: WatchEpisode) {
-        guard let localFileURL = episode.localFileURL else { return }
+    @discardableResult
+    func play(_ episode: WatchEpisode) -> Bool {
+        guard let localFileURL = episode.localFileURL else { return false }
 
         if playingEpisodeHash != episode.episodeHash {
             reportPosition(finished: false)
@@ -36,14 +38,14 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                 player = try AVAudioPlayer(contentsOf: localFileURL)
             } catch {
                 markEpisodePlaybackFailed(episode, error: error.localizedDescription)
-                return
+                return false
             }
             playingEpisodeHash = episode.episodeHash
         }
 
         guard let player else {
             markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
-            return
+            return false
         }
 
         player.delegate = self
@@ -53,7 +55,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             markEpisodePlaybackFailed(episode, error: error.localizedDescription)
-            return
+            return false
         }
 
         let duration = player.duration
@@ -63,11 +65,13 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
         guard player.play() else {
             markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
-            return
+            return false
         }
         isPlaying = true
+        currentPosition = player.currentTime
         startTimer()
         reportPosition(finished: false)
+        return true
     }
 
     func pause() {
@@ -82,6 +86,11 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         player.currentTime = min(max(0, position), player.duration)
         currentPosition = player.currentTime
         reportPosition(finished: false)
+    }
+
+    func seek(by seconds: TimeInterval) {
+        guard let player else { return }
+        seek(to: player.currentTime + seconds)
     }
 
     func flushPlaybackState() {
@@ -111,17 +120,25 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
+            let finishedHash = playingEpisodeHash
             isPlaying = false
             stopTimer()
             reportPosition(finished: true)
+            self.player = nil
+            playingEpisodeHash = nil
+            currentPosition = 0
+
+            if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
+                _ = play(nextEpisode)
+            }
         }
     }
 
     private func startTimer() {
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.reportPosition(finished: false)
+                self?.tickPlaybackPosition()
             }
         }
     }
@@ -131,10 +148,22 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         timer = nil
     }
 
+    private func tickPlaybackPosition() {
+        guard let player, playingEpisodeHash != nil else { return }
+        currentPosition = player.currentTime
+
+        let now = Date()
+        if let lastAutomaticReportDate, now.timeIntervalSince(lastAutomaticReportDate) < 5 {
+            return
+        }
+        reportPosition(finished: false)
+    }
+
     private func reportPosition(finished: Bool) {
         guard let hash = playingEpisodeHash, let player else { return }
         let position = max(0, Int(player.currentTime.rounded()))
         currentPosition = player.currentTime
+        lastAutomaticReportDate = Date()
 
         WatchManifestStore.shared.updateEpisode(hash: hash) { episode in
             episode.lastPlaybackPosition = finished ? episode.displayDuration : position

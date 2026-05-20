@@ -10,6 +10,11 @@
 "Episode" = "Episode";
 "Pause" = "Pause";
 "Abspielen" = "Play";
+"Skipping Back" = "Skipping Back";
+"Skipping Forward" = "Skipping Forward";
+"Gespielt" = "Played";
+"%@ gespielt" = "%@ played";
+"Ungespielt, %@" = "Unplayed, %@";
 "Download fehlgeschlagen: HTTP %ld." = "Download failed: HTTP %ld.";
 "Geladene Datei ist leer." = "Downloaded file is empty.";
 "Geladene Audiodatei konnte nicht validiert werden." = "Downloaded audio file could not be validated.";

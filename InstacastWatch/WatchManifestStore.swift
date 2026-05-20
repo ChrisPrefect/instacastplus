@@ -5,6 +5,7 @@ final class WatchManifestStore: ObservableObject {
     static let shared = WatchManifestStore()
 
     @Published private(set) var episodes: [WatchEpisode] = []
+    @Published private(set) var accentColorHex = UserDefaults.standard.string(forKey: "InstacastWatchAccentColorHex") ?? "#FF5300"
 
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -16,10 +17,16 @@ final class WatchManifestStore: ObservableObject {
 
     var sortedEpisodes: [WatchEpisode] {
         episodes.sorted { first, second in
-            if first.consumed != second.consumed {
-                return !first.consumed
+            switch (first.playbackOrder, second.playbackOrder) {
+            case let (.some(firstOrder), .some(secondOrder)) where firstOrder != secondOrder:
+                return firstOrder < secondOrder
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            default:
+                return first.sortDate > second.sortDate
             }
-            return first.sortDate > second.sortDate
         }
     }
 
@@ -66,6 +73,20 @@ final class WatchManifestStore: ObservableObject {
         persist()
     }
 
+    func nextPlayableEpisode(after episodeHash: String) -> WatchEpisode? {
+        let orderedEpisodes = sortedEpisodes
+        guard let index = orderedEpisodes.firstIndex(where: { $0.episodeHash == episodeHash }) else { return nil }
+        return orderedEpisodes[(index + 1)...].first { episode in
+            episode.status == .downloaded && episode.localFileURL != nil && !episode.consumed
+        }
+    }
+
+    func updateAccentColorHex(_ value: String?) {
+        guard let value, Self.isValidHexColor(value), value != accentColorHex else { return }
+        accentColorHex = value
+        UserDefaults.standard.set(value, forKey: "InstacastWatchAccentColorHex")
+    }
+
     func persist() {
         try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
         guard let data = try? encoder.encode(episodes) else { return }
@@ -79,5 +100,12 @@ final class WatchManifestStore: ObservableObject {
 
     private var manifestURL: URL {
         supportDirectory.appendingPathComponent("manifest.json")
+    }
+
+    private static func isValidHexColor(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hex = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard hex.count == 6 else { return false }
+        return hex.unicodeScalars.allSatisfy { CharacterSet(charactersIn: "0123456789ABCDEFabcdef").contains($0) }
     }
 }
