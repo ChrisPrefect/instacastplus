@@ -13,6 +13,21 @@ enum WatchEpisodeStatus: String, Codable {
     case removing
 }
 
+struct WatchChapter: Codable, Identifiable, Equatable {
+    var id: Int { startSeconds }
+
+    let title: String
+    let startSeconds: Int
+    let endSeconds: Int?
+    let imageFileName: String?
+
+    func contains(position: TimeInterval, episodeDuration: Int) -> Bool {
+        let start = TimeInterval(startSeconds)
+        let end = TimeInterval(endSeconds ?? episodeDuration)
+        return position >= start && position < max(start, end)
+    }
+}
+
 struct WatchManifestEntry {
     let episodeHash: String
     let feedIdentifier: String
@@ -59,6 +74,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     var expectedBytes: Int64
     var skipForwardSeconds: Int
     var skipBackwardSeconds: Int
+    var chapters: [WatchChapter]
+    var chapterArtworkBaseURL: URL?
 
     var sortDate: Date {
         selectionSource == .manual ? watchAddedDate : pubDate
@@ -102,6 +119,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         case expectedBytes
         case skipForwardSeconds
         case skipBackwardSeconds
+        case chapters
+        case chapterArtworkBaseURL
     }
 
     init(from decoder: Decoder) throws {
@@ -130,6 +149,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         expectedBytes = try container.decode(Int64.self, forKey: .expectedBytes)
         skipForwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipForwardSeconds) ?? 30)
         skipBackwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipBackwardSeconds) ?? 30)
+        chapters = try container.decodeIfPresent([WatchChapter].self, forKey: .chapters) ?? []
+        chapterArtworkBaseURL = try container.decodeIfPresent(URL.self, forKey: .chapterArtworkBaseURL)
     }
 }
 
@@ -178,6 +199,7 @@ extension WatchManifestEntry {
 extension WatchEpisode {
     init(entry: WatchManifestEntry, existing: WatchEpisode?) {
         let canReuseDownload = existing?.mediaURL == entry.mediaURL
+        let canReuseLocalMetadata = canReuseDownload && existing?.localFileURL != nil
         self.episodeHash = entry.episodeHash
         self.feedIdentifier = entry.feedIdentifier
         self.title = entry.title
@@ -202,5 +224,13 @@ extension WatchEpisode {
         self.expectedBytes = canReuseDownload ? (existing?.expectedBytes ?? 0) : 0
         self.skipForwardSeconds = entry.skipForwardSeconds
         self.skipBackwardSeconds = entry.skipBackwardSeconds
+        self.chapters = canReuseLocalMetadata ? (existing?.chapters ?? []) : []
+        self.chapterArtworkBaseURL = canReuseLocalMetadata ? existing?.chapterArtworkBaseURL : nil
+    }
+
+    func currentChapter(at position: TimeInterval) -> WatchChapter? {
+        chapters.last { chapter in
+            chapter.contains(position: position, episodeDuration: displayDuration)
+        }
     }
 }

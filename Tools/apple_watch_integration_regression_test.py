@@ -23,6 +23,7 @@ watch_download_manager = read("InstacastWatch/WatchDownloadManager.swift")
 watch_connectivity = read("InstacastWatch/WatchConnectivityController.swift")
 watch_player = read("InstacastWatch/WatchPlayerController.swift")
 watch_views = read("InstacastWatch/WatchEpisodeViews.swift")
+watch_chapter_extractor = read("InstacastWatch/WatchChapterExtractor.swift")
 watch_plist = read("InstacastWatch/Info.plist")
 feed_settings = read("Classes/FeedSettingsViewController.m")
 episodes_table = read("Classes/EpisodesTableViewController.m")
@@ -69,6 +70,11 @@ require(
     and "InstacastWatch.app in Embed Watch Content" in project
     and "WatchConnectivity.framework in Frameworks" in project,
     "The Xcode project must contain and embed the executable watchOS app target inside the iOS app's Watch folder with WatchConnectivity.",
+)
+
+require(
+    "WatchChapterExtractor.swift in Sources" in project,
+    "The Watch target must compile the local media chapter extractor.",
 )
 
 require(
@@ -154,6 +160,22 @@ require(
 )
 
 require(
+    'self.title = @"Folgen auf Apple Watch".ls' in apple_watch_controller
+    and 'systemImageNamed:@"pencil"' in apple_watch_controller
+    and '@"checkmark"' in apple_watch_controller
+    and "toggleEditMode:" in apple_watch_controller
+    and "UITableViewCellEditingStyleDelete" in apple_watch_controller
+    and "commitEditingStyle" in apple_watch_controller,
+    "The iOS Apple Watch page must use the final list title, icon-only edit control, and a normal edit-mode delete control.",
+)
+
+require(
+    '"%ld auf der Watch".ls' not in apple_watch_controller
+    and "downloadedCount" not in apple_watch_controller,
+    "The iOS Apple Watch header must not repeat the number of Watch episodes above the visible list.",
+)
+
+require(
     "moveEpisodeAtIndex" in manager
     and "visibleEpisodeStates" in manager
     and "playbackOrder" in manager
@@ -169,6 +191,13 @@ require(
     and "watch.deleted" in manager
     and "watch.downloadEvicted" in manager,
     "Watch-side deletions must remove the episode on iOS and suppress automatic re-adds without confusing storage evictions with user deletes.",
+)
+
+require(
+    "visibleEpisodeStates" in manager
+    and "removingFromWatch" in manager.split("- (NSArray<AppleWatchEpisodeState*>*)visibleEpisodeStates", 1)[1].split("- (AppleWatchEpisodeState*)stateForEpisodeHash", 1)[0]
+    and "_suppressAutomaticEpisodeHash" in manager.split("- (void)removeEpisodeFromWatch:(CDEpisode*)episode", 1)[1].split("- (void)prioritizeEpisodeOnWatch:(CDEpisode*)episode", 1)[0],
+    "Episodes removed from the iOS Watch list must disappear from the visible list and must not be re-added by automatic feed rules.",
 )
 
 require(
@@ -201,6 +230,13 @@ require(
     and "downloadValidationError" in watch_download_manager
     and "isPlayable" in watch_download_manager,
     "The Watch download manager must reject HTTP errors, empty files, and unplayable downloads before marking episodes downloaded.",
+)
+
+require(
+    "WatchChapterExtractor.shared.extractChapters" in watch_download_manager
+    and "item.chapters = chapterMetadata.chapters" in watch_download_manager
+    and "item.chapterArtworkBaseURL = chapterMetadata.artworkBaseURL" in watch_download_manager,
+    "The Watch download manager must extract chapters and chapter artwork from the downloaded media file before marking it ready.",
 )
 
 require(
@@ -271,6 +307,12 @@ require(
 )
 
 require(
+    "chapterArtworkDirectory" in read("InstacastWatch/WatchStorageManager.swift")
+    and "removeChapterArtwork(for:" in read("InstacastWatch/WatchStorageManager.swift"),
+    "The Watch storage manager must clean up locally extracted chapter artwork with the episode download.",
+)
+
+require(
     "guard bytesNeeded > 0" not in read("InstacastWatch/WatchStorageManager.swift")
     and "50 * 1024 * 1024" in read("InstacastWatch/WatchStorageManager.swift")
     and "playbackOrder" in read("InstacastWatch/WatchStorageManager.swift"),
@@ -320,7 +362,7 @@ require(
     and "AsyncImage" in watch_views
     and "player.play(episode)" in watch_views
     and "playerPath = [episode.episodeHash]" in watch_views
-    and "ProgressView(value:" in watch_views
+    and "ThinProgressLine" in watch_views
     and "Von Watch entfernen" in watch_views,
     "The Watch UI must provide direct list playback, artwork, progress, a dedicated player page, retry, and removal controls.",
 )
@@ -330,6 +372,12 @@ require(
     and "WatchEpisodeDetailView" not in watch_views
     and "checkmark.circle.fill" not in watch_views,
     "The Watch list must not navigate through an intermediate detail screen or show an unexplained green checkmark.",
+)
+
+require(
+    'Image(systemName: "circle.fill")' not in watch_views
+    and "playedIndicator" not in watch_views,
+    "The Watch episode rows must not show an unexplained round status dot.",
 )
 
 require(
@@ -347,6 +395,46 @@ require(
     and "playerProgressFraction" in watch_views
     and "CompactSkipButton" in watch_views,
     "The Watch player must be a non-scrolling page with a compact progress bar, no generic Episode title, and no watchOS slider stepper controls.",
+)
+
+require(
+    "ScrubbableProgressLine" in watch_views
+    and "DragGesture(minimumDistance: 0)" in watch_views
+    and "player.seek(to: duration * fraction)" in watch_views
+    and "formatCompactDuration" in watch_views
+    and "formatPlayerTime" in watch_views
+    and "chapters: episode.chapters" in watch_views
+    and "ChapterMarkerLine" in watch_views
+    and "chapterTitleText" in watch_views
+    and "lineLimit(2, reservesSpace: true)" in watch_views.split("Text(chapterTitleText)", 1)[1].split("ScrubbableProgressLine", 1)[0]
+    and ".frame(height: 24)" in watch_views.split("private struct ScrubbableProgressLine", 1)[1]
+    and "formatClock(" not in watch_views,
+    "The Watch player progress must be scrubable, show chapter markers, reserve a stable two-line chapter title, and use second-level player time labels without changing compact list durations.",
+)
+
+require(
+    "episode.currentChapter(at: currentPosition)" in watch_views
+    and "ChapterArtworkImage" in watch_views
+    and "chapterTitle" in watch_views
+    and "currentChapter.imageFileName" in watch_views,
+    "The Watch player must show the current chapter title and chapter artwork when the downloaded media provides them.",
+)
+
+require(
+    "struct WatchChapter" in read("InstacastWatch/WatchEpisode.swift")
+    and "var chapters: [WatchChapter]" in read("InstacastWatch/WatchEpisode.swift")
+    and "var chapterArtworkBaseURL: URL?" in read("InstacastWatch/WatchEpisode.swift")
+    and "decodeIfPresent([WatchChapter].self, forKey: .chapters) ?? []" in read("InstacastWatch/WatchEpisode.swift"),
+    "The Watch episode model must persist extracted chapters and migrate older manifests without chapter data.",
+)
+
+require(
+    "loadMetadata(for: .id3Metadata)" in watch_chapter_extractor
+    and '"CHAP"' in watch_chapter_extractor
+    and "loadChapterMetadataGroups" in watch_chapter_extractor
+    and "CGImageDestinationCreateWithData" in watch_chapter_extractor
+    and "WatchChapterExtractionResult" in watch_chapter_extractor,
+    "The Watch chapter extractor must parse local ID3/M4A chapter metadata and normalize chapter artwork for local display.",
 )
 
 require(

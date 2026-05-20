@@ -22,6 +22,7 @@
 
 /* Begin PBXBuildFile section */
 		00BDD66A9B111CE9A71D61F2 /* InstacastWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC78BFA5ED5BF6AAFCF8263 /* InstacastWatchApp.swift */; };
+		A13C00000000000000000001 /* WatchChapterExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A13C00000000000000000002 /* WatchChapterExtractor.swift */; };
 		0BC7C038B900D866CD820D92 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9E85E0F1B1C46AF663E6C92E /* Localizable.strings */; };
 		0DB2440CD95BAD55C356BB6E /* WhisperKitBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */; };
 		165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B874ED55A5A0F6ED98DD872E /* TranscriptionEngine.swift */; };
@@ -429,6 +430,7 @@
 		057F44A6199937D988246F7F /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		05DDBFFC087D9C88BF6EE0FF /* WidgetDataExporter.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = WidgetDataExporter.h; sourceTree = "<group>"; };
 		09CFAABC00E1EE7CBF631F30 /* WatchEpisodeViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchEpisodeViews.swift; sourceTree = "<group>"; };
+		A13C00000000000000000002 /* WatchChapterExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchChapterExtractor.swift; sourceTree = "<group>"; };
 		0E1EBF5E0B5CFC7C64346CB5 /* SoundAnalysis.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = System/Library/Frameworks/SoundAnalysis.framework; sourceTree = SDKROOT; };
 		1076F1231B20B9D44BEB0EDB /* InstacastBackupImportViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupImportViewController.m; sourceTree = "<group>"; };
 		10EB3DD650BC677E54254D60 /* AppleWatchSyncManager.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = AppleWatchSyncManager.m; sourceTree = "<group>"; };
@@ -2042,6 +2044,7 @@
 				B42F79024BFCC38482512F4F /* WatchStorageManager.swift */,
 				BA9132D446FDE310C9A8CBDC /* WatchConnectivityController.swift */,
 				4DA77CE3DBE6C0B97B4D3DD1 /* WatchDownloadManager.swift */,
+				A13C00000000000000000002 /* WatchChapterExtractor.swift */,
 				54593D5847CEE5BF017F34C3 /* WatchPlayerController.swift */,
 				09CFAABC00E1EE7CBF631F30 /* WatchEpisodeViews.swift */,
 				A12F00000000000000000002 /* Assets.xcassets */,
@@ -2658,6 +2661,7 @@
 				60E23B44A8833D26A4AE672D /* WatchStorageManager.swift in Sources */,
 				3EAC1BEC50381ACB27AB92B8 /* WatchConnectivityController.swift in Sources */,
 				A4D635E23144E9DFE29547D9 /* WatchDownloadManager.swift in Sources */,
+				A13C00000000000000000001 /* WatchChapterExtractor.swift in Sources */,
 				3879D9B56E699B6E45D0CBB3 /* WatchPlayerController.swift in Sources */,
 				8996211B84D064F2C5A274DE /* WatchEpisodeViews.swift in Sources */,
 			);

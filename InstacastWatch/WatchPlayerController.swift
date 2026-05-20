@@ -202,6 +202,8 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             item.actualDuration = 0
             item.downloadedBytes = 0
             item.expectedBytes = 0
+            item.chapters = []
+            item.chapterArtworkBaseURL = nil
             item.lastError = error
         }
 

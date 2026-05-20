@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UIKit
 
 struct WatchEpisodeListView: View {
     @EnvironmentObject private var store: WatchManifestStore
@@ -88,7 +89,11 @@ private struct WatchEpisodeRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    playedIndicator
+                    if episode.consumed {
+                        Image(systemName: "checkmark")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(episode.title)
                         .font(.headline)
                         .lineLimit(2)
@@ -101,8 +106,7 @@ private struct WatchEpisodeRow: View {
                     .lineLimit(1)
 
                 if let fraction = progressFraction {
-                    ProgressView(value: fraction)
-                        .tint(progressTint)
+                    ThinProgressLine(fraction: fraction, tint: progressTint)
                 }
 
                 statusLine
@@ -110,18 +114,6 @@ private struct WatchEpisodeRow: View {
             }
         }
         .opacity(episode.consumed ? 0.72 : 1)
-    }
-
-    @ViewBuilder
-    private var playedIndicator: some View {
-        if episode.consumed {
-            Image(systemName: "checkmark.circle")
-                .foregroundStyle(.secondary)
-        } else {
-            Image(systemName: "circle.fill")
-                .foregroundStyle(accentColor)
-                .font(.system(size: 9, weight: .semibold))
-        }
     }
 
     private var secondaryText: String {
@@ -192,7 +184,7 @@ private struct WatchEpisodeRow: View {
         if episode.consumed {
             return NSLocalizedString("Gespielt", comment: "")
         }
-        return "\(formatClock(playbackPosition)) / \(formatDuration(episode.displayDuration))"
+        return "\(formatCompactDuration(playbackPosition)) / \(formatCompactDuration(episode.displayDuration))"
     }
 }
 
@@ -240,29 +232,70 @@ private struct WatchPlayerView: View {
         min(1.0, max(0.0, currentPosition / duration))
     }
 
+    private var currentChapter: WatchChapter? {
+        episode.currentChapter(at: currentPosition)
+    }
+
+    private var chapterTitle: String? {
+        currentChapter?.title
+    }
+
+    private var chapterTitleText: String {
+        let title = chapterTitle ?? ""
+        return title.isEmpty ? " " : title
+    }
+
+    private var chapterArtworkURL: URL? {
+        guard
+            let currentChapter,
+            let imageFileName = currentChapter.imageFileName,
+            let baseURL = episode.chapterArtworkBaseURL
+        else {
+            return nil
+        }
+        return baseURL.appendingPathComponent(imageFileName)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(episode.title)
-                .font(.headline)
-                .fontWeight(.semibold)
-                .lineLimit(3)
-                .minimumScaleFactor(0.78)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 7) {
+                if let chapterArtworkURL {
+                    ChapterArtworkImage(url: chapterArtworkURL)
+                }
+
+                Text(episode.title)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.78)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Text(episode.podcastTitle)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            ProgressView(value: playerProgressFraction)
-                .progressViewStyle(.linear)
-                .tint(accentColor)
-                .scaleEffect(x: 1, y: 0.45, anchor: .center)
+            Text(chapterTitleText)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(accentColor)
+                .lineLimit(2, reservesSpace: true)
+                .minimumScaleFactor(0.78)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            ScrubbableProgressLine(
+                fraction: playerProgressFraction,
+                chapters: episode.chapters,
+                duration: duration,
+                tint: accentColor
+            ) { fraction in
+                player.seek(to: duration * fraction)
+            }
 
             HStack {
-                Text(formatClock(Int(currentPosition.rounded())))
+                Text(formatPlayerTime(Int(currentPosition.rounded())))
                 Spacer()
-                Text("-\(formatClock(max(0, Int((duration - currentPosition).rounded()))))")
+                Text("-\(formatPlayerTime(max(0, Int((duration - currentPosition).rounded()))))")
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -300,11 +333,30 @@ private struct WatchPlayerView: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.top, -2)
         .onAppear {
             if episode.status == .downloaded, episode.localFileURL != nil, player.playingEpisodeHash != episode.episodeHash {
                 _ = player.play(episode)
             }
+        }
+    }
+}
+
+private struct ChapterArtworkImage: View {
+    let url: URL
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            }
+        }
+        .task(id: url) {
+            image = UIImage(contentsOfFile: url.path)
         }
     }
 }
@@ -349,20 +401,92 @@ private struct UnavailableWatchView: View {
     }
 }
 
-private func formatDuration(_ totalSeconds: Int) -> String {
-    let seconds = max(0, totalSeconds)
-    let hours = seconds / 3600
-    let minutes = (seconds % 3600) / 60
-    if hours > 0 {
-        return "\(hours) h \(minutes) min"
+private struct ThinProgressLine: View {
+    let fraction: Double
+    let tint: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.quaternary)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: proxy.size.width * min(1.0, max(0.0, fraction)))
+            }
+        }
+        .frame(height: 2)
     }
-    return "\(minutes) min"
 }
 
-private func formatClock(_ totalSeconds: Int) -> String {
+private struct ScrubbableProgressLine: View {
+    let fraction: Double
+    let chapters: [WatchChapter]
+    let duration: Double
+    let tint: Color
+    let onScrub: (Double) -> Void
+
+    private var chapterMarkerFractions: [Double] {
+        guard duration > 1 else { return [] }
+        return chapters
+            .map { Double($0.startSeconds) / duration }
+            .filter { $0 > 0 && $0 < 1 }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.quaternary)
+                    .frame(height: 9)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: proxy.size.width * min(1.0, max(0.0, fraction)), height: 9)
+                ForEach(chapterMarkerFractions, id: \.self) { markerFraction in
+                    ChapterMarkerLine()
+                        .offset(x: max(0, min(proxy.size.width - 1, proxy.size.width * markerFraction)))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard proxy.size.width > 0 else { return }
+                        let fraction = min(1.0, max(0.0, value.location.x / proxy.size.width))
+                        onScrub(fraction)
+                    }
+            )
+        }
+        .frame(height: 24)
+    }
+}
+
+private struct ChapterMarkerLine: View {
+    var body: some View {
+        Rectangle()
+            .fill(.primary.opacity(0.35))
+            .frame(width: 1, height: 12)
+    }
+}
+
+private func formatCompactDuration(_ totalSeconds: Int) -> String {
+    let minutes = max(0, totalSeconds) / 60
+    let hours = minutes / 60
+    let remainingMinutes = minutes % 60
+    if hours > 0 {
+        if remainingMinutes == 0 {
+            return "\(hours)h"
+        }
+        return "\(hours)h \(remainingMinutes)m"
+    }
+    return "\(minutes)m"
+}
+
+private func formatPlayerTime(_ totalSeconds: Int) -> String {
     let seconds = max(0, totalSeconds)
     let hours = seconds / 3600
-    let minutes = (seconds % 3600) / 60
+    let minutes = (seconds / 60) % 60
     let remainingSeconds = seconds % 60
     if hours > 0 {
         return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)

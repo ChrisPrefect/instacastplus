@@ -23,6 +23,7 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 @property (nonatomic, strong) UILabel* storageLabel;
 @property (nonatomic, strong) UIProgressView* storageProgressView;
 @property (nonatomic, strong) UIButton* syncButton;
+@property (nonatomic, strong) UIBarButtonItem* editIconButtonItem;
 
 @end
 
@@ -37,9 +38,13 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 {
     [super viewDidLoad];
 
-    self.title = @"Apple Watch".ls;
+    self.title = @"Folgen auf Apple Watch".ls;
     self.clearsSelectionOnViewWillAppear = YES;
-    self.navigationItem.rightBarButtonItem = self.editButtonItem;
+    self.editIconButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                               style:UIBarButtonItemStylePlain
+                                                              target:self
+                                                              action:@selector(toggleEditMode:)];
+    self.navigationItem.rightBarButtonItem = self.editIconButtonItem;
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:ICAppleWatchMessageCellIdentifier];
     [self.tableView registerClass:[EpisodesTableViewCell class] forCellReuseIdentifier:ICAppleWatchEpisodeCellIdentifier];
 
@@ -138,15 +143,25 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     CGFloat y = 18;
     CGFloat buttonSize = 34;
     CGFloat textWidth = MAX(0, contentWidth - buttonSize - 10);
+    BOOL showsSummary = (self.summaryLabel.text.length > 0);
 
-    CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)];
-    self.summaryLabel.frame = CGRectMake(16, y, textWidth, ceil(summarySize.height));
-    self.syncButton.frame = CGRectMake(width - 16 - buttonSize, y, buttonSize, buttonSize);
-    y += MAX(ceil(summarySize.height), buttonSize) + 8;
+    if (showsSummary) {
+        CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)];
+        self.summaryLabel.frame = CGRectMake(16, y, textWidth, ceil(summarySize.height));
+        self.syncButton.frame = CGRectMake(width - 16 - buttonSize, y, buttonSize, buttonSize);
+        y += MAX(ceil(summarySize.height), buttonSize) + 8;
 
-    CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
-    self.syncLabel.frame = CGRectMake(16, y, contentWidth, MIN(36, ceil(syncSize.height)));
-    y += CGRectGetHeight(self.syncLabel.frame) + 8;
+        CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
+        self.syncLabel.frame = CGRectMake(16, y, contentWidth, MIN(36, ceil(syncSize.height)));
+        y += CGRectGetHeight(self.syncLabel.frame) + 8;
+    }
+    else {
+        self.summaryLabel.frame = CGRectZero;
+        self.syncButton.frame = CGRectMake(width - 16 - buttonSize, y, buttonSize, buttonSize);
+        CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)];
+        self.syncLabel.frame = CGRectMake(16, y, textWidth, MIN(36, ceil(syncSize.height)));
+        y += MAX(CGRectGetHeight(self.syncLabel.frame), buttonSize) + 8;
+    }
 
     self.storageLabel.frame = CGRectMake(16, y, contentWidth, 18);
     y += 21;
@@ -195,12 +210,6 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 - (void)_updateHeaderText
 {
     AppleWatchSyncManager* manager = [AppleWatchSyncManager sharedManager];
-    NSInteger downloadedCount = 0;
-    for (AppleWatchEpisodeState* state in self.states) {
-        if (state.downloadedOnWatch) {
-            downloadedCount += 1;
-        }
-    }
 
     if (!manager.supported) {
         self.summaryLabel.text = @"Apple Watch ist auf diesem Gerät nicht verfügbar.".ls;
@@ -212,7 +221,7 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
         self.summaryLabel.text = @"Die InstacastPlus-Watch-App ist noch nicht installiert.".ls;
     }
     else {
-        self.summaryLabel.text = [NSString stringWithFormat:@"%ld auf der Watch".ls, (long)downloadedCount];
+        self.summaryLabel.text = nil;
     }
 
     self.syncLabel.text = [self _statusTextForManager:manager];
@@ -221,6 +230,19 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     self.syncButton.enabled = manager.supported && manager.paired && manager.watchAppInstalled;
     [self _updateSyncButtonConfiguration];
     [self _layoutHeaderForWidth:CGRectGetWidth(self.tableView.bounds)];
+}
+
+- (void)toggleEditMode:(id)sender
+{
+    (void)sender;
+    [self setEditing:!self.editing animated:YES];
+}
+
+- (void)setEditing:(BOOL)editing animated:(BOOL)animated
+{
+    [super setEditing:editing animated:animated];
+    [self.tableView setEditing:editing animated:animated];
+    self.editIconButtonItem.image = [UIImage systemImageNamed:(editing ? @"checkmark" : @"pencil")];
 }
 
 - (void)syncAction:(id)sender
@@ -403,14 +425,29 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 {
     (void)tableView;
     (void)indexPath;
-    return UITableViewCellEditingStyleNone;
+    return UITableViewCellEditingStyleDelete;
 }
 
 - (BOOL)tableView:(UITableView*)tableView shouldIndentWhileEditingRowAtIndexPath:(NSIndexPath*)indexPath
 {
     (void)tableView;
     (void)indexPath;
-    return NO;
+    return YES;
+}
+
+- (void)tableView:(UITableView*)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (editingStyle != UITableViewCellEditingStyleDelete || indexPath.row >= self.states.count) {
+        return;
+    }
+
+    AppleWatchEpisodeState* state = self.states[indexPath.row];
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    if (!episode) {
+        return;
+    }
+
+    [[AppleWatchSyncManager sharedManager] removeEpisodeFromWatch:episode];
 }
 
 - (BOOL)tableView:(UITableView*)tableView canMoveRowAtIndexPath:(NSIndexPath*)indexPath

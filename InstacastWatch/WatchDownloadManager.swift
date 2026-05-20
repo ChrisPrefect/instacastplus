@@ -169,6 +169,8 @@ final class WatchDownloadManager: NSObject, ObservableObject {
                     item.actualDuration = 0
                     item.downloadedBytes = 0
                     item.expectedBytes = 0
+                    item.chapters = []
+                    item.chapterArtworkBaseURL = nil
                 }
             } else if episode.status == .downloading && !taskHashes.contains(episode.episodeHash) {
                 WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
@@ -265,6 +267,12 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 return
             }
 
+            let chapterMetadata = await WatchChapterExtractor.shared.extractChapters(
+                from: destination,
+                episodeHash: hash,
+                artworkDirectory: WatchStorageManager.shared.chapterArtworkDirectory
+            )
+
             WatchManifestStore.shared.updateEpisode(hash: hash) { item in
                 item.status = .downloaded
                 item.localFileURL = destination
@@ -273,6 +281,8 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 item.downloadedBytes = attributes.size
                 item.expectedBytes = attributes.size
                 item.lastError = nil
+                item.chapters = chapterMetadata.chapters
+                item.chapterArtworkBaseURL = chapterMetadata.artworkBaseURL
             }
             WatchConnectivityController.shared.send(type: "watch.downloaded", payload: [
                 "episodeHash": hash,

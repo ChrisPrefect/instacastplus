@@ -131,6 +131,11 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 - (NSArray<AppleWatchEpisodeState*>*)visibleEpisodeStates
 {
     NSArray<AppleWatchEpisodeState*>* states = [self allEpisodeStates];
+    states = [states filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id evaluatedObject, NSDictionary<NSString*, id>* bindings) {
+        (void)bindings;
+        AppleWatchEpisodeState* state = evaluatedObject;
+        return !state.removingFromWatch;
+    }]];
     return [states sortedArrayUsingComparator:^NSComparisonResult(AppleWatchEpisodeState* first, AppleWatchEpisodeState* second) {
         CDEpisode* firstEpisode = [DMANAGER episodeWithObjectHash:first.episodeHash];
         CDEpisode* secondEpisode = [DMANAGER episodeWithObjectHash:second.episodeHash];
@@ -222,6 +227,9 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 
     state.watchStatus = ICAppleWatchStatusRemoving;
     state.watchLastError = nil;
+    if ([state.selectionSource isEqualToString:ICAppleWatchSelectionSourceLatestRule]) {
+        [self _suppressAutomaticEpisodeHash:episode.objectHash];
+    }
     [DMANAGER save];
     [self _postEpisodeStatesChanged];
     [self _sendCommand:@{ ICAppleWatchMessageTypeKey: ICAppleWatchManifestRemoveEpisodes,

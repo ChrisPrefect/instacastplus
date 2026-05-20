@@ -13,6 +13,13 @@ final class WatchStorageManager {
         return directory
     }
 
+    var chapterArtworkDirectory: URL {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let directory = support.appendingPathComponent("ChapterArtwork", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     func localFileURL(for episode: WatchEpisode, temporaryURL: URL? = nil) -> URL {
         let ext = temporaryURL?.pathExtension.isEmpty == false ? temporaryURL!.pathExtension : episode.mediaURL.pathExtension
         let fileName = ext.isEmpty ? episode.episodeHash : "\(episode.episodeHash).\(ext)"
@@ -25,6 +32,24 @@ final class WatchStorageManager {
         }
         let computedURL = localFileURL(for: episode)
         try? FileManager.default.removeItem(at: computedURL)
+        removeChapterArtwork(for: episode)
+    }
+
+    func removeChapterArtwork(for episode: WatchEpisode) {
+        if let baseURL = episode.chapterArtworkBaseURL {
+            for chapter in episode.chapters {
+                guard let imageFileName = chapter.imageFileName else { continue }
+                try? FileManager.default.removeItem(at: baseURL.appendingPathComponent(imageFileName))
+            }
+        }
+
+        let safeHash = episode.episodeHash.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "_", options: .regularExpression)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: chapterArtworkDirectory, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for file in files where file.lastPathComponent.hasPrefix("\(safeHash)-chapter-") {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     func downloadBytes() -> Int64 {
@@ -86,6 +111,8 @@ final class WatchStorageManager {
                 item.actualFileSize = 0
                 item.downloadedBytes = 0
                 item.expectedBytes = 0
+                item.chapters = []
+                item.chapterArtworkBaseURL = nil
             }
             removed.append(episode)
         }
