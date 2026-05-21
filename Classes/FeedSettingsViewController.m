@@ -589,7 +589,7 @@ enum {
         case kAutoDownloadSettingsSection:
             return @"Auto-Download Content".ls;
         case kAppleWatchSection:
-            return @"Apple Watch".ls;
+            return nil;
         case kAutoDeleteSettingsSection:
             return @"Auto-Delete Content".ls;
         case kPlaybackSection:
@@ -598,6 +598,43 @@ enum {
             break;
     }
     return nil;
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section
+{
+    if (section != kAppleWatchSection) {
+        return nil;
+    }
+
+    UITableViewHeaderFooterView* header = [[UITableViewHeaderFooterView alloc] initWithReuseIdentifier:nil];
+    header.contentView.backgroundColor = tableView.backgroundColor;
+
+    UIImageSymbolConfiguration* symbolConfiguration = [UIImageSymbolConfiguration configurationWithPointSize:ICFontSize(13) weight:UIImageSymbolWeightSemibold];
+    UIImageView* imageView = [[UIImageView alloc] initWithImage:[[UIImage systemImageNamed:@"applewatch"] imageWithConfiguration:symbolConfiguration]];
+    imageView.tintColor = [UIColor grayColor];
+    imageView.translatesAutoresizingMaskIntoConstraints = NO;
+    [header.contentView addSubview:imageView];
+
+    UILabel* label = [[UILabel alloc] initWithFrame:CGRectZero];
+    label.text = [@"Apple Watch".ls uppercaseString];
+    label.textColor = [UIColor grayColor];
+    label.font = [UIFont systemFontOfSize:ICFontSize(13)];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [header.contentView addSubview:label];
+
+    UILayoutGuide* margins = header.contentView.layoutMarginsGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [imageView.leadingAnchor constraintEqualToAnchor:margins.leadingAnchor],
+        [imageView.centerYAnchor constraintEqualToAnchor:header.contentView.centerYAnchor constant:2],
+        [imageView.widthAnchor constraintEqualToConstant:18],
+        [imageView.heightAnchor constraintEqualToConstant:18],
+
+        [label.leadingAnchor constraintEqualToAnchor:imageView.trailingAnchor constant:7],
+        [label.centerYAnchor constraintEqualToAnchor:imageView.centerYAnchor],
+        [label.trailingAnchor constraintLessThanOrEqualToAnchor:margins.trailingAnchor]
+    ]];
+
+    return header;
 }
 
 - (void) _transcriptionToggleChanged:(UISwitch*)sender

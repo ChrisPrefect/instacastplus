@@ -766,6 +766,10 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 - (void)_mergeWatchPlaybackPayload:(NSDictionary*)payload finished:(BOOL)finished
 {
     NSString* episodeHash = [payload[@"episodeHash"] isKindOfClass:[NSString class]] ? payload[@"episodeHash"] : nil;
+    if (episodeHash.length == 0) {
+        return;
+    }
+
     AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
     CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
     if (!state || !episode) {

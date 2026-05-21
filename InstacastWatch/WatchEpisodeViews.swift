@@ -53,8 +53,17 @@ struct WatchEpisodeListView: View {
                 if let episode = store.episode(hash: episodeHash) {
                     WatchPlayerView(episode: episode, accentColor: accentColor)
                 } else {
-                    UnavailableWatchView(title: "Nicht verfügbar", systemImage: "exclamationmark.triangle")
+                    Color.clear
+                        .onAppear {
+                            popUnavailablePlayerIfNeeded()
+                        }
                 }
+            }
+            .onChange(of: store.sortedEpisodes.map(\.episodeHash)) { _ in
+                popUnavailablePlayerIfNeeded()
+            }
+            .onAppear {
+                popUnavailablePlayerIfNeeded()
             }
         }
     }
@@ -74,6 +83,11 @@ struct WatchEpisodeListView: View {
             return max(0, Int(player.currentPosition.rounded()))
         }
         return episode.lastPlaybackPosition
+    }
+
+    private func popUnavailablePlayerIfNeeded() {
+        guard let visibleHash = playerPath.last, store.episode(hash: visibleHash) == nil else { return }
+        playerPath.removeAll()
     }
 }
 
@@ -103,7 +117,7 @@ private struct WatchEpisodeRow: View {
                 Text(secondaryText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
 
                 if let fraction = progressFraction {
                     ThinProgressLine(fraction: fraction, tint: progressTint)
@@ -206,8 +220,8 @@ private struct WatchArtworkView: View {
                     .background(.quaternary)
             }
         }
-        .frame(width: 42, height: 42)
-        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .frame(width: 50, height: 50)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 
@@ -245,6 +259,11 @@ private struct WatchPlayerView: View {
         return title.isEmpty ? " " : title
     }
 
+    private var hasChapterTitle: Bool {
+        guard let chapterTitle else { return false }
+        return !chapterTitle.isEmpty
+    }
+
     private var chapterArtworkURL: URL? {
         guard
             let currentChapter,
@@ -257,87 +276,125 @@ private struct WatchPlayerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top, spacing: 7) {
-                if let chapterArtworkURL {
-                    ChapterArtworkImage(url: chapterArtworkURL)
+        GeometryReader { proxy in
+            let compact = proxy.size.height < 220
+
+            VStack(alignment: .leading, spacing: compact ? 2 : 4) {
+                WatchPlayerHeader(
+                    episode: episode,
+                    chapterArtworkURL: chapterArtworkURL,
+                    compact: compact
+                )
+
+                if compact {
+                    if hasChapterTitle {
+                        Text(chapterTitleText)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(accentColor)
+                            .lineLimit(2, reservesSpace: true)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                } else {
+                    Text(chapterTitleText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(accentColor)
+                        .lineLimit(2, reservesSpace: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
 
-                Text(episode.title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.78)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                ScrubbableProgressLine(
+                    fraction: playerProgressFraction,
+                    chapters: episode.chapters,
+                    duration: duration,
+                    tint: accentColor,
+                    compact: compact
+                ) { fraction in
+                    player.seek(to: duration * fraction)
+                }
 
-            Text(episode.podcastTitle)
+                HStack {
+                    Text(formatPlayerTime(Int(currentPosition.rounded())))
+                    Spacer()
+                    Text("-\(formatPlayerTime(max(0, Int((duration - currentPosition).rounded()))))")
+                }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
 
-            Text(chapterTitleText)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(accentColor)
-                .lineLimit(2, reservesSpace: true)
-                .minimumScaleFactor(0.78)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                HStack(alignment: .center) {
+                    CompactSkipButton(
+                        forward: false,
+                        seconds: episode.skipBackwardSeconds,
+                        accentColor: accentColor,
+                        compact: compact
+                    ) {
+                        player.seek(by: -Double(episode.skipBackwardSeconds))
+                    }
 
-            ScrubbableProgressLine(
-                fraction: playerProgressFraction,
-                chapters: episode.chapters,
-                duration: duration,
-                tint: accentColor
-            ) { fraction in
-                player.seek(to: duration * fraction)
-            }
+                    Spacer(minLength: 8)
 
-            HStack {
-                Text(formatPlayerTime(Int(currentPosition.rounded())))
-                Spacer()
-                Text("-\(formatPlayerTime(max(0, Int((duration - currentPosition).rounded()))))")
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+                    Button {
+                        player.togglePlayback(for: episode)
+                    } label: {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: compact ? 24 : 28, weight: .semibold))
+                            .frame(width: compact ? 44 : 50, height: compact ? 30 : 36)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(accentColor)
 
-            HStack(alignment: .center) {
-                CompactSkipButton(
-                    forward: false,
-                    seconds: episode.skipBackwardSeconds,
-                    accentColor: accentColor
-                ) {
-                    player.seek(by: -Double(episode.skipBackwardSeconds))
-                }
+                    Spacer(minLength: 8)
 
-                Spacer(minLength: 8)
-
-                Button {
-                    player.togglePlayback(for: episode)
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 30, weight: .semibold))
-                        .frame(width: 52, height: 44)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(accentColor)
-
-                Spacer(minLength: 8)
-
-                CompactSkipButton(
-                    forward: true,
-                    seconds: episode.skipForwardSeconds,
-                    accentColor: accentColor
-                ) {
-                    player.seek(by: Double(episode.skipForwardSeconds))
+                    CompactSkipButton(
+                        forward: true,
+                        seconds: episode.skipForwardSeconds,
+                        accentColor: accentColor,
+                        compact: compact
+                    ) {
+                        player.seek(by: Double(episode.skipForwardSeconds))
+                    }
                 }
             }
+            .padding(.horizontal, compact ? 6 : 8)
+            .padding(.top, compact ? 4 : 34)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .padding(.horizontal, 8)
         .onAppear {
             if episode.status == .downloaded, episode.localFileURL != nil, player.playingEpisodeHash != episode.episodeHash {
                 _ = player.play(episode)
             }
         }
+    }
+}
+
+private struct WatchPlayerHeader: View {
+    let episode: WatchEpisode
+    let chapterArtworkURL: URL?
+    let compact: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            if let chapterArtworkURL {
+                ChapterArtworkImage(url: chapterArtworkURL)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(episode.title)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .lineLimit(compact ? 2 : 3)
+                    .minimumScaleFactor(0.72)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(episode.podcastTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
@@ -365,17 +422,18 @@ private struct CompactSkipButton: View {
     let forward: Bool
     let seconds: Int
     let accentColor: Color
+    let compact: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 1) {
                 Image(systemName: forward ? "goforward" : "gobackward")
-                    .font(.system(size: 19, weight: .medium))
+                    .font(.system(size: compact ? 17 : 18, weight: .medium))
                 Text(shortSkipText(seconds))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: compact ? 9 : 10, weight: .semibold))
             }
-            .frame(width: 42, height: 38)
+            .frame(width: compact ? 36 : 40, height: compact ? 30 : 34)
         }
         .buttonStyle(.plain)
         .foregroundStyle(accentColor)
@@ -424,6 +482,7 @@ private struct ScrubbableProgressLine: View {
     let chapters: [WatchChapter]
     let duration: Double
     let tint: Color
+    let compact: Bool
     let onScrub: (Double) -> Void
 
     private var chapterMarkerFractions: [Double] {
@@ -438,12 +497,12 @@ private struct ScrubbableProgressLine: View {
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(.quaternary)
-                    .frame(height: 9)
+                    .frame(height: compact ? 7 : 9)
                 Capsule()
                     .fill(tint)
-                    .frame(width: proxy.size.width * min(1.0, max(0.0, fraction)), height: 9)
+                    .frame(width: proxy.size.width * min(1.0, max(0.0, fraction)), height: compact ? 7 : 9)
                 ForEach(chapterMarkerFractions, id: \.self) { markerFraction in
-                    ChapterMarkerLine()
+                    ChapterMarkerLine(height: compact ? 9 : 12)
                         .offset(x: max(0, min(proxy.size.width - 1, proxy.size.width * markerFraction)))
                 }
             }
@@ -458,15 +517,17 @@ private struct ScrubbableProgressLine: View {
                     }
             )
         }
-        .frame(height: 24)
+        .frame(height: compact ? 16 : 20)
     }
 }
 
 private struct ChapterMarkerLine: View {
+    let height: CGFloat
+
     var body: some View {
         Rectangle()
             .fill(.primary.opacity(0.35))
-            .frame(width: 1, height: 12)
+            .frame(width: 1, height: height)
     }
 }
 

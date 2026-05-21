@@ -67,7 +67,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
-        case TSSectionModels: return NSLocalizedString(@"Modelle", nil);
+        case TSSectionModels: return NSLocalizedString(@"Betaversion", nil);
         case TSSectionCloud: return NSLocalizedString(@"Cloud-Zugänge", nil);
         case TSSectionChapters: return NSLocalizedString(@"Kapitel & Sponsoren", nil);
         case TSSectionAuto: return NSLocalizedString(@"Automatisch", nil);

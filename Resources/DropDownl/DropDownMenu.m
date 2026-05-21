@@ -47,11 +47,11 @@
     NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
     if (sleepTimer == PlaybackStopTimeNoValue)
     {
-        titleLbl.text = @"Intelligent Sleep timer (off)";
+        titleLbl.text = @"Intelligent Sleep timer (off)".ls;
     }
     else
     {
-        titleLbl.text = @"Intelligent Sleep timer (on)";
+        titleLbl.text = @"Intelligent Sleep timer (on)".ls;
     }
     // Do any additional setup after loading the view.
 }
@@ -62,11 +62,11 @@
     NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
     if (sleepTimer == PlaybackStopTimeNoValue)
     {
-        titleLbl.text = @"Intelligent Sleep timer (off)";
+        titleLbl.text = @"Intelligent Sleep timer (off)".ls;
     }
     else
     {
-        titleLbl.text = @"Intelligent Sleep timer (on)";
+        titleLbl.text = @"Intelligent Sleep timer (on)".ls;
     }
 }
 
@@ -77,7 +77,7 @@
 
 - (void) viewWillAppear:(BOOL)animated
 {
-  
+    [super viewWillAppear:animated];
 }
 
 /*

@@ -174,9 +174,9 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
             NSArray *results = nil;
             NSString *updated = nil;
             NSError *parseError = nil;
-            [self _parseData:data results:&results updated:&updated error:&parseError];
+            BOOL parsed = [self _parseData:data results:&results updated:&updated error:&parseError];
 
-            if (parseError || !results) {
+            if (!parsed || !results) {
                 NSDictionary *staleCache = diskCached ?: cached;
                 if (staleCache) {
                     if (completion) {
@@ -370,9 +370,9 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
                 NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
                 if (httpResponse.statusCode == 200) {
                     NSArray *results = nil;
-                    [self _parseLegacyData:data results:&results error:nil];
+                    BOOL parsed = [self _parseLegacyData:data results:&results error:nil];
 
-                    if (results.count > 0) {
+                    if (parsed && results.count > 0) {
                         dispatch_sync(mergeQueue, ^{
                             for (NSDictionary *item in results) {
                                 NSString *podcastId = item[kAppleChartsID];
@@ -452,21 +452,21 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
 
 #pragma mark - Parsing
 
-- (void)_parseData:(NSData *)data results:(NSArray **)outResults updated:(NSString **)outUpdated error:(NSError **)outError
+- (BOOL)_parseData:(NSData *)data results:(NSArray **)outResults updated:(NSString **)outUpdated error:(NSError **)outError
 {
     NSError *jsonError = nil;
     NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
     if (!json || ![json isKindOfClass:[NSDictionary class]]) {
         if (outError) *outError = jsonError ?: [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain" code:-1
                                                               userInfo:@{NSLocalizedDescriptionKey: @"Invalid JSON response"}];
-        return;
+        return NO;
     }
 
     NSDictionary *feed = json[@"feed"];
     if (!feed || ![feed isKindOfClass:[NSDictionary class]]) {
         if (outError) *outError = [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain" code:-2
                                                   userInfo:@{NSLocalizedDescriptionKey: @"Missing feed object"}];
-        return;
+        return NO;
     }
 
     if (outUpdated) {
@@ -476,7 +476,7 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
     NSArray *rawResults = feed[@"results"];
     if (!rawResults || ![rawResults isKindOfClass:[NSArray class]]) {
         if (outResults) *outResults = @[];
-        return;
+        return YES;
     }
 
     NSMutableArray *parsedResults = [NSMutableArray arrayWithCapacity:rawResults.count];
@@ -540,6 +540,7 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
     }
 
     if (outResults) *outResults = [parsedResults copy];
+    return YES;
 }
 
 #pragma mark - Caching
@@ -592,8 +593,7 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
 
     NSArray *results = nil;
     NSString *updated = nil;
-    [self _parseData:data results:&results updated:&updated error:nil];
-    if (!results) return nil;
+    if (![self _parseData:data results:&results updated:&updated error:nil] || !results) return nil;
 
     return @{
         @"results": results,
@@ -604,27 +604,27 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
 
 #pragma mark - Legacy iTunes RSS API Parsing
 
-- (void)_parseLegacyData:(NSData *)data results:(NSArray **)outResults error:(NSError **)outError
+- (BOOL)_parseLegacyData:(NSData *)data results:(NSArray **)outResults error:(NSError **)outError
 {
     NSError *jsonError = nil;
     NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
     if (!json || ![json isKindOfClass:[NSDictionary class]]) {
         if (outError) *outError = jsonError ?: [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain" code:-1
                                                               userInfo:@{NSLocalizedDescriptionKey: @"Invalid JSON response"}];
-        return;
+        return NO;
     }
 
     NSDictionary *feed = json[@"feed"];
     if (!feed || ![feed isKindOfClass:[NSDictionary class]]) {
         if (outError) *outError = [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain" code:-2
                                                   userInfo:@{NSLocalizedDescriptionKey: @"Missing feed object"}];
-        return;
+        return NO;
     }
 
     NSArray *entries = feed[@"entry"];
     if (!entries || ![entries isKindOfClass:[NSArray class]]) {
         if (outResults) *outResults = @[];
-        return;
+        return YES;
     }
 
     NSMutableArray *parsedResults = [NSMutableArray arrayWithCapacity:entries.count];
@@ -702,6 +702,7 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
     }
 
     if (outResults) *outResults = [parsedResults copy];
+    return YES;
 }
 
 #pragma mark - Genre Disk Cache

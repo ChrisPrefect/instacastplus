@@ -10,6 +10,7 @@
 #import "EpisodePlayComboButton.h"
 #import "EpisodesTableViewCell.h"
 #import "ImageCacheManager.h"
+#import <math.h>
 
 static NSString* const ICAppleWatchEpisodeCellIdentifier = @"AppleWatchEpisodeCell";
 static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCell";
@@ -21,8 +22,9 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 @property (nonatomic, strong) UILabel* summaryLabel;
 @property (nonatomic, strong) UILabel* syncLabel;
 @property (nonatomic, strong) UILabel* storageLabel;
-@property (nonatomic, strong) UIProgressView* storageProgressView;
-@property (nonatomic, strong) UIButton* syncButton;
+@property (nonatomic, strong) UIView* storageProgressTrackView;
+@property (nonatomic, strong) UIView* storageUsedProgressView;
+@property (nonatomic, strong) UIView* storagePodcastProgressView;
 @property (nonatomic, strong) UIBarButtonItem* editIconButtonItem;
 
 @end
@@ -79,12 +81,13 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     [self updateAppearance];
     [self.navigationController setToolbarHidden:YES animated:animated];
     [[AppleWatchSyncManager sharedManager] start];
+    [[AppleWatchSyncManager sharedManager] syncNow];
     [self _reloadDataFromManager];
 }
 
 - (void)_buildHeaderView
 {
-    UIView* header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 140)];
+    UIView* header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 104)];
     header.backgroundColor = ICBackgroundColor;
 
     UILabel* summaryLabel = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -104,28 +107,25 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     UILabel* storageLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     storageLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
     storageLabel.textColor = ICMutedTextColor;
-    storageLabel.numberOfLines = 1;
+    storageLabel.numberOfLines = 2;
     [header addSubview:storageLabel];
     self.storageLabel = storageLabel;
 
-    UIProgressView* storageProgressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-    storageProgressView.progressTintColor = ICTintColor;
-    storageProgressView.trackTintColor = ICGroupCellSelectedBackgroundColor;
-    [header addSubview:storageProgressView];
-    self.storageProgressView = storageProgressView;
+    UIView* storageProgressTrackView = [[UIView alloc] initWithFrame:CGRectZero];
+    storageProgressTrackView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+    storageProgressTrackView.clipsToBounds = YES;
+    [header addSubview:storageProgressTrackView];
+    self.storageProgressTrackView = storageProgressTrackView;
 
-    UIButton* button = [UIButton buttonWithType:UIButtonTypeSystem];
-    UIButtonConfiguration* configuration = [UIButtonConfiguration tintedButtonConfiguration];
-    configuration.image = [UIImage systemImageNamed:@"arrow.clockwise"];
-    configuration.buttonSize = UIButtonConfigurationSizeSmall;
-    configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-    configuration.baseForegroundColor = ICTintColor;
-    configuration.baseBackgroundColor = [ICTintColor colorWithAlphaComponent:0.16];
-    button.configuration = configuration;
-    button.accessibilityLabel = @"Jetzt synchronisieren".ls;
-    [button addTarget:self action:@selector(syncAction:) forControlEvents:UIControlEventTouchUpInside];
-    [header addSubview:button];
-    self.syncButton = button;
+    UIView* storageUsedProgressView = [[UIView alloc] initWithFrame:CGRectZero];
+    storageUsedProgressView.backgroundColor = [ICMutedTextColor colorWithAlphaComponent:0.24];
+    [storageProgressTrackView addSubview:storageUsedProgressView];
+    self.storageUsedProgressView = storageUsedProgressView;
+
+    UIView* storagePodcastProgressView = [[UIView alloc] initWithFrame:CGRectZero];
+    storagePodcastProgressView.backgroundColor = ICTintColor;
+    [storageProgressTrackView addSubview:storagePodcastProgressView];
+    self.storagePodcastProgressView = storagePodcastProgressView;
 
     self.headerContainerView = header;
     self.tableView.tableHeaderView = header;
@@ -140,34 +140,41 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 - (void)_layoutHeaderForWidth:(CGFloat)width
 {
     CGFloat contentWidth = MAX(0, width - 32);
-    CGFloat y = 18;
-    CGFloat buttonSize = 34;
-    CGFloat textWidth = MAX(0, contentWidth - buttonSize - 10);
+    CGFloat y = 10;
     BOOL showsSummary = (self.summaryLabel.text.length > 0);
+    BOOL showsStatus = (self.syncLabel.text.length > 0);
 
     if (showsSummary) {
-        CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)];
-        self.summaryLabel.frame = CGRectMake(16, y, textWidth, ceil(summarySize.height));
-        self.syncButton.frame = CGRectMake(width - 16 - buttonSize, y, buttonSize, buttonSize);
-        y += MAX(ceil(summarySize.height), buttonSize) + 8;
-
-        CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
-        self.syncLabel.frame = CGRectMake(16, y, contentWidth, MIN(36, ceil(syncSize.height)));
-        y += CGRectGetHeight(self.syncLabel.frame) + 8;
+        CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
+        self.summaryLabel.frame = CGRectMake(16, y, contentWidth, ceil(summarySize.height));
+        y += ceil(summarySize.height) + 10;
     }
     else {
         self.summaryLabel.frame = CGRectZero;
-        self.syncButton.frame = CGRectMake(width - 16 - buttonSize, y, buttonSize, buttonSize);
-        CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(textWidth, CGFLOAT_MAX)];
-        self.syncLabel.frame = CGRectMake(16, y, textWidth, MIN(36, ceil(syncSize.height)));
-        y += MAX(CGRectGetHeight(self.syncLabel.frame), buttonSize) + 8;
     }
 
-    self.storageLabel.frame = CGRectMake(16, y, contentWidth, 18);
-    y += 21;
+    CGSize storageSize = [self.storageLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
+    self.storageLabel.frame = CGRectMake(16, y, contentWidth, MIN(38, ceil(storageSize.height)));
+    y += CGRectGetHeight(self.storageLabel.frame) + 5;
 
-    self.storageProgressView.frame = CGRectMake(16, y, contentWidth, 3);
-    y += 22;
+    self.storageProgressTrackView.frame = CGRectMake(16, y, contentWidth, 4);
+    self.storageProgressTrackView.layer.cornerRadius = 2;
+    self.storageUsedProgressView.layer.cornerRadius = 2;
+    self.storagePodcastProgressView.layer.cornerRadius = 2;
+    [self _updateStorageProgressForManager:[AppleWatchSyncManager sharedManager]];
+    y += 12;
+
+    if (showsStatus) {
+        CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
+        self.syncLabel.hidden = NO;
+        self.syncLabel.frame = CGRectMake(16, y, contentWidth, MIN(38, ceil(syncSize.height)));
+        y += CGRectGetHeight(self.syncLabel.frame) + 10;
+    }
+    else {
+        self.syncLabel.hidden = YES;
+        self.syncLabel.frame = CGRectZero;
+        y += 4;
+    }
 
     CGRect headerFrame = self.headerContainerView.frame;
     headerFrame.size.width = width;
@@ -186,10 +193,10 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     self.summaryLabel.textColor = ICTextColor;
     self.syncLabel.textColor = ICMutedTextColor;
     self.storageLabel.textColor = ICMutedTextColor;
-    self.storageProgressView.progressTintColor = ICTintColor;
-    self.storageProgressView.trackTintColor = ICGroupCellSelectedBackgroundColor;
-    self.syncButton.tintColor = ICTintColor;
-    [self _updateSyncButtonConfiguration];
+    self.storageProgressTrackView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+    self.storageUsedProgressView.backgroundColor = [ICMutedTextColor colorWithAlphaComponent:0.24];
+    self.storagePodcastProgressView.backgroundColor = ICTintColor;
+    [self _updateStorageProgressForManager:[AppleWatchSyncManager sharedManager]];
     [self.tableView reloadData];
 }
 
@@ -226,10 +233,8 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 
     self.syncLabel.text = [self _statusTextForManager:manager];
     self.storageLabel.text = [self _storageTextForManager:manager];
-    [self _updateStorageProgressForManager:manager];
-    self.syncButton.enabled = manager.supported && manager.paired && manager.watchAppInstalled;
-    [self _updateSyncButtonConfiguration];
     [self _layoutHeaderForWidth:CGRectGetWidth(self.tableView.bounds)];
+    [self _updateStorageProgressForManager:manager];
 }
 
 - (void)toggleEditMode:(id)sender
@@ -251,27 +256,17 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     [[AppleWatchSyncManager sharedManager] syncNow];
 }
 
-- (void)_updateSyncButtonConfiguration
-{
-    UIButtonConfiguration* configuration = self.syncButton.configuration ?: [UIButtonConfiguration tintedButtonConfiguration];
-    configuration.image = [UIImage systemImageNamed:@"arrow.clockwise"];
-    configuration.buttonSize = UIButtonConfigurationSizeSmall;
-    configuration.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-    configuration.baseForegroundColor = self.syncButton.enabled ? ICTintColor : ICMutedTextColor;
-    configuration.baseBackgroundColor = [(self.syncButton.enabled ? ICTintColor : ICMutedTextColor) colorWithAlphaComponent:0.16];
-    self.syncButton.configuration = configuration;
-    self.syncButton.alpha = self.syncButton.enabled ? 1.0 : 0.55;
-}
-
 - (NSString*)_storageTextForManager:(AppleWatchSyncManager*)manager
 {
     if (!manager.lastWatchStatusDate) {
-        return @"Watch-Speicher: wird geladen".ls;
+        return @"Speicher: wird geladen".ls;
     }
 
-    NSString* used = [self _byteStringForBytes:manager.watchUsedBytes];
     NSString* free = [self _byteStringForBytes:manager.watchFreeBytes];
-    return [NSString stringWithFormat:@"Watch-Speicher: %@ belegt, %@ frei".ls, used, free];
+    int64_t totalBytes = MAX(manager.watchTotalBytes, manager.watchUsedBytes + manager.watchFreeBytes);
+    NSString* total = [self _byteStringForBytes:totalBytes];
+    NSString* podcasts = [self _byteStringForBytes:manager.watchDownloadBytes];
+    return [NSString stringWithFormat:@"Speicher: %@ von %@ frei, %@ Podcasts".ls, free, total, podcasts];
 }
 
 - (NSString*)_statusTextForManager:(AppleWatchSyncManager*)manager
@@ -282,27 +277,46 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
         return [NSString stringWithFormat:@"Watch lädt \"%@\" (%@/%@)".ls, manager.currentWatchDownloadTitle, downloaded, expected];
     }
 
-    if (manager.lastSyncDate) {
-        NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
-        formatter.timeStyle = NSDateFormatterShortStyle;
-        formatter.dateStyle = NSDateFormatterNoStyle;
-        return [NSString stringWithFormat:@"%@ %@", @"Letzte Synchronisierung".ls, [formatter stringFromDate:manager.lastSyncDate]];
-    }
-    return @"Letzte Synchronisierung: nie".ls;
+    return nil;
 }
 
 - (void)_updateStorageProgressForManager:(AppleWatchSyncManager*)manager
 {
-    float progress = 0.f;
-    if (manager.watchTotalBytes > 0) {
-        progress = (float)MIN(1.0, MAX(0.0, (double)manager.watchUsedBytes / (double)manager.watchTotalBytes));
+    CGFloat width = CGRectGetWidth(self.storageProgressTrackView.bounds);
+    CGFloat height = CGRectGetHeight(self.storageProgressTrackView.bounds);
+    if (width <= 0 || height <= 0) {
+        self.storageUsedProgressView.frame = CGRectZero;
+        self.storagePodcastProgressView.frame = CGRectZero;
+        return;
     }
-    [self.storageProgressView setProgress:progress animated:NO];
+
+    double totalBytes = MAX((double)manager.watchTotalBytes, (double)(manager.watchUsedBytes + manager.watchFreeBytes));
+    double usedFraction = totalBytes > 0 ? MIN(1.0, MAX(0.0, (double)manager.watchUsedBytes / totalBytes)) : 0.0;
+    double podcastFraction = totalBytes > 0 ? MIN(usedFraction, MAX(0.0, (double)manager.watchDownloadBytes / totalBytes)) : 0.0;
+
+    self.storageUsedProgressView.frame = CGRectMake(0, 0, width * usedFraction, height);
+    self.storagePodcastProgressView.frame = CGRectMake(0, 0, width * podcastFraction, height);
 }
 
 - (NSString*)_byteStringForBytes:(int64_t)bytes
 {
-    return [NSByteCountFormatter stringFromByteCount:MAX((int64_t)0, bytes) countStyle:NSByteCountFormatterCountStyleFile];
+    double safeBytes = (double)MAX((int64_t)0, bytes);
+    double gigabyte = 1000.0 * 1000.0 * 1000.0;
+    double megabyte = 1000.0 * 1000.0;
+    if (safeBytes >= gigabyte) {
+        double value = safeBytes / gigabyte;
+        double rounded = round(value);
+        if (fabs(value - rounded) < 0.05) {
+            return [NSString stringWithFormat:@"%.0fGB", rounded];
+        }
+        return [NSString stringWithFormat:@"%.1fGB", value];
+    }
+
+    if (safeBytes >= megabyte) {
+        return [NSString stringWithFormat:@"%.0fMB", round(safeBytes / megabyte)];
+    }
+
+    return [NSString stringWithFormat:@"%.0fKB", round(safeBytes / 1000.0)];
 }
 
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section

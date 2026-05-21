@@ -1190,6 +1190,7 @@
 "Unterbrochene Transkription wird fortgesetzt." = "Interrupted transcription is being resumed.";
 "Transkriptionsfehler" = "Transcription Error";
 "Unbekannter Fehler." = "Unknown error.";
+"Betaversion" = "Beta Version";
 "Modelle" = "Models";
 "Voice to Text" = "Voice to Text";
 "Text zu Kapitel" = "Text to Chapters";
@@ -1233,8 +1234,10 @@
 "Letzte Synchronisierung" = "Last Sync";
 "Speicher: wird geladen" = "Storage: loading";
 "Speicher: %@ belegt, %@ frei" = "Storage: %@ used, %@ free";
+"Speicher: %@ von %@ frei, %@ Podcasts" = "Storage: %@ of %@ free, %@ podcasts";
 "Watch-Speicher: wird geladen" = "Watch storage: loading";
 "Watch-Speicher: %@ belegt, %@ frei" = "Watch storage: %@ used, %@ free";
+"Watch-Speicher: %@ belegt, %@ Podcasts, %@ frei" = "Watch storage: %@ used, %@ podcasts, %@ free";
 "Kopple eine Apple Watch, um Episoden für die Watch auszuwählen." = "Pair an Apple Watch to select episodes for Watch.";
 "Installiere die InstacastPlus-Watch-App auf deiner Apple Watch." = "Install the InstacastPlus Watch app on your Apple Watch.";
 "Keine Episoden für die Apple Watch ausgewählt." = "No episodes selected for Apple Watch.";

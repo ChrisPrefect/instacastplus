@@ -37,7 +37,7 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchEpisodeStatesDidChangeNotification
 
 - (NSArray<AppleWatchEpisodeState*>*)allEpisodeStates;
 - (NSArray<AppleWatchEpisodeState*>*)visibleEpisodeStates;
-- (nullable AppleWatchEpisodeState*)stateForEpisodeHash:(NSString*)episodeHash;
+- (nullable AppleWatchEpisodeState*)stateForEpisodeHash:(nullable NSString*)episodeHash;
 
 - (BOOL)isEpisodeSelectedForWatch:(CDEpisode*)episode;
 - (BOOL)isEpisodeDownloadedOnWatch:(CDEpisode*)episode;
