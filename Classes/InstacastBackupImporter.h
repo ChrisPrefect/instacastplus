@@ -20,7 +20,8 @@ typedef NS_OPTIONS(NSUInteger, ICBackupImportCategory) {
     ICBackupImportSettings        = 1 << 7,
     ICBackupImportSortOrder       = 1 << 8,
     ICBackupImportDownloads       = 1 << 9,
-    ICBackupImportAll             = 0x3FF,
+    ICBackupImportAppleWatch      = 1 << 10,
+    ICBackupImportAll             = 0x7FF,
 };
 
 /// Callbacks for detailed import progress reporting.

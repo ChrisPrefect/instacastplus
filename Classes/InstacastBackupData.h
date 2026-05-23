@@ -75,6 +75,23 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, nullable) NSMutableArray<NSString *> *includedFeedURLs;
 @end
 
+#pragma mark - ICBackupAppleWatchEpisode
+
+@interface ICBackupAppleWatchEpisode : NSObject
+@property (nonatomic, strong, nullable) NSString *episodeHash;
+@property (nonatomic, strong, nullable) NSString *guid;
+@property (nonatomic, strong, nullable) NSString *feedURL;
+@property (nonatomic, strong, nullable) NSString *feedIdentifier;
+@property (nonatomic, strong, nullable) NSString *selectionSource;
+@property (nonatomic, strong, nullable) NSDate *watchAddedDate;
+@property (nonatomic) int32_t lastPhonePosition;
+@property (nonatomic, strong, nullable) NSDate *lastPhonePositionDate;
+@property (nonatomic) int32_t lastWatchPosition;
+@property (nonatomic, strong, nullable) NSDate *lastWatchPositionDate;
+@property (nonatomic) BOOL watchConsumed;
+@property (nonatomic, strong, nullable) NSDate *watchConsumedDate;
+@end
+
 #pragma mark - ICBackupSettings
 
 @interface ICBackupSettings : NSObject
@@ -96,6 +113,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, strong, nullable) ICBackupEpisode *nowPlaying;
 @property (nonatomic, strong) NSMutableArray<ICBackupPlaylist *> *playlists;
 @property (nonatomic, strong) NSMutableArray<ICBackupEpisodeList *> *episodeLists;
+@property (nonatomic, strong) NSMutableArray<ICBackupAppleWatchEpisode *> *appleWatchEpisodes;
 @property (nonatomic, strong) ICBackupSettings *settings;
 @end
 

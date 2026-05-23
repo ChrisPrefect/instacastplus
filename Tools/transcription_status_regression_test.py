@@ -318,6 +318,12 @@ require(
     "Queue UI no longer allows two-line status text for detailed updates.",
 )
 require(
+    "if ([TranscriptionQueue shared].items.count == 0)" in controller_source
+    and "[self setToolbarItems:@[] animated:animated]" in controller_source
+    and "_updateToolbarItemsAnimated" in controller_source,
+    "The transcription queue toolbar must hide the cancel-all button when the queue has no visible items.",
+)
+require(
     "Transkription wird gestartet" not in controller_source
     and "Transkription läuft" in controller_source
     and "Transkription läuft." in backend_source,

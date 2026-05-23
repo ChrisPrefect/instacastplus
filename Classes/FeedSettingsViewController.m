@@ -637,6 +637,15 @@ enum {
     return header;
 }
 
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
+{
+    (void)tableView;
+    if (section == kAppleWatchSection) {
+        return 44.f;
+    }
+    return UITableViewAutomaticDimension;
+}
+
 - (void) _transcriptionToggleChanged:(UISwitch*)sender
 {
     NSInteger row = sender.tag - 1000;

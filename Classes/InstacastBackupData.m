@@ -32,6 +32,9 @@
 @implementation ICBackupEpisodeList
 @end
 
+@implementation ICBackupAppleWatchEpisode
+@end
+
 @implementation ICBackupSettings
 - (instancetype)init {
     if ((self = [super init])) {
@@ -49,6 +52,7 @@
         _upNextEpisodes = [NSMutableArray array];
         _playlists = [NSMutableArray array];
         _episodeLists = [NSMutableArray array];
+        _appleWatchEpisodes = [NSMutableArray array];
         _settings = [[ICBackupSettings alloc] init];
     }
     return self;

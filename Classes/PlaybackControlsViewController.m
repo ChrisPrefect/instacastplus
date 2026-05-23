@@ -567,7 +567,7 @@
 	NSString* remainingText = [NSString stringWithFormat:@"-%ld:%02ld:%02ld", (long)rem/3600, (long)(rem/60)%60, (long)rem%60];
     self.remainingTimeLabel.text = remainingText;
 	
-	self.timeSlider.value = (double)cur / (double) dur;
+	self.timeSlider.value = pman.position;
 	self.timeSlider.progress = [self _effectiveLoadProgressForPlaybackManager:pman];
 
     [self updateChapterTitle];

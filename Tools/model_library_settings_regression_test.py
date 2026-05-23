@@ -33,6 +33,21 @@ require(
     and "2_629_991_680" in engine_source,
     "Gemma 4 E2B-it is missing from the downloadable chapter model catalog.",
 )
+chapter_model_order = [
+    'identifier: "openai-codex-oauth"',
+    'identifier: "openai-chatgpt-5.5-api-key"',
+    'identifier: "kimi-k2.6-api-key"',
+    'identifier: "anthropic-claude-opus-4.7-api-key"',
+    'identifier: "gemma-4-e2b-it-q4-k"',
+    'identifier: "apple-foundation-models"',
+]
+chapter_model_indices = [model_catalog_source.find(marker) for marker in chapter_model_order]
+require(
+    all(index != -1 for index in chapter_model_indices)
+    and chapter_model_indices == sorted(chapter_model_indices)
+    and "Lokales Modell mit sehr großem Download. Qualität schwankt je nach Folge." in engine_source,
+    "Chapter model order/copy must put Codex before OpenAI API, Gemma near the end with honest copy, and Apple Intelligence last.",
+)
 require(
     "MARKETING_VERSION = 3.4;" in project_source
     and "MARKETING_VERSION = 3.3;" not in project_source
@@ -168,11 +183,18 @@ require(
     "Model settings copy must stay user-centered and avoid implementation details.",
 )
 require(
-    '"Modelle werden bei Bedarf heruntergeladen und danach vorbereitet."' in de_strings
-    and '"Modelle werden bei Bedarf heruntergeladen und danach vorbereitet."' in en_strings
+    '"Modelle werden bei Bedarf heruntergeladen und danach vorbereitet."' not in de_strings
+    and '"Modelle werden bei Bedarf heruntergeladen und danach vorbereitet."' not in en_strings
+    and "Diese Zugangsdaten werden nur verwendet" not in settings_source
     and '"Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet."' in en_strings
     and '"Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet."' in en_strings,
-    "New user-facing model settings strings must be localized instead of falling back to German.",
+    "Main transcription settings must not repeat model-download or cloud-credential hints already covered elsewhere.",
+)
+require(
+    "Geladene Modelle kannst du per Swipe nach links löschen." in settings_source
+    and '"Geladene Modelle kannst du per Swipe nach links löschen."' in de_strings
+    and '"Geladene Modelle kannst du per Swipe nach links löschen."' in en_strings,
+    "Model subpages must tell users that downloaded models can be deleted by swiping left.",
 )
 require(
     "Beste Transkriptionsgenauigkeit, Core ML/GPU" not in engine_source

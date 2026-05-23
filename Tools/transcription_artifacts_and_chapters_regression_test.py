@@ -78,6 +78,22 @@ require(
     "Chapter row selection still indexes runtime playback chapters instead of seeking to the displayed stored chapter timecode.",
 )
 
+chapter_selection_body = source_slice(
+    player_info_source,
+    "- (void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath",
+    "else if ([self _hasBookmarks] && indexPath.section == [self _bookmarksSection])",
+)
+immediate_chapter_index = chapter_selection_body.find("pman.currentChapter = indexPath.row")
+seek_index = chapter_selection_body.find("[pman seekToTime:chapter.timecode tolerance:NO]")
+play_index = chapter_selection_body.find("[pman play]")
+require(
+    immediate_chapter_index != -1
+    and seek_index != -1
+    and play_index != -1
+    and immediate_chapter_index < seek_index < play_index,
+    "Chapter taps must mark the tapped row before seeking/playing so the previous chapter cannot flash and restored background playback highlights immediately.",
+)
+
 require(
     "_effectiveChapterIndexForPlaybackManager:" in player_info_source
     and "_chapterIndexForPlaybackTime:" in player_info_source,

@@ -11,6 +11,7 @@ struct SmartListEntry: TimelineEntry, Sendable {
     let listId: String
     let episodes: [WEpisode]
     let compact: Bool
+    let order: SmartListOrder
 }
 
 struct SmartListProvider: AppIntentTimelineProvider {
@@ -28,7 +29,8 @@ struct SmartListProvider: AppIntentTimelineProvider {
             listName: WidgetSampleData.smartList.listName,
             listId: WidgetSampleData.smartList.listId,
             episodes: WidgetSampleData.smartList.episodes,
-            compact: true
+            compact: true,
+            order: .columns
         )
     }
 
@@ -40,7 +42,8 @@ struct SmartListProvider: AppIntentTimelineProvider {
                 listName: WidgetSampleData.smartList.listName,
                 listId: WidgetSampleData.smartList.listId,
                 episodes: WidgetSampleData.smartList.episodes,
-                compact: configuration.compact
+                compact: configuration.compact,
+                order: configuration.order
             )
         }
         return entry
@@ -53,43 +56,45 @@ struct SmartListProvider: AppIntentTimelineProvider {
 
     private func loadEntry(for configuration: SmartListConfigIntent) -> SmartListEntry {
         let compact = configuration.compact
+        let order = configuration.order
         widgetLog.info("loadEntry: list=\(configuration.list?.id ?? "nil", privacy: .public), compact=\(compact)")
 
         if let listEntity = configuration.list {
             if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
                 widgetLog.info("loaded \(listData.episodes.count) episodes for '\(listEntity.name, privacy: .public)'")
-                return entry(from: listData, compact: compact)
+                return entry(from: listData, compact: compact, order: order)
             }
             widgetLog.error("no data for list '\(listEntity.name, privacy: .public)' id=\(listEntity.id, privacy: .public)")
-            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], compact: compact)
+            return SmartListEntry(date: Date(), listName: listEntity.name, listId: listEntity.id, episodes: [], compact: compact, order: order)
         }
 
         // No list configured — choose the best currently available list.
-        if let fallback = fallbackEntry(excluding: nil, compact: compact) {
+        if let fallback = fallbackEntry(excluding: nil, compact: compact, order: order) {
             widgetLog.info("fallback: '\(fallback.listName, privacy: .public)' \(fallback.episodes.count) episodes")
             return fallback
         }
 
         widgetLog.warning("no lists at all — empty state")
-        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], compact: compact)
+        return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], compact: compact, order: order)
     }
 
-    private func entry(from listData: WListEpisodes, compact: Bool) -> SmartListEntry {
+    private func entry(from listData: WListEpisodes, compact: Bool, order: SmartListOrder) -> SmartListEntry {
         SmartListEntry(
             date: Date(),
             listName: listData.listName,
             listId: listData.listId,
             episodes: listData.episodes,
-            compact: compact
+            compact: compact,
+            order: order
         )
     }
 
-    private func fallbackEntry(excluding excludedListID: String?, compact: Bool) -> SmartListEntry? {
+    private func fallbackEntry(excluding excludedListID: String?, compact: Bool, order: SmartListOrder) -> SmartListEntry? {
         guard let list = preferredFallbackList(excluding: excludedListID),
               let listData = SharedContainerReader.readListEpisodes(listId: list.id) else {
             return nil
         }
-        return entry(from: listData, compact: compact)
+        return entry(from: listData, compact: compact, order: order)
     }
 
     /// Finds the best fallback list by actually loading episode data files,

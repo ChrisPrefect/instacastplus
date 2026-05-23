@@ -553,7 +553,9 @@
     
     
 	CGRect bounds = self.bounds;
-    self.panningContentView.frame = self.contentView.bounds;
+    CGRect contentBounds = self.contentView.bounds;
+    contentBounds.origin = CGPointZero;
+    self.panningContentView.frame = contentBounds;
     
 	CGRect textLabelRect = self.titleLabel.frame;
     CGRect detailLabelRect = self.summaryLabel.frame;

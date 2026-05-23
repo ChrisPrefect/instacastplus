@@ -23,6 +23,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     kRowBookmarks,
     kRowUpNext,
     kRowNowPlaying,
+    kRowAppleWatchEpisodes,
     kRowPlaylists,
     kRowAppSettings,
     kRowSortOrder,
@@ -41,6 +42,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 @property (nonatomic) NSInteger totalBookmarkCount;
 @property (nonatomic) NSInteger newBookmarkCount;
 @property (nonatomic) NSInteger upNextCount;
+@property (nonatomic) NSInteger appleWatchEpisodeCount;
 @property (nonatomic) NSInteger playlistCount;
 @property (nonatomic) NSInteger episodeListCount;
 @property (nonatomic, strong) NSString *nowPlayingTitle;
@@ -176,6 +178,9 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     // Up Next
     self.upNextCount = backup.upNextEpisodes.count;
 
+    // Apple Watch episodes
+    self.appleWatchEpisodeCount = backup.appleWatchEpisodes.count;
+
     // Now Playing
     if (backup.nowPlaying && backup.nowPlaying.guid) {
         // Try to find the episode title
@@ -236,6 +241,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     if (self.totalBookmarkCount > 0) [self.selectedCategories addObject:@(kRowBookmarks)];
     if (self.upNextCount > 0) [self.selectedCategories addObject:@(kRowUpNext)];
     if (self.nowPlayingTitle) [self.selectedCategories addObject:@(kRowNowPlaying)];
+    if (self.appleWatchEpisodeCount > 0) [self.selectedCategories addObject:@(kRowAppleWatchEpisodes)];
     if (self.playlistCount + self.episodeListCount > 0) [self.selectedCategories addObject:@(kRowPlaylists)];
     if (self.backupData.settings.values.count > 0) [self.selectedCategories addObject:@(kRowAppSettings)];
     if (self.sortModeDescription) [self.selectedCategories addObject:@(kRowSortOrder)];
@@ -250,6 +256,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         case kRowBookmarks:     return self.totalBookmarkCount > 0;
         case kRowUpNext:        return self.upNextCount > 0;
         case kRowNowPlaying:    return self.nowPlayingTitle != nil;
+        case kRowAppleWatchEpisodes: return self.appleWatchEpisodeCount > 0;
         case kRowPlaylists:     return (self.playlistCount + self.episodeListCount) > 0;
         case kRowAppSettings:   return self.backupData.settings.values.count > 0;
         case kRowSortOrder:     return self.sortModeDescription != nil;
@@ -266,6 +273,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         case kRowBookmarks:     return ICBackupImportBookmarks;
         case kRowUpNext:        return ICBackupImportUpNext;
         case kRowNowPlaying:    return ICBackupImportNowPlaying;
+        case kRowAppleWatchEpisodes: return ICBackupImportAppleWatch;
         case kRowPlaylists:     return ICBackupImportPlaylists;
         case kRowAppSettings:   return ICBackupImportSettings;
         case kRowSortOrder:     return ICBackupImportSortOrder;
@@ -403,6 +411,13 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
             cell.detailTextLabel.text = self.nowPlayingTitle ?: @"Nothing playing".ls;
             break;
 
+        case kRowAppleWatchEpisodes:
+            cell.textLabel.text = @"Apple Watch Episodes".ls;
+            cell.detailTextLabel.text = self.appleWatchEpisodeCount > 0
+                ? [NSString stringWithFormat:@"%ld Apple Watch episodes".ls, (long)self.appleWatchEpisodeCount]
+                : @"No Apple Watch episodes".ls;
+            break;
+
         case kRowPlaylists:
             cell.textLabel.text = @"Playlists".ls;
             if (self.playlistCount > 0 && self.episodeListCount > 0) {
@@ -487,6 +502,8 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         [summaryItems addObject:[NSString stringWithFormat:@"%ld episode updates".ls, (long)self.updatedEpisodeCount]];
     if ([self.selectedCategories containsObject:@(kRowBookmarks)])
         [summaryItems addObject:[NSString stringWithFormat:@"%ld new bookmarks".ls, (long)self.newBookmarkCount]];
+    if ([self.selectedCategories containsObject:@(kRowAppleWatchEpisodes)])
+        [summaryItems addObject:[NSString stringWithFormat:@"%ld Apple Watch episodes".ls, (long)self.appleWatchEpisodeCount]];
 
     NSString *summary = summaryItems.count > 0
         ? [summaryItems componentsJoinedByString:@"\n"]

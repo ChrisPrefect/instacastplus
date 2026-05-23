@@ -671,10 +671,12 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     NSMutableArray* section2Items = [NSMutableArray arrayWithObject:downloadsItem];
     AppleWatchSyncManager* watchManager = [AppleWatchSyncManager sharedManager];
     if (watchManager.paired || [watchManager allEpisodeStates].count > 0) {
+        UIImageSymbolConfiguration* watchSymbolConfiguration = [UIImageSymbolConfiguration configurationWithPointSize:27 weight:UIImageSymbolWeightRegular];
+        UIImage* watchSidebarImage = [UIImage systemImageNamed:@"applewatch" withConfiguration:watchSymbolConfiguration];
         MainSidebarItem* appleWatchItem = [MainSidebarItem itemWithTitle:@"Apple Watch".ls
                                                                      tag:kMainSidebarItemAppleWatch
-                                                                   image:[UIImage systemImageNamed:@"applewatch"]
-                                                           selectedImage:[UIImage systemImageNamed:@"applewatch"]];
+                                                                   image:watchSidebarImage
+                                                           selectedImage:watchSidebarImage];
         appleWatchItem.subtitle = ^NSString*{
             if (!watchManager.watchAppInstalled) {
                 return @"Einrichten".ls;

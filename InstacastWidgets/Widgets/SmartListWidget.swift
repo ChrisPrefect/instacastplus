@@ -200,7 +200,7 @@ struct SmartListWidgetView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, family == .systemLarge ? 12 : 0)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: family == .systemMedium ? .center : .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .clipped()
     }
 
@@ -218,8 +218,8 @@ struct SmartListWidgetView: View {
             VStack(spacing: rowSpacing) {
                 ForEach(0..<rowCount, id: \.self) { row in
                     HStack(spacing: 6) {
-                        let leftIdx = row * 2
-                        let rightIdx = row * 2 + 1
+                        let leftIdx = compactGridIndex(row: row, column: 0, rowCount: rowCount)
+                        let rightIdx = compactGridIndex(row: row, column: 1, rowCount: rowCount)
 
                         if leftIdx < items.count {
                             Link(destination: episodeTapURL(for: items[leftIdx])) {
@@ -243,6 +243,15 @@ struct SmartListWidgetView: View {
             .padding(.vertical, 8)
         }
         .clipped()
+    }
+
+    private func compactGridIndex(row: Int, column: Int, rowCount: Int) -> Int {
+        switch entry.order {
+        case .columns:
+            return column * rowCount + row
+        case .rows:
+            return row * 2 + column
+        }
     }
 
     /// Compact episode cell for 2-column layout

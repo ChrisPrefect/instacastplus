@@ -158,14 +158,16 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
     
-    self.playerWasPlayingBeforeWentToBackground = (!pman.paused);
+    self.playerWasPlayingBeforeWentToBackground = (pman.movingVideo && !pman.paused);
 }
 
 -(void)resumePlayback
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
+    BOOL shouldResumePlayback = self.playerWasPlayingBeforeWentToBackground;
+    self.playerWasPlayingBeforeWentToBackground = NO;
     
-    if (self.playerWasPlayingBeforeWentToBackground && pman.paused) {
+    if (shouldResumePlayback && pman.movingVideo && pman.paused) {
         [pman play];
         [self updateNowPlayingInfo];
     }
@@ -209,7 +211,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         NSInteger interruptionType = [userInfo[AVAudioSessionInterruptionTypeKey] integerValue];
         NSInteger option = [userInfo[AVAudioSessionInterruptionOptionKey] integerValue];
 
-        BOOL wasPlaying = pman.hasBeenPlayingWhenInterrupted;
+        BOOL shouldResumeAfterInterruption = pman.hasBeenPlayingWhenInterrupted;
 
         if (interruptionType == AVAudioSessionInterruptionTypeBegan) {
             BOOL playingBeforeInterrupt = !pman.paused;
@@ -218,10 +220,13 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
                      playingBeforeInterrupt, pman.paused);
             [pman pause];
         }
-        else if (interruptionType == AVAudioSessionInterruptionTypeEnded && wasPlaying) {
-            DebugLog(@"AVAudioSession interruption ENDED: wasPlaying=%d option=%ld paused=%d",
-                     wasPlaying, (long)option, pman.paused);
-            if (option == AVAudioSessionInterruptionOptionShouldResume) {
+        else if (interruptionType == AVAudioSessionInterruptionTypeEnded) {
+            pman.hasBeenPlayingWhenInterrupted = NO;
+            if (shouldResumeAfterInterruption) {
+                DebugLog(@"AVAudioSession interruption ENDED: wasPlaying=%d option=%ld paused=%d",
+                         shouldResumeAfterInterruption, (long)option, pman.paused);
+            }
+            if (shouldResumeAfterInterruption && option == AVAudioSessionInterruptionOptionShouldResume) {
                 [pman play];
                 [self updateNowPlayingInfo];
             }

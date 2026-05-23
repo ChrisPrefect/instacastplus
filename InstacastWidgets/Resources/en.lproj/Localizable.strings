@@ -4,18 +4,15 @@
 
 "widget.smartlist.name" = "Episode List";
 "widget.smartlist.description" = "Shows episodes from a selected list.";
+"List" = "List";
+"Choose which list to display." = "Choose which list to display.";
+"Compact" = "Compact";
+"Order" = "Order";
+"Columns" = "Columns";
+"Rows" = "Rows";
 
 "widget.stats.name" = "Podcast Stats";
 "widget.stats.description" = "Your listening statistics.";
-
-"widget.lockscreen.circular.name" = "Play/Pause";
-"widget.lockscreen.circular.description" = "Play/Pause button with progress ring.";
-
-"widget.lockscreen.rectangular.name" = "Current Episode";
-"widget.lockscreen.rectangular.description" = "Shows title and progress of the current episode.";
-
-"widget.lockscreen.inline.name" = "Playback";
-"widget.lockscreen.inline.description" = "Shows the title of the current episode.";
 
 /* Widget Content */
 "widget.empty.noplayback" = "No Playback";

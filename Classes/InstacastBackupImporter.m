@@ -17,7 +17,12 @@
 #import "AudioSession+UpNextPlaylist.h"
 #import "CacheManager.h"
 #import "ImageCacheManager.h"
+#import "WidgetDataExporter.h"
+#import "AppleWatchSyncManager.h"
+#import "AppleWatchEpisodeState.h"
 #import "NSString+VMFoundation.h"
+#import "InstacastPlus-Swift.h"
+#import <UIKit/UIKit.h>
 
 static NSString * const kPendingBackupDownloadsKey = @"PendingBackupDownloads";
 static NSString * const kPendingNowPlayingKey = @"PendingBackupNowPlaying";
@@ -29,6 +34,37 @@ static BOOL _skipCurrentFeed = NO;
 
 // GUID index for O(1) episode lookup
 static NSMutableDictionary<NSString *, NSDictionary<NSString *, CDEpisode *> *> *_guidIndexByFeedURL = nil;
+
+static UIColor *ICBackupColorFromHexString(NSString *hexString) {
+    if (![hexString isKindOfClass:[NSString class]]) return nil;
+
+    NSString *cleanString = [[hexString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] stringByReplacingOccurrencesOfString:@"#" withString:@""];
+    if (cleanString.length != 6) return nil;
+
+    unsigned int rgbValue = 0;
+    NSScanner *scanner = [NSScanner scannerWithString:cleanString];
+    if (![scanner scanHexInt:&rgbValue]) return nil;
+
+    return [UIColor colorWithRed:((rgbValue >> 16) & 0xFF) / 255.0
+                           green:((rgbValue >> 8) & 0xFF) / 255.0
+                            blue:(rgbValue & 0xFF) / 255.0
+                           alpha:1.0];
+}
+
+static void ICBackupApplyColorHex(NSUserDefaults *defaults, NSString *hexString, NSString *hexKey, NSString *colorDataKey) {
+    if (hexString.length == 0) return;
+
+    [defaults setObject:hexString forKey:hexKey];
+
+    UIColor *color = ICBackupColorFromHexString(hexString);
+    if (!color) return;
+
+    NSError *error = nil;
+    NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:color requiringSecureCoding:YES error:&error];
+    if (colorData) {
+        [defaults setObject:colorData forKey:colorDataKey];
+    }
+}
 
 #pragma mark - Helper: run block on main thread synchronously (from background)
 
@@ -401,6 +437,7 @@ static void runOnMain(void (^block)(void)) {
             }],
             @[@(ICBackupImportSettings),      ^NSInteger{ return [self importSettingsFromBackup:backup]; }],
             @[@(ICBackupImportSortOrder),     ^NSInteger{ return [self importSortOrderFromBackup:backup]; }],
+            @[@(ICBackupImportAppleWatch),    ^NSInteger{ return [self importAppleWatchEpisodesFromBackup:backup]; }],
             @[@(ICBackupImportDownloads),     ^NSInteger{ return [self importDownloadsFromBackup:backup]; }],
         ];
 
@@ -526,6 +563,8 @@ static void runOnMain(void (^block)(void)) {
 
     if (categories & ICBackupImportSettings) {
         [[ICAppearanceManager sharedManager] updateAppearance];
+        [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
+        [WidgetKitHelper reloadAllTimelines];
     }
 
     [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
@@ -887,6 +926,86 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     [[AudioSession sharedAudioSession] playEpisode:episode queueUpCurrent:NO at:(NSTimeInterval)position autostart:NO];
 }
 
+#pragma mark - Apple Watch Episodes
+
++ (CDEpisode *)_episodeForAppleWatchBackupEpisode:(ICBackupAppleWatchEpisode *)backupEpisode {
+    if (backupEpisode.episodeHash.length > 0) {
+        CDEpisode *episode = [DMANAGER episodeWithObjectHash:backupEpisode.episodeHash];
+        if (episode) return episode;
+    }
+
+    return [self findEpisodeWithGuid:backupEpisode.guid feedURL:backupEpisode.feedURL];
+}
+
++ (NSString *)_feedIdentifierForWatchEpisode:(CDEpisode *)episode backupValue:(NSString *)backupValue {
+    if (backupValue.length > 0) return backupValue;
+
+    NSString *sourceURL = [episode.feed.sourceURL absoluteString];
+    if (sourceURL.length > 0) return sourceURL;
+
+    return episode.feed.uid ?: @"";
+}
+
++ (NSString *)_validAppleWatchSelectionSource:(NSString *)selectionSource {
+    if ([selectionSource isEqualToString:ICAppleWatchSelectionSourceManual] ||
+        [selectionSource isEqualToString:ICAppleWatchSelectionSourceLatestRule]) {
+        return selectionSource;
+    }
+    return ICAppleWatchSelectionSourceManual;
+}
+
++ (NSInteger)importAppleWatchEpisodesFromBackup:(InstacastBackupData *)backup {
+    AppleWatchSyncManager *watchManager = [AppleWatchSyncManager sharedManager];
+    NSMutableSet<NSString *> *importedHashes = [NSMutableSet set];
+    NSInteger count = 0;
+
+    for (ICBackupAppleWatchEpisode *backupEpisode in backup.appleWatchEpisodes) {
+        CDEpisode *episode = [self _episodeForAppleWatchBackupEpisode:backupEpisode];
+        if (![watchManager canSendEpisodeToWatch:episode]) continue;
+
+        NSString *episodeHash = episode.objectHash ?: backupEpisode.episodeHash;
+        if (episodeHash.length == 0 || [importedHashes containsObject:episodeHash]) continue;
+        [importedHashes addObject:episodeHash];
+
+        AppleWatchEpisodeState *state = [watchManager stateForEpisodeHash:episodeHash];
+        if (!state) {
+            state = [NSEntityDescription insertNewObjectForEntityForName:@"AppleWatchEpisodeState" inManagedObjectContext:DMANAGER.objectContext];
+            state.episodeHash = episodeHash;
+        }
+
+        BOOL keepLocalDownloadStatus = [state.watchStatus isEqualToString:ICAppleWatchStatusDownloaded] ||
+                                       [state.watchStatus isEqualToString:ICAppleWatchStatusDownloading];
+
+        state.feedIdentifier = [self _feedIdentifierForWatchEpisode:episode backupValue:backupEpisode.feedIdentifier];
+        state.selectionSource = [self _validAppleWatchSelectionSource:backupEpisode.selectionSource];
+        state.watchAddedDate = backupEpisode.watchAddedDate ?: state.watchAddedDate ?: [NSDate date];
+        state.lastPhonePosition = backupEpisode.lastPhonePosition;
+        state.lastPhonePositionDate = backupEpisode.lastPhonePositionDate;
+        state.lastWatchPosition = backupEpisode.lastWatchPosition;
+        state.lastWatchPositionDate = backupEpisode.lastWatchPositionDate;
+        state.watchConsumed = backupEpisode.watchConsumed;
+        state.watchConsumedDate = backupEpisode.watchConsumedDate;
+        state.watchLastError = nil;
+
+        if (!keepLocalDownloadStatus) {
+            state.watchStatus = ICAppleWatchStatusSelected;
+            state.watchDownloadedDate = nil;
+            state.watchLastSeenDate = nil;
+            state.watchActualDuration = 0;
+            state.watchActualFileSize = 0;
+        }
+
+        count++;
+    }
+
+    if (count > 0) {
+        [DMANAGER save];
+        [watchManager syncCurrentSelectionsNow];
+    }
+
+    return count;
+}
+
 #pragma mark - Playlists
 
 + (NSInteger)importPlaylistsFromBackup:(InstacastBackupData *)backup {
@@ -1026,6 +1145,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"autoCacheVideo":          AutoCacheNewVideoEpisodes,
         @"autoDeletePlayed":        AutoDeleteAfterFinishedPlaying,
         @"disableAutoLock":         DisableAutoLock,
+        @"defaultSleepTimer":       DefaultIntelligentSleepTimer,
         @"appearanceMode":          kDefaultAppearanceMode,
         @"sleepTimerAlways":        ScreenTimerAlwaysActive,
         @"disableSleepTimerCarPlay": DisableSleepTimerInCarPlay,
@@ -1044,6 +1164,9 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"themeColorHex":           InterfaceThemeColorHexCode,
         @"playerPerPodcastColor":   PlayerColorPerPodcastActive,
         @"playerColorHex":          PlayerThemeColorHexCode,
+        @"widgetThemeDefaultActive": WidgetThemeDefaultActive,
+        @"widgetColorHex":          WidgetThemeColorHexCode,
+        @"transcriptHighlightStyle": kDefaultTranscriptHighlightStyle,
         @"smarthomeMQTTEnabled":    SmarthomeMQTTEnabled,
         @"smarthomeMQTTHost":       SmarthomeMQTTHost,
         @"smarthomeMQTTPort":       SmarthomeMQTTPort,
@@ -1061,19 +1184,31 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"autoDownloadWhileStreaming": AutoDownloadWhileStreaming,
         @"enableCachingImagesOver3G": EnableCachingImagesOver3G,
         @"openLinksExternal":       OpenLinksInExternalBrowser,
+        @"allowDiagnostics":        AllowSendingDiagnostics,
+        @"amazonAffiliateEnabled":  AmazonAffiliateEnabled,
         @"notifyNewEpisode":        EnableNewEpisodeNotification,
         @"notifyRefreshFinished":   EnableManualRefreshFinishedNotification,
         @"notifyDownloadFinished":  EnableManualDownloadFinishedNotification,
-        @"themeColorCode":          InterfaceThemeColorCode,
-        @"playerColorCode":         PlayerThemeColorCode,
         @"intelligentSleepAlways":  IntelligentSleepTimerAlwaysActive,
         @"feedSortOrder":           FeedSortOrder,
         @"selectedAppLanguage":     SelectedAppLanguage,
         @"episodeSwipeRightAction": EpisodeSwipeRightAction,
         @"episodeSwipeLeftAction":  EpisodeSwipeLeftAction,
+        @"appleWatchSendLatestCount": AppleWatchSendLatestCount,
+        @"appleWatchOnlyUnplayed":  AppleWatchOnlyUnplayed,
         @"darkModePureBlack":       kDefaultDarkModePureBlack,
         @"fontSizeLarger":          kDefaultFontSizeLarger,
         @"tapOnEpisodeAction":      TapOnEpisodeAction,
+        @"mediaFilesSortMode":      @"MediaFilesSortMode",
+        @"transcriptionEngine":     kTranscriptionEngine,
+        @"transcriptionWhisperModel": kTranscriptionWhisperModel,
+        @"chapterGenerationModel":  @"ChapterGenerationModel",
+        @"transcriptionAutoDefault": kTranscriptionAutoDefault,
+        @"chapterAutoDefault":      kChapterAutoDefault,
+        @"autoSkipSponsors":        kAutoSkipSponsors,
+        @"transcriptionEverActivated": kTranscriptionEverActivated,
+        @"transcriptionFirstRunShown": kTranscriptionFirstRunShown,
+        @"transcriptVisiblePreference": @"TranscriptVisiblePreference",
     };
 
     NSSet *boolKeys = [NSSet setWithArray:@[
@@ -1081,19 +1216,23 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"sleepTimerAlways", @"disableSleepTimerCarPlay", @"autoDeleteMarkedPlayed", @"autoDeleteNews",
         @"enableCachingOver3G", @"enableRefreshingOver3G", @"enableStreamingOver3G",
         @"uiSoundEnabled", @"showBadge", @"dontDeleteUpNext", @"showUnavailable",
-        @"themeDefaultActive", @"playerPerPodcastColor",
+        @"themeDefaultActive", @"playerPerPodcastColor", @"widgetThemeDefaultActive",
         @"smarthomeMQTTEnabled", @"smarthomeAllowControl", @"smarthomeWiFiOnly",
         @"deviceMovementIntelligentSleep", @"screenTouchIntelligentSleep", @"volumeChangeIntelligentSleep",
         @"continuousPlay", @"autoDownloadWhileStreaming", @"enableCachingImagesOver3G",
         @"openLinksExternal", @"notifyNewEpisode", @"notifyRefreshFinished", @"notifyDownloadFinished",
-        @"intelligentSleepAlways", @"darkModePureBlack",
+        @"intelligentSleepAlways", @"darkModePureBlack", @"amazonAffiliateEnabled",
+        @"appleWatchOnlyUnplayed", @"transcriptionAutoDefault", @"chapterAutoDefault",
+        @"autoSkipSponsors", @"transcriptionEverActivated", @"transcriptionFirstRunShown",
+        @"transcriptVisiblePreference",
     ]];
 
     NSSet *doubleKeys = [NSSet setWithArray:@[@"deviceMovementSensitivity"]];
 
-    NSSet *stringKeys = [NSSet setWithArray:@[@"themeColorHex", @"playerColorHex",
+    NSSet *stringKeys = [NSSet setWithArray:@[@"themeColorHex", @"playerColorHex", @"widgetColorHex",
         @"smarthomeMQTTHost", @"smarthomeMQTTUsername", @"smarthomeMQTTPassword", @"smarthomeDeviceName",
-        @"feedSortOrder", @"selectedAppLanguage"]];
+        @"feedSortOrder", @"selectedAppLanguage", @"transcriptionEngine", @"transcriptionWhisperModel",
+        @"chapterGenerationModel"]];
 
     NSInteger count = 0;
     NSUserDefaults *defaults = USER_DEFAULTS;
@@ -1105,7 +1244,13 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         NSString *value = backup.settings.values[xmlKey];
         if (!value || value.length == 0) continue;
 
-        if ([boolKeys containsObject:xmlKey]) {
+        if ([xmlKey isEqualToString:@"themeColorHex"]) {
+            ICBackupApplyColorHex(defaults, value, InterfaceThemeColorHexCode, InterfaceThemeColorCode);
+        } else if ([xmlKey isEqualToString:@"playerColorHex"]) {
+            ICBackupApplyColorHex(defaults, value, PlayerThemeColorHexCode, PlayerThemeColorCode);
+        } else if ([xmlKey isEqualToString:@"widgetColorHex"]) {
+            ICBackupApplyColorHex(defaults, value, WidgetThemeColorHexCode, WidgetThemeColorCode);
+        } else if ([boolKeys containsObject:xmlKey]) {
             [defaults setBool:[value isEqualToString:@"true"] forKey:defaultsKey];
         } else if ([doubleKeys containsObject:xmlKey]) {
             [defaults setDouble:[value doubleValue] forKey:defaultsKey];
@@ -1115,6 +1260,19 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             [defaults setInteger:[value integerValue] forKey:defaultsKey];
         }
         count++;
+    }
+
+    NSArray *credentialKeys = @[@"openAIAPIKey", @"anthropicAPIKey", @"kimiAPIKey", @"openAIOAuthAccessToken", @"openAIOAuthRefreshToken", @"openAIOAuthIDToken", @"openAIOAuthAccountID", @"openAIOAuthAccountEmail", @"openAIOAuthFedRAMP"];
+    NSMutableDictionary *credentialValues = [NSMutableDictionary dictionary];
+    for (NSString *key in credentialKeys) {
+        NSString *value = backup.settings.values[key];
+        if ([value isKindOfClass:[NSString class]] && value.length > 0) {
+            credentialValues[key] = value;
+        }
+    }
+    if (credentialValues.count > 0) {
+        [ICRemoteChapterCredentialStore restoreBackupCredentialValues:credentialValues];
+        count += credentialValues.count;
     }
 
     if (backup.settings.mainMenuListUIDs.count > 0) {

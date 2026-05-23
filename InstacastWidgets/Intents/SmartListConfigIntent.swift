@@ -10,6 +10,20 @@ struct SmartListConfigIntent: WidgetConfigurationIntent {
 
     @Parameter(title: "Compact", default: true)
     var compact: Bool
+
+    @Parameter(title: "Order", default: .columns)
+    var order: SmartListOrder
+}
+
+enum SmartListOrder: String, AppEnum {
+    case columns
+    case rows
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Order"
+    static let caseDisplayRepresentations: [SmartListOrder: DisplayRepresentation] = [
+        .columns: "Columns",
+        .rows: "Rows"
+    ]
 }
 
 // MARK: - List Entity

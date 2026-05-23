@@ -587,6 +587,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [pman addTaskObserver:self forKeyPath:@"currentChapter" task:^(id obj, NSDictionary *change) {
             PlaybackManager* pman = [PlaybackManager playbackManager];
             weakSelf.currentChapterIndex = pman.currentChapter;
+            [weakSelf _updateVisibleCells];
         }];
 
         [pman addTaskObserver:self forKeyPath:@"playingEpisode.consumed" task:^(id obj, NSDictionary *change) {
@@ -3565,9 +3566,28 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if ([self _hasChapters] && indexPath.section == [self _chaptersSection])
     {
         CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
+        CDEpisode* episodeToPlay = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
+        NSString* loadedEpisodeHash = pman.playingEpisode.objectHash;
+        NSString* targetEpisodeHash = episodeToPlay.objectHash;
+        BOOL sameEpisodeLoaded = (loadedEpisodeHash.length > 0 && targetEpisodeHash.length > 0 && [loadedEpisodeHash isEqualToString:targetEpisodeHash]);
         
-        [pman seekToTime:chapter.timecode tolerance:NO];
-        [pman play];
+        pman.currentChapter = indexPath.row;
+        [self _updateVisibleCells];
+        if (sameEpisodeLoaded) {
+            NSArray* playbackChapters = pman.chapters;
+            NSInteger playbackChapterIndex = chapter.index;
+            if (playbackChapterIndex >= 0 && playbackChapterIndex < (NSInteger)playbackChapters.count) {
+                ICMetadataChapter* playbackChapter = playbackChapters[playbackChapterIndex];
+                [pman seekToChapter:playbackChapter];
+            }
+            else {
+                [pman seekToTime:chapter.timecode tolerance:NO];
+            }
+            [pman play];
+        }
+        else if (episodeToPlay) {
+            [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapter.timecode) autostart:YES];
+        }
         
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
     }

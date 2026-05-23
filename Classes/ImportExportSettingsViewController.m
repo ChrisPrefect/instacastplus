@@ -14,6 +14,10 @@
 #import "InstacastBackupParser.h"
 #import "InstacastBackupImportViewController.h"
 #import "CacheManager.h"
+#import "AppleWatchSyncManager.h"
+#import "AppleWatchEpisodeState.h"
+#import "InstacastPlus-Swift.h"
+#import <math.h>
 typedef NS_ENUM(NSInteger, ImportExportSections) {
     kExportSection = 0,
     kImportSection,
@@ -286,6 +290,23 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     return string;
 }
 
+- (NSString *)_hexColorForDefaults:(NSUserDefaults *)defaults hexKey:(NSString *)hexKey colorDataKey:(NSString *)colorDataKey
+{
+    NSString *storedHex = [defaults stringForKey:hexKey];
+    if (storedHex.length > 0) return storedHex;
+
+    id colorObject = [defaults objectForKey:colorDataKey];
+    if (![colorObject isKindOfClass:[NSData class]]) return nil;
+
+    UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:(NSData *)colorObject error:nil];
+    if (!color) return nil;
+
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+    if (![color getRed:&r green:&g blue:&b alpha:&a]) return nil;
+
+    return [NSString stringWithFormat:@"#%02X%02X%02X", (int)round(r * 255), (int)round(g * 255), (int)round(b * 255)];
+}
+
 - (void) exportEverything
 {
     NSMutableString* xml = [NSMutableString string];
@@ -420,6 +441,40 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             currentEpisode.position];
     }
 
+    // Apple Watch episode selection
+    AppleWatchSyncManager *watchManager = [AppleWatchSyncManager sharedManager];
+    NSArray<AppleWatchEpisodeState *> *watchStates = [watchManager visibleEpisodeStates];
+    BOOL hasAppleWatchEpisodes = NO;
+    for (AppleWatchEpisodeState *state in watchStates) {
+        CDEpisode *episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+        if (![watchManager canSendEpisodeToWatch:episode]) continue;
+
+        if (!hasAppleWatchEpisodes) {
+            [xml appendString:@"  <appleWatchEpisodes>\n"];
+            hasAppleWatchEpisodes = YES;
+        }
+
+        NSString *feedURL = [episode.feed.sourceURL absoluteString] ?: @"";
+        NSString *feedIdentifier = state.feedIdentifier ?: feedURL ?: episode.feed.uid ?: @"";
+        NSMutableString *attrs = [NSMutableString stringWithFormat:@"episodeHash=\"%@\" guid=\"%@\" feedUrl=\"%@\" feedIdentifier=\"%@\" selectionSource=\"%@\"",
+            [self xmlEscape:state.episodeHash ?: episode.objectHash ?: @""],
+            [self xmlEscape:episode.guid ?: @""],
+            [self xmlEscape:feedURL],
+            [self xmlEscape:feedIdentifier],
+            [self xmlEscape:state.selectionSource ?: @"manual"]];
+
+        if (state.watchAddedDate) [attrs appendFormat:@" watchAddedDate=\"%@\"", [self xmlEscape:[dateFormatter stringFromDate:state.watchAddedDate]]];
+        if (state.lastPhonePosition > 0) [attrs appendFormat:@" lastPhonePosition=\"%d\"", state.lastPhonePosition];
+        if (state.lastPhonePositionDate) [attrs appendFormat:@" lastPhonePositionDate=\"%@\"", [self xmlEscape:[dateFormatter stringFromDate:state.lastPhonePositionDate]]];
+        if (state.lastWatchPosition > 0) [attrs appendFormat:@" lastWatchPosition=\"%d\"", state.lastWatchPosition];
+        if (state.lastWatchPositionDate) [attrs appendFormat:@" lastWatchPositionDate=\"%@\"", [self xmlEscape:[dateFormatter stringFromDate:state.lastWatchPositionDate]]];
+        if (state.watchConsumed) [attrs appendString:@" watchConsumed=\"true\""];
+        if (state.watchConsumedDate) [attrs appendFormat:@" watchConsumedDate=\"%@\"", [self xmlEscape:[dateFormatter stringFromDate:state.watchConsumedDate]]];
+
+        [xml appendFormat:@"    <episode %@/>\n", attrs];
+    }
+    if (hasAppleWatchEpisodes) [xml appendString:@"  </appleWatchEpisodes>\n"];
+
     // Playlists
     NSArray* lists = DMANAGER.lists;
     BOOL hasPlaylists = NO;
@@ -498,6 +553,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:kDefaultPlayerControls]) [xml appendFormat:@"    <playerControls>%ld</playerControls>\n", (long)[defaults integerForKey:kDefaultPlayerControls]];
     if ([defaults objectForKey:kDefaultDontDeleteUpNextWhenChangingEpisode]) [xml appendFormat:@"    <dontDeleteUpNext>%@</dontDeleteUpNext>\n", [defaults boolForKey:kDefaultDontDeleteUpNextWhenChangingEpisode] ? @"true" : @"false"];
     if ([defaults objectForKey:ContinuousPlayFromFeed]) [xml appendFormat:@"    <continuousPlay>%@</continuousPlay>\n", [defaults boolForKey:ContinuousPlayFromFeed] ? @"true" : @"false"];
+    if ([defaults objectForKey:DefaultIntelligentSleepTimer]) [xml appendFormat:@"    <defaultSleepTimer>%ld</defaultSleepTimer>\n", (long)[defaults integerForKey:DefaultIntelligentSleepTimer]];
     // Downloads
     if ([defaults objectForKey:AutoCacheNewAudioEpisodes]) [xml appendFormat:@"    <autoCacheAudio>%@</autoCacheAudio>\n", [defaults boolForKey:AutoCacheNewAudioEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoCacheNewVideoEpisodes]) [xml appendFormat:@"    <autoCacheVideo>%@</autoCacheVideo>\n", [defaults boolForKey:AutoCacheNewVideoEpisodes] ? @"true" : @"false"];
@@ -517,6 +573,8 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:ShowApplicationBadgeForUnseen]) [xml appendFormat:@"    <showBadge>%@</showBadge>\n", [defaults boolForKey:ShowApplicationBadgeForUnseen] ? @"true" : @"false"];
     if ([defaults objectForKey:kDefaultShowUnavailableEpisodes]) [xml appendFormat:@"    <showUnavailable>%@</showUnavailable>\n", [defaults boolForKey:kDefaultShowUnavailableEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:OpenLinksInExternalBrowser]) [xml appendFormat:@"    <openLinksExternal>%@</openLinksExternal>\n", [defaults boolForKey:OpenLinksInExternalBrowser] ? @"true" : @"false"];
+    if ([defaults objectForKey:AllowSendingDiagnostics]) [xml appendFormat:@"    <allowDiagnostics>%ld</allowDiagnostics>\n", (long)[defaults integerForKey:AllowSendingDiagnostics]];
+    if ([defaults objectForKey:AmazonAffiliateEnabled]) [xml appendFormat:@"    <amazonAffiliateEnabled>%@</amazonAffiliateEnabled>\n", [defaults boolForKey:AmazonAffiliateEnabled] ? @"true" : @"false"];
     // Notifications
     if ([defaults objectForKey:EnableNewEpisodeNotification]) [xml appendFormat:@"    <notifyNewEpisode>%@</notifyNewEpisode>\n", [defaults boolForKey:EnableNewEpisodeNotification] ? @"true" : @"false"];
     if ([defaults objectForKey:EnableManualRefreshFinishedNotification]) [xml appendFormat:@"    <notifyRefreshFinished>%@</notifyRefreshFinished>\n", [defaults boolForKey:EnableManualRefreshFinishedNotification] ? @"true" : @"false"];
@@ -524,11 +582,15 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     // Appearance
     if ([defaults objectForKey:kDefaultAppearanceMode]) [xml appendFormat:@"    <appearanceMode>%ld</appearanceMode>\n", (long)[defaults integerForKey:kDefaultAppearanceMode]];
     if ([defaults objectForKey:InterfaceThemeDefaultActive]) [xml appendFormat:@"    <themeDefaultActive>%@</themeDefaultActive>\n", [defaults boolForKey:InterfaceThemeDefaultActive] ? @"true" : @"false"];
-    if ([defaults objectForKey:InterfaceThemeColorCode]) [xml appendFormat:@"    <themeColorCode>%ld</themeColorCode>\n", (long)[defaults integerForKey:InterfaceThemeColorCode]];
-    if ([defaults objectForKey:InterfaceThemeColorHexCode]) [xml appendFormat:@"    <themeColorHex>%@</themeColorHex>\n", [self xmlEscape:[defaults stringForKey:InterfaceThemeColorHexCode]]];
+    NSString *interfaceColorHex = [self _hexColorForDefaults:defaults hexKey:InterfaceThemeColorHexCode colorDataKey:InterfaceThemeColorCode];
+    if (interfaceColorHex.length > 0) [xml appendFormat:@"    <themeColorHex>%@</themeColorHex>\n", [self xmlEscape:interfaceColorHex]];
     if ([defaults objectForKey:PlayerColorPerPodcastActive]) [xml appendFormat:@"    <playerPerPodcastColor>%@</playerPerPodcastColor>\n", [defaults boolForKey:PlayerColorPerPodcastActive] ? @"true" : @"false"];
-    if ([defaults objectForKey:PlayerThemeColorCode]) [xml appendFormat:@"    <playerColorCode>%ld</playerColorCode>\n", (long)[defaults integerForKey:PlayerThemeColorCode]];
-    if ([defaults objectForKey:PlayerThemeColorHexCode]) [xml appendFormat:@"    <playerColorHex>%@</playerColorHex>\n", [self xmlEscape:[defaults stringForKey:PlayerThemeColorHexCode]]];
+    NSString *playerColorHex = [self _hexColorForDefaults:defaults hexKey:PlayerThemeColorHexCode colorDataKey:PlayerThemeColorCode];
+    if (playerColorHex.length > 0) [xml appendFormat:@"    <playerColorHex>%@</playerColorHex>\n", [self xmlEscape:playerColorHex]];
+    if ([defaults objectForKey:WidgetThemeDefaultActive]) [xml appendFormat:@"    <widgetThemeDefaultActive>%@</widgetThemeDefaultActive>\n", [defaults boolForKey:WidgetThemeDefaultActive] ? @"true" : @"false"];
+    NSString *widgetColorHex = [self _hexColorForDefaults:defaults hexKey:WidgetThemeColorHexCode colorDataKey:WidgetThemeColorCode];
+    if (widgetColorHex.length > 0) [xml appendFormat:@"    <widgetColorHex>%@</widgetColorHex>\n", [self xmlEscape:widgetColorHex]];
+    if ([defaults objectForKey:kDefaultTranscriptHighlightStyle]) [xml appendFormat:@"    <transcriptHighlightStyle>%ld</transcriptHighlightStyle>\n", (long)[defaults integerForKey:kDefaultTranscriptHighlightStyle]];
     // Sleep Timer
     if ([defaults objectForKey:ScreenTimerAlwaysActive]) [xml appendFormat:@"    <sleepTimerAlways>%@</sleepTimerAlways>\n", [defaults boolForKey:ScreenTimerAlwaysActive] ? @"true" : @"false"];
     if ([defaults objectForKey:IntelligentSleepTimerAlwaysActive]) [xml appendFormat:@"    <intelligentSleepAlways>%@</intelligentSleepAlways>\n", [defaults boolForKey:IntelligentSleepTimerAlwaysActive] ? @"true" : @"false"];
@@ -569,10 +631,31 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     // Swipe Actions
     if ([defaults objectForKey:EpisodeSwipeRightAction]) [xml appendFormat:@"    <episodeSwipeRightAction>%ld</episodeSwipeRightAction>\n", (long)[defaults integerForKey:EpisodeSwipeRightAction]];
     if ([defaults objectForKey:EpisodeSwipeLeftAction]) [xml appendFormat:@"    <episodeSwipeLeftAction>%ld</episodeSwipeLeftAction>\n", (long)[defaults integerForKey:EpisodeSwipeLeftAction]];
+    if ([defaults objectForKey:AppleWatchSendLatestCount]) [xml appendFormat:@"    <appleWatchSendLatestCount>%ld</appleWatchSendLatestCount>\n", (long)[defaults integerForKey:AppleWatchSendLatestCount]];
+    if ([defaults objectForKey:AppleWatchOnlyUnplayed]) [xml appendFormat:@"    <appleWatchOnlyUnplayed>%@</appleWatchOnlyUnplayed>\n", [defaults boolForKey:AppleWatchOnlyUnplayed] ? @"true" : @"false"];
     // Display
     if ([defaults objectForKey:kDefaultDarkModePureBlack]) [xml appendFormat:@"    <darkModePureBlack>%@</darkModePureBlack>\n", [defaults boolForKey:kDefaultDarkModePureBlack] ? @"true" : @"false"];
     if ([defaults objectForKey:kDefaultFontSizeLarger]) [xml appendFormat:@"    <fontSizeLarger>%ld</fontSizeLarger>\n", (long)[defaults integerForKey:kDefaultFontSizeLarger]];
     if ([defaults objectForKey:TapOnEpisodeAction]) [xml appendFormat:@"    <tapOnEpisodeAction>%ld</tapOnEpisodeAction>\n", (long)[defaults integerForKey:TapOnEpisodeAction]];
+    if ([defaults objectForKey:@"MediaFilesSortMode"]) [xml appendFormat:@"    <mediaFilesSortMode>%ld</mediaFilesSortMode>\n", (long)[defaults integerForKey:@"MediaFilesSortMode"]];
+    // Transcription & Chapters
+    if ([defaults objectForKey:kTranscriptionEngine]) [xml appendFormat:@"    <transcriptionEngine>%@</transcriptionEngine>\n", [self xmlEscape:[defaults stringForKey:kTranscriptionEngine]]];
+    if ([defaults objectForKey:kTranscriptionWhisperModel]) [xml appendFormat:@"    <transcriptionWhisperModel>%@</transcriptionWhisperModel>\n", [self xmlEscape:[defaults stringForKey:kTranscriptionWhisperModel]]];
+    if ([defaults objectForKey:@"ChapterGenerationModel"]) [xml appendFormat:@"    <chapterGenerationModel>%@</chapterGenerationModel>\n", [self xmlEscape:[defaults stringForKey:@"ChapterGenerationModel"]]];
+    if ([defaults objectForKey:kTranscriptionAutoDefault]) [xml appendFormat:@"    <transcriptionAutoDefault>%@</transcriptionAutoDefault>\n", [defaults boolForKey:kTranscriptionAutoDefault] ? @"true" : @"false"];
+    if ([defaults objectForKey:kChapterAutoDefault]) [xml appendFormat:@"    <chapterAutoDefault>%@</chapterAutoDefault>\n", [defaults boolForKey:kChapterAutoDefault] ? @"true" : @"false"];
+    if ([defaults objectForKey:kAutoSkipSponsors]) [xml appendFormat:@"    <autoSkipSponsors>%@</autoSkipSponsors>\n", [defaults boolForKey:kAutoSkipSponsors] ? @"true" : @"false"];
+    if ([defaults objectForKey:kTranscriptionEverActivated]) [xml appendFormat:@"    <transcriptionEverActivated>%@</transcriptionEverActivated>\n", [defaults boolForKey:kTranscriptionEverActivated] ? @"true" : @"false"];
+    if ([defaults objectForKey:kTranscriptionFirstRunShown]) [xml appendFormat:@"    <transcriptionFirstRunShown>%@</transcriptionFirstRunShown>\n", [defaults boolForKey:kTranscriptionFirstRunShown] ? @"true" : @"false"];
+    if ([defaults objectForKey:@"TranscriptVisiblePreference"]) [xml appendFormat:@"    <transcriptVisiblePreference>%@</transcriptVisiblePreference>\n", [defaults boolForKey:@"TranscriptVisiblePreference"] ? @"true" : @"false"];
+    NSDictionary *credentialValues = [ICRemoteChapterCredentialStore backupCredentialValues];
+    NSArray *credentialKeys = @[@"openAIAPIKey", @"anthropicAPIKey", @"kimiAPIKey", @"openAIOAuthAccessToken", @"openAIOAuthRefreshToken", @"openAIOAuthIDToken", @"openAIOAuthAccountID", @"openAIOAuthAccountEmail", @"openAIOAuthFedRAMP"];
+    for (NSString *key in credentialKeys) {
+        NSString *value = credentialValues[key];
+        if ([value isKindOfClass:[NSString class]] && value.length > 0) {
+            [xml appendFormat:@"    <%@>%@</%@>\n", key, [self xmlEscape:value], key];
+        }
+    }
     // Enabled Playback Speeds
     if ([defaults objectForKey:EnabledPlaybackSpeedsKey]) {
         NSArray* speeds = [defaults objectForKey:EnabledPlaybackSpeedsKey];

@@ -51,6 +51,8 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 @property (nonatomic) BOOL started;
 @property (nonatomic) BOOL needsManifestSyncAfterActivation;
 
+- (void)_sendCurrentManifestAndNotify;
+
 @end
 
 @implementation AppleWatchSyncManager
@@ -271,6 +273,16 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 - (void)syncNow
 {
     [self _rebuildAutomaticSelections];
+    [self _sendCurrentManifestAndNotify];
+}
+
+- (void)syncCurrentSelectionsNow
+{
+    [self _sendCurrentManifestAndNotify];
+}
+
+- (void)_sendCurrentManifestAndNotify
+{
     NSArray<NSDictionary*>* entries = [self _manifestEntries];
     NSDictionary* payload = @{
         ICAppleWatchMessageTypeKey: ICAppleWatchManifestReplace,

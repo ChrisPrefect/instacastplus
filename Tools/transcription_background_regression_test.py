@@ -146,10 +146,11 @@ require(
     "Download/transcription cell layout still double-reserves accessory space or keeps elapsed time on the status text row.",
 )
 require(
-    "Modelle werden bei Bedarf heruntergeladen und danach vorbereitet." in settings_source
+    "Modelle werden bei Bedarf heruntergeladen und danach vorbereitet." not in settings_source
+    and "Geladene Modelle kannst du per Swipe nach links löschen." in settings_source
     and "Core ML" not in settings_source
     and "GPU" not in settings_source,
-    "Model settings copy should be short and user-centered without implementation details.",
+    "Model settings copy should stay short, user-centered, and avoid redundant main-page download hints.",
 )
 require(
     "willBeginEditingRowAtIndexPath" in controller_source

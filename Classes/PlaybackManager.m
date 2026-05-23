@@ -1373,11 +1373,11 @@ didReceiveResponse:(NSURLResponse *)response
         
         MPRemoteCommand *pauseCommand = rcc.pauseCommand;
         pauseCommand.enabled = YES;
-        [pauseCommand addTarget:self action:@selector(_playPauseEvent:)];
+        [pauseCommand addTarget:self action:@selector(_pauseEvent:)];
         //
         MPRemoteCommand *playCommand = rcc.playCommand;
         playCommand.enabled = YES;
-        [playCommand addTarget:self action:@selector(_playPauseEvent:)];
+        [playCommand addTarget:self action:@selector(_playEvent:)];
         
         MPRemoteCommand *togglePlayPauseCommand = rcc.togglePlayPauseCommand;
         togglePlayPauseCommand.enabled = YES;
@@ -1471,6 +1471,23 @@ didReceiveResponse:(NSURLResponse *)response
 - (MPRemoteCommandHandlerStatus) _playPauseEvent:(MPRemoteCommandEvent*)event
 {
     [self playPause];
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus) _playEvent:(MPRemoteCommandEvent*)event
+{
+    if (self.paused) {
+        [self play];
+        [self updateNowPlayingInfo];
+    }
+    return MPRemoteCommandHandlerStatusSuccess;
+}
+
+- (MPRemoteCommandHandlerStatus) _pauseEvent:(MPRemoteCommandEvent*)event
+{
+    if (!self.paused) {
+        [self pause];
+    }
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
@@ -2442,6 +2459,14 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) seekToTime:(NSTimeInterval)time tolerance:(BOOL)tolerance
 {
+    NSTimeInterval duration = self.duration;
+    if (duration > 0) {
+        self.seekingPosition = MIN(MAX(time / duration, 0), 1);
+        self.seekingPositionChangeDate = [NSDate date];
+        [self willChangeValueForKey:@"time"];
+        [self didChangeValueForKey:@"time"];
+    }
+
 	CMTime current = CMTimeMake((int64_t)(time*1000), 1000);
     void (^finishSeekUpdate)(BOOL) = ^(BOOL finished) {
         if (!finished) {

@@ -465,6 +465,111 @@ static NSString* kUpNextCell = @"UpNextCell";
     [self _updateToolbarItems];
 }
 
+- (NSIndexPath*) _indexPathForEpisode:(CDEpisode*)episode
+{
+    if (!episode) {
+        return nil;
+    }
+
+    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
+    NSString* objectHash = episode.objectHash;
+    for(NSUInteger row = 0; row < [playlist count]; row++) {
+        CDEpisode* currentEpisode = (CDEpisode*)playlist[row];
+        if (currentEpisode == episode || [currentEpisode isEqual:episode]) {
+            return [NSIndexPath indexPathForRow:row inSection:0];
+        }
+
+        if (objectHash && currentEpisode.objectHash && [currentEpisode.objectHash isEqualToString:objectHash]) {
+            return [NSIndexPath indexPathForRow:row inSection:0];
+        }
+    }
+
+    return nil;
+}
+
+- (UIContextualAction*) _downloadSwipeActionAtIndexPath:(NSIndexPath*)indexPath
+{
+    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
+    if (indexPath.section != 0 || indexPath.row >= playlist.count) {
+        return nil;
+    }
+
+    CDEpisode* episode = playlist[indexPath.row];
+    __weak UpNextTableViewController* weakSelf = self;
+    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal title:nil handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+        UpNextTableViewController* strongSelf = weakSelf;
+        if (!strongSelf) {
+            completionHandler(NO);
+            return;
+        }
+
+        NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
+        if (!currentIndexPath) {
+            completionHandler(NO);
+            return;
+        }
+
+        [strongSelf _toggleDownloadAtIndexPath:currentIndexPath];
+        completionHandler(YES);
+    }];
+    action.image = [self _downloadSwipeImageForEpisode:episode];
+    action.backgroundColor = [self _downloadSwipeTintForEpisode:episode];
+    return action;
+}
+
+- (UIContextualAction*) _removeSwipeActionAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (indexPath.section != 0 || indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
+        return nil;
+    }
+
+    CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
+    __weak UpNextTableViewController* weakSelf = self;
+    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:nil handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+        UpNextTableViewController* strongSelf = weakSelf;
+        if (!strongSelf) {
+            completionHandler(NO);
+            return;
+        }
+
+        NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
+        if (!currentIndexPath) {
+            completionHandler(NO);
+            return;
+        }
+
+        [strongSelf _removeEpisodeAtIndexPath:currentIndexPath];
+        completionHandler(YES);
+    }];
+    action.image = [self _deleteSwipeImage];
+    action.backgroundColor = [UIColor systemRedColor];
+    return action;
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UIContextualAction* action = [self _downloadSwipeActionAtIndexPath:indexPath];
+    if (!action) {
+        return nil;
+    }
+
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    UIContextualAction* action = [self _removeSwipeActionAtIndexPath:indexPath];
+    if (!action) {
+        return nil;
+    }
+
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
+}
+
 #pragma mark - Table view data source
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -486,7 +591,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     BOOL isPlaying = [episode isEqual:[AudioSession sharedAudioSession].episode];
     cell.backgroundColor = isPlaying ? ICTableSelectedBackgroundColor : self.tableView.backgroundColor;
     cell.embedded = NO;
-    cell.panRecognizer.enabled = YES;
+    cell.panRecognizer.enabled = NO;
     cell.objectValue = episode;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
 
@@ -514,35 +619,6 @@ static NSString* kUpNextCell = @"UpNextCell";
         strongCell.iconView.image = image;
     }];
 
-    __weak UpNextTableViewController* weakSelf = self;
-    cell.leftSwipeImageProvider = ^UIImage* {
-        return [weakSelf _deleteSwipeImage];
-    };
-    cell.leftSwipeTintProvider = ^UIColor* {
-        return [UIColor systemRedColor];
-    };
-    cell.rightSwipeImageProvider = ^UIImage* {
-        return [weakSelf _downloadSwipeImageForEpisode:episode];
-    };
-    cell.rightSwipeTintProvider = ^UIColor* {
-        return [weakSelf _downloadSwipeTintForEpisode:episode];
-    };
-    cell.didPanRight = ^(NSIndexPath* swipedIndexPath) {
-        [weakSelf _toggleDownloadAtIndexPath:swipedIndexPath];
-    };
-    cell.didPanLeft = ^(NSIndexPath* swipedIndexPath) {
-        [weakSelf _removeEpisodeAtIndexPath:swipedIndexPath];
-    };
-    cell.panDidBegin = ^(NSIndexPath* swipedIndexPath) {
-        EpisodesTableViewCell* actionCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:swipedIndexPath];
-        for (NSIndexPath* visibleIndexPath in [weakSelf.tableView indexPathsForVisibleRows]) {
-            EpisodesTableViewCell* visibleCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:visibleIndexPath];
-            if (visibleCell != actionCell && visibleCell.showsDeleteControl) {
-                [visibleCell cancelDelete:nil];
-            }
-        }
-    };
-
     return cell;
 }
 
@@ -561,7 +637,12 @@ static NSString* kUpNextCell = @"UpNextCell";
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    return NO;
+    return YES;
+}
+
+- (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    return UITableViewCellEditingStyleNone;
 }
 
 #pragma mark - UITableViewDragDelegate

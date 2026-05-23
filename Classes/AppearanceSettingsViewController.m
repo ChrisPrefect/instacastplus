@@ -572,7 +572,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     {
         case kAppIconSuggestion:
         {
-            return @"We're looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon.".ls;
+            return @"We’re looking for creative suggestions for our app icon. If you have ideas, feel free to share your design as a .psd file, or send a link to your proposed app icon.".ls;
         }
         default:
             break;

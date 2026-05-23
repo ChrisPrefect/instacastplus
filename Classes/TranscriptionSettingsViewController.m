@@ -78,9 +78,9 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
         case TSSectionModels:
-            return NSLocalizedString(@"Modelle werden bei Bedarf heruntergeladen und danach vorbereitet.", nil);
+            return nil;
         case TSSectionCloud:
-            return NSLocalizedString(@"Diese Zugangsdaten werden nur verwendet, wenn ein Cloud-Modell für Kapitel ausgewählt ist. Das vollständige Transkript wird dann an den Anbieter gesendet.", nil);
+            return nil;
         case TSSectionChapters:
             return NSLocalizedString(@"Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.", nil);
         case TSSectionAuto:
@@ -438,10 +438,11 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    NSString *deleteHint = NSLocalizedString(@"Geladene Modelle kannst du per Swipe nach links löschen.", nil);
     if (self.modelRole == ICDownloadableModelRoleVoiceToText) {
-        return NSLocalizedString(@"Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet.", nil);
+        return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet.", nil), deleteHint];
     }
-    return NSLocalizedString(@"Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet.", nil);
+    return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet.", nil), deleteHint];
 }
 
 - (NSArray<ICDownloadableModel *> *)_modelsForSection:(NSInteger)section {

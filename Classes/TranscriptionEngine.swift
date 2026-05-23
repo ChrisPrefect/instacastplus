@@ -1764,6 +1764,77 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
         return preview(nil)
     }
 
+    @objc static func backupCredentialValues() -> NSDictionary {
+        var values: [String: String] = [:]
+
+        if let value = openAIAPIKey(), !value.isEmpty {
+            values["openAIAPIKey"] = value
+        }
+        if let value = anthropicAPIKey(), !value.isEmpty {
+            values["anthropicAPIKey"] = value
+        }
+        if let value = kimiUserAPIKey(), !value.isEmpty {
+            values["kimiAPIKey"] = value
+        }
+        if let value = secret(account: openAIAccessTokenAccount), !value.isEmpty {
+            values["openAIOAuthAccessToken"] = value
+        }
+        if let value = secret(account: openAIRefreshTokenAccount), !value.isEmpty {
+            values["openAIOAuthRefreshToken"] = value
+        }
+        if let value = secret(account: openAIIDTokenAccount), !value.isEmpty {
+            values["openAIOAuthIDToken"] = value
+        }
+        if let value = secret(account: openAIAccountIDAccount), !value.isEmpty {
+            values["openAIOAuthAccountID"] = value
+        }
+        if let value = secret(account: openAIAccountEmailAccount), !value.isEmpty {
+            values["openAIOAuthAccountEmail"] = value
+        }
+        if let value = secret(account: openAIFedRAMPAccount), !value.isEmpty {
+            values["openAIOAuthFedRAMP"] = value
+        }
+
+        return values as NSDictionary
+    }
+
+    @objc(restoreBackupCredentialValues:)
+    static func restoreBackupCredentialValues(_ values: NSDictionary) {
+        func stringValue(_ key: String) -> String? {
+            guard let value = values[key] as? String else { return nil }
+            let trimmed = trimmedSecret(value) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
+
+        if let value = stringValue("openAIAPIKey") {
+            setOpenAIAPIKey(value)
+        }
+        if let value = stringValue("anthropicAPIKey") {
+            setAnthropicAPIKey(value)
+        }
+        if let value = stringValue("kimiAPIKey") {
+            setKimiAPIKey(value)
+        }
+        if let value = stringValue("openAIOAuthAccessToken") {
+            setSecret(value, account: openAIAccessTokenAccount)
+        }
+        if let value = stringValue("openAIOAuthRefreshToken") {
+            setSecret(value, account: openAIRefreshTokenAccount)
+        }
+        if let value = stringValue("openAIOAuthIDToken") {
+            setSecret(value, account: openAIIDTokenAccount)
+        }
+        if let value = stringValue("openAIOAuthAccountID") {
+            setSecret(value, account: openAIAccountIDAccount)
+        }
+        if let value = stringValue("openAIOAuthAccountEmail") {
+            setSecret(value, account: openAIAccountEmailAccount)
+        }
+        if let value = stringValue("openAIOAuthFedRAMP") {
+            setSecret(value == "true" ? "true" : nil, account: openAIFedRAMPAccount)
+        }
+    }
+
     @objc static func hasOpenAIOAuthCredentials() -> Bool {
         return !(openAIOAuthAccessToken() ?? "").isEmpty
             && !(openAIOAuthAccountID() ?? "").isEmpty
@@ -2271,27 +2342,16 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             supportsCompilation: false
         ),
         ICDownloadableModel(
-            identifier: "gemma-4-e2b-it-q4-k",
-            title: "Gemma 4 E2B-it",
-            shortTitle: "Gemma 4",
-            detail: NSLocalizedString("Für Kapitel in langen Folgen.", comment: ""),
-            role: .textToChapters,
-            downloadSizeBytes: 2_629_991_680,
-            requiresDownload: true,
-            supportsCompilation: false,
-            remoteURLString: "https://huggingface.co/eaddario/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K.gguf",
-            fileName: "gemma-4-E2B-it-Q4_K.gguf"
-        ),
-        ICDownloadableModel(
-            identifier: "apple-foundation-models",
-            title: NSLocalizedString("Apple Intelligence", comment: ""),
-            shortTitle: "Apple",
-            detail: NSLocalizedString("Kein Download in der App.", comment: ""),
+            identifier: "openai-codex-oauth",
+            title: "OpenAI Codex",
+            shortTitle: "Codex",
+            detail: NSLocalizedString("Sendet das vollständige Transkript über den Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
-            chapterProvider: .appleFoundation
+            chapterProvider: .openAICodexOAuth,
+            remoteModelName: "gpt-5.5"
         ),
         ICDownloadableModel(
             identifier: "openai-chatgpt-5.5-api-key",
@@ -2303,18 +2363,6 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             requiresDownload: false,
             supportsCompilation: false,
             chapterProvider: .openAIAPI,
-            remoteModelName: "gpt-5.5"
-        ),
-        ICDownloadableModel(
-            identifier: "openai-codex-oauth",
-            title: "OpenAI Codex",
-            shortTitle: "Codex",
-            detail: NSLocalizedString("Sendet das vollständige Transkript über den Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
-            role: .textToChapters,
-            downloadSizeBytes: 0,
-            requiresDownload: false,
-            supportsCompilation: false,
-            chapterProvider: .openAICodexOAuth,
             remoteModelName: "gpt-5.5"
         ),
         ICDownloadableModel(
@@ -2340,6 +2388,29 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             supportsCompilation: false,
             chapterProvider: .anthropicAPI,
             remoteModelName: "claude-opus-4-7"
+        ),
+        ICDownloadableModel(
+            identifier: "gemma-4-e2b-it-q4-k",
+            title: "Gemma 4 E2B-it",
+            shortTitle: "Gemma 4",
+            detail: NSLocalizedString("Lokales Modell mit sehr großem Download. Qualität schwankt je nach Folge.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 2_629_991_680,
+            requiresDownload: true,
+            supportsCompilation: false,
+            remoteURLString: "https://huggingface.co/eaddario/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K.gguf",
+            fileName: "gemma-4-E2B-it-Q4_K.gguf"
+        ),
+        ICDownloadableModel(
+            identifier: "apple-foundation-models",
+            title: NSLocalizedString("Apple Intelligence", comment: ""),
+            shortTitle: "Apple",
+            detail: NSLocalizedString("Kein Download in der App.", comment: ""),
+            role: .textToChapters,
+            downloadSizeBytes: 0,
+            requiresDownload: false,
+            supportsCompilation: false,
+            chapterProvider: .appleFoundation
         ),
     ]
 

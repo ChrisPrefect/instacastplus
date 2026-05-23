@@ -21,6 +21,7 @@
     ICBackupEpisode *_currentEpisode;
     ICBackupPlaylist *_currentPlaylist;
     ICBackupEpisodeList *_currentEpisodeList;
+    NSDateFormatter *_dateFormatter;
 }
 
 - (instancetype)init {
@@ -29,6 +30,19 @@
         _elementStack = [NSMutableArray array];
     }
     return self;
+}
+
+- (NSDateFormatter *)dateFormatter {
+    if (!_dateFormatter) {
+        _dateFormatter = [[NSDateFormatter alloc] init];
+        [_dateFormatter setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZ"];
+    }
+    return _dateFormatter;
+}
+
+- (NSDate *)dateFromString:(NSString *)dateString {
+    if (dateString.length == 0) return nil;
+    return [[self dateFormatter] dateFromString:dateString];
 }
 
 - (NSString *)currentPath {
@@ -51,9 +65,7 @@
         _backupData.version = attrs[@"version"];
         NSString *dateStr = attrs[@"date"];
         if (dateStr) {
-            NSDateFormatter *df = [[NSDateFormatter alloc] init];
-            [df setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZ"];
-            _backupData.date = [df dateFromString:dateStr];
+            _backupData.date = [self dateFromString:dateStr];
         }
     }
     // <podcast url="..." rank="..." username="..." password="...">
@@ -99,6 +111,23 @@
         np.feedURL = attrs[@"feedUrl"];
         np.position = (int32_t)[attrs[@"position"] integerValue];
         _backupData.nowPlaying = np;
+    }
+    // <episode .../> inside appleWatchEpisodes
+    else if ([path isEqualToString:@"instacast/appleWatchEpisodes/episode"]) {
+        ICBackupAppleWatchEpisode *watchEpisode = [[ICBackupAppleWatchEpisode alloc] init];
+        watchEpisode.episodeHash = attrs[@"episodeHash"];
+        watchEpisode.guid = attrs[@"guid"];
+        watchEpisode.feedURL = attrs[@"feedUrl"];
+        watchEpisode.feedIdentifier = attrs[@"feedIdentifier"];
+        watchEpisode.selectionSource = attrs[@"selectionSource"];
+        watchEpisode.watchAddedDate = [self dateFromString:attrs[@"watchAddedDate"]];
+        watchEpisode.lastPhonePosition = (int32_t)[attrs[@"lastPhonePosition"] integerValue];
+        watchEpisode.lastPhonePositionDate = [self dateFromString:attrs[@"lastPhonePositionDate"]];
+        watchEpisode.lastWatchPosition = (int32_t)[attrs[@"lastWatchPosition"] integerValue];
+        watchEpisode.lastWatchPositionDate = [self dateFromString:attrs[@"lastWatchPositionDate"]];
+        watchEpisode.watchConsumed = [attrs[@"watchConsumed"] isEqualToString:@"true"];
+        watchEpisode.watchConsumedDate = [self dateFromString:attrs[@"watchConsumedDate"]];
+        [_backupData.appleWatchEpisodes addObject:watchEpisode];
     }
     // <playlist name="..." rank="...">
     else if ([path isEqualToString:@"instacast/playlists/playlist"]) {

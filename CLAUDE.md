@@ -13,6 +13,26 @@ xcodebuild -project Instacast.xcodeproj -scheme InstacastMac build       # macOS
 xcodebuild -project Instacast.xcodeproj -scheme "Instacast Tests" test   # Tests
 ```
 
+## TestFlight / App Store Connect
+
+App Store ID: `6472283494`. Bundle ID: `com.iteconomy.instacastplus`. Team ID: `L95F4M2LHG`.
+
+ASC API Key:
+- Key ID: `7QUKV6MHZ2`
+- Issuer ID: `69a6de70-cba8-47e3-e053-5b8c7c11a4d1`
+- Private Key lokal: `/Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8`
+
+Private-Key-Inhalt NIEMALS ins Repo, in Logs oder in Chat-Ausgaben kopieren.
+
+Release-Regeln:
+- Vor Upload Build-Nummer erhöhen, z.B. `agvtool new-version -all <next-build>`.
+- Archivieren mit `xcodebuild -project Instacast.xcodeproj -scheme Instacast -configuration Release -destination 'generic/platform=iOS' -archivePath build/TestFlight/InstacastPlus-<version>-<build>.xcarchive -allowProvisioningUpdates archive`.
+- Upload mit `xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<version>-<build>.xcarchive -exportOptionsPlist build/TestFlight/ExportOptionsUpload.plist -allowProvisioningUpdates`.
+- Für externe TestFlight-Freigaben ASC API Key verwenden, Verarbeitung abwarten/pollen und erst nach App-Store-Connect-Status bestätigen.
+- Tester immer benachrichtigen.
+- `What to Test` jeweils selbst auf Deutsch setzen; kurz und konkret die nutzerrelevanten Änderungen dieser Version beschreiben.
+- Build `3.4 (10)` wurde am 23.05.2026 bereits vom User für externe Tester freigegeben; nicht erneut freigeben.
+
 ## Architecture
 
 Prefixes: `CD*` = Core Data (`CDFeed/CDEpisode/CDMedia/CDChapter/CDBookmark/CDPlaylist/CDSmartPlaylist/CDEpisodeList`), `IC*` = Parser immutable (`ICFeed/ICEpisode/ICMedia/ICChapter/ICCategory`), `VM*` = VemedioKit.

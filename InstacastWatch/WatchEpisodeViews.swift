@@ -1,6 +1,7 @@
 import SwiftUI
 import Foundation
 import UIKit
+import CryptoKit
 
 struct WatchEpisodeListView: View {
     @EnvironmentObject private var store: WatchManifestStore
@@ -15,10 +16,10 @@ struct WatchEpisodeListView: View {
         NavigationStack(path: $playerPath) {
             List {
                 Text("InstacastPlus")
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                    .font(.system(size: 21, weight: .semibold, design: .rounded))
                     .foregroundStyle(accentColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(0.85)
                     .allowsTightening(true)
                     .listRowBackground(Color.clear)
 
@@ -70,8 +71,10 @@ struct WatchEpisodeListView: View {
 
     private func handleTap(_ episode: WatchEpisode) {
         if episode.status == .downloaded, episode.localFileURL != nil {
-            if player.play(episode) {
-                playerPath = [episode.episodeHash]
+            Task { @MainActor in
+                if await player.play(episode) {
+                    playerPath = [episode.episodeHash]
+                }
             }
         } else {
             WatchDownloadManager.shared.prioritizeEpisode(hash: episode.episodeHash)
@@ -117,7 +120,7 @@ private struct WatchEpisodeRow: View {
                 Text(secondaryText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
 
                 if let fraction = progressFraction {
                     ThinProgressLine(fraction: fraction, tint: progressTint)
@@ -131,9 +134,6 @@ private struct WatchEpisodeRow: View {
     }
 
     private var secondaryText: String {
-        if let subtitle = episode.subtitle, !subtitle.isEmpty {
-            return subtitle
-        }
         return episode.podcastTitle
     }
 
@@ -204,24 +204,33 @@ private struct WatchEpisodeRow: View {
 
 private struct WatchArtworkView: View {
     let imageURL: URL?
+    @State private var image: UIImage?
 
     var body: some View {
-        AsyncImage(url: imageURL) { phase in
-            switch phase {
-            case .success(let image):
-                image
+        Group {
+            if let image {
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-            default:
-                Image(systemName: "waveform")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(.quaternary)
+            } else {
+                artworkPlaceholder
             }
         }
         .frame(width: 50, height: 50)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .task(id: imageURL) {
+            image = nil
+            guard let imageURL else { return }
+            image = await WatchArtworkLoader.image(from: imageURL)
+        }
+    }
+
+    private var artworkPlaceholder: some View {
+        Image(systemName: "waveform")
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.quaternary)
     }
 }
 
@@ -362,7 +371,9 @@ private struct WatchPlayerView: View {
         }
         .onAppear {
             if episode.status == .downloaded, episode.localFileURL != nil, player.playingEpisodeHash != episode.episodeHash {
-                _ = player.play(episode)
+                Task { @MainActor in
+                    _ = await player.play(episode)
+                }
             }
         }
     }
@@ -565,6 +576,44 @@ private func shortSkipText(_ seconds: Int) -> String {
         return "\(value / 60)m"
     }
     return "\(value)s"
+}
+
+private enum WatchArtworkLoader {
+    static func image(from url: URL) async -> UIImage? {
+        if let cachedImage = cachedImage(for: url) {
+            return cachedImage
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                return nil
+            }
+            guard let image = UIImage(data: data) else { return nil }
+            try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+            try? data.write(to: cacheURL(for: url), options: [.atomic])
+            return image
+        } catch {
+            return nil
+        }
+    }
+
+    private static func cachedImage(for url: URL) -> UIImage? {
+        let fileURL = cacheURL(for: url)
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func cacheURL(for url: URL) -> URL {
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        let fileName = digest.map { String(format: "%02x", $0) }.joined()
+        return cacheDirectory.appendingPathComponent(fileName).appendingPathExtension("img")
+    }
+
+    private static var cacheDirectory: URL {
+        let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return base.appendingPathComponent("WatchArtwork", isDirectory: true)
+    }
 }
 
 private extension Color {

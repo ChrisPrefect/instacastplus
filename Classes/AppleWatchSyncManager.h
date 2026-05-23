@@ -33,6 +33,7 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchEpisodeStatesDidChangeNotification
 
 - (void)start;
 - (void)syncNow;
+- (void)syncCurrentSelectionsNow;
 - (void)rebuildAutomaticSelectionsAndSync;
 
 - (NSArray<AppleWatchEpisodeState*>*)allEpisodeStates;

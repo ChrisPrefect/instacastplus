@@ -7,8 +7,5 @@ struct InstacastWidgets: WidgetBundle {
         // NowPlayingWidget() — disabled until WidgetKit supports reliable interactive controls
         SmartListWidget()
         StatsWidget()
-        LockScreenCircularWidget()
-        LockScreenRectangularWidget()
-        LockScreenInlineWidget()
     }
 }

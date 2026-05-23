@@ -24,6 +24,7 @@
 #define kDonate5ProductID  @"donate_to_developer_5"
 #define kDonate15ProductID @"donate_to_developer_15"
 #define kDonate20ProductID @"donate_to_developer_20"
+#define kDonate100ProductID @"donate_to_developer_100"
 
 #define kDonationHistoryKey @"DonationHistory"
 
@@ -104,7 +105,8 @@ enum {
                                  kDonate1ProductID,
                                  kDonate5ProductID,
                                  kDonate15ProductID,
-                                 kDonate20ProductID, nil];
+                                 kDonate20ProductID,
+                                 kDonate100ProductID, nil];
     _productsRequest = [[SKProductsRequest alloc] initWithProductIdentifiers:productIdentifiers];
     _productsRequest.delegate = self;
     [_productsRequest start];
@@ -141,6 +143,7 @@ enum {
         case 1: return _validProducts[@"product_second"];
         case 2: return _validProducts[@"product_third"];
         case 3: return _validProducts[@"product_fourth"];
+        case 4: return _validProducts[@"product_fifth"];
         default: return nil;
     }
 }
@@ -153,17 +156,6 @@ enum {
         return;
     }
     [[UIApplication sharedApplication] openURL:reviewURL options:@{} completionHandler:nil];
-}
-
-- (NSString *)fallbackPriceForRow:(NSInteger)row
-{
-    switch (row) {
-        case 0: return @"$1";
-        case 1: return @"$5";
-        case 2: return @"$15";
-        case 3: return @"$20";
-        default: return @"";
-    }
 }
 
 #pragma mark - SKProductsRequestDelegate
@@ -181,6 +173,8 @@ enum {
                 _validProducts[@"product_third"] = product;
             } else if ([product.productIdentifier isEqualToString:kDonate20ProductID]) {
                 _validProducts[@"product_fourth"] = product;
+            } else if ([product.productIdentifier isEqualToString:kDonate100ProductID]) {
+                _validProducts[@"product_fifth"] = product;
             }
         }
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -239,6 +233,8 @@ enum {
         product = _validProducts[@"product_third"];
     } else if ([productId isEqualToString:kDonate20ProductID]) {
         product = _validProducts[@"product_fourth"];
+    } else if ([productId isEqualToString:kDonate100ProductID]) {
+        product = _validProducts[@"product_fifth"];
     }
 
     NSString *amount = product ? [product.price stringValue] : @"?";
@@ -334,7 +330,7 @@ enum {
 {
     switch (section) {
         case kSectionDonationButtons:
-            return 4;
+            return 5;
         case kSectionDonationHistory:
         {
             NSArray *history = [self donationHistory];
@@ -375,8 +371,10 @@ enum {
             if (product) {
                 cell.textLabel.text = [self formattedPriceForProduct:product];
             } else {
-                cell.textLabel.text = [self fallbackPriceForRow:indexPath.row];
+                cell.textLabel.text = @"Loading…".ls;
             }
+            cell.userInteractionEnabled = (product != nil);
+            cell.textLabel.enabled = (product != nil);
             if ([ICAppearanceManager sharedManager].nightSettingMode) {
                 cell.backgroundColor = [UIColor colorWithRed:17/255.0 green:17/255.0 blue:17/255.0 alpha:1.0];
             } else {

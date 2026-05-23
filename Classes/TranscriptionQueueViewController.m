@@ -428,6 +428,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 }
 
 - (void)_updateToolbarItemsAnimated:(BOOL)animated {
+    if ([TranscriptionQueue shared].items.count == 0) {
+        [self setToolbarItems:@[] animated:animated];
+        return;
+    }
+
     UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
     if ([self backgroundControlsAvailable]) {
         [self setToolbarItems:@[self.pauseItem, flexSpace, self.cancelItem] animated:animated];
@@ -737,6 +742,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             self.suppressReload = NO;
             self.swipeInteractionActive = NO;
+            [self _syncBackgroundButtonState];
             [self _progressUpdated];
         });
     }
@@ -768,6 +774,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             self.suppressReload = NO;
             self.swipeInteractionActive = NO;
+            [self _syncBackgroundButtonState];
             [self _progressUpdated];
         });
     }];
@@ -886,6 +893,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 - (void)_deleteFailedOrInterruptedItem:(ICTranscriptionQueueItem*)item {
     if (item.episodeHash.length == 0) return;
     [[TranscriptionQueue shared] dequeueWithEpisodeHash:item.episodeHash];
+    [self _syncBackgroundButtonState];
     [self.tableView reloadData];
 }
 

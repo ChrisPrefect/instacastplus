@@ -1082,6 +1082,60 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
 }
 
+- (NSIndexPath*) _indexPathForEpisode:(CDEpisode*)episode
+{
+    if (!episode) {
+        return nil;
+    }
+
+    NSArray* lEpisodes = self.episodes;
+    NSString* objectHash = episode.objectHash;
+    for(NSUInteger row = 0; row < [lEpisodes count]; row++) {
+        CDEpisode* currentEpisode = (CDEpisode*)[lEpisodes objectAtIndex:row];
+        if (currentEpisode == episode || [currentEpisode isEqual:episode]) {
+            return [NSIndexPath indexPathForRow:row inSection:0];
+        }
+
+        if (objectHash && currentEpisode.objectHash && [currentEpisode.objectHash isEqualToString:objectHash]) {
+            return [NSIndexPath indexPathForRow:row inSection:0];
+        }
+    }
+
+    return nil;
+}
+
+- (UIContextualAction*) _contextualSwipeActionForSwipeAction:(ICEpisodeSwipeAction)swipeAction atIndexPath:(NSIndexPath*)indexPath
+{
+    NSArray* lEpisodes = self.episodes;
+    if (indexPath.section != 0 || indexPath.row >= [lEpisodes count]) {
+        return nil;
+    }
+
+    CDEpisode* episode = (CDEpisode*)[lEpisodes objectAtIndex:indexPath.row];
+    UIContextualActionStyle style = (swipeAction == ICEpisodeSwipeActionDelete) ? UIContextualActionStyleDestructive : UIContextualActionStyleNormal;
+    __weak EpisodesTableViewController* weakSelf = self;
+
+    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:style title:nil handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+        EpisodesTableViewController* strongSelf = weakSelf;
+        if (!strongSelf) {
+            completionHandler(NO);
+            return;
+        }
+
+        NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
+        if (!currentIndexPath) {
+            completionHandler(NO);
+            return;
+        }
+
+        [strongSelf _performSwipeAction:swipeAction atIndexPath:currentIndexPath];
+        completionHandler(YES);
+    }];
+    action.image = [self _imageForSwipeAction:swipeAction episode:episode];
+    action.backgroundColor = [self _tintColorForSwipeAction:swipeAction episode:episode];
+    return action;
+}
+
 - (void) _showPlayNextToastWithText:(NSString*)text added:(BOOL)added
 {
     UIWindow* window = App.ic_keyWindow;
@@ -1359,6 +1413,40 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         AudioServicesPlaySystemSound(1519);
     }
     [self.tableView reloadData];
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (self.tableView.editing) {
+        return nil;
+    }
+
+    ICEpisodeSwipeAction swipeAction = [USER_DEFAULTS integerForKey:EpisodeSwipeRightAction];
+    UIContextualAction* action = [self _contextualSwipeActionForSwipeAction:swipeAction atIndexPath:indexPath];
+    if (!action) {
+        return nil;
+    }
+
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (self.tableView.editing) {
+        return nil;
+    }
+
+    ICEpisodeSwipeAction swipeAction = [USER_DEFAULTS integerForKey:EpisodeSwipeLeftAction];
+    UIContextualAction* action = [self _contextualSwipeActionForSwipeAction:swipeAction atIndexPath:indexPath];
+    if (!action) {
+        return nil;
+    }
+
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
 }
 
 - (void) _transcriptionQueueChanged
@@ -2024,6 +2112,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     
     cell.objectValue = episode;
     cell.playAccessoryButton.userInfo = episode;
+    cell.panRecognizer.enabled = NO;
     
     if (self.showsImage) {
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
@@ -2044,48 +2133,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             strongCell.iconView.image = image;
         }];
     }
-    
-    __weak EpisodesTableViewController* weakSelf = self;
-
-    ICEpisodeSwipeAction rightAction = [USER_DEFAULTS integerForKey:EpisodeSwipeRightAction];
-    ICEpisodeSwipeAction leftAction = [USER_DEFAULTS integerForKey:EpisodeSwipeLeftAction];
-
-    cell.rightSwipeImageProvider = ^UIImage* {
-        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
-        return [weakSelf _imageForSwipeAction:rightAction episode:ep];
-    };
-    cell.rightSwipeTintProvider = ^UIColor* {
-        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
-        return [weakSelf _tintColorForSwipeAction:rightAction episode:ep];
-    };
-    cell.leftSwipeImageProvider = ^UIImage* {
-        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
-        return [weakSelf _imageForSwipeAction:leftAction episode:ep];
-    };
-    cell.leftSwipeTintProvider = ^UIColor* {
-        CDEpisode* ep = (CDEpisode*)[weakSelf.episodes objectAtIndex:indexPath.row];
-        return [weakSelf _tintColorForSwipeAction:leftAction episode:ep];
-    };
-
-    cell.didPanRight = ^(NSIndexPath* indexPath) {
-        [weakSelf _performSwipeAction:rightAction atIndexPath:indexPath];
-    };
-
-    cell.didPanLeft = ^(NSIndexPath* indexPath) {
-        [weakSelf _performSwipeAction:leftAction atIndexPath:indexPath];
-    };
-
-    cell.panDidBegin = ^(NSIndexPath* indexPath) {
-
-        EpisodesTableViewCell* actionCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
-
-        for(NSIndexPath* indexPath2 in [self.tableView indexPathsForVisibleRows]) {
-            EpisodesTableViewCell* myCell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath2];
-            if (myCell != actionCell && myCell.showsDeleteControl) {
-                [myCell cancelDelete:nil];
-            }
-        }
-    };
     
     return cell;
 }

@@ -15,9 +15,10 @@ static ICBackupImportCategory const kMetadataCategories[] = {
     ICBackupImportPlaylists,
     ICBackupImportSettings,
     ICBackupImportSortOrder,
+    ICBackupImportAppleWatch,
     ICBackupImportDownloads,
 };
-static const NSInteger kMetadataCategoriesCount = 9;
+static const NSInteger kMetadataCategoriesCount = 10;
 
 #pragma mark - Feed Row View
 
@@ -522,6 +523,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         case ICBackupImportPlaylists:     return @"Playlists".ls;
         case ICBackupImportSettings:      return @"App Settings".ls;
         case ICBackupImportSortOrder:     return @"Podcast Sort Order".ls;
+        case ICBackupImportAppleWatch:    return @"Apple Watch Episodes".ls;
         case ICBackupImportDownloads:     return @"Re-download Episodes".ls;
         default: return @"";
     }

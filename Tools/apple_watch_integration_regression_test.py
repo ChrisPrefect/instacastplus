@@ -25,12 +25,15 @@ watch_player = read("InstacastWatch/WatchPlayerController.swift")
 watch_views = read("InstacastWatch/WatchEpisodeViews.swift")
 watch_chapter_extractor = read("InstacastWatch/WatchChapterExtractor.swift")
 watch_plist = read("InstacastWatch/Info.plist")
+watch_complication_path = ROOT / "InstacastWatchWidgets" / "WatchComplicationWidget.swift"
+watch_complication = watch_complication_path.read_text() if watch_complication_path.exists() else ""
 feed_settings = read("Classes/FeedSettingsViewController.m")
 episodes_table = read("Classes/EpisodesTableViewController.m")
 episode_view = read("Classes/EpisodeViewController.m")
 main_view = read("Classes/MainViewController_4.m")
 cell = read("Classes/EpisodesTableViewCell.m")
 apple_watch_controller = read("Classes/AppleWatchEpisodesViewController.m")
+donation_view = read("Classes/DonationViewController.m")
 
 
 watch_entity = model.find("./entity[@name='AppleWatchEpisodeState']")
@@ -90,9 +93,37 @@ require(
 )
 
 require(
+    "<key>UIBackgroundModes</key>" in watch_plist
+    and "<string>audio</string>" in watch_plist,
+    "The Watch app must declare audio background mode so local episode playback continues after wrist down/app backgrounding.",
+)
+
+require(
+    "policy: .longFormAudio" in watch_player
+    and "mode: .default" in watch_player
+    and "activate(options: [])" in watch_player
+    and "setActive(true)" not in watch_player,
+    "The Watch player must activate a long-form audio route before starting playback; a foreground-style audio session stops shortly after backgrounding on watchOS.",
+)
+
+require(
     'Text("InstacastPlus")' in watch_views
     and "foregroundStyle(accentColor)" in watch_views,
     "The Watch UI title must match the shipped app display name and use the synced accent color.",
+)
+
+require(
+    "font(.system(size: 30" not in watch_views
+    and "return episode.podcastTitle" in watch_views
+    and "return subtitle" not in watch_views.split("private var secondaryText", 1)[1].split("private var progressFraction", 1)[0],
+    "The Watch episode list must use a compact app title and must not spend row space on episode descriptions.",
+)
+
+require(
+    "WatchArtworkLoader" in watch_views
+    and "URLSession.shared.data(from: url)" in watch_views
+    and "cachesDirectory" in watch_views,
+    "The Watch list artwork must be cached locally instead of relying on transient AsyncImage fetches.",
 )
 
 require(
@@ -107,6 +138,18 @@ require(
     and "Assets.xcassets in Resources" in project
     and "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;" in project,
     "The Watch target must bundle a real AppIcon asset catalog so the iOS Watch app can list it with an icon.",
+)
+
+require(
+    watch_complication_path.exists()
+    and "struct WatchComplicationWidget" in watch_complication
+    and ".supportedFamilies([.accessoryCircular" in watch_complication
+    and ".accessoryInline" in watch_complication
+    and ".accessoryCorner" in watch_complication
+    and ".accessoryRectangular" in watch_complication
+    and "InstacastWatchWidgets.appex" in project
+    and "SDKROOT = watchos;" in project.split("InstacastWatchWidgets", 1)[1],
+    "The app must ship a watchOS WidgetKit complication target so InstacastPlus appears in the Watch face complication picker.",
 )
 
 require(
@@ -148,7 +191,7 @@ require(
     and "moveRowAtIndexPath" in apple_watch_controller
     and "canMoveRowAtIndexPath" in apple_watch_controller
     and "storageLabel" in apple_watch_controller
-    and "UIButtonConfiguration" in apple_watch_controller,
+    and "storageProgressTrackView" in apple_watch_controller,
     "The iOS Apple Watch list must use normal episode cells, expose storage/reorder/removal controls, and must not navigate into show notes.",
 )
 
@@ -334,6 +377,13 @@ require(
     "The iPhone UI must expose feed rules, manual episode actions, the Watch sidebar page, and downloaded indicators.",
 )
 
+require(
+    "heightForHeaderInSection" in feed_settings
+    and "section == kAppleWatchSection" in feed_settings
+    and "return 44" in feed_settings,
+    "The per-podcast Apple Watch settings header must reserve enough height above the first setting row.",
+)
+
 for localization in ("Resources/en.lproj/Localizable.strings", "Resources/de.lproj/Localizable.strings"):
     strings = read(localization)
     for key in (
@@ -359,7 +409,7 @@ require(
     and "WatchEpisodeListView" in watch_views
     and "WatchPlayerView" in watch_views
     and "navigationDestination(for: String.self)" in watch_views
-    and "AsyncImage" in watch_views
+    and "WatchArtworkLoader" in watch_views
     and "player.play(episode)" in watch_views
     and "playerPath = [episode.episodeHash]" in watch_views
     and "ThinProgressLine" in watch_views
@@ -407,7 +457,7 @@ require(
     and "ChapterMarkerLine" in watch_views
     and "chapterTitleText" in watch_views
     and "lineLimit(2, reservesSpace: true)" in watch_views.split("Text(chapterTitleText)", 1)[1].split("ScrubbableProgressLine", 1)[0]
-    and ".frame(height: 24)" in watch_views.split("private struct ScrubbableProgressLine", 1)[1]
+    and ".frame(height: compact ? 16 : 20)" in watch_views.split("private struct ScrubbableProgressLine", 1)[1]
     and "formatClock(" not in watch_views,
     "The Watch player progress must be scrubable, show chapter markers, reserve a stable two-line chapter title, and use second-level player time labels without changing compact list durations.",
 )
@@ -452,12 +502,47 @@ require(
 )
 
 require(
-    "storageProgressView" in apple_watch_controller
-    and "UIProgressView" in apple_watch_controller
+    "storageProgressTrackView" in apple_watch_controller
+    and "storageUsedProgressView" in apple_watch_controller
+    and "storagePodcastProgressView" in apple_watch_controller
     and '"Watch lädt \\"%@\\" (%@/%@)"' in apple_watch_controller
     and '"%ld auf der Watch\\n%ld werden geladen"' not in apple_watch_controller
     and "showsPlaybackProgress = NO" in apple_watch_controller,
     "The iOS Apple Watch page must show current Watch download/storage status and disable normal cell playback progress bars.",
+)
+
+require(
+    '#import "PlaybackViewController.h"' in apple_watch_controller
+    and '#import "AudioSession.h"' in apple_watch_controller
+    and "playComboButtonAction:" in apple_watch_controller
+    and "cell.playAccessoryButton.userInteractionEnabled = YES" in apple_watch_controller
+    and "PlaybackViewController* playbackController" in apple_watch_controller,
+    "The iOS Apple Watch episode list play buttons must start normal iPhone playback instead of being disabled.",
+)
+
+require(
+    "fallbackPriceForRow" not in donation_view
+    and '"$1"' not in donation_view
+    and '"$5"' not in donation_view
+    and '"$15"' not in donation_view
+    and '"$20"' not in donation_view
+    and "cell.userInteractionEnabled = (product != nil)" in donation_view,
+    "The donation page must not show hard-coded USD fallback prices; it must wait for StoreKit localized prices from the signed-in account.",
+)
+
+require(
+    "Installiere die InstacastPlus-Watch-App über die Watch-App auf deinem iPhone" in apple_watch_controller
+    and "manager.supported && manager.paired && manager.watchAppInstalled" in apple_watch_controller
+    and "self.states = @[]" in apple_watch_controller
+    and "self.storageLabel.text = canManageWatchApp ? [self _storageTextForManager:manager] : nil" in apple_watch_controller
+    and "self.navigationItem.rightBarButtonItem = canManageWatchApp ? self.editIconButtonItem : nil" in apple_watch_controller,
+    "The iOS Apple Watch page must render the not-installed state as setup text only, without storage, episode rows, or edit controls.",
+)
+
+require(
+    "configurationWithPointSize:27" in main_view
+    and "systemImageNamed:@\"applewatch\" withConfiguration:watchSymbolConfiguration" in main_view,
+    "The main sidebar Apple Watch symbol must be sized consistently with the other sidebar icons.",
 )
 
 require(

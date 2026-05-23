@@ -13,6 +13,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private var timer: Timer?
     private var lastAutomaticReportDate: Date?
     private let dateFormatter = ISO8601DateFormatter()
+    private var playbackGeneration = 0
 
     private override init() {
         super.init()
@@ -23,13 +24,18 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         if playingEpisodeHash == episode.episodeHash, isPlaying {
             pause()
         } else {
-            _ = play(episode)
+            Task { @MainActor in
+                _ = await play(episode)
+            }
         }
     }
 
     @discardableResult
-    func play(_ episode: WatchEpisode) -> Bool {
+    func play(_ episode: WatchEpisode) async -> Bool {
         guard let localFileURL = episode.localFileURL else { return false }
+
+        playbackGeneration += 1
+        let generation = playbackGeneration
 
         if playingEpisodeHash != episode.episodeHash {
             reportPosition(finished: false)
@@ -51,10 +57,13 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         player.delegate = self
 
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try AVAudioSession.sharedInstance().setActive(true)
+            try await activateLongFormAudioSession()
         } catch {
             markEpisodePlaybackFailed(episode, error: error.localizedDescription)
+            return false
+        }
+
+        guard generation == playbackGeneration, playingEpisodeHash == episode.episodeHash else {
             return false
         }
 
@@ -75,6 +84,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 
     func pause() {
+        playbackGeneration += 1
         player?.pause()
         isPlaying = false
         stopTimer()
@@ -129,7 +139,23 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             currentPosition = 0
 
             if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
-                _ = play(nextEpisode)
+                _ = await play(nextEpisode)
+            }
+        }
+    }
+
+    private func activateLongFormAudioSession() async throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            session.activate(options: []) { activated, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if activated {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: WatchPlayerError.audioSessionNotActivated)
+                }
             }
         }
     }
@@ -187,6 +213,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 
     private func markEpisodePlaybackFailed(_ episode: WatchEpisode, error: String) {
+        playbackGeneration += 1
         stopTimer()
         player?.stop()
         player = nil
@@ -212,5 +239,13 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             "error": error,
             "timestamp": dateFormatter.string(from: Date()),
         ])
+    }
+}
+
+private enum WatchPlayerError: LocalizedError {
+    case audioSessionNotActivated
+
+    var errorDescription: String? {
+        NSLocalizedString("Audiositzung konnte nicht aktiviert werden.", comment: "")
     }
 }

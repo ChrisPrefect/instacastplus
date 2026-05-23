@@ -61,6 +61,7 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 #define kDonate5ProductID @"donate_to_developer_5"
 #define kDonate15ProductID @"donate_to_developer_15"
 #define kDonate20ProductID @"donate_to_developer_20"
+#define kDonate100ProductID @"donate_to_developer_100"
 
 @interface InstacastSceneDelegate () <CPNowPlayingTemplateObserver>
 @property (strong) VDModalInfo* mInfo;
@@ -1918,6 +1919,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     SKProduct *p2 = validProducts[@"product_second"];
     SKProduct *p3 = validProducts[@"product_third"];
     SKProduct *p4 = validProducts[@"product_fourth"];
+    SKProduct *p5 = validProducts[@"product_fifth"];
     NSString *title1 = p1 ? [self formattedPriceForProduct:p1] : @"$1";
     NSString *title2 = p2 ? [self formattedPriceForProduct:p2] : @"$5";
     NSString *title3 = p3 ? [self formattedPriceForProduct:p3] : @"$15";
@@ -1993,6 +1995,25 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         } afterDelay:0.01];
     }];
     [alert addAction:fourthAction];
+
+    if (p5) {
+        UIAlertAction* fifthAction = [UIAlertAction actionWithTitle:[self formattedPriceForProduct:p5] style:UIAlertActionStyleDefault handler:^(UIAlertAction * action) {
+            STRONG_SELF
+            InstacastSceneDelegate* strongSelf = self;
+            NSDictionary* products = strongSelf->validProducts;
+            // Mark popup as shown
+            [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"hasShownDonatePopup"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+
+            [strongSelf perform:^(id sender) {
+                if([products valueForKey:@"product_fifth"] != nil)
+                {
+                    [strongSelf purchaseMyProduct:[products valueForKey:@"product_fifth"]];
+                }
+            } afterDelay:0.01];
+        }];
+        [alert addAction:fifthAction];
+    }
     
     UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:^(UIAlertAction * action) {
         //STRONG_SELF
@@ -2022,7 +2043,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 }
 
 -(void)fetchAvailableProducts {
-    NSSet *productIdentifiers = [NSSet setWithObjects:kDonate1ProductID,kDonate5ProductID,kDonate15ProductID,kDonate20ProductID,nil];
+    NSSet *productIdentifiers = [NSSet setWithObjects:kDonate1ProductID,kDonate5ProductID,kDonate15ProductID,kDonate20ProductID,kDonate100ProductID,nil];
     productsRequest = [[SKProductsRequest alloc] initWithProductIdentifiers:productIdentifiers];
     productsRequest.delegate = self;
     [productsRequest start];
@@ -2091,6 +2112,9 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                 else if ([transaction.payment.productIdentifier isEqualToString:kDonate20ProductID]) {
                     [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
                 }
+                else if ([transaction.payment.productIdentifier isEqualToString:kDonate100ProductID]) {
+                    [self showPurchaseAlertController:@"Thank you! Your donation is appreciated!.".ls];
+                }
                 [[SKPaymentQueue defaultQueue] finishTransaction:transaction];
                 break;
             case SKPaymentTransactionStateRestored:
@@ -2126,6 +2150,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             else if ([product.productIdentifier  isEqual: kDonate20ProductID])
             {
                 [validProducts setObject:product forKey:@"product_fourth"];
+            }
+            else if ([product.productIdentifier  isEqual: kDonate100ProductID])
+            {
+                [validProducts setObject:product forKey:@"product_fifth"];
             }
         }
     }
@@ -2305,7 +2333,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         // Present player ONLY when no action specified (= user tapped widget area, not a control button)
         if (!action && [PlaybackManager playbackManager].playingEpisode) {
             PlaybackViewController *pvc = [PlaybackViewController playbackViewController];
-            [pvc presentFromParentViewController:self.mainViewController];
+            [pvc presentFromParentViewController:self.mainViewController autostart:NO completion:NULL];
         }
     }
     else if ([host isEqualToString:@"episode"]) {
