@@ -22,8 +22,12 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     ICMQTTClient *_client;
     NSTimer *_statusTimer;
     NSTimer *_reconnectTimer;
+    NSTimer *_backgroundPublishTaskTimeoutTimer;
+    UIBackgroundTaskIdentifier _backgroundPublishTaskIdentifier;
     NSTimeInterval _reconnectDelay;
     BOOL _intentionalDisconnect;
+    NSMutableDictionary *_eventValuesByTopic;
+    NSMutableDictionary *_eventDatesByTopic;
 
     // Dynamic topic base: "InstacastPlus/{deviceName}"
     NSString *_topicBase;
@@ -53,11 +57,13 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
     // Motion detection throttling
     NSTimer *_motionResetTimer;
+    NSDate *_motionDetectedResetDate;
     BOOL _motionDetectedState;
     BOOL _fellAsleepActive;
 
     // Fell-asleep auto-reset
     NSTimer *_fellAsleepResetTimer;
+    NSDate *_fellAsleepResetDate;
 }
 @end
 
@@ -78,6 +84,9 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     self = [super init];
     if (self) {
         _reconnectDelay = 2.0;
+        _backgroundPublishTaskIdentifier = UIBackgroundTaskInvalid;
+        _eventValuesByTopic = [[NSMutableDictionary alloc] init];
+        _eventDatesByTopic = [[NSMutableDictionary alloc] init];
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackDidStart:) name:PlaybackManagerDidStartNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackDidEnd:) name:PlaybackManagerDidEndNotification object:nil];
@@ -247,11 +256,14 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     _reconnectTimer = nil;
     [_statusTimer invalidate];
     _statusTimer = nil;
+    [self _endBackgroundPublishTask];
     [_motionResetTimer invalidate];
     _motionResetTimer = nil;
+    _motionDetectedResetDate = nil;
     _motionDetectedState = NO;
     [_fellAsleepResetTimer invalidate];
     _fellAsleepResetTimer = nil;
+    _fellAsleepResetDate = nil;
     [self _tearDownClient];
     _connectionStatusText = @"Disconnected".ls;
     [self clearLastValues];
@@ -262,6 +274,109 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 - (void)clearPendingEvents
 {
     _pendingEpisodeFinished = NO;
+}
+
+- (BOOL)_beginBackgroundPublishTaskIfNeeded
+{
+    UIApplication *application = [UIApplication sharedApplication];
+    if (application.applicationState == UIApplicationStateActive) return NO;
+    if (!self.connected) return NO;
+    if (_backgroundPublishTaskIdentifier != UIBackgroundTaskInvalid) return NO;
+
+    __weak typeof(self) weakSelf = self;
+    _backgroundPublishTaskIdentifier = [application beginBackgroundTaskWithName:@"InstacastPlus.MQTTStateFlush" expirationHandler:^{
+        [weakSelf _endBackgroundPublishTask];
+    }];
+
+    return (_backgroundPublishTaskIdentifier != UIBackgroundTaskInvalid);
+}
+
+- (void)_flushMQTTPendingWritesAndEndBackgroundTask
+{
+    if (_backgroundPublishTaskIdentifier == UIBackgroundTaskInvalid) return;
+
+    [_backgroundPublishTaskTimeoutTimer invalidate];
+    _backgroundPublishTaskTimeoutTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(_endBackgroundPublishTask) userInfo:nil repeats:NO];
+
+    __weak typeof(self) weakSelf = self;
+    [_client flushPendingWritesWithCompletion:^{
+        [weakSelf _endBackgroundPublishTask];
+    }];
+}
+
+- (void)_endBackgroundPublishTask
+{
+    if (_backgroundPublishTaskIdentifier == UIBackgroundTaskInvalid) return;
+
+    UIBackgroundTaskIdentifier taskIdentifier = _backgroundPublishTaskIdentifier;
+    _backgroundPublishTaskIdentifier = UIBackgroundTaskInvalid;
+
+    [_backgroundPublishTaskTimeoutTimer invalidate];
+    _backgroundPublishTaskTimeoutTimer = nil;
+
+    [[UIApplication sharedApplication] endBackgroundTask:taskIdentifier];
+}
+
+- (void)_performMQTTBackgroundFlushIfNeeded:(void (^)(void))publishBlock
+{
+    BOOL shouldFlush = [self _beginBackgroundPublishTaskIfNeeded];
+    if (publishBlock) {
+        publishBlock();
+    }
+    if (shouldFlush) {
+        [self _flushMQTTPendingWritesAndEndBackgroundTask];
+    }
+}
+
+- (NSString*)_timestampStringFromDate:(NSDate*)date
+{
+    static NSISO8601DateFormatter *formatter = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        formatter = [[NSISO8601DateFormatter alloc] init];
+        formatter.formatOptions = NSISO8601DateFormatWithInternetDateTime | NSISO8601DateFormatWithFractionalSeconds;
+    });
+    return [formatter stringFromDate:(date ?: [NSDate date])];
+}
+
+- (NSDate*)_eventDateForTopic:(NSString*)topic value:(NSString*)value changedAt:(NSDate*)changedAt
+{
+    if (!topic) return (changedAt ?: [NSDate date]);
+
+    NSString *safeValue = value ?: @"";
+    NSString *lastEventValue = _eventValuesByTopic[topic];
+    if (!lastEventValue || ![lastEventValue isEqualToString:safeValue]) {
+        _eventValuesByTopic[topic] = safeValue;
+        _eventDatesByTopic[topic] = changedAt ?: [NSDate date];
+    }
+
+    return _eventDatesByTopic[topic] ?: changedAt ?: [NSDate date];
+}
+
+- (void)_recordEventValue:(NSString*)value topicName:(NSString*)topicName changedAt:(NSDate*)changedAt
+{
+    [self _eventDateForTopic:[self topic:topicName] value:value changedAt:changedAt];
+}
+
+- (void)_expireTransientStatesIfNeeded
+{
+    NSDate *now = [NSDate date];
+
+    if (_fellAsleepActive && _fellAsleepResetDate && [_fellAsleepResetDate compare:now] != NSOrderedDescending) {
+        _fellAsleepActive = NO;
+        [_fellAsleepResetTimer invalidate];
+        _fellAsleepResetTimer = nil;
+        [self _recordEventValue:@"0" topicName:@"fell-asleep" changedAt:_fellAsleepResetDate];
+        _fellAsleepResetDate = nil;
+    }
+
+    if (_motionDetectedState && _motionDetectedResetDate && [_motionDetectedResetDate compare:now] != NSOrderedDescending) {
+        _motionDetectedState = NO;
+        [_motionResetTimer invalidate];
+        _motionResetTimer = nil;
+        [self _recordEventValue:@"0" topicName:@"motion-detected" changedAt:_motionDetectedResetDate];
+        _motionDetectedResetDate = nil;
+    }
 }
 
 - (void)reconnectIfNeeded
@@ -562,10 +677,16 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)publishFellAsleepState
 {
+    [self publishFellAsleepStateChangedAt:nil];
+}
+
+- (void)publishFellAsleepStateChangedAt:(NSDate*)changedAt
+{
     [self publishValue:(_fellAsleepActive ? @"1" : @"0")
                toTopic:[self topic:@"fell-asleep"]
              lastValue:&_lastFellAsleep
-                retain:YES];
+                retain:YES
+             changedAt:changedAt];
 }
 
 - (void)publishPlayState
@@ -699,21 +820,34 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)publishMotionState
 {
+    [self publishMotionStateChangedAt:nil];
+}
+
+- (void)publishMotionStateChangedAt:(NSDate*)changedAt
+{
     [self publishValue:(_motionDetectedState ? @"1" : @"0")
                toTopic:[self topic:@"motion-detected"]
              lastValue:&_lastMotionDetected
-                retain:YES];
+                retain:YES
+             changedAt:changedAt];
 }
 
 #pragma mark - Deduplication Helper
 
 - (void)publishValue:(NSString*)value toTopic:(NSString*)topic lastValue:(NSString*__strong*)lastValue retain:(BOOL)retain
 {
+    [self publishValue:value toTopic:topic lastValue:lastValue retain:retain changedAt:nil];
+}
+
+- (void)publishValue:(NSString*)value toTopic:(NSString*)topic lastValue:(NSString*__strong*)lastValue retain:(BOOL)retain changedAt:(NSDate*)changedAt
+{
+    NSDate *eventDate = [self _eventDateForTopic:topic value:value changedAt:changedAt];
     if (!self.connected) return;
     if (*lastValue && [*lastValue isEqualToString:value]) return;
 
     *lastValue = [value copy];
     [_client publishMessage:value toTopic:topic retain:retain];
+    [_client publishMessage:[self _timestampStringFromDate:eventDate] toTopic:[topic stringByAppendingString:@"-timestamp"] retain:retain];
 }
 
 - (void)clearLastValues
@@ -750,10 +884,12 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)playbackDidEnd:(NSNotification*)note
 {
-    [self publishPlayState];
-    [self publishEpisodeInfo];
-    [self publishChapterState];
-    [self publishPositionState];
+    [self _performMQTTBackgroundFlushIfNeeded:^{
+        [self publishPlayState];
+        [self publishEpisodeInfo];
+        [self publishChapterState];
+        [self publishPositionState];
+    }];
 }
 
 - (void)playbackDidChangeEpisode:(NSNotification*)note
@@ -770,20 +906,26 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)sleepTimerDidExpire:(NSNotification*)note
 {
-    [self publishSleeptimerState];
-    _fellAsleepActive = YES;
-    [self publishFellAsleepState];
+    NSDate *now = [NSDate date];
+    [self _performMQTTBackgroundFlushIfNeeded:^{
+        [self publishSleeptimerState];
+        _fellAsleepActive = YES;
+        [self publishFellAsleepStateChangedAt:now];
+    }];
 
     // Auto-reset to "0" after 5 seconds, independent of connection state.
     [_fellAsleepResetTimer invalidate];
+    _fellAsleepResetDate = [now dateByAddingTimeInterval:5.0];
     _fellAsleepResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(fellAsleepResetTimerFired) userInfo:nil repeats:NO];
 }
 
 - (void)fellAsleepResetTimerFired
 {
+    NSDate *resetDate = _fellAsleepResetDate ?: [NSDate date];
     _fellAsleepResetTimer = nil;
+    _fellAsleepResetDate = nil;
     _fellAsleepActive = NO;
-    [self publishFellAsleepState];
+    [self publishFellAsleepStateChangedAt:resetDate];
 }
 
 - (void)resetFellAsleep
@@ -792,31 +934,38 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     _fellAsleepActive = NO;
     [_fellAsleepResetTimer invalidate];
     _fellAsleepResetTimer = nil;
+    _fellAsleepResetDate = nil;
     [self publishFellAsleepState];
 }
 
 - (void)motionDidDetect:(NSNotification*)note
 {
+    NSDate *now = [NSDate date];
     // Keep state independent from playback/app/sleeptimer and connection.
     _motionDetectedState = YES;
-    [self publishMotionState];
+    [self publishMotionStateChangedAt:now];
 
     // Reset/extend the timer - will publish "0" 5 seconds after last motion
     [_motionResetTimer invalidate];
+    _motionDetectedResetDate = [now dateByAddingTimeInterval:5.0];
     _motionResetTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(motionResetTimerFired) userInfo:nil repeats:NO];
 }
 
 - (void)motionResetTimerFired
 {
+    NSDate *resetDate = _motionDetectedResetDate ?: [NSDate date];
     _motionResetTimer = nil;
+    _motionDetectedResetDate = nil;
     _motionDetectedState = NO;
-    [self publishMotionState];
+    [self publishMotionStateChangedAt:resetDate];
 }
 
 - (void)episodeDidFinish:(NSNotification*)note
 {
     if (self.connected) {
-        [_client publishMessage:@"1" toTopic:[self topic:@"episode-finished"] retain:NO];
+        [self _performMQTTBackgroundFlushIfNeeded:^{
+            [_client publishMessage:@"1" toTopic:[self topic:@"episode-finished"] retain:NO];
+        }];
     } else {
         // Store for later when we reconnect
         _pendingEpisodeFinished = YES;
@@ -825,6 +974,8 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)appDidBecomeActive:(NSNotification*)note
 {
+    [self _expireTransientStatesIfNeeded];
+
     if (self.connected) {
         // Force-refresh all states so the smart home system gets current values
         // even if we missed events while the app was in the background/suspended.
@@ -837,16 +988,20 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 
 - (void)appWillResignActive:(NSNotification*)note
 {
-    [self publishPlayState];
-    [self publishLockState];
-    [self publishAppState];
+    [self _performMQTTBackgroundFlushIfNeeded:^{
+        [self publishPlayState];
+        [self publishLockState];
+        [self publishAppState];
+    }];
 }
 
 - (void)appDidEnterBackground:(NSNotification*)note
 {
-    [self publishPlayState];
-    [self publishLockState];
-    [self publishAppState];
+    [self _performMQTTBackgroundFlushIfNeeded:^{
+        [self publishPlayState];
+        [self publishLockState];
+        [self publishAppState];
+    }];
 }
 
 - (void)appWillEnterForeground:(NSNotification*)note

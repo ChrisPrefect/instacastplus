@@ -467,6 +467,9 @@
 
 - (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures
 {
+    if (![USER_DEFAULTS boolForKey:EnableRefreshFailureNotification]) {
+        return;
+    }
     if (failures.count == 0) {
         return;
     }

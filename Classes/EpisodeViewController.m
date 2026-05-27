@@ -1386,9 +1386,14 @@
                 [self.navigationController pushViewController:settingsVC animated:YES];
                 return;
             }
-            [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:self.episode.objectHash
-                                                           episodeTitle:self.episode.title ?: @""
-                                                              feedTitle:self.episode.feed.title ?: @""];
+            BOOL started = [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:self.episode.objectHash
+                                                                          episodeTitle:self.episode.title ?: @""
+                                                                             feedTitle:self.episode.feed.title ?: @""];
+            if (started) {
+                PlaySoundFile(@"AffirmIn", NO);
+            } else {
+                AudioServicesPlaySystemSound(1519);
+            }
         }]];
     }
 

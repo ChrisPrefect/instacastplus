@@ -14,6 +14,7 @@ typedef NS_ENUM(NSInteger, ColorPickerTarget) {
 @interface AppearanceSettingsViewController : UITableViewController<UIColorPickerViewControllerDelegate>
 {
     NSArray* appIconsArray;
+    NSArray* appIconNamesArray;
     UIColor* selectedThemeColor;
     UIColor* selectedPlayerColor;
     UIColor* selectedWidgetColor;

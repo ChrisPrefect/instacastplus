@@ -591,7 +591,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     BOOL isPlaying = [episode isEqual:[AudioSession sharedAudioSession].episode];
     cell.backgroundColor = isPlaying ? ICTableSelectedBackgroundColor : self.tableView.backgroundColor;
     cell.embedded = NO;
-    cell.panRecognizer.enabled = NO;
+    cell.usesNativeSwipeActions = YES;
     cell.objectValue = episode;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
 

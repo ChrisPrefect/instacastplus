@@ -38,9 +38,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 @property BOOL continuousPlaybackTemporarilyDisabled;
 @property BOOL autoStopDisabled;
 
-// Silent audio playback to keep app alive when paused in background
-@property (nonatomic, strong) AVPlayer* silentPlayer;
-@property (nonatomic, strong) id silentPlayerLoopObserver;
 @end
 
 
@@ -419,8 +416,6 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) clear
 {
-    [self stopSilentPlayback];
-
     if (self.episode) {
         self.episode = nil;
         [self _savePlaybackStateInUserDefaults];
@@ -784,59 +779,11 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
             // Track fell asleep count
             NSInteger fellAsleepCount = [USER_DEFAULTS integerForKey:@"SleepTimerFellAsleepCount"];
             [USER_DEFAULTS setInteger:fellAsleepCount + 1 forKey:@"SleepTimerFellAsleepCount"];
-            [self stopSilentPlayback]; // Sleep timer stop should not keep app alive
             self.playerWasPlayingBeforeWentToBackground = NO;
             [PlaybackManager playbackManager].hasBeenPlayingWhenInterrupted = NO;
             self.stopDate = nil;
             [[NSNotificationCenter defaultCenter] postNotificationName:AudioSessionSleepTimerDidExpireNotification object:self];
         }
-    }
-}
-
-#pragma mark -
-#pragma mark Silent Audio Playback (Background Keep-Alive)
-
-- (void)startSilentPlayback
-{
-    if (self.silentPlayer) {
-        return; // Already running
-    }
-
-    NSURL* url = [[NSBundle mainBundle] URLForResource:@"Silence" withExtension:@"caf"];
-    if (!url) {
-        ErrLog(@"Silence.caf not found in bundle");
-        return;
-    }
-
-    AVPlayerItem* item = [AVPlayerItem playerItemWithURL:url];
-    self.silentPlayer = [AVPlayer playerWithPlayerItem:item];
-    self.silentPlayer.volume = 0.0; // Inaudible
-
-    // Loop when finished
-    __weak typeof(self) weakSelf = self;
-    self.silentPlayerLoopObserver = [[NSNotificationCenter defaultCenter]
-        addObserverForName:AVPlayerItemDidPlayToEndTimeNotification
-        object:item
-        queue:nil
-        usingBlock:^(NSNotification* note) {
-            [weakSelf.silentPlayer seekToTime:kCMTimeZero completionHandler:^(__unused BOOL finished) {
-            }];
-            [weakSelf.silentPlayer play];
-        }];
-
-    [self.silentPlayer play];
-}
-
-- (void)stopSilentPlayback
-{
-    if (self.silentPlayerLoopObserver) {
-        [[NSNotificationCenter defaultCenter] removeObserver:self.silentPlayerLoopObserver];
-        self.silentPlayerLoopObserver = nil;
-    }
-
-    if (self.silentPlayer) {
-        [self.silentPlayer pause];
-        self.silentPlayer = nil;
     }
 }
 

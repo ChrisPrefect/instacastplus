@@ -48,6 +48,8 @@
 	<true/>
 	<key>EnableNewEpisodesNotification</key>
 	<true/>
+	<key>EnableRefreshFailureNotification</key>
+	<false/>
 	<key>EnableDownloadFinishedNotification</key>
 	<true/>
 	<key>ReplayAfterPause</key>

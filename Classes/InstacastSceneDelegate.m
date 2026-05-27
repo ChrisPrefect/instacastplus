@@ -1542,6 +1542,10 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     }
 
     NSMutableArray* parts = [NSMutableArray array];
+    NSString* podcastTitle = episode.feed.title;
+    if (podcastTitle.length > 0) {
+        [parts insertObject:podcastTitle atIndex:0];
+    }
 
     if (!episode.consumed && episode.duration > 0) {
         [parts addObject:[self carPlayFormattedDuration:episode.duration]];
@@ -1560,6 +1564,11 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         return markersText;
     }
     return partsText;
+}
+
+- (NSURL*)carPlayArtworkURLForEpisode:(CDEpisode*)episode
+{
+    return episode.imageURL ?: episode.feed.imageURL;
 }
 
 - (BOOL)carPlayEpisodeIsDownloaded:(CDEpisode*)episode
@@ -1601,7 +1610,13 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 
 - (CPListItem*)carPlayListItemForEpisode:(CDEpisode*)episode
 {
-    CPListItem* item = [self carPlayListItemWithText:episode.title detailText:[self carPlayEpisodeDetailText:episode] image:nil];
+    NSURL* artworkURL = [self carPlayArtworkURLForEpisode:episode];
+    UIImage* cachedImage = nil;
+    if (artworkURL) {
+        cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:artworkURL size:80 grayscale:NO];
+    }
+
+    CPListItem* item = [self carPlayListItemWithText:episode.title detailText:[self carPlayEpisodeDetailText:episode] image:cachedImage];
     item.userInfo = episode;
 
     [self carPlaySetTrailingSymbolImage:[self carPlayEpisodeAccessoryImage:episode] forListItem:item];
@@ -1613,6 +1628,16 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
     [self carPlayAssignSelectionHandlerForItem:item handler:^{
         [self carPlayPlayEpisode:episode at:MAX(0, episode.position)];
     }];
+
+    if (artworkURL) {
+        [ImageCacheManager loadImageForURL:artworkURL size:80 grayscale:NO completion:^(UIImage *image, NSError *error) {
+            if (image) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self carPlaySetImage:image forListItem:item];
+                });
+            }
+        }];
+    }
 
     return item;
 }

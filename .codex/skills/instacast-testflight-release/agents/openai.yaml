@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instacast TestFlight Release"
+  short_description: "Build and upload Instacast TestFlight releases"
+  default_prompt: "Use $instacast-testflight-release to package this InstacastPlus build and release it to external TestFlight testers."

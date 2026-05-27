@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instacast Settings Localization Backup"
+  short_description: "Keep Instacast settings localized and backed up"
+  default_prompt: "Use $instacast-settings-localization-backup to add this InstacastPlus setting with DE/EN strings, defaults, backup/import handling, and focused tests."

@@ -99,12 +99,13 @@ require(
 
 upnext_source = (ROOT / "Classes" / "UpNextTableViewController.m").read_text()
 require(
-    'cell.didPanLeft = ^(NSIndexPath* swipedIndexPath)' in upnext_source,
-    "Up Next rows are not wired to the custom swipe-to-delete path.",
+    'cell.usesNativeSwipeActions = YES;' in upnext_source,
+    "Up Next rows are not opting into the native swipe path.",
 )
 require(
-    'trailingSwipeActionsConfigurationForRowAtIndexPath' not in upnext_source,
-    "Up Next still uses the system swipe action configuration that caused the stutter.",
+    'trailingSwipeActionsConfigurationForRowAtIndexPath' in upnext_source
+    and 'leadingSwipeActionsConfigurationForRowAtIndexPath' in upnext_source,
+    "Up Next must use native table-view swipe actions instead of the legacy cell pan recognizer.",
 )
 require(
     '[self.navigationController popViewControllerAnimated:YES];' in upnext_source,

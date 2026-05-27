@@ -45,6 +45,7 @@ typedef NS_ENUM(NSInteger, ICMQTTConnectionState) {
 - (void)disconnect;
 
 - (void)publishMessage:(NSString*)message toTopic:(NSString*)topic retain:(BOOL)retain;
+- (void)flushPendingWritesWithCompletion:(void (^ _Nullable)(void))completion;
 - (void)subscribeToTopic:(NSString*)topic;
 
 @end

@@ -10,6 +10,16 @@
 			<key>Type</key>
 			<string>PSToggleSwitchSpecifier</string>
 			<key>Title</key>
+			<string>Podcast Updates Failed</string>
+			<key>Key</key>
+			<string>EnableRefreshFailureNotification</string>
+			<key>DefaultValue</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSToggleSwitchSpecifier</string>
+			<key>Title</key>
 			<string>New Episodes</string>
 			<key>Key</key>
 			<string>EnableNewEpisodesNotification</string>

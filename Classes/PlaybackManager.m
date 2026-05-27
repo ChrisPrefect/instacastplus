@@ -1860,13 +1860,6 @@ didReceiveResponse:(NSURLResponse *)response
             [weakSelf _setupRemotePlaybackCenterWithEpisode:weakSelf.playingEpisode];
         } afterDelay:0.1];
 
-        // Silent audio playback to keep app alive when paused in background
-        if (rate == 0 && weakSelf.playingEpisode) {
-            [[AudioSession sharedAudioSession] startSilentPlayback];
-        } else {
-            [[AudioSession sharedAudioSession] stopSilentPlayback];
-        }
-
         MPNowPlayingInfoCenter.defaultCenter.playbackState = (rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
 
         // Propagate the effective player state (rate-based paused/running) immediately.
@@ -2347,10 +2340,12 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) play
 {
+    BOOL hasRecentSeek = (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1);
+
 	// rewind 30 seconds if we paused more than 10 mins
 	if (self.lastPauseDate)
 	{
-		if ([USER_DEFAULTS boolForKey:PlayerReplayAfterPause] && [[NSDate date] timeIntervalSinceDate:self.lastPauseDate] > 600)
+		if (!hasRecentSeek && [USER_DEFAULTS boolForKey:PlayerReplayAfterPause] && [[NSDate date] timeIntervalSinceDate:self.lastPauseDate] > 600)
 		{
 			CMTime current = [self.player.currentItem currentTime];
 			NSInteger cur = (current.timescale != 0) ? current.value/current.timescale : 0;
@@ -2364,6 +2359,9 @@ didReceiveResponse:(NSURLResponse *)response
 #if TARGET_OS_IPHONE
     if (self.paused && self.streamCacheLoader && self.playingEpisode && [[CacheManager sharedCacheManager] episodeIsCached:self.playingEpisode]) {
         NSTimeInterval resumeTime = [self time];
+        if (hasRecentSeek && self.duration > 0) {
+            resumeTime = self.seekingPosition * self.duration;
+        }
         [self openWithEpisode:self.playingEpisode at:resumeTime autostart:YES];
         return;
     }

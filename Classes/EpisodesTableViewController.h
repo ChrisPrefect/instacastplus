@@ -24,6 +24,7 @@ typedef enum {
 - (void) _setObserving:(BOOL)observing;
 
 @property (nonatomic) BOOL userAction;
+@property (nonatomic) BOOL suppressNextListReload;
 @property (nonatomic, strong) NSArray* episodes;
 
 @property (nonatomic, assign) EpisodesTableViewEditingStyle editingStyle;

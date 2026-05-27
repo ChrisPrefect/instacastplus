@@ -71,6 +71,7 @@ NSString* FeedListSortMode = @"FeedListSortMode";
 NSString* DefaultPlaybackSpeed = @"DefaultPlaybackSpeed";
 NSString* DefaultIntelligentSleepTimer = @"DefaultIntelligentSleepTimer";
 NSString* EnableManualRefreshFinishedNotification = @"EnableManualRefreshFinishedNotification";
+NSString* EnableRefreshFailureNotification = @"EnableRefreshFailureNotification";
 NSString* EnableManualDownloadFinishedNotification = @"EnableManualDownloadFinishedNotification";
 NSString* EnableNewEpisodeNotification = @"EnableNewEpisodeNotification";
 NSString* UncompletedSleepTimeInterval = @"UncompletedSleepTimeInterval";

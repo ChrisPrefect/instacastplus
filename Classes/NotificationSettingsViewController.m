@@ -10,7 +10,7 @@
 #import "UITableViewController+Settings.h"
 
 typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
-    kBadgeSection,
+    kGeneralSection,
     kNotifications,
     kSubscriptions,
     kNumberOfSections,
@@ -78,8 +78,8 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
-        case kBadgeSection:
-            return 1;
+        case kGeneralSection:
+            return 2;
         case kNotifications:
             return 3;
         case kSubscriptions:
@@ -92,15 +92,20 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kBadgeSection)
+    if (indexPath.section == kGeneralSection)
     {
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
-        control.tag = 100;
 
-        cell.textLabel.text = @"Application Badge".ls;
-        control.on = [USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen];
-        [control addTarget:self action:@selector(toggleBadgeSettings:) forControlEvents:UIControlEventValueChanged];
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Podcast update failed.".ls;
+            control.on = [USER_DEFAULTS boolForKey:EnableRefreshFailureNotification];
+            [control addTarget:self action:@selector(toggleRefreshFailureNotification:) forControlEvents:UIControlEventValueChanged];
+        } else {
+            cell.textLabel.text = @"Application Badge".ls;
+            control.on = [USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen];
+            [control addTarget:self action:@selector(toggleBadgeSettings:) forControlEvents:UIControlEventValueChanged];
+        }
         return cell;
     }
     else if (indexPath.section == kNotifications)
@@ -158,7 +163,7 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (NSString*) tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if (section == kBadgeSection) {
+    if (section == kGeneralSection) {
         return @"";
     }
     else if (section == kSubscriptions) {
@@ -197,6 +202,11 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
         }
     }
     
+}
+
+- (void) toggleRefreshFailureNotification:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:EnableRefreshFailureNotification];
 }
 
 

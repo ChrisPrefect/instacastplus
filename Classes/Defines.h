@@ -71,6 +71,7 @@ extern NSString* LastSelectedSleepTimer;
 
 
 extern NSString* EnableManualRefreshFinishedNotification;
+extern NSString* EnableRefreshFailureNotification;
 extern NSString* EnableManualDownloadFinishedNotification;
 extern NSString* EnableNewEpisodeNotification;
 

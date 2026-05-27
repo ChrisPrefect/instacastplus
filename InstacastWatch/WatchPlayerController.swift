@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import MediaPlayer
 
 @MainActor
 final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDelegate {
@@ -18,6 +19,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private override init() {
         super.init()
         dateFormatter.formatOptions = [.withInternetDateTime]
+        configureRemoteCommands()
     }
 
     func togglePlayback(for episode: WatchEpisode) {
@@ -79,6 +81,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         isPlaying = true
         currentPosition = player.currentTime
         startTimer()
+        updateNowPlayingInfo(for: episode)
         reportPosition(finished: false)
         return true
     }
@@ -89,6 +92,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         isPlaying = false
         stopTimer()
         reportPosition(finished: false)
+        updateNowPlayingInfo()
     }
 
     func seek(to position: TimeInterval) {
@@ -96,6 +100,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         player.currentTime = min(max(0, position), player.duration)
         currentPosition = player.currentTime
         reportPosition(finished: false)
+        updateNowPlayingInfo()
     }
 
     func seek(by seconds: TimeInterval) {
@@ -137,6 +142,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             self.player = nil
             playingEpisodeHash = nil
             currentPosition = 0
+            clearNowPlayingInfo()
 
             if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
                 _ = await play(nextEpisode)
@@ -160,6 +166,109 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
     }
 
+    private func configureRemoteCommands() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                await self?.toggleCurrentPlayback()
+            }
+            return .success
+        }
+
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                await self?.playCurrentEpisode()
+            }
+            return .success
+        }
+
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.pauseCurrentEpisode()
+            }
+            return .success
+        }
+
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            Task { @MainActor in
+                self?.seek(to: event.positionTime)
+            }
+            return .success
+        }
+    }
+
+    private func toggleCurrentPlayback() async {
+        if isPlaying {
+            pause()
+        } else {
+            await playCurrentEpisode()
+        }
+    }
+
+    private func playCurrentEpisode() async {
+        guard
+            let hash = playingEpisodeHash,
+            let episode = WatchManifestStore.shared.episode(hash: hash)
+        else {
+            return
+        }
+        _ = await play(episode)
+    }
+
+    private func pauseCurrentEpisode() {
+        if isPlaying {
+            pause()
+        } else {
+            updateNowPlayingInfo()
+        }
+    }
+
+    private func updateNowPlayingInfo(for episode: WatchEpisode? = nil) {
+        guard
+            let player,
+            let episode = episode ?? currentEpisode()
+        else {
+            clearNowPlayingInfo()
+            return
+        }
+
+        let chapterTitle = episode.currentChapter(at: player.currentTime)?.title
+        let albumTitle: String
+        if let chapterTitle, !chapterTitle.isEmpty {
+            albumTitle = chapterTitle
+        } else {
+            albumTitle = episode.podcastTitle
+        }
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: episode.title,
+            MPMediaItemPropertyArtist: episode.podcastTitle,
+            MPMediaItemPropertyPlaybackDuration: player.duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: player.currentTime,
+            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? 1.0 : 0.0,
+        ]
+        if !albumTitle.isEmpty {
+            info[MPMediaItemPropertyAlbumTitle] = albumTitle
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func currentEpisode() -> WatchEpisode? {
+        guard let hash = playingEpisodeHash else { return nil }
+        return WatchManifestStore.shared.episode(hash: hash)
+    }
+
+    private func clearNowPlayingInfo() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
     private func startTimer() {
         stopTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -177,6 +286,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private func tickPlaybackPosition() {
         guard let player, playingEpisodeHash != nil else { return }
         currentPosition = player.currentTime
+        updateNowPlayingInfo()
 
         let now = Date()
         if let lastAutomaticReportDate, now.timeIntervalSince(lastAutomaticReportDate) < 5 {
@@ -220,6 +330,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         playingEpisodeHash = nil
         isPlaying = false
         currentPosition = 0
+        clearNowPlayingInfo()
 
         WatchStorageManager.shared.removeLocalFile(for: episode)
         WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in

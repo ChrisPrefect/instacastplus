@@ -19,12 +19,15 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     ICMQTTPacketDisconnect  = 14
 };
 
+typedef void (^ICMQTTFlushCompletion)(void);
+
 @interface ICMQTTClient () <NSStreamDelegate>
 {
     NSInputStream *_inputStream;
     NSOutputStream *_outputStream;
     NSMutableData *_readBuffer;
     NSMutableData *_writeBuffer;
+    NSMutableArray *_flushCompletionBlocks;
     NSTimer *_pingTimer;
     NSTimer *_connectTimeoutTimer;
     uint16_t _packetId;
@@ -81,6 +84,7 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
         _clientId = [[NSString alloc] initWithFormat:@"instacast-%@", [[NSUUID UUID] UUIDString]];
         _readBuffer = [[NSMutableData alloc] init];
         _writeBuffer = [[NSMutableData alloc] init];
+        _flushCompletionBlocks = [[NSMutableArray alloc] init];
         _connectionState = ICMQTTConnectionStateDisconnected;
         _packetId = 0;
     }
@@ -172,6 +176,7 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     _outputStream = nil;
 
     [_writeBuffer setLength:0];
+    [self _completePendingFlushCompletions];
 }
 
 - (void)connectTimeout
@@ -426,6 +431,41 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
     [self flushWriteBuffer];
 }
 
+- (void)_completePendingFlushCompletions
+{
+    if (_flushCompletionBlocks.count == 0) return;
+
+    NSArray *completionBlocks = [_flushCompletionBlocks copy];
+    [_flushCompletionBlocks removeAllObjects];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (ICMQTTFlushCompletion completion in completionBlocks) {
+            completion();
+        }
+    });
+}
+
+- (void)flushPendingWritesWithCompletion:(void (^)(void))completion
+{
+    if (!completion) return;
+
+    [self performSelector:@selector(flushPendingWritesOnNetworkThread:)
+                 onThread:[[self class] networkThread]
+               withObject:[completion copy]
+            waitUntilDone:NO];
+}
+
+- (void)flushPendingWritesOnNetworkThread:(ICMQTTFlushCompletion)completion
+{
+    if (completion) {
+        [_flushCompletionBlocks addObject:[completion copy]];
+    }
+
+    [self flushWriteBuffer];
+    if (_writeBuffer.length == 0 || _connectionState != ICMQTTConnectionStateConnected) {
+        [self _completePendingFlushCompletions];
+    }
+}
+
 - (void)flushWriteBuffer
 {
     if (!_outputStream || _outputStream.streamStatus != NSStreamStatusOpen) {
@@ -441,6 +481,9 @@ typedef NS_ENUM(uint8_t, ICMQTTPacketType) {
 
     if (len > 0) {
         [_writeBuffer replaceBytesInRange:NSMakeRange(0, len) withBytes:NULL length:0];
+        if (_writeBuffer.length == 0) {
+            [self _completePendingFlushCompletions];
+        }
     }
 }
 

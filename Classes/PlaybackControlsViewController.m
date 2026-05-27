@@ -198,8 +198,9 @@
     //DevD To DO
     routeButton.showsRouteButton = YES;
     [routeButton setRouteButtonImage:[[UIImage imageNamed:@"Player AirPlay"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
-    [routeButton setRouteButtonImage:[UIImage imageNamed:@"Player AirPlay Active"] forState:UIControlStateSelected];
+    [routeButton setRouteButtonImage:[[UIImage imageNamed:@"Player AirPlay Active"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateSelected];
 #pragma clang diagnostic pop
+    routeButton.tintColor = self.view.tintColor;
     
     [self.toolsView addSubview:routeButton];
     self.routeButton = routeButton;
@@ -480,6 +481,7 @@
 - (void) setTintColor:(UIColor *)tintColor
 {
     self.view.tintColor = tintColor;
+    self.routeButton.tintColor = tintColor;
 }
 
 - (void) setShown:(BOOL)shown

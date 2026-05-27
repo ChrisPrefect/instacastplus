@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instacast Test-First Bugfix"
+  short_description: "Reproduce Instacast bugs before fixing"
+  default_prompt: "Use $instacast-test-first-bugfix to reproduce this InstacastPlus bug with a focused regression test, then fix the real root cause."

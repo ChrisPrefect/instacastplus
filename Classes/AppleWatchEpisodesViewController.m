@@ -16,6 +16,12 @@
 
 static NSString* const ICAppleWatchEpisodeCellIdentifier = @"AppleWatchEpisodeCell";
 static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCell";
+static CGFloat const ICAppleWatchHeaderHorizontalInset = 16.f;
+static CGFloat const ICAppleWatchHeaderTopInset = 10.f;
+static CGFloat const ICAppleWatchHeaderBottomInset = 10.f;
+static CGFloat const ICAppleWatchHeaderSummaryHeight = 20.f;
+static CGFloat const ICAppleWatchHeaderLineHeight = 16.f;
+static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 
 @interface AppleWatchEpisodesViewController ()
 
@@ -95,21 +101,24 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     UILabel* summaryLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     summaryLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
     summaryLabel.textColor = ICTextColor;
-    summaryLabel.numberOfLines = 0;
+    summaryLabel.numberOfLines = 1;
+    summaryLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [header addSubview:summaryLabel];
     self.summaryLabel = summaryLabel;
 
     UILabel* syncLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     syncLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
     syncLabel.textColor = ICMutedTextColor;
-    syncLabel.numberOfLines = 2;
+    syncLabel.numberOfLines = 1;
+    syncLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [header addSubview:syncLabel];
     self.syncLabel = syncLabel;
 
     UILabel* storageLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     storageLabel.font = [UIFont systemFontOfSize:ICFontSize(12)];
     storageLabel.textColor = ICMutedTextColor;
-    storageLabel.numberOfLines = 2;
+    storageLabel.numberOfLines = 1;
+    storageLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [header addSubview:storageLabel];
     self.storageLabel = storageLabel;
 
@@ -141,29 +150,30 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 
 - (void)_layoutHeaderForWidth:(CGFloat)width
 {
-    CGFloat contentWidth = MAX(0, width - 32);
-    CGFloat y = 10;
+    CGFloat contentWidth = MAX(0, width - 2 * ICAppleWatchHeaderHorizontalInset);
+    CGFloat y = ICAppleWatchHeaderTopInset;
     BOOL showsSummary = (self.summaryLabel.text.length > 0);
     BOOL showsStorage = (self.storageLabel.text.length > 0);
-    BOOL showsStatus = (self.syncLabel.text.length > 0);
+    BOOL reservesStatus = showsStorage;
+    BOOL showsStatus = reservesStatus && (self.syncLabel.text.length > 0);
 
     if (showsSummary) {
-        CGSize summarySize = [self.summaryLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
-        self.summaryLabel.frame = CGRectMake(16, y, contentWidth, ceil(summarySize.height));
-        y += ceil(summarySize.height) + 10;
+        self.summaryLabel.hidden = NO;
+        self.summaryLabel.frame = CGRectMake(ICAppleWatchHeaderHorizontalInset, y, contentWidth, ICAppleWatchHeaderSummaryHeight);
+        y += ICAppleWatchHeaderSummaryHeight + 10;
     }
     else {
+        self.summaryLabel.hidden = YES;
         self.summaryLabel.frame = CGRectZero;
     }
 
     if (showsStorage) {
         self.storageLabel.hidden = NO;
-        CGSize storageSize = [self.storageLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
-        self.storageLabel.frame = CGRectMake(16, y, contentWidth, MIN(38, ceil(storageSize.height)));
-        y += CGRectGetHeight(self.storageLabel.frame) + 5;
+        self.storageLabel.frame = CGRectMake(ICAppleWatchHeaderHorizontalInset, y, contentWidth, ICAppleWatchHeaderLineHeight);
+        y += ICAppleWatchHeaderLineHeight + 5;
 
         self.storageProgressTrackView.hidden = NO;
-        self.storageProgressTrackView.frame = CGRectMake(16, y, contentWidth, 4);
+        self.storageProgressTrackView.frame = CGRectMake(ICAppleWatchHeaderHorizontalInset, y, contentWidth, ICAppleWatchHeaderProgressHeight);
         self.storageProgressTrackView.layer.cornerRadius = 2;
         self.storageUsedProgressView.layer.cornerRadius = 2;
         self.storagePodcastProgressView.layer.cornerRadius = 2;
@@ -179,16 +189,15 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
         self.storagePodcastProgressView.frame = CGRectZero;
     }
 
-    if (showsStatus) {
-        CGSize syncSize = [self.syncLabel sizeThatFits:CGSizeMake(contentWidth, CGFLOAT_MAX)];
-        self.syncLabel.hidden = NO;
-        self.syncLabel.frame = CGRectMake(16, y, contentWidth, MIN(38, ceil(syncSize.height)));
-        y += CGRectGetHeight(self.syncLabel.frame) + 10;
+    if (reservesStatus) {
+        self.syncLabel.hidden = !showsStatus;
+        self.syncLabel.frame = CGRectMake(ICAppleWatchHeaderHorizontalInset, y, contentWidth, ICAppleWatchHeaderLineHeight);
+        y += ICAppleWatchHeaderLineHeight + ICAppleWatchHeaderBottomInset;
     }
     else {
         self.syncLabel.hidden = YES;
         self.syncLabel.frame = CGRectZero;
-        y += 4;
+        y += ICAppleWatchHeaderBottomInset;
     }
 
     CGRect headerFrame = self.headerContainerView.frame;
@@ -224,15 +233,36 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 - (void)_reloadDataFromManager
 {
     AppleWatchSyncManager* manager = [AppleWatchSyncManager sharedManager];
+    NSArray<AppleWatchEpisodeState*>* newStates = nil;
     if (manager.supported && manager.paired && manager.watchAppInstalled) {
-        self.states = [manager visibleEpisodeStates];
+        newStates = [manager visibleEpisodeStates];
     }
     else {
-        self.states = @[];
+        newStates = @[];
     }
+    BOOL firstLoad = (self.states == nil);
+    BOOL episodeHashesChanged = firstLoad || ![[self _episodeHashesForStates:self.states] isEqualToArray:[self _episodeHashesForStates:newStates]];
+    self.states = newStates;
     [self _updateHeaderText];
-    [self.tableView reloadData];
+    if (episodeHashesChanged) {
+        [self.tableView reloadData];
+    }
+    else {
+        NSArray<NSIndexPath*>* visibleIndexPaths = [self.tableView indexPathsForVisibleRows] ?: @[];
+        if (visibleIndexPaths.count > 0) {
+            [self.tableView reloadRowsAtIndexPaths:visibleIndexPaths withRowAnimation:UITableViewRowAnimationNone];
+        }
+    }
     [self.refreshControl endRefreshing];
+}
+
+- (NSArray<NSString*>*)_episodeHashesForStates:(NSArray<AppleWatchEpisodeState*>*)states
+{
+    NSMutableArray<NSString*>* hashes = [NSMutableArray arrayWithCapacity:states.count];
+    for (AppleWatchEpisodeState* state in states) {
+        [hashes addObject:state.episodeHash ?: @""];
+    }
+    return hashes;
 }
 
 - (void)_updateHeaderText
@@ -298,10 +328,10 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
 
 - (NSString*)_statusTextForManager:(AppleWatchSyncManager*)manager
 {
-    if (manager.currentWatchDownloadTitle.length > 0 && manager.currentWatchExpectedBytes > 0) {
+    if (manager.currentWatchExpectedBytes > 0) {
         NSString* downloaded = [self _byteStringForBytes:manager.currentWatchDownloadedBytes];
         NSString* expected = [self _byteStringForBytes:manager.currentWatchExpectedBytes];
-        return [NSString stringWithFormat:@"Watch lädt \"%@\" (%@/%@)".ls, manager.currentWatchDownloadTitle, downloaded, expected];
+        return [NSString stringWithFormat:@"Watch lädt Podcasts (%@/%@)".ls, downloaded, expected];
     }
 
     return nil;
@@ -390,7 +420,7 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     cell.showsPlaybackProgress = NO;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.accessoryType = UITableViewCellAccessoryNone;
-    cell.panRecognizer.enabled = NO;
+    cell.usesNativeSwipeActions = YES;
     cell.topSeparator = (indexPath.row > 0);
     [cell.playAccessoryButton removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
     [cell.playAccessoryButton addTarget:self action:@selector(playComboButtonAction:) forControlEvents:UIControlEventTouchUpInside];
@@ -427,12 +457,7 @@ static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCe
     }
 
     UIApplication* application = [UIApplication sharedApplication];
-    if (@available(iOS 10.0, *)) {
-        [application openURL:url options:@{} completionHandler:nil];
-    }
-    else {
-        [application openURL:url];
-    }
+    [application openURL:url options:@{} completionHandler:nil];
 }
 
 - (NSString*)_emptyMessage

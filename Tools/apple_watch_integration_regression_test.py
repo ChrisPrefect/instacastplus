@@ -505,10 +505,10 @@ require(
     "storageProgressTrackView" in apple_watch_controller
     and "storageUsedProgressView" in apple_watch_controller
     and "storagePodcastProgressView" in apple_watch_controller
-    and '"Watch lädt \\"%@\\" (%@/%@)"' in apple_watch_controller
+    and '"Watch lädt Podcasts (%@/%@)"' in apple_watch_controller
     and '"%ld auf der Watch\\n%ld werden geladen"' not in apple_watch_controller
     and "showsPlaybackProgress = NO" in apple_watch_controller,
-    "The iOS Apple Watch page must show current Watch download/storage status and disable normal cell playback progress bars.",
+    "The iOS Apple Watch page must show stable Watch download/storage status and disable normal cell playback progress bars.",
 )
 
 require(
@@ -533,7 +533,7 @@ require(
 require(
     "Installiere die InstacastPlus-Watch-App über die Watch-App auf deinem iPhone" in apple_watch_controller
     and "manager.supported && manager.paired && manager.watchAppInstalled" in apple_watch_controller
-    and "self.states = @[]" in apple_watch_controller
+    and "newStates = @[]" in apple_watch_controller
     and "self.storageLabel.text = canManageWatchApp ? [self _storageTextForManager:manager] : nil" in apple_watch_controller
     and "self.navigationItem.rightBarButtonItem = canManageWatchApp ? self.editIconButtonItem : nil" in apple_watch_controller,
     "The iOS Apple Watch page must render the not-installed state as setup text only, without storage, episode rows, or edit controls.",

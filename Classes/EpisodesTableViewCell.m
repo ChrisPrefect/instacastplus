@@ -189,11 +189,56 @@
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
 }
 
+- (void) _moveEpisodeContentToView:(UIView*)view
+{
+    NSArray* episodeContentViews = @[
+        self.titleLabel,
+        self.summaryLabel,
+        self.iconView,
+        self.durationLabel,
+        self.dateLabel,
+        self.consumeIndicator2,
+        self.transcriptIndicator,
+        self.watchIndicator,
+        self.videoIndicator,
+        self.starredIndicator,
+        self.playAccessoryButton,
+        progressView
+    ];
+
+    for (UIView* episodeContentView in episodeContentViews) {
+        if (episodeContentView.superview != view) {
+            [view addSubview:episodeContentView];
+        }
+    }
+
+    [self.contentView bringSubviewToFront:self.topSeparatorView];
+}
+
+- (void)setUsesNativeSwipeActions:(BOOL)usesNativeSwipeActions
+{
+    _usesNativeSwipeActions = usesNativeSwipeActions;
+    self.panRecognizer.enabled = !usesNativeSwipeActions;
+    self.panningContentView.hidden = NO;
+    [self _moveEpisodeContentToView:self.panningContentView];
+
+    if (usesNativeSwipeActions) {
+        self.showsDeleteControl = NO;
+        self.leftPanImage.hidden = YES;
+        self.rightPanImage.hidden = YES;
+        self.moreButton.hidden = YES;
+        self.deleteButton.hidden = YES;
+    }
+
+    [self setNeedsLayout];
+}
+
 
 - (void) prepareForReuse {
     [super prepareForReuse];
     _textSizeCacheValid = NO;
 
+    self.usesNativeSwipeActions = NO;
     self.objectValue = nil;
     self.leftPanImage.hidden = YES;
     self.rightPanImage.hidden = YES;
@@ -552,7 +597,7 @@
     self.videoIndicator.tintColor = ICMutedTextColor;
     
     
-	CGRect bounds = self.bounds;
+    CGRect bounds = self.bounds;
     CGRect contentBounds = self.contentView.bounds;
     contentBounds.origin = CGPointZero;
     self.panningContentView.frame = contentBounds;
@@ -693,7 +738,8 @@
 //        self.panningContentView.backgroundColor = [UIColor clearColor];
 //    }
     progressView.hidden = !self.showsPlaybackProgress || self.consumeIndicator2.hidden;
-    progressView.frame = CGRectMake(0, CGRectGetHeight([[self panningContentView] bounds]) - 2.0f, CGRectGetWidth([[self panningContentView] bounds]), 2.0f);
+    CGRect progressBounds = progressView.superview.bounds;
+    progressView.frame = CGRectMake(0, CGRectGetHeight(progressBounds) - 2.0f, CGRectGetWidth(progressBounds), 2.0f);
 }
 
 - (void) willTransitionToState:(UITableViewCellStateMask)state

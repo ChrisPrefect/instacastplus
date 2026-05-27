@@ -3382,7 +3382,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
         cell.embedded = YES;
         cell.upNextStyle = YES;
-        cell.panRecognizer.enabled = NO;
+        cell.usesNativeSwipeActions = YES;
 
         // Set podcast image
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];

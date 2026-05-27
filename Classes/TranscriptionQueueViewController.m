@@ -504,9 +504,12 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
     cell.tag = indexPath.row;
     // (i) accessory opens the detailed log (durations, sizes, char/chapter counts).
-    UIButton* logButton = [UIButton buttonWithType:UIButtonTypeInfoLight];
+    UIButton* logButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButtonConfiguration* logButtonConfiguration = [UIButtonConfiguration plainButtonConfiguration];
+    logButtonConfiguration.image = [UIImage systemImageNamed:@"info.circle"];
+    logButtonConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(8, 0, -8, 0);
+    logButton.configuration = logButtonConfiguration;
     logButton.frame = CGRectMake(0, 0, 44, 44);
-    logButton.imageEdgeInsets = UIEdgeInsetsMake(8, 0, -8, 0);
     logButton.tag = indexPath.row;
     [logButton addTarget:self action:@selector(_showLogFromAccessoryButton:) forControlEvents:UIControlEventTouchUpInside];
     cell.rightContentAccessoryView = logButton;

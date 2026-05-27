@@ -15,6 +15,7 @@ playback_controls = (ROOT / "Classes" / "PlaybackControlsViewController.m").read
 
 chapter_selection = player_info.split("- (void) tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath", 1)[1]
 chapter_selection = chapter_selection.split("else if ([self _hasBookmarks]", 1)[0]
+play_block = playback_manager.split("- (void) play", 1)[1].split("- (void) pause", 1)[0]
 
 require(
     "pman.currentChapter = indexPath.row;" in chapter_selection
@@ -44,4 +45,15 @@ require(
 require(
     "self.timeSlider.value = pman.position;" in playback_controls,
     "The player seek bar must use PlaybackManager.position so transient seek targets update the highlighted chapter segment.",
+)
+require(
+    "BOOL hasRecentSeek" in play_block
+    and "if (!hasRecentSeek && [USER_DEFAULTS boolForKey:PlayerReplayAfterPause]" in play_block
+    and "self.lastPauseDate = nil;" in play_block,
+    "Playback after an explicit chapter seek must not apply replay-after-pause from the sleep timer.",
+)
+require(
+    "if (hasRecentSeek && self.duration > 0) {" in play_block
+    and "resumeTime = self.seekingPosition * self.duration;" in play_block,
+    "If playback reopens the local cached file after an explicit seek, it must reopen at the seek target, not the stale AVPlayer time.",
 )

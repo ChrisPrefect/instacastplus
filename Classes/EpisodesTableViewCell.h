@@ -25,6 +25,7 @@
 @property (nonatomic) BOOL upNextStyle; // feed title above episode title, with image
 @property (nonatomic) BOOL showsPlaybackProgress;
 @property (nonatomic, strong, readonly) UIPanGestureRecognizer* panRecognizer;
+@property (nonatomic) BOOL usesNativeSwipeActions;
 @property (nonatomic) BOOL topSeparator;
 
 - (void) updatePlayComboButtonState;

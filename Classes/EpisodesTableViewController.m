@@ -893,6 +893,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 		BOOL flag = !episode.consumed;
 		
         self.userAction = YES;
+        self.suppressNextListReload = YES;
         [DMANAGER markEpisode:episode asConsumed:flag];
         
         // stop playback of episode
@@ -900,7 +901,10 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 			[[AudioSession sharedAudioSession] stop];
 		}
 		
-        [cell updatePlayedAndStarredState];
+        BOOL removed = [self _removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:indexPath];
+        if (!removed) {
+            [cell updatePlayedAndStarredState];
+        }
 		[self _updateToolbarItemsAnimated:NO];
         [self _updateToolbarLabels];
 		
@@ -926,9 +930,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 		BOOL flag = !episode.starred;
 		
         self.userAction = YES;
+        self.suppressNextListReload = YES;
         [DMANAGER markEpisode:episode asStarred:flag];
         
-        [cell updatePlayedAndStarredState];
+        BOOL removed = [self _removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:indexPath];
+        if (!removed) {
+            [cell updatePlayedAndStarredState];
+        }
 		[self _updateToolbarItemsAnimated:NO];
         [self _updateToolbarLabels];
 		self.userAction = NO;
@@ -1102,6 +1110,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     }
 
     return nil;
+}
+
+- (BOOL) _removeEpisodeFromDisplayedListIfNeededAfterMutation:(CDEpisode*)episode atIndexPath:(NSIndexPath*)indexPath
+{
+    return NO;
 }
 
 - (UIContextualAction*) _contextualSwipeActionForSwipeAction:(ICEpisodeSwipeAction)swipeAction atIndexPath:(NSIndexPath*)indexPath
@@ -1284,11 +1297,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         {
             BOOL flag = !episode.consumed;
             self.userAction = YES;
+            self.suppressNextListReload = YES;
             [DMANAGER markEpisode:episode asConsumed:flag];
             if (flag && [episode isEqual:[AudioSession sharedAudioSession].episode]) {
                 [[AudioSession sharedAudioSession] stop];
             }
-            if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+            BOOL removed = [self _removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:indexPath];
+            if (!removed && [cell isKindOfClass:[EpisodesTableViewCell class]]) {
                 [cell updatePlayedAndStarredState];
             }
             [self _updateToolbarItemsAnimated:NO];
@@ -1306,16 +1321,23 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         {
             CacheManager* cman = [CacheManager sharedCacheManager];
             if ([cman episodeIsCached:episode]) {
+                self.userAction = YES;
+                self.suppressNextListReload = YES;
                 [cman removeCacheForEpisode:episode automatic:NO];
-                if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                BOOL removed = [self _removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:indexPath];
+                if (!removed && [cell isKindOfClass:[EpisodesTableViewCell class]]) {
                     [cell updatePlayComboButtonState];
                 }
+                self.userAction = NO;
                 PlaySoundFile(@"AffirmOut", NO);
             } else if ([cman isCachingEpisode:episode]) {
+                self.userAction = YES;
+                self.suppressNextListReload = YES;
                 [cman cancelCachingEpisode:episode disableAutoDownload:YES];
                 if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
                     [cell updatePlayComboButtonState];
                 }
+                self.userAction = NO;
                 PlaySoundFile(@"AffirmOut", NO);
             } else {
                 WEAK_SELF
@@ -1338,16 +1360,19 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         case ICEpisodeSwipeActionDelete:
         {
             self.userAction = YES;
-
-            // Remove episode from data source array before table update
-            NSMutableArray* mutableEpisodes = [self.episodes mutableCopy];
-            [mutableEpisodes removeObjectAtIndex:indexPath.row];
-            self.episodes = [mutableEpisodes copy];
+            self.suppressNextListReload = YES;
 
             [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
             [DMANAGER setEpisode:episode archived:YES];
 
-            [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+            BOOL removed = [self _removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:indexPath];
+            if (!removed) {
+                NSMutableArray* mutableEpisodes = [self.episodes mutableCopy];
+                [mutableEpisodes removeObjectAtIndex:indexPath.row];
+                self.episodes = [mutableEpisodes copy];
+
+                [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
+            }
 
             [self _updateToolbarItemsAnimated:NO];
             [self _updateToolbarLabels];
@@ -1660,11 +1685,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                              [weakSelf.navigationController pushViewController:settingsVC animated:YES];
                                                              return;
                                                          }
-                                                         [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:episode.objectHash
-                                                                                                        episodeTitle:episode.title ?: @""
-                                                                                                           feedTitle:episode.feed.title ?: @""];
-                                                         [weakSelf _showTranscriptionToastWithText:NSLocalizedString(@"Kapitelerkennung gestartet", nil)];
-                                                         PlaySoundFile(@"AffirmIn", NO);
+                                                         BOOL started = [[TranscriptionQueue shared] generateChaptersWithEpisodeHash:episode.objectHash
+                                                                                                                         episodeTitle:episode.title ?: @""
+                                                                                                                            feedTitle:episode.feed.title ?: @""];
+                                                         if (started) {
+                                                             [weakSelf _showTranscriptionToastWithText:NSLocalizedString(@"Kapitelerkennung gestartet", nil)];
+                                                             PlaySoundFile(@"AffirmIn", NO);
+                                                         } else {
+                                                             AudioServicesPlaySystemSound(1519);
+                                                         }
                                                      }];
         [actions addObject:chaptersAction];
     }
@@ -2112,7 +2141,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     
     cell.objectValue = episode;
     cell.playAccessoryButton.userInfo = episode;
-    cell.panRecognizer.enabled = NO;
+    cell.usesNativeSwipeActions = YES;
     
     if (self.showsImage) {
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];

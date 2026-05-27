@@ -342,6 +342,7 @@
 "Downloading finished." = "Downloads beendet";
 "New episode available." = "Neue Folge verfügbar";
 "Notifications" = "Mitteilungen";
+"Podcast update failed." = "Podcast-Aktualisierung fehlgeschlagen";
 "Refreshing finished." = "Fertig aktualisiert";
 "Test Notification System" = "Mitteilungssystem testen";
 "Types" = "Typen";

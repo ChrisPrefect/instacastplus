@@ -11,6 +11,7 @@
 @interface GeneralSettingsViewController : UITableViewController<UIColorPickerViewControllerDelegate>
 {
     NSArray* appIconsArray;
+    NSArray* appIconNamesArray;
     UIColor* selectedThemeColor;
     UIColor* selectedPlayerColor;
     BOOL isPlayerColorSelected;

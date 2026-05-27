@@ -38,6 +38,8 @@
 	<integer>30</integer>
 	<key>EnableManualRefreshFinishedNotification</key>
 	<false/>
+	<key>EnableRefreshFailureNotification</key>
+	<false/>
 	<key>EnableManualDownloadFinishedNotification</key>
 	<false/>
 	<key>ShowUnavailableEpisodes</key>

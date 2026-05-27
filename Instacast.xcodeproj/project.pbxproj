@@ -321,6 +321,7 @@
 		BDDA2F12D823EEED173BED3F /* SmartListWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDB33E265B93207D959630A1 /* SmartListWidget.swift */; };
 		BF81C67275563B9BDFDA692E /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9F49A1BF113FE64D009560D8 /* AVFoundation.framework */; };
 		C300DED378385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
+		C300DED478385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
 		C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */; };
 		C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */; };
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
@@ -332,7 +333,6 @@
 		CCA420203F2DE44E828D25C0 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 768D9E9235479C0E57092DBD /* WhisperKit */; };
 		CD0082042CD65D91001E081B /* InstacastSceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */; };
 		CD00AA012D10A00100000001 /* ICShareItem.m in Sources */ = {isa = PBXBuildFile; fileRef = CD00AA002D10A00100000001 /* ICShareItem.m */; };
-		CD0SILENCE2026020100000002 /* Silence.caf in Resources */ = {isa = PBXBuildFile; fileRef = CD0SILENCE2026020100000001 /* Silence.caf */; };
 		CD7A884E2C60C27F0033C023 /* light_dd_ic.png in Resources */ = {isa = PBXBuildFile; fileRef = CD7A884C2C60C27E0033C023 /* light_dd_ic.png */; };
 		CD7A884F2C60C27F0033C023 /* dark_dd_ic.png in Resources */ = {isa = PBXBuildFile; fileRef = CD7A884D2C60C27F0033C023 /* dark_dd_ic.png */; };
 		CD97E3722D109A6D00A61ED8 /* GradientProgressView.m in Sources */ = {isa = PBXBuildFile; fileRef = CD97E3712D109A6D00A61ED8 /* GradientProgressView.m */; };
@@ -977,7 +977,6 @@
 		CD0082032CD65D91001E081B /* InstacastSceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastSceneDelegate.m; sourceTree = "<group>"; };
 		CD00AA002D10A00100000001 /* ICShareItem.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICShareItem.m; sourceTree = "<group>"; };
 		CD00AA012D10A00100000002 /* ICShareItem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICShareItem.h; sourceTree = "<group>"; };
-		CD0SILENCE2026020100000001 /* Silence.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Silence.caf; sourceTree = "<group>"; };
 		CD7A884C2C60C27E0033C023 /* light_dd_ic.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = light_dd_ic.png; sourceTree = "<group>"; };
 		CD7A884D2C60C27F0033C023 /* dark_dd_ic.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = dark_dd_ic.png; sourceTree = "<group>"; };
 		CD97E3702D109A6D00A61ED8 /* GradientProgressView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GradientProgressView.h; sourceTree = "<group>"; };
@@ -1115,6 +1114,7 @@
 				F5291C3A24F8C32DDB1A6D81 /* WatchConnectivity.framework in Frameworks */,
 				BF81C67275563B9BDFDA692E /* AVFoundation.framework in Frameworks */,
 				ADE3E3ECB7559DA5D7AF009E /* SwiftUI.framework in Frameworks */,
+				C300DED478385F60CDCE084B /* AppIntents.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1302,7 +1302,6 @@
 				1B1724D6145598D900B4959D /* Shake.caf */,
 				1BD242CA15457CE50044DFF9 /* ClockTicking.caf */,
 				1B2A468E1925083E0042C3E5 /* Tink.caf */,
-				CD0SILENCE2026020100000001 /* Silence.caf */,
 			);
 			path = Sounds;
 			sourceTree = "<group>";
@@ -2398,7 +2397,6 @@
 				1BA27BE916A450BB00D51D59 /* Defaults.plist in Resources */,
 				1B919E6317BF99B100A30BDE /* tv.png in Resources */,
 				1B2A468F1925089B0042C3E5 /* Tink.caf in Resources */,
-				CD0SILENCE2026020100000002 /* Silence.caf in Resources */,
 				188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */,
 				CDA3FD942C5FF43700314B5A /* ChapterImageCell.xib in Resources */,
 				CD7A884F2C60C27F0033C023 /* dark_dd_ic.png in Resources */,
@@ -2834,6 +2832,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2906,7 +2905,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-13 AppIcon-12 AppIcon-11 AppIcon-10 AppIcon-9 AppIcon-8 AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -2914,6 +2913,7 @@
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = InstacastMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 10;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
@@ -2989,7 +2989,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-13 AppIcon-12 AppIcon-11 AppIcon-10 AppIcon-9 AppIcon-8 AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -3057,6 +3057,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;

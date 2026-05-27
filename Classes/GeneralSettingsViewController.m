@@ -67,7 +67,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"General".ls;
-    self->appIconsArray = [NSArray arrayWithObjects: @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7", nil];
+    self->appIconsArray = @[ @"appicon12", @"appicon13", @"appicon8", @"appicon9", @"appicon10", @"appicon11", @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7" ];
+    self->appIconNamesArray = @[ @"AppIcon-12", @"AppIcon-13", @"AppIcon-8", @"AppIcon-9", @"AppIcon-10", @"AppIcon-11", @"AppIcon-1", @"AppIcon-2", @"AppIcon-3", @"AppIcon-4", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7" ];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -1121,7 +1122,7 @@ API_AVAILABLE(ios(14.0)){
 
 - (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath
 {
-    NSString* appIconName = [NSString stringWithFormat:@"AppIcon-%ld", (long)(indexPath.item + 1)];
+    NSString* appIconName = self->appIconNamesArray[indexPath.item];
     [[UIApplication sharedApplication] setAlternateIconName:appIconName completionHandler:^(NSError * _Nullable error) {
         if (error != nil){
             ErrLog(@"setAlternateIconName error: %@", error.localizedDescription);

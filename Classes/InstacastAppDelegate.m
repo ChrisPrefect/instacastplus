@@ -437,7 +437,10 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     [[AppleWatchSyncManager sharedManager] start];
 
     [ICTranscriptionDebugAutomation startCommandProcessing];
-    [ICTranscriptionDebugAutomation handleLaunchArguments];
+    BOOL handledTranscriptionLaunchArguments = [ICTranscriptionDebugAutomation handleLaunchArguments];
+    if (handledTranscriptionLaunchArguments) {
+        [[ICDiagnosticLogger shared] logEvent:@"debug-automation" message:@"Launch-Argumente verarbeitet" metadata:nil];
+    }
 }
 
 

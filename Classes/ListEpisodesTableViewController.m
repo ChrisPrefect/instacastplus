@@ -29,6 +29,9 @@
 
 - (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures
 {
+    if (![USER_DEFAULTS boolForKey:EnableRefreshFailureNotification]) {
+        return;
+    }
     if (failures.count == 0) {
         return;
     }
@@ -93,6 +96,12 @@
         
         [self addTaskObserver:self forKeyPath:@"list.numberOfEpisodes" task:^(id obj, NSDictionary *change) {
             [weakSelf _updateToolbarLabels];
+            if (weakSelf.suppressNextListReload) {
+                weakSelf.suppressNextListReload = NO;
+                [weakSelf _updateToolbarItemsAnimated:NO];
+                [weakSelf _updateToolbarLabels];
+                return;
+            }
             
             if (!weakSelf.userAction) {
                 [weakSelf updateEpisodes];
@@ -159,7 +168,7 @@
     self.title = self.list.name;
 
     if ([self _showsEditorButton]) {
-        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+        self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
                                                                                     style:UIBarButtonItemStylePlain
                                                                                    target:self
                                                                                    action:@selector(editButtonAction:)];
@@ -266,6 +275,90 @@
 - (void)enumerateEpisodesUsingBlock:(void (^)(CDEpisode* episode, NSUInteger idx, BOOL *stop))block
 {
     [self.allEpisodes enumerateObjectsUsingBlock:block];
+}
+
+- (BOOL)_episode:(CDEpisode*)episode matchesCurrentEpisodeList:(CDEpisodeList*)list
+{
+    if (!episode || !list) {
+        return YES;
+    }
+
+    if (episode.archived || !episode.feed.subscribed) {
+        return NO;
+    }
+
+    if (!list.audio && !episode.video) {
+        return NO;
+    }
+    if (!list.video && episode.video) {
+        return NO;
+    }
+    if (!list.unplayed && !(episode.consumed || (!episode.consumed && episode.position > 0))) {
+        return NO;
+    }
+    if (!list.unfinished && episode.position != 0) {
+        return NO;
+    }
+    if (!list.played && episode.consumed) {
+        return NO;
+    }
+    if (!list.starred && episode.starred) {
+        return NO;
+    }
+    if (!list.notStarred && !episode.starred) {
+        return NO;
+    }
+
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    BOOL cached = [cacheManager episodeIsCached:episode fastLookup:YES];
+    if (!list.downloaded && cached) {
+        return NO;
+    }
+    if (!list.notDownloaded && !cached) {
+        return NO;
+    }
+
+    if ([list.includedFeeds count] > 0 && ![list.includedFeeds containsObject:episode.feed]) {
+        return NO;
+    }
+
+    return YES;
+}
+
+- (void)_removeEpisode:(CDEpisode*)episode fromArrayProperty:(NSString*)propertyName
+{
+    NSMutableArray* mutableEpisodes = [[self valueForKey:propertyName] mutableCopy];
+    NSUInteger index = [mutableEpisodes indexOfObject:episode];
+    if (index == NSNotFound && episode.objectHash.length > 0) {
+        index = [mutableEpisodes indexOfObjectPassingTest:^BOOL(id candidate, NSUInteger idx, BOOL* stop) {
+            return [[candidate objectHash] isEqualToString:episode.objectHash];
+        }];
+    }
+    if (index != NSNotFound) {
+        [mutableEpisodes removeObjectAtIndex:index];
+        [self setValue:[mutableEpisodes copy] forKey:propertyName];
+    }
+}
+
+- (BOOL) _removeEpisodeFromDisplayedListIfNeededAfterMutation:(CDEpisode*)episode atIndexPath:(NSIndexPath*)indexPath
+{
+    if (![self.list isKindOfClass:[CDEpisodeList class]]) {
+        return NO;
+    }
+
+    if ([self _episode:episode matchesCurrentEpisodeList:(CDEpisodeList*)self.list]) {
+        return NO;
+    }
+
+    if (!indexPath || indexPath.row >= [self.episodes count]) {
+        return NO;
+    }
+
+    self.suppressNextListReload = YES;
+    [self _removeEpisode:episode fromArrayProperty:@"episodes"];
+    [self _removeEpisode:episode fromArrayProperty:@"allEpisodes"];
+    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+    return YES;
 }
 
 - (NSString*) _scrollPersistenceKey

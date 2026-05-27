@@ -139,6 +139,9 @@
 
 - (void) _presentRefreshFailureAlert:(NSArray<NSString*>*)failures
 {
+    if (![USER_DEFAULTS boolForKey:EnableRefreshFailureNotification]) {
+        return;
+    }
     if (failures.count == 0) {
         return;
     }
@@ -194,8 +197,8 @@
     [super viewDidLoad];
     [self setScrollView:self.tableView contentInsets:UIEdgeInsetsZero byAdjustingForStandardBars:YES];
     
-    // Use edit icon instead of text
-    self.editButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+    // Use settings-style icon instead of text
+    self.editButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"gearshape"]
                                                             style:UIBarButtonItemStylePlain
                                                            target:self
                                                            action:@selector(toggleEditMode:)];
@@ -529,7 +532,7 @@
     [super setEditing:editing animated:animated];
 
     // Update edit button icon
-    UIImage* editImage = editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"pencil"];
+    UIImage* editImage = editing ? [UIImage systemImageNamed:@"checkmark"] : [UIImage systemImageNamed:@"gearshape"];
     self.navigationItem.rightBarButtonItem.image = editImage;
 
     [self _updateToolbarItemsAnimated:YES];
