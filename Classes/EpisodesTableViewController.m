@@ -29,6 +29,7 @@
 
 #import "ToolbarLabelsViewController.h"
 #import "PlaybackDefines.h"
+#import "AudioSession+UpNextPlaylist.h"
 #import "ICSidebarPanGestureRecognizer.h"
 #import "UpNextTableViewController.h"
 #import "PortraitNavigationController.h"
@@ -85,8 +86,13 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     if (observing && !_observing)
     {
+        __weak EpisodesTableViewController* weakSelf = self;
+
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
             [self _setNeedsPlayComboButtonUpdate];
+        }];
+        [[AudioSession sharedAudioSession] addTaskObserver:self forKeyPath:@"playlist" task:^(__unused id obj, __unused NSDictionary *change) {
+            [weakSelf _updateVisiblePlaylistIndicators];
         }];
 
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
@@ -119,6 +125,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [nc removeObserver:self];
 
         [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachingEpisodes"];
+        [[AudioSession sharedAudioSession] removeTaskObserver:self forKeyPath:@"playlist"];
 
         _observing = NO;
     }
@@ -136,6 +143,26 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     (void)notification;
     if (self.tableView.window) {
         [self.tableView reloadData];
+    }
+}
+
+- (void) _updateVisiblePlaylistIndicators
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _updateVisiblePlaylistIndicators];
+        });
+        return;
+    }
+
+    if (!self.tableView.window) {
+        return;
+    }
+
+    for (UITableViewCell* visibleCell in self.tableView.visibleCells) {
+        if ([visibleCell isKindOfClass:[EpisodesTableViewCell class]]) {
+            [(EpisodesTableViewCell*)visibleCell updatePlaylistIndicatorState];
+        }
     }
 }
 
@@ -1673,7 +1700,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     // Chapters generieren (if transcript available but no generated chapters anywhere —
     // neither in the JSON cache nor copied into Core Data on first playback).
-    BOOL hasTranscript = (episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
+    BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash] || episode.chapters.count > 0;
     if (hasTranscript && !hasAnyChapters) {
         UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil)

@@ -666,6 +666,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
             if (!innerSelf) {
                 return;
             }
+            [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:innerSelf.episode];
 
             dispatch_async(innerSelf.resourceLoaderQueue, ^{
                 if (!success) {
@@ -1564,6 +1565,7 @@ didReceiveResponse:(NSURLResponse *)response
 	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
 
     BOOL shouldCacheViaStream = (!isCached &&
+                                 ![eman isCachingEpisode:anEpisode] &&
                                  [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] &&
                                  media.fileURL != nil &&
                                  anEpisode.objectHash.length > 0);
@@ -1608,12 +1610,14 @@ didReceiveResponse:(NSURLResponse *)response
             if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
                 return;
             }
+            [[CacheManager sharedCacheManager] updateStreamingCacheForEpisode:playingEpisode progress:progress];
             strongSelf.streamingCacheActive = !cacheComplete;
             strongSelf.streamingCacheProgress = progress;
             strongSelf.streamingCacheComplete = cacheComplete;
             [strongSelf _sendUpdateNotification];
         };
         self.streamingCacheActive = YES;
+        [eman beginStreamingCacheForEpisode:anEpisode];
         self.mediaAsset = [AVURLAsset URLAssetWithURL:self.streamCacheLoader.assetURL options:nil];
         [self.mediaAsset.resourceLoader setDelegate:self.streamCacheLoader queue:self.streamCacheLoader.resourceLoaderQueue];
     } else {

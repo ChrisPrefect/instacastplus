@@ -16,6 +16,7 @@
 
 static NSString* const ICAppleWatchEpisodeCellIdentifier = @"AppleWatchEpisodeCell";
 static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCell";
+static NSString* const ICAppleWatchSetupCellIdentifier = @"AppleWatchSetupCell";
 static CGFloat const ICAppleWatchHeaderHorizontalInset = 16.f;
 static CGFloat const ICAppleWatchHeaderTopInset = 10.f;
 static CGFloat const ICAppleWatchHeaderBottomInset = 10.f;
@@ -56,6 +57,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
                                                               action:@selector(toggleEditMode:)];
     self.navigationItem.rightBarButtonItem = self.editIconButtonItem;
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:ICAppleWatchMessageCellIdentifier];
+    [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:ICAppleWatchSetupCellIdentifier];
     [self.tableView registerClass:[EpisodesTableViewCell class] forCellReuseIdentifier:ICAppleWatchEpisodeCellIdentifier];
 
     self.refreshControl = [[UIRefreshControl alloc] init];
@@ -386,14 +388,20 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 - (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)indexPath
 {
     if (self.states.count == 0) {
-        UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchMessageCellIdentifier forIndexPath:indexPath];
         BOOL opensWatchApp = [self _emptyMessageOpensWatchApp];
-        cell.textLabel.textColor = opensWatchApp ? ICTintColor : ICMutedTextColor;
+        if (opensWatchApp) {
+            UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchSetupCellIdentifier forIndexPath:indexPath];
+            [self _configureWatchSetupCell:cell];
+            return cell;
+        }
+
+        UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchMessageCellIdentifier forIndexPath:indexPath];
+        cell.textLabel.textColor = ICMutedTextColor;
         cell.textLabel.numberOfLines = 0;
         cell.textLabel.text = [self _emptyMessage];
         cell.backgroundColor = ICBackgroundColor;
-        cell.selectionStyle = opensWatchApp ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
-        cell.accessoryType = opensWatchApp ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.accessoryType = UITableViewCellAccessoryNone;
         cell.imageView.image = nil;
         return cell;
     }
@@ -443,10 +451,56 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     return cell;
 }
 
+- (void)_configureWatchSetupCell:(UITableViewCell*)cell
+{
+    for (UIView* subview in [cell.contentView.subviews copy]) {
+        [subview removeFromSuperview];
+    }
+    cell.textLabel.text = nil;
+    cell.detailTextLabel.text = nil;
+    cell.imageView.image = nil;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.backgroundColor = ICBackgroundColor;
+
+    UILabel* label = [[UILabel alloc] initWithFrame:CGRectZero];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.text = [self _emptyMessage];
+    label.textColor = ICMutedTextColor;
+    label.font = [UIFont systemFontOfSize:ICFontSize(15)];
+    label.numberOfLines = 0;
+
+    UIButton* button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+    [button setTitle:@"Watch-App öffnen".ls forState:UIControlStateNormal];
+    button.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(15)];
+    [button addTarget:self action:@selector(_watchInstallButtonAction:) forControlEvents:UIControlEventTouchUpInside];
+
+    UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[label, button]];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentLeading;
+    stack.spacing = 10;
+    [cell.contentView addSubview:stack];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:16],
+        [stack.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-16],
+        [stack.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:12],
+        [stack.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-12],
+    ]];
+}
+
 - (BOOL)_emptyMessageOpensWatchApp
 {
     AppleWatchSyncManager* manager = [AppleWatchSyncManager sharedManager];
     return manager.supported && manager.paired && !manager.watchAppInstalled;
+}
+
+- (void)_watchInstallButtonAction:(UIButton*)button
+{
+    (void)button;
+    [self _openWatchApp];
 }
 
 - (void)_openWatchApp
@@ -478,9 +532,6 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 - (void)tableView:(UITableView*)tableView didSelectRowAtIndexPath:(NSIndexPath*)indexPath
 {
     (void)indexPath;
-    if (self.states.count == 0 && [self _emptyMessageOpensWatchApp]) {
-        [self _openWatchApp];
-    }
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 

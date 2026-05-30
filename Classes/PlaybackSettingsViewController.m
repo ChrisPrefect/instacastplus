@@ -315,6 +315,11 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                 controller.title = @"System Controls".ls;
                 controller.values = @[ @(kPlayerSeekingControls), @(kPlayerSeekingAndSkippingChaptersControls), @(kPlayerSkippingControls)];
                 controller.titles = @[ @"Seeking".ls, @"Seeking and Skipping Chapters".ls, @"Skipping".ls];
+                controller.footerTexts = @[
+                    @"System Controls Seeking Explanation".ls,
+                    @"System Controls Seeking Chapters Explanation".ls,
+                    @"System Controls Skipping Explanation".ls,
+                ];
                 [self.navigationController pushViewController:controller animated:YES];
                 break;
             }

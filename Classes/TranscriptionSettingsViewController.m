@@ -19,7 +19,8 @@
 @end
 
 typedef NS_ENUM(NSInteger, TSSection) {
-    TSSectionModels = 0,
+    TSSectionIntro = 0,
+    TSSectionModels,
     TSSectionCloud,
     TSSectionChapters,
     TSSectionAuto,
@@ -67,6 +68,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
+        case TSSectionIntro: return nil;
         case TSSectionModels: return NSLocalizedString(@"Betaversion", nil);
         case TSSectionCloud: return NSLocalizedString(@"Cloud-Zugänge", nil);
         case TSSectionChapters: return NSLocalizedString(@"Kapitel & Sponsoren", nil);
@@ -77,6 +79,8 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     switch (section) {
+        case TSSectionIntro:
+            return nil;
         case TSSectionModels:
             return nil;
         case TSSectionCloud:
@@ -91,6 +95,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
+        case TSSectionIntro: return 1;
         case TSSectionModels: return 2;
         case TSSectionCloud: return 4;
         case TSSectionChapters: return 1;
@@ -101,12 +106,25 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     switch (indexPath.section) {
+        case TSSectionIntro: return [self _introCell];
         case TSSectionModels: return [self _modelCellForRow:indexPath.row];
         case TSSectionCloud: return [self _cloudCellForRow:indexPath.row];
         case TSSectionChapters: return [self _chaptersCellForRow:indexPath.row];
         case TSSectionAuto: return [self _autoCellForRow:indexPath.row];
         default: return [[UITableViewCell alloc] init];
     }
+}
+
+#pragma mark - Intro Section
+
+- (UITableViewCell *)_introCell {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.textLabel.numberOfLines = 0;
+    cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    cell.textLabel.textColor = ICMutedTextColor;
+    cell.textLabel.text = NSLocalizedString(@"Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar.", nil);
+    return cell;
 }
 
 #pragma mark - Model Section

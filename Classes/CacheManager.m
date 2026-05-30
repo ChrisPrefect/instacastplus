@@ -103,6 +103,8 @@ static void ICClearAllTranscriptCache(void)
 @property (readwrite) double rate;
 @property (nonatomic, strong) ICCacheHistory* cacheHistory;
 @property (nonatomic, strong) NSTimer* timer;
+- (NSString*) _streamingCacheKeyForEpisode:(CDEpisode*)episode;
+- (BOOL) _hasStreamingCacheForEpisode:(CDEpisode*)episode;
 @end
 
 
@@ -119,6 +121,7 @@ static void ICClearAllTranscriptCache(void)
     IOPMAssertionID             _noSystemSleepAssertionID;
 #endif
     NSMutableArray*             _cachingEpisodes;
+    NSMutableDictionary*        _streamingCacheProgresses;
     unsigned long long          _downloadedBytes;
     NSDate*                     _rateDate;
     int64_t                     _rateBytes;
@@ -186,6 +189,7 @@ static void ICClearAllTranscriptCache(void)
 		_cachedEpisodes = [[NSMutableSet alloc] init];
 		_cachedURLIndex = [[NSMutableDictionary alloc] init];
         _cachingEpisodes = [[NSMutableArray alloc] init];
+        _streamingCacheProgresses = [[NSMutableDictionary alloc] init];
         
         NSString* historyFile = [[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"CacheHistory.plist"];
         _cacheHistory = [[ICCacheHistory alloc] initWithContentsOfFile:historyFile];
@@ -468,7 +472,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 		return NO;
 	}
 	
-	if ([self isCachingSourceOfEpisode:episode]) {
+	if ([self isCachingSourceOfEpisode:episode] || [self _hasStreamingCacheForEpisode:episode]) {
 		return NO;
 	}
 
@@ -708,7 +712,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
         }
 	}
               
-	return (cachingOps > 0);
+	return (cachingOps > 0 || [_streamingCacheProgresses count] > 0);
 }
 
 - (CACHE_OPERATION_CLASS*) _cacheOperationForEpisode:(CDEpisode*)episode
@@ -1080,8 +1084,9 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 		_totalOps = 0;
 		[_updateTimer invalidate];
 		_updateTimer = nil;
+        BOOL hasStreamingCache = ([_streamingCacheProgresses count] > 0);
 		
-		if (![operation isCancelled] && !operation.failed)
+		if (!hasStreamingCache && ![operation isCancelled] && !operation.failed)
 		{
 			BOOL notificationEnabled = [USER_DEFAULTS boolForKey:EnableManualDownloadFinishedNotification];
 
@@ -1110,11 +1115,13 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 			[self _endBackgroundTaskAfterSoundPlayed];
 		}
 		
-        _flags.supressSendUpdate = YES;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
-            self->_flags.supressSendUpdate = NO;
-        });
+        if (!hasStreamingCache) {
+            _flags.supressSendUpdate = YES;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
+                self->_flags.supressSendUpdate = NO;
+            });
+        }
 	}
     
     [self autoClearAndMakeRoomForBytes:0 automatic:operation.automatic];
@@ -1167,7 +1174,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 	if (operation) {
 		return operation.progress;
 	}
-	return 0;
+	return [self streamingCacheProgressForEpisode:episode];
 }
 
 - (double) cacheProgressForFeed:(CDFeed*)feed
@@ -1207,6 +1214,11 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 	if (operation) {
 		return operation.expectedContentLength;
 	}
+
+    if ([self _hasStreamingCacheForEpisode:episode]) {
+        return [episode preferedMedium].byteSize;
+    }
+
 	return 0;
 }
 
@@ -1216,7 +1228,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 	if (operation) {
 		return [operation isExecuting];
 	}
-	return 0;
+	return ([self streamingCacheProgressForEpisode:episode] > 0 || [self _hasStreamingCacheForEpisode:episode]);
 }
 
 - (BOOL) isLoadingEpisodeSuspended:(CDEpisode*)episode
@@ -1226,6 +1238,94 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 		return ([operation isExecuting] && operation.suspended);
 	}
 	return 0;
+}
+
+- (NSString*) _streamingCacheKeyForEpisode:(CDEpisode*)episode
+{
+    NSString* key = episode.objectHash;
+    return ([key length] > 0) ? key : nil;
+}
+
+- (BOOL) _hasStreamingCacheForEpisode:(CDEpisode*)episode
+{
+    NSString* key = [self _streamingCacheKeyForEpisode:episode];
+    return (key && _streamingCacheProgresses[key] != nil);
+}
+
+- (void) beginStreamingCacheForEpisode:(CDEpisode*)episode
+{
+    NSString* key = [self _streamingCacheKeyForEpisode:episode];
+    if (!key) {
+        return;
+    }
+    if (_streamingCacheProgresses[key]) {
+        return;
+    }
+
+    BOOL wasCaching = [self isCaching];
+    BOOL wasTrackingEpisode = [self isCachingEpisode:episode];
+    _streamingCacheProgresses[key] = @(0.0);
+
+    if (!wasTrackingEpisode) {
+        [self willChangeValueForKey:@"cachingEpisodes"];
+        [_cachingEpisodes addObject:episode];
+        [self didChangeValueForKey:@"cachingEpisodes"];
+    }
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:wasCaching ? CacheManagerDidAddEpisodeToCachingQueueNotification : CacheManagerDidStartCachingNotification object:self];
+    [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidStartCachingEpisodeNotification
+                                                        object:self
+                                                      userInfo:@{ @"episode" : episode }];
+    [self _postDidUpdateNotification];
+}
+
+- (void) updateStreamingCacheForEpisode:(CDEpisode*)episode progress:(double)progress
+{
+    NSString* key = [self _streamingCacheKeyForEpisode:episode];
+    if (!key || !_streamingCacheProgresses[key]) {
+        return;
+    }
+
+    double normalizedProgress = MIN(MAX(progress, 0.0), 1.0);
+    _streamingCacheProgresses[key] = @(normalizedProgress);
+
+    [self _postDidUpdateNotification];
+}
+
+- (void) finishStreamingCacheForEpisode:(CDEpisode*)episode
+{
+    NSString* key = [self _streamingCacheKeyForEpisode:episode];
+    if (!key || !_streamingCacheProgresses[key]) {
+        return;
+    }
+
+    [_streamingCacheProgresses removeObjectForKey:key];
+
+    BOOL removedEpisode = NO;
+    for (CDEpisode* cachingEpisode in [_cachingEpisodes copy]) {
+        if ([cachingEpisode isEqual:episode] || [cachingEpisode.objectHash isEqualToString:key]) {
+            if (!removedEpisode) {
+                [self willChangeValueForKey:@"cachingEpisodes"];
+                removedEpisode = YES;
+            }
+            [_cachingEpisodes removeObject:cachingEpisode];
+        }
+    }
+    if (removedEpisode) {
+        [self didChangeValueForKey:@"cachingEpisodes"];
+    }
+
+    [self _postDidUpdateNotification];
+    if (![self isCaching]) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
+    }
+}
+
+- (double) streamingCacheProgressForEpisode:(CDEpisode*)episode
+{
+    NSString* key = [self _streamingCacheKeyForEpisode:episode];
+    NSNumber* progress = key ? _streamingCacheProgresses[key] : nil;
+    return progress ? [progress doubleValue] : 0.0;
 }
 
 - (NSTimeInterval) cacheTimeLeftForEpisode:(CDEpisode*)episode
@@ -1618,7 +1718,7 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
         return;
     }
 
-    if ([self episodeIsCached:episode] || [self isCachingEpisode:episode]) {
+    if ([self episodeIsCached:episode] || [self isCachingSourceOfEpisode:episode]) {
         [self removeCacheForEpisode:episode automatic:NO];
     }
     

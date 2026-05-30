@@ -228,7 +228,7 @@ private struct PersistedQueue: Codable {
 
     private func canAutoResumeRemoteChapterJobAfterUnexpectedTermination(_ item: ICTranscriptionQueueItem) -> Bool {
         guard item.chapterOnly else { return false }
-        guard engine.hasSRT(for: item.episodeHash) else { return false }
+        guard hasChapterGenerationTranscript(episodeHash: item.episodeHash) else { return false }
         return ICDownloadableModelStore.selectedModel(for: .textToChapters).usesRemoteChapterService
     }
 
@@ -435,9 +435,9 @@ private struct PersistedQueue: Codable {
                                                metadata: ["episodeHash": episodeHash] as NSDictionary)
             return false
         }
-        guard engine.hasSRT(for: episodeHash) else {
+        guard hasChapterGenerationTranscript(episodeHash: episodeHash) else {
             ICDiagnosticLogger.shared.logEvent("debug-automation",
-                                               message: "SRT fuer Kapitelerstellung fehlt",
+                                               message: "Transkript fuer Kapitelerstellung fehlt",
                                                metadata: ["episodeHash": episodeHash] as NSDictionary)
             return false
         }
@@ -553,10 +553,8 @@ private struct PersistedQueue: Codable {
         }
         items.removeAll { $0.episodeHash == episodeHash && ($0.status == .completed || $0.status == .failed) }
 
-        // Load transcript cues from SRT
-        let srtURL = TranscriptionEngine.shared.srtURL(for: episodeHash)
-        guard FileManager.default.fileExists(atPath: srtURL.path) else {
-            NSLog("[TranscriptionQueue] No SRT for %@, chapter generation from RSS not yet supported", episodeHash)
+        guard hasChapterGenerationTranscript(episodeHash: episodeHash) else {
+            NSLog("[TranscriptionQueue] No usable transcript for %@", episodeHash)
             return false
         }
 
@@ -574,12 +572,12 @@ private struct PersistedQueue: Codable {
         postQueueChangeNotification()
 
         if !isProcessing && chapterTask == nil && !shouldPauseWhisperKitForBackground {
-            startChapterGenerationTask(for: item, srtURL: srtURL, startReason: "chapter-task-enqueued")
+            startChapterGenerationTask(for: item, startReason: "chapter-task-enqueued")
         }
         return true
     }
 
-    private func startChapterGenerationTask(for item: ICTranscriptionQueueItem, srtURL: URL, startReason: String) {
+    private func startChapterGenerationTask(for item: ICTranscriptionQueueItem, startReason: String) {
         let episodeHash = item.episodeHash
         UserDefaults.standard.set(true, forKey: TranscriptionQueue.crashGuardKey)
         beginStep(for: item,
@@ -594,8 +592,7 @@ private struct PersistedQueue: Codable {
                 self.refreshBackgroundContinuation(reason: "chapter-task-started")
             }
 
-            // Load cues from SRT file
-            let cues = self.loadCuesFromSRT(url: srtURL)
+            let cues = await self.loadCuesForChapterGeneration(episodeHash: episodeHash)
             guard !cues.isEmpty else {
                 await MainActor.run {
                     self.chapterTask = nil
@@ -718,35 +715,501 @@ private struct PersistedQueue: Codable {
         }
     }
 
+    @objc(hasChapterGenerationTranscriptWithEpisodeHash:)
+    func hasChapterGenerationTranscript(episodeHash: String) -> Bool {
+        if engine.hasSRT(for: episodeHash) {
+            return true
+        }
+        guard let episode = findEpisode(hash: episodeHash) else {
+            return false
+        }
+        return chapterGenerationTranscriptDescriptors(for: episode).contains {
+            !transcriptURLAttemptStrings(for: $0, episode: episode).isEmpty
+        }
+    }
+
+    private func loadCuesForChapterGeneration(episodeHash: String) async -> [ICTranscriptCue] {
+        let srtURL = TranscriptionEngine.shared.srtURL(for: episodeHash)
+        if FileManager.default.fileExists(atPath: srtURL.path) {
+            return loadCuesFromSRT(url: srtURL)
+        }
+
+        guard let episode = findEpisode(hash: episodeHash) else {
+            return []
+        }
+
+        for descriptor in chapterGenerationTranscriptDescriptors(for: episode) {
+            for urlString in transcriptURLAttemptStrings(for: descriptor, episode: episode) {
+                guard let url = URL(string: urlString), url.scheme != nil else { continue }
+                guard let loaded = await loadPodcastTranscriptData(from: url, episode: episode) else { continue }
+                let descriptorForParsing = descriptor.merging(["resolvedURL": urlString]) { _, new in new }
+                let cues = parseTranscriptData(loaded.data, descriptor: descriptorForParsing, response: loaded.response)
+                if !cues.isEmpty {
+                    return cues
+                }
+            }
+        }
+        return []
+    }
+
     /// Parse SRT file into transcript cues
     private func loadCuesFromSRT(url: URL) -> [ICTranscriptCue] {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-        var cues: [ICTranscriptCue] = []
-        let blocks = content.components(separatedBy: "\n\n")
-        for block in blocks {
-            let lines = block.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
-            guard lines.count >= 3 else { continue }
-            // Line 0: index, Line 1: timestamps, Line 2+: text
-            let timeLine = lines[1]
-            let parts = timeLine.components(separatedBy: " --> ")
-            guard parts.count == 2 else { continue }
-            let start = parseSRTTime(parts[0])
-            let end = parseSRTTime(parts[1])
-            let text = lines[2...].joined(separator: " ")
-            cues.append(ICTranscriptCue(start: start, end: end, text: text))
-        }
-        return cues
+        return parseArrowTimedTranscript(content)
     }
 
     private func parseSRTTime(_ str: String) -> Double {
-        // Format: HH:MM:SS,mmm
         let cleaned = str.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        guard !cleaned.isEmpty else { return -1 }
+        if cleaned.hasSuffix("ms") {
+            guard let value = Double(cleaned.dropLast(2)) else { return -1 }
+            return value / 1000.0
+        }
+        if cleaned.hasSuffix("s") && !cleaned.contains(":") {
+            return Double(cleaned.dropLast()) ?? -1
+        }
+        if cleaned.hasSuffix("m") && !cleaned.contains(":") {
+            guard let value = Double(cleaned.dropLast()) else { return -1 }
+            return value * 60.0
+        }
+        if cleaned.hasSuffix("h") && !cleaned.contains(":") {
+            guard let value = Double(cleaned.dropLast()) else { return -1 }
+            return value * 3600.0
+        }
+
         let parts = cleaned.components(separatedBy: ":")
-        guard parts.count == 3 else { return 0 }
-        let hours = Double(parts[0]) ?? 0
-        let minutes = Double(parts[1]) ?? 0
-        let seconds = Double(parts[2]) ?? 0
-        return hours * 3600 + minutes * 60 + seconds
+        if parts.count == 1 {
+            return Double(parts[0]) ?? -1
+        }
+
+        var seconds = 0.0
+        var factor = 1.0
+        for part in parts.reversed() {
+            guard let value = Double(part) else { return -1 }
+            seconds += value * factor
+            factor *= 60.0
+        }
+        return seconds
+    }
+
+    private func chapterGenerationTranscriptDescriptors(for episode: CDEpisode) -> [[String: String]] {
+        guard let rawSources = episode.transcripts as? [[String: Any]] else { return [] }
+        return rawSources.compactMap { source in
+            guard let url = source["url"] as? String,
+                  !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return nil
+            }
+            var descriptor = ["url": url]
+            for key in ["type", "language", "rel", "title", "fallbackURL", "href"] {
+                if let value = source[key] as? String, !value.isEmpty {
+                    descriptor[key] = value
+                }
+            }
+            return descriptor
+        }
+    }
+
+    private func transcriptURLAttemptStrings(for descriptor: [String: String], episode: CDEpisode) -> [String] {
+        var attempts: [String] = []
+        var seen: Set<String> = []
+        appendTranscriptURLAttempt(descriptor["url"], episode: episode, attempts: &attempts, seen: &seen)
+        appendTranscriptURLAttempt(descriptor["fallbackURL"], episode: episode, attempts: &attempts, seen: &seen)
+        appendTranscriptURLAttempt(descriptor["href"], episode: episode, attempts: &attempts, seen: &seen)
+        return attempts
+    }
+
+    private func appendTranscriptURLAttempt(_ rawValue: String?,
+                                            episode: CDEpisode,
+                                            attempts: inout [String],
+                                            seen: inout Set<String>) {
+        guard let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return
+        }
+
+        func add(_ value: String) {
+            guard !value.isEmpty, !seen.contains(value) else { return }
+            seen.insert(value)
+            attempts.append(value)
+        }
+
+        if trimmed.hasPrefix("//") {
+            var schemes: [String] = []
+            if let scheme = episode.feed?.sourceURL?.scheme, !scheme.isEmpty {
+                schemes.append(scheme)
+            }
+            if let scheme = episode.feed?.linkURL?.scheme, !scheme.isEmpty, !schemes.contains(scheme) {
+                schemes.append(scheme)
+            }
+            if !schemes.contains("https") {
+                schemes.append("https")
+            }
+            if !schemes.contains("http") {
+                schemes.append("http")
+            }
+            for scheme in schemes {
+                add("\(scheme):\(trimmed)")
+            }
+            return
+        }
+
+        if let directURL = URL(string: trimmed), directURL.scheme != nil {
+            add(directURL.absoluteString)
+            return
+        }
+
+        var addedResolvedURL = false
+        if let sourceURL = episode.feed?.sourceURL,
+           let resolved = URL(string: trimmed, relativeTo: sourceURL)?.absoluteURL {
+            add(resolved.absoluteString)
+            addedResolvedURL = true
+        }
+        if let linkURL = episode.feed?.linkURL,
+           let resolved = URL(string: trimmed, relativeTo: linkURL)?.absoluteURL {
+            add(resolved.absoluteString)
+            addedResolvedURL = true
+        }
+        if !addedResolvedURL, let directURL = URL(string: trimmed), directURL.scheme != nil {
+            add(directURL.absoluteString)
+        }
+    }
+
+    private func loadPodcastTranscriptData(from url: URL, episode: CDEpisode) async -> (data: Data, response: URLResponse?)? {
+        if url.isFileURL {
+            guard let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+            return (data, nil)
+        }
+
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30.0)
+        request.setValue("text/vtt,application/x-subrip,text/plain,application/json,application/ttml+xml,text/xml;q=0.9,*/*;q=0.8",
+                         forHTTPHeaderField: "Accept")
+        if let username = episode.feed?.username, !username.isEmpty,
+           let password = episode.feed?.password, !password.isEmpty,
+           let credentials = "\(username):\(password)".data(using: .utf8) {
+            request.setValue("Basic \(credentials.base64EncodedString())", forHTTPHeaderField: "Authorization")
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse,
+               !(200..<300).contains(httpResponse.statusCode) {
+                return nil
+            }
+            return data.isEmpty ? nil : (data, response)
+        } catch {
+            NSLog("[TranscriptionQueue] Podcast transcript load failed: %@", error.localizedDescription)
+            return nil
+        }
+    }
+
+    private func parseTranscriptData(_ data: Data, descriptor: [String: String], response: URLResponse?) -> [ICTranscriptCue] {
+        let descriptorType = descriptor["type"]?.lowercased() ?? ""
+        let mimeType = response?.mimeType?.lowercased() ?? ""
+        let urlString = descriptor["resolvedURL"] ?? descriptor["url"] ?? ""
+        let urlExtension = URL(string: urlString)?.pathExtension.lowercased() ?? ""
+
+        let maybeJSON = transcriptType(descriptorType, contains: "json") || transcriptType(mimeType, contains: "json") || urlExtension == "json"
+        if maybeJSON {
+            let jsonCues = parseTranscriptJSON(data)
+            if !jsonCues.isEmpty {
+                return jsonCues
+            }
+        }
+
+        guard let text = decodedTranscriptString(from: data), !text.isEmpty else {
+            return []
+        }
+
+        let maybeTTML = transcriptType(descriptorType, contains: "ttml") ||
+            transcriptType(mimeType, contains: "ttml") ||
+            urlExtension == "ttml" ||
+            urlExtension == "dfxp" ||
+            transcriptType(descriptorType, contains: "xml")
+        if maybeTTML || text.range(of: "<tt", options: .caseInsensitive) != nil {
+            let ttmlCues = parseTTMLTranscript(text)
+            if !ttmlCues.isEmpty {
+                return ttmlCues
+            }
+        }
+
+        if urlExtension == "lrc" {
+            let lrcCues = parseLRCTranscript(text)
+            if !lrcCues.isEmpty {
+                return lrcCues
+            }
+        }
+
+        let timedTextCues = parseArrowTimedTranscript(text)
+        if !timedTextCues.isEmpty {
+            return timedTextCues
+        }
+
+        let lrcCues = parseLRCTranscript(text)
+        if !lrcCues.isEmpty {
+            return lrcCues
+        }
+
+        let jsonCues = parseTranscriptJSON(data)
+        if !jsonCues.isEmpty {
+            return jsonCues
+        }
+
+        let maybePlain = transcriptType(descriptorType, contains: "plain") ||
+            transcriptType(mimeType, contains: "plain") ||
+            urlExtension == "txt"
+        let plainCues = parsePlainTranscript(text)
+        if maybePlain && !plainCues.isEmpty {
+            return plainCues
+        }
+        return plainCues
+    }
+
+    private func decodedTranscriptString(from data: Data) -> String? {
+        let encodings: [String.Encoding] = [.utf8, .unicode, .utf16LittleEndian, .utf16BigEndian, .isoLatin1]
+        for encoding in encodings {
+            if let text = String(data: data, encoding: encoding), !text.isEmpty {
+                return text
+            }
+        }
+        return nil
+    }
+
+    private func parseArrowTimedTranscript(_ text: String) -> [ICTranscriptCue] {
+        let rawLines = text.components(separatedBy: .newlines)
+        var cues: [ICTranscriptCue] = []
+        var index = 0
+
+        while index < rawLines.count {
+            var line = rawLines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty || line.hasPrefix("WEBVTT") || line.hasPrefix("NOTE") {
+                index += 1
+                continue
+            }
+
+            if !line.contains("-->") {
+                if index + 1 < rawLines.count {
+                    let maybeTimeLine = rawLines[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+                    if maybeTimeLine.contains("-->") {
+                        line = maybeTimeLine
+                        index += 1
+                    } else {
+                        index += 1
+                        continue
+                    }
+                } else {
+                    break
+                }
+            }
+
+            let parts = line.components(separatedBy: "-->")
+            guard parts.count >= 2 else {
+                index += 1
+                continue
+            }
+            let startString = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let endString = parts[1]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: .whitespacesAndNewlines)
+                .first ?? ""
+            let start = parseSRTTime(startString)
+            let end = parseSRTTime(endString)
+            index += 1
+
+            var lineParts: [String] = []
+            while index < rawLines.count {
+                let cueLine = rawLines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                if cueLine.isEmpty {
+                    index += 1
+                    break
+                }
+                lineParts.append(cueLine)
+                index += 1
+            }
+
+            let cueText = stripTranscriptHTML(lineParts.joined(separator: "\n"))
+            if !cueText.isEmpty {
+                cues.append(ICTranscriptCue(start: start, end: end, text: cueText))
+            }
+        }
+
+        return normalizeTranscriptCues(cues)
+    }
+
+    private func parseLRCTranscript(_ text: String) -> [ICTranscriptCue] {
+        guard let regex = try? NSRegularExpression(pattern: "\\[(\\d{1,2}:\\d{2}(?:[\\.:]\\d{1,3})?)\\]") else {
+            return []
+        }
+        var cues: [ICTranscriptCue] = []
+        for line in text.components(separatedBy: .newlines) {
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            let matches = regex.matches(in: line, options: [], range: range)
+            guard !matches.isEmpty else { continue }
+            let cueText = stripTranscriptHTML(regex.stringByReplacingMatches(in: line, options: [], range: range, withTemplate: ""))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cueText.isEmpty else { continue }
+            for match in matches {
+                guard let timeRange = Range(match.range(at: 1), in: line) else { continue }
+                cues.append(ICTranscriptCue(start: parseSRTTime(String(line[timeRange])), end: 0, text: cueText))
+            }
+        }
+        return normalizeTranscriptCues(cues)
+    }
+
+    private func parseTTMLTranscript(_ text: String) -> [ICTranscriptCue] {
+        guard let regex = try? NSRegularExpression(pattern: "<p\\b([^>]*)>(.*?)</p>",
+                                                   options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return []
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let matches = regex.matches(in: text, options: [], range: range)
+        var cues: [ICTranscriptCue] = []
+        for match in matches {
+            guard let attrsRange = Range(match.range(at: 1), in: text),
+                  let innerRange = Range(match.range(at: 2), in: text) else {
+                continue
+            }
+            let attrs = String(text[attrsRange])
+            let inner = String(text[innerRange])
+            let start = parseSRTTime(xmlAttribute("begin", in: attrs) ?? "")
+            var end = parseSRTTime(xmlAttribute("end", in: attrs) ?? "")
+            if !(end > start), let durationString = xmlAttribute("dur", in: attrs) {
+                let duration = parseSRTTime(durationString)
+                if duration > 0 {
+                    end = start + duration
+                }
+            }
+            let cueText = stripTranscriptHTML(inner.replacingOccurrences(of: "<br/>", with: "\n")
+                .replacingOccurrences(of: "<br />", with: "\n"))
+            if !cueText.isEmpty {
+                cues.append(ICTranscriptCue(start: start, end: end, text: cueText))
+            }
+        }
+        return normalizeTranscriptCues(cues)
+    }
+
+    private func xmlAttribute(_ key: String, in attributes: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: "\(NSRegularExpression.escapedPattern(for: key))\\s*=\\s*['\\\"]([^'\\\"]+)['\\\"]",
+                                                   options: .caseInsensitive) else {
+            return nil
+        }
+        let range = NSRange(attributes.startIndex..<attributes.endIndex, in: attributes)
+        guard let match = regex.firstMatch(in: attributes, options: [], range: range),
+              let valueRange = Range(match.range(at: 1), in: attributes) else {
+            return nil
+        }
+        return String(attributes[valueRange])
+    }
+
+    private func parseTranscriptJSON(_ data: Data) -> [ICTranscriptCue] {
+        guard let object = try? JSONSerialization.jsonObject(with: data, options: []) else {
+            return []
+        }
+        var cues: [ICTranscriptCue] = []
+        collectJSONCues(object, into: &cues)
+        return normalizeTranscriptCues(cues)
+    }
+
+    private func collectJSONCues(_ object: Any, into cues: inout [ICTranscriptCue]) {
+        if let array = object as? [Any] {
+            for entry in array {
+                collectJSONCues(entry, into: &cues)
+            }
+            return
+        }
+
+        guard let dict = object as? [String: Any] else {
+            return
+        }
+
+        let startKeys = ["start", "startTime", "start_time", "begin", "from", "t"]
+        let endKeys = ["end", "endTime", "end_time", "to", "until"]
+        let durationKeys = ["duration", "dur", "d"]
+        let start = firstTranscriptTimeValue(in: dict, keys: startKeys)
+        var end = firstTranscriptTimeValue(in: dict, keys: endKeys)
+        let duration = firstTranscriptTimeValue(in: dict, keys: durationKeys)
+        if start >= 0, !(end > start), duration > 0 {
+            end = start + duration
+        }
+
+        if start >= 0,
+           let text = firstTranscriptTextValue(in: dict),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            cues.append(ICTranscriptCue(start: start, end: end, text: stripTranscriptHTML(text)))
+        }
+
+        for value in dict.values {
+            collectJSONCues(value, into: &cues)
+        }
+    }
+
+    private func firstTranscriptTimeValue(in dict: [String: Any], keys: [String]) -> Double {
+        for key in keys {
+            if let number = dict[key] as? NSNumber {
+                return number.doubleValue
+            }
+            if let string = dict[key] as? String {
+                return parseSRTTime(string)
+            }
+        }
+        return -1
+    }
+
+    private func firstTranscriptTextValue(in dict: [String: Any]) -> String? {
+        for key in ["text", "value", "line", "cue", "utterance", "transcript"] {
+            if let value = dict[key] as? String, !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func parsePlainTranscript(_ text: String) -> [ICTranscriptCue] {
+        let stripped = stripTranscriptHTML(text)
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !stripped.isEmpty else { return [] }
+        return [ICTranscriptCue(start: 0, end: 3153600000.0, text: stripped)]
+    }
+
+    private func normalizeTranscriptCues(_ cues: [ICTranscriptCue]) -> [ICTranscriptCue] {
+        let sorted = cues.sorted { $0.start < $1.start }
+        var normalized: [ICTranscriptCue] = []
+        for index in sorted.indices {
+            let cue = sorted[index]
+            let text = cue.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, cue.start >= 0 else { continue }
+            var end = cue.end
+            if !(end > cue.start) {
+                if index + 1 < sorted.count, sorted[index + 1].start > cue.start {
+                    end = sorted[index + 1].start
+                } else {
+                    end = cue.start + 2
+                }
+            }
+            normalized.append(ICTranscriptCue(start: cue.start, end: end, text: text))
+        }
+        return normalized
+    }
+
+    private func stripTranscriptHTML(_ text: String) -> String {
+        var stripped = text.replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: .regularExpression)
+        stripped = stripped.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        let entities = [
+            "&amp;": "&",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&quot;": "\"",
+            "&#39;": "'",
+            "&nbsp;": " ",
+        ]
+        for (entity, replacement) in entities {
+            stripped = stripped.replacingOccurrences(of: entity, with: replacement)
+        }
+        return stripped.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func transcriptType(_ value: String, contains token: String) -> Bool {
+        value.range(of: token, options: .caseInsensitive) != nil
     }
 
     /// Reorder queue items (for drag & drop in UI).
@@ -1300,8 +1763,7 @@ private struct PersistedQueue: Codable {
             }
 
             if candidate.chapterOnly {
-                let srtURL = TranscriptionEngine.shared.srtURL(for: candidate.episodeHash)
-                guard FileManager.default.fileExists(atPath: srtURL.path) else {
+                guard hasChapterGenerationTranscript(episodeHash: candidate.episodeHash) else {
                     candidate.status = .failed
                     candidate.statusDetail = nil
                     candidate.statusStartedAt = nil
@@ -1320,7 +1782,7 @@ private struct PersistedQueue: Codable {
                     postQueueChangeNotification()
                     continue
                 }
-                startChapterGenerationTask(for: candidate, srtURL: srtURL, startReason: "chapter-task-resumed")
+                startChapterGenerationTask(for: candidate, startReason: "chapter-task-resumed")
                 return
             }
 
@@ -2118,7 +2580,7 @@ private struct PersistedQueue: Codable {
             }
 
             if pItem.chapterOnly == true {
-                guard engine.hasSRT(for: pItem.episodeHash) else {
+                guard hasChapterGenerationTranscript(episodeHash: pItem.episodeHash) else {
                     ICDiagnosticLogger.shared.logEvent("queue", message: "Persistierter Kapitel-Job ohne Transkript übersprungen", metadata: [
                         "episodeHash": pItem.episodeHash,
                     ] as NSDictionary)

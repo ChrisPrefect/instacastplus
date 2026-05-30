@@ -123,11 +123,7 @@
     [self _updateTimeUIDuringSliding:NO];
     [self _updateVolumeUI];
     
-    [self.backwardButton setImage:[[UIImage imageNamed:@"Player Backward"]  imageWithColor:[UIColor blackColor]] forState:UIControlStateNormal];
-    [self.backwardButton setImage:[[UIImage imageNamed:@"Player Backward"]  imageWithColor:[UIColor whiteColor]] forState:UIControlStateHighlighted];
-    
-    [self.forwardButton setImage:[[UIImage imageNamed:@"Player Forward"]  imageWithColor:[UIColor blackColor]] forState:UIControlStateNormal];
-    [self.forwardButton setImage:[[UIImage imageNamed:@"Player Forward"]  imageWithColor:[UIColor whiteColor]] forState:UIControlStateHighlighted];
+    [self _updateSkipButtonImages];
     
     [self.scrubber setThumbImage:[UIImage imageNamed:@"Video Slider Thumb"] forState:UIControlStateNormal];
     [self.scrubber setMaximumTrackImage:[[[UIImage imageNamed:@"Video Slider Outline Track"] imageWithColor:[UIColor blackColor]] resizableImageWithCapInsets:UIEdgeInsetsMake(0, 5, 0, 5)]
@@ -146,6 +142,7 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     [self traitCollectionDidChange:self.traitCollection];
 #pragma clang diagnostic pop
+    [self _updateSkipButtonImages];
     self.controlsVisible = YES;
 }
 
@@ -187,6 +184,22 @@
         [self.playButton setImage:[[UIImage imageNamed:@"Player Pause"] imageWithColor:[UIColor blackColor]] forState:UIControlStateNormal];
         [self.playButton setImage:[[UIImage imageNamed:@"Player Pause"] imageWithColor:[UIColor whiteColor]] forState:UIControlStateHighlighted];
     }
+}
+
+- (void)_updateSkipButtonImages
+{
+    NSInteger backSeconds = [USER_DEFAULTS integerForKey:PlayerSkipBackPeriod];
+    NSInteger forwardSeconds = [USER_DEFAULTS integerForKey:PlayerSkipForwardPeriod];
+    UIImage* backImage = ICSkipIntervalImage(NO, backSeconds, 34.f);
+    UIImage* forwardImage = ICSkipIntervalImage(YES, forwardSeconds, 34.f);
+    [self.backwardButton setImage:[backImage imageWithTintColor:[UIColor blackColor] renderingMode:UIImageRenderingModeAlwaysOriginal]
+                          forState:UIControlStateNormal];
+    [self.backwardButton setImage:[backImage imageWithTintColor:[UIColor whiteColor] renderingMode:UIImageRenderingModeAlwaysOriginal]
+                          forState:UIControlStateHighlighted];
+    [self.forwardButton setImage:[forwardImage imageWithTintColor:[UIColor blackColor] renderingMode:UIImageRenderingModeAlwaysOriginal]
+                         forState:UIControlStateNormal];
+    [self.forwardButton setImage:[forwardImage imageWithTintColor:[UIColor whiteColor] renderingMode:UIImageRenderingModeAlwaysOriginal]
+                         forState:UIControlStateHighlighted];
 }
 
 - (double)_effectiveLoadProgressForPlaybackManager:(PlaybackManager*)pman

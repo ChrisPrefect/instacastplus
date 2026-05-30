@@ -436,13 +436,36 @@ private struct CompactSkipButton: View {
     let compact: Bool
     let action: () -> Void
 
+    private var skipSymbolBaseName: String {
+        if forward {
+            return "goforward"
+        }
+        return "gobackward"
+    }
+
+    private var skipSymbolName: String {
+        if Self.numberedSymbolSeconds.contains(seconds) {
+            return "\(skipSymbolBaseName).\(seconds)"
+        }
+        return skipSymbolBaseName
+    }
+
+    private var drawsNumberOverlay: Bool {
+        !Self.numberedSymbolSeconds.contains(seconds)
+    }
+
+    private static let numberedSymbolSeconds: Set<Int> = [5, 10, 15, 30, 45, 60, 75, 90]
+
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 1) {
-                Image(systemName: forward ? "goforward" : "gobackward")
-                    .font(.system(size: compact ? 17 : 18, weight: .medium))
-                Text(shortSkipText(seconds))
-                    .font(.system(size: compact ? 9 : 10, weight: .semibold))
+            ZStack {
+                Image(systemName: skipSymbolName)
+                    .font(.system(size: compact ? 22 : 24, weight: .medium))
+                if drawsNumberOverlay {
+                    Text(shortSkipText(seconds))
+                        .font(.system(size: compact ? 8 : 9, weight: .bold, design: .rounded))
+                        .minimumScaleFactor(0.6)
+                }
             }
             .frame(width: compact ? 36 : 40, height: compact ? 30 : 34)
         }

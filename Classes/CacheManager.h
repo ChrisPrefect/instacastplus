@@ -74,6 +74,11 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 - (BOOL) isLoadingEpisode:(CDEpisode*)episode;
 - (BOOL) isLoadingEpisodeSuspended:(CDEpisode*)episode;
 
+- (void) beginStreamingCacheForEpisode:(CDEpisode*)episode;
+- (void) updateStreamingCacheForEpisode:(CDEpisode*)episode progress:(double)progress;
+- (void) finishStreamingCacheForEpisode:(CDEpisode*)episode;
+- (double) streamingCacheProgressForEpisode:(CDEpisode*)episode;
+
 @property (nonatomic, readonly) unsigned long long numberOfDownloadedBytes;
 - (unsigned long long) numberOfDownloadedBytesForEpisode:(CDEpisode*)episode;
 

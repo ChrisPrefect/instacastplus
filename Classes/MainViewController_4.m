@@ -678,9 +678,6 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
                                                                    image:watchSidebarImage
                                                            selectedImage:watchSidebarImage];
         appleWatchItem.subtitle = ^NSString*{
-            if (!watchManager.watchAppInstalled) {
-                return @"Einrichten".ls;
-            }
             NSInteger downloading = 0;
             for (AppleWatchEpisodeState* state in [watchManager allEpisodeStates]) {
                 if ([state.watchStatus isEqualToString:ICAppleWatchStatusDownloading] ||

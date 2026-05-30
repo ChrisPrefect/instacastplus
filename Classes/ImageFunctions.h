@@ -25,6 +25,7 @@ extern "C" {
 	UIImage* CreateGreyscaleImage(UIImage* i);
     UIImage* ICImageFromByDrawingInContext(CGSize size, void(^drawBlock)(void));
     UIImage* ICImageFromByDrawingInContextWithScale(CGSize size, BOOL opaque, CGFloat scale, void(^drawBlock)(void));
+    UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize);
 #else
     NSImage* CreateGreyscaleImage(NSImage* i);
 #endif

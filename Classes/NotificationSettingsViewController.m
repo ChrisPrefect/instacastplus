@@ -10,8 +10,9 @@
 #import "UITableViewController+Settings.h"
 
 typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
-    kGeneralSection,
-    kNotifications,
+    kFailureSection,
+    kBadgeSection,
+    kPushNotificationsSection,
     kSubscriptions,
     kNumberOfSections,
 };
@@ -78,9 +79,11 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
     switch (section) {
-        case kGeneralSection:
-            return 2;
-        case kNotifications:
+        case kFailureSection:
+            return 1;
+        case kBadgeSection:
+            return 1;
+        case kPushNotificationsSection:
             return 3;
         case kSubscriptions:
             return [DMANAGER.feeds count];
@@ -92,23 +95,27 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kGeneralSection)
+    if (indexPath.section == kFailureSection)
     {
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
 
-        if (indexPath.row == 0) {
-            cell.textLabel.text = @"Podcast update failed.".ls;
-            control.on = [USER_DEFAULTS boolForKey:EnableRefreshFailureNotification];
-            [control addTarget:self action:@selector(toggleRefreshFailureNotification:) forControlEvents:UIControlEventValueChanged];
-        } else {
-            cell.textLabel.text = @"Application Badge".ls;
-            control.on = [USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen];
-            [control addTarget:self action:@selector(toggleBadgeSettings:) forControlEvents:UIControlEventValueChanged];
-        }
+        cell.textLabel.text = @"Podcast update failed.".ls;
+        control.on = [USER_DEFAULTS boolForKey:EnableRefreshFailureNotification];
+        [control addTarget:self action:@selector(toggleRefreshFailureNotification:) forControlEvents:UIControlEventValueChanged];
         return cell;
     }
-    else if (indexPath.section == kNotifications)
+    else if (indexPath.section == kBadgeSection)
+    {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+
+        cell.textLabel.text = @"Application Badge".ls;
+        control.on = [USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen];
+        [control addTarget:self action:@selector(toggleBadgeSettings:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
+    else if (indexPath.section == kPushNotificationsSection)
     {
         UITableViewCell* cell = [self switchCell];
         UISwitch* control = (UISwitch*)cell.accessoryView;
@@ -163,14 +170,14 @@ typedef NS_ENUM(NSInteger, kNotificationSettingsSections) {
 
 - (NSString*) tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
-    if (section == kGeneralSection) {
+    if (section == kFailureSection || section == kBadgeSection) {
         return @"";
     }
     else if (section == kSubscriptions) {
         return @"New episode available".ls;
     }
-    else if (section == kNotifications) {
-        return @"Types".ls;
+    else if (section == kPushNotificationsSection) {
+        return @"Push Notifications".ls;
     }
     return nil;
 }

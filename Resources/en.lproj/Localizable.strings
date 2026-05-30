@@ -343,6 +343,7 @@
 "Podcast update failed." = "Podcast update failed.";
 "Refreshing finished." = "Refreshing finished.";
 "Test Notification System" = "Test Notification System";
+"Push Notifications" = "Push Notifications";
 "Types" = "Types";
 "If push notifications are set up correctly on your device, and our system is running smoothly, you should receive a message within 60 seconds confirming that push notifications are working." = "If push notifications are set up correctly on your device, and our system is running smoothly, you should receive a message within 60 seconds confirming that push notifications are working.";
 
@@ -394,6 +395,9 @@
 "Send Reports" = "Send Reports";
 "Skipping" = "Skipping";
 "System Controls" = "System Controls";
+"System Controls Seeking Explanation" = "Holding the system controls scrubs continuously. A short press skips forward or back by the configured seconds.";
+"System Controls Seeking Chapters Explanation" = "Holding scrubs continuously. Previous/next jumps between chapters; without chapters, the configured seconds are used.";
+"System Controls Skipping Explanation" = "Previous/next and skip buttons always jump forward or back by the configured seconds.";
 "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up." = "You can either disable the usage of cellular data completely (which might decrease the user experience when not on WiFi), enable cellular usage for everything except downloading episodes, or enable cellular usage for everything including downloading episodes. Disabling cellular data completely will also prevent iOS's cellular data alert from popping up.";
 
 /* UtilityFunctions.m */
@@ -1198,6 +1202,7 @@
 "Text zu Kapitel" = "Text to Chapters";
 "Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet." = "Choose the model for transcriptions. If it is missing, it will be downloaded and prepared.";
 "Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet." = "Choose the model for chapters. If it is missing, it will be downloaded and prepared.";
+"Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar." = "Start transcription and chapter jobs from an episode's context menu. Monitor progress in Downloads > Transcribe. In the player, open transcripts with the transcript button; use chapters in the chapter list and on the scrubber.";
 "Geladene Modelle kannst du per Swipe nach links löschen." = "Swipe left on downloaded models to delete them.";
 "Sehr gute Genauigkeit, größerer Download." = "Very good accuracy, larger download.";
 "Kleinerer Download, schneller bereit." = "Smaller download, ready sooner.";
@@ -1218,6 +1223,7 @@
 "Die Apple Watch lädt ausgewählte Audiodateien selbst über WLAN oder Mobilfunk." = "Apple Watch downloads selected audio files itself over Wi-Fi or cellular.";
 "An Apple Watch senden" = "Send to Apple Watch";
 "Von Apple Watch entfernen" = "Remove from Apple Watch";
+"Watch-App öffnen" = "Open Watch App";
 "Priorisiert auf Watch laden" = "Prioritize Download on Watch";
 "Auf Apple Watch" = "On Apple Watch";
 "Laedt auf Apple Watch" = "Loading on Apple Watch";

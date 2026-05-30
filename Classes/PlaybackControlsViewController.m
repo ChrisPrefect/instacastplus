@@ -260,11 +260,7 @@
     self.timeSlider.enabled = NO;
 	[self updateControlsUI];
     
-    [self.backButton setImage:[[UIImage imageNamed:@"Player Backward"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
-                     forState:UIControlStateNormal];
-    
-    [self.forwardButton setImage:[[UIImage imageNamed:@"Player Forward"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
-                     forState:UIControlStateNormal];
+    [self _updateSkipButtonImages];
     
     [self.bookmarkButton setImage:[[UIImage imageNamed:@"Player Bookmark"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                        forState:UIControlStateNormal];
@@ -317,6 +313,16 @@
     maxImage = [maxImage resizableImageWithCapInsets:UIEdgeInsetsMake(0, 1, 0, 1)];
     [self.volumeView setMaximumVolumeSliderImage:maxImage forState:UIControlStateNormal];
 
+}
+
+- (void)_updateSkipButtonImages
+{
+    NSInteger backSeconds = [USER_DEFAULTS integerForKey:PlayerSkipBackPeriod];
+    NSInteger forwardSeconds = [USER_DEFAULTS integerForKey:PlayerSkipForwardPeriod];
+    [self.backButton setImage:ICSkipIntervalImage(NO, backSeconds, 34.f)
+                     forState:UIControlStateNormal];
+    [self.forwardButton setImage:ICSkipIntervalImage(YES, forwardSeconds, 34.f)
+                        forState:UIControlStateNormal];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -655,6 +661,7 @@
 - (void) updateControlsUI
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
+    [self _updateSkipButtonImages];
 	if (pman.paused) {
 		[self.playButton setImage:[[UIImage imageNamed:@"Player Play"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                          forState:UIControlStateNormal];
@@ -667,8 +674,8 @@
         self.playButton.accessibilityLabel = @"Pause".ls;
 	}
     
-    self.backButton.accessibilityLabel = @"Backward".ls;
-    self.forwardButton.accessibilityLabel = @"Forward".ls;
+    self.backButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Backward".ls, (long)[USER_DEFAULTS integerForKey:PlayerSkipBackPeriod], @"Seconds".ls];
+    self.forwardButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Forward".ls, (long)[USER_DEFAULTS integerForKey:PlayerSkipForwardPeriod], @"Seconds".ls];
     
     self.playButton.enabled = pman.ready;
     self.backButton.enabled = pman.ready;

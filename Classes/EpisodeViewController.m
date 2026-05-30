@@ -1376,7 +1376,7 @@
     // 7. Generate chapters (only if no generated chapters exist — neither in the JSON
     // cache nor copied into Core Data on first playback). Otherwise "Generieren" and
     // "Löschen" would be visible at the same time, which is confusing.
-    BOOL hasTranscript = (self.episode.transcripts.count > 0) || [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
+    BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:self.episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash] || self.episode.chapters.count > 0;
     if (hasTranscript && !hasAnyChapters) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {

@@ -14,6 +14,8 @@
 #import "ICEpisodeConsumeIndicator.h"
 #import "GradientProgressView.h"
 #import "PlaybackManager.h"
+#import "AudioSession+UpNextPlaylist.h"
+#import "ICEpisodeUIConfig.h"
 #import "InstacastPlus-Swift.h"
 #import "AppleWatchSyncManager.h"
 
@@ -38,6 +40,8 @@
 @property (nonatomic, readwrite, strong) UIImageView* videoIndicator;
 @property (nonatomic, strong) UIImageView* transcriptIndicator;
 @property (nonatomic) BOOL transcriptIndicatorVisible; // cached, updated in setObjectValue/updateTranscriptState
+@property (nonatomic, strong) UIImageView* playlistIndicator;
+@property (nonatomic) BOOL playlistIndicatorVisible;
 @property (nonatomic, strong) UIImageView* watchIndicator;
 @property (nonatomic) BOOL watchIndicatorVisible;
 @property (nonatomic, strong) UIView* starredIndicator;
@@ -105,6 +109,13 @@
         _transcriptIndicator.contentMode = UIViewContentModeScaleAspectFit;
         _transcriptIndicator.hidden = YES;
         [self.panningContentView addSubview:_transcriptIndicator];
+
+        _playlistIndicator = [[UIImageView alloc] initWithFrame:CGRectZero];
+        _playlistIndicator.image = [[UIImage systemImageNamed:ICEpisodePlayNextMenuSymbolName() withConfiguration:config] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        _playlistIndicator.tintColor = ICTintColor;
+        _playlistIndicator.contentMode = UIViewContentModeScaleAspectFit;
+        _playlistIndicator.hidden = YES;
+        [self.panningContentView addSubview:_playlistIndicator];
 
         _watchIndicator = [[UIImageView alloc] initWithFrame:CGRectZero];
         _watchIndicator.image = [[UIImage systemImageNamed:@"applewatch" withConfiguration:config] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -199,6 +210,7 @@
         self.dateLabel,
         self.consumeIndicator2,
         self.transcriptIndicator,
+        self.playlistIndicator,
         self.watchIndicator,
         self.videoIndicator,
         self.starredIndicator,
@@ -256,6 +268,8 @@
     self.leftSwipeTintProvider = nil;
     self.rightSwipeImageProvider = nil;
     self.rightSwipeTintProvider = nil;
+    self.playlistIndicatorVisible = NO;
+    self.playlistIndicator.hidden = YES;
     self.watchIndicatorVisible = NO;
     self.watchIndicator.hidden = YES;
 
@@ -344,6 +358,7 @@
         [self updatePlayComboButtonState];
         [self updatePlayedAndStarredState];
         [self updateTranscriptIndicatorState];
+        [self updatePlaylistIndicatorState];
         [self updateWatchIndicatorState];
 
     }
@@ -535,6 +550,21 @@
     }
 }
 
+- (void) updatePlaylistIndicatorState
+{
+    CDEpisode* episode = (CDEpisode*)self.objectValue;
+    self.playlistIndicatorVisible = NO;
+    self.playlistIndicator.hidden = YES;
+
+    if (episode && [[AudioSession sharedAudioSession].playlist containsObject:episode]) {
+        self.playlistIndicatorVisible = YES;
+        self.playlistIndicator.hidden = NO;
+        self.playlistIndicator.tintColor = ICTintColor;
+    }
+
+    [self setNeedsLayout];
+}
+
 - (void) updateWatchIndicatorState
 {
     CDEpisode* episode = (CDEpisode*)self.objectValue;
@@ -707,6 +737,12 @@
     _transcriptIndicator.frame = CGRectMake(indicatorX, indicatorY, 14, 11);
     if (self.transcriptIndicatorVisible) {
         indicatorY = CGRectGetMaxY(_transcriptIndicator.frame) + 3;
+    }
+
+    _playlistIndicator.hidden = !self.playlistIndicatorVisible;
+    _playlistIndicator.frame = CGRectMake(indicatorX, indicatorY, 14, 11);
+    if (self.playlistIndicatorVisible) {
+        indicatorY = CGRectGetMaxY(_playlistIndicator.frame) + 3;
     }
 
     _watchIndicator.hidden = !self.watchIndicatorVisible;

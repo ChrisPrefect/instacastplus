@@ -297,4 +297,36 @@ UIImage* ICImageFromByDrawingInContextWithScale(CGSize size, BOOL opaque, CGFloa
     UIGraphicsEndImageContext();
     return image;
 }
+
+UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize)
+{
+    CGFloat sizeValue = MAX(24.f, pointSize);
+    CGSize size = CGSizeMake(sizeValue, sizeValue);
+    CGFloat scale = [UIScreen mainScreen].scale;
+    UIImage* image = ICImageFromByDrawingInContextWithScale(size, NO, scale, ^{
+        UIColor* color = [UIColor blackColor];
+        NSString* symbolName = forward ? @"goforward" : @"gobackward";
+        UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:sizeValue * 0.82f
+                                                                                              weight:UIImageSymbolWeightRegular];
+        UIImage* symbol = [[UIImage systemImageNamed:symbolName withConfiguration:config] imageWithTintColor:color
+                                                                                              renderingMode:UIImageRenderingModeAlwaysOriginal];
+        CGRect symbolRect = CGRectInset((CGRect){ .origin = CGPointZero, .size = size }, 1.f, 1.f);
+        [symbol drawInRect:symbolRect];
+
+        NSString* secondsText = [NSString stringWithFormat:@"%ld", (long)seconds];
+        CGFloat fontSize = secondsText.length >= 3 ? sizeValue * 0.22f : sizeValue * 0.29f;
+        UIFont* font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
+        NSMutableParagraphStyle* paragraphStyle = [[NSMutableParagraphStyle alloc] init];
+        paragraphStyle.alignment = NSTextAlignmentCenter;
+        NSDictionary* attributes = @{
+            NSFontAttributeName: font,
+            NSForegroundColorAttributeName: color,
+            NSParagraphStyleAttributeName: paragraphStyle,
+        };
+        CGFloat textHeight = ceilf(font.lineHeight);
+        CGRect textRect = CGRectMake(0, floorf((sizeValue - textHeight) * 0.5f), sizeValue, textHeight);
+        [secondsText drawInRect:textRect withAttributes:attributes];
+    });
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
 #endif
