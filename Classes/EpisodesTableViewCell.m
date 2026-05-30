@@ -601,6 +601,7 @@
     CGRect contentBounds = self.contentView.bounds;
     contentBounds.origin = CGPointZero;
     self.panningContentView.frame = contentBounds;
+    BOOL usesTableEditingLayout = self.editing && self.showsEditControl;
     
 	CGRect textLabelRect = self.titleLabel.frame;
     CGRect detailLabelRect = self.summaryLabel.frame;
@@ -610,14 +611,14 @@
 	CGRect consumeIndicatorFrame = CGRectMake(10, 9, 10, 10);
     
     self.videoIndicator.hidden = (!episode.video);
-    self.videoIndicator.alpha = (self.editing) ? 0.0 : 1.0;
+    self.videoIndicator.alpha = usesTableEditingLayout ? 0.0 : 1.0;
     CGRect videoIndicatorFrame = CGRectMake(10, (self.consumeIndicator2.hidden)?10:28, 10, 9);
     
     textLabelRect.origin.x = 25;
     textLabelRect.origin.y = 5;
     
 
-	if (self.editing)
+	if (usesTableEditingLayout)
     {
         imageViewRect.origin.x = -CGRectGetMinX(self.contentView.frame)-56;
         
@@ -631,7 +632,7 @@
     CGFloat textFieldWidth = CGRectGetWidth(bounds)-25-44; // 44 = play button
     if (self.embedded) {
         textFieldWidth += 44-15;
-        if (self.editing) {
+        if (usesTableEditingLayout) {
             textFieldWidth -= 65;
         }
     }
@@ -713,14 +714,14 @@
 
     self.videoIndicator.frame = videoIndicatorFrame;
     
-    self.starredIndicator.frame = (self.editing) ? CGRectMake(-56, 0, 3, CGRectGetHeight(bounds)) : CGRectMake(0, 0, 3, CGRectGetHeight(bounds));
+    self.starredIndicator.frame = usesTableEditingLayout ? CGRectMake(-56, 0, 3, CGRectGetHeight(bounds)) : CGRectMake(0, 0, 3, CGRectGetHeight(bounds));
     
     //self.playAccessoryButton.frame = CGRectMake(CGRectGetMaxX(bounds)-44, floorf((CGRectGetHeight(bounds)-44)/2), 44, 44);
     self.playAccessoryButton.frame = CGRectMake(CGRectGetMaxX(bounds)-60, floorf((CGRectGetHeight(bounds)-60)/2), 60, 60);
     self.playAccessoryButton.tintColor = (episode.consumed) ? [UIColor colorWithWhite:0.5f alpha:1.0f] : ICTintColor;
     
     
-    self.playAccessoryButton.hidden = (self.embedded || self.editing);
+    self.playAccessoryButton.hidden = (self.embedded || usesTableEditingLayout);
     _starredIndicator.backgroundColor = [UIColor colorWithRed:1.f green:174/255.0 blue:0.f alpha:1.f];
     
     

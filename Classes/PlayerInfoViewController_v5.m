@@ -542,6 +542,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void) _setObserving:(BOOL)observing
 {
+    AudioSession* audioSession = [AudioSession sharedAudioSession];
     PlaybackManager* pman = [PlaybackManager playbackManager];
     NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
     
@@ -599,6 +600,16 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                 [weakSelf _removeTranscriptCacheForEpisode:episode];
             }
         }];
+
+        [audioSession addTaskObserver:self forKeyPath:@"playlist" task:^(id obj, NSDictionary *change) {
+            (void)obj;
+            (void)change;
+            if (!weakSelf.isViewLoaded || weakSelf.view.window == nil) {
+                return;
+            }
+            [weakSelf layoutHeaderView];
+            [weakSelf.tableView reloadData];
+        }];
         
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
@@ -618,6 +629,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [pman removeTaskObserver:self forKeyPath:@"time"];
         [pman removeTaskObserver:self forKeyPath:@"currentChapter"];
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode.consumed"];
+        [audioSession removeTaskObserver:self forKeyPath:@"playlist"];
 
         [nc removeObserver:self];
 
@@ -3174,32 +3186,37 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     PlaybackManager* pman = [PlaybackManager playbackManager];
     NSInteger currentChapter = [self _effectiveChapterIndexForPlaybackManager:pman];
     
-    for(NSIndexPath* indexPath in self.tableView.indexPathsForVisibleRows)
+    for(UITableViewCell* tableCell in self.tableView.visibleCells)
     {
-        ChaptersTableViewCell* cell = (ChaptersTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
-        if ([cell isKindOfClass:[ChaptersTableViewCell class]])
-        {
-            if (indexPath.row == currentChapter) {
-                cell.textLabel.textColor = self.view.tintColor;
-                cell.numLabel.textColor = self.view.tintColor;
-                cell.timeLabel.textColor = self.view.tintColor;
-            }
-            else
-            {
-                cell.textLabel.textColor = (indexPath.row <= currentChapter) ? ICMutedTextColor : ICTextColor;
-                cell.numLabel.textColor = ICMutedTextColor;
-                cell.timeLabel.textColor = ICMutedTextColor;
-            }
-            
-            BOOL hidden = (currentChapter != indexPath.row);
-            BOOL changed = (cell.progressView.hidden != hidden);
-            cell.progressView.hidden = hidden;
-            float progress = 0;
-            if (cell.objectValue.duration > 0) {
-                progress = MAX(0, MIN(1, (pman.time - cell.objectValue.timecode) / cell.objectValue.duration));
-            }
-            [cell.progressView setProgress:progress animated:(!hidden && !changed)];
+        if (![tableCell isKindOfClass:[ChaptersTableViewCell class]]) {
+            continue;
         }
+        NSIndexPath* indexPath = [self.tableView indexPathForCell:tableCell];
+        if (indexPath == nil || ![self _hasChapters] || indexPath.section != [self _chaptersSection]) {
+            continue;
+        }
+
+        ChaptersTableViewCell* cell = (ChaptersTableViewCell*)tableCell;
+        if (indexPath.row == currentChapter) {
+            cell.textLabel.textColor = self.view.tintColor;
+            cell.numLabel.textColor = self.view.tintColor;
+            cell.timeLabel.textColor = self.view.tintColor;
+        }
+        else
+        {
+            cell.textLabel.textColor = (indexPath.row <= currentChapter) ? ICMutedTextColor : ICTextColor;
+            cell.numLabel.textColor = ICMutedTextColor;
+            cell.timeLabel.textColor = ICMutedTextColor;
+        }
+
+        BOOL hidden = (currentChapter != indexPath.row);
+        BOOL changed = (cell.progressView.hidden != hidden);
+        cell.progressView.hidden = hidden;
+        float progress = 0;
+        if (cell.objectValue.duration > 0) {
+            progress = MAX(0, MIN(1, (pman.time - cell.objectValue.timecode) / cell.objectValue.duration));
+        }
+        [cell.progressView setProgress:progress animated:(!hidden && !changed)];
     }
 
 }
@@ -3444,7 +3461,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
             
             [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
-            [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationRight];
         }
     }
 }

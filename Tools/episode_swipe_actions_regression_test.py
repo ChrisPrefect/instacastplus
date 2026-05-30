@@ -66,6 +66,10 @@ cell_layout = method_body(
     cell_source,
     "- (void) layoutSubviews",
 )
+cell_layout_code = "\n".join(
+    line for line in cell_layout.splitlines()
+    if not line.lstrip().startswith("//")
+)
 
 
 def outside_contextual_action_handler(source: str) -> str:
@@ -206,6 +210,14 @@ require(
     and "self.panningContentView.frame = self.contentView.bounds;" not in cell_layout
     and "CGRect contentBounds = self.contentView.bounds;\n    contentBounds.origin = CGPointZero;\n    self.panningContentView.frame = contentBounds;" in cell_layout,
     "Native UIKit swipes must not relayout the episode container to contentView.bounds while the swipe view is moving; keep one zero-origin content container so artwork and text travel as one row.",
+)
+require(
+    "BOOL usesTableEditingLayout = self.editing && self.showsEditControl;" in cell_layout_code
+    and "if (usesTableEditingLayout)" in cell_layout_code
+    and "if (self.editing)" not in cell_layout_code
+    and "(self.editing)" not in cell_layout_code
+    and "imageViewRect.origin.x = -CGRectGetMinX(self.contentView.frame)-56;" in cell_layout_code,
+    "Native swipe actions can put UITableViewCell into an editing transition without table edit controls; only the real table-editing layout may counter-position the episode artwork.",
 )
 require(
     "self.panningContentView.hidden = YES" not in cell_source,
