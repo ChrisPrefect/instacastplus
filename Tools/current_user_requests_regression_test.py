@@ -49,14 +49,16 @@ en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text
 
 require(
     "TSSectionIntro" in transcription_settings
-    and "Transkriptions- und Kapiteljobs startest du" in transcription_settings
+    and "Lege den Finger länger auf eine Episode" in transcription_settings
+    and "Kontextmenü" in transcription_settings
     and "Downloads > Transkribieren" in transcription_settings
-    and "Player" in transcription_settings,
-    "Transcription settings must start with a concise how-to section explaining start, monitoring, and player usage.",
+    and "Sprechblasen-Symbol" in transcription_settings
+    and "Podcast eigene Kapitel" in transcription_settings,
+    "Transcription settings must explain long-press start, monitoring, player transcript button, and existing podcast chapters.",
 )
 for strings in (de_strings, en_strings):
     require(
-        "Transkriptions- und Kapiteljobs startest du" in strings
+        "Lege den Finger länger auf eine Episode" in strings
         and "Downloads > Transkribieren" in strings,
         "Transcription how-to copy must be localized in German and English resources.",
     )
@@ -158,5 +160,5 @@ require(
 require(
     "hasChapterGenerationTranscript" in episodes_controller
     and "hasChapterGenerationTranscript" in episode_controller,
-    "Episode menus must base the Chapters generieren action on transcripts that the chapter queue can actually consume.",
+    "Episode menus must base the Kapitel generieren action on transcripts that the chapter queue can actually consume.",
 )

@@ -322,8 +322,7 @@ actor WhisperKitBackend {
         WhisperKitBackend.migrateFromDocumentsIfNeeded()
         let modelDir = WhisperKitBackend.modelFolderURL(modelName: modelName)
         WhisperKitBackend.prepareModelDirectoryForCoreML(in: modelDir)
-        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: modelDir.path),
-              contents.contains(where: { $0.hasSuffix(".mlmodelc") }) else {
+        guard WhisperKitBackend.hasCompiledModelFiles(in: modelDir) else {
             return nil
         }
         if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: modelDir) {

@@ -322,15 +322,15 @@ enum {
 
 - (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section {
     if (section == kOptionsSectionMain) {
-        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 170)];
+        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 56)];
         footerView.backgroundColor = [UIColor clearColor];
 
-        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 170)];
+        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 56)];
         footerLabel.numberOfLines = 0;
         footerLabel.textAlignment = NSTextAlignmentLeft;
         [footerLabel setTextColor:[UIColor grayColor]];
         footerLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
-        footerLabel.text = [NSString stringWithFormat:@"\nVersion %@\nPublisher: Chris Thomann \nDeveloper: Opus, Codex\nDevendra Kamal, Tasia Mosahid \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion]];
+        footerLabel.text = [NSString stringWithFormat:@"\nVersion %@", [NSBundle appVersion]];
 
         [footerView addSubview:footerLabel];
         return footerView;
@@ -341,7 +341,7 @@ enum {
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
     if (section == kOptionsSectionMain) {
-        return 170;
+        return 56;
     }
     return 0.0f;
 }

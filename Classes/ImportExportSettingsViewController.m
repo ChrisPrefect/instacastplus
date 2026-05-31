@@ -560,6 +560,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:AutoDeleteAfterFinishedPlaying]) [xml appendFormat:@"    <autoDeletePlayed>%@</autoDeletePlayed>\n", [defaults boolForKey:AutoDeleteAfterFinishedPlaying] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoDeleteAfterMarkedAsPlayed]) [xml appendFormat:@"    <autoDeleteMarkedPlayed>%@</autoDeleteMarkedPlayed>\n", [defaults boolForKey:AutoDeleteAfterMarkedAsPlayed] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoDeleteNewsMode]) [xml appendFormat:@"    <autoDeleteNews>%@</autoDeleteNews>\n", [defaults boolForKey:AutoDeleteNewsMode] ? @"true" : @"false"];
+    if ([defaults objectForKey:PodcastRefreshOnAppStart]) [xml appendFormat:@"    <podcastRefreshOnAppStart>%@</podcastRefreshOnAppStart>\n", [defaults boolForKey:PodcastRefreshOnAppStart] ? @"true" : @"false"];
     if ([defaults objectForKey:AutoCacheStorageLimit]) [xml appendFormat:@"    <autoCacheStorageLimit>%ld</autoCacheStorageLimit>\n", (long)[defaults integerForKey:AutoCacheStorageLimit]];
     if ([defaults objectForKey:AutoDownloadWhileStreaming]) [xml appendFormat:@"    <autoDownloadWhileStreaming>%@</autoDownloadWhileStreaming>\n", [defaults boolForKey:AutoDownloadWhileStreaming] ? @"true" : @"false"];
     // Cellular

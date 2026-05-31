@@ -15,6 +15,12 @@
 
 static NSString* kFeedCell = @"FeedCell";
 
+enum {
+    kRefreshSection,
+    kFeedsSection,
+    kNumberOfSections
+};
+
 
 @interface FeedOptionsViewController ()
 
@@ -83,16 +89,28 @@ static NSString* kFeedCell = @"FeedCell";
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
-    return 1;
+    return kNumberOfSections;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
+    if (section == kRefreshSection) {
+        return 1;
+    }
     return [DMANAGER.feeds count];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    if (indexPath.section == kRefreshSection) {
+        UITableViewCell* cell = [self switchCell];
+        UISwitch* control = (UISwitch*)cell.accessoryView;
+        cell.textLabel.text = @"Podcast-Refresh bei App-Start".ls;
+        control.on = [USER_DEFAULTS boolForKey:PodcastRefreshOnAppStart];
+        [control addTarget:self action:@selector(toggleStartupRefresh:) forControlEvents:UIControlEventValueChanged];
+        return cell;
+    }
+
     SubscriptionSettingTableViewCell *cell = (SubscriptionSettingTableViewCell*)[tableView dequeueReusableCellWithIdentifier:kFeedCell forIndexPath:indexPath];
 
     CDFeed* feed = [DMANAGER.feeds objectAtIndex:indexPath.row];
@@ -111,6 +129,10 @@ static NSString* kFeedCell = @"FeedCell";
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
+    if (indexPath.section == kRefreshSection) {
+        return;
+    }
+
     CDFeed* feed = [DMANAGER.feeds objectAtIndex:indexPath.row];
     
     FeedSettingsViewController* viewController = [FeedSettingsViewController feedSettingsViewControllerWithFeed:feed];
@@ -120,6 +142,10 @@ static NSString* kFeedCell = @"FeedCell";
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
+    if (section == kRefreshSection) {
+        return @"Automatically refresh podcasts when opening the app or returning to it. Manual refreshes, push updates, and iOS background fetch are unaffected.".ls;
+    }
+
     return @"Use the switch to temporarily pause a podcast. No new episodes will be fetched and no auto-downloads will occur. Tap a row to change individual podcast settings. Colored disclosure triangles indicate that custom settings apply.".ls;
 }
 
@@ -149,6 +175,11 @@ static NSString* kFeedCell = @"FeedCell";
     CDFeed* feed = [DMANAGER.feeds objectAtIndex:index];
     feed.parked = !switchControl.on;
     [DMANAGER save];
+}
+
+- (void) toggleStartupRefresh:(UISwitch*)switchControl
+{
+    [USER_DEFAULTS setBool:switchControl.on forKey:PodcastRefreshOnAppStart];
 }
 
 @end

@@ -62,6 +62,8 @@
 @property (nonatomic, readonly) double streamingCacheProgress;
 @property (nonatomic, readonly) BOOL streamingCacheComplete;
 
+- (void) useCachedFileIfAvailableAfterStreamingDownload;
+
 @property (nonatomic) double position;
 @property (nonatomic, readonly) double playablePosition;
 

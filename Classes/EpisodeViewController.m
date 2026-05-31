@@ -1379,7 +1379,7 @@
     BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:self.episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash] || self.episode.chapters.count > 0;
     if (hasTranscript && !hasAnyChapters) {
-        [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
+        [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Kapitel generieren", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             if (![ICDownloadableModelStore selectedChapterModelCanGenerate]) {
                 UIViewController* settingsVC = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:NO];

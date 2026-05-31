@@ -81,6 +81,7 @@
     if ([phase isEqualToString:@"model"])     return NSLocalizedString(@"Modell", nil);
     if ([phase isEqualToString:@"transcribe"]) return NSLocalizedString(@"Transkription", nil);
     if ([phase isEqualToString:@"chapters"])  return NSLocalizedString(@"Kapitel", nil);
+    if ([phase isEqualToString:@"background"]) return NSLocalizedString(@"Hintergrund", nil);
     if ([phase isEqualToString:@"done"])      return NSLocalizedString(@"Fertig", nil);
     if ([phase isEqualToString:@"error"])     return NSLocalizedString(@"Fehler", nil);
     return phase;
@@ -556,6 +557,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             // download must not be labelled as interrupted even though isProcessing=NO
             // on the queue (downloads run on the CacheManager, not the queue itself).
             BOOL isDownloading = [item.error isEqualToString:NSLocalizedString(@"Episode wird heruntergeladen...", nil)];
+            BOOL isBackgroundPaused = [item.statusDetail isEqualToString:NSLocalizedString(@"Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", nil)];
             if (isDownloading) {
                 CDEpisode* ep = [self _episodeForHash:item.episodeHash];
                 double p = ep ? [[CacheManager sharedCacheManager] cacheProgressForEpisode:ep] : 0.0;
@@ -570,6 +572,19 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
                     cell.progressView.hidden = YES;
                 }
                 detail = item.statusDetail ?: NSLocalizedString(@"Automatischer Download für die Transkription.", nil);
+                cell.timeLabel.text = elapsedText ?: @"";
+            } else if (isBackgroundPaused) {
+                int pct = (int)(item.progress * 100);
+                if (pct > 0) {
+                    headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription pausiert (%d%%)", nil), pct];
+                    cell.progressView.progress = item.progress;
+                    cell.progressView.hidden = NO;
+                } else {
+                    headline = NSLocalizedString(@"Transkription pausiert", nil);
+                    cell.progressView.progress = 0;
+                    cell.progressView.hidden = YES;
+                }
+                detail = item.statusDetail;
                 cell.timeLabel.text = elapsedText ?: @"";
             } else if (item.error.length > 0 && ![TranscriptionQueue shared].isProcessing) {
                 headline = NSLocalizedString(@"Unterbrochen", nil);

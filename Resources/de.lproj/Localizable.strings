@@ -73,7 +73,9 @@
 "You support the development of InstacastPlus with purchases through these links." = "Sie unterstützen mit Käufen über diese Links die Weiterentwicklung von InstacastPlus.";
 "Auto-Download Content" = "Inhalte automatisch laden";
 "Crazy (3x)" = "Verrückt (3x)";
-"Enable News Mode to only keep the most recent episode(s) of a podcast." = "Einschalten, um das Herunterladen und Löschen von Inhalten für Podcasts zu optimieren, die häufig und mehrmals am Tag veröffentlichen.";
+"Automatically refresh podcasts when opening the app or returning to it. Manual refreshes, push updates, and iOS background fetch are unaffected." = "Aktualisiert Podcasts automatisch, wenn die App gestartet oder in den Vordergrund zurückgeholt wird. Manuelles Aktualisieren, Push-Updates und iOS-Hintergrundaktualisierung bleiben unabhängig davon.";
+"News Mode keeps only episodes from the newest publishing day as unplayed. Older episodes are marked as played and downloaded files are deleted automatically." = "Der News Mode hält nur Folgen vom neuesten Veröffentlichungstag als ungespielt. Ältere Folgen werden als gespielt markiert und heruntergeladene Dateien automatisch gelöscht.";
+"Podcast-Refresh bei App-Start" = "Podcast-Refresh bei App-Start";
 "Enable to show all episodes regardless of whether or not they are still available on the publisher's server." = "Einschalten, um alle Folgen anzuzeigen, auch wenn diese online nicht mehr verfügbar sind.";
 "Episodes" = "Folgen";
 "Fast (2x)" = "Schnell (2x)";
@@ -1050,9 +1052,11 @@
 "CL Music Analysis" = "Erkennt Musik-Segmente (Jingles, Intros) mit Apple SoundAnalysis für genauere Kapitelgrenzen.";
 
 "Chapters generieren" = "Chapters generieren";
+"Kapitel generieren" = "Kapitel generieren";
 "Generierte Chapters löschen" = "Generierte Chapters löschen";
 "Neue Folgen transkribieren" = "Neue Folgen transkribieren";
 "Neue Folgen Chapters generieren" = "Neue Folgen Chapters generieren";
+"Neue Folgen Kapitel generieren" = "Neue Folgen Kapitel generieren";
 "Voreinstellung für alle Podcasts" = "Voreinstellung für alle Podcasts";
 "Erfordert Apple Intelligence" = "Erfordert Apple Intelligence";
 "Sponsoren überspringen" = "Sponsoren überspringen";
@@ -1203,9 +1207,11 @@
 "Modelle" = "Modelle";
 "Voice to Text" = "Voice to Text";
 "Text zu Kapitel" = "Text zu Kapitel";
+"Transkribieren" = "Transkribieren";
 "Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet." = "Wähle das Modell für Transkriptionen. Wenn es fehlt, wird es heruntergeladen und vorbereitet.";
 "Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet." = "Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet.";
 "Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar." = "Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar.";
+"Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten." = "Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten.";
 "Geladene Modelle kannst du per Swipe nach links löschen." = "Geladene Modelle kannst du per Swipe nach links löschen.";
 "Sehr gute Genauigkeit, größerer Download." = "Sehr gute Genauigkeit, größerer Download.";
 "Kleinerer Download, schneller bereit." = "Kleinerer Download, schneller bereit.";
@@ -1319,6 +1325,7 @@
 "Fertig" = "Fertig";
 "Folge hat bereits Kapitel." = "Folge hat bereits Kapitel.";
 "Gerätecode erstellen" = "Gerätecode erstellen";
+"Hintergrund" = "Hintergrund";
 "Hintergrund nicht verfügbar" = "Hintergrund nicht verfügbar";
 "Ich habe den Code eingegeben" = "Ich habe den Code eingegeben";
 "Integrierter Zugang" = "Integrierter Zugang";
@@ -1362,6 +1369,8 @@
 "Transcript" = "Transkript";
 "Transkript wird mit maximalem Kontext für das Kapitelmodell vorbereitet." = "Transkript wird mit maximalem Kontext für das Kapitelmodell vorbereitet.";
 "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." = "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.";
+"Transkription pausiert" = "Transkription pausiert";
+"Transkription pausiert (%d%%)" = "Transkription pausiert (%d%%)";
 "Transkriptions-Log" = "Transkriptions-Log";
 "Warteschlange" = "Warteschlange";
 "Zugangsdaten eingerichtet." = "Zugangsdaten eingerichtet.";

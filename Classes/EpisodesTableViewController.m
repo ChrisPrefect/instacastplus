@@ -1698,12 +1698,12 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [actions addObject:transcribeAction];
     }
 
-    // Chapters generieren (if transcript available but no generated chapters anywhere —
+    // Kapitel generieren (if transcript available but no generated chapters anywhere —
     // neither in the JSON cache nor copied into Core Data on first playback).
     BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash] || episode.chapters.count > 0;
     if (hasTranscript && !hasAnyChapters) {
-        UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Chapters generieren", nil)
+        UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Kapitel generieren", nil)
                                                        image:[UIImage systemImageNamed:@"list.number"]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {

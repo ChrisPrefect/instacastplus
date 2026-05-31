@@ -183,7 +183,7 @@ require(
     "Transcription queue is no longer awaiting chapter generation directly, so cancel/remove can leave stale LLM work running.",
 )
 require(
-    "item.chapterOnly = true\n        items.append(item)\n        persistQueue()\n        postQueueChangeNotification()\n\n        if !isProcessing && chapterTask == nil && !shouldPauseWhisperKitForBackground {\n            startChapterGenerationTask(for: item, srtURL: srtURL, startReason: \"chapter-task-enqueued\")\n        }" in queue_source,
+    "item.chapterOnly = true\n        items.append(item)\n        persistQueue()\n        postQueueChangeNotification()\n\n        if !isProcessing && chapterTask == nil && !shouldPauseWhisperKitForBackground {\n            startChapterGenerationTask(for: item, startReason: \"chapter-task-enqueued\")\n        }" in queue_source,
     "Chapter-only debug/UI jobs must stay queued behind an active transcription instead of starting a second model task concurrently.",
 )
 require(

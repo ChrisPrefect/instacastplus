@@ -99,6 +99,7 @@ NSString* SharingTwitterHandle= @"SharingTwitterHandle";
 NSString* AutoDeleteAfterFinishedPlaying = @"AutoDeleteAfterFinishedPlaying";
 NSString* AutoDeleteAfterMarkedAsPlayed = @"AutoDeleteAfterMarkedAsPlayed";
 NSString* AutoDeleteNewsMode = @"AutoDeleteNewsMode";
+NSString* PodcastRefreshOnAppStart = @"PodcastRefreshOnAppStart";
 NSString* KeepNewestEpisodesCount = @"KeepNewestEpisodesCount";
 NSString* ContinuousPlayFromFeed = @"ContinuousPlayFromFeed";
 NSString* AutoDownloadWhileStreaming = @"AutoDownloadWhileStreaming";

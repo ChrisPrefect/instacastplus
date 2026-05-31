@@ -314,7 +314,7 @@ UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize)
         [symbol drawInRect:symbolRect];
 
         NSString* secondsText = [NSString stringWithFormat:@"%ld", (long)seconds];
-        CGFloat fontSize = secondsText.length >= 3 ? sizeValue * 0.22f : sizeValue * 0.29f;
+        CGFloat fontSize = secondsText.length >= 3 ? sizeValue * 0.30f : sizeValue * 0.38f;
         UIFont* font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
         NSMutableParagraphStyle* paragraphStyle = [[NSMutableParagraphStyle alloc] init];
         paragraphStyle.alignment = NSTextAlignmentCenter;
@@ -323,8 +323,14 @@ UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize)
             NSForegroundColorAttributeName: color,
             NSParagraphStyleAttributeName: paragraphStyle,
         };
-        CGFloat textHeight = ceilf(font.lineHeight);
-        CGRect textRect = CGRectMake(0, floorf((sizeValue - textHeight) * 0.5f), sizeValue, textHeight);
+        CGSize textSize = [secondsText boundingRectWithSize:size
+                                                     options:NSStringDrawingUsesLineFragmentOrigin
+                                                  attributes:attributes
+                                                     context:nil].size;
+        CGRect textRect = CGRectMake(0,
+                                     ceilf((sizeValue - textSize.height) * 0.5f),
+                                     sizeValue,
+                                     ceilf(textSize.height));
         [secondsText drawInRect:textRect withAttributes:attributes];
     });
     return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];

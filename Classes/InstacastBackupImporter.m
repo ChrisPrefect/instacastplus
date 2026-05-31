@@ -1153,6 +1153,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"playerControls":          kDefaultPlayerControls,
         @"autoDeleteMarkedPlayed":  AutoDeleteAfterMarkedAsPlayed,
         @"autoDeleteNews":          AutoDeleteNewsMode,
+        @"podcastRefreshOnAppStart": PodcastRefreshOnAppStart,
         @"enableCachingOver3G":     EnableCachingOver3G,
         @"enableRefreshingOver3G":  EnableRefreshingOver3G,
         @"enableStreamingOver3G":   EnableStreamingOver3G,
@@ -1214,6 +1215,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     NSSet *boolKeys = [NSSet setWithArray:@[
         @"autoCacheAudio", @"autoCacheVideo", @"autoDeletePlayed", @"disableAutoLock",
         @"sleepTimerAlways", @"disableSleepTimerCarPlay", @"autoDeleteMarkedPlayed", @"autoDeleteNews",
+        @"podcastRefreshOnAppStart",
         @"enableCachingOver3G", @"enableRefreshingOver3G", @"enableStreamingOver3G",
         @"uiSoundEnabled", @"showBadge", @"dontDeleteUpNext", @"showUnavailable",
         @"themeDefaultActive", @"playerPerPodcastColor", @"widgetThemeDefaultActive",

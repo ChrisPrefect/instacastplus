@@ -123,7 +123,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
     cell.textLabel.numberOfLines = 0;
     cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
     cell.textLabel.textColor = ICMutedTextColor;
-    cell.textLabel.text = NSLocalizedString(@"Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar.", nil);
+    cell.textLabel.text = NSLocalizedString(@"Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten.", nil);
     return cell;
 }
 
@@ -135,14 +135,14 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
     if (row == 0) {
         ICDownloadableModel *model = [ICDownloadableModelStore selectedModelForRole:ICDownloadableModelRoleVoiceToText];
-        cell.textLabel.text = NSLocalizedString(@"Voice to Text", nil);
+        cell.textLabel.text = NSLocalizedString(@"Transkribieren", nil);
         cell.detailTextLabel.text = [self _summaryForModel:model];
         return cell;
     }
 
     if (row == 1) {
         ICDownloadableModel *model = [ICDownloadableModelStore selectedModelForRole:ICDownloadableModelRoleTextToChapters];
-        cell.textLabel.text = NSLocalizedString(@"Text zu Kapitel", nil);
+        cell.textLabel.text = NSLocalizedString(@"Kapitel generieren", nil);
         cell.detailTextLabel.text = [self _summaryForModel:model];
         return cell;
     }
@@ -371,7 +371,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
             toggle.on = [USER_DEFAULTS boolForKey:kTranscriptionAutoDefault];
             break;
         case 1:
-            cell.textLabel.text = NSLocalizedString(@"Neue Folgen Chapters generieren", nil);
+            cell.textLabel.text = NSLocalizedString(@"Neue Folgen Kapitel generieren", nil);
             toggle.on = [USER_DEFAULTS boolForKey:kChapterAutoDefault];
             break;
     }
@@ -418,7 +418,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Voice to Text", nil) : NSLocalizedString(@"Text zu Kapitel", nil);
+    self.title = self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Transkribieren", nil) : NSLocalizedString(@"Kapitel generieren", nil);
     self.busyModelIDs = [NSMutableSet set];
     self.downloadTasksByModelID = [NSMutableDictionary dictionary];
     self.downloadProgressByModelID = [NSMutableDictionary dictionary];
@@ -452,7 +452,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Voice to Text", nil) : NSLocalizedString(@"Text zu Kapitel", nil);
+    return self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Transkribieren", nil) : NSLocalizedString(@"Kapitel generieren", nil);
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {

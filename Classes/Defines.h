@@ -102,6 +102,7 @@ extern NSString* SharingTwitterHandle;
 extern NSString* AutoDeleteAfterFinishedPlaying;
 extern NSString* AutoDeleteAfterMarkedAsPlayed;
 extern NSString* AutoDeleteNewsMode;
+extern NSString* PodcastRefreshOnAppStart;
 extern NSString* KeepNewestEpisodesCount;
 extern NSString* ContinuousPlayFromFeed;
 extern NSString* AutoDownloadWhileStreaming;

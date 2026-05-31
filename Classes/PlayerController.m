@@ -552,24 +552,12 @@ enum {
 
     [self.view addSubview:self.controller.view];
     [self.controller didMoveToParentViewController:self];
-	
 
-	if (pman.ready && pman.movingVideo) {
-		[pman restart];
-	}
-
-	_state = LoadedState;
-	[self _stateMachine];
-	
-	[self.controller updateTimeWhenLoading];
-    [self.controller updateControlsUI];
-    [self.controller updateChapterMarkers];
-    
     // loading image
     CDEpisode* episode = [AudioSession sharedAudioSession].episode;
     CDFeed* feed = episode.feed;
 
-    // Apply cached tint color immediately (before image loads) to avoid color flash
+    // Apply cached tint color immediately before the first controls update to avoid color flash.
     if ([USER_DEFAULTS boolForKey:PlayerColorPerPodcastActive] && feed) {
         NSString* cachedHex = [feed stringForKey:@"cachedPlayerTintColor"];
         if (cachedHex.length > 0) {
@@ -580,6 +568,17 @@ enum {
             self.controller.tintColor = cachedColor;
         }
     }
+
+	if (pman.ready && pman.movingVideo) {
+		[pman restart];
+	}
+
+	_state = LoadedState;
+	[self _stateMachine];
+
+	[self.controller updateTimeWhenLoading];
+    [self.controller updateControlsUI];
+    [self.controller updateChapterMarkers];
 
     NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
     UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];

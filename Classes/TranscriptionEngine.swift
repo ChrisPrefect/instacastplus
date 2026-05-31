@@ -700,8 +700,9 @@ private struct TranscriptionCheckpoint: Codable {
                         self.currentProgress = segProgress
                         progress(segProgress, .transcribing)
 
-                        // Checkpoint every ~10%
-                        if segProgress - lastCheckpointProg >= 0.1 {
+                        // Keep checkpoint progress close to the visible progress so short
+                        // background pauses resume near where the user left off.
+                        if segProgress - lastCheckpointProg >= 0.01 {
                             lastCheckpointProg = segProgress
                             self.saveCheckpointWithCues(episodeHash: episodeHash, cues: accumulatedCues, engineType: effectiveEngine.rawValue)
                         }
@@ -1550,9 +1551,9 @@ private struct TranscriptionCheckpoint: Codable {
     @objc var roleTitle: String {
         switch role {
         case .voiceToText:
-            return NSLocalizedString("Voice to Text", comment: "")
+            return NSLocalizedString("Transkribieren", comment: "")
         case .textToChapters:
-            return NSLocalizedString("Text zu Kapitel", comment: "")
+            return NSLocalizedString("Kapitel generieren", comment: "")
         @unknown default:
             return ""
         }
@@ -1695,6 +1696,22 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
     private static let openAIFedRAMPAccount = "openai-oauth-fedramp"
     private static let openAIClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
     private static let openAIIssuer = "https://auth.openai.com"
+    private nonisolated(unsafe) static var didMigrateStoredSecretsForDeviceBackup = false
+    private nonisolated(unsafe) static var isMigratingStoredSecretsForDeviceBackup = false
+
+    private static var storedSecretAccounts: [String] {
+        [
+            openAIAPIKeyAccount,
+            anthropicAPIKeyAccount,
+            kimiAPIKeyAccount,
+            openAIAccessTokenAccount,
+            openAIRefreshTokenAccount,
+            openAIIDTokenAccount,
+            openAIAccountIDAccount,
+            openAIAccountEmailAccount,
+            openAIFedRAMPAccount,
+        ]
+    }
 
     @objc static func hasOpenAIAPIKey() -> Bool {
         return !(openAIAPIKey() ?? "").isEmpty
@@ -2049,6 +2066,8 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
     }
 
     private static func secret(account: String) -> String? {
+        migrateStoredSecretsForDeviceBackupIfNeeded()
+
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -2060,6 +2079,34 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    private static func migrateStoredSecretsForDeviceBackupIfNeeded() {
+        guard !didMigrateStoredSecretsForDeviceBackup, !isMigratingStoredSecretsForDeviceBackup else { return }
+        isMigratingStoredSecretsForDeviceBackup = true
+        var migrationComplete = true
+        defer {
+            isMigratingStoredSecretsForDeviceBackup = false
+            if migrationComplete {
+                didMigrateStoredSecretsForDeviceBackup = true
+            }
+        }
+
+        for account in storedSecretAccounts {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let attributes: [String: Any] = [
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            ]
+            let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound {
+                migrationComplete = false
+                NSLog("[ICRemoteChapterCredentialStore] Keychain accessibility migration failed for %@: %d", account, status)
+            }
+        }
     }
 
     private static func setSecret(_ value: String?, account: String) {
@@ -2075,7 +2122,7 @@ private final class ICModelDownloadCancellationBox: @unchecked Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecValueData as String: Data(value.utf8),
         ]
         SecItemAdd(attributes as CFDictionary, nil)

@@ -50,6 +50,8 @@
 	<true/>
 	<key>EnableRefreshFailureNotification</key>
 	<false/>
+	<key>PodcastRefreshOnAppStart</key>
+	<false/>
 	<key>EnableDownloadFinishedNotification</key>
 	<true/>
 	<key>ReplayAfterPause</key>

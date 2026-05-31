@@ -2342,6 +2342,27 @@ didReceiveResponse:(NSURLResponse *)response
     }
 }
 
+- (void) useCachedFileIfAvailableAfterStreamingDownload
+{
+#if TARGET_OS_IPHONE
+    if (!self.player || !self.streamCacheLoader || !self.playingEpisode) {
+        return;
+    }
+    if (!self.streamCacheLoader.cacheComplete || ![[CacheManager sharedCacheManager] episodeIsCached:self.playingEpisode]) {
+        return;
+    }
+
+    CDEpisode* episode = self.playingEpisode;
+    NSTimeInterval resumeTime = [self time];
+    if (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1 && self.duration > 0) {
+        resumeTime = self.seekingPosition * self.duration;
+    }
+
+    BOOL wasPlaying = (self.player.rate > 0 || self.state == ShouldRunState);
+    [self openWithEpisode:episode at:resumeTime autostart:wasPlaying];
+#endif
+}
+
 - (void) play
 {
     BOOL hasRecentSeek = (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1);

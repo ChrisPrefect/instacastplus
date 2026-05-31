@@ -508,11 +508,15 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     [self _updateAppContentAfterBecomingActive];
     [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
 
+    PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+
     // Sync Now Playing lockscreen state with actual playback state
-    [[PlaybackManager playbackManager] updateNowPlayingInfo];
+    [playbackManager updateNowPlayingInfo];
 
     // Auto-refresh feeds if last refresh was more than 30 minutes ago
     [self _autoRefreshFeedsIfNeeded];
+
+    [playbackManager useCachedFileIfAvailableAfterStreamingDownload];
 
     // Resume transcription queue after the foreground transition has yielded once.
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -540,6 +544,10 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 - (void) _autoRefreshFeedsIfNeeded
 {
     SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
+
+    if (![USER_DEFAULTS boolForKey:PodcastRefreshOnAppStart]) {
+        return;
+    }
 
     // Skip if already refreshing
     if (sman.isRefreshing) {

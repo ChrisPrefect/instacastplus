@@ -221,7 +221,7 @@ enum {
                 }
                 break;
             case 1:
-                cell.textLabel.text = NSLocalizedString(@"Neue Folgen Chapters generieren", nil);
+                cell.textLabel.text = NSLocalizedString(@"Neue Folgen Kapitel generieren", nil);
                 {
                     NSString* val = [self.feed stringForKey:kFeedPropertyAutoChapters];
                     control.on = (val == nil || [val isEqualToString:@"default"])
@@ -911,7 +911,7 @@ enum {
         return @"Temporarily stop updating this podcast when syncing subscriptions.".ls;
     }
     else if (section == kNewsModeSection) {
-        return @"Enable News Mode to only keep the most recent episode(s) of a podcast.".ls;
+        return @"News Mode keeps only episodes from the newest publishing day as unplayed. Older episodes are marked as played and downloaded files are deleted automatically.".ls;
     }
     else if (section == kAppleWatchSection) {
         return @"Die Apple Watch lädt ausgewählte Audiodateien selbst über WLAN oder Mobilfunk.".ls;

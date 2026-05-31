@@ -1662,11 +1662,11 @@ private struct PersistedQueue: Codable {
 
     private func finishBackgroundPause(for item: ICTranscriptionQueueItem, reason: String, error: Error? = nil) {
         backgroundPausedEpisodeHashes.insert(item.episodeHash)
+        let pauseDetail = NSLocalizedString("Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", comment: "")
         item.status = .queued
-        item.progress = 0
-        item.statusDetail = nil
+        item.statusDetail = pauseDetail
         item.statusStartedAt = nil
-        item.error = NSLocalizedString("Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", comment: "")
+        item.error = nil
         invalidateProcessingRun()
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.crashGuardKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)
@@ -1678,7 +1678,7 @@ private struct PersistedQueue: Codable {
         postQueueChangeNotification()
 
         TranscriptionLogger.shared.append(episodeHash: item.episodeHash,
-                                          phase: "error",
+                                          phase: "background",
                                           message: "Transkription im Hintergrund pausiert",
                                           detailText: error.map { TranscriptionQueue.detailedErrorMessage(for: $0) })
         ICDiagnosticLogger.shared.logEvent("queue", message: "Transkription im Hintergrund pausiert", metadata: [

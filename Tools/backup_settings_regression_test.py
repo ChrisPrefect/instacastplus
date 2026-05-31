@@ -39,6 +39,7 @@ missing_setting_tags = [
     "transcriptionEverActivated",
     "transcriptionFirstRunShown",
     "transcriptVisiblePreference",
+    "podcastRefreshOnAppStart",
 ]
 
 for tag in missing_setting_tags:

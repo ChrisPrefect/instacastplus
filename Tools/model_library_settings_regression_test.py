@@ -24,6 +24,11 @@ en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text
 model_catalog_source = engine_source.split(
     "private static let models: [ICDownloadableModel] = [", 1
 )[1].split("\n    ]", 1)[0]
+options_footer_source = (ROOT / "Classes" / "OptionsViewController.m").read_text().split(
+    "- (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section", 1
+)[1].split(
+    "- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section", 1
+)[0]
 
 
 require(
@@ -51,9 +56,10 @@ require(
 require(
     "MARKETING_VERSION = 3.4;" in project_source
     and "MARKETING_VERSION = 3.3;" not in project_source
-    and "Developer: Opus, Codex" in (ROOT / "Classes" / "OptionsViewController.m").read_text()
-    and "Claude Code Opus" not in (ROOT / "Classes" / "OptionsViewController.m").read_text(),
-    "Version must be 3.4 and the options footer must name Opus and Codex without the old Opus version.",
+    and "Version %@" in options_footer_source
+    and "Developer:" not in options_footer_source
+    and "Publisher:" not in options_footer_source,
+    "Version must be 3.4 and the options footer must not show developer or publisher credits.",
 )
 require(
     "ICChapterModelProvider" in engine_source
@@ -135,9 +141,11 @@ require(
 require(
     "modelLibraryViewControllerFocusedOnVoiceToText:" in settings_header
     and "ICModelLibraryViewController" in settings_source
-    and "Voice to Text" in settings_source
-    and "Text zu Kapitel" in settings_source,
-    "Settings does not provide dedicated voice/chapter model subpages.",
+    and "Transkribieren" in settings_source
+    and "Kapitel generieren" in settings_source
+    and "Voice to Text" not in settings_source
+    and "Text zu Kapitel" not in settings_source,
+    "Settings does not provide dedicated Transkribieren/Kapitel generieren model subpages.",
 )
 require(
     "case TSSectionModels: return 2;" in settings_source
