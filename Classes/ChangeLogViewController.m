@@ -52,6 +52,7 @@
         ],
         @[
             @"CL Transcription Feature".ls,
+            @"CL Search Transcript".ls,
             @"CL Chapter Generation".ls,
             @"CL Sponsor Detection".ls,
             @"CL Music Analysis".ls
@@ -67,6 +68,7 @@
             @"CL Swipeable Chapter Images".ls
         ],
         @[
+            @"CL Apple Watch".ls,
             @"CL Widgets".ls,
             @"CL Backup & Restore".ls,
             @"CL CarPlay".ls,
@@ -85,6 +87,8 @@
             @"CL Tap on Episode".ls,
             @"CL Context Menus".ls,
             @"CL Adjustable Font Size".ls,
+            @"CL Auto Refresh".ls,
+            @"CL Playback State Markers".ls,
             @"CL Faster Refresh".ls,
             @"CL Remember Scroll Position".ls,
             @"CL Faster App Start".ls

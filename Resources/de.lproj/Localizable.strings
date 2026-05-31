@@ -745,7 +745,8 @@
 "CL Redesigned Now Playing" = "Überarbeiteter Now-Playing-Bereich – Grösserer Play-Button, Kapitelname unter der Seekbar, vergrösserte Seekbar und Zeitanzeigen. Tippe oder ziehe an eine beliebige Stelle der Seekbar. Tippe auf den Podcast-Titel, um zur Episodenliste zu springen.";
 "CL Chapter Markers" = "Kapitelmarkierungen auf der Seekbar – Kapitelgrenzen auf einen Blick. Das aktuelle Kapitel wird hervorgehoben.";
 "CL Swipeable Chapter Images" = "Wischbare Kapitelbilder – Kapitelbilder durch Wischen durchblättern, ohne die Wiedergabeposition zu ändern.";
-"CL Widgets" = "Widgets – Home- und Sperrbildschirm-Widgets: Now Playing mit Play/Pause-Steuerung, Smart List (konfigurierbare Episodenliste), Statistik, und drei Sperrbildschirm-Varianten. Widget-Akzentfarbe separat einstellbar.";
+"CL Apple Watch" = "Apple Watch – Neue Watch-App mit Episodenliste, Downloads, Offline-Wiedergabe, Kapiteln, Abspielposition und Steuerung direkt am Handgelenk.";
+"CL Widgets" = "Widgets – Home- und Sperrbildschirm-Widgets: Now Playing mit Play/Pause-Steuerung, Smart List, Statistik, Watch-Komplikation und kompaktere Listenoptionen. Widget-Akzentfarbe separat einstellbar.";
 "CL Backup & Restore" = "Backup & Restore – Vollständiger Export aller Abonnements, Einstellungen, Playlists, Wiedergabestatus und Zugangsdaten. Import mit Live-Fortschritt, einzelne Podcasts überspringbar, jede Datenkategorie einzeln wählbar.";
 "CL CarPlay" = "CarPlay – Volle CarPlay-Unterstützung mit Podcast-Liste, Episodenauswahl und Wiedergabesteuerung.";
 "CL iPad & macOS" = "iPad & macOS – Eigene Layouts für iPad und Mac. Optimiert für iOS 26 Liquid Glass.";
@@ -759,11 +760,13 @@
 "CL Tap on Episode" = "Tippen auf Episode – Wählen, ob Tippen auf eine Episode diese direkt abspielt oder die Shownotes öffnet. Einstellungen > Wiedergabe.";
 "CL Context Menus" = "Kontextmenüs – Langes Drücken auf Episoden zeigt ein Kontextmenü mit Vorschau, inkl. als gehört/ungehört markieren.";
 "CL Adjustable Font Size" = "Einstellbare Schriftgrösse – Vier Stufen (Normal, Grösser, Noch grösser, Am grössten), gilt für die gesamte App. Einstellungen > Darstellung.";
+"CL Auto Refresh" = "Podcast-Refresh bei App-Start – Podcasts können automatisch aktualisiert werden, wenn InstacastPlus geöffnet oder wieder in den Vordergrund geholt wird.";
+"CL Playback State Markers" = "Abspiel-Markierungen – Gespielte und ungespielte Folgen sind in Listen und auf der Apple Watch klarer erkennbar.";
 "CL Faster Refresh" = "Schnellere Aktualisierung – Mehrere Podcasts werden gleichzeitig aktualisiert. Nicht erreichbare Podcasts blockieren die anderen nicht mehr. Klare Timeout-Meldungen.";
 "CL Remember Scroll Position" = "Scroll-Position merken – Die Position wird beim Verlassen langer Episodenlisten gespeichert.";
 "CL Faster App Start" = "Schnellerer App-Start – Spürbar schnellerer Start.";
 "CL Custom Colors" = "Eigene Farben – Eigene Interface-Akzentfarbe festlegen. Player-Farbe passt sich dem Podcast-Artwork an oder kann manuell gewählt werden.";
-"CL App Icons" = "App-Icons – Sieben Icons zur Auswahl, inkl. Dark-Mode-Variante.";
+"CL App Icons" = "App-Icons – Neue Icon-Varianten inklusive Dark- und Tinted-Versionen stehen zur Auswahl.";
 "CL Playback Speeds" = "Wiedergabegeschwindigkeiten – 0.5x bis 3x in feinen Stufen. Unter Einstellungen > Wiedergabe > Aktivierte Geschwindigkeitsstufen festlegen, welche Stufen im Player erscheinen.";
 "CL Dark Mode" = "Dark Mode – Automatisch (System), Hell oder Dunkel. Pure-Black-Modus für OLED-Displays. Optionaler externer Browser für Shownote-Links.";
 "CL MQTT Integration" = "MQTT-Integration – Wiedergabestatus, Kapitel, Sleep Timer, Lautstärke und Gerätestatus an deinen MQTT-Broker senden. Fernsteuerung über MQTT. Nur-WLAN-Modus verfügbar.";
@@ -1046,10 +1049,11 @@
 "CL Tip ChapterSkip" = "Pro Podcast können Kapitel definiert werden die automatisch übersprungen werden (z.B. Intros, Werbung). In den Podcast-Einstellungen konfigurieren.";
 "CL Tip SleepTimer" = "Der Sleep-Timer kann immer aktiv sein. Der intelligente Sleep-Timer pausiert die Wiedergabe wenn er erkennt dass du nicht mehr zuhörst (keine Bewegung, keine Bildschirmberührung).";
 "CL Tip Playlists" = "Erstelle eigene Abspiellisten mit Filtern (ungespielt, Favoriten, heruntergeladen) und aktiviere kontinuierliche Wiedergabe für automatischen Episodenwechsel.";
-"CL Transcription Feature" = "On-Device Transkription mit WhisperKit oder Apple Spracherkennung. Episoden direkt auf dem Gerät herunterladen und transkribieren.";
-"CL Chapter Generation" = "Automatische Kapitelerkennung mit Apple Intelligence. Erkennt Themenwechsel und erstellt navigierbare Kapitelmarker.";
-"CL Sponsor Detection" = "Erkennt Sponsoren-Segmente in Podcasts und kann sie automatisch überspringen. Nutzt den bestehenden Kapitel-Skip-Mechanismus.";
-"CL Music Analysis" = "Erkennt Musik-Segmente (Jingles, Intros) mit Apple SoundAnalysis für genauere Kapitelgrenzen.";
+"CL Transcription Feature" = "On-Device-Transkription – Episoden mit WhisperKit, Apple-Spracherkennung oder einem lokalen Modell direkt auf dem Gerät transkribieren. Neue Folgen können auf Wunsch automatisch verarbeitet werden.";
+"CL Search Transcript" = "Transkript-Suche – Transkripte im Player durchsuchen und direkt zur gefundenen Stelle springen.";
+"CL Chapter Generation" = "Automatische Kapitel – Apple Intelligence erkennt Themenwechsel im Transkript und erstellt navigierbare Kapitelmarker.";
+"CL Sponsor Detection" = "Sponsor-Erkennung – Werbe- und Sponsoren-Segmente können aus dem Transkript erkannt und über die Kapitel-Skip-Regeln automatisch übersprungen werden.";
+"CL Music Analysis" = "Musik-Analyse – Musik, Sprache und Stille werden erkannt, um Kapitelgrenzen genauer zu setzen.";
 
 "Chapters generieren" = "Chapters generieren";
 "Kapitel generieren" = "Kapitel generieren";

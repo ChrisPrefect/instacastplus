@@ -744,7 +744,8 @@
 "CL Redesigned Now Playing" = "Redesigned Now Playing – Larger play button, chapter name below the seek bar, bigger seek bar and time labels. Tap or drag anywhere on the seek bar to jump to that position. Tap the podcast title to jump to the episode list.";
 "CL Chapter Markers" = "Chapter Markers on Seek Bar – Chapter boundaries visible at a glance. The current chapter is highlighted.";
 "CL Swipeable Chapter Images" = "Swipeable Chapter Images – Browse chapter artwork by swiping without changing playback position.";
-"CL Widgets" = "Widgets – Home Screen and Lock Screen widgets: Now Playing with play/pause control, Smart List (configurable episode list), Stats, and three Lock Screen variants. Widget accent color configurable separately.";
+"CL Apple Watch" = "Apple Watch – New Watch app with episode lists, downloads, offline playback, chapters, playback position, and controls on your wrist.";
+"CL Widgets" = "Widgets – Home Screen and Lock Screen widgets: Now Playing with play/pause control, Smart List, Stats, Watch complication, and more compact list options. Widget accent color configurable separately.";
 "CL Backup & Restore" = "Backup & Restore – Full export of all subscriptions, settings, playlists, play status, and credentials. Import with live progress, skippable individual podcasts, and selective import of each data category.";
 "CL CarPlay" = "CarPlay – Full CarPlay support with podcast list, episode selection, and playback control.";
 "CL iPad & macOS" = "iPad & macOS – Dedicated layouts for iPad and Mac. Optimized for iOS 26 Liquid Glass.";
@@ -758,11 +759,13 @@
 "CL Tap on Episode" = "Tap on Episode – Choose whether tapping an episode plays it directly or opens the show notes. Settings > Playback.";
 "CL Context Menus" = "Context Menus – Long-press on episodes shows a context menu with preview, including mark as played/unplayed.";
 "CL Adjustable Font Size" = "Adjustable Font Size – Four levels (Normal, Larger, Even Larger, Largest), applied app-wide. Settings > Appearance.";
+"CL Auto Refresh" = "Podcast Refresh on App Start – Podcasts can refresh automatically when InstacastPlus opens or returns to the foreground.";
+"CL Playback State Markers" = "Playback Markers – Played and unplayed episodes are easier to recognize in lists and on Apple Watch.";
 "CL Faster Refresh" = "Faster Refresh – Multiple podcasts refresh simultaneously. Unreachable podcasts no longer block the rest. Clear timeout messages.";
 "CL Remember Scroll Position" = "Remember Scroll Position – Your place is saved when browsing long episode lists.";
 "CL Faster App Start" = "Faster App Start – Noticeably faster launch.";
 "CL Custom Colors" = "Custom Colors – Set your own interface accent color. Player color adapts to podcast artwork or can be set manually.";
-"CL App Icons" = "App Icons – Seven icons to choose from, including a Dark Mode variant.";
+"CL App Icons" = "App Icons – New icon variants are available, including Dark and Tinted versions.";
 "CL Playback Speeds" = "Playback Speeds – 0.5x to 3x in fine steps. Choose which speeds appear in the player under Settings > Playback > Enabled Speed Steps.";
 "CL Dark Mode" = "Dark Mode – Automatic (system), Light, or Dark. Pure Black mode for OLED displays. External browser option for shownote links.";
 "CL MQTT Integration" = "MQTT Integration – Publish playback status, chapters, sleep timer, volume, and device state to your MQTT broker. Remote control via MQTT. WiFi-only mode available.";
@@ -1043,10 +1046,11 @@
 "CL Tip ChapterSkip" = "Per podcast, you can define chapters that are automatically skipped (e.g. intros, ads). Configure in podcast settings.";
 "CL Tip SleepTimer" = "The sleep timer can be set to always active. The intelligent sleep timer pauses playback when it detects you've stopped listening (no motion, no screen touches).";
 "CL Tip Playlists" = "Create custom playlists with filters (unplayed, favorites, downloaded) and enable continuous playback for automatic episode advancement.";
-"CL Transcription Feature" = "On-device transcription using WhisperKit or Apple Speech Recognition. Download and transcribe episodes directly on your device.";
-"CL Chapter Generation" = "Automatic chapter detection using Apple Intelligence. Identifies topic changes and creates navigable chapter markers.";
-"CL Sponsor Detection" = "Detects sponsor segments in podcasts and can automatically skip them. Uses the existing chapter skip mechanism.";
-"CL Music Analysis" = "Detects music segments (jingles, intros) using Apple SoundAnalysis for more accurate chapter boundaries.";
+"CL Transcription Feature" = "On-device transcription – Transcribe episodes directly on your device with WhisperKit, Apple Speech Recognition, or a local model. New episodes can be processed automatically.";
+"CL Search Transcript" = "Transcript Search – Search transcripts in the player and jump straight to the matching moment.";
+"CL Chapter Generation" = "Automatic Chapters – Apple Intelligence detects topic changes in transcripts and creates navigable chapter markers.";
+"CL Sponsor Detection" = "Sponsor Detection – Ad and sponsor segments can be detected from transcripts and skipped automatically through chapter skip rules.";
+"CL Music Analysis" = "Music Analysis – Music, speech, and silence are detected to place chapter boundaries more accurately.";
 
 "Chapters generieren" = "Generate Chapters";
 "Kapitel generieren" = "Generate Chapters";

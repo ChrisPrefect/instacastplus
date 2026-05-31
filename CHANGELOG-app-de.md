@@ -1,5 +1,21 @@
 # InstacastPlus Änderungsprotokoll
 
+## Version 3.5
+
+- **Apple Watch-App** – Episodenlisten, Downloads, Offline-Wiedergabe, Kapitel, Abspielposition und Steuerung direkt auf der Apple Watch.
+- **On-Device-Transkription** – Folgen mit WhisperKit, Apple-Spracherkennung oder einem lokalen Modell direkt auf dem Gerät transkribieren.
+- **Transkript-Suche** – Transkripte im Player durchsuchen und direkt zur passenden Stelle springen.
+- **Automatische Kapitel & Sponsor-Erkennung** – Apple Intelligence erkennt Themenwechsel und Werbung im Transkript; Sponsor-Kapitel können automatisch übersprungen werden.
+- **Bessere Transkript- und Kapitelverarbeitung** – Hintergrundverarbeitung, Modellstatus, Fortschritt, Fehlerzustände und Wiederaufnahme sind robuster.
+- **Watch-Komplikation und Widgets** – Smart-List-Widgets wurden erweitert und die Apple Watch bekommt eine eigene Komplikation.
+- **Neue App-Icons** – Zusätzliche Icon-Varianten inklusive Dark- und Tinted-Versionen.
+- **Verbesserte Swipe-Aktionen und Kontextmenüs** – Aktionen wie Favorit, Gehört/Ungespielt und Play Next sind konsistenter und zeigen passendere Icons.
+- **Klarere Abspiel-Markierungen** – Gespielte und ungespielte Folgen sind in Listen und auf der Apple Watch besser erkennbar.
+- **Podcast-Refresh bei App-Start** – Podcasts können beim Öffnen oder Zurückkehren in die App automatisch aktualisiert werden.
+- **Viele TestFlight-Fixes** – Verbesserungen für Wiedergabe, Downloads, Benachrichtigungen, MQTT, AirPlay und Stabilität.
+
+---
+
 Wir haben InstacastPlus noch intelligenter und leistungsfähiger gemacht. Entdecken Sie die Neuerungen!
 
 ---
