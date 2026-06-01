@@ -634,6 +634,9 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:EpisodeSwipeLeftAction]) [xml appendFormat:@"    <episodeSwipeLeftAction>%ld</episodeSwipeLeftAction>\n", (long)[defaults integerForKey:EpisodeSwipeLeftAction]];
     if ([defaults objectForKey:AppleWatchSendLatestCount]) [xml appendFormat:@"    <appleWatchSendLatestCount>%ld</appleWatchSendLatestCount>\n", (long)[defaults integerForKey:AppleWatchSendLatestCount]];
     if ([defaults objectForKey:AppleWatchOnlyUnplayed]) [xml appendFormat:@"    <appleWatchOnlyUnplayed>%@</appleWatchOnlyUnplayed>\n", [defaults boolForKey:AppleWatchOnlyUnplayed] ? @"true" : @"false"];
+    if ([defaults objectForKey:ICiCloudSyncEpisodesEnabled]) [xml appendFormat:@"    <iCloudSyncEpisodes>%@</iCloudSyncEpisodes>\n", [defaults boolForKey:ICiCloudSyncEpisodesEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:ICiCloudSyncSubscriptionsEnabled]) [xml appendFormat:@"    <iCloudSyncSubscriptions>%@</iCloudSyncSubscriptions>\n", [defaults boolForKey:ICiCloudSyncSubscriptionsEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:ICiCloudSyncSettingsEnabled]) [xml appendFormat:@"    <iCloudSyncSettings>%@</iCloudSyncSettings>\n", [defaults boolForKey:ICiCloudSyncSettingsEnabled] ? @"true" : @"false"];
     // Display
     if ([defaults objectForKey:kDefaultDarkModePureBlack]) [xml appendFormat:@"    <darkModePureBlack>%@</darkModePureBlack>\n", [defaults boolForKey:kDefaultDarkModePureBlack] ? @"true" : @"false"];
     if ([defaults objectForKey:kDefaultFontSizeLarger]) [xml appendFormat:@"    <fontSizeLarger>%ld</fontSizeLarger>\n", (long)[defaults integerForKey:kDefaultFontSizeLarger]];

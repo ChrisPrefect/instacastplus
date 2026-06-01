@@ -73,7 +73,7 @@ private struct MusicTimeline: Codable {
 
     func analyzeAsync(audioURL: URL, episodeHash: String) async throws -> [ICAudioSegment] {
         // Check cached result first
-        if let cached = loadCachedTimeline(for: episodeHash) {
+        if let cached = await loadCachedTimeline(for: episodeHash) {
             return cached
         }
 
@@ -182,40 +182,42 @@ private struct MusicTimeline: Codable {
 
     // MARK: - Persistence
 
-    private func loadCachedTimeline(for episodeHash: String) -> [ICAudioSegment]? {
+    private func loadCachedTimeline(for episodeHash: String) async -> [ICAudioSegment]? {
         let url = ICTranscriptionPaths.musicTimelineURL(for: episodeHash)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            ICDiagnosticLogger.shared.logFileEvent("file-read",
-                                                   message: "Musik-Timeline fehlt",
-                                                   path: url.path,
-                                                   metadata: [
-                                                    "episodeHash": episodeHash,
-                                                   ] as NSDictionary)
-            return nil
-        }
-        do {
-            let data = try Data(contentsOf: url)
-            let timeline = try JSONDecoder().decode(MusicTimeline.self, from: data)
-            ICDiagnosticLogger.shared.logFileEvent("file-read",
-                                                   message: "Musik-Timeline geladen",
-                                                   path: url.path,
-                                                   metadata: [
-                                                    "episodeHash": episodeHash,
-                                                    "segmentCount": timeline.segments.count,
-                                                   ] as NSDictionary)
-            return timeline.segments.map {
-                ICAudioSegment(type: $0.type, start: $0.start, end: $0.end, confidence: $0.confidence)
+        return await Task.detached(priority: .utility) {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                ICDiagnosticLogger.shared.logFileEvent("file-read",
+                                                       message: "Musik-Timeline fehlt",
+                                                       path: url.path,
+                                                       metadata: [
+                                                        "episodeHash": episodeHash,
+                                                       ] as NSDictionary)
+                return nil
             }
-        } catch {
-            ICDiagnosticLogger.shared.logFileEvent("file-read",
-                                                   message: "Musik-Timeline konnte nicht geladen werden",
-                                                   path: url.path,
-                                                   metadata: [
-                                                    "episodeHash": episodeHash,
-                                                    "error": error.localizedDescription,
-                                                   ] as NSDictionary)
-            return nil
-        }
+            do {
+                let data = try Data(contentsOf: url)
+                let timeline = try JSONDecoder().decode(MusicTimeline.self, from: data)
+                ICDiagnosticLogger.shared.logFileEvent("file-read",
+                                                       message: "Musik-Timeline geladen",
+                                                       path: url.path,
+                                                       metadata: [
+                                                        "episodeHash": episodeHash,
+                                                        "segmentCount": timeline.segments.count,
+                                                       ] as NSDictionary)
+                return timeline.segments.map {
+                    ICAudioSegment(type: $0.type, start: $0.start, end: $0.end, confidence: $0.confidence)
+                }
+            } catch {
+                ICDiagnosticLogger.shared.logFileEvent("file-read",
+                                                       message: "Musik-Timeline konnte nicht geladen werden",
+                                                       path: url.path,
+                                                       metadata: [
+                                                        "episodeHash": episodeHash,
+                                                        "error": error.localizedDescription,
+                                                       ] as NSDictionary)
+                return nil
+            }
+        }.value
     }
 
     private func saveCachedTimeline(segments: [ICAudioSegment], for episodeHash: String) {

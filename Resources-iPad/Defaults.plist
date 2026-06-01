@@ -86,6 +86,12 @@
 	<true/>
 	<key>AutoDownloadWhileStreaming</key>
 	<true/>
+	<key>ICiCloudSyncEpisodesEnabled</key>
+	<false/>
+	<key>ICiCloudSyncSubscriptionsEnabled</key>
+	<false/>
+	<key>ICiCloudSyncSettingsEnabled</key>
+	<false/>
 	<key>AmazonAffiliateEnabled</key>
 	<true/>
 </dict>

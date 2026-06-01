@@ -30,10 +30,42 @@ static NSString * const kPendingNowPlayingKey = @"PendingBackupNowPlaying";
 // The currently running import operation — cancel via [_currentOperation cancel]
 static NSOperationQueue *_importQueue = nil;
 static NSBlockOperation *_currentOperation = nil;
-static BOOL _skipCurrentFeed = NO;
+static BOOL _skipCurrentFeed;
 
 // GUID index for O(1) episode lookup
-static NSMutableDictionary<NSString *, NSDictionary<NSString *, CDEpisode *> *> *_guidIndexByFeedURL = nil;
+static NSMutableDictionary<NSString *, NSMutableDictionary<NSString *, NSManagedObjectID *> *> *_guidIndexByFeedURL = nil;
+
+static dispatch_queue_t ICBackupImportStateQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("com.vemedio.instacast.backupImport.state", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+static void ICBackupSetSkipCurrentFeed(BOOL skip) {
+    dispatch_sync(ICBackupImportStateQueue(), ^{
+        _skipCurrentFeed = skip;
+    });
+}
+
+static BOOL ICBackupConsumeSkipCurrentFeed(void) {
+    __block BOOL skip = NO;
+    dispatch_sync(ICBackupImportStateQueue(), ^{
+        skip = _skipCurrentFeed;
+        _skipCurrentFeed = NO;
+    });
+    return skip;
+}
+
+static BOOL ICBackupSkipCurrentFeedRequested(void) {
+    __block BOOL skip = NO;
+    dispatch_sync(ICBackupImportStateQueue(), ^{
+        skip = _skipCurrentFeed;
+    });
+    return skip;
+}
 
 static UIColor *ICBackupColorFromHexString(NSString *hexString) {
     if (![hexString isKindOfClass:[NSString class]]) return nil;
@@ -89,7 +121,7 @@ static void runOnMain(void (^block)(void)) {
 }
 
 + (void)skipCurrentFeed {
-    _skipCurrentFeed = YES;
+    ICBackupSetSkipCurrentFeed(YES);
 }
 
 #pragma mark - Main Entry Point
@@ -104,7 +136,7 @@ static void runOnMain(void (^block)(void)) {
         return;
     }
 
-    _skipCurrentFeed = NO;
+    ICBackupSetSkipCurrentFeed(NO);
     _guidIndexByFeedURL = nil;
 
     // Copy all callback blocks (C struct doesn't auto-copy)
@@ -197,8 +229,7 @@ static void runOnMain(void (^block)(void)) {
                 continue;
             }
 
-            if (_skipCurrentFeed) {
-                _skipCurrentFeed = NO;
+            if (ICBackupConsumeSkipCurrentFeed()) {
                 runOnMain(^{
                     if (cb.setFeedSkipped) cb.setFeedSkipped(i);
                 });
@@ -231,8 +262,7 @@ static void runOnMain(void (^block)(void)) {
 
             if (op.isCancelled) break;
 
-            if (_skipCurrentFeed) {
-                _skipCurrentFeed = NO;
+            if (ICBackupConsumeSkipCurrentFeed()) {
                 runOnMain(^{
                     if (cb.setFeedSkipped) cb.setFeedSkipped(i);
                 });
@@ -360,7 +390,7 @@ static void runOnMain(void (^block)(void)) {
                 // Wait for feed to finish loading.
                 // Poll every 0.2s to check cancel/skip. Cancel reacts within 200ms.
                 BOOL feedDone = NO;
-                while (!feedDone && !op.isCancelled && !_skipCurrentFeed) {
+                while (!feedDone && !op.isCancelled && !ICBackupSkipCurrentFeedRequested()) {
                     long waitResult = dispatch_semaphore_wait(finishSem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(200 * NSEC_PER_MSEC)));
                     if (waitResult == 0) {
                         feedDone = YES; // finish notification received
@@ -384,8 +414,7 @@ static void runOnMain(void (^block)(void)) {
 
             if (op.isCancelled) break;
 
-            if (_skipCurrentFeed) {
-                _skipCurrentFeed = NO;
+            if (ICBackupConsumeSkipCurrentFeed()) {
                 runOnMain(^{
                     [elm cancelLoadingForFeed:subscribedFeed];
                     if (cb.setFeedSkipped) cb.setFeedSkipped(i);
@@ -418,8 +447,8 @@ static void runOnMain(void (^block)(void)) {
         // ═══════════════════════════════════════════════
 
         // Build GUID index for O(1) lookup
+        [self _buildGuidIndex];
         runOnMain(^{
-            [self _buildGuidIndex];
             if (cb.setStatusText) cb.setStatusText(@"Importing local data…".ls);
         });
 
@@ -473,10 +502,7 @@ static void runOnMain(void (^block)(void)) {
                     if (op.isCancelled) break;
 
                     NSInteger podcastIndex = pi;
-                    __block NSInteger feedCount = 0;
-                    runOnMain(^{
-                        feedCount = [self _importEpisodeStatusForPodcastAtIndex:podcastIndex fromBackup:backup];
-                    });
+                    NSInteger feedCount = [self _importEpisodeStatusForPodcastAtIndex:podcastIndex fromBackup:backup];
                     count += feedCount;
 
                     // Update progress per feed within the episode status phase
@@ -487,9 +513,6 @@ static void runOnMain(void (^block)(void)) {
                         if (cb.setTotalProgress) cb.setTotalProgress(feedProgress);
                     });
                 }
-                runOnMain(^{
-                    [DMANAGER save];
-                });
             } else {
                 runOnMain(^{
                     count = importBlock();
@@ -606,15 +629,26 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     _guidIndexByFeedURL = [NSMutableDictionary dictionary];
     _feedURLMapping = [NSMutableDictionary dictionary];
 
-    for (CDFeed *feed in DMANAGER.feeds) {
-        if (!feed.sourceURL) continue;
-        NSString *key = [feed.sourceURL absoluteString];
-        NSMutableDictionary *index = [NSMutableDictionary dictionaryWithCapacity:feed.episodes.count];
-        for (CDEpisode *ep in feed.episodes) {
-            if (ep.guid) index[ep.guid] = ep;
+    NSManagedObjectContext *context = [DMANAGER newBackgroundContext];
+    [context performBlockAndWait:^{
+        NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+        request.includesSubentities = NO;
+        request.predicate = [NSPredicate predicateWithFormat:@"guid != nil AND feed.sourceURL_ != nil"];
+        request.fetchBatchSize = 500;
+        NSArray *episodes = [context executeFetchRequest:request error:nil];
+
+        for (CDEpisode *ep in episodes) {
+            NSString *feedURL = [ep.feed.sourceURL absoluteString];
+            if (feedURL.length == 0 || ep.guid.length == 0) continue;
+
+            NSMutableDictionary *index = _guidIndexByFeedURL[feedURL];
+            if (!index) {
+                index = [NSMutableDictionary dictionary];
+                _guidIndexByFeedURL[feedURL] = index;
+            }
+            index[ep.guid] = ep.objectID;
         }
-        _guidIndexByFeedURL[key] = index;
-    }
+    }];
 }
 
 /// Map a backup feedURL to the actual feed sourceURL stored in Core Data.
@@ -677,11 +711,8 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
 
     ICBackupPodcast *podcast = backup.podcasts[index];
     if (!podcast.feedURL) return 0;
-    NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
-    if (!feedURL) return 0;
-
-    CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
-    if (!feed) return 0;
+    NSString *resolvedFeedURL = [self _resolvedFeedURLForBackupURL:podcast.feedURL];
+    if (!resolvedFeedURL) return 0;
 
     // Build backup episode lookup by GUID
     NSMutableDictionary<NSString *, ICBackupEpisode *> *backupEpisodesByGuid = [NSMutableDictionary dictionaryWithCapacity:podcast.episodes.count];
@@ -691,46 +722,58 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         }
     }
 
-    NSInteger count = 0;
+    __block NSInteger count = 0;
+    NSManagedObjectContext *context = [DMANAGER newBackgroundContext];
+    [context performBlockAndWait:^{
+        NSFetchRequest *feedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+        feedRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", resolvedFeedURL];
+        feedRequest.fetchLimit = 1;
+        CDFeed *feed = [[context executeFetchRequest:feedRequest error:nil] firstObject];
+        if (!feed) return;
 
-    for (CDEpisode *episode in feed.episodes) {
-        if (!episode.guid) continue;
+        for (CDEpisode *episode in feed.episodes) {
+            if (!episode.guid) continue;
 
-        ICBackupEpisode *backupEp = backupEpisodesByGuid[episode.guid];
+            ICBackupEpisode *backupEp = backupEpisodesByGuid[episode.guid];
 
-        if (backupEp) {
-            BOOL shouldBeConsumed = backupEp.played;
-            if (shouldBeConsumed != episode.consumed) {
-                episode.consumed = shouldBeConsumed;
-                count++;
-            }
+            if (backupEp) {
+                BOOL shouldBeConsumed = backupEp.played;
+                if (shouldBeConsumed != episode.consumed) {
+                    episode.consumed = shouldBeConsumed;
+                    count++;
+                }
 
-            if (backupEp.starred != episode.starred) {
-                episode.starred = backupEp.starred;
-                count++;
-            }
+                if (backupEp.starred != episode.starred) {
+                    episode.starred = backupEp.starred;
+                    count++;
+                }
 
-            if (backupEp.archived && !episode.archived) {
-                [DMANAGER setEpisode:episode archived:YES];
-                count++;
-            }
+                if (backupEp.archived && !episode.archived) {
+                    episode.archived = YES;
+                    count++;
+                }
 
-            if (backupEp.position > 0 && backupEp.position != episode.position) {
-                episode.position = backupEp.position;
-                count++;
-            }
+                if (backupEp.position > 0 && backupEp.position != episode.position) {
+                    episode.position = backupEp.position;
+                    count++;
+                }
 
-            if (backupEp.duration > 0 && episode.duration == 0) {
-                episode.duration = backupEp.duration;
-                count++;
-            }
-        } else {
-            if (episode.consumed) {
-                episode.consumed = NO;
-                count++;
+                if (backupEp.duration > 0 && episode.duration == 0) {
+                    episode.duration = backupEp.duration;
+                    count++;
+                }
+            } else {
+                if (episode.consumed) {
+                    episode.consumed = NO;
+                    count++;
+                }
             }
         }
-    }
+
+        if (context.hasChanges) {
+            [context save:nil];
+        }
+    }];
 
     return count;
 }
@@ -1197,6 +1240,9 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"episodeSwipeLeftAction":  EpisodeSwipeLeftAction,
         @"appleWatchSendLatestCount": AppleWatchSendLatestCount,
         @"appleWatchOnlyUnplayed":  AppleWatchOnlyUnplayed,
+        @"iCloudSyncEpisodes":      ICiCloudSyncEpisodesEnabled,
+        @"iCloudSyncSubscriptions": ICiCloudSyncSubscriptionsEnabled,
+        @"iCloudSyncSettings":      ICiCloudSyncSettingsEnabled,
         @"darkModePureBlack":       kDefaultDarkModePureBlack,
         @"fontSizeLarger":          kDefaultFontSizeLarger,
         @"tapOnEpisodeAction":      TapOnEpisodeAction,
@@ -1226,7 +1272,8 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"intelligentSleepAlways", @"darkModePureBlack", @"amazonAffiliateEnabled",
         @"appleWatchOnlyUnplayed", @"transcriptionAutoDefault", @"chapterAutoDefault",
         @"autoSkipSponsors", @"transcriptionEverActivated", @"transcriptionFirstRunShown",
-        @"transcriptVisiblePreference",
+        @"transcriptVisiblePreference", @"iCloudSyncEpisodes", @"iCloudSyncSubscriptions",
+        @"iCloudSyncSettings",
     ]];
 
     NSSet *doubleKeys = [NSSet setWithArray:@[@"deviceMovementSensitivity"]];
@@ -1396,7 +1443,10 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         NSString *resolvedURL = [self _resolvedFeedURLForBackupURL:feedURLString];
         if (resolvedURL) {
             NSDictionary *index = _guidIndexByFeedURL[resolvedURL];
-            if (index) return index[guid];
+            NSManagedObjectID *episodeID = index[guid];
+            if (episodeID) {
+                return (CDEpisode *)[DMANAGER.objectContext existingObjectWithID:episodeID error:nil];
+            }
         }
     }
 

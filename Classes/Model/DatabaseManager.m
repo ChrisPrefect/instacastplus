@@ -855,10 +855,10 @@ NS_INLINE NSString* _DataStoreFile(void) {
         NSDictionary* cv = [updatedObject changedValues];
         
         if ([updatedObject isKindOfClass:[CDEpisode class]] && (cv[@"title"] || cv[@"summary"] || cv[@"fulltext"])) {
-            [self.ftsController addEpisode:(CDEpisode*)updatedObject];
+            [self.ftsController updateEpisode:(CDEpisode*)updatedObject];
         }
         else if ([updatedObject isKindOfClass:[CDFeed class]] && (cv[@"title"] || cv[@"author"] || cv[@"summary"])) {
-            [self.ftsController addFeed:(CDFeed*)updatedObject];
+            [self.ftsController updateFeed:(CDFeed*)updatedObject];
         }
     }
     

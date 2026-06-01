@@ -48,6 +48,7 @@
 @property (nonatomic, readonly) NSInteger episodesCount;
 @property (nonatomic, readonly) NSInteger unplayedCount;
 @property (nonatomic, readonly) NSInteger downloadedCount;
+@property (nonatomic, readonly) BOOL countsLoaded;
 @property (nonatomic, readonly) NSDate* lastPlayed;
 @property (nonatomic, readonly) NSDate* lastPubDate;
 
@@ -55,6 +56,7 @@
 @property (nonatomic, strong) NSString * displayTitle;
 
 - (void) invalidateCounts;
+- (void)calculateCountsWithCompletion:(void (^)(NSInteger unplayedCount, NSInteger episodesCount))completion;
 
 @end
 

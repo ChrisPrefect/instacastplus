@@ -50,6 +50,8 @@
         unsigned int userAction:1;
     } _flags;
     BOOL _didRestoreScrollPosition;
+    NSInteger _searchGeneration;
+    NSInteger _feedSortGeneration;
 }
 
 #pragma mark -
@@ -888,20 +890,37 @@
 - (void) _searchTermDidChange
 {
     NSString* searchText = self.searchBar.text;
+    NSInteger searchGeneration = ++_searchGeneration;
     
     if ([searchText length] > 2)
     {
-        NSSet* feedUIDs = [DMANAGER.ftsController feedUIDsForSearchTerm:searchText];
-        
-        self.fetchController.fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO && sourceURL_ IN %@", feedUIDs];
-        [self.fetchController performFetch:nil];
         [USER_DEFAULTS setObject:searchText forKey:kUIPersistenceSubscriptionsSearchTerm];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSSet* feedUIDs = [DMANAGER.ftsController feedUIDsForSearchTerm:searchText];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (searchGeneration != self->_searchGeneration || ![self.searchBar.text isEqualToString:searchText]) {
+                    return;
+                }
+
+                [self _applySearchFeedUIDs:feedUIDs searchText:searchText];
+            });
+        });
+        return;
     }
     else {
         self.fetchController.fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
         [self.fetchController performFetch:nil];
         [USER_DEFAULTS removeObjectForKey:kUIPersistenceSubscriptionsSearchTerm];
     }
+    [self.tableView reloadData];
+    [self _updateToolbarLabels];
+    self.navigationItem.rightBarButtonItem.enabled = ([searchText length] == 0);
+}
+
+- (void) _applySearchFeedUIDs:(NSSet*)feedUIDs searchText:(NSString*)searchText
+{
+    self.fetchController.fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO && sourceURL_ IN %@", feedUIDs];
+    [self.fetchController performFetch:nil];
     [self.tableView reloadData];
     [self _updateToolbarLabels];
     self.navigationItem.rightBarButtonItem.enabled = ([searchText length] == 0);
@@ -968,6 +987,103 @@
     [self presentViewController:navigationController animated:YES completion:NULL];
 }
 
+- (NSString*)_feedSortObjectIDKey:(NSManagedObjectID*)objectID
+{
+    return objectID.URIRepresentation.absoluteString ?: @"";
+}
+
+- (void)_finishBackgroundFeedSortWithGeneration:(NSInteger)generation
+{
+    if (generation != _feedSortGeneration) {
+        return;
+    }
+
+    [self.fetchController performFetch:nil];
+    [self.tableView reloadData];
+    _flags.userAction = 0;
+    [self _refreshSortMenu];
+    self.alertController = nil;
+}
+
+- (void)_sortFeedsByBackgroundMetric:(NSString*)metric
+{
+    _flags.userAction = 1;
+    [USER_DEFAULTS setObject:metric forKey:FeedListSortMode];
+
+    NSInteger generation = ++_feedSortGeneration;
+    NSArray* feedIDs = [DMANAGER.feeds valueForKey:@"objectID"];
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableDictionary* valuesByFeedID = [[NSMutableDictionary alloc] initWithCapacity:feedIDs.count];
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        [context performBlockAndWait:^{
+            for(NSManagedObjectID* feedID in feedIDs) {
+                NSError* error = nil;
+                CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedID error:&error];
+                if (!feed || error) {
+                    continue;
+                }
+
+                NSString* key = [self _feedSortObjectIDKey:feedID];
+                if ([metric isEqualToString:@"unplayed"]) {
+                    NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+                    request.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND consumed == %@ AND archived == %@", feed, @NO, @NO];
+                    NSUInteger count = [context countForFetchRequest:request error:nil];
+                    valuesByFeedID[key] = @((count == NSNotFound) ? 0 : (NSInteger)count);
+                    continue;
+                }
+
+                NSString* dateKey = [metric isEqualToString:@"lastPlayed"] ? @"lastPlayed" : @"pubDate";
+                NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+                request.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@ AND %K != nil", feed, @NO, dateKey];
+                request.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:dateKey ascending:NO] ];
+                request.fetchLimit = 1;
+                request.resultType = NSDictionaryResultType;
+                request.propertiesToFetch = @[ dateKey ];
+                NSDictionary* result = [[context executeFetchRequest:request error:nil] firstObject];
+                NSDate* date = result[dateKey];
+                if (date) {
+                    valuesByFeedID[key] = date;
+                }
+            }
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self->_feedSortGeneration) {
+                return;
+            }
+
+            [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
+                NSString* keyA = [self _feedSortObjectIDKey:a.objectID];
+                NSString* keyB = [self _feedSortObjectIDKey:b.objectID];
+                id valueA = valuesByFeedID[keyA];
+                id valueB = valuesByFeedID[keyB];
+
+                if ([metric isEqualToString:@"unplayed"]) {
+                    NSInteger countA = [valueA integerValue];
+                    NSInteger countB = [valueB integerValue];
+                    if (countA != countB) {
+                        return (countA > countB) ? NSOrderedAscending : NSOrderedDescending;
+                    }
+                } else {
+                    if (!valueA && valueB) return NSOrderedDescending;
+                    if (valueA && !valueB) return NSOrderedAscending;
+                    if (valueA && valueB) {
+                        NSComparisonResult result = [valueB compare:valueA];
+                        if (result != NSOrderedSame) {
+                            return result;
+                        }
+                    }
+                }
+
+                return [a.title naturalCaseInsensitiveCompare:b.title];
+            }];
+
+            [self _finishBackgroundFeedSortWithGeneration:generation];
+        });
+    });
+}
+
 
 - (UIMenu*) _buildSortMenu API_AVAILABLE(ios(14.0))
 {
@@ -988,51 +1104,19 @@
 
     UIAction* unplayedAction = [UIAction actionWithTitle:@"Unplayed".ls image:nil identifier:nil handler:^(UIAction *action) {
         STRONG_SELF
-        self->_flags.userAction = 1;
-        [USER_DEFAULTS setObject:@"unplayed" forKey:FeedListSortMode];
-        [DMANAGER sortFeedsByKey:@"unplayedCount" ascending:NO selector:nil];
-        [self.fetchController performFetch:nil];
-        [self.tableView reloadData];
-        self->_flags.userAction = 0;
-        [self _refreshSortMenu];
+        [self _sortFeedsByBackgroundMetric:@"unplayed"];
     }];
     unplayedAction.state = [currentMode isEqualToString:@"unplayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
     UIAction* lastPlayedAction = [UIAction actionWithTitle:@"Last Played".ls image:nil identifier:nil handler:^(UIAction *action) {
         STRONG_SELF
-        self->_flags.userAction = 1;
-        [USER_DEFAULTS setObject:@"lastPlayed" forKey:FeedListSortMode];
-        [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
-            NSDate* dateA = a.lastPlayed;
-            NSDate* dateB = b.lastPlayed;
-            if (!dateA && !dateB) return NSOrderedSame;
-            if (!dateA) return NSOrderedDescending;
-            if (!dateB) return NSOrderedAscending;
-            return [dateB compare:dateA];
-        }];
-        [self.fetchController performFetch:nil];
-        [self.tableView reloadData];
-        self->_flags.userAction = 0;
-        [self _refreshSortMenu];
+        [self _sortFeedsByBackgroundMetric:@"lastPlayed"];
     }];
     lastPlayedAction.state = [currentMode isEqualToString:@"lastPlayed"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
     UIAction* newestAction = [UIAction actionWithTitle:@"Newest Episodes".ls image:nil identifier:nil handler:^(UIAction *action) {
         STRONG_SELF
-        self->_flags.userAction = 1;
-        [USER_DEFAULTS setObject:@"newestEpisodes" forKey:FeedListSortMode];
-        [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
-            NSDate* dateA = a.lastPubDate;
-            NSDate* dateB = b.lastPubDate;
-            if (!dateA && !dateB) return NSOrderedSame;
-            if (!dateA) return NSOrderedDescending;
-            if (!dateB) return NSOrderedAscending;
-            return [dateB compare:dateA];
-        }];
-        [self.fetchController performFetch:nil];
-        [self.tableView reloadData];
-        self->_flags.userAction = 0;
-        [self _refreshSortMenu];
+        [self _sortFeedsByBackgroundMetric:@"newestEpisodes"];
     }];
     newestAction.state = [currentMode isEqualToString:@"newestEpisodes"] ? UIMenuElementStateOn : UIMenuElementStateOff;
 
@@ -1087,13 +1171,7 @@
                                                         handler:^(UIAlertAction * action) {
                                                             STRONG_SELF
                                                             [self dismissViewControllerAnimated:NO completion:nil];
-                                                            self->_flags.userAction = 1;
-                                                            [USER_DEFAULTS setObject:@"unplayed" forKey:FeedListSortMode];
-                                                            [DMANAGER sortFeedsByKey:@"unplayedCount" ascending:NO selector:nil];
-                                                            [self.fetchController performFetch:nil];
-                                                            [self.tableView reloadData];
-                                                            self->_flags.userAction = 0;
-                                                            self.alertController = nil;
+                                                            [self _sortFeedsByBackgroundMetric:@"unplayed"];
                                                         }];
     if ([currentMode isEqualToString:@"unplayed"]) [unplayedAction setValue:@YES forKey:@"checked"];
     [alert addAction:unplayedAction];
@@ -1102,20 +1180,7 @@
                                                              handler:^(UIAlertAction * action) {
                                                                  STRONG_SELF
                                                                  [self dismissViewControllerAnimated:NO completion:nil];
-                                                                 self->_flags.userAction = 1;
-                                                                 [USER_DEFAULTS setObject:@"lastPlayed" forKey:FeedListSortMode];
-                                                                 [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
-                                                                     NSDate* dateA = a.lastPlayed;
-                                                                     NSDate* dateB = b.lastPlayed;
-                                                                     if (!dateA && !dateB) return NSOrderedSame;
-                                                                     if (!dateA) return NSOrderedDescending;
-                                                                     if (!dateB) return NSOrderedAscending;
-                                                                     return [dateB compare:dateA];
-                                                                 }];
-                                                                 [self.fetchController performFetch:nil];
-                                                                 [self.tableView reloadData];
-                                                                 self->_flags.userAction = 0;
-                                                                 self.alertController = nil;
+                                                                 [self _sortFeedsByBackgroundMetric:@"lastPlayed"];
                                                              }];
     if ([currentMode isEqualToString:@"lastPlayed"]) [lastPlayedAction setValue:@YES forKey:@"checked"];
     [alert addAction:lastPlayedAction];
@@ -1124,20 +1189,7 @@
                                                                  handler:^(UIAlertAction * action) {
                                                                      STRONG_SELF
                                                                      [self dismissViewControllerAnimated:NO completion:nil];
-                                                                     self->_flags.userAction = 1;
-                                                                     [USER_DEFAULTS setObject:@"newestEpisodes" forKey:FeedListSortMode];
-                                                                     [DMANAGER sortFeedsByComparator:^NSComparisonResult(CDFeed* a, CDFeed* b) {
-                                                                         NSDate* dateA = a.lastPubDate;
-                                                                         NSDate* dateB = b.lastPubDate;
-                                                                         if (!dateA && !dateB) return NSOrderedSame;
-                                                                         if (!dateA) return NSOrderedDescending;
-                                                                         if (!dateB) return NSOrderedAscending;
-                                                                         return [dateB compare:dateA];
-                                                                     }];
-                                                                     [self.fetchController performFetch:nil];
-                                                                     [self.tableView reloadData];
-                                                                     self->_flags.userAction = 0;
-                                                                     self.alertController = nil;
+                                                                     [self _sortFeedsByBackgroundMetric:@"newestEpisodes"];
                                                                  }];
     if ([currentMode isEqualToString:@"newestEpisodes"]) [newestEpisodesAction setValue:@YES forKey:@"checked"];
     [alert addAction:newestEpisodesAction];

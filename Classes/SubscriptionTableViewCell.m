@@ -135,8 +135,24 @@
             }
         }
         
-        [self _updateUnplayedCount];
-        [self _updateEpisodesNumber];
+        if (objectValue.countsLoaded) {
+            [self _updateUnplayedCount];
+            [self _updateEpisodesNumber];
+        } else {
+            self.numberLabel.text = nil;
+            self.detailTextLabel2.text = nil;
+            __weak SubscriptionTableViewCell* weakSelf = self;
+            [objectValue calculateCountsWithCompletion:^(__unused NSInteger unplayedCount, __unused NSInteger episodesCount) {
+                SubscriptionTableViewCell* strongSelf = weakSelf;
+                if (!strongSelf || strongSelf.objectValue != objectValue) {
+                    return;
+                }
+
+                [strongSelf _updateUnplayedCount];
+                [strongSelf _updateEpisodesNumber];
+                [strongSelf setNeedsLayout];
+            }];
+        }
         
         
         __weak SubscriptionTableViewCell* weakSelf = self;

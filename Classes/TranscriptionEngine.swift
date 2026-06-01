@@ -561,6 +561,7 @@ private struct TranscriptionCheckpoint: Codable {
     private var currentTask: Task<Void, Never>?
     private var currentCompletion: (([ICTranscriptCue]?, Error?) -> Void)?
     private var currentTranscriptionRunID: UUID?
+    private var checkpointCache: [String: TranscriptionCheckpoint] = [:]
 
     nonisolated static func isBackgroundGPUExecutionError(_ error: Error) -> Bool {
         var errors: [NSError] = []
@@ -1317,6 +1318,7 @@ private struct TranscriptionCheckpoint: Codable {
         do {
             let data = try JSONEncoder().encode(checkpoint)
             try data.write(to: url, options: .atomic)
+            checkpointCache[episodeHash] = checkpoint
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: message,
                                                    path: url.path,
@@ -1353,6 +1355,10 @@ private struct TranscriptionCheckpoint: Codable {
     }
 
     private func loadCheckpoint(for episodeHash: String) -> TranscriptionCheckpoint? {
+        if let cached = checkpointCache[episodeHash] {
+            return cached
+        }
+
         let url = checkpointURL(for: episodeHash)
         guard FileManager.default.fileExists(atPath: url.path) else {
             ICDiagnosticLogger.shared.logFileEvent("file-read",
@@ -1366,6 +1372,7 @@ private struct TranscriptionCheckpoint: Codable {
         do {
             let data = try Data(contentsOf: url)
             let checkpoint = try JSONDecoder().decode(TranscriptionCheckpoint.self, from: data)
+            checkpointCache[episodeHash] = checkpoint
             ICDiagnosticLogger.shared.logFileEvent("file-read",
                                                    message: "Checkpoint geladen",
                                                    path: url.path,
@@ -1403,6 +1410,7 @@ private struct TranscriptionCheckpoint: Codable {
     }
 
     private func removeCheckpoint(for episodeHash: String) {
+        checkpointCache.removeValue(forKey: episodeHash)
         let url = checkpointURL(for: episodeHash)
         if FileManager.default.fileExists(atPath: url.path) {
             do {

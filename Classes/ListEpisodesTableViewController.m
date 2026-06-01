@@ -14,12 +14,14 @@
 #import "CDList.h"
 #import "CDEpisodeList.h"
 #import "CDPlaylist.h"
+#import "DatabaseManager.h"
 
 #define EPISODE_PAGE_SIZE 25
 
 @interface ListEpisodesTableViewController ()
 @property (nonatomic) NSInteger loadPages;
 @property (nonatomic) NSArray* allEpisodes;
+@property (nonatomic) NSInteger episodesLoadGeneration;
 @end
 
 @implementation ListEpisodesTableViewController {
@@ -266,10 +268,47 @@
 
 - (void) updateEpisodes
 {
-    self.allEpisodes = [self.list sortedEpisodes];
-    self.loadPages = 0;
-    self.episodes = nil;
-    [self _loadNextPage];
+    NSInteger generation = ++self.episodesLoadGeneration;
+    NSManagedObjectID* listID = self.list.objectID;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        __block NSArray* episodeIDs = @[];
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        [context performBlockAndWait:^{
+            NSError* error = nil;
+            CDList* list = (CDList*)[context existingObjectWithID:listID error:&error];
+            if (!list || error) {
+                return;
+            }
+
+            NSArray* episodes = [list sortedEpisodes];
+            episodeIDs = [episodes valueForKey:@"objectID"];
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.episodesLoadGeneration) {
+                return;
+            }
+
+            NSMutableArray* episodes = [[NSMutableArray alloc] initWithCapacity:episodeIDs.count];
+            for(NSManagedObjectID* episodeID in episodeIDs) {
+                NSError* error = nil;
+                CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeID error:&error];
+                if (episode && !error) {
+                    [episodes addObject:episode];
+                }
+            }
+
+            self.allEpisodes = episodes;
+            self.loadPages = 0;
+            self.episodes = nil;
+            [self _loadNextPage];
+            [self reloadDataAndPreserveSelection];
+            [self _updateToolbarItemsAnimated:NO];
+            [self _updateToolbarLabels];
+            [self _restoreScrollPositionIfNeeded];
+        });
+    });
 }
 
 - (void)enumerateEpisodesUsingBlock:(void (^)(CDEpisode* episode, NSUInteger idx, BOOL *stop))block
@@ -617,7 +656,8 @@
         CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
         [playlist removeEpisode:episode];
         [DMANAGER save];
-        [self updateEpisodes];
+        [self _removeEpisode:episode fromArrayProperty:@"episodes"];
+        [self _removeEpisode:episode fromArrayProperty:@"allEpisodes"];
         [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
     } else {
         CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];

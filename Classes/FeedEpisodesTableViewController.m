@@ -50,6 +50,7 @@
     NSMutableSet* _selectionPreservingIndexPathes;
     BOOL _didRestoreScrollPosition;
     BOOL isDownloadedFilter;
+    NSInteger _searchGeneration;
 }
 
 + (FeedEpisodesTableViewController*) episodesControllerWithFeed:(CDFeed*)feed
@@ -217,14 +218,12 @@
     return NO;
 }
 
-- (void) _updateFetchController
+- (void) _updateFetchControllerWithEpisodeGuids:(NSSet*)episodeGuids
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
     if ([self.searchTerm length] > 0)
     {
-        NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.searchTerm];
-
         fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && guid IN %@", self.feed, @NO, episodeGuids];
         
     } else {
@@ -240,6 +239,31 @@
     [self.fetchController performFetch:nil];
     
     [self updateEpisodes];
+}
+
+- (void) _updateFetchController
+{
+    NSString* searchTerm = [self.searchTerm copy];
+    NSInteger searchGeneration = ++_searchGeneration;
+    if ([searchTerm length] > 0)
+    {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:searchTerm];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (searchGeneration != self->_searchGeneration || ![self.searchTerm isEqualToString:searchTerm]) {
+                    return;
+                }
+
+                [self _updateFetchControllerWithEpisodeGuids:episodeGuids];
+                [self.tableView reloadData];
+                [self _updateToolbarItemsAnimated:NO];
+                [self _updateToolbarLabels];
+            });
+        });
+        return;
+    }
+
+    [self _updateFetchControllerWithEpisodeGuids:nil];
 }
 
 #pragma mark - FetchedResultsController delegate
@@ -1045,26 +1069,7 @@
 #pragma mark - Filter By All
 - (void) _filterAllEpisode
 {
-    BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
-    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-    if ([self.searchTerm length] > 0)
-    {
-        NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.searchTerm];
-
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && guid IN %@", self.feed, @NO, episodeGuids];
-        
-    } else {
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@", self.feed, @NO];
-    }
-    
-    fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
-    
-    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_all_%@", self.feed.title];
-    [NSFetchedResultsController deleteCacheWithName:cacheName];
-    self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
-    self.fetchController.delegate = self;
-    [self.fetchController performFetch:nil];
-    [self updateEpisodes];
+    [self _updateFetchController];
     [self.tableView reloadData];
         [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
@@ -1130,15 +1135,11 @@
 
 -(void) downloadedUpdateEpisodes
 {
-    self.episodes = nil;
-    NSMutableArray *downloadedArray = [NSMutableArray array];
-    NSArray* cachedEpisodes = [CacheManager sharedCacheManager].cachedEpisodes;
-    for(CDEpisode* episode in cachedEpisodes) {
-        if ([episode.feed isEqual:self.feed]) {
-            [downloadedArray addObject:episode];
-        }
-    }
-    self.episodes = downloadedArray;
+    BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
+    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && downloaded == %@", self.feed, @NO, @YES];
+    fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
+    self.episodes = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:nil] ?: @[];
     [self.tableView reloadData];
         [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];

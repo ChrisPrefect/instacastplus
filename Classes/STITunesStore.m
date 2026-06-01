@@ -215,18 +215,21 @@ NSString* kiTunesStoreCollectionId = @"kiTunesStoreCollectionId";
 		self.connectionDelegate = delegate;
 		self.connectionData = [[NSMutableData alloc] init];
 
-		__weak typeof(self) weakSelf = self;
-		self.dataTask = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
-			dispatch_async(dispatch_get_main_queue(), ^{
-				if (error) {
-					if (weakSelf.connectionDelegate && [weakSelf.connectionDelegate respondsToSelector:@selector(itunesStore:didEndWithError:)]) {
-						[weakSelf.connectionDelegate itunesStore:weakSelf didEndWithError:error];
-					}
-				} else {
-					NSArray* searchResults = [weakSelf _searchResultsForData:data];
-					if (weakSelf.connectionDelegate && [weakSelf.connectionDelegate respondsToSelector:@selector(itunesStore:didFindSearchResults:)]) {
-						[weakSelf.connectionDelegate itunesStore:weakSelf didFindSearchResults:searchResults];
-					}
+			__weak typeof(self) weakSelf = self;
+			self.dataTask = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+                NSArray* searchResults = nil;
+                if (!error) {
+                    searchResults = [weakSelf _searchResultsForData:data];
+                }
+				dispatch_async(dispatch_get_main_queue(), ^{
+					if (error) {
+						if (weakSelf.connectionDelegate && [weakSelf.connectionDelegate respondsToSelector:@selector(itunesStore:didEndWithError:)]) {
+							[weakSelf.connectionDelegate itunesStore:weakSelf didEndWithError:error];
+						}
+					} else {
+						if (weakSelf.connectionDelegate && [weakSelf.connectionDelegate respondsToSelector:@selector(itunesStore:didFindSearchResults:)]) {
+							[weakSelf.connectionDelegate itunesStore:weakSelf didFindSearchResults:searchResults];
+						}
 				}
 				weakSelf.dataTask = nil;
 				weakSelf.connectionDelegate = nil;

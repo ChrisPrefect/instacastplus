@@ -486,6 +486,7 @@ enum {
 @property (nonatomic, strong) UIButton* transcriptSearchCloseButton;
 @property (nonatomic, strong) UILabel* transcriptSearchCountLabel;
 @property (nonatomic, strong) NSArray<NSValue*>* transcriptSearchMatchRanges;
+@property (nonatomic, strong) NSArray<NSValue*>* transcriptAppliedSearchHighlightRanges;
 @property (nonatomic) NSInteger transcriptSearchCurrentIndex;
 @property (nonatomic) BOOL transcriptSearchActive;
 @property (nonatomic) BOOL transcriptWasPaused;
@@ -521,7 +522,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSInteger _previousTranscriptCueIndex;
     CGSize _lastTranscriptBoundsSize;
     NSString* _transcriptSearchTerm;
+    NSInteger _transcriptSearchGeneration;
     UIVisualEffect* _transcriptSearchBarEffect; // saved glass effect for materialize/dematerialize
+    BOOL _suppressChapterReload;
 }
 
 + (instancetype) viewController {
@@ -1634,7 +1637,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     BOOL shouldRun = (self.isViewLoaded && self.view.window != nil && self.transcriptVisible && self.transcriptCues.count > 0);
     if (shouldRun && !self.transcriptSyncTimer) {
-        self.transcriptSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
+        self.transcriptSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.5
                                                                      target:self
                                                                    selector:@selector(_transcriptSyncTimerFired:)
                                                                    userInfo:nil
@@ -1687,6 +1690,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptCueRanges = @[];
     self.activeTranscriptCueIndex = NSNotFound;
     self.transcriptSearchMatchRanges = @[];
+    self.transcriptAppliedSearchHighlightRanges = @[];
     self.transcriptSearchCurrentIndex = NSNotFound;
     self.transcriptSearchButton.hidden = YES;
 }
@@ -1770,15 +1774,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptTextView.attributedText = attrString;
     self.transcriptCueRanges = ranges;
 
-    // Force the full layout eagerly. Without this the first user tap on a paragraph
-    // triggers a large ensureLayoutForCharacterRange pass which in turn changes
-    // contentSize — UITextView then shifts contentOffset "to stay consistent", and our
-    // subsequent setContentOffset:animated:YES animates from that shifted origin,
-    // producing the wild jump described by the user. Doing the layout once up-front
-    // makes every later tap scroll from a stable origin.
-    [self.transcriptTextView.layoutManager
-        ensureLayoutForCharacterRange:NSMakeRange(0, self.transcriptTextView.textStorage.length)];
-
     // Cache the built attributed string + ranges for instant restore
     s_transcriptCachedAttrString = [attrString copy];
     s_transcriptCachedRanges = [ranges copy];
@@ -1796,20 +1791,25 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return NSNotFound;
     }
 
-    NSInteger bestIndex = 0;
-    for (NSInteger idx = 0; idx < (NSInteger)self.transcriptCues.count; idx++) {
-        NSDictionary* cue = self.transcriptCues[idx];
+    NSInteger low = 0;
+    NSInteger high = (NSInteger)self.transcriptCues.count - 1;
+    NSInteger bestIndex = NSNotFound;
+    while (low <= high) {
+        NSInteger mid = low + ((high - low) / 2);
+        NSDictionary* cue = self.transcriptCues[mid];
         double start = [cue[@"start"] doubleValue];
         double end = [cue[@"end"] doubleValue];
-        if (time < start) {
-            return MAX(bestIndex, 0);
-        }
-        bestIndex = idx;
         if (time >= start && time < end) {
-            return idx;
+            return mid;
+        }
+        if (time < start) {
+            high = mid - 1;
+        } else {
+            bestIndex = mid;
+            low = mid + 1;
         }
     }
-    return bestIndex;
+    return (bestIndex == NSNotFound) ? 0 : bestIndex;
 }
 
 - (void)_focusTranscriptCueAtIndex:(NSInteger)index animated:(BOOL)animated
@@ -1822,14 +1822,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
     NSTextContainer* textContainer = self.transcriptTextView.textContainer;
 
-    // Ensure layout for the ENTIRE text, not just up to the cue.
-    // When _updateTranscriptLabelAppearance changes fonts at old and new cue positions,
-    // textStorage endEditing invalidates layout for the union of both ranges.
-    // If we only ensureLayout up to the new cue (smaller range for backward seeks),
-    // the gap between new and old cue reverts to estimated line heights.
-    // UITextView then re-layouts visible content, contentSize changes, and UITextView
-    // auto-adjusts contentOffset to compensate — destroying our scroll position.
-    [layoutManager ensureLayoutForCharacterRange:NSMakeRange(0, layoutManager.textStorage.length)];
+    [layoutManager ensureLayoutForCharacterRange:cueRange];
     NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:cueRange actualCharacterRange:NULL];
     CGRect glyphRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
 
@@ -1942,6 +1935,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self.transcriptSearchField resignFirstResponder];
     self.transcriptSearchField.text = @"";
     _transcriptSearchTerm = nil;
+    _transcriptSearchGeneration++;
 
     // Clear highlights
     [self _clearTranscriptSearchHighlights];
@@ -1965,6 +1959,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_performTranscriptSearch:(NSString*)term
 {
+    NSInteger generation = ++_transcriptSearchGeneration;
+
     // Clear previous highlights
     [self _clearTranscriptSearchHighlights];
 
@@ -1983,27 +1979,37 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
-    NSMutableArray<NSValue*>* matches = [NSMutableArray array];
-    NSRange searchRange = NSMakeRange(0, fullText.length);
-    while (searchRange.location < fullText.length) {
-        NSRange found = [fullText rangeOfString:term options:NSCaseInsensitiveSearch range:searchRange];
-        if (found.location == NSNotFound) break;
-        [matches addObject:[NSValue valueWithRange:found]];
-        searchRange.location = found.location + found.length;
-        searchRange.length = fullText.length - searchRange.location;
-    }
+    NSString* searchTerm = [term copy];
+    NSString* transcriptText = [fullText copy];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableArray<NSValue*>* matches = [NSMutableArray array];
+        NSRange searchRange = NSMakeRange(0, transcriptText.length);
+        while (searchRange.location < transcriptText.length) {
+            NSRange found = [transcriptText rangeOfString:searchTerm options:NSCaseInsensitiveSearch range:searchRange];
+            if (found.location == NSNotFound) break;
+            [matches addObject:[NSValue valueWithRange:found]];
+            searchRange.location = found.location + found.length;
+            searchRange.length = transcriptText.length - searchRange.location;
+        }
 
-    self.transcriptSearchMatchRanges = matches;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self->_transcriptSearchGeneration || ![self->_transcriptSearchTerm isEqualToString:searchTerm]) {
+                return;
+            }
 
-    if (matches.count > 0) {
-        self.transcriptSearchCurrentIndex = 0;
-        [self _applyTranscriptSearchHighlights];
-        [self _scrollToTranscriptSearchMatch:0 animated:YES];
-    } else {
-        self.transcriptSearchCurrentIndex = NSNotFound;
-    }
+            self.transcriptSearchMatchRanges = matches;
 
-    [self _updateTranscriptSearchUI];
+            if (matches.count > 0) {
+                self.transcriptSearchCurrentIndex = 0;
+                [self _applyTranscriptSearchHighlights];
+                [self _scrollToTranscriptSearchMatch:0 animated:YES];
+            } else {
+                self.transcriptSearchCurrentIndex = NSNotFound;
+            }
+
+            [self _updateTranscriptSearchUI];
+        });
+    });
 }
 
 - (void)_applyTranscriptSearchHighlights
@@ -2021,6 +2027,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [textStorage addAttribute:NSBackgroundColorAttributeName value:bg range:range];
     }
     [textStorage endEditing];
+    self.transcriptAppliedSearchHighlightRanges = self.transcriptSearchMatchRanges;
 }
 
 - (void)_clearTranscriptSearchHighlights
@@ -2028,10 +2035,16 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSTextStorage* textStorage = self.transcriptTextView.textStorage;
     if (!textStorage || textStorage.length == 0) return;
 
-    // Clear ALL background colors in the entire text to avoid stale highlights
+    NSArray<NSValue*>* highlightedRanges = self.transcriptAppliedSearchHighlightRanges ?: @[];
     [textStorage beginEditing];
-    [textStorage removeAttribute:NSBackgroundColorAttributeName range:NSMakeRange(0, textStorage.length)];
+    for (NSValue* rangeValue in highlightedRanges) {
+        NSRange range = [rangeValue rangeValue];
+        if (NSMaxRange(range) <= textStorage.length) {
+            [textStorage removeAttribute:NSBackgroundColorAttributeName range:range];
+        }
+    }
     [textStorage endEditing];
+    self.transcriptAppliedSearchHighlightRanges = @[];
 
     // Re-apply active cue highlight since we cleared its background too
     [self _updateTranscriptLabelAppearance];
@@ -2045,7 +2058,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSLayoutManager* layoutManager = self.transcriptTextView.layoutManager;
     NSTextContainer* textContainer = self.transcriptTextView.textContainer;
 
-    [layoutManager ensureLayoutForCharacterRange:NSMakeRange(0, layoutManager.textStorage.length)];
+    [layoutManager ensureLayoutForCharacterRange:matchRange];
     NSRange glyphRange = [layoutManager glyphRangeForCharacterRange:matchRange actualCharacterRange:NULL];
     CGRect glyphRect = [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
     glyphRect.origin.y += self.transcriptTextView.textContainerInset.top;
@@ -2586,11 +2599,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         if (s_transcriptCachedAttrString && s_transcriptCachedRanges.count > 0) {
             self.transcriptTextView.attributedText = s_transcriptCachedAttrString;
             self.transcriptCueRanges = s_transcriptCachedRanges;
-            // Same eager layout as in _rebuildTranscriptLines — without it the first
-            // user tap on a paragraph triggers a layout pass that shifts contentSize
-            // and breaks the seek-scroll animation.
-            [self.transcriptTextView.layoutManager
-                ensureLayoutForCharacterRange:NSMakeRange(0, self.transcriptTextView.textStorage.length)];
         } else {
             [self _rebuildTranscriptLines];
         }
@@ -3049,7 +3057,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     PlaybackManager* pman = [PlaybackManager playbackManager];
     CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
     self.transcriptDataEpisodeHash = episode.objectHash;
+    _suppressChapterReload = YES;
     self.chapters = (episode != nil) ? [episode sortedChapters] : @[];
+    _suppressChapterReload = NO;
     self.currentChapterIndex = pman.currentChapter;
     self.duration = episode.duration;
     
@@ -3139,7 +3149,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     if (_chapters != chapters) {
         _chapters = chapters ?: @[];
-        if (self.isViewLoaded && self.view.window != nil) {
+        if (!_suppressChapterReload && self.isViewLoaded && self.view.window != nil) {
             [self layoutHeaderView];
             [self.tableView reloadData];
         }

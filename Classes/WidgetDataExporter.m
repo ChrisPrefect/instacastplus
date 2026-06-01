@@ -59,8 +59,15 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 // Cached stats values so widget exports stay cheap on the main thread.
 @property (nonatomic) NSInteger cachedNewEpisodesTodayCount;
+@property (nonatomic) double cachedListenedTodaySec;
+@property (nonatomic) double cachedListenedWeekSec;
+@property (nonatomic) NSInteger cachedDownloadedCount;
+@property (nonatomic) unsigned long long cachedDownloadedSizeBytes;
+@property (nonatomic) NSInteger cachedSubscribedCount;
+@property (nonatomic) NSInteger cachedUnplayedCount;
 @property (nonatomic, copy) NSString *cachedStatsDayKey;
 @property (nonatomic, strong) dispatch_queue_t statsRefreshQueue;
+@property (nonatomic, strong) dispatch_queue_t listsExportQueue;
 @property (nonatomic) BOOL statsRefreshInProgress;
 @property (nonatomic, strong) NSDate *lastPlaybackStatsRefreshDate;
 @property (nonatomic, strong) NSMutableSet<NSString *> *pendingImageFetchKeys;
@@ -118,6 +125,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         _containerURL = [[NSFileManager defaultManager] containerURLForSecurityApplicationGroupIdentifier:kAppGroupID];
         dispatch_queue_attr_t queueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
         _statsRefreshQueue = dispatch_queue_create("com.instacastplus.widget-stats", queueAttributes);
+        _listsExportQueue = dispatch_queue_create("com.instacastplus.widget-lists", queueAttributes);
         _cachedStatsDayKey = [self _dateKeyForDate:[NSDate date]];
         _pendingImageFetchKeys = [NSMutableSet set];
         if (_containerURL) {
@@ -332,24 +340,28 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         NSString *action = note.userInfo[@"action"];
         if (!action) return;
 
-        NSNumber *chapterIndex = nil;
-        if ([action isEqualToString:@"skipchapter"] && self.containerURL) {
-            NSURL *pendingURL = [self.containerURL URLByAppendingPathComponent:kPendingActionFile];
-            NSData *data = [NSData dataWithContentsOfURL:pendingURL];
-            if (data) {
-                NSError *error = nil;
-                NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-                if ([payload isKindOfClass:[NSDictionary class]] && !error) {
-                    NSString *pendingAction = payload[@"action"];
-                    if ([pendingAction isEqualToString:@"skipchapter"]) {
-                        chapterIndex = payload[@"chapterIndex"];
+        NSURL *pendingURL = ([action isEqualToString:@"skipchapter"] && self.containerURL) ? [self.containerURL URLByAppendingPathComponent:kPendingActionFile] : nil;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSNumber *chapterIndex = nil;
+            if (pendingURL) {
+                NSData *data = [NSData dataWithContentsOfURL:pendingURL];
+                if (data) {
+                    NSError *error = nil;
+                    NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+                    if ([payload isKindOfClass:[NSDictionary class]] && !error) {
+                        NSString *pendingAction = payload[@"action"];
+                        if ([pendingAction isEqualToString:@"skipchapter"]) {
+                            chapterIndex = payload[@"chapterIndex"];
+                        }
                     }
                 }
             }
-        }
 
-        [self _clearPendingWidgetActionFile];
-        [self _handleWidgetAction:action chapterIndex:chapterIndex];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self _clearPendingWidgetActionFile];
+                [self _handleWidgetAction:action chapterIndex:chapterIndex];
+            });
+        });
     });
 }
 
@@ -363,23 +375,27 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     if (!self.containerURL) return;
 
     NSURL *pendingURL = [self.containerURL URLByAppendingPathComponent:kPendingActionFile];
-    NSData *data = [NSData dataWithContentsOfURL:pendingURL];
-    if (!data) return;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSData *data = [NSData dataWithContentsOfURL:pendingURL];
+        if (!data) return;
 
-    NSError *error = nil;
-    NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
-    if (![payload isKindOfClass:[NSDictionary class]] || error) {
-        [self _clearPendingWidgetActionFile];
-        return;
-    }
+        NSError *error = nil;
+        NSDictionary *payload = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (![payload isKindOfClass:[NSDictionary class]] || error) {
+                [self _clearPendingWidgetActionFile];
+                return;
+            }
 
-    NSString *action = payload[@"action"];
-    NSNumber *chapterIndex = payload[@"chapterIndex"];
-    [self _clearPendingWidgetActionFile];
+            NSString *action = payload[@"action"];
+            NSNumber *chapterIndex = payload[@"chapterIndex"];
+            [self _clearPendingWidgetActionFile];
 
-    if (action.length > 0) {
-        [self _handleWidgetAction:action chapterIndex:chapterIndex];
-    }
+            if (action.length > 0) {
+                [self _handleWidgetAction:action chapterIndex:chapterIndex];
+            }
+        });
+    });
 }
 
 - (void)_clearPendingWidgetActionFile {
@@ -825,53 +841,60 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)exportListsSnapshot {
     if (!self.containerURL) return;
 
-    NSArray *lists = DMANAGER.lists;
-    NSMutableArray *listIndex = [NSMutableArray arrayWithCapacity:lists.count];
+    dispatch_async(self.listsExportQueue, ^{
+        NSMutableArray *listIndex = [NSMutableArray array];
+        NSMutableArray *episodeSnapshots = [NSMutableArray array];
+        NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
 
-    for (CDList *list in lists) {
-        NSMutableDictionary *d = [NSMutableDictionary dictionary];
-        d[@"id"] = list.uid ?: @"";
-        d[@"name"] = list.name ?: @"";
-        d[@"episodeCount"] = @(list.numberOfEpisodes);
+        [backgroundContext performBlockAndWait:^{
+            NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"List"];
+            request.includesSubentities = YES;
+            request.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
+            NSArray *lists = [backgroundContext executeFetchRequest:request error:nil];
 
-        if ([list isKindOfClass:[CDSmartPlaylist class]]) {
-            CDSmartPlaylist *smart = (CDSmartPlaylist *)list;
-            NSString *type = smart.smartPredicate[@"type"];
-            d[@"type"] = type ? [NSString stringWithFormat:@"smart:%@", type] : @"smart";
-        } else if ([list isKindOfClass:[CDEpisodeList class]]) {
-            d[@"type"] = @"episode_list";
-        } else {
-            d[@"type"] = @"playlist";
+            for (CDList *list in lists) {
+                NSMutableDictionary *d = [NSMutableDictionary dictionary];
+                d[@"id"] = list.uid ?: @"";
+                d[@"name"] = list.name ?: @"";
+                d[@"episodeCount"] = @(list.numberOfEpisodes);
+
+                if ([list isKindOfClass:[CDSmartPlaylist class]]) {
+                    CDSmartPlaylist *smart = (CDSmartPlaylist *)list;
+                    NSString *type = smart.smartPredicate[@"type"];
+                    d[@"type"] = type ? [NSString stringWithFormat:@"smart:%@", type] : @"smart";
+                } else if ([list isKindOfClass:[CDEpisodeList class]]) {
+                    d[@"type"] = @"episode_list";
+                } else {
+                    d[@"type"] = @"playlist";
+                }
+
+                [listIndex addObject:d];
+
+                NSArray *episodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
+                NSMutableArray *episodeDicts = [NSMutableArray array];
+                NSInteger count = 0;
+                for (CDEpisode *ep in episodes) {
+                    if (count >= kMaxEpisodesPerList) break;
+                    [episodeDicts addObject:[self _episodeDictForEpisode:ep withImageSize:kImageSizeMedium]];
+                    count++;
+                }
+
+                NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
+                snapshot[@"listId"] = list.uid ?: @"";
+                snapshot[@"listName"] = list.name ?: @"";
+                snapshot[@"episodes"] = episodeDicts;
+                snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
+
+                NSString *filename = [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, list.uid ?: @"unknown"];
+                [episodeSnapshots addObject:@{ @"filename": filename, @"snapshot": snapshot }];
+            }
+        }];
+
+        for (NSDictionary *entry in episodeSnapshots) {
+            [self _writeJSON:entry[@"snapshot"] toFile:entry[@"filename"]];
         }
-
-        [listIndex addObject:d];
-
-        // Export per-list episode file
-        [self _exportEpisodesForList:list];
-    }
-
-    [self _writeJSON:listIndex toFile:kListsIndexFile];
-}
-
-- (void)_exportEpisodesForList:(CDList *)list {
-    NSArray *episodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
-    NSMutableArray *episodeDicts = [NSMutableArray array];
-
-    NSInteger count = 0;
-    for (CDEpisode *ep in episodes) {
-        if (count >= kMaxEpisodesPerList) break;
-        [episodeDicts addObject:[self _episodeDictForEpisode:ep withImageSize:kImageSizeMedium]];
-        count++;
-    }
-
-    NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
-    snapshot[@"listId"] = list.uid ?: @"";
-    snapshot[@"listName"] = list.name ?: @"";
-    snapshot[@"episodes"] = episodeDicts;
-    snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
-
-    NSString *filename = [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, list.uid ?: @"unknown"];
-    [self _writeJSON:snapshot toFile:filename];
+        [self _writeJSON:listIndex toFile:kListsIndexFile];
+    });
 }
 
 #pragma mark - Stats Export
@@ -881,39 +904,21 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     NSDate *now = [NSDate date];
     [self _updateStatsDayIfNeededForDate:now];
 
-    NSDictionary *listeningLog = [self _readListeningLog];
-
-    // Today
-    NSString *todayKey = [self _dateKeyForDate:now];
-    double todaySec = [listeningLog[todayKey] doubleValue];
-
-    // This week
-    double weekSec = 0;
-    NSCalendar *cal = [NSCalendar currentCalendar];
-    for (NSInteger i = 0; i < 7; i++) {
-        NSDate *day = [cal dateByAddingUnit:NSCalendarUnitDay value:-i toDate:now options:0];
-        NSString *key = [self _dateKeyForDate:day];
-        weekSec += [listeningLog[key] doubleValue];
-    }
-
-    CacheManager *cman = [CacheManager sharedCacheManager];
-    NSInteger downloadedCount = [cman numberOfCachedEpisodes];
-    unsigned long long downloadedSizeBytes = [cman numberOfDownloadedBytes];
-
     NSInteger sleepTimerCount = [USER_DEFAULTS integerForKey:@"SleepTimerFellAsleepCount"];
 
     NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
-    snapshot[@"listenedTodaySec"] = @(todaySec);
-    snapshot[@"listenedWeekSec"] = @(weekSec);
-    snapshot[@"downloadedCount"] = @(downloadedCount);
-    snapshot[@"downloadedSizeBytes"] = @(downloadedSizeBytes);
-    snapshot[@"subscribedCount"] = @(DMANAGER.visibleFeeds.count);
-    snapshot[@"unplayedCount"] = @(DMANAGER.unplayedList.numberOfEpisodes);
+    snapshot[@"listenedTodaySec"] = @(self.cachedListenedTodaySec);
+    snapshot[@"listenedWeekSec"] = @(self.cachedListenedWeekSec);
+    snapshot[@"downloadedCount"] = @(self.cachedDownloadedCount);
+    snapshot[@"downloadedSizeBytes"] = @(self.cachedDownloadedSizeBytes);
+    snapshot[@"subscribedCount"] = @(self.cachedSubscribedCount);
+    snapshot[@"unplayedCount"] = @(self.cachedUnplayedCount);
     snapshot[@"newEpisodesTodayCount"] = @(self.cachedNewEpisodesTodayCount);
     snapshot[@"sleepTimerUsedCount"] = @(sleepTimerCount);
     snapshot[@"timestamp"] = [self _iso8601String:now];
 
     [self _writeJSON:snapshot toFile:kStatsFile];
+    [self _refreshStatsCacheInBackgroundWritingSnapshot:YES reloadWhenDone:NO];
 }
 
 #pragma mark - Listening Time Tracking
@@ -1201,10 +1206,26 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     [self _updateStatsDayIfNeededForDate:[NSDate date]];
 
     NSString *dayKey = [self.cachedStatsDayKey copy];
-    NSDate *startOfToday = [[NSCalendar currentCalendar] startOfDayForDate:[NSDate date]];
+    NSDate *now = [NSDate date];
+    NSDate *startOfToday = [[NSCalendar currentCalendar] startOfDayForDate:now];
 
     dispatch_async(self.statsRefreshQueue, ^{
         __block NSUInteger newEpisodesCount = 0;
+        __block NSUInteger subscribedCount = 0;
+        __block NSUInteger unplayedCount = 0;
+        __block NSUInteger downloadedCount = 0;
+
+        NSDictionary *listeningLog = [self _readListeningLog];
+        NSString *todayKey = [self _dateKeyForDate:now];
+        double todaySec = [listeningLog[todayKey] doubleValue];
+        double weekSec = 0;
+        NSCalendar *cal = [NSCalendar currentCalendar];
+        for (NSInteger i = 0; i < 7; i++) {
+            NSDate *day = [cal dateByAddingUnit:NSCalendarUnitDay value:-i toDate:now options:0];
+            NSString *key = [self _dateKeyForDate:day];
+            weekSec += [listeningLog[key] doubleValue];
+        }
+
         NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
         if (backgroundContext) {
             [backgroundContext performBlockAndWait:^{
@@ -1213,8 +1234,27 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 request.resultType = NSCountResultType;
                 NSUInteger count = [backgroundContext countForFetchRequest:request error:nil];
                 newEpisodesCount = (count == NSNotFound) ? 0 : count;
+
+                NSFetchRequest *subscribedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+                subscribedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES AND parked == NO"];
+                subscribedRequest.resultType = NSCountResultType;
+                NSUInteger feedCount = [backgroundContext countForFetchRequest:subscribedRequest error:nil];
+                subscribedCount = (feedCount == NSNotFound) ? 0 : feedCount;
+
+                NSFetchRequest *unplayedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+                unplayedRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived == NO AND consumed == NO"];
+                unplayedRequest.resultType = NSCountResultType;
+                NSUInteger unplayedResult = [backgroundContext countForFetchRequest:unplayedRequest error:nil];
+                unplayedCount = (unplayedResult == NSNotFound) ? 0 : unplayedResult;
+
+                NSFetchRequest *downloadedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+                downloadedRequest.predicate = [NSPredicate predicateWithFormat:@"downloaded == YES"];
+                downloadedRequest.resultType = NSCountResultType;
+                NSUInteger downloadedResult = [backgroundContext countForFetchRequest:downloadedRequest error:nil];
+                downloadedCount = (downloadedResult == NSNotFound) ? 0 : downloadedResult;
             }];
         }
+        unsigned long long downloadedSizeBytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
 
         dispatch_async(dispatch_get_main_queue(), ^{
             self.statsRefreshInProgress = NO;
@@ -1223,9 +1263,27 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             }
 
             self.cachedNewEpisodesTodayCount = (NSInteger)newEpisodesCount;
+            self.cachedListenedTodaySec = todaySec;
+            self.cachedListenedWeekSec = weekSec;
+            self.cachedDownloadedCount = (NSInteger)downloadedCount;
+            self.cachedDownloadedSizeBytes = downloadedSizeBytes;
+            self.cachedSubscribedCount = (NSInteger)subscribedCount;
+            self.cachedUnplayedCount = (NSInteger)unplayedCount;
 
             if (writeSnapshot) {
-                [self exportStatsSnapshot];
+                NSInteger sleepTimerCount = [USER_DEFAULTS integerForKey:@"SleepTimerFellAsleepCount"];
+                NSDictionary *snapshot = @{
+                    @"listenedTodaySec": @(self.cachedListenedTodaySec),
+                    @"listenedWeekSec": @(self.cachedListenedWeekSec),
+                    @"downloadedCount": @(self.cachedDownloadedCount),
+                    @"downloadedSizeBytes": @(self.cachedDownloadedSizeBytes),
+                    @"subscribedCount": @(self.cachedSubscribedCount),
+                    @"unplayedCount": @(self.cachedUnplayedCount),
+                    @"newEpisodesTodayCount": @(self.cachedNewEpisodesTodayCount),
+                    @"sleepTimerUsedCount": @(sleepTimerCount),
+                    @"timestamp": [self _iso8601String:[NSDate date]]
+                };
+                [self _writeJSON:snapshot toFile:kStatsFile];
             }
             if (reloadWhenDone) {
                 [WidgetKitHelper reloadStatsTimeline];

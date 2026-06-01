@@ -109,6 +109,12 @@ extern NSString* AutoDownloadWhileStreaming;
 extern NSString* AppleWatchSendLatestCount;
 extern NSString* AppleWatchOnlyUnplayed;
 
+extern NSString* ICiCloudSyncEpisodesEnabled;
+extern NSString* ICiCloudSyncSubscriptionsEnabled;
+extern NSString* ICiCloudSyncSettingsEnabled;
+extern NSString* ICiCloudSyncStateDidChangeNotification;
+extern NSString* ICiCloudSyncDevicesDidChangeNotification;
+
 extern NSString* kDefaultShowUnavailableEpisodes;
 
 extern NSString* kDefaultPlayerControls;

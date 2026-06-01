@@ -21,11 +21,13 @@
 #import "SleepTimerSettingsViewController.h"
 #import "DataSettingsViewController.h"
 #import "ImportExportSettingsViewController.h"
+#import "ICiCloudSyncSettingsViewController.h"
 #import "SmarthomeSettingsViewController.h"
 #import "TranscriptionSettingsViewController.h"
 #import "UITableViewController+Settings.h"
 #import "InstacastAppDelegate.h"
 #import "DonationViewController.h"
+#import "InstacastPlus-Swift.h"
 #include <sys/sysctl.h>
 
 
@@ -45,6 +47,7 @@ enum {
     kRowData,
     kRowSubscriptions,
     kRowNotifications,
+    kRowiCloudSync,
     kRowImportExport,
     kRowTranscription,
     kRowSmartHome,
@@ -60,6 +63,23 @@ enum {
 + (OptionsViewController*) optionsViewController
 {
     return [[self alloc] initWithStyle:UITableViewStyleGrouped];
+}
+
++ (BOOL)iCloudSyncSettingsAvailable
+{
+    if (@available(iOS 17.0, *)) {
+        return [ICiCloudSyncManager isAvailable];
+    }
+    return NO;
+}
+
+- (NSInteger)settingsRowForIndexPath:(NSIndexPath*)indexPath
+{
+    NSInteger row = indexPath.row;
+    if (![OptionsViewController iCloudSyncSettingsAvailable] && row >= kRowiCloudSync) {
+        row++;
+    }
+    return row;
 }
 
 - (id)initWithStyle:(UITableViewStyle)style
@@ -126,7 +146,7 @@ enum {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return kNumberOfRows;
+    return [OptionsViewController iCloudSyncSettingsAvailable] ? kNumberOfRows : kNumberOfRows-1;
 }
 
 
@@ -136,7 +156,7 @@ enum {
     cell.detailTextLabel.text = nil;
     cell.backgroundColor = ICGroupCellBackgroundColor;
 
-    switch (indexPath.row)
+    switch ([self settingsRowForIndexPath:indexPath])
     {
         case kRowAppearance:
             cell.textLabel.text = @"Appearance".ls;
@@ -161,6 +181,11 @@ enum {
         case kRowNotifications:
             cell.textLabel.text = @"Notifications".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"bell"];
+            break;
+        case kRowiCloudSync:
+            cell.textLabel.text = @"iCloud Sync".ls;
+            cell.detailTextLabel.text = [ICiCloudSyncManager sharedManager].anySyncEnabled ? @"On".ls : @"Off".ls;
+            cell.imageView.image = [UIImage systemImageNamed:@"icloud"];
             break;
         case kRowImportExport:
             cell.textLabel.text = @"Import / Export".ls;
@@ -218,7 +243,7 @@ enum {
 {
     [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-    switch (indexPath.row)
+    switch ([self settingsRowForIndexPath:indexPath])
     {
         case kRowAppearance: {
             AppearanceSettingsViewController* controller = [AppearanceSettingsViewController viewController];
@@ -247,6 +272,11 @@ enum {
         }
         case kRowNotifications: {
             NotificationSettingsViewController* controller = [NotificationSettingsViewController viewController];
+            [self.navigationController pushViewController:controller animated:YES];
+            break;
+        }
+        case kRowiCloudSync: {
+            ICiCloudSyncSettingsViewController* controller = [ICiCloudSyncSettingsViewController viewController];
             [self.navigationController pushViewController:controller animated:YES];
             break;
         }

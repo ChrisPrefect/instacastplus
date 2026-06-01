@@ -106,6 +106,12 @@ NSString* AutoDownloadWhileStreaming = @"AutoDownloadWhileStreaming";
 NSString* AppleWatchSendLatestCount = @"AppleWatchSendLatestCount";
 NSString* AppleWatchOnlyUnplayed = @"AppleWatchOnlyUnplayed";
 
+NSString* ICiCloudSyncEpisodesEnabled = @"ICiCloudSyncEpisodesEnabled";
+NSString* ICiCloudSyncSubscriptionsEnabled = @"ICiCloudSyncSubscriptionsEnabled";
+NSString* ICiCloudSyncSettingsEnabled = @"ICiCloudSyncSettingsEnabled";
+NSString* ICiCloudSyncStateDidChangeNotification = @"ICiCloudSyncStateDidChangeNotification";
+NSString* ICiCloudSyncDevicesDidChangeNotification = @"ICiCloudSyncDevicesDidChangeNotification";
+
 NSString* kDefaultShowUnavailableEpisodes = @"ShowUnavailableEpisodes";
 
 NSString* kDefaultPlayerControls = @"PlayerControls";

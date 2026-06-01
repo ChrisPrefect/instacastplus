@@ -26,6 +26,7 @@
 		0BC7C038B900D866CD820D92 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9E85E0F1B1C46AF663E6C92E /* Localizable.strings */; };
 		0DB2440CD95BAD55C356BB6E /* WhisperKitBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */; };
 		165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B874ED55A5A0F6ED98DD872E /* TranscriptionEngine.swift */; };
+		1741894CCC3BF64933A78F04 /* ICiCloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */; };
 		188B3C742E175728004D14A5 /* SkipTimeCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C722E175728004D14A5 /* SkipTimeCell.m */; };
 		188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = 188B3C732E175728004D14A5 /* SkipTimeCell.xib */; };
 		188B3C7A2E175728004D14A5 /* ChapterSkipListViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */; };
@@ -277,6 +278,7 @@
 		4E17049B04D20C89632443B7 /* SoundAnalysis.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E1EBF5E0B5CFC7C64346CB5 /* SoundAnalysis.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		549252E172585DFA15883AE7 /* SmartListProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F18A9A9049D062D880172CA /* SmartListProvider.swift */; };
 		54DBA3A9E5FA05FFD075D209 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9C5C4F8A861137F72E8F19A2 /* WidgetKit.framework */; };
+		57D9F457CC96238BEEB70419 /* ICiCloudSyncSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */; };
 		583FA5429C9AB195D2CA972F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 057F44A6199937D988246F7F /* Assets.xcassets */; };
 		5A2E9033549D40E7962DD609 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 55B48241CC8542159B525C5D /* llama.xcframework */; };
 		5C20094B64F67BF1D6D0C4F1 /* SmartListConfigIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03021CE4557756F44F12E9B /* SmartListConfigIntent.swift */; };
@@ -325,6 +327,7 @@
 		C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */; };
 		C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */; };
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
+		C84346F0614BBB1CD0176549 /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5C3FDB1627B350209184A9F1 /* CloudKit.framework */; };
 		CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000003 /* AppearanceSettingsViewController.m */; };
 		CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000006 /* PlaybackSettingsViewController.m */; };
 		CC000001AABB000000000007 /* SleepTimerSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC000001AABB000000000009 /* SleepTimerSettingsViewController.m */; };
@@ -904,11 +907,13 @@
 		54593D5847CEE5BF017F34C3 /* WatchPlayerController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchPlayerController.swift; sourceTree = "<group>"; };
 		55B48241CC8542159B525C5D /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = SOURCE_ROOT; };
 		5645886712DE345E4E7D3055 /* Instacast-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = "Instacast-Bridging-Header.h"; sourceTree = "<group>"; };
+		5C3FDB1627B350209184A9F1 /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		5C51A43A770AC6A975A4DF75 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChapterGenerator.swift; sourceTree = "<group>"; };
 		63518412FB54017F3C29C6B1 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
 		6D294C45DC205F05467440EC /* SharedConstants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
+		6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ICiCloudSyncManager.swift; sourceTree = "<group>"; };
 		6D7680A7EBB0F850D04672C4 /* AppleWatchEpisodesViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = AppleWatchEpisodesViewController.m; sourceTree = "<group>"; };
 		6FA31224D071849FE16A7472 /* StatsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StatsWidget.swift; sourceTree = "<group>"; };
 		7151C9D64D31E80C30AE2762 /* InstacastBackupData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupData.h; sourceTree = "<group>"; };
@@ -1022,12 +1027,14 @@
 		CE3EA68F2AA7A952001900EB /* FMDatabasePool.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMDatabasePool.m; sourceTree = "<group>"; };
 		CE3EA6902AA7A952001900EB /* FMResultSet.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMResultSet.m; sourceTree = "<group>"; };
 		D04E8A15E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ICTranscriptionDebugAutomation.swift; sourceTree = "<group>"; };
+		D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ICiCloudSyncSettingsViewController.m; sourceTree = "<group>"; };
 		DB74294F288D82D23D7B0FCE /* AppleWatchEpisodesViewController.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = AppleWatchEpisodesViewController.h; sourceTree = "<group>"; };
 		DEC78BFA5ED5BF6AAFCF8263 /* InstacastWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = InstacastWatchApp.swift; sourceTree = "<group>"; };
 		E0F1A2B3C4D5E6F7890A1B2C3D /* WidgetSampleData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetSampleData.swift; sourceTree = "<group>"; };
 		E204D7F9561339C72E9FA9B5 /* EpisodeRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EpisodeRowView.swift; sourceTree = "<group>"; };
 		E22B646C8956D4D87E74D52A /* de */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		E2BE7ED19B3EBFB2FF9E42DB /* WidgetDataExporter.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = WidgetDataExporter.m; sourceTree = "<group>"; };
+		E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICiCloudSyncSettingsViewController.h; sourceTree = "<group>"; };
 		E7BDEE8025D877EC7A1EDCB4 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		E8CEAFDEB115E8592898C922 /* InstacastWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = InstacastWidgets.entitlements; sourceTree = "<group>"; };
 		EB510018DA7F6FAE21375486 /* InstacastWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InstacastWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1093,6 +1100,7 @@
 				5A2E9033549D40E7962DD609 /* llama.xcframework in Frameworks */,
 				CCA420203F2DE44E828D25C0 /* WhisperKit in Frameworks */,
 				67E9C9F11D2906B0D5935C63 /* WatchConnectivity.framework in Frameworks */,
+				C84346F0614BBB1CD0176549 /* CloudKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1186,6 +1194,9 @@
 				83A4F7D077257CCC4A65EA02 /* TranscriptionSettingsViewController.m */,
 				ED28C103136054494A8998FD /* TranscriptionQueueViewController.m */,
 				EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */,
+				6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */,
+				E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */,
+				D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */,
 			);
 			path = Classes;
 			sourceTree = "<group>";
@@ -2000,6 +2011,7 @@
 				3EB984E2E160A577257960B2 /* Speech.framework */,
 				55B48241CC8542159B525C5D /* llama.xcframework */,
 				DD10A4E3DB3973E867C02ABA /* watchOS */,
+				5C3FDB1627B350209184A9F1 /* CloudKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -2720,6 +2732,8 @@
 				8645A4A22D90C9EFCF4CFACD /* AppleWatchSyncManager.m in Sources */,
 				27AB83E1F94A3303C22D3425 /* AppleWatchEpisodesViewController.m in Sources */,
 				90C7F61E3C4DF59CB43D455E /* Model5.xcdatamodeld in Sources */,
+				1741894CCC3BF64933A78F04 /* ICiCloudSyncManager.swift in Sources */,
+				57D9F457CC96238BEEB70419 /* ICiCloudSyncSettingsViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

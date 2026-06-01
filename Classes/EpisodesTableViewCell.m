@@ -371,6 +371,26 @@
 
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle
 {
+    CDEpisode* episode = (CDEpisode*)objectValue;
+    NSString* cacheKey = [NSString stringWithFormat:@"%@-%.0f-%.0f-%d-%d-%d",
+                          episode.objectHash ?: episode.guid ?: episode.title ?: @"",
+                          tableSize.width,
+                          imageSize.width,
+                          embedded,
+                          editing,
+                          upNextStyle];
+    static NSCache* heightCache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        heightCache = [[NSCache alloc] init];
+        heightCache.countLimit = 1000;
+    });
+
+    NSNumber* cachedHeight = [heightCache objectForKey:cacheKey];
+    if (cachedHeight) {
+        return [cachedHeight floatValue];
+    }
+
     UIFont* textLabelFont;
     UIFont* detailLabelFont;
 
@@ -383,7 +403,6 @@
     }
 
 
-    CDEpisode* episode = (CDEpisode*)objectValue;
     CDFeed* feed = episode.feed;
 
     CGFloat w = tableSize.width-25-44;
@@ -435,7 +454,9 @@
         IC_SIZE_INTEGRAL(detailLabelSize);
     }
 
-    return MAX(MAX(44.f, 5+textLabelSize.height+detailLabelSize.height+25), imageSize.width +10);
+    CGFloat height = MAX(MAX(44.f, 5+textLabelSize.height+detailLabelSize.height+25), imageSize.width +10);
+    [heightCache setObject:@(height) forKey:cacheKey];
+    return height;
 }
 
 

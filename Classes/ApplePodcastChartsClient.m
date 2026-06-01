@@ -120,91 +120,78 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
         return;
     }
 
-    // 2. Check disk cache (still valid)
-    NSDictionary *diskCached = [self _loadDiskCacheForKey:cacheKey];
-    if (diskCached && [self _isCacheValid:diskCached]) {
-        [self.memoryCache setObject:diskCached forKey:cacheKey];
-        if (completion) {
-            completion(diskCached[@"results"], diskCached[@"updated"], nil);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // 2. Check disk cache (still valid)
+        NSDictionary *diskCached = [self _loadDiskCacheForKey:cacheKey];
+        if (diskCached && [self _isCacheValid:diskCached]) {
+            [self.memoryCache setObject:diskCached forKey:cacheKey];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) {
+                    completion(diskCached[@"results"], diskCached[@"updated"], nil);
+                }
+            });
+            return;
         }
-        return;
-    }
 
-    // 3. Fetch from network
-    NSString *urlString = [NSString stringWithFormat:@"https://rss.marketingtools.apple.com/api/v2/%@/podcasts/top/%ld/podcasts.json",
-                           countryCode, (long)limit];
-    NSURL *url = [NSURL URLWithString:urlString];
+        // 3. Fetch from network
+        NSString *urlString = [NSString stringWithFormat:@"https://rss.marketingtools.apple.com/api/v2/%@/podcasts/top/%ld/podcasts.json",
+                               countryCode, (long)limit];
+        NSURL *url = [NSURL URLWithString:urlString];
 
-    NSURLSessionDataTask *task = [self.session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (error) {
-                // Fallback to stale cache
-                NSDictionary *staleCache = diskCached ?: cached;
-                if (staleCache) {
-                    if (completion) {
-                        completion(staleCache[@"results"], staleCache[@"updated"], nil);
-                    }
-                } else {
-                    if (completion) {
-                        completion(nil, nil, error);
-                    }
-                }
-                return;
-            }
-
-            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-            if (httpResponse.statusCode != 200) {
-                NSError *statusError = [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain"
-                                                          code:httpResponse.statusCode
-                                                      userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"HTTP %ld", (long)httpResponse.statusCode]}];
-                // Fallback to stale cache
-                NSDictionary *staleCache = diskCached ?: cached;
-                if (staleCache) {
-                    if (completion) {
-                        completion(staleCache[@"results"], staleCache[@"updated"], nil);
-                    }
-                } else {
-                    if (completion) {
-                        completion(nil, nil, statusError);
-                    }
-                }
-                return;
-            }
-
+        NSURLSessionDataTask *task = [self.session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             NSArray *results = nil;
             NSString *updated = nil;
-            NSError *parseError = nil;
-            BOOL parsed = [self _parseData:data results:&results updated:&updated error:&parseError];
+            NSError *completionError = error;
+            NSDictionary *cacheEntry = nil;
 
-            if (!parsed || !results) {
-                NSDictionary *staleCache = diskCached ?: cached;
-                if (staleCache) {
-                    if (completion) {
-                        completion(staleCache[@"results"], staleCache[@"updated"], nil);
-                    }
-                } else {
-                    if (completion) {
-                        completion(nil, nil, parseError);
-                    }
+            if (!completionError) {
+                NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+                if (httpResponse.statusCode != 200) {
+                    completionError = [NSError errorWithDomain:@"ApplePodcastChartsErrorDomain"
+                                                           code:httpResponse.statusCode
+                                                       userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"HTTP %ld", (long)httpResponse.statusCode]}];
                 }
-                return;
             }
 
-            // Cache the results
-            NSDictionary *cacheEntry = @{
-                @"results": results,
-                @"updated": updated ?: @"",
-                @"timestamp": @([[NSDate date] timeIntervalSince1970])
-            };
-            [self.memoryCache setObject:cacheEntry forKey:cacheKey];
-            [self _saveDiskCache:cacheEntry forKey:cacheKey rawData:data];
-
-            if (completion) {
-                completion(results, updated, nil);
+            if (!completionError) {
+                NSError *parseError = nil;
+                BOOL parsed = [self _parseData:data results:&results updated:&updated error:&parseError];
+                if (!parsed || !results) {
+                    completionError = parseError;
+                } else {
+                    cacheEntry = @{
+                        @"results": results,
+                        @"updated": updated ?: @"",
+                        @"timestamp": @([[NSDate date] timeIntervalSince1970])
+                    };
+                    [self.memoryCache setObject:cacheEntry forKey:cacheKey];
+                    [self _saveDiskCache:cacheEntry forKey:cacheKey rawData:data];
+                }
             }
-        });
-    }];
-    [task resume];
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completionError) {
+                    // Fallback to stale cache
+                    NSDictionary *staleCache = diskCached ?: cached;
+                    if (staleCache) {
+                        if (completion) {
+                            completion(staleCache[@"results"], staleCache[@"updated"], nil);
+                        }
+                    } else {
+                        if (completion) {
+                            completion(nil, nil, completionError);
+                        }
+                    }
+                    return;
+                }
+
+                if (completion) {
+                    completion(results, updated, nil);
+                }
+            });
+        }];
+        [task resume];
+    });
 }
 
 + (NSArray *)podcastGenreIDs
@@ -341,81 +328,87 @@ static NSTimeInterval const kCacheTTL = 30 * 60; // 30 minutes
         return;
     }
 
-    // Check disk cache (still valid)
-    NSDictionary *diskCached = [self _loadGenreDiskCacheForKey:cacheKey];
-    if (diskCached && [self _isCacheValid:diskCached]) {
-        [self.memoryCache setObject:diskCached forKey:cacheKey];
-        if (completion) {
-            completion(diskCached[@"results"], nil);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Check disk cache (still valid)
+        NSDictionary *diskCached = [self _loadGenreDiskCacheForKey:cacheKey];
+        if (diskCached && [self _isCacheValid:diskCached]) {
+            [self.memoryCache setObject:diskCached forKey:cacheKey];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) {
+                    completion(diskCached[@"results"], nil);
+                }
+            });
+            return;
         }
-        return;
-    }
 
-    // Fetch from network — all genres in parallel
-    NSArray *genreIDs = [ApplePodcastChartsClient podcastGenreIDs];
-    NSMutableArray *allResults = [NSMutableArray array];
-    NSMutableSet *seenIDs = [NSMutableSet set];
-    dispatch_group_t group = dispatch_group_create();
-    dispatch_queue_t mergeQueue = dispatch_queue_create("com.instacast.charts.merge", DISPATCH_QUEUE_SERIAL);
+        // Fetch from network — all genres in parallel
+        NSArray *genreIDs = [ApplePodcastChartsClient podcastGenreIDs];
+        NSMutableArray *allResults = [NSMutableArray array];
+        NSMutableSet *seenIDs = [NSMutableSet set];
+        dispatch_group_t group = dispatch_group_create();
+        dispatch_queue_t mergeQueue = dispatch_queue_create("com.instacast.charts.merge", DISPATCH_QUEUE_SERIAL);
 
-    for (NSString *genreId in genreIDs) {
-        dispatch_group_enter(group);
+        for (NSString *genreId in genreIDs) {
+            dispatch_group_enter(group);
 
-        NSString *urlString = [NSString stringWithFormat:@"https://itunes.apple.com/%@/rss/toppodcasts/limit=%ld/genre=%@/json",
-                               countryCode, (long)limitPerGenre, genreId];
-        NSURL *url = [NSURL URLWithString:urlString];
+            NSString *urlString = [NSString stringWithFormat:@"https://itunes.apple.com/%@/rss/toppodcasts/limit=%ld/genre=%@/json",
+                                   countryCode, (long)limitPerGenre, genreId];
+            NSURL *url = [NSURL URLWithString:urlString];
 
-        NSURLSessionDataTask *task = [self.session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            if (data && !error) {
-                NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-                if (httpResponse.statusCode == 200) {
-                    NSArray *results = nil;
-                    BOOL parsed = [self _parseLegacyData:data results:&results error:nil];
+            NSURLSessionDataTask *task = [self.session dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+                if (data && !error) {
+                    NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+                    if (httpResponse.statusCode == 200) {
+                        NSArray *results = nil;
+                        BOOL parsed = [self _parseLegacyData:data results:&results error:nil];
 
-                    if (parsed && results.count > 0) {
-                        dispatch_sync(mergeQueue, ^{
-                            for (NSDictionary *item in results) {
-                                NSString *podcastId = item[kAppleChartsID];
-                                if (podcastId && ![seenIDs containsObject:podcastId]) {
-                                    [seenIDs addObject:podcastId];
-                                    [allResults addObject:item];
+                        if (parsed && results.count > 0) {
+                            dispatch_sync(mergeQueue, ^{
+                                for (NSDictionary *item in results) {
+                                    NSString *podcastId = item[kAppleChartsID];
+                                    if (podcastId && ![seenIDs containsObject:podcastId]) {
+                                        [seenIDs addObject:podcastId];
+                                        [allResults addObject:item];
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
                 }
-            }
-            dispatch_group_leave(group);
-        }];
-        [task resume];
-    }
-
-    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-        NSArray *results = [allResults copy];
-
-        if (results.count > 0) {
-            NSDictionary *cacheEntry = @{
-                @"results": results,
-                @"timestamp": @([[NSDate date] timeIntervalSince1970])
-            };
-            [self.memoryCache setObject:cacheEntry forKey:cacheKey];
-            [self _saveGenreDiskCache:cacheEntry forKey:cacheKey];
+                dispatch_group_leave(group);
+            }];
+            [task resume];
         }
 
-        // Fallback to stale cache
-        if (results.count == 0) {
-            NSDictionary *staleCache = diskCached ?: cached;
-            if (staleCache) {
-                if (completion) {
-                    completion(staleCache[@"results"], nil);
+        dispatch_group_notify(group, mergeQueue, ^{
+            NSArray *results = [allResults copy];
+
+            if (results.count > 0) {
+                NSDictionary *cacheEntry = @{
+                    @"results": results,
+                    @"timestamp": @([[NSDate date] timeIntervalSince1970])
+                };
+                [self.memoryCache setObject:cacheEntry forKey:cacheKey];
+                [self _saveGenreDiskCache:cacheEntry forKey:cacheKey];
+            }
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                // Fallback to stale cache
+                if (results.count == 0) {
+                    NSDictionary *staleCache = diskCached ?: cached;
+                    if (staleCache) {
+                        if (completion) {
+                            completion(staleCache[@"results"], nil);
+                        }
+                        return;
+                    }
                 }
-                return;
-            }
-        }
 
-        if (completion) {
-            completion(results.count > 0 ? results : nil, nil);
-        }
+                if (completion) {
+                    completion(results.count > 0 ? results : nil, nil);
+                }
+            });
+        });
     });
 }
 

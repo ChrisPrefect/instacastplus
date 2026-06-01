@@ -4236,6 +4236,7 @@ private struct ChaptersFile: Codable {
 
     // Cache for hasChapters results
     private var _chaptersCache: [String: Bool] = [:]
+    private var _loadedChaptersCache: [String: [ICGeneratedChapter]] = [:]
 
     @objc func saveChapters(_ chapters: [ICGeneratedChapter], for episodeHash: String) {
         try? saveChaptersThrowing(chapters, for: episodeHash)
@@ -4252,6 +4253,7 @@ private struct ChaptersFile: Codable {
         do {
             try data.write(to: url, options: .atomic)
             _chaptersCache[episodeHash] = true
+            _loadedChaptersCache[episodeHash] = chapters
             NSLog("[ChapterGenerator] Saved %d chapters for %@", chapters.count, episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "Kapiteldatei geschrieben",
@@ -4275,6 +4277,10 @@ private struct ChaptersFile: Codable {
     }
 
     @objc func loadChapters(for episodeHash: String) -> [ICGeneratedChapter]? {
+        if let cached = _loadedChaptersCache[episodeHash] {
+            return cached
+        }
+
         let url = ICTranscriptionPaths.chaptersJSONURL(for: episodeHash)
         guard FileManager.default.fileExists(atPath: url.path) else {
             ICDiagnosticLogger.shared.logFileEvent("file-read",
@@ -4295,9 +4301,12 @@ private struct ChaptersFile: Codable {
                                                     "episodeHash": episodeHash,
                                                     "chapterCount": file.chapters.count,
                                                    ] as NSDictionary)
-            return file.chapters.map {
+            let chapters = file.chapters.map {
                 ICGeneratedChapter(start: $0.start, end: $0.end, title: $0.title, isSponsor: $0.isSponsor)
             }
+            _loadedChaptersCache[episodeHash] = chapters
+            _chaptersCache[episodeHash] = true
+            return chapters
         } catch {
             ICDiagnosticLogger.shared.logFileEvent("file-read",
                                                    message: "Kapiteldatei konnte nicht geladen werden",
@@ -4321,6 +4330,7 @@ private struct ChaptersFile: Codable {
     /// Invalidate cached hasChapters result.
     @objc func invalidateChaptersCache(for episodeHash: String) {
         _chaptersCache.removeValue(forKey: episodeHash)
+        _loadedChaptersCache.removeValue(forKey: episodeHash)
     }
 
     @objc(removeGeneratedChaptersForEpisodeHash:)
@@ -4366,6 +4376,7 @@ private struct ChaptersFile: Codable {
                                                    ] as NSDictionary)
         }
         _chaptersCache[episodeHash] = false
+        _loadedChaptersCache.removeValue(forKey: episodeHash)
         removeChapterDebug(for: episodeHash)
 
         guard let episode, !generated.isEmpty else {

@@ -17,9 +17,11 @@
 - (void) indexFeeds:(NSArray*)feeds;
 
 - (void) addFeed:(CDFeed*)feed;
+- (void) updateFeed:(CDFeed*)feed;
 - (void) removeFeed:(CDFeed*)feed;
 
 - (void) addEpisode:(CDEpisode*)episode;
+- (void) updateEpisode:(CDEpisode*)episode;
 - (void) removeEpisode:(CDEpisode*)episode;
 
 - (NSSet*) feedUIDsForSearchTerm:(NSString*)search;

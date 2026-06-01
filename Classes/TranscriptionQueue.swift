@@ -161,6 +161,12 @@ private struct PersistedQueue: Codable {
     }
 }
 
+private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
+    Task.detached(priority: .utility) {
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
 // MARK: - TranscriptionQueue
 
 @MainActor
@@ -2530,7 +2536,7 @@ private struct PersistedQueue: Codable {
             }
         )
         if let data = try? JSONEncoder().encode(persistable) {
-            try? data.write(to: queueFileURL, options: .atomic)
+            ICWritePersistedTranscriptionQueueData(data, to: queueFileURL)
         }
     }
 

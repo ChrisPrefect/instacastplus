@@ -227,18 +227,24 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
     ApplePodcastChartsClient *client = [ApplePodcastChartsClient sharedClient];
 
     // 1. Show cached data instantly (merged from both sources, even if stale)
-    NSArray *cachedMain = [client cachedTopPodcastsForCountryCode:nil limit:50];
-    NSArray *cachedGenres = [client cachedGenrePodcastsForCountryCode:nil];
-    if (cachedMain.count > 0 || cachedGenres.count > 0) {
-        self.chartsAllResults = [self _mergeMainResults:cachedMain withGenreResults:cachedGenres];
-        [self _buildGenreList];
-        [self _applyGenreFilter];
-        [self.tableView reloadData];
-    }
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSArray *cachedMain = [client cachedTopPodcastsForCountryCode:nil limit:50];
+        NSArray *cachedGenres = [client cachedGenrePodcastsForCountryCode:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            if (cachedMain.count > 0 || cachedGenres.count > 0) {
+                strongSelf.chartsAllResults = [strongSelf _mergeMainResults:cachedMain withGenreResults:cachedGenres];
+                [strongSelf _buildGenreList];
+                [strongSelf _applyGenreFilter];
+                [strongSelf.tableView reloadData];
+            }
+        });
+    });
 
     // 2. Fetch both sources in parallel
     self.chartsLoading = YES;
-    __weak typeof(self) weakSelf = self;
 
     // Phase 1: 50 from new API (fast, single request)
     [client fetchTopPodcastsWithCountryCode:nil limit:50 completion:^(NSArray *results, NSString *updated, NSError *error) {
@@ -246,13 +252,19 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
         if (!strongSelf) return;
 
         if (results) {
-            NSArray *genreResults = [client cachedGenrePodcastsForCountryCode:nil];
-            strongSelf.chartsAllResults = [strongSelf _mergeMainResults:results withGenreResults:genreResults];
-            [strongSelf _buildGenreList];
-            [strongSelf _applyGenreFilter];
-            if ([strongSelf _isShowingCharts]) {
-                [strongSelf.tableView reloadData];
-            }
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                NSArray *genreResults = [client cachedGenrePodcastsForCountryCode:nil];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) mainSelf = weakSelf;
+                    if (!mainSelf) return;
+                    mainSelf.chartsAllResults = [mainSelf _mergeMainResults:results withGenreResults:genreResults];
+                    [mainSelf _buildGenreList];
+                    [mainSelf _applyGenreFilter];
+                    if ([mainSelf _isShowingCharts]) {
+                        [mainSelf.tableView reloadData];
+                    }
+                });
+            });
         }
     }];
 
@@ -264,13 +276,19 @@ NSString* kUIPersistenceDirectorySearchSelectedScopeIndex = @"DirectorySearchSel
         strongSelf.chartsLoading = NO;
 
         if (genreResults.count > 0) {
-            NSArray *mainResults = [client cachedTopPodcastsForCountryCode:nil limit:50];
-            strongSelf.chartsAllResults = [strongSelf _mergeMainResults:mainResults withGenreResults:genreResults];
-            [strongSelf _buildGenreList];
-            [strongSelf _applyGenreFilter];
-            if ([strongSelf _isShowingCharts]) {
-                [strongSelf.tableView reloadData];
-            }
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                NSArray *mainResults = [client cachedTopPodcastsForCountryCode:nil limit:50];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    __strong typeof(weakSelf) mainSelf = weakSelf;
+                    if (!mainSelf) return;
+                    mainSelf.chartsAllResults = [mainSelf _mergeMainResults:mainResults withGenreResults:genreResults];
+                    [mainSelf _buildGenreList];
+                    [mainSelf _applyGenreFilter];
+                    if ([mainSelf _isShowingCharts]) {
+                        [mainSelf.tableView reloadData];
+                    }
+                });
+            });
         }
     }];
 }

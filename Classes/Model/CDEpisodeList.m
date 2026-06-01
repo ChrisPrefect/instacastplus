@@ -172,6 +172,12 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     if (!self.notStarred) {
         [subPredicates addObject:[NSPredicate predicateWithFormat:@"starred == YES"]];
     }
+
+    if (!self.downloaded) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"downloaded == NO"]];
+    } else if (!self.notDownloaded) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"downloaded == YES"]];
+    }
     
     if ([self.includedFeeds count] > 0)
     {
@@ -253,39 +259,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     
 
     NSArray* objectHashes = [objects valueForKey:@"objectHash"];
-    NSMutableSet* filteredObjectHashes = [[NSMutableSet alloc] initWithArray:objectHashes];
-    
-    
-    // additionally filter for transient properties
-    if (!self.downloaded || !self.notDownloaded)
-    {
-        NSArray* cachedEpisodes = [[CacheManager sharedCacheManager] cachedEpisodes];
-        
-        // filter all out that are downloaded
-        if (!self.downloaded) {
-            for(CDEpisode* episode in cachedEpisodes) {
-                [filteredObjectHashes removeObject:episode.objectHash];
-            }
-        }
-        
-        //filter all out that are not downloaded
-        else if (!self.notDownloaded)
-        {
-            NSMutableSet* cachedHashes = [[NSMutableSet alloc] init];
-            for(CDEpisode* episode in cachedEpisodes) {
-                [cachedHashes addObject:episode.objectHash];
-            }
-            
-            for(NSString* objectHash in objectHashes) {
-                if (![cachedHashes containsObject:objectHash]) {
-                    [filteredObjectHashes removeObject:objectHash];
-                }
-            }
-        }
-        
-        objectHashes = [filteredObjectHashes allObjects];
-    }
-    
     NSFetchRequest* fetchRequest2 = [[NSFetchRequest alloc] init];
     fetchRequest2.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
     fetchRequest2.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", objectHashes];

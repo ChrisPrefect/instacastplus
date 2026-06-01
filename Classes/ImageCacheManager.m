@@ -253,20 +253,9 @@ static ImageCacheManager* gSharedCacheManager = nil;
 
 - (IC_IMAGE*) localImageForImageURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale
 {
-    // try to find image in memory cache
+    // Memory-only fast path. Disk decoding happens through imageForURL:... on the image queue.
     NSString* cacheKey = [ImageCacheManager cacheKeyWithURL:url size:size grayscale:grayscale];
-    IC_IMAGE* image = [self cachedImageForKey:cacheKey];
-    if (image) {
-        return image;
-    }
-    
-    // try to find image in file storage
-    NSURL* fileURL = [ImageCacheManager fileURLToCachedImageForImageURL:url size:size grayscale:grayscale];
-    image = [[IC_IMAGE alloc] initWithContentsOfFile:[fileURL path]];
-    if (image) {
-        [self cacheImage:image forURL:url size:size grayscale:grayscale];
-    }
-    return image;
+    return [self cachedImageForKey:cacheKey];
 }
 
 - (void) imageForURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale sender:(id)sender completion:(void (^)(IC_IMAGE* image))completionHandler

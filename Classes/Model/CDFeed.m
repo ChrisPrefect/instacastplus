@@ -12,6 +12,7 @@
 #import "CDCategory.h"
 #import "CDEpisode.h"
 #import "CDFeedProperty.h"
+#import "DatabaseManager.h"
 #import "EpisodeLoadingManager.h"
 
 @interface CDFeed ()
@@ -216,6 +217,61 @@
     }
 
     return unplayedCount;
+}
+
+- (BOOL)countsLoaded
+{
+    return (unplayedCount >= 0 && episodesCount >= 0);
+}
+
+- (void)calculateCountsWithCompletion:(void (^)(NSInteger unplayedCount, NSInteger episodesCount))completion
+{
+    if (self.countsLoaded) {
+        if (completion) {
+            completion(unplayedCount, episodesCount);
+        }
+        return;
+    }
+
+    NSManagedObjectID* feedID = self.objectID;
+    NSInteger totalExpected = [self integerForKey:kFeedPropertyTotalExpectedEpisodes];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        __block NSInteger loadedUnplayedCount = 0;
+        __block NSInteger loadedEpisodesCount = 0;
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        [context performBlockAndWait:^{
+            NSError* error = nil;
+            CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedID error:&error];
+            if (!feed || error) {
+                return;
+            }
+
+            NSFetchRequest* episodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+            episodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", feed, @NO];
+            NSUInteger episodesResult = [context countForFetchRequest:episodesRequest error:nil];
+            loadedEpisodesCount = (episodesResult == NSNotFound) ? 0 : (NSInteger)episodesResult;
+            if (totalExpected > loadedEpisodesCount) {
+                loadedEpisodesCount = totalExpected;
+            }
+
+            NSFetchRequest* unplayedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+            unplayedRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND consumed == %@ AND archived == %@", feed, @NO, @NO];
+            NSUInteger unplayedResult = [context countForFetchRequest:unplayedRequest error:nil];
+            loadedUnplayedCount = (unplayedResult == NSNotFound) ? 0 : (NSInteger)unplayedResult;
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.isDeleted) {
+                return;
+            }
+
+            self.unplayedCount = loadedUnplayedCount;
+            self.episodesCount = loadedEpisodesCount;
+            if (completion) {
+                completion(loadedUnplayedCount, loadedEpisodesCount);
+            }
+        });
+    });
 }
 
 - (NSInteger) downloadedCount

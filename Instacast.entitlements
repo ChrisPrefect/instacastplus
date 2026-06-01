@@ -6,6 +6,14 @@
 	<string>development</string>
 	<key>com.apple.developer.carplay-audio</key>
 	<true/>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.iteconomy.instacastplus</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
 	<key>com.apple.developer.playable-content</key>
 	<true/>
 	<key>com.apple.developer.associated-domains</key>

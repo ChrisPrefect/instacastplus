@@ -110,6 +110,12 @@
 	<integer>0</integer>
 	<key>AppleWatchOnlyUnplayed</key>
 	<true/>
+	<key>ICiCloudSyncEpisodesEnabled</key>
+	<false/>
+	<key>ICiCloudSyncSubscriptionsEnabled</key>
+	<false/>
+	<key>ICiCloudSyncSettingsEnabled</key>
+	<false/>
 	<key>AmazonAffiliateEnabled</key>
 	<true/>
 </dict>

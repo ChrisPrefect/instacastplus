@@ -435,6 +435,9 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     [WidgetKitHelper startListeningForWidgetActions];
 
     [[AppleWatchSyncManager sharedManager] start];
+    if (@available(iOS 17.0, *)) {
+        [[ICiCloudSyncManager sharedManager] start];
+    }
 
     [ICTranscriptionDebugAutomation startCommandProcessing];
     BOOL handledTranscriptionLaunchArguments = [ICTranscriptionDebugAutomation handleLaunchArguments];
@@ -687,6 +690,13 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult result))handler
 {
+    if (@available(iOS 17.0, *)) {
+        if ([[ICiCloudSyncManager sharedManager] shouldHandleRemoteNotification:userInfo]) {
+            [[ICiCloudSyncManager sharedManager] performBackgroundSyncWithCompletion:handler];
+            return;
+        }
+    }
+
     NSDictionary* notificationContent = userInfo[@"aps"];
     
 //    NSDictionary* alert = notificationContent[@"alert"];
