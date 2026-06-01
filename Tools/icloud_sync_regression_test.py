@@ -39,6 +39,7 @@ APP_DELEGATE = read("Classes/InstacastAppDelegate.m")
 EXPORTER = read("Classes/ImportExportSettingsViewController.m")
 IMPORTER = read("Classes/InstacastBackupImporter.m")
 PROJECT = read("Instacast.xcodeproj/project.pbxproj")
+AGENTS = read("AGENTS.md")
 EN_STRINGS = read("Resources/en.lproj/Localizable.strings")
 DE_STRINGS = read("Resources/de.lproj/Localizable.strings")
 
@@ -69,6 +70,11 @@ require(
     "remote-notification" in IPAD_INFO.get("UIBackgroundModes", []),
     "The iPad target must handle CloudKit remote notifications in the background.",
 )
+require(
+    "UI-Reaktivität hat oberste Priorität" in AGENTS
+    and "asynchron im Hintergrund ausgeführt werden" in AGENTS,
+    "AGENTS.md must document that UI reactivity has highest priority.",
+)
 
 for source_name in ["ICiCloudSyncManager.swift", "ICiCloudSyncSettingsViewController.m"]:
     require(source_name in PROJECT, f"{source_name} must be part of the Instacast target.")
@@ -94,46 +100,103 @@ require("setError(error)" in manual_completion, "Manual sync errors must be pers
 
 manual_sync = method_body(MANAGER, "private func performManualSync() async throws")
 require("hasUnresolvedSyncFailures = false" in manual_sync, "Manual sync must reset unresolved failure tracking before sending.")
-require("if !hasUnresolvedSyncFailures {\n            markSyncCompleted()" in manual_sync, "Manual sync must not report success after partial CKSyncEngine send failures.")
+require("markSyncCompletedIfFinished()" in manual_sync, "Manual sync must not report success while CKSyncEngine still has pending changes.")
 
 background_sync = method_body(MANAGER, "@objc func performBackgroundSyncWithCompletion")
 require("hasUnresolvedSyncFailures = false" in background_sync, "Background sync must reset unresolved fetch failure tracking.")
-require("if !hasUnresolvedSyncFailures {\n                        markSyncCompleted()" in background_sync, "Background sync must not report success after partial CKSyncEngine fetch failures.")
+require("markSyncCompletedIfFinished()" in background_sync, "Background sync must not report success while CKSyncEngine still has pending changes.")
 
 event_handler = method_body(MANAGER, "func handleEvent")
 require("hasUnresolvedSyncFailures = true" in event_handler, "Fetch zone errors must be remembered until the sync finishes.")
-require("case .didFetchChanges:\n            if !hasUnresolvedSyncFailures" in event_handler, "Fetch completion must not overwrite a failed zone fetch status.")
+require("case .didFetchChanges:\n            markSyncCompletedIfFinished()" in event_handler, "Fetch completion must not overwrite a failed or unfinished sync status.")
 require("case .didSendChanges:\n            break" in event_handler, "A finished send operation must not overwrite failed record or zone send status.")
 require("as? [AnyHashable: Any]" in method_body(MANAGER, "@objc func shouldHandleRemoteNotification"), "Malformed remote notification payloads must not crash iCloud Sync detection.")
 
 queue_enabled_data = method_body(MANAGER, "private func queueCurrentEnabledDataForUpload")
 require("queueSettingsRecord()" in queue_enabled_data, "Manual Sync must queue settings immediately instead of relying on a debounce timer.")
 require("markSettingsLocallyChangedAndQueue()" not in queue_enabled_data, "Current enabled data upload must not use delayed settings queueing.")
+require("private func queueCurrentEnabledDataForUpload() async" in MANAGER, "Full iCloud queueing must be async so UI taps are not blocked.")
+require("await queueAllEpisodeStateRecords()" in queue_enabled_data, "Episode initial queueing must yield while collecting large libraries.")
+require("await queueAllSubscriptionRecords()" in queue_enabled_data, "Subscription initial queueing must yield while collecting large libraries.")
+require("Task.yield()" in queue_enabled_data, "Full iCloud queueing must yield back to the UI between large sync categories.")
+
+start_body = source_between(MANAGER, "@objc func start()", "\n    @objc func setEpisodesSyncEnabled")
+require("queueDeviceRecord()" in start_body, "App launch should only refresh the current device record for iCloud Sync.")
+require("scheduleCurrentEnabledDataForUpload()" not in start_body, "App launch must not enqueue the whole library.")
+require("queueCurrentEnabledDataForUpload()" not in start_body, "App launch must not synchronously queue the whole library.")
 
 sent_changes = method_body(MANAGER, "private func handleSentRecordZoneChanges")
 require("event.failedRecordDeletes" in sent_changes, "Record delete failures must be handled, not ignored.")
 require("handleFailedRecordDelete(recordID: recordID, error: error)" in sent_changes, "Record delete failures must go through explicit error handling.")
 require("if hasFailedRecordChanges {\n            hasUnresolvedSyncFailures = true" in sent_changes, "Failed record sends must not be marked as a completed sync.")
+require("markSyncCompletedIfFinished()" in sent_changes, "Record sends must only show Synced after all pending changes are finished.")
+database_changes = method_body(MANAGER, "private func handleSentDatabaseChanges")
+require("markSyncCompleted()" not in database_changes, "Creating the CloudKit zone must not show Synced before records are uploaded.")
+require("markSyncCompletedIfFinished()" in MANAGER, "Sync completion must check pending CKSyncEngine changes before showing Synced.")
 
 require("as? NSData" in method_body(MANAGER, "private func payloadDictionary"), "CloudKit payload decoding must accept NSData from encryptedValues.")
 require("normalizedDataDictionary" in MANAGER, "Persisted CKRecord system fields must survive UserDefaults NSData bridging.")
+require("private func deviceHardwareIdentifier()" in MANAGER, "Device records must read the hardware identifier instead of relying on generic UIDevice.model.")
+require("private func deviceMarketingName()" in MANAGER, "Device records must store a user-facing Apple marketing model name.")
+require('"iPhone18,1": "iPhone 17 Pro"' in MANAGER, "iPhone 17 Pro must be displayed by marketing name.")
+require('"iPhone18,2": "iPhone 17 Pro Max"' in MANAGER, "iPhone 17 Pro Max must be displayed by marketing name.")
+local_device_payload = method_body(MANAGER, "private func localDevicePayload")
+require('"name": marketingName' in local_device_payload and '"model": marketingName' in local_device_payload, "Local device payload must not store generic iPhone/iPad names.")
 
 devices_body = source_between(MANAGER, "@objc var devices: [ICiCloudSyncDeviceInfo] {", "\n    private override init()")
 require("cache[deviceID] = localDevicePayload()" not in devices_body, "Devices must not inject the current device before a successful sync.")
 require("guard deviceParticipates(value) else { return nil }" in devices_body, "Devices must only list devices that participate in sync.")
+require("key == deviceID ? value.merging(localDevicePayload()" in devices_body, "Existing current-device cache entries must refresh to the current marketing model name.")
 require("deviceParticipates" in MANAGER, "Device participation must be explicit and based on enabled sync categories.")
 
 sync_options_changed = method_body(MANAGER, "@objc func syncOptionsChanged()")
 require('"iCloud prüfen…"' in sync_options_changed, "Enabling sync must show that iCloud availability is being checked, not Ready.")
 require("await refreshAccountStatus()" in sync_options_changed, "Enabling sync must refresh account status immediately.")
+require("scheduleCurrentEnabledDataForUpload()" in sync_options_changed, "Toggling sync options must schedule initial queueing asynchronously.")
+require("queueCurrentEnabledDataForUpload()" not in sync_options_changed, "Toggling sync options must not synchronously queue the whole library on the switch tap.")
+
+episode_queue = method_body(MANAGER, "private func queueAllEpisodeStateRecords")
+episode_fetch = method_body(MANAGER, "private func episodeObjectHashesForInitialSync")
+require("private func queueAllEpisodeStateRecords() async" in MANAGER, "Initial episode queueing must be async.")
+require("performAndWait" not in episode_queue, "Initial episode queueing must not block the MainActor with performAndWait.")
+require("await context.perform" in episode_fetch, "Initial episode queueing must fetch episode IDs on a Core Data background context.")
+
+subscription_queue = method_body(MANAGER, "private func queueAllSubscriptionRecords")
+subscription_fetch = method_body(MANAGER, "private func subscribedFeedURLsForInitialSync")
+require("private func queueAllSubscriptionRecords() async" in MANAGER, "Initial subscription queueing must be async.")
+require("databaseManager.feeds" not in subscription_queue, "Initial subscription queueing must not scan feeds on the MainActor.")
+require("await subscribedFeedURLsForInitialSync()" in subscription_queue, "Initial subscription queueing must collect feed URLs off the UI path.")
+require("await context.perform" in subscription_fetch, "Initial subscription queueing must fetch feed URLs on a Core Data background context.")
+
+record_batch = method_body(MANAGER, "func nextRecordZoneChangeBatch")
+require("maximumRecordZoneChangesPerBatch" in record_batch, "CloudKit record send batches must be capped.")
+require("validChangeCount >= Self.maximumRecordZoneChangesPerBatch" in record_batch, "CloudKit batch construction must stop before creating oversized requests.")
+
+set_error = method_body(MANAGER, "private func setError")
+require("displayStatus(for: error)" in set_error, "Visible iCloud Sync errors must be converted to short user-facing status text.")
+require("error.localizedDescription" not in set_error, "Raw backend error descriptions must not be shown directly in the status row.")
+set_status = method_body(MANAGER, "private func setStatus")
+require("clearError()" in set_status, "New iCloud Sync status updates must clear stale raw errors from previous builds.")
 
 settings_key_filter = method_body(MANAGER, "private func shouldSyncSettingsKey")
 require('if key.hasPrefix("ICiCloudSync") { return false }' in settings_key_filter, "iCloud Sync opt-in switches must stay local to each device.")
 require("private var syncOptionKeys" not in MANAGER, "Settings sync must not whitelist iCloud Sync opt-in switches.")
+apply_settings = method_body(MANAGER, "private func applyRemoteAppSettings")
+require("syncOptionsChanged()" not in apply_settings, "Applying synced settings must not re-run full iCloud option queueing.")
+transient_keys = method_body(MANAGER, "private var transientSettingsKeys")
+for key in [
+    "kUIPersistenceMainSidebarItem",
+    "kUIPersistenceSubscriptionsSelectedFeedUID",
+    "kUIPersistenceSubscriptionsSearchTerm",
+    "kUIPersistencePlaylistsSelectedPlaylistUID",
+    "kUIPersistenceBookmarkSelectedEpisodeGUID",
+    "kUIPersistenceDirectorySearchSearchString",
+    "kUIPersistenceDirectorySearchSelectedScopeIndex",
+]:
+    require(key in transient_keys, f"{key} must not be synced as an app setting.")
 
 require("@available(iOS 17.0, *)" in OPTIONS and "[ICiCloudSyncManager isAvailable]" in OPTIONS, "Options must hide iCloud Sync on older iOS.")
 require("kRowiCloudSync" in OPTIONS and '"iCloud Sync".ls' in OPTIONS, "Options must show an iCloud Sync row.")
-require("[ICiCloudSyncManager sharedManager].anySyncEnabled" in OPTIONS, "Options must display whether any iCloud Sync category is enabled.")
 require("ICiCloudSyncSettingsViewController" in OPTIONS, "Options must open the iCloud Sync settings controller.")
 
 require("ICiCloudSyncSettingsSectionStatus" in SETTINGS, "iCloud Sync settings must have a status section.")
@@ -146,10 +209,25 @@ require("performManualSyncWithCompletion" in SETTINGS and '"Sync Now".ls' in SET
 require("configureSyncNowCell:" in SETTINGS, "Sync Now cell must have explicit enabled/disabled state.")
 require("cell.userInteractionEnabled = syncEnabled" in SETTINGS, "Sync Now must be disabled when no sync category is enabled.")
 require("if (![ICiCloudSyncManager sharedManager].anySyncEnabled) { return; }" in SETTINGS, "Tapping disabled Sync Now must not trigger a sync.")
+require("error.localizedDescription" not in SETTINGS, "Manual sync alerts must not show clipped raw CloudKit backend messages.")
+require("reloadStatusAndDevicesSections" in SETTINGS, "iCloud settings updates must reload only status/devices, not rebuild switch rows while a switch is being tapped.")
+toggle_body = method_body(SETTINGS, "- (void)toggleSyncOption:")
+require("[self.tableView reloadData]" not in toggle_body, "Tapping an iCloud Sync switch must not rebuild the whole table view.")
 require("ICiCloudSyncDeviceInfo" in SETTINGS and '"Last Sync".ls' in SETTINGS, "Device list must show participating devices and last sync status.")
 require('"No synced devices yet".ls' in SETTINGS, "Empty device state must make successful sync participation clear.")
 require("iCloud Sync keeps selected data in sync through your private iCloud account." in SETTINGS, "iCloud Sync settings need clear user-facing option copy.")
+require("Choose on each device which categories this device syncs. This choice is not copied to your other devices." in SETTINGS, "Per-device sync option copy must be understandable.")
+require("These iCloud Sync switches stay local to this device." not in SETTINGS, "Unclear per-device sync option copy must not be used.")
 require("Only devices that have successfully synced with at least one enabled category appear here." in SETTINGS, "Device section needs clear user-facing device copy.")
+require("displayNameForDevice:" in SETTINGS, "The current-device row must not present a generic iOS device type as the user's chosen device name.")
+require("multilineInfoCellWithIdentifier:" in SETTINGS, "Status and device rows must use a multiline cell layout.")
+require("UITableViewCellStyleSubtitle" in SETTINGS, "Status and device rows need a full-width subtitle line instead of a narrow value label.")
+require("ICiCloudSyncSettingsTallRowHeight" in SETTINGS, "Status and device rows must be tall enough for two-line sync details.")
+require("heightForRowAtIndexPath" in SETTINGS, "The iCloud Sync settings table must explicitly size multiline rows.")
+require('@"%@\\n%@: %@"' in SETTINGS, "Device details must put Last Sync on a second line when all categories are enabled.")
+
+options_icloud_row = source_between(OPTIONS, "case kRowiCloudSync:", "\n            break;")
+require("[ICiCloudSyncManager sharedManager].anySyncEnabled" not in options_icloud_row, "The main settings menu must not show an On/Off status for iCloud Sync.")
 
 require("@available(iOS 17.0, *)" in APP_DELEGATE, "App delegate must not touch CKSyncEngine on older iOS.")
 require("shouldHandleRemoteNotification:" in APP_DELEGATE, "App delegate must route CloudKit pushes to iCloud Sync.")
@@ -165,7 +243,9 @@ for strings, language in [(EN_STRINGS, "English"), (DE_STRINGS, "German")]:
         require(f'"{key}" =' in strings, f"{language} localization is missing {key}.")
     for key in [
         "iCloud Sync keeps selected data in sync through your private iCloud account.",
+        "Choose on each device which categories this device syncs. This choice is not copied to your other devices.",
         "Only devices that have successfully synced with at least one enabled category appear here.",
+        "iCloud Sync will continue in smaller batches.",
     ]:
         require(f'"{key}" =' in strings, f"{language} localization is missing clearer copy: {key}.")
 

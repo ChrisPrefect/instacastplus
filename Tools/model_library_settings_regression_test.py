@@ -54,12 +54,21 @@ require(
     "Chapter model order/copy must put Codex before OpenAI API, Gemma near the end with honest copy, and Apple Intelligence last.",
 )
 require(
-    "MARKETING_VERSION = 3.4;" in project_source
+    "MARKETING_VERSION = 3.5;" in project_source
     and "MARKETING_VERSION = 3.3;" not in project_source
-    and "Version %@" in options_footer_source
+    and 'CGRectMake(0, 0, tableView.frame.size.width, 170)' in options_footer_source
+    and 'CGRectMake(20, 5, footerView.frame.size.width-40, 170)' in options_footer_source
+    and '"\\nVersion %@ (%@)\\nPublisher: Chris Thomann \\nOriginally developed by Martin Hering \\nThank you Martin!"' in options_footer_source
+    and "[NSBundle buildVersion]" in options_footer_source
     and "Developer:" not in options_footer_source
-    and "Publisher:" not in options_footer_source,
-    "Version must be 3.4 and the options footer must not show developer or publisher credits.",
+    and "Claude" not in options_footer_source
+    and "Opus" not in options_footer_source
+    and "Codex" not in options_footer_source
+    and "Devendra" not in options_footer_source
+    and "Tasia" not in options_footer_source
+    and "Build " not in options_footer_source
+    and "CFBundleVersion" not in options_footer_source,
+    "Version must be 3.5 and the options footer must keep original credits, show build behind version, and remove developer names.",
 )
 require(
     "ICChapterModelProvider" in engine_source

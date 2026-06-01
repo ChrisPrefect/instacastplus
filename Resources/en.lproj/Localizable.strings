@@ -1411,7 +1411,10 @@
 "iCloud ist auf diesem Gerät eingeschränkt." = "iCloud is restricted on this device.";
 "iCloud Status unbekannt." = "iCloud status unknown.";
 "iCloud ist vorübergehend nicht verfügbar." = "iCloud is temporarily unavailable.";
+"iCloud Sync will continue in smaller batches." = "iCloud Sync will continue in smaller batches.";
+"iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync could not be completed.";
 "Unbekanntes Gerät" = "Unknown Device";
 "iCloud Sync keeps selected data in sync through your private iCloud account." = "iCloud Sync keeps selected data in sync through your private iCloud account.";
-"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync. These iCloud Sync switches stay local to this device." = "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync. These iCloud Sync switches stay local to this device.";
+"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync." = "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync.";
+"Choose on each device which categories this device syncs. This choice is not copied to your other devices." = "Choose on each device which categories this device syncs. This choice is not copied to your other devices.";
 "Only devices that have successfully synced with at least one enabled category appear here." = "Only devices that have successfully synced with at least one enabled category appear here.";

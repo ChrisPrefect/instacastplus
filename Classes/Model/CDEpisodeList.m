@@ -119,13 +119,6 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit
 {
-    if ([self.episodes count] > 0) {
-        NSArray* all = [self.episodes array];
-        if (limit > 0 && all.count > limit) {
-            return [all subarrayWithRange:NSMakeRange(0, limit)];
-        }
-        return all;
-    }
     NSArray* result = [self _sortedEpisodesWithFetchLimit:limit];
     if (limit > 0 && result.count > limit) {
         return [result subarrayWithRange:NSMakeRange(0, limit)];
@@ -135,8 +128,9 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (NSArray*) _sortedEpisodesWithFetchLimit:(NSUInteger)fetchLimit
 {
-    if ([self.episodes count] > 0) {
-        return [self.episodes array];
+    NSArray* explicitEpisodes = [self explicitEpisodeRelationshipObjectsWithFetchLimit:fetchLimit];
+    if ([explicitEpisodes count] > 0) {
+        return explicitEpisodes;
     }
 
 
@@ -289,6 +283,25 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     return stage3Objects;
 }
 
+- (NSArray*)explicitEpisodeRelationshipObjectsWithFetchLimit:(NSUInteger)fetchLimit
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    request.includesSubentities = NO;
+    request.predicate = [NSPredicate predicateWithFormat:@"episodeLists CONTAINS %@", self];
+    if (fetchLimit > 0) {
+        request.fetchLimit = fetchLimit;
+    }
+
+    NSError* error;
+    NSArray* episodes = [self.managedObjectContext executeFetchRequest:request error:&error];
+    if (error) {
+        ErrLog(@"error fetching explicit episode list membership: %@", error);
+        return @[];
+    }
+    return episodes ?: @[];
+}
+
 
 - (NSUInteger) numberOfEpisodes
 {
@@ -312,13 +325,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         completion([self.cachedEpisodesCount unsignedIntegerValue]);
         return;
     }
-    
-    if ([self.episodes count] > 0) {
-        self.cachedEpisodesCount = @([self.episodes count]);
-        completion([self.episodes count]);
-        return;
-    }
-    
+
     NSManagedObjectID* selfId = [self objectID];
     
     NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
@@ -330,6 +337,15 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         CDEpisodeList* contextSelf = (CDEpisodeList*)[childContext existingObjectWithID:selfId error:&error];
         if (error) {
             ErrLog(@"error getting episode list in child context: %@", error);
+            return;
+        }
+
+        NSUInteger explicitEpisodeCount = [contextSelf explicitEpisodeRelationshipCountInContext:childContext episodeList:contextSelf];
+        if (explicitEpisodeCount > 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self.cachedEpisodesCount = @(explicitEpisodeCount);
+                completion(explicitEpisodeCount);
+            });
             return;
         }
         
@@ -438,6 +454,22 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         });
 
     }];
+}
+
+- (NSUInteger)explicitEpisodeRelationshipCountInContext:(NSManagedObjectContext*)context episodeList:(CDEpisodeList*)episodeList
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
+    request.includesSubentities = NO;
+    request.predicate = [NSPredicate predicateWithFormat:@"episodeLists CONTAINS %@", episodeList];
+
+    NSError* error;
+    NSUInteger count = [context countForFetchRequest:request error:&error];
+    if (count == NSNotFound) {
+        ErrLog(@"error counting explicit episode list membership: %@", error);
+        return 0;
+    }
+    return count;
 }
 
 - (void) invalidateCaches {

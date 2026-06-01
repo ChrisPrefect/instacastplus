@@ -6,6 +6,7 @@
 @preconcurrency import CloudKit
 import CoreData
 import CryptoKit
+import Darwin
 import Foundation
 import UIKit
 
@@ -75,6 +76,8 @@ import UIKit
     private static let lastSyncDateKey = "ICiCloudSyncLastSyncDate"
     private static let lastStatusKey = "ICiCloudSyncLastStatus"
     private static let lastErrorKey = "ICiCloudSyncLastError"
+    private static let maximumRecordZoneChangesPerBatch = 200
+    private static let pendingChangeQueueChunkSize = 200
 
     private enum RecordKind {
         static let device = "ICDevice"
@@ -104,6 +107,7 @@ import UIKit
     private var scrollDebounceWorkItem: DispatchWorkItem?
     private var episodeLocalModifiedDatesCache: [String: TimeInterval]?
     private var episodeLocalModifiedDatesWriteWorkItem: DispatchWorkItem?
+    private var initialQueueTask: Task<Void, Never>?
 
     private var databaseManager: DatabaseManager {
         DatabaseManager.shared()!
@@ -145,6 +149,7 @@ import UIKit
 
     @objc var devices: [ICiCloudSyncDeviceInfo] {
         deviceCache().compactMap { key, value in
+            let value = key == deviceID ? value.merging(localDevicePayload()) { _, current in current } : value
             guard deviceParticipates(value) else { return nil }
             let name = value["name"] as? String ?? NSLocalizedString("Unbekanntes Gerät", comment: "")
             let model = value["model"] as? String ?? ""
@@ -187,7 +192,7 @@ import UIKit
 
         if anySyncEnabled {
             initializeSyncEngineIfNeeded()
-            queueCurrentEnabledDataForUpload()
+            queueDeviceRecord()
             Task { @MainActor in
                 await refreshAccountStatus()
             }
@@ -195,16 +200,19 @@ import UIKit
     }
 
     @objc func setEpisodesSyncEnabled(_ enabled: Bool) {
+        guard episodesSyncEnabled != enabled else { return }
         defaults.set(enabled, forKey: ICiCloudSyncEpisodesEnabled)
         syncOptionsChanged()
     }
 
     @objc func setSubscriptionsSyncEnabled(_ enabled: Bool) {
+        guard subscriptionsSyncEnabled != enabled else { return }
         defaults.set(enabled, forKey: ICiCloudSyncSubscriptionsEnabled)
         syncOptionsChanged()
     }
 
     @objc func setSettingsSyncEnabled(_ enabled: Bool) {
+        guard settingsSyncEnabled != enabled else { return }
         defaults.set(enabled, forKey: ICiCloudSyncSettingsEnabled)
         syncOptionsChanged()
     }
@@ -215,7 +223,7 @@ import UIKit
         if anySyncEnabled {
             initializeSyncEngineIfNeeded()
             queueDeviceRecord()
-            queueCurrentEnabledDataForUpload()
+            scheduleCurrentEnabledDataForUpload()
             setStatus(NSLocalizedString("iCloud prüfen…", comment: ""))
             Task { @MainActor in
                 await refreshAccountStatus()
@@ -266,7 +274,7 @@ import UIKit
                 try await engine.fetchChanges()
                 await MainActor.run {
                     if !hasUnresolvedSyncFailures {
-                        markSyncCompleted()
+                        markSyncCompletedIfFinished()
                         completion(.newData)
                     } else {
                         postStateChanged()
@@ -291,10 +299,10 @@ import UIKit
 
         initializeSyncEngineIfNeeded()
         queueDeviceRecord()
-        queueCurrentEnabledDataForUpload()
         hasUnresolvedSyncFailures = false
         setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
         postStateChanged()
+        await queueCurrentEnabledDataForUpload()
 
         if let syncEngine {
             try await syncEngine.sendChanges()
@@ -302,7 +310,7 @@ import UIKit
         }
 
         if !hasUnresolvedSyncFailures {
-            markSyncCompleted()
+            markSyncCompletedIfFinished()
         } else {
             postStateChanged()
         }
@@ -346,18 +354,35 @@ import UIKit
         }
     }
 
-    private func queueCurrentEnabledDataForUpload() {
+    private func scheduleCurrentEnabledDataForUpload() {
+        initialQueueTask?.cancel()
+        initialQueueTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self, !Task.isCancelled else { return }
+            await self.queueCurrentEnabledDataForUpload()
+            if !Task.isCancelled {
+                self.postStateChanged()
+            }
+        }
+    }
+
+    private func queueCurrentEnabledDataForUpload() async {
         queueDeviceRecord()
 
         if episodesSyncEnabled {
-            queueAllEpisodeStateRecords()
+            await queueAllEpisodeStateRecords()
+            guard !Task.isCancelled else { return }
             queueListScrollPositionsRecord()
+            await Task.yield()
         }
         if subscriptionsSyncEnabled {
-            queueAllSubscriptionRecords()
+            await queueAllSubscriptionRecords()
+            guard !Task.isCancelled else { return }
+            await Task.yield()
         }
         if settingsSyncEnabled {
             queueSettingsRecord()
+            await Task.yield()
         }
     }
 
@@ -365,50 +390,126 @@ import UIKit
         addPendingSave(deviceRecordID(for: deviceID))
     }
 
-    private func queueAllEpisodeStateRecords() {
-        let context = databaseManager.newBackgroundContext()
-        var objectHashes: [String] = []
-        context?.performAndWait {
-            let request = NSFetchRequest<NSDictionary>(entityName: "Episode")
-            request.resultType = .dictionaryResultType
-            request.includesSubentities = false
-            request.propertiesToFetch = ["objectHash"]
-            request.predicate = NSPredicate(format: "feed.subscribed == YES AND archived == NO AND objectHash != nil AND (consumed == YES OR starred == YES OR position > 0)")
-            if let rows = try? context?.fetch(request) {
-                objectHashes = rows.compactMap { $0["objectHash"] as? String }
-            }
-        }
+    private func queueAllEpisodeStateRecords() async {
+        let objectHashes = await episodeObjectHashesForInitialSync()
+        guard !objectHashes.isEmpty, !Task.isCancelled else { return }
+
         let now = Date()
         setEpisodeLocalModifiedDates(objectHashes.reduce(into: [String: Date]()) { partialResult, objectHash in
             partialResult[objectHash] = now
         })
-        for objectHash in objectHashes {
-            addPendingSave(episodeRecordID(forObjectHash: objectHash))
+        for chunk in chunked(objectHashes, size: Self.pendingChangeQueueChunkSize) {
+            guard !Task.isCancelled else { return }
+            addPendingSaves(chunk.map { episodeRecordID(forObjectHash: $0) })
+            await Task.yield()
         }
     }
 
-    private func queueAllSubscriptionRecords() {
-        for feed in databaseManager.feeds as? [CDFeed] ?? [] {
-            if feed.subscribed, let urlString = feed.sourceURL?.absoluteString {
-                setSubscriptionRecordURL(urlString, for: subscriptionRecordID(forFeedURL: urlString).recordName)
-                markSubscriptionLocallyChanged(feedURL: urlString)
+    private func episodeObjectHashesForInitialSync() async -> [String] {
+        guard let context = databaseManager.newBackgroundContext() else { return [] }
+        let fetchBatchSize = Self.pendingChangeQueueChunkSize
+        return await context.perform {
+            let request = NSFetchRequest<NSDictionary>(entityName: "Episode")
+            request.resultType = .dictionaryResultType
+            request.includesSubentities = false
+            request.fetchBatchSize = fetchBatchSize
+            request.propertiesToFetch = ["objectHash"]
+            request.predicate = NSPredicate(format: "feed.subscribed == YES AND archived == NO AND objectHash != nil AND (consumed == YES OR starred == YES OR position > 0)")
+            guard let rows = try? context.fetch(request) else { return [] }
+            return rows.compactMap { $0["objectHash"] as? String }
+        }
+    }
+
+    private func queueAllSubscriptionRecords() async {
+        let feedURLs = await subscribedFeedURLsForInitialSync()
+        guard !feedURLs.isEmpty, !Task.isCancelled else { return }
+
+        let now = Date()
+        var recordURLs = subscriptionRecordURLs()
+        var modifiedDates = subscriptionLocalModifiedDates()
+        for feedURL in feedURLs {
+            recordURLs[subscriptionRecordID(forFeedURL: feedURL).recordName] = feedURL
+            modifiedDates[feedURL] = now.timeIntervalSince1970
+        }
+        setSyncMetadata(recordURLs, forKey: Self.subscriptionRecordURLsKey)
+        setSyncMetadata(modifiedDates, forKey: Self.subscriptionLocalModifiedDatesKey)
+
+        for chunk in chunked(feedURLs, size: Self.pendingChangeQueueChunkSize) {
+            guard !Task.isCancelled else { return }
+            addPendingSaves(chunk.map { subscriptionRecordID(forFeedURL: $0) })
+            await Task.yield()
+        }
+    }
+
+    private func subscribedFeedURLsForInitialSync() async -> [String] {
+        guard let context = databaseManager.newBackgroundContext() else { return [] }
+        let fetchBatchSize = Self.pendingChangeQueueChunkSize
+        return await context.perform {
+            let request = NSFetchRequest<NSDictionary>(entityName: "Feed")
+            request.resultType = .dictionaryResultType
+            request.includesSubentities = false
+            request.fetchBatchSize = fetchBatchSize
+            request.propertiesToFetch = ["sourceURL"]
+            request.predicate = NSPredicate(format: "subscribed == YES AND sourceURL != nil")
+            guard let rows = try? context.fetch(request) else { return [] }
+            return rows.compactMap { row in
+                if let url = row["sourceURL"] as? URL {
+                    return url.absoluteString
+                }
+                if let url = row["sourceURL"] as? NSURL {
+                    return url.absoluteString
+                }
+                return nil
             }
         }
     }
 
+    private func chunked<T>(_ values: [T], size: Int) -> [[T]] {
+        guard size > 0, !values.isEmpty else { return [] }
+        var chunks: [[T]] = []
+        var index = values.startIndex
+        while index < values.endIndex {
+            let end = values.index(index, offsetBy: size, limitedBy: values.endIndex) ?? values.endIndex
+            chunks.append(Array(values[index..<end]))
+            index = end
+        }
+        return chunks
+    }
+
     private func addPendingSave(_ recordID: CKRecord.ID) {
+        addPendingSaves([recordID])
+    }
+
+    private func addPendingSaves(_ recordIDs: [CKRecord.ID]) {
+        guard !recordIDs.isEmpty else { return }
         initializeSyncEngineIfNeeded()
-        let change = CKSyncEngine.PendingRecordZoneChange.saveRecord(recordID)
-        if syncEngine?.state.pendingRecordZoneChanges.contains(change) == false {
-            syncEngine?.state.add(pendingRecordZoneChanges: [change])
+        let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
+        let changes = recordIDs.compactMap { recordID -> CKSyncEngine.PendingRecordZoneChange? in
+            let change = CKSyncEngine.PendingRecordZoneChange.saveRecord(recordID)
+            return pendingKeys.contains(pendingChangeKey(change)) ? nil : change
+        }
+        if !changes.isEmpty {
+            syncEngine?.state.add(pendingRecordZoneChanges: changes)
         }
     }
 
     private func addPendingDelete(_ recordID: CKRecord.ID) {
         initializeSyncEngineIfNeeded()
         let change = CKSyncEngine.PendingRecordZoneChange.deleteRecord(recordID)
-        if syncEngine?.state.pendingRecordZoneChanges.contains(change) == false {
+        let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
+        if !pendingKeys.contains(pendingChangeKey(change)) {
             syncEngine?.state.add(pendingRecordZoneChanges: [change])
+        }
+    }
+
+    private func pendingChangeKey(_ change: CKSyncEngine.PendingRecordZoneChange) -> String {
+        switch change {
+        case .saveRecord(let recordID):
+            return "save:\(recordID.recordName)"
+        case .deleteRecord(let recordID):
+            return "delete:\(recordID.recordName)"
+        @unknown default:
+            return "unknown"
         }
     }
 
@@ -440,18 +541,14 @@ import UIKit
             setStatus(NSLocalizedString("Sende Änderungen…", comment: ""))
 
         case .didFetchChanges:
-            if !hasUnresolvedSyncFailures {
-                markSyncCompleted()
-            }
+            markSyncCompletedIfFinished()
 
         case .didFetchRecordZoneChanges(let event):
             if let error = event.error {
                 hasUnresolvedSyncFailures = true
                 setError(error)
             } else {
-                if !hasUnresolvedSyncFailures {
-                    markSyncCompleted()
-                }
+                markSyncCompletedIfFinished()
             }
 
         case .didSendChanges:
@@ -470,16 +567,21 @@ import UIKit
         var recordIDsToDelete: [CKRecord.ID] = []
         var staleSaveChanges: [CKSyncEngine.PendingRecordZoneChange] = []
 
+        var validChangeCount = 0
         for change in scopedChanges {
+            if validChangeCount >= Self.maximumRecordZoneChangesPerBatch { break }
+
             switch change {
             case .saveRecord(let recordID):
                 if let record = recordToSave(for: recordID) {
                     recordsToSave.append(record)
+                    validChangeCount += 1
                 } else {
                     staleSaveChanges.append(change)
                 }
             case .deleteRecord(let recordID):
                 recordIDsToDelete.append(recordID)
+                validChangeCount += 1
 
             @unknown default:
                 break
@@ -611,7 +713,7 @@ import UIKit
         switch event.changeType {
         case .signIn:
             setStatus(NSLocalizedString("iCloud angemeldet.", comment: ""))
-            queueCurrentEnabledDataForUpload()
+            scheduleCurrentEnabledDataForUpload()
         case .signOut:
             setStatus(NSLocalizedString("Kein iCloud Account verfügbar.", comment: ""))
         case .switchAccounts:
@@ -619,7 +721,7 @@ import UIKit
             setSyncMetadata([String: Data](), forKey: Self.knownRecordsKey)
             syncEngine = nil
             initializeSyncEngineIfNeeded()
-            queueCurrentEnabledDataForUpload()
+            scheduleCurrentEnabledDataForUpload()
             setStatus(NSLocalizedString("iCloud Account gewechselt.", comment: ""))
         @unknown default:
             setStatus(NSLocalizedString("iCloud Account geändert.", comment: ""))
@@ -630,7 +732,7 @@ import UIKit
         for deletion in event.deletions where deletion.zoneID == zoneID {
             setSyncMetadata([String: Data](), forKey: Self.knownRecordsKey)
             setSyncMetadata([String: [String: Any]](), forKey: Self.deviceCacheKey)
-            queueCurrentEnabledDataForUpload()
+            scheduleCurrentEnabledDataForUpload()
         }
     }
 
@@ -656,7 +758,7 @@ import UIKit
         }
 
         databaseManager.save()
-        markSyncCompleted()
+        markSyncCompletedIfFinished()
     }
 
     private func handleSentDatabaseChanges(_ event: CKSyncEngine.Event.SentDatabaseChanges) {
@@ -676,7 +778,7 @@ import UIKit
             hasUnresolvedSyncFailures = true
             postStateChanged()
         } else if !hasUnresolvedSyncFailures {
-            markSyncCompleted()
+            markSyncCompletedIfFinished()
         }
     }
 
@@ -719,7 +821,7 @@ import UIKit
             hasUnresolvedSyncFailures = true
             postStateChanged()
         } else if !hasUnresolvedSyncFailures {
-            markSyncCompleted()
+            markSyncCompletedIfFinished()
         }
     }
 
@@ -1023,7 +1125,7 @@ import UIKit
         defaults.synchronize()
         ICAppearanceManager.shared()?.updateAppearance()
         NotificationCenter.default.post(name: NSNotification.Name("MainMenuListUIDsDidChangeNotification"), object: nil)
-        syncOptionsChanged()
+        postStateChanged()
     }
 
     private func applyRemoteListScrollPositions(_ payload: [String: Any]) {
@@ -1146,22 +1248,74 @@ import UIKit
     }
 
     private func localDevicePayload() -> [String: Any] {
-        [
+        let marketingName = deviceMarketingName()
+        var payload: [String: Any] = [
             "deviceID": deviceID,
-            "name": UIDevice.current.name,
-            "model": UIDevice.current.model,
+            "name": marketingName,
+            "model": marketingName,
             "systemVersion": UIDevice.current.systemVersion,
             "appVersion": appVersionString(),
-            "lastSyncDate": lastSyncDate as Any,
             "episodesEnabled": episodesSyncEnabled,
             "subscriptionsEnabled": subscriptionsSyncEnabled,
             "settingsEnabled": settingsSyncEnabled,
-        ].compactMapValues { value in
-            if let optional = value as? OptionalProtocol, optional.isNil {
-                return nil
-            }
-            return value
+        ]
+        if let lastSyncDate {
+            payload["lastSyncDate"] = lastSyncDate
         }
+        return payload
+    }
+
+    private func deviceHardwareIdentifier() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingCString: $0) ?? ""
+            }
+        }
+    }
+
+    private func deviceMarketingName() -> String {
+        let identifier = deviceHardwareIdentifier()
+        if let name = deviceMarketingNames[identifier] {
+            return name
+        }
+        return UIDevice.current.model
+    }
+
+    private var deviceMarketingNames: [String: String] {
+        [
+            "iPhone12,1": "iPhone 11",
+            "iPhone12,3": "iPhone 11 Pro",
+            "iPhone12,5": "iPhone 11 Pro Max",
+            "iPhone12,8": "iPhone SE (2nd generation)",
+            "iPhone13,1": "iPhone 12 mini",
+            "iPhone13,2": "iPhone 12",
+            "iPhone13,3": "iPhone 12 Pro",
+            "iPhone13,4": "iPhone 12 Pro Max",
+            "iPhone14,2": "iPhone 13 Pro",
+            "iPhone14,3": "iPhone 13 Pro Max",
+            "iPhone14,4": "iPhone 13 mini",
+            "iPhone14,5": "iPhone 13",
+            "iPhone14,6": "iPhone SE (3rd generation)",
+            "iPhone14,7": "iPhone 14",
+            "iPhone14,8": "iPhone 14 Plus",
+            "iPhone15,2": "iPhone 14 Pro",
+            "iPhone15,3": "iPhone 14 Pro Max",
+            "iPhone15,4": "iPhone 15",
+            "iPhone15,5": "iPhone 15 Plus",
+            "iPhone16,1": "iPhone 15 Pro",
+            "iPhone16,2": "iPhone 15 Pro Max",
+            "iPhone17,1": "iPhone 16 Pro",
+            "iPhone17,2": "iPhone 16 Pro Max",
+            "iPhone17,3": "iPhone 16",
+            "iPhone17,4": "iPhone 16 Plus",
+            "iPhone17,5": "iPhone 16e",
+            "iPhone18,1": "iPhone 17 Pro",
+            "iPhone18,2": "iPhone 17 Pro Max",
+            "iPhone18,3": "iPhone 17",
+            "iPhone18,4": "iPhone Air",
+        ]
     }
 
     private func appVersionString() -> String {
@@ -1288,6 +1442,13 @@ import UIKit
         [
             LastRefreshSubscriptionDate,
             FirstLaunchDate,
+            kUIPersistenceMainSidebarItem,
+            kUIPersistenceSubscriptionsSelectedFeedUID,
+            kUIPersistenceSubscriptionsSearchTerm,
+            kUIPersistencePlaylistsSelectedPlaylistUID,
+            kUIPersistenceBookmarkSelectedEpisodeGUID,
+            kUIPersistenceDirectorySearchSearchString,
+            kUIPersistenceDirectorySearchSelectedScopeIndex,
             UIStateSelectedFeed,
             UIStateSelectedEpisode,
             kUIPersistenceListScrollPositions,
@@ -1555,13 +1716,55 @@ import UIKit
         postStateChanged()
     }
 
+    private var hasPendingSyncChanges: Bool {
+        guard let syncEngine else { return false }
+        return !syncEngine.state.pendingDatabaseChanges.isEmpty || !syncEngine.state.pendingRecordZoneChanges.isEmpty
+    }
+
+    private func markSyncCompletedIfFinished() {
+        guard !hasUnresolvedSyncFailures else {
+            postStateChanged()
+            return
+        }
+        guard !hasPendingSyncChanges else {
+            setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
+            postStateChanged()
+            return
+        }
+        markSyncCompleted()
+    }
+
     private func setStatus(_ status: String) {
+        clearError()
         setSyncMetadata(status, forKey: Self.lastStatusKey)
     }
 
     private func setError(_ error: Error) {
-        setSyncMetadata(error.localizedDescription, forKey: Self.lastErrorKey)
+        setSyncMetadata(displayStatus(for: error), forKey: Self.lastErrorKey)
         postStateChanged()
+    }
+
+    private func displayStatus(for error: Error) -> String {
+        if let ckError = error as? CKError {
+            switch ckError.code {
+            case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable, .requestRateLimited:
+                return NSLocalizedString("iCloud ist vorübergehend nicht verfügbar.", comment: "")
+            case .notAuthenticated:
+                return NSLocalizedString("Kein iCloud Account verfügbar.", comment: "")
+            case .permissionFailure:
+                return NSLocalizedString("iCloud ist auf diesem Gerät eingeschränkt.", comment: "")
+            case .limitExceeded:
+                return NSLocalizedString("iCloud Sync will continue in smaller batches.", comment: "")
+            default:
+                break
+            }
+        }
+
+        let description = (error as NSError).localizedDescription.lowercased()
+        if description.contains("request contains") && description.contains("maximum number") {
+            return NSLocalizedString("iCloud Sync will continue in smaller batches.", comment: "")
+        }
+        return NSLocalizedString("iCloud Sync konnte nicht abgeschlossen werden.", comment: "")
     }
 
     private func clearError() {

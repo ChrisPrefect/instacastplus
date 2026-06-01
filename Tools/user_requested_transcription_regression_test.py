@@ -97,12 +97,19 @@ options_footer = source_slice(
     "- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section",
 )
 require(
-    "Developer:" not in options_footer
-    and "Publisher:" not in options_footer
+    'CGRectMake(0, 0, tableView.frame.size.width, 119)' in options_footer
+    and 'CGRectMake(20, 5, footerView.frame.size.width-40, 119)' in options_footer
+    and '"Version %@ (%@)\\nPublisher: Chris Thomann \\nOriginally developed by Martin Hering \\nThank you Martin!"' in options_footer
+    and "[NSBundle buildVersion]" in options_footer
+    and "Developer:" not in options_footer
+    and "Claude" not in options_footer
+    and "Opus" not in options_footer
+    and "Codex" not in options_footer
     and "Devendra" not in options_footer
     and "Tasia" not in options_footer
-    and "Originally developed" not in options_footer,
-    "Settings credits footer must remove developer and contributor credits.",
+    and "Build " not in options_footer
+    and "CFBundleVersion" not in options_footer,
+    "Settings credits footer must keep the original credit text without the removed developer-line whitespace.",
 )
 
 require(

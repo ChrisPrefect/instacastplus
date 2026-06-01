@@ -21,6 +21,8 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
     ICiCloudSyncOptionRowCount,
 };
 
+static CGFloat const ICiCloudSyncSettingsTallRowHeight = 70.0f;
+
 @interface ICiCloudSyncSettingsViewController ()
 @property (nonatomic, strong) NSDateFormatter *dateFormatter;
 @end
@@ -73,7 +75,7 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
 
 - (void)syncStateDidChange:(NSNotification*)notification
 {
-    [self.tableView reloadData];
+    [self reloadStatusAndDevicesSections];
 }
 
 #pragma mark - Table view data source
@@ -100,7 +102,7 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
 {
     if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {
         if (indexPath.row == 0) {
-            UITableViewCell *cell = [self detailCell];
+            UITableViewCell *cell = [self multilineInfoCellWithIdentifier:@"ICiCloudSyncStatusCell"];
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
             cell.accessoryType = UITableViewCellAccessoryNone;
             cell.textLabel.text = @"Status".ls;
@@ -147,12 +149,11 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
     }
 
     ICiCloudSyncDeviceInfo *device = devices[indexPath.row];
-    UITableViewCell *cell = [self detailCell];
+    UITableViewCell *cell = [self multilineInfoCellWithIdentifier:@"ICiCloudSyncDeviceCell"];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.accessoryType = UITableViewCellAccessoryNone;
-    cell.textLabel.text = device.isCurrentDevice ? [NSString stringWithFormat:@"%@ (%@)", device.name, @"This Device".ls] : device.name;
+    cell.textLabel.text = [self displayNameForDevice:device];
     cell.detailTextLabel.text = [self detailTextForDevice:device];
-    cell.detailTextLabel.numberOfLines = 2;
     return cell;
 }
 
@@ -165,7 +166,7 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
     NSString *categories = (parts.count > 0) ? [parts componentsJoinedByString:@", "] : @"Off".ls;
 
     NSString *dateString = device.lastSyncDate ? [self.dateFormatter stringFromDate:device.lastSyncDate] : @"Never".ls;
-    return [NSString stringWithFormat:@"%@ · %@: %@", categories, @"Last Sync".ls, dateString];
+    return [NSString stringWithFormat:@"%@\n%@: %@", categories, @"Last Sync".ls, dateString];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
@@ -187,7 +188,9 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
         return @"iCloud Sync keeps selected data in sync through your private iCloud account.".ls;
     }
     if (section == ICiCloudSyncSettingsSectionOptions) {
-        return @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync. These iCloud Sync switches stay local to this device.".ls;
+        NSString *syncDetails = @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync.".ls;
+        NSString *perDeviceChoice = @"Choose on each device which categories this device syncs. This choice is not copied to your other devices.".ls;
+        return [NSString stringWithFormat:@"%@ %@", syncDetails, perDeviceChoice];
     }
     if (section == ICiCloudSyncSettingsSectionDevices) {
         return @"Only devices that have successfully synced with at least one enabled category appear here.".ls;
@@ -198,6 +201,17 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
     return [self heightForFooterText:[self tableView:tableView titleForFooterInSection:section]];
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (indexPath.section == ICiCloudSyncSettingsSectionStatus && indexPath.row == 0) {
+        return ICiCloudSyncSettingsTallRowHeight;
+    }
+    if (indexPath.section == ICiCloudSyncSettingsSectionDevices && [ICiCloudSyncManager sharedManager].devices.count > 0) {
+        return ICiCloudSyncSettingsTallRowHeight;
+    }
+    return UITableViewAutomaticDimension;
 }
 
 - (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section
@@ -232,12 +246,12 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
                 cell.userInteractionEnabled = YES;
                 if (error) {
                     [self presentAlertControllerWithTitle:@"iCloud Sync".ls
-                                                  message:error.localizedDescription
+                                                  message:[ICiCloudSyncManager sharedManager].statusText
                                                    button:@"OK".ls
                                                  animated:YES
                                                completion:nil];
                 }
-                [self.tableView reloadData];
+                [self reloadStatusAndDevicesSections];
             });
         }];
     }
@@ -256,7 +270,7 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
             [[ICiCloudSyncManager sharedManager] setSettingsSyncEnabled:sender.on];
             break;
     }
-    [self.tableView reloadData];
+    [self reloadStatusAndDevicesSections];
 }
 
 - (void)configureSyncNowCell:(UITableViewCell*)cell
@@ -267,6 +281,54 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
     cell.textLabel.enabled = syncEnabled;
     cell.textLabel.textColor = syncEnabled ? [[ICAppearanceManager sharedManager] appearance].tintColor : ICMutedTextColor;
     cell.selectionStyle = syncEnabled ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+}
+
+- (NSString*)displayNameForDevice:(ICiCloudSyncDeviceInfo*)device
+{
+    NSString *model = device.model ?: @"";
+    NSString *name = device.name ?: @"";
+    NSString *displayName = (model.length > 0) ? model : name;
+    if (device.isCurrentDevice) {
+        return (displayName.length > 0) ? [NSString stringWithFormat:@"%@ (%@)", displayName, @"This Device".ls] : @"This Device".ls;
+    }
+    return (displayName.length > 0) ? displayName : @"Unbekanntes Gerät".ls;
+}
+
+- (UITableViewCell*)multilineInfoCellWithIdentifier:(NSString*)identifier
+{
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:identifier];
+    if (cell == nil) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:identifier];
+        cell.selectedBackgroundView = [[UIView alloc] init];
+    }
+
+    cell.backgroundColor = ICGroupCellBackgroundColor;
+    cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+    cell.textLabel.textColor = ICTextColor;
+    cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
+    cell.detailTextLabel.textColor = ICMutedTextColor;
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
+    cell.detailTextLabel.numberOfLines = 2;
+    cell.detailTextLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = nil;
+
+    return cell;
+}
+
+- (void)reloadStatusAndDevicesSections
+{
+    if (!self.isViewLoaded) {
+        return;
+    }
+
+    NSIndexSet *sections = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(ICiCloudSyncSettingsSectionStatus, 1)];
+    NSMutableIndexSet *mutableSections = [sections mutableCopy];
+    [mutableSections addIndex:ICiCloudSyncSettingsSectionDevices];
+
+    [UIView performWithoutAnimation:^{
+        [self.tableView reloadSections:mutableSections withRowAnimation:UITableViewRowAnimationNone];
+    }];
 }
 
 @end

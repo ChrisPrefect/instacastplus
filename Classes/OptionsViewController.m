@@ -184,7 +184,6 @@ enum {
             break;
         case kRowiCloudSync:
             cell.textLabel.text = @"iCloud Sync".ls;
-            cell.detailTextLabel.text = [ICiCloudSyncManager sharedManager].anySyncEnabled ? @"On".ls : @"Off".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"icloud"];
             break;
         case kRowImportExport:
@@ -352,15 +351,15 @@ enum {
 
 - (UIView *)tableView:(UITableView *)tableView viewForFooterInSection:(NSInteger)section {
     if (section == kOptionsSectionMain) {
-        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 56)];
+        UIView *footerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.frame.size.width, 170)];
         footerView.backgroundColor = [UIColor clearColor];
 
-        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 56)];
+        UILabel *footerLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 5, footerView.frame.size.width-40, 170)];
         footerLabel.numberOfLines = 0;
         footerLabel.textAlignment = NSTextAlignmentLeft;
         [footerLabel setTextColor:[UIColor grayColor]];
         footerLabel.font = [UIFont systemFontOfSize:ICFontSize(14)];
-        footerLabel.text = [NSString stringWithFormat:@"\nVersion %@", [NSBundle appVersion]];
+        footerLabel.text = [NSString stringWithFormat:@"\nVersion %@ (%@)\nPublisher: Chris Thomann \nOriginally developed by Martin Hering \nThank you Martin!", [NSBundle appVersion], [NSBundle buildVersion]];
 
         [footerView addSubview:footerLabel];
         return footerView;
@@ -371,7 +370,7 @@ enum {
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
     if (section == kOptionsSectionMain) {
-        return 56;
+        return 170;
     }
     return 0.0f;
 }

@@ -66,6 +66,14 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+### 5. UI Reactivity
+
+**UI-Reaktivität hat oberste Priorität.**
+
+- Alle Funktionen, die die UI verlangsamen können, müssen asynchron im Hintergrund ausgeführt werden.
+- UI-Aktionen wie Taps, Switches, Navigation und App-Start dürfen keine großen Datenbank-Scans, Netzwerkoperationen, Dateizugriffe oder Sync-Queue-Aufbauten synchron ausführen.
+- UI-Updates müssen klein und gezielt bleiben; sichtbare Controls dürfen während der Interaktion nicht unnötig durch komplette Reloads neu aufgebaut werden.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

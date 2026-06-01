@@ -1414,7 +1414,10 @@
 "iCloud ist auf diesem Gerät eingeschränkt." = "iCloud ist auf diesem Gerät eingeschränkt.";
 "iCloud Status unbekannt." = "iCloud-Status unbekannt.";
 "iCloud ist vorübergehend nicht verfügbar." = "iCloud ist vorübergehend nicht verfügbar.";
+"iCloud Sync will continue in smaller batches." = "iCloud Sync verarbeitet die Änderungen in kleineren Schritten.";
+"iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync konnte nicht abgeschlossen werden.";
 "Unbekanntes Gerät" = "Unbekanntes Gerät";
 "iCloud Sync keeps selected data in sync through your private iCloud account." = "iCloud Sync hält ausgewählte Daten über deinen privaten iCloud-Account synchron.";
-"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync. These iCloud Sync switches stay local to this device." = "Folgen synchronisieren hält Gespielt/Ungespielt, Abspielposition, Favoriten und Scroll-Positionen in Listen synchron. Abonnements synchronisieren hält abonnierte Podcasts, Podcast-Einstellungen, Löschungen und Sortierung synchron. Einstellungen synchronisieren hält App-Einstellungen synchron. Diese iCloud-Sync-Schalter bleiben lokal auf diesem Gerät.";
+"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync." = "Folgen synchronisieren hält Gespielt/Ungespielt, Abspielposition, Favoriten und Scroll-Positionen in Listen synchron. Abonnements synchronisieren hält abonnierte Podcasts, Podcast-Einstellungen, Löschungen und Sortierung synchron. Einstellungen synchronisieren hält App-Einstellungen synchron.";
+"Choose on each device which categories this device syncs. This choice is not copied to your other devices." = "Du wählst auf jedem Gerät separat aus, welche Kategorien dieses Gerät synchronisiert. Diese Auswahl wird nicht auf andere Geräte übertragen.";
 "Only devices that have successfully synced with at least one enabled category appear here." = "Hier erscheinen nur Geräte, die mit mindestens einer aktivierten Kategorie erfolgreich synchronisiert wurden.";
