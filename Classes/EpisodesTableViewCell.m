@@ -46,6 +46,7 @@
 @property (nonatomic) BOOL watchIndicatorVisible;
 @property (nonatomic, strong) UIView* starredIndicator;
 @property (nonatomic, strong, readwrite) EpisodePlayComboButton* playAccessoryButton;
+@property (nonatomic, strong, readwrite) UIButton* primaryActionMenuButton;
 @property (nonatomic, strong, readwrite) UIPanGestureRecognizer* panRecognizer;
 @property (nonatomic, readwrite) BOOL showsDeleteControl;
 @property (nonatomic, strong, readwrite) UIView* topSeparatorView;
@@ -136,6 +137,15 @@
         _playAccessoryButton = [EpisodePlayComboButton button];
         _playAccessoryButton.frame = CGRectMake(0, 0, 60, 60);//CGRectMake(0, 0, 44, 44);
         [self.panningContentView addSubview:_playAccessoryButton];
+
+        _primaryActionMenuButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        _primaryActionMenuButton.backgroundColor = [UIColor clearColor];
+        _primaryActionMenuButton.hidden = YES;
+        if (@available(iOS 14.0, *)) {
+            _primaryActionMenuButton.showsMenuAsPrimaryAction = YES;
+        }
+        [self.panningContentView addSubview:_primaryActionMenuButton];
+        [self.panningContentView bringSubviewToFront:_playAccessoryButton];
         
         
         // Long-press gesture removed — UITableView's contextMenuConfigurationForRowAtIndexPath handles long-press via UIContextMenu
@@ -256,6 +266,10 @@
     self.rightPanImage.hidden = YES;
     self.moreButton.hidden = YES;
     self.deleteButton.hidden = YES;
+    self.primaryActionMenuButton.hidden = YES;
+    if (@available(iOS 14.0, *)) {
+        self.primaryActionMenuButton.menu = nil;
+    }
     self.canDelete = NO;
     self.showsDeleteControl = NO;
     self.topSeparator = NO;
@@ -776,9 +790,12 @@
     //self.playAccessoryButton.frame = CGRectMake(CGRectGetMaxX(bounds)-44, floorf((CGRectGetHeight(bounds)-44)/2), 44, 44);
     self.playAccessoryButton.frame = CGRectMake(CGRectGetMaxX(bounds)-60, floorf((CGRectGetHeight(bounds)-60)/2), 60, 60);
     self.playAccessoryButton.tintColor = (episode.consumed) ? [UIColor colorWithWhite:0.5f alpha:1.0f] : ICTintColor;
-    
-    
     self.playAccessoryButton.hidden = (self.embedded || usesTableEditingLayout);
+    CGFloat menuButtonRightInset = self.playAccessoryButton.hidden ? 0 : 60;
+    self.primaryActionMenuButton.frame = CGRectMake(0, 0, MAX(0, CGRectGetWidth(bounds)-menuButtonRightInset), CGRectGetHeight(bounds));
+    [self.panningContentView bringSubviewToFront:self.primaryActionMenuButton];
+    [self.panningContentView bringSubviewToFront:self.playAccessoryButton];
+
     _starredIndicator.backgroundColor = [UIColor colorWithRed:1.f green:174/255.0 blue:0.f alpha:1.f];
     
     

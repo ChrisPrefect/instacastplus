@@ -490,7 +490,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.sizeLabel.numberOfLines = 2;
     cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
-    cell.timeLabel.textAlignment = NSTextAlignmentRight;
+    cell.timeLabel.textAlignment = NSTextAlignmentCenter;
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = nil;
     cell.rightContentAccessoryView = nil;
@@ -547,6 +547,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     cell.sizeLabel.textColor = ICMutedTextColor; // reset color
     cell.timeLabel.textColor = ICMutedTextColor;
     NSString* elapsedText = [self _elapsedTextForItem:item];
+    NSString* remainingText = [self _estimatedRemainingTextForItem:item];
     NSString* headline = nil;
     NSString* detail = item.statusDetail;
 
@@ -576,7 +577,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             } else if (isBackgroundPaused) {
                 int pct = (int)(item.progress * 100);
                 if (pct > 0) {
-                    headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription pausiert (%d%%)", nil), pct];
+                    if (remainingText.length > 0) {
+                        headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription pausiert (%d%%, %@ verbleibend)", nil), pct, remainingText];
+                    } else {
+                        headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription pausiert (%d%%)", nil), pct];
+                    }
                     cell.progressView.progress = item.progress;
                     cell.progressView.hidden = NO;
                 } else {
@@ -632,7 +637,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         case ICTranscriptionStatusTranscribing: {
             int pct = (int)(item.progress * 100);
             if (pct > 0) {
-                headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription läuft (%d%%)", nil), pct];
+                if (remainingText.length > 0) {
+                    headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription läuft (%d%%, %@ verbleibend)", nil), pct, remainingText];
+                } else {
+                    headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription läuft (%d%%)", nil), pct];
+                }
                 cell.progressView.progress = item.progress;
                 cell.progressView.hidden = NO;
             } else {
@@ -647,7 +656,11 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         case ICTranscriptionStatusGeneratingChapters: {
             int pct = (int)(item.progress * 100);
             if (pct > 0 && pct < 100) {
-                headline = [NSString stringWithFormat:NSLocalizedString(@"Kapitel werden erstellt (%d%%)", nil), pct];
+                if (remainingText.length > 0) {
+                    headline = [NSString stringWithFormat:NSLocalizedString(@"Kapitel werden erstellt (%d%%, %@ verbleibend)", nil), pct, remainingText];
+                } else {
+                    headline = [NSString stringWithFormat:NSLocalizedString(@"Kapitel werden erstellt (%d%%)", nil), pct];
+                }
             } else {
                 headline = NSLocalizedString(@"Kapitel werden erstellt", nil);
             }
@@ -874,6 +887,22 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];
     }
     return [NSString stringWithFormat:@"%lds", (long)seconds];
+}
+
+- (NSString*)_estimatedRemainingTextForItem:(ICTranscriptionQueueItem*)item {
+    if (!item.statusStartedAt || item.progress <= 0.01f || item.progress >= 1.0f) {
+        return nil;
+    }
+
+    NSTimeInterval elapsed = [[NSDate date] timeIntervalSinceDate:item.statusStartedAt];
+    if (elapsed < 5) {
+        return nil;
+    }
+
+    NSInteger remaining = MAX(0, (NSInteger)ceil(elapsed * (1.0 - item.progress) / item.progress));
+    NSInteger minutes = remaining / 60;
+    NSInteger seconds = remaining % 60;
+    return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];
 }
 
 - (NSString*)_activeEngineLabel {

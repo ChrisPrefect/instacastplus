@@ -49,17 +49,21 @@ en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text
 
 require(
     "TSSectionIntro" in transcription_settings
-    and "Lege den Finger länger auf eine Episode" in transcription_settings
+    and "Long Press auf eine Episode" in transcription_settings
     and "Kontextmenü" in transcription_settings
-    and "Downloads > Transkribieren" in transcription_settings
+    and "direkt im Menü Transkribieren" in transcription_settings
     and "Sprechblasen-Symbol" in transcription_settings
-    and "Podcast eigene Kapitel" in transcription_settings,
-    "Transcription settings must explain long-press start, monitoring, player transcript button, and existing podcast chapters.",
+    and "Transkribieren und Kapitel-Erstellen ist in der Beta-Phase" in transcription_settings
+    and "Lege den Finger länger" not in transcription_settings
+    and "Downloads > Transkribieren" not in transcription_settings
+    and "Wenn der Podcast eigene Kapitel" not in transcription_settings,
+    "Transcription settings must explain Long Press start, menu progress, player transcript button, and beta status.",
 )
 for strings in (de_strings, en_strings):
     require(
-        "Lege den Finger länger auf eine Episode" in strings
-        and "Downloads > Transkribieren" in strings,
+        "Long Press auf eine Episode" in strings
+        and "direkt im Menü Transkribieren" in strings
+        and "Transkribieren und Kapitel-Erstellen ist in der Beta-Phase" in strings,
         "Transcription how-to copy must be localized in German and English resources.",
     )
 

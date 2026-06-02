@@ -184,7 +184,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     
     CDFeed* subscribedFeed = [DMANAGER subscribeFeed:parserFeed withOptions:options];
     if (autodownload && !subscribedFeed.parked) {
-        [self autoDownloadEpisodesInFeed:subscribedFeed];
+        [self _autoDownloadEpisodesInFeedAsynchronously:subscribedFeed];
     }
     return subscribedFeed;
 }
@@ -778,7 +778,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 - (void) _finishParsingFeed:(CDFeed*)feed url:(NSURL*)url shouldAutoDownload:(BOOL)shouldAutoDownload
 {
     if (shouldAutoDownload) {
-        [self autoDownloadEpisodesInFeed:feed];
+        [self _autoDownloadEpisodesInFeedAsynchronously:feed];
     }
 
     [self _enforceKeepNewestLimitForFeed:feed];
@@ -791,14 +791,34 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                                                       userInfo:(feed)?[NSDictionary dictionaryWithObject:feed forKey:@"feed"]:nil];
 }
 
-- (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed
+- (BOOL)_feedNeedsDurationMetadataRefreshForFeedObjectID:(NSManagedObjectID*)feedObjectID
 {
-    for (CDEpisode* episode in feed.episodes) {
-        if (!episode.archived && !episode.consumed && episode.position <= 0 && episode.duration <= 0) {
-            return YES;
-        }
+    if (!feedObjectID || feedObjectID.isTemporaryID) {
+        return NO;
     }
-    return NO;
+
+    NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+    if (!context) {
+        return NO;
+    }
+
+    __block BOOL needsRefresh = NO;
+    [context performBlockAndWait:^{
+        NSError* feedError = nil;
+        CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&feedError];
+        if (![feed isKindOfClass:[CDFeed class]] || feedError) {
+            return;
+        }
+
+        NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+        request.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == NO && consumed == NO && position <= 0 && duration <= 0", feed];
+        request.fetchLimit = 1;
+
+        NSError* countError = nil;
+        NSUInteger count = [context countForFetchRequest:request error:&countError];
+        needsRefresh = (!countError && count != NSNotFound && count > 0);
+    }];
+    return needsRefresh;
 }
 
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
@@ -822,7 +842,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:self userInfo:@{@"url" : feed.sourceURL}];
     }
     
-    BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefresh:feed];
+    BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefreshForFeedObjectID:feed.objectID];
     ICFeedParser* feedParser = [ICFeedParser feedParser];
     if (etagHandling && !needsDurationMetadataRefresh) {
         feedParser.etag = feed.etag;
@@ -1547,6 +1567,69 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
             });
         }
     }];
+}
+
+- (void)_autoDownloadEpisodesInFeedAsynchronously:(CDFeed*)feed
+{
+    if (!feed || feed.parked || !feed.subscribed || feed.objectID.isTemporaryID) {
+        return;
+    }
+
+    NSManagedObjectID* feedObjectID = feed.objectID;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        if (!context) {
+            return;
+        }
+
+        __block NSArray<NSManagedObjectID*>* episodeObjectIDs = @[];
+        [context performBlockAndWait:^{
+            NSError* feedError = nil;
+            CDFeed* backgroundFeed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&feedError];
+            if (![backgroundFeed isKindOfClass:[CDFeed class]] || feedError || backgroundFeed.parked || !backgroundFeed.subscribed) {
+                return;
+            }
+
+            NSArray* sortedEpisodes = [backgroundFeed chronologicallySortedEpisodes];
+            NSDate* firstPubDate = [[sortedEpisodes firstObject] pubDate];
+            if (!firstPubDate) {
+                return;
+            }
+
+            NSDateComponents* firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+                                                                           fromDate:firstPubDate];
+            NSMutableArray<NSManagedObjectID*>* objectIDs = [NSMutableArray array];
+            for (CDEpisode* episode in sortedEpisodes) {
+                NSDate* pubDate = episode.pubDate;
+                NSDateComponents* comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
+                                                                          fromDate:pubDate];
+                if ([comps day] != [firstComps day] || [comps month] != [firstComps month] || [comps year] != [firstComps year]) {
+                    continue;
+                }
+                if (episode.consumed || episode.archived || episode.objectID.isTemporaryID) {
+                    continue;
+                }
+                [objectIDs addObject:episode.objectID];
+            }
+            episodeObjectIDs = [objectIDs copy];
+        }];
+
+        if (episodeObjectIDs.count == 0) {
+            return;
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableArray* thisSortedEpisodes = [[NSMutableArray alloc] initWithCapacity:episodeObjectIDs.count];
+            for (NSManagedObjectID* objectID in episodeObjectIDs) {
+                NSError* error = nil;
+                CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:objectID error:&error];
+                if ([episode isKindOfClass:[CDEpisode class]] && !error && !episode.isDeleted) {
+                    [thisSortedEpisodes addObject:episode];
+                }
+            }
+            [self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes];
+        });
+    });
 }
 
 - (BOOL) autoDownloadEpisodesInFeed:(CDFeed*)feed

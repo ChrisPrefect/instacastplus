@@ -16,6 +16,7 @@
 
 @property (nonatomic, strong) id objectValue;
 @property (nonatomic, strong, readonly) EpisodePlayComboButton* playAccessoryButton;
+@property (nonatomic, strong, readonly) UIButton* primaryActionMenuButton;
 @property (nonatomic, strong, readonly) UIImageView* iconView;
 
 @property (nonatomic) BOOL canDelete;

@@ -69,7 +69,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
         case TSSectionIntro: return nil;
-        case TSSectionModels: return NSLocalizedString(@"Betaversion", nil);
+        case TSSectionModels: return nil;
         case TSSectionCloud: return NSLocalizedString(@"Cloud-Zugänge", nil);
         case TSSectionChapters: return NSLocalizedString(@"Kapitel & Sponsoren", nil);
         case TSSectionAuto: return NSLocalizedString(@"Automatisch", nil);
@@ -123,7 +123,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
     cell.textLabel.numberOfLines = 0;
     cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
     cell.textLabel.textColor = ICMutedTextColor;
-    cell.textLabel.text = NSLocalizedString(@"Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten.", nil);
+    cell.textLabel.text = NSLocalizedString(@"Long Press auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du direkt im Menü Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein.\nTranskribieren und Kapitel-Erstellen ist in der Beta-Phase.", nil);
     return cell;
 }
 
@@ -168,16 +168,16 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
     switch (row) {
         case 0:
+            cell.textLabel.text = @"Anthropic API-Key";
+            cell.detailTextLabel.text = [ICRemoteChapterCredentialStore anthropicAPIKeyPreview];
+            break;
+        case 1:
             cell.textLabel.text = @"OpenAI API-Key";
             cell.detailTextLabel.text = [ICRemoteChapterCredentialStore openAIAPIKeyPreview];
             break;
-        case 1:
+        case 2:
             cell.textLabel.text = @"OpenAI Codex Login";
             cell.detailTextLabel.text = [ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials] ? [ICRemoteChapterCredentialStore openAIOAuthAccountLabel] : NSLocalizedString(@"Gerätecode erstellen", nil);
-            break;
-        case 2:
-            cell.textLabel.text = @"Anthropic API-Key";
-            cell.detailTextLabel.text = [ICRemoteChapterCredentialStore anthropicAPIKeyPreview];
             break;
         case 3:
             cell.textLabel.text = @"Kimi API-Key";
@@ -388,9 +388,9 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (indexPath.section == TSSectionCloud) {
-        if (indexPath.row == 0) [self _showOpenAIAPIKeyEditor];
-        else if (indexPath.row == 1) [self _showOpenAIOAuthLogin];
-        else if (indexPath.row == 2) [self _showAnthropicAPIKeyEditor];
+        if (indexPath.row == 0) [self _showAnthropicAPIKeyEditor];
+        else if (indexPath.row == 1) [self _showOpenAIAPIKeyEditor];
+        else if (indexPath.row == 2) [self _showOpenAIOAuthLogin];
         else if (indexPath.row == 3) [self _showKimiAPIKeyEditor];
         return;
     }

@@ -986,6 +986,7 @@
 "Tap on Episode" = "Tap auf Episode";
 "Show Notes" = "Show Notes";
 "Play Episode Action" = "Episode abspielen";
+"Open Long-Press Menu" = "Long-Press Menü öffnen";
 
 /* Speed Steps */
 "Enabled Speed Steps" = "Aktivierte Geschwindigkeiten";
@@ -1165,10 +1166,12 @@
 "Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen." = "Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen.";
 "Transkription läuft" = "Transkription läuft";
 "Transkription läuft (%d%%)" = "Transkription läuft (%d%%)";
+"Transkription läuft (%d%%, %@ verbleibend)" = "Transkription läuft (%d%%, %@ verbleibend)";
 "Audiodatei wird verarbeitet." = "Audiodatei wird verarbeitet.";
 "Warte auf das erste erkannte Transkriptsegment." = "Warte auf das erste erkannte Transkriptsegment.";
 "Kapitel werden erstellt" = "Kapitel werden erstellt";
 "Kapitel werden erstellt (%d%%)" = "Kapitel werden erstellt (%d%%)";
+"Kapitel werden erstellt (%d%%, %@ verbleibend)" = "Kapitel werden erstellt (%d%%, %@ verbleibend)";
 "Kapitel werden aus dem Transkript erstellt." = "Kapitel werden aus dem Transkript erstellt.";
 "Automatischer Download wurde gestartet." = "Automatischer Download wurde gestartet.";
 "Episode wird heruntergeladen. Spracherkennungsmodell wird vorbereitet." = "Episode wird heruntergeladen. Spracherkennungsmodell wird vorbereitet.";
@@ -1216,6 +1219,7 @@
 "Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet." = "Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet.";
 "Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar." = "Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar.";
 "Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten." = "Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten.";
+"Long Press auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du direkt im Menü Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein.\nTranskribieren und Kapitel-Erstellen ist in der Beta-Phase." = "Long Press auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du direkt im Menü Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein.\nTranskribieren und Kapitel-Erstellen ist in der Beta-Phase.";
 "Geladene Modelle kannst du per Swipe nach links löschen." = "Geladene Modelle kannst du per Swipe nach links löschen.";
 "Sehr gute Genauigkeit, größerer Download." = "Sehr gute Genauigkeit, größerer Download.";
 "Kleinerer Download, schneller bereit." = "Kleinerer Download, schneller bereit.";
@@ -1375,6 +1379,7 @@
 "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." = "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.";
 "Transkription pausiert" = "Transkription pausiert";
 "Transkription pausiert (%d%%)" = "Transkription pausiert (%d%%)";
+"Transkription pausiert (%d%%, %@ verbleibend)" = "Transkription pausiert (%d%%, %@ verbleibend)";
 "Transkriptions-Log" = "Transkriptions-Log";
 "Warteschlange" = "Warteschlange";
 "Zugangsdaten eingerichtet." = "Zugangsdaten eingerichtet.";
@@ -1390,6 +1395,7 @@
 "Syncing…" = "Synchronisiere…";
 "Status" = "Status";
 "Devices" = "Geräte";
+"Synced Devices" = "Synchronisierte Geräte";
 "This Device" = "Dieses Gerät";
 "No synced devices yet" = "Noch keine synchronisierten Geräte";
 "Last Sync" = "Letzter Sync";
@@ -1404,9 +1410,11 @@
 "Keine Sync-Kategorie aktiviert." = "Keine Sync-Kategorie aktiviert.";
 "iCloud prüfen…" = "iCloud prüfen…";
 "Synchronisiere…" = "Synchronisiere…";
+"%ld/%ld Elemente" = "%ld/%ld Elemente";
 "Empfange Änderungen…" = "Empfange Änderungen…";
 "Sende Änderungen…" = "Sende Änderungen…";
 "Synchronisiert" = "Synchronisiert";
+"Keine Änderungen" = "Keine Änderungen";
 "iCloud angemeldet." = "iCloud angemeldet.";
 "Kein iCloud Account verfügbar." = "Kein iCloud-Account verfügbar.";
 "iCloud Account gewechselt." = "iCloud-Account gewechselt.";
@@ -1417,7 +1425,4 @@
 "iCloud Sync will continue in smaller batches." = "iCloud Sync verarbeitet die Änderungen in kleineren Schritten.";
 "iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync konnte nicht abgeschlossen werden.";
 "Unbekanntes Gerät" = "Unbekanntes Gerät";
-"iCloud Sync keeps selected data in sync through your private iCloud account." = "iCloud Sync hält ausgewählte Daten über deinen privaten iCloud-Account synchron.";
-"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync." = "Folgen synchronisieren hält Gespielt/Ungespielt, Abspielposition, Favoriten und Scroll-Positionen in Listen synchron. Abonnements synchronisieren hält abonnierte Podcasts, Podcast-Einstellungen, Löschungen und Sortierung synchron. Einstellungen synchronisieren hält App-Einstellungen synchron.";
-"Choose on each device which categories this device syncs. This choice is not copied to your other devices." = "Du wählst auf jedem Gerät separat aus, welche Kategorien dieses Gerät synchronisiert. Diese Auswahl wird nicht auf andere Geräte übertragen.";
-"Only devices that have successfully synced with at least one enabled category appear here." = "Hier erscheinen nur Geräte, die mit mindestens einer aktivierten Kategorie erfolgreich synchronisiert wurden.";
+"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync." = "Folgen synchronisieren hält Gespielt/Ungespielt, Abspielposition, Favoriten und Scroll-Positionen in Listen synchron. Abonnements synchronisieren hält abonnierte Podcasts, Podcast-Einstellungen, Löschungen und Sortierung synchron.";

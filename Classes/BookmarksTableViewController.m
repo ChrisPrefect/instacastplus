@@ -40,6 +40,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 @property (nonatomic, strong) ToolbarLabelsViewController* toolbarLabelsViewController;
 
 @property (nonatomic, strong) UIBarButtonItem* labelsItems;
+@property (nonatomic, strong) UIBarButtonItem* editButtonItem;
 
 @property (nonatomic, strong) UIDocumentInteractionController* interactionController;
 @property (nonatomic, assign) BOOL multiple;
@@ -71,6 +72,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         [DMANAGER addTaskObserver:self forKeyPath:@"bookmarks" task:^(id obj, NSDictionary *change) {
             if (!self->_userAction) {
                 [self _reloadBookmarks];
+                [self _updateEmptyState];
                 [self.tableView reloadData];
                 [self _updateToolbarAnimated:YES];
                 [self _updateToolbarLabels];
@@ -219,11 +221,43 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 
 - (void) _updateToolbarAnimated:(BOOL)animated
 {
+    BOOL hasBookmarks = ([self.sections count] > 0);
+    if (!hasBookmarks) {
+        [self setToolbarItems:@[] animated:animated];
+        [self.navigationController setToolbarHidden:!hasBookmarks animated:animated];
+        return;
+    }
+
     // Toolbar-Items nur setzen wenn noch nicht gesetzt
     if (!self.toolbarItems || self.toolbarItems.count == 0) {
         UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
         [self setToolbarItems:@[flexSpace, self.labelsItems, flexSpace] animated:animated];
     }
+    [self.navigationController setToolbarHidden:!hasBookmarks animated:animated];
+}
+
+- (void)_updateEmptyState
+{
+    BOOL hasBookmarks = ([self.sections count] > 0);
+    self.tableView.scrollEnabled = hasBookmarks;
+    self.navigationItem.rightBarButtonItem = hasBookmarks ? self.editButtonItem : nil;
+    if (!hasBookmarks && self.editing) {
+        [super setEditing:NO animated:NO];
+    }
+
+    if (hasBookmarks) {
+        self.tableView.backgroundView = nil;
+        return;
+    }
+
+    UILabel* emptyLabel = [[UILabel alloc] initWithFrame:self.tableView.bounds];
+    emptyLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    emptyLabel.backgroundColor = [UIColor clearColor];
+    emptyLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
+    emptyLabel.textColor = ICMutedTextColor;
+    emptyLabel.textAlignment = NSTextAlignmentCenter;
+    emptyLabel.text = @"No bookmarks yet.".ls;
+    self.tableView.backgroundView = emptyLabel;
 }
 
 
@@ -236,10 +270,11 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         self.title = @"Bookmarks".ls;
     }
     
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
-                                                                                style:UIBarButtonItemStylePlain
-                                                                               target:self
-                                                                               action:@selector(editAction:)];
+    self.editButtonItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"pencil"]
+                                                           style:UIBarButtonItemStylePlain
+                                                          target:self
+                                                          action:@selector(editAction:)];
+    self.navigationItem.rightBarButtonItem = self.editButtonItem;
     
 	self.tableView.rowHeight = 57+10;
 	self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
@@ -261,6 +296,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     
     [self _updateToolbarAnimated:YES];
     [self _updateToolbarLabels];
+    [self _updateEmptyState];
     
     [self _setObserving:YES];
 }
@@ -268,6 +304,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 - (void) updateAppearance {
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.tableView.backgroundColor = ICBackgroundColor;
+    [self _updateEmptyState];
     [self.tableView reloadData];
 }
 
@@ -310,6 +347,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 - (void) reload
 {
     [self _reloadBookmarks];
+    [self _updateEmptyState];
     [self.tableView reloadData];
 }
 
@@ -322,31 +360,11 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)sectionIndex
 {
-    return MAX(1,[self.sections count]);
+    return [self.sections count];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if ([self.sections count] == 0)
-    {
-        static NSString *BookmarksPlaceholder = @"BookmarksPlaceholderCellItem";
-		
-		UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:BookmarksPlaceholder];
-		if (cell == nil) {
-			cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:BookmarksPlaceholder];
-		}
-		cell.backgroundColor = self.tableView.backgroundColor;
-		
-		cell.textLabel.text = @"No bookmarks yet.".ls;
-		cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
-		cell.textLabel.textColor = ICMutedTextColor;
-		cell.textLabel.textAlignment = NSTextAlignmentCenter;
-		cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    
-        return cell;
-    }
-    else
-    {
         static NSString *CellIdentifier = @"Cell";
         BookmarksTableViewCell *cell = (BookmarksTableViewCell*)[tableView dequeueReusableCellWithIdentifier:CellIdentifier];
         if (!cell) {
@@ -403,9 +421,6 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
         }];
 
         return cell;
-    }
-    
-    return nil;
 }
 
 
@@ -682,13 +697,16 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     }
     
     [self _reloadBookmarks];
+    [self _updateEmptyState];
+    [self _updateToolbarAnimated:YES];
+    [self _updateToolbarLabels];
     
     if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone && self.parentHash && [self.sections count] == 1) {
         [self.navigationController popViewControllerAnimated:YES];
     }
 
     else if ([self.sections count] == 0) {
-        [self.tableView reloadRowsAtIndexPaths:rows withRowAnimation:UITableViewRowAnimationFade];
+        [self.tableView reloadData];
     }
     
     else {

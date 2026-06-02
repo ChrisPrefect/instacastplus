@@ -2131,9 +2131,14 @@ private struct ChaptersFile: Codable {
             }
 
             let candidateTitle = candidate.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            let isSponsor = candidate.isSponsor || candidateTitle.hasPrefix("Sponsor: ")
+            let candidateTitleWithoutSponsor = titleByRemovingSponsorPrefix(candidateTitle)
+            let isStructuralOrAudio = normalizedStructuralChapterTitle(titleByRemovingSponsorPrefix(candidateTitle)) != nil
+                || normalizedAudioInterludeTitle(titleByRemovingSponsorPrefix(candidateTitle)) != nil
+            let isSponsor = !isStructuralOrAudio && (candidate.isSponsor || candidateTitle.hasPrefix("Sponsor: "))
             let title: String
-            if isSponsor {
+            if isStructuralOrAudio {
+                title = candidateTitleWithoutSponsor
+            } else if isSponsor {
                 if candidateTitle.hasPrefix("Sponsor: ") {
                     title = candidateTitle
                 } else if original.title.hasPrefix("Sponsor: ") {
@@ -3304,19 +3309,33 @@ private struct ChaptersFile: Codable {
     }
 
     private static func isStructuralChapterTitle(_ title: String) -> Bool {
-        normalizedStructuralChapterTitle(title) != nil
+        normalizedStructuralChapterTitle(titleByRemovingSponsorPrefix(title)) != nil
     }
 
     private static func normalizedStructuralChapterTitle(_ title: String) -> String? {
-        let normalized = title
+        let normalized = titleByRemovingSponsorPrefix(title)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
             .lowercased()
-        return ["intro", "outro"].contains(normalized) ? normalized : nil
+            .replacingOccurrences(of: #"[^a-z0-9]+"#,
+                                  with: " ",
+                                  options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if ["intro", "outro"].contains(normalized) {
+            return normalized
+        }
+
+        let tokens = normalized.split(separator: " ").map(String.init)
+        guard !tokens.isEmpty else { return nil }
+        let allowedStructuralTokens: Set<String> = ["intro", "outro", "music", "musik", "jingle", "audio", "sound", "sample"]
+        guard tokens.allSatisfy({ allowedStructuralTokens.contains($0) }) else { return nil }
+        if tokens.contains("intro") { return "intro" }
+        if tokens.contains("outro") { return "outro" }
+        return nil
     }
 
     private static func normalizedAudioInterludeTitle(_ title: String) -> String? {
-        let normalized = title
+        let normalized = titleByRemovingSponsorPrefix(title)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "de_DE"))
             .lowercased()
@@ -3331,6 +3350,15 @@ private struct ChaptersFile: Codable {
             return "sound-sample"
         }
         return nil
+    }
+
+    private static func titleByRemovingSponsorPrefix(_ title: String) -> String {
+        title
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^sponsor\s*:\s*"#,
+                                  with: "",
+                                  options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func overlapDuration(_ startA: Double,

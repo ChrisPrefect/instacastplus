@@ -1760,7 +1760,25 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 
     // Show Notes or Play (depending on tap-on-episode setting)
     NSInteger tapAction = [USER_DEFAULTS integerForKey:TapOnEpisodeAction];
-    if (tapAction == ICTapOnEpisodeActionShowNotes) {
+    if (tapAction == ICTapOnEpisodeActionOpenContextMenu) {
+        UIAction* playAction = [UIAction actionWithTitle:@"Play Episode".ls
+                                                   image:[UIImage systemImageNamed:@"play.fill"]
+                                              identifier:nil
+                                                 handler:^(UIAction *action) {
+                                                     BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
+                                                     PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+                                                     [playbackController presentFromParentViewController:weakSelf.navigationController autostart:YES completion:NULL];
+                                                 }];
+        [actions addObject:playAction];
+
+        UIAction* infoAction = [UIAction actionWithTitle:@"Episode Info".ls
+                                                   image:[UIImage systemImageNamed:@"info.circle"]
+                                              identifier:nil
+                                                 handler:^(UIAction *action) {
+                                                     [weakSelf _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
+                                                 }];
+        [actions addObject:infoAction];
+    } else if (tapAction == ICTapOnEpisodeActionShowNotes) {
         // Default tap shows notes, so context menu offers Play
         UIAction* playAction = [UIAction actionWithTitle:@"Play Episode".ls
                                                    image:[UIImage systemImageNamed:@"play.fill"]
@@ -2169,6 +2187,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     cell.objectValue = episode;
     cell.playAccessoryButton.userInfo = episode;
     cell.usesNativeSwipeActions = YES;
+    cell.primaryActionMenuButton.hidden = YES;
+    if (@available(iOS 14.0, *)) {
+        cell.primaryActionMenuButton.menu = nil;
+        if ([USER_DEFAULTS integerForKey:TapOnEpisodeAction] == ICTapOnEpisodeActionOpenContextMenu) {
+            cell.primaryActionMenuButton.menu = [self _contextMenuForIndexPath:indexPath];
+            cell.primaryActionMenuButton.hidden = NO;
+        }
+    }
     
     if (self.showsImage) {
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
@@ -2251,6 +2277,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     NSInteger tapAction = [USER_DEFAULTS integerForKey:TapOnEpisodeAction];
     if (tapAction == ICTapOnEpisodeActionShowNotes) {
         [self _pushShowNotesOfEpisode:episode animated:YES inAppearanceTransition:NO];
+    } else if (tapAction == ICTapOnEpisodeActionOpenContextMenu) {
+        [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
     } else {
         BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
         PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];

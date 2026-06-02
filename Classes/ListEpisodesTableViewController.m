@@ -14,6 +14,7 @@
 #import "CDList.h"
 #import "CDEpisodeList.h"
 #import "CDPlaylist.h"
+#import "CDSmartPlaylist.h"
 #import "DatabaseManager.h"
 
 #define EPISODE_PAGE_SIZE 25
@@ -77,6 +78,11 @@
     return [self.list isKindOfClass:[CDEpisodeList class]];
 }
 
+- (BOOL)_allowsPullToRefresh
+{
+    return ![self.list isKindOfClass:[CDSmartPlaylist class]];
+}
+
 - (CDPlaylist*)_playlist
 {
     if (![self.list isKindOfClass:[CDPlaylist class]]) {
@@ -114,39 +120,41 @@
             }
         }];
         
-        [nc addObserver:self name:SubscriptionManagerDidStartRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
-            if (self.isViewLoaded && self.view.window) {
-                [self.refreshControl beginRefreshing];
-            }
-        }];
-        
-        [nc addObserver:self name:SubscriptionManagerDidFinishRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
-            SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
-            [self _presentRefreshFailureAlert:sm.lastRefreshFailureMessages];
+        if ([self _allowsPullToRefresh]) {
+            [nc addObserver:self name:SubscriptionManagerDidStartRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
+                if (self.isViewLoaded && self.view.window) {
+                    [self.refreshControl beginRefreshing];
+                }
+            }];
 
-            NSString* failedFeedName = sm.lastRefreshFailedFeedName;
-            if (failedFeedName.length > 0) {
-                ((ICRefreshControl*)self.refreshControl).refreshText = failedFeedName;
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
-                    [self.refreshControl endRefreshing];
-                });
-                return;
-            }
-            ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
-            [self.refreshControl endRefreshing];
-        }];
-        
-        [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
-            ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
-        }];
+            [nc addObserver:self name:SubscriptionManagerDidFinishRefreshingFeedsNotification object:nil handler:^(NSNotification *notification) {
+                SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+                [self _presentRefreshFailureAlert:sm.lastRefreshFailureMessages];
 
-        [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
-            SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
-            if (sm.refreshing) {
-                ((ICRefreshControl*)self.refreshControl).refreshText = sm.refreshStatusText;
-            }
-        }];
+                NSString* failedFeedName = sm.lastRefreshFailedFeedName;
+                if (failedFeedName.length > 0) {
+                    ((ICRefreshControl*)self.refreshControl).refreshText = failedFeedName;
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
+                        [self.refreshControl endRefreshing];
+                    });
+                    return;
+                }
+                ((ICRefreshControl*)self.refreshControl).refreshText = @"Looking for new episodes…".ls;
+                [self.refreshControl endRefreshing];
+            }];
+
+            [sman addTaskObserver:self forKeyPath:@"formattedLastRefreshDate" task:^(id obj, NSDictionary *change) {
+                ((ICRefreshControl*)self.refreshControl).idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
+            }];
+
+            [sman addTaskObserver:self forKeyPath:@"refreshStatusText" task:^(id obj, NSDictionary *change) {
+                SubscriptionManager* sm = [SubscriptionManager sharedSubscriptionManager];
+                if (sm.refreshing) {
+                    ((ICRefreshControl*)self.refreshControl).refreshText = sm.refreshStatusText;
+                }
+            }];
+        }
 
         _list_episodes_observing = YES;
     }
@@ -178,12 +186,14 @@
         self.navigationItem.rightBarButtonItem = nil;
     }
 
-    ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
-    refreshControl.pulldownText = @"Pull to refresh…".ls;
-    refreshControl.refreshText = @"Looking for new episodes…".ls;
-    refreshControl.idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
-    [refreshControl addTarget:self action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
-    self.refreshControl = refreshControl;
+    if ([self _allowsPullToRefresh]) {
+        ICRefreshControl* refreshControl = [[ICRefreshControl alloc] init];
+        refreshControl.pulldownText = @"Pull to refresh…".ls;
+        refreshControl.refreshText = @"Looking for new episodes…".ls;
+        refreshControl.idleText = [[SubscriptionManager sharedSubscriptionManager] formattedLastRefreshDate];
+        [refreshControl addTarget:self action:@selector(refresh:) forControlEvents:UIControlEventValueChanged];
+        self.refreshControl = refreshControl;
+    }
 }
 
 - (void) editButtonAction:(id)sender
@@ -212,6 +222,9 @@
     
     // Dispatch to avoid "offscreen beginRefreshing" warning
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (![self _allowsPullToRefresh]) {
+            return;
+        }
         if ([SubscriptionManager sharedSubscriptionManager].refreshing && !self.refreshControl.refreshing) {
             [self.refreshControl beginRefreshing];
         }
@@ -235,6 +248,11 @@
 
 - (void) refresh:(id)sender
 {
+    if (![self _allowsPullToRefresh]) {
+        [self.refreshControl endRefreshing];
+        return;
+    }
+
     [[SubscriptionManager sharedSubscriptionManager] refreshAllFeedsForce:YES etagHandling:YES completion:^(BOOL success, NSArray* newEpisodes, NSError* error) {
         if (error) {
             [self presentError:error];

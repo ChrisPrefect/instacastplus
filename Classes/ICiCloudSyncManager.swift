@@ -108,6 +108,11 @@ import UIKit
     private var episodeLocalModifiedDatesCache: [String: TimeInterval]?
     private var episodeLocalModifiedDatesWriteWorkItem: DispatchWorkItem?
     private var initialQueueTask: Task<Void, Never>?
+    private var syncProgressTotal = 0
+    private var syncProgressCompleted = 0
+    private var syncProgressActive = false
+    private var deviceRecordShouldStampSyncDate = false
+    private var syncedUserDataInCurrentRun = false
 
     private var databaseManager: DatabaseManager {
         DatabaseManager.shared()!
@@ -140,6 +145,9 @@ import UIKit
     @objc var statusText: String {
         if let error = defaults.string(forKey: Self.lastErrorKey), !error.isEmpty {
             return error
+        }
+        if let progress = syncProgressStatusText() {
+            return progress
         }
         if let status = defaults.string(forKey: Self.lastStatusKey), !status.isEmpty {
             return status
@@ -192,7 +200,7 @@ import UIKit
 
         if anySyncEnabled {
             initializeSyncEngineIfNeeded()
-            queueDeviceRecord()
+            queueDeviceRecordForPendingUserDataIfNeeded()
             Task { @MainActor in
                 await refreshAccountStatus()
             }
@@ -230,6 +238,7 @@ import UIKit
             }
         } else if syncEngine != nil {
             clearError()
+            cancelInitialQueueTask()
             queueDeviceRecord()
             setStatus(NSLocalizedString("Aus", comment: ""))
         }
@@ -298,11 +307,13 @@ import UIKit
         }
 
         initializeSyncEngineIfNeeded()
-        queueDeviceRecord()
         hasUnresolvedSyncFailures = false
         setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
         postStateChanged()
-        await queueCurrentEnabledDataForUpload()
+        await initialQueueTask?.value
+        queueDeviceRecordForPendingUserDataIfNeeded()
+        beginSyncProgress()
+        postStateChanged()
 
         if let syncEngine {
             try await syncEngine.sendChanges()
@@ -355,7 +366,7 @@ import UIKit
     }
 
     private func scheduleCurrentEnabledDataForUpload() {
-        initialQueueTask?.cancel()
+        cancelInitialQueueTask()
         initialQueueTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
@@ -364,6 +375,11 @@ import UIKit
                 self.postStateChanged()
             }
         }
+    }
+
+    private func cancelInitialQueueTask() {
+        initialQueueTask?.cancel()
+        initialQueueTask = nil
     }
 
     private func queueCurrentEnabledDataForUpload() async {
@@ -386,20 +402,23 @@ import UIKit
         }
     }
 
-    private func queueDeviceRecord() {
+    private func queueDeviceRecord(stampLastSyncDate: Bool = false) {
+        if stampLastSyncDate {
+            deviceRecordShouldStampSyncDate = true
+        }
         addPendingSave(deviceRecordID(for: deviceID))
     }
 
     private func queueAllEpisodeStateRecords() async {
         let objectHashes = await episodeObjectHashesForInitialSync()
-        guard !objectHashes.isEmpty, !Task.isCancelled else { return }
+        guard episodesSyncEnabled, !objectHashes.isEmpty, !Task.isCancelled else { return }
 
         let now = Date()
         setEpisodeLocalModifiedDates(objectHashes.reduce(into: [String: Date]()) { partialResult, objectHash in
             partialResult[objectHash] = now
         })
         for chunk in chunked(objectHashes, size: Self.pendingChangeQueueChunkSize) {
-            guard !Task.isCancelled else { return }
+            guard episodesSyncEnabled, !Task.isCancelled else { return }
             addPendingSaves(chunk.map { episodeRecordID(forObjectHash: $0) })
             await Task.yield()
         }
@@ -422,7 +441,7 @@ import UIKit
 
     private func queueAllSubscriptionRecords() async {
         let feedURLs = await subscribedFeedURLsForInitialSync()
-        guard !feedURLs.isEmpty, !Task.isCancelled else { return }
+        guard subscriptionsSyncEnabled, !feedURLs.isEmpty, !Task.isCancelled else { return }
 
         let now = Date()
         var recordURLs = subscriptionRecordURLs()
@@ -435,7 +454,7 @@ import UIKit
         setSyncMetadata(modifiedDates, forKey: Self.subscriptionLocalModifiedDatesKey)
 
         for chunk in chunked(feedURLs, size: Self.pendingChangeQueueChunkSize) {
-            guard !Task.isCancelled else { return }
+            guard subscriptionsSyncEnabled, !Task.isCancelled else { return }
             addPendingSaves(chunk.map { subscriptionRecordID(forFeedURL: $0) })
             await Task.yield()
         }
@@ -482,6 +501,7 @@ import UIKit
 
     private func addPendingSaves(_ recordIDs: [CKRecord.ID]) {
         guard !recordIDs.isEmpty else { return }
+        let containsUserData = containsUserDataRecordID(recordIDs)
         initializeSyncEngineIfNeeded()
         let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
         let changes = recordIDs.compactMap { recordID -> CKSyncEngine.PendingRecordZoneChange? in
@@ -491,6 +511,9 @@ import UIKit
         if !changes.isEmpty {
             syncEngine?.state.add(pendingRecordZoneChanges: changes)
         }
+        if containsUserData {
+            queueDeviceRecord(stampLastSyncDate: true)
+        }
     }
 
     private func addPendingDelete(_ recordID: CKRecord.ID) {
@@ -499,6 +522,9 @@ import UIKit
         let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
         if !pendingKeys.contains(pendingChangeKey(change)) {
             syncEngine?.state.add(pendingRecordZoneChanges: [change])
+        }
+        if isUserDataRecordID(recordID) {
+            queueDeviceRecord(stampLastSyncDate: true)
         }
     }
 
@@ -511,6 +537,34 @@ import UIKit
         @unknown default:
             return "unknown"
         }
+    }
+
+    private func containsUserDataRecordID(_ recordIDs: [CKRecord.ID]) -> Bool {
+        recordIDs.contains { isUserDataRecordID($0) }
+    }
+
+    private func isUserDataRecordID(_ recordID: CKRecord.ID) -> Bool {
+        recordID.recordName.hasPrefix(RecordPrefix.episode)
+        || recordID.recordName.hasPrefix(RecordPrefix.subscription)
+        || recordID.recordName == RecordPrefix.appSettings
+        || recordID.recordName == RecordPrefix.listScrollPositions
+    }
+
+    private func hasPendingUserDataChanges() -> Bool {
+        guard let syncEngine else { return false }
+        return syncEngine.state.pendingRecordZoneChanges.contains { change in
+            switch change {
+            case .saveRecord(let recordID), .deleteRecord(let recordID):
+                return isUserDataRecordID(recordID)
+            @unknown default:
+                return false
+            }
+        }
+    }
+
+    private func queueDeviceRecordForPendingUserDataIfNeeded() {
+        guard hasPendingUserDataChanges() else { return }
+        queueDeviceRecord(stampLastSyncDate: true)
     }
 
     func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
@@ -534,11 +588,15 @@ import UIKit
             await handleSentRecordZoneChanges(event)
 
         case .willFetchChanges, .willFetchRecordZoneChanges:
+            clearSyncProgress()
             setStatus(NSLocalizedString("Empfange Änderungen…", comment: ""))
+            postStateChanged()
 
         case .willSendChanges:
             hasUnresolvedSyncFailures = false
+            beginSyncProgressIfNeeded()
             setStatus(NSLocalizedString("Sende Änderungen…", comment: ""))
+            postStateChanged()
 
         case .didFetchChanges:
             markSyncCompletedIfFinished()
@@ -625,7 +683,9 @@ import UIKit
         let record = mutableRecord(recordType: RecordKind.device, recordID: recordID)
         let now = Date()
         var payload = localDevicePayload()
-        payload["lastSyncDate"] = now
+        if deviceRecordShouldStampSyncDate {
+            payload["lastSyncDate"] = now
+        }
         payload["updatedAt"] = now
         populate(record, payload: payload, updatedAt: now)
         record["deviceID"] = deviceID as CKRecordValue
@@ -739,6 +799,11 @@ import UIKit
     private func handleFetchedRecordZoneChanges(_ event: CKSyncEngine.Event.FetchedRecordZoneChanges) async {
         guard !event.modifications.isEmpty || !event.deletions.isEmpty else { return }
 
+        if event.modifications.contains(where: { isUserDataRecordID($0.record.recordID) })
+            || event.deletions.contains(where: { isUserDataRecordID($0.recordID) }) {
+            syncedUserDataInCurrentRun = true
+        }
+
         isApplyingRemoteChange = true
         defer {
             isApplyingRemoteChange = false
@@ -783,6 +848,11 @@ import UIKit
     }
 
     private func handleSentRecordZoneChanges(_ event: CKSyncEngine.Event.SentRecordZoneChanges) async {
+        if event.savedRecords.contains(where: { isUserDataRecordID($0.recordID) })
+            || event.deletedRecordIDs.contains(where: { isUserDataRecordID($0) }) {
+            syncedUserDataInCurrentRun = true
+        }
+
         for record in event.savedRecords {
             rememberServerRecord(record)
             if record.recordType == RecordKind.device, let payload = payloadDictionary(from: record) {
@@ -816,6 +886,8 @@ import UIKit
         if !retryRecords.isEmpty {
             syncEngine?.state.add(pendingRecordZoneChanges: retryRecords)
         }
+
+        updateSyncProgressFromPendingChanges()
 
         if hasFailedRecordChanges {
             hasUnresolvedSyncFailures = true
@@ -1709,10 +1781,22 @@ import UIKit
     }
 
     private func markSyncCompleted() {
-        let now = Date()
-        setSyncMetadata(now, forKey: Self.lastSyncDateKey)
-        clearError()
-        setStatus(NSLocalizedString("Synchronisiert", comment: ""))
+        clearSyncProgress()
+        if syncedUserDataInCurrentRun {
+            let now = Date()
+            setSyncMetadata(now, forKey: Self.lastSyncDateKey)
+            var payload = localDevicePayload()
+            payload["lastSyncDate"] = now
+            updateDeviceCache(with: payload)
+            clearError()
+            setStatus(NSLocalizedString("Synchronisiert", comment: ""))
+            postDevicesChanged()
+        } else {
+            clearError()
+            setStatus(NSLocalizedString("Keine Änderungen", comment: ""))
+        }
+        deviceRecordShouldStampSyncDate = false
+        syncedUserDataInCurrentRun = false
         postStateChanged()
     }
 
@@ -1721,12 +1805,44 @@ import UIKit
         return !syncEngine.state.pendingDatabaseChanges.isEmpty || !syncEngine.state.pendingRecordZoneChanges.isEmpty
     }
 
+    private func beginSyncProgress() {
+        syncProgressTotal = syncEngine?.state.pendingRecordZoneChanges.count ?? 0
+        syncProgressCompleted = 0
+        syncProgressActive = syncProgressTotal > 0
+    }
+
+    private func beginSyncProgressIfNeeded() {
+        if !syncProgressActive {
+            beginSyncProgress()
+        }
+    }
+
+    private func updateSyncProgressFromPendingChanges() {
+        guard syncProgressActive, syncProgressTotal > 0 else { return }
+        let pendingCount = syncEngine?.state.pendingRecordZoneChanges.count ?? 0
+        let completedCount = syncProgressTotal - pendingCount
+        syncProgressCompleted = min(syncProgressTotal, max(syncProgressCompleted, completedCount))
+    }
+
+    private func clearSyncProgress() {
+        syncProgressTotal = 0
+        syncProgressCompleted = 0
+        syncProgressActive = false
+    }
+
+    private func syncProgressStatusText() -> String? {
+        guard syncProgressActive, syncProgressTotal > 0 else { return nil }
+        return String(format: NSLocalizedString("%ld/%ld Elemente", comment: ""), syncProgressCompleted, syncProgressTotal)
+    }
+
     private func markSyncCompletedIfFinished() {
         guard !hasUnresolvedSyncFailures else {
             postStateChanged()
             return
         }
         guard !hasPendingSyncChanges else {
+            beginSyncProgressIfNeeded()
+            updateSyncProgressFromPendingChanges()
             setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
             postStateChanged()
             return
@@ -1740,6 +1856,9 @@ import UIKit
     }
 
     private func setError(_ error: Error) {
+        clearSyncProgress()
+        deviceRecordShouldStampSyncDate = false
+        syncedUserDataInCurrentRun = false
         setSyncMetadata(displayStatus(for: error), forKey: Self.lastErrorKey)
         postStateChanged()
     }

@@ -33,6 +33,8 @@
 
 #define SEND_UPDATE [self _sendUpdateNotification];
 
+static NSString* const ICGeneratedSponsorSkipName = @"__ICGeneratedSponsor__";
+
 #if !TARGET_OS_IPHONE
 #ifdef __MAC_10_9
 #define ENABLE_10_9_AUDIO_DEVICE_BEHAVIOR 1
@@ -2015,6 +2017,26 @@ didReceiveResponse:(NSURLResponse *)response
     return nil;
 }
 
+- (BOOL)_autoSkipSponsorsEnabledForFeed:(CDFeed*)feed
+{
+    NSString* value = [feed stringForKey:kFeedPropertyAutoSkipSponsors];
+    if ([value isEqualToString:@"yes"]) {
+        return YES;
+    }
+    if ([value isEqualToString:@"no"]) {
+        return NO;
+    }
+    return [USER_DEFAULTS boolForKey:kAutoSkipSponsors];
+}
+
+- (NSString*)_skipNameForChapter:(ICMetadataChapter*)chapter withNames:(NSArray*)skipNames includeGeneratedSponsors:(BOOL)includeGeneratedSponsors
+{
+    if (includeGeneratedSponsors && chapter.generatedSponsor) {
+        return ICGeneratedSponsorSkipName;
+    }
+    return [self matchingSkipNameForChapter:chapter withNames:skipNames];
+}
+
 - (void)nextTimeAfterSkipChapter:(CDEpisode *)episode {
     if (self.isAutoSkipping) return;
     if (!self.autoSkipMarkers || self.autoSkipMarkers.count == 0) return;
@@ -2978,6 +3000,7 @@ didReceiveResponse:(NSURLResponse *)response
                     ch.title = gch.title;
                     ch.start = CMTimeMakeWithSeconds(gch.start, NSEC_PER_SEC);
                     ch.end = CMTimeMakeWithSeconds(gch.end, NSEC_PER_SEC);
+                    ch.generatedSponsor = gch.isSponsor;
                     [metaChapters addObject:ch];
                 }
                 chapters = metaChapters;
@@ -3034,15 +3057,11 @@ didReceiveResponse:(NSURLResponse *)response
         return;
     }
 
-    // Get skip keywords
     NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
     NSString *chaptersName = [episode.feed stringForKey:key];
-    if (!chaptersName || chaptersName.length == 0) {
-        self.autoSkipMarkers = nil;
-        return;
-    }
-    NSArray *skipNames = [chaptersName componentsSeparatedByString:@".  "];
-    if (skipNames.count == 0) {
+    NSArray *skipNames = (chaptersName.length > 0) ? [chaptersName componentsSeparatedByString:@".  "] : @[];
+    BOOL includeGeneratedSponsors = [self _autoSkipSponsorsEnabledForFeed:episode.feed];
+    if (skipNames.count == 0 && !includeGeneratedSponsors) {
         self.autoSkipMarkers = nil;
         return;
     }
@@ -3053,14 +3072,14 @@ didReceiveResponse:(NSURLResponse *)response
 
     while (i < chapterCount) {
         ICMetadataChapter *chapter = self.chapters[i];
-        NSString *skipName = [self matchingSkipNameForChapter:chapter withNames:skipNames];
+        NSString *skipName = [self _skipNameForChapter:chapter withNames:skipNames includeGeneratedSponsors:includeGeneratedSponsors];
 
         if (!skipName) {
             // Check if next chapter is a skip chapter with negative startOffset → early skip from this chapter
             if (i + 1 < chapterCount) {
                 ICMetadataChapter *nextChapter = self.chapters[i + 1];
-                NSString *nextSkipName = [self matchingSkipNameForChapter:nextChapter withNames:skipNames];
-                if (nextSkipName) {
+                NSString *nextSkipName = [self _skipNameForChapter:nextChapter withNames:skipNames includeGeneratedSponsors:includeGeneratedSponsors];
+                if (nextSkipName && ![nextSkipName isEqualToString:ICGeneratedSponsorSkipName]) {
                     NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, nextSkipName];
                     double startOffset = [episode.feed doubleForKey:startKey];
                     if (startOffset < 0) {
@@ -3084,7 +3103,7 @@ didReceiveResponse:(NSURLResponse *)response
         NSInteger j = i + 1;
         while (j < chapterCount) {
             ICMetadataChapter *nextChap = self.chapters[j];
-            NSString *nextName = [self matchingSkipNameForChapter:nextChap withNames:skipNames];
+            NSString *nextName = [self _skipNameForChapter:nextChap withNames:skipNames includeGeneratedSponsors:includeGeneratedSponsors];
             if (!nextName) break;
             lastSkipName = nextName;
             groupEnd = j;
@@ -3095,8 +3114,11 @@ didReceiveResponse:(NSURLResponse *)response
         ICMetadataChapter *firstSkipChapter = self.chapters[groupStart];
         NSTimeInterval firstSkipChapterStart = CMTimeGetSeconds(firstSkipChapter.start);
 
-        NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, firstSkipName];
-        double startOffset = [episode.feed doubleForKey:startKey];
+        double startOffset = 0;
+        if (![firstSkipName isEqualToString:ICGeneratedSponsorSkipName]) {
+            NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, firstSkipName];
+            startOffset = [episode.feed doubleForKey:startKey];
+        }
 
         NSTimeInterval skipStart;
         if (startOffset < 0) {
@@ -3118,8 +3140,11 @@ didReceiveResponse:(NSURLResponse *)response
             ICMetadataChapter *lastSkipChapter = self.chapters[groupEnd];
             NSTimeInterval lastSkipChapterEnd = CMTimeGetSeconds(lastSkipChapter.end);
 
-            NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
-            double endOffset = [episode.feed doubleForKey:endKey];
+            double endOffset = 0;
+            if (![lastSkipName isEqualToString:ICGeneratedSponsorSkipName]) {
+                NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
+                endOffset = [episode.feed doubleForKey:endKey];
+            }
 
             resumeTime = lastSkipChapterEnd + endOffset;
 

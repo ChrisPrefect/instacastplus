@@ -101,6 +101,9 @@ require("setError(error)" in manual_completion, "Manual sync errors must be pers
 manual_sync = method_body(MANAGER, "private func performManualSync() async throws")
 require("hasUnresolvedSyncFailures = false" in manual_sync, "Manual sync must reset unresolved failure tracking before sending.")
 require("markSyncCompletedIfFinished()" in manual_sync, "Manual sync must not report success while CKSyncEngine still has pending changes.")
+require("await initialQueueTask?.value" in manual_sync, "Manual sync must wait for already scheduled initial queueing instead of queueing unchanged data itself.")
+require("queueCurrentEnabledDataForUpload()" not in manual_sync, "Manual sync must not re-upload all enabled data when nothing changed.")
+require("queueDeviceRecordForPendingUserDataIfNeeded()" in manual_sync, "Manual sync must only refresh the device record when user data is pending.")
 
 background_sync = method_body(MANAGER, "@objc func performBackgroundSyncWithCompletion")
 require("hasUnresolvedSyncFailures = false" in background_sync, "Background sync must reset unresolved fetch failure tracking.")
@@ -121,7 +124,8 @@ require("await queueAllSubscriptionRecords()" in queue_enabled_data, "Subscripti
 require("Task.yield()" in queue_enabled_data, "Full iCloud queueing must yield back to the UI between large sync categories.")
 
 start_body = source_between(MANAGER, "@objc func start()", "\n    @objc func setEpisodesSyncEnabled")
-require("queueDeviceRecord()" in start_body, "App launch should only refresh the current device record for iCloud Sync.")
+require("queueDeviceRecord()" not in start_body, "App launch must not queue a device-only sync that makes Last Sync look current.")
+require("queueDeviceRecordForPendingUserDataIfNeeded()" in start_body, "App launch may only queue the device record when user data is already pending.")
 require("scheduleCurrentEnabledDataForUpload()" not in start_body, "App launch must not enqueue the whole library.")
 require("queueCurrentEnabledDataForUpload()" not in start_body, "App launch must not synchronously queue the whole library.")
 
@@ -142,6 +146,17 @@ require('"iPhone18,1": "iPhone 17 Pro"' in MANAGER, "iPhone 17 Pro must be displ
 require('"iPhone18,2": "iPhone 17 Pro Max"' in MANAGER, "iPhone 17 Pro Max must be displayed by marketing name.")
 local_device_payload = method_body(MANAGER, "private func localDevicePayload")
 require('"name": marketingName' in local_device_payload and '"model": marketingName' in local_device_payload, "Local device payload must not store generic iPhone/iPad names.")
+device_record = method_body(MANAGER, "private func deviceRecord")
+require("deviceRecordShouldStampSyncDate" in device_record, "Device records may stamp Last Sync only when user data was synced.")
+require('if deviceRecordShouldStampSyncDate {\n            payload["lastSyncDate"] = now' in device_record, "Device-only records must not move Last Sync to now.")
+add_pending_saves = method_body(MANAGER, "private func addPendingSaves")
+require("containsUserDataRecordID(recordIDs)" in add_pending_saves, "Pending user data must be detected before queueing the device sync date.")
+require("queueDeviceRecord(stampLastSyncDate: true)" in add_pending_saves, "User-data changes must queue a device record that can publish the real data-sync date.")
+add_pending_delete = method_body(MANAGER, "private func addPendingDelete")
+require("isUserDataRecordID(recordID)" in add_pending_delete and "queueDeviceRecord(stampLastSyncDate: true)" in add_pending_delete, "User-data deletes must queue a device record that can publish the real data-sync date.")
+mark_completed = method_body(MANAGER, "private func markSyncCompleted")
+require("if syncedUserDataInCurrentRun" in mark_completed, "Last Sync must only update after user data was actually sent or received.")
+require('"Keine Änderungen"' in mark_completed, "No-op sync checks must report that nothing changed instead of pretending data synced.")
 
 devices_body = source_between(MANAGER, "@objc var devices: [ICiCloudSyncDeviceInfo] {", "\n    private override init()")
 require("cache[deviceID] = localDevicePayload()" not in devices_body, "Devices must not inject the current device before a successful sync.")
@@ -154,6 +169,25 @@ require('"iCloud prüfen…"' in sync_options_changed, "Enabling sync must show 
 require("await refreshAccountStatus()" in sync_options_changed, "Enabling sync must refresh account status immediately.")
 require("scheduleCurrentEnabledDataForUpload()" in sync_options_changed, "Toggling sync options must schedule initial queueing asynchronously.")
 require("queueCurrentEnabledDataForUpload()" not in sync_options_changed, "Toggling sync options must not synchronously queue the whole library on the switch tap.")
+require("cancelInitialQueueTask()" in MANAGER, "iCloud Sync must have a dedicated cancellation path for stale initial queueing.")
+disable_all_sync = source_between(sync_options_changed, "} else if syncEngine != nil {", "\n        }")
+require(
+    disable_all_sync.find("cancelInitialQueueTask()") != -1
+    and disable_all_sync.find("cancelInitialQueueTask()") < disable_all_sync.find("queueDeviceRecord()"),
+    "Disabling the last iCloud Sync category must cancel stale initial episode/subscription queueing before queuing the device-off record.",
+)
+episode_initial_queue = method_body(MANAGER, "private func queueAllEpisodeStateRecords")
+require(
+    "guard episodesSyncEnabled, !objectHashes.isEmpty, !Task.isCancelled else { return }" in episode_initial_queue
+    and "guard episodesSyncEnabled, !Task.isCancelled else { return }" in episode_initial_queue,
+    "Stale initial episode queueing must stop after async fetches when Episode sync has been disabled.",
+)
+subscription_initial_queue = method_body(MANAGER, "private func queueAllSubscriptionRecords")
+require(
+    "guard subscriptionsSyncEnabled, !feedURLs.isEmpty, !Task.isCancelled else { return }" in subscription_initial_queue
+    and "guard subscriptionsSyncEnabled, !Task.isCancelled else { return }" in subscription_initial_queue,
+    "Stale initial subscription queueing must stop after async fetches when Subscription sync has been disabled.",
+)
 
 episode_queue = method_body(MANAGER, "private func queueAllEpisodeStateRecords")
 episode_fetch = method_body(MANAGER, "private func episodeObjectHashesForInitialSync")
@@ -175,6 +209,7 @@ require("validChangeCount >= Self.maximumRecordZoneChangesPerBatch" in record_ba
 set_error = method_body(MANAGER, "private func setError")
 require("displayStatus(for: error)" in set_error, "Visible iCloud Sync errors must be converted to short user-facing status text.")
 require("error.localizedDescription" not in set_error, "Raw backend error descriptions must not be shown directly in the status row.")
+require("syncedUserDataInCurrentRun = false" in set_error, "Failed syncs must not leak user-data activity into the next no-op sync.")
 set_status = method_body(MANAGER, "private func setStatus")
 require("clearError()" in set_status, "New iCloud Sync status updates must clear stale raw errors from previous builds.")
 
@@ -202,6 +237,7 @@ require("ICiCloudSyncSettingsViewController" in OPTIONS, "Options must open the 
 require("ICiCloudSyncSettingsSectionStatus" in SETTINGS, "iCloud Sync settings must have a status section.")
 require("ICiCloudSyncSettingsSectionOptions" in SETTINGS, "iCloud Sync settings must have an options section.")
 require("ICiCloudSyncSettingsSectionDevices" in SETTINGS, "iCloud Sync settings must have a devices section.")
+require("case ICiCloudSyncSettingsSectionStatus:\n            return nil;" in SETTINGS, "The status section must not repeat the page title as a header.")
 require("ICiCloudSyncOptionRowEpisodes" in SETTINGS, "Episode sync option row is missing.")
 require("ICiCloudSyncOptionRowSubscriptions" in SETTINGS, "Subscription sync option row is missing.")
 require("ICiCloudSyncOptionRowSettings" in SETTINGS, "Settings sync option row is missing.")
@@ -215,16 +251,26 @@ toggle_body = method_body(SETTINGS, "- (void)toggleSyncOption:")
 require("[self.tableView reloadData]" not in toggle_body, "Tapping an iCloud Sync switch must not rebuild the whole table view.")
 require("ICiCloudSyncDeviceInfo" in SETTINGS and '"Last Sync".ls' in SETTINGS, "Device list must show participating devices and last sync status.")
 require('"No synced devices yet".ls' in SETTINGS, "Empty device state must make successful sync participation clear.")
-require("iCloud Sync keeps selected data in sync through your private iCloud account." in SETTINGS, "iCloud Sync settings need clear user-facing option copy.")
-require("Choose on each device which categories this device syncs. This choice is not copied to your other devices." in SETTINGS, "Per-device sync option copy must be understandable.")
+require("iCloud Sync keeps selected data in sync through your private iCloud account." not in SETTINGS, "The status footer copy must be removed from iCloud Sync settings.")
+require("Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync." in SETTINGS, "The option footer must explain episode and subscription sync.")
+require("Sync Settings keeps app settings in sync." not in SETTINGS, "The option footer must not include the confusing settings-sync explanation.")
+require("Choose on each device which categories this device syncs. This choice is not copied to your other devices." not in SETTINGS, "The per-device option footer copy must be removed from iCloud Sync settings.")
 require("These iCloud Sync switches stay local to this device." not in SETTINGS, "Unclear per-device sync option copy must not be used.")
-require("Only devices that have successfully synced with at least one enabled category appear here." in SETTINGS, "Device section needs clear user-facing device copy.")
+require('"Synced Devices".ls' in SETTINGS, "Device section must use a clear synced-devices header.")
+require("Only devices that have successfully synced with at least one enabled category appear here." not in SETTINGS, "The device section footer copy must be removed.")
 require("displayNameForDevice:" in SETTINGS, "The current-device row must not present a generic iOS device type as the user's chosen device name.")
 require("multilineInfoCellWithIdentifier:" in SETTINGS, "Status and device rows must use a multiline cell layout.")
-require("UITableViewCellStyleSubtitle" in SETTINGS, "Status and device rows need a full-width subtitle line instead of a narrow value label.")
-require("ICiCloudSyncSettingsTallRowHeight" in SETTINGS, "Status and device rows must be tall enough for two-line sync details.")
+status_row = source_between(SETTINGS, "if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {", "\n    if (indexPath.section == ICiCloudSyncSettingsSectionOptions)")
+require("[self detailCell]" in status_row, "The iCloud Sync status row must stay a single-line detail row.")
+require("multilineInfoCellWithIdentifier" not in status_row, "The iCloud Sync status row must not use the multiline device layout.")
+require("NSRelativeDateTimeFormatter" in SETTINGS and "localizedStringForDate:" in SETTINGS and "relativeToDate:" in SETTINGS, "Device last-sync dates must be displayed relative to now.")
+require("UITableViewCellStyleSubtitle" in SETTINGS, "Device rows need a full-width subtitle line instead of a narrow value label.")
+require("ICiCloudSyncSettingsDeviceRowHeight" in SETTINGS, "Device rows must be tall enough for two-line sync details.")
 require("heightForRowAtIndexPath" in SETTINGS, "The iCloud Sync settings table must explicitly size multiline rows.")
 require('@"%@\\n%@: %@"' in SETTINGS, "Device details must put Last Sync on a second line when all categories are enabled.")
+require("%ld/%ld Elemente" in MANAGER, "Sync status must expose item progress while sending changes.")
+require("beginSyncProgress()" in MANAGER and "updateSyncProgressFromPendingChanges()" in MANAGER, "Sync progress must be tracked from CKSyncEngine pending changes.")
+require("clearSyncProgress()" in MANAGER, "Transient sync progress must be cleared after completion or errors.")
 
 options_icloud_row = source_between(OPTIONS, "case kRowiCloudSync:", "\n            break;")
 require("[ICiCloudSyncManager sharedManager].anySyncEnabled" not in options_icloud_row, "The main settings menu must not show an On/Off status for iCloud Sync.")
@@ -239,15 +285,21 @@ for tag, key in zip(BACKUP_TAGS, SYNC_KEYS):
     require(f'"{tag}"' in IMPORTER.split("NSSet *boolKeys", 1)[1], f"Backup import must restore {tag} as a boolean.")
 
 for strings, language in [(EN_STRINGS, "English"), (DE_STRINGS, "German")]:
-    for key in ["iCloud Sync", "Sync Episodes", "Sync Subscriptions", "Sync Settings", "Sync Now", "Last Sync", "No synced devices yet", "iCloud prüfen…"]:
+    for key in ["iCloud Sync", "Sync Episodes", "Sync Subscriptions", "Sync Settings", "Sync Now", "Last Sync", "No synced devices yet", "Synced Devices", "iCloud prüfen…", "Keine Änderungen"]:
         require(f'"{key}" =' in strings, f"{language} localization is missing {key}.")
     for key in [
-        "iCloud Sync keeps selected data in sync through your private iCloud account.",
-        "Choose on each device which categories this device syncs. This choice is not copied to your other devices.",
-        "Only devices that have successfully synced with at least one enabled category appear here.",
+        "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync.",
         "iCloud Sync will continue in smaller batches.",
+        "%ld/%ld Elemente",
     ]:
         require(f'"{key}" =' in strings, f"{language} localization is missing clearer copy: {key}.")
+    for removed_key in [
+        "iCloud Sync keeps selected data in sync through your private iCloud account.",
+        "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync.",
+        "Choose on each device which categories this device syncs. This choice is not copied to your other devices.",
+        "Only devices that have successfully synced with at least one enabled category appear here.",
+    ]:
+        require(f'"{removed_key}" =' not in strings, f"{language} localization still contains removed iCloud explainer copy.")
 
 require('"Sync Episodes" = "Folgen synchronisieren";' in DE_STRINGS, "German episode sync label is missing.")
 require('"Sync Subscriptions" = "Abonnements synchronisieren";' in DE_STRINGS, "German subscription sync label is missing.")

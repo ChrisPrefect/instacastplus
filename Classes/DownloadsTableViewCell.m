@@ -106,7 +106,7 @@
         CGFloat progressWidth = MAX(0, width - ((rightContentAccessoryWidth > 0) ? 0 : (timeWidth + spacing)));
         self.progressView.frame = CGRectMake(CGRectGetMinX(textLabelRect), 34, progressWidth, 10);
         if (timeWidth > 0 && rightContentAccessoryWidth > 0) {
-            self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - rightContentAccessoryWidth, 47, rightContentAccessoryWidth, 16);
+            self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - rightContentAccessoryWidth - 5, 47, rightContentAccessoryWidth, 16);
             self.timeLabel.hidden = NO;
         } else if (timeWidth > 0) {
             self.timeLabel.frame = CGRectMake(CGRectGetMaxX(self.progressView.frame) + 6, 30, timeWidth, 16);
@@ -132,7 +132,7 @@
 	
     self.playAccessoryButton.frame = CGRectMake(CGRectGetMaxX(bounds)-44, floorf((CGRectGetHeight(bounds)-44)/2), 44, 44);
     if (showsRightContentAccessory) {
-        self.rightContentAccessoryView.frame = CGRectMake(CGRectGetMaxX(bounds)-rightContentAccessoryWidth, 4, rightContentAccessoryWidth, 44);
+        self.rightContentAccessoryView.frame = CGRectMake(CGRectGetMaxX(bounds)-rightContentAccessoryWidth-5, 4, rightContentAccessoryWidth, 44);
     }
 }
 

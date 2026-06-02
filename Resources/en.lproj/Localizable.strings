@@ -983,6 +983,7 @@
 "Tap on Episode" = "Tap on Episode";
 "Show Notes" = "Show Notes";
 "Play Episode Action" = "Play Episode";
+"Open Long-Press Menu" = "Open Long-Press Menu";
 
 /* Speed Steps */
 "Enabled Speed Steps" = "Enabled Speed Steps";
@@ -1162,10 +1163,12 @@
 "Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen." = "Detecting music, speech, and silence for later chapter boundaries.";
 "Transkription läuft" = "Transcription in progress";
 "Transkription läuft (%d%%)" = "Transcription in progress (%d%%)";
+"Transkription läuft (%d%%, %@ verbleibend)" = "Transcription in progress (%d%%, %@ remaining)";
 "Audiodatei wird verarbeitet." = "Processing audio file.";
 "Warte auf das erste erkannte Transkriptsegment." = "Waiting for the first recognized transcript segment.";
 "Kapitel werden erstellt" = "Creating chapters";
 "Kapitel werden erstellt (%d%%)" = "Creating chapters (%d%%)";
+"Kapitel werden erstellt (%d%%, %@ verbleibend)" = "Creating chapters (%d%%, %@ remaining)";
 "Kapitel werden aus dem Transkript erstellt." = "Creating chapters from the transcript.";
 "Automatischer Download wurde gestartet." = "Automatic download has started.";
 "Episode wird heruntergeladen. Spracherkennungsmodell wird vorbereitet." = "Downloading episode. Preparing speech recognition model.";
@@ -1213,6 +1216,7 @@
 "Wähle das Modell für Kapitel. Wenn es fehlt, wird es heruntergeladen und vorbereitet." = "Choose the model for chapters. If it is missing, it will be downloaded and prepared.";
 "Transkriptions- und Kapiteljobs startest du über das Kontextmenü einer Episode. Den Fortschritt siehst du über Downloads > Transkribieren. Im Player öffnest du Transkripte über die Transkript-Schaltfläche; Kapitel nutzt du in der Kapitelliste und auf der Seekbar." = "Start transcription and chapter jobs from an episode's context menu. Monitor progress in Downloads > Transcribe. In the player, open transcripts with the transcript button; use chapters in the chapter list and on the scrubber.";
 "Lege den Finger länger auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du unter Downloads > Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein. Wenn der Podcast eigene Kapitel mitbringt, bleiben sie erhalten; Kapitel generieren wird nur für Folgen ohne Kapitel angeboten." = "Long-press an episode and choose “Transcribe” or “Generate Chapters” from the context menu. Track progress in Downloads > Transcribe. In the player, show transcripts with the speech-bubble button in the lower toolbar. If the podcast includes its own chapters, they stay unchanged; Generate Chapters is only offered for episodes without chapters.";
+"Long Press auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du direkt im Menü Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein.\nTranskribieren und Kapitel-Erstellen ist in der Beta-Phase." = "Long Press an episode and choose “Transcribe” or “Generate Chapters” from the context menu. Track progress directly in the Transcribe menu. In the player, show transcripts with the speech-bubble button in the lower toolbar.\nTranscription and chapter creation are in beta.";
 "Geladene Modelle kannst du per Swipe nach links löschen." = "Swipe left on downloaded models to delete them.";
 "Sehr gute Genauigkeit, größerer Download." = "Very good accuracy, larger download.";
 "Kleinerer Download, schneller bereit." = "Smaller download, ready sooner.";
@@ -1372,6 +1376,7 @@
 "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." = "Background transcription paused. It will resume automatically when you return.";
 "Transkription pausiert" = "Transcription paused";
 "Transkription pausiert (%d%%)" = "Transcription paused (%d%%)";
+"Transkription pausiert (%d%%, %@ verbleibend)" = "Transcription paused (%d%%, %@ remaining)";
 "Transkriptions-Log" = "Transcription Log";
 "Warteschlange" = "Queue";
 "Zugangsdaten eingerichtet." = "Credentials configured.";
@@ -1387,6 +1392,7 @@
 "Syncing…" = "Syncing…";
 "Status" = "Status";
 "Devices" = "Devices";
+"Synced Devices" = "Synced Devices";
 "This Device" = "This Device";
 "No synced devices yet" = "No synced devices yet";
 "Last Sync" = "Last Sync";
@@ -1401,9 +1407,11 @@
 "Keine Sync-Kategorie aktiviert." = "No sync category is enabled.";
 "iCloud prüfen…" = "Checking iCloud…";
 "Synchronisiere…" = "Syncing…";
+"%ld/%ld Elemente" = "%ld/%ld items";
 "Empfange Änderungen…" = "Receiving changes…";
 "Sende Änderungen…" = "Sending changes…";
 "Synchronisiert" = "Synced";
+"Keine Änderungen" = "No changes";
 "iCloud angemeldet." = "Signed in to iCloud.";
 "Kein iCloud Account verfügbar." = "No iCloud account available.";
 "iCloud Account gewechselt." = "iCloud account changed.";
@@ -1414,7 +1422,4 @@
 "iCloud Sync will continue in smaller batches." = "iCloud Sync will continue in smaller batches.";
 "iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync could not be completed.";
 "Unbekanntes Gerät" = "Unknown Device";
-"iCloud Sync keeps selected data in sync through your private iCloud account." = "iCloud Sync keeps selected data in sync through your private iCloud account.";
-"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync." = "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync.";
-"Choose on each device which categories this device syncs. This choice is not copied to your other devices." = "Choose on each device which categories this device syncs. This choice is not copied to your other devices.";
-"Only devices that have successfully synced with at least one enabled category appear here." = "Only devices that have successfully synced with at least one enabled category appear here.";
+"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync." = "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync.";

@@ -25,6 +25,7 @@ typedef void (^ICMetadataCompletionHandler)(BOOL success, NSError* error);
 @property (strong) NSString* label;
 @property (strong) NSURL* link;
 @property (strong) NSString* linkLabel;
+@property BOOL generatedSponsor;
 @end
 
 @interface ICMetadataImage : ICMetadataItem

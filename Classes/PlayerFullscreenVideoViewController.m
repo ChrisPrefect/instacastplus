@@ -10,6 +10,7 @@
 
 #import "PlayerFullscreenVideoViewController.h"
 #import "ImageFunctions.h"
+#import "CDModel.h"
 #import "PlayerVideoSlider.h"
 #import "InstacastAppDelegate.h"
 #import <MediaPlayer/MediaPlayer.h>
@@ -188,8 +189,8 @@
 
 - (void)_updateSkipButtonImages
 {
-    NSInteger backSeconds = [USER_DEFAULTS integerForKey:PlayerSkipBackPeriod];
-    NSInteger forwardSeconds = [USER_DEFAULTS integerForKey:PlayerSkipForwardPeriod];
+    NSInteger backSeconds = [self _configuredSkipSecondsForKey:PlayerSkipBackPeriod];
+    NSInteger forwardSeconds = [self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod];
     UIImage* backImage = ICSkipIntervalImage(NO, backSeconds, 34.f);
     UIImage* forwardImage = ICSkipIntervalImage(YES, forwardSeconds, 34.f);
     [self.backwardButton setImage:[backImage imageWithTintColor:[UIColor blackColor] renderingMode:UIImageRenderingModeAlwaysOriginal]
@@ -200,6 +201,15 @@
                          forState:UIControlStateNormal];
     [self.forwardButton setImage:[forwardImage imageWithTintColor:[UIColor whiteColor] renderingMode:UIImageRenderingModeAlwaysOriginal]
                          forState:UIControlStateHighlighted];
+}
+
+- (NSInteger)_configuredSkipSecondsForKey:(NSString*)key
+{
+    CDFeed* feed = [PlaybackManager playbackManager].playingEpisode.feed;
+    if (feed) {
+        return [feed integerForKey:key];
+    }
+    return [USER_DEFAULTS integerForKey:key];
 }
 
 - (double)_effectiveLoadProgressForPlaybackManager:(PlaybackManager*)pman

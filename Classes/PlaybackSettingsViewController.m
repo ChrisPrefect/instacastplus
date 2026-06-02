@@ -104,7 +104,12 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                 cell.textLabel.text = @"Tap on Episode".ls;
 
                 NSInteger tapAction = [USER_DEFAULTS integerForKey:TapOnEpisodeAction];
-                cell.detailTextLabel.text = (tapAction == ICTapOnEpisodeActionShowNotes) ? @"Show Notes".ls : @"Play Episode Action".ls;
+                NSDictionary* tapActionTitles = @{
+                    @(ICTapOnEpisodeActionPlay): @"Play Episode Action".ls,
+                    @(ICTapOnEpisodeActionShowNotes): @"Show Notes".ls,
+                    @(ICTapOnEpisodeActionOpenContextMenu): @"Open Long-Press Menu".ls,
+                };
+                cell.detailTextLabel.text = tapActionTitles[@(tapAction)] ?: @"Play Episode Action".ls;
 
                 return cell;
             }
@@ -274,8 +279,8 @@ typedef NS_ENUM(NSInteger, PlaybackSettingsSections) {
                 controller.valueType = kSettingTypeInteger;
                 controller.key = TapOnEpisodeAction;
                 controller.title = @"Tap on Episode".ls;
-                controller.values = @[ @(ICTapOnEpisodeActionPlay), @(ICTapOnEpisodeActionShowNotes) ];
-                controller.titles = @[ @"Play Episode Action".ls, @"Show Notes".ls ];
+                controller.values = @[ @(ICTapOnEpisodeActionPlay), @(ICTapOnEpisodeActionShowNotes), @(ICTapOnEpisodeActionOpenContextMenu) ];
+                controller.titles = @[ @"Play Episode Action".ls, @"Show Notes".ls, @"Open Long-Press Menu".ls ];
                 [self.navigationController pushViewController:controller animated:YES];
                 break;
             }

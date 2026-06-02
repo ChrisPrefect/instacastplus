@@ -16,6 +16,7 @@
 #import "PlayerTimerButton.h"
 #import "ICProgressSlider.h"
 #import "ICMetadata.h"
+#import "CDModel.h"
 #import "CDEpisode+ShowNotes.h"
 
 #import "VDModalInfo.h"
@@ -317,12 +318,21 @@
 
 - (void)_updateSkipButtonImages
 {
-    NSInteger backSeconds = [USER_DEFAULTS integerForKey:PlayerSkipBackPeriod];
-    NSInteger forwardSeconds = [USER_DEFAULTS integerForKey:PlayerSkipForwardPeriod];
+    NSInteger backSeconds = [self _configuredSkipSecondsForKey:PlayerSkipBackPeriod];
+    NSInteger forwardSeconds = [self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod];
     [self.backButton setImage:ICSkipIntervalImage(NO, backSeconds, 34.f)
                      forState:UIControlStateNormal];
     [self.forwardButton setImage:ICSkipIntervalImage(YES, forwardSeconds, 34.f)
                         forState:UIControlStateNormal];
+}
+
+- (NSInteger)_configuredSkipSecondsForKey:(NSString*)key
+{
+    CDFeed* feed = [PlaybackManager playbackManager].playingEpisode.feed;
+    if (feed) {
+        return [feed integerForKey:key];
+    }
+    return [USER_DEFAULTS integerForKey:key];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -674,8 +684,8 @@
         self.playButton.accessibilityLabel = @"Pause".ls;
 	}
     
-    self.backButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Backward".ls, (long)[USER_DEFAULTS integerForKey:PlayerSkipBackPeriod], @"Seconds".ls];
-    self.forwardButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Forward".ls, (long)[USER_DEFAULTS integerForKey:PlayerSkipForwardPeriod], @"Seconds".ls];
+    self.backButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Backward".ls, (long)[self _configuredSkipSecondsForKey:PlayerSkipBackPeriod], @"Seconds".ls];
+    self.forwardButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Forward".ls, (long)[self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod], @"Seconds".ls];
     
     self.playButton.enabled = pman.ready;
     self.backButton.enabled = pman.ready;

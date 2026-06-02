@@ -144,7 +144,8 @@ typedef NS_ENUM(NSInteger, ICAppearanceMode) {
 extern NSString* TapOnEpisodeAction;
 typedef NS_ENUM(NSInteger, ICTapOnEpisodeAction) {
     ICTapOnEpisodeActionPlay = 0,
-    ICTapOnEpisodeActionShowNotes = 1
+    ICTapOnEpisodeActionShowNotes = 1,
+    ICTapOnEpisodeActionOpenContextMenu = 2
 };
 
 extern NSString* EpisodeSwipeRightAction;

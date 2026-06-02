@@ -477,6 +477,29 @@
 
     }
 
+    - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
+    {
+        if (![gestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]]) {
+            return YES;
+        }
+
+        UIView* gestureView = gestureRecognizer.view;
+        CGPoint location = [gestureRecognizer locationInView:gestureView];
+        UIView* hitView = [gestureView hitTest:location withEvent:nil];
+        for (UIView* view = hitView; view && view != gestureView; view = view.superview) {
+            if ([view isKindOfClass:[UIControl class]]) {
+                return NO;
+            }
+        }
+
+        CGPoint velocity = [(UIPanGestureRecognizer*)gestureRecognizer velocityInView:gestureView];
+        if (velocity.y <= 0 || velocity.y <= fabs(velocity.x)) {
+            return NO;
+        }
+
+        return YES;
+    }
+
     - (void) handlePan:(UIPanGestureRecognizer*)recognizer
     {
         CGPoint translation = [recognizer translationInView:self.parent.view];

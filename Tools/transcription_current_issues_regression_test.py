@@ -36,8 +36,8 @@ require(
 
 require(
     "rightContentAccessoryView" in controller_source
-    and "UIButtonTypeInfoLight" in controller_source
-    and "imageEdgeInsets = UIEdgeInsetsMake(8, 0, -8, 0)" in controller_source
+    and "UIButtonConfiguration* logButtonConfiguration" in controller_source
+    and "contentInsets = NSDirectionalEdgeInsetsMake(8, 0, -8, 0)" in controller_source
     and "cell.accessoryView = logButton" not in controller_source
     and "_showLogFromAccessoryButton:" in controller_source,
     "The transcription log info button is still the table accessory, so elapsed time cannot be centered under it.",

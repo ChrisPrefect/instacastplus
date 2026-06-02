@@ -67,21 +67,42 @@ require(
     "Downloadable model role titles must match the user-facing settings labels.",
 )
 
-how_to = "Lege den Finger länger auf eine Episode"
+how_to = "Long Press auf eine Episode"
 require(
     how_to in settings
     and "Kontextmenü" in settings
-    and "Downloads > Transkribieren" in settings
+    and "direkt im Menü Transkribieren" in settings
     and "Sprechblasen-Symbol" in settings
-    and "Podcast eigene Kapitel" in settings,
-    "Transcription intro copy must explain long-press start, progress location, transcript button, and podcast-provided chapters.",
+    and "Transkribieren und Kapitel-Erstellen ist in der Beta-Phase" in settings
+    and "Lege den Finger länger" not in settings
+    and "Downloads > Transkribieren" not in settings
+    and "Wenn der Podcast eigene Kapitel" not in settings,
+    "Transcription intro copy must use Long Press wording, point to the Transkribieren menu, and include the beta note.",
 )
 for strings in (de_strings, en_strings):
     require(
         how_to in strings
-        and "Downloads > Transkribieren" in strings,
+        and "direkt im Menü Transkribieren" in strings
+        and "Transkribieren und Kapitel-Erstellen ist in der Beta-Phase" in strings,
         "The revised transcription how-to copy must be localized in German and English resources.",
     )
+require(
+    'NSLocalizedString(@"Betaversion", nil)' not in settings,
+    "The Transcription settings model section must not show the Betaversion header.",
+)
+
+cloud_cell = source_slice(settings, "- (UITableViewCell *)_cloudCellForRow:(NSInteger)row", "- (void)_showOpenAIAPIKeyEditor")
+cloud_selection = source_slice(settings, "- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath", "- (void)_showError:")
+require(
+    cloud_cell.find('case 0:\n            cell.textLabel.text = @"Anthropic API-Key";') != -1
+    and cloud_cell.find('case 1:\n            cell.textLabel.text = @"OpenAI API-Key";') != -1
+    and cloud_cell.find('case 2:\n            cell.textLabel.text = @"OpenAI Codex Login";') != -1
+    and cloud_cell.find('case 3:\n            cell.textLabel.text = @"Kimi API-Key";') != -1
+    and cloud_selection.find("indexPath.row == 0) [self _showAnthropicAPIKeyEditor]") != -1
+    and cloud_selection.find("indexPath.row == 1) [self _showOpenAIAPIKeyEditor]") != -1
+    and cloud_selection.find("indexPath.row == 2) [self _showOpenAIOAuthLogin]") != -1,
+    "Cloud credentials must list Anthropic API-Key first and keep selection handlers in the same order.",
+)
 
 require(
     'NSLocalizedString(@"Kapitel generieren", nil)' in episode

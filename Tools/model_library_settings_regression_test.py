@@ -29,6 +29,16 @@ options_footer_source = (ROOT / "Classes" / "OptionsViewController.m").read_text
 )[1].split(
     "- (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section", 1
 )[0]
+cloud_cell_source = settings_source.split(
+    "- (UITableViewCell *)_cloudCellForRow:(NSInteger)row", 1
+)[1].split(
+    "- (void)_showOpenAIAPIKeyEditor", 1
+)[0]
+settings_selection_source = settings_source.split(
+    "- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath", 1
+)[1].split(
+    "- (void)_showError:", 1
+)[0]
 
 
 require(
@@ -56,9 +66,9 @@ require(
 require(
     "MARKETING_VERSION = 3.5;" in project_source
     and "MARKETING_VERSION = 3.3;" not in project_source
-    and 'CGRectMake(0, 0, tableView.frame.size.width, 170)' in options_footer_source
-    and 'CGRectMake(20, 5, footerView.frame.size.width-40, 170)' in options_footer_source
-    and '"\\nVersion %@ (%@)\\nPublisher: Chris Thomann \\nOriginally developed by Martin Hering \\nThank you Martin!"' in options_footer_source
+    and 'CGRectMake(0, 0, tableView.frame.size.width, 119)' in options_footer_source
+    and 'CGRectMake(20, 5, footerView.frame.size.width-40, 119)' in options_footer_source
+    and '"Version %@ (%@)\\nPublisher: Chris Thomann \\nOriginally developed by Martin Hering \\nThank you Martin!"' in options_footer_source
     and "[NSBundle buildVersion]" in options_footer_source
     and "Developer:" not in options_footer_source
     and "Claude" not in options_footer_source
@@ -68,7 +78,7 @@ require(
     and "Tasia" not in options_footer_source
     and "Build " not in options_footer_source
     and "CFBundleVersion" not in options_footer_source,
-    "Version must be 3.5 and the options footer must keep original credits, show build behind version, and remove developer names.",
+    "Version must be 3.5 and the options footer must keep original credits without the removed developer-line whitespace.",
 )
 require(
     "ICChapterModelProvider" in engine_source
@@ -157,6 +167,10 @@ require(
     "Settings does not provide dedicated Transkribieren/Kapitel generieren model subpages.",
 )
 require(
+    'NSLocalizedString(@"Betaversion", nil)' not in settings_source,
+    "Transcription settings must not show the Betaversion section header.",
+)
+require(
     "case TSSectionModels: return 2;" in settings_source
     and "Modelle verwalten" not in settings_source,
     "Settings should open separate voice/text model pages directly instead of showing a separate manage-models row.",
@@ -172,6 +186,16 @@ require(
     and "OpenAI Codex Login" in settings_source
     and "Anthropic API-Key" in settings_source,
     "Settings must expose OpenAI API key, Codex login, Anthropic API key, and Kimi API key credentials.",
+)
+require(
+    cloud_cell_source.find('case 0:\n            cell.textLabel.text = @"Anthropic API-Key";') != -1
+    and cloud_cell_source.find('case 1:\n            cell.textLabel.text = @"OpenAI API-Key";') != -1
+    and cloud_cell_source.find('case 2:\n            cell.textLabel.text = @"OpenAI Codex Login";') != -1
+    and cloud_cell_source.find('case 3:\n            cell.textLabel.text = @"Kimi API-Key";') != -1
+    and settings_selection_source.find("indexPath.row == 0) [self _showAnthropicAPIKeyEditor]") != -1
+    and settings_selection_source.find("indexPath.row == 1) [self _showOpenAIAPIKeyEditor]") != -1
+    and settings_selection_source.find("indexPath.row == 2) [self _showOpenAIOAuthLogin]") != -1,
+    "Cloud credentials list must put Anthropic API-Key first and match the row selection order.",
 )
 require(
     "Gerätecode erstellen" in settings_source

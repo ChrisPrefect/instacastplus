@@ -21,10 +21,10 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
     ICiCloudSyncOptionRowCount,
 };
 
-static CGFloat const ICiCloudSyncSettingsTallRowHeight = 70.0f;
+static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 @interface ICiCloudSyncSettingsViewController ()
-@property (nonatomic, strong) NSDateFormatter *dateFormatter;
+@property (nonatomic, strong) NSRelativeDateTimeFormatter *relativeDateFormatter;
 @end
 
 @implementation ICiCloudSyncSettingsViewController
@@ -43,9 +43,9 @@ static CGFloat const ICiCloudSyncSettingsTallRowHeight = 70.0f;
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"iCloud Sync".ls;
 
-    self.dateFormatter = [[NSDateFormatter alloc] init];
-    self.dateFormatter.dateStyle = NSDateFormatterShortStyle;
-    self.dateFormatter.timeStyle = NSDateFormatterShortStyle;
+    self.relativeDateFormatter = [[NSRelativeDateTimeFormatter alloc] init];
+    self.relativeDateFormatter.unitsStyle = NSRelativeDateTimeFormatterUnitsStyleFull;
+    self.relativeDateFormatter.dateTimeStyle = NSRelativeDateTimeFormatterStyleNamed;
 
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self selector:@selector(syncStateDidChange:) name:ICiCloudSyncStateDidChangeNotification object:nil];
@@ -102,11 +102,12 @@ static CGFloat const ICiCloudSyncSettingsTallRowHeight = 70.0f;
 {
     if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {
         if (indexPath.row == 0) {
-            UITableViewCell *cell = [self multilineInfoCellWithIdentifier:@"ICiCloudSyncStatusCell"];
+            UITableViewCell *cell = [self detailCell];
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
             cell.accessoryType = UITableViewCellAccessoryNone;
             cell.textLabel.text = @"Status".ls;
             cell.detailTextLabel.text = [ICiCloudSyncManager sharedManager].statusText;
+            cell.detailTextLabel.numberOfLines = 1;
             return cell;
         }
 
@@ -165,7 +166,7 @@ static CGFloat const ICiCloudSyncSettingsTallRowHeight = 70.0f;
     if (device.settingsEnabled) [parts addObject:@"Settings".ls];
     NSString *categories = (parts.count > 0) ? [parts componentsJoinedByString:@", "] : @"Off".ls;
 
-    NSString *dateString = device.lastSyncDate ? [self.dateFormatter stringFromDate:device.lastSyncDate] : @"Never".ls;
+    NSString *dateString = device.lastSyncDate ? [self.relativeDateFormatter localizedStringForDate:device.lastSyncDate relativeToDate:[NSDate date]] : @"Never".ls;
     return [NSString stringWithFormat:@"%@\n%@: %@", categories, @"Last Sync".ls, dateString];
 }
 
@@ -173,43 +174,33 @@ static CGFloat const ICiCloudSyncSettingsTallRowHeight = 70.0f;
 {
     switch (section) {
         case ICiCloudSyncSettingsSectionStatus:
-            return @"iCloud Sync".ls;
+            return nil;
         case ICiCloudSyncSettingsSectionOptions:
             return @"Sync Options".ls;
         case ICiCloudSyncSettingsSectionDevices:
-            return @"Devices".ls;
+            return @"Synced Devices".ls;
     }
     return nil;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
-    if (section == ICiCloudSyncSettingsSectionStatus) {
-        return @"iCloud Sync keeps selected data in sync through your private iCloud account.".ls;
-    }
     if (section == ICiCloudSyncSettingsSectionOptions) {
-        NSString *syncDetails = @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync. Sync Settings keeps app settings in sync.".ls;
-        NSString *perDeviceChoice = @"Choose on each device which categories this device syncs. This choice is not copied to your other devices.".ls;
-        return [NSString stringWithFormat:@"%@ %@", syncDetails, perDeviceChoice];
-    }
-    if (section == ICiCloudSyncSettingsSectionDevices) {
-        return @"Only devices that have successfully synced with at least one enabled category appear here.".ls;
+        return @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync.".ls;
     }
     return nil;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
-    return [self heightForFooterText:[self tableView:tableView titleForFooterInSection:section]];
+    NSString *footer = [self tableView:tableView titleForFooterInSection:section];
+    return footer.length > 0 ? [self heightForFooterText:footer] : 0.0f;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == ICiCloudSyncSettingsSectionStatus && indexPath.row == 0) {
-        return ICiCloudSyncSettingsTallRowHeight;
-    }
     if (indexPath.section == ICiCloudSyncSettingsSectionDevices && [ICiCloudSyncManager sharedManager].devices.count > 0) {
-        return ICiCloudSyncSettingsTallRowHeight;
+        return ICiCloudSyncSettingsDeviceRowHeight;
     }
     return UITableViewAutomaticDimension;
 }
