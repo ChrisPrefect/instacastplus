@@ -1426,3 +1426,7 @@
 "iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync konnte nicht abgeschlossen werden.";
 "Unbekanntes Gerät" = "Unbekanntes Gerät";
 "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync." = "Folgen synchronisieren hält Gespielt/Ungespielt, Abspielposition, Favoriten und Scroll-Positionen in Listen synchron. Abonnements synchronisieren hält abonnierte Podcasts, Podcast-Einstellungen, Löschungen und Sortierung synchron.";
+
+/* TestFlight diagnostics */
+"Crash Logs per Mail schicken" = "Crash Logs per Mail schicken";
+"Crash Logs InstacastPlus" = "Crash Logs InstacastPlus";

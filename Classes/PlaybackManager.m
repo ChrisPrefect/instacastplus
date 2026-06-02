@@ -1931,6 +1931,16 @@ didReceiveResponse:(NSURLResponse *)response
                     double skipTriggerTime = dur - skipEndPeriod;
 
                     if (currentTime >= skipTriggerTime && currentTime < dur) {
+                        [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende ausgelöst"
+                                                    episode:episode
+                                                currentTime:currentTime
+                                                   duration:dur
+                                                   metadata:@{
+                                                       @"skipEndPeriod": @(skipEndPeriod),
+                                                       @"skipTriggerTime": @(skipTriggerTime),
+                                                       @"feedSkipEndPeriod": @(periodFeedEnd),
+                                                       @"globalSkipEndPeriod": @(periodGeneralEnd),
+                                                   }];
                         [weakSelf.player pause];
                         [weakSelf close];
 
@@ -1946,6 +1956,16 @@ didReceiveResponse:(NSURLResponse *)response
                         [DMANAGER save];
                         // Remove consumed episode from Up Next playlist
                         [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+                        [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende abgeschlossen"
+                                                    episode:episode
+                                                currentTime:currentTime
+                                                   duration:dur
+                                                   metadata:@{
+                                                       @"skipEndPeriod": @(skipEndPeriod),
+                                                       @"skipTriggerTime": @(skipTriggerTime),
+                                                       @"feedSkipEndPeriod": @(periodFeedEnd),
+                                                       @"globalSkipEndPeriod": @(periodGeneralEnd),
+                                                   }];
                     }
                 }
             }
@@ -2004,6 +2024,29 @@ didReceiveResponse:(NSURLResponse *)response
     SEND_UPDATE
 }
 
+- (NSMutableDictionary*)_playbackDiagnosticsMetadataForEpisode:(CDEpisode*)episode currentTime:(NSTimeInterval)currentTime duration:(NSTimeInterval)duration
+{
+    NSMutableDictionary *metadata = [NSMutableDictionary dictionary];
+    metadata[@"episodeHash"] = episode.objectHash ?: @"";
+    metadata[@"currentTime"] = @(currentTime);
+    metadata[@"duration"] = @(duration);
+    metadata[@"playerRate"] = @(self.player.rate);
+    metadata[@"state"] = @(self.state);
+    metadata[@"autoSkipMarkerCount"] = @(self.autoSkipMarkers.count);
+    metadata[@"suppressedSkipMarker"] = @(self.suppressedSkipMarker);
+    metadata[@"isAutoSkipping"] = @(self.isAutoSkipping);
+    return metadata;
+}
+
+- (void)_logPlaybackAutoSkipEvent:(NSString*)message episode:(CDEpisode*)episode currentTime:(NSTimeInterval)currentTime duration:(NSTimeInterval)duration metadata:(NSDictionary*)extraMetadata
+{
+    NSMutableDictionary *metadata = [self _playbackDiagnosticsMetadataForEpisode:episode currentTime:currentTime duration:duration];
+    if (extraMetadata.count > 0) {
+        [metadata addEntriesFromDictionary:extraMetadata];
+    }
+    [[ICDiagnosticLogger shared] logEvent:@"playback-auto-skip" message:message metadata:metadata];
+}
+
 - (NSString *)matchingSkipNameForChapter:(ICMetadataChapter *)chapterObj withNames:(NSArray *)skipNames {
     if (!chapterObj.title || skipNames.count == 0) {
         return nil;
@@ -2055,12 +2098,30 @@ didReceiveResponse:(NSURLResponse *)response
 
             if (resumeTime < 0) {
                 // All remaining chapters are skip → finish episode
+                [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip beendet Episode"
+                                        episode:episode
+                                    currentTime:currentTime
+                                       duration:self.duration
+                                       metadata:@{
+                                           @"markerIndex": @(i),
+                                           @"skipStart": @(skipStart),
+                                           @"resumeTime": @(resumeTime),
+                                       }];
                 [self _finishEpisodeDueToSkip:episode];
                 return;
             }
 
             if (currentTime < resumeTime) {
                 // We're in the skip zone → jump to resume point
+                [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip springt zu Resume-Zeit"
+                                        episode:episode
+                                    currentTime:currentTime
+                                       duration:self.duration
+                                       metadata:@{
+                                           @"markerIndex": @(i),
+                                           @"skipStart": @(skipStart),
+                                           @"resumeTime": @(resumeTime),
+                                       }];
                 self.isAutoSkipping = YES;
                 self.lastAutoSkipDate = [NSDate date];
                 [self seekToTime:resumeTime tolerance:NO];
@@ -2076,7 +2137,20 @@ didReceiveResponse:(NSURLResponse *)response
     self.isAutoSkipping = YES;
     AVPlayerItem *item = self.player.currentItem;
     CMTime duration = item.asset.duration;
-    NSInteger dur = (duration.timescale != 0) ? duration.value / duration.timescale : 0;
+    NSTimeInterval durationSeconds = 0;
+    if (CMTIME_IS_VALID(duration) && !CMTIME_IS_INDEFINITE(duration)) {
+        durationSeconds = CMTimeGetSeconds(duration);
+        if (durationSeconds < 0) {
+            durationSeconds = 0;
+        }
+    }
+    NSInteger dur = (NSInteger)durationSeconds;
+    NSTimeInterval currentTime = [self time];
+    [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gestartet"
+                            episode:episode
+                        currentTime:currentTime
+                           duration:durationSeconds
+                           metadata:nil];
     [self.player pause];
     [self close];
     _changingPosition = YES;
@@ -2090,6 +2164,13 @@ didReceiveResponse:(NSURLResponse *)response
     [DMANAGER save];
     // Remove consumed episode from Up Next playlist
     [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+    [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gespeichert"
+                            episode:episode
+                        currentTime:currentTime
+                           duration:durationSeconds
+                           metadata:@{
+                               @"savedPosition": @(dur),
+                           }];
     self.isAutoSkipping = NO;
 }
 
@@ -3054,6 +3135,18 @@ didReceiveResponse:(NSURLResponse *)response
     CDEpisode *episode = self.playingEpisode;
     if (!episode || !self.chapters || self.chapters.count == 0) {
         self.autoSkipMarkers = nil;
+        if (episode) {
+            [self _logPlaybackAutoSkipEvent:@"Auto-Skip-Marker berechnet"
+                                    episode:episode
+                                currentTime:[self time]
+                                   duration:self.duration
+                                   metadata:@{
+                                       @"chapterCount": @(self.chapters.count),
+                                       @"markerCount": @0,
+                                       @"skipNameCount": @0,
+                                       @"includeGeneratedSponsors": @(NO),
+                                   }];
+        }
         return;
     }
 
@@ -3063,6 +3156,16 @@ didReceiveResponse:(NSURLResponse *)response
     BOOL includeGeneratedSponsors = [self _autoSkipSponsorsEnabledForFeed:episode.feed];
     if (skipNames.count == 0 && !includeGeneratedSponsors) {
         self.autoSkipMarkers = nil;
+        [self _logPlaybackAutoSkipEvent:@"Auto-Skip-Marker berechnet"
+                                episode:episode
+                            currentTime:[self time]
+                               duration:self.duration
+                               metadata:@{
+                                   @"chapterCount": @(self.chapters.count),
+                                   @"markerCount": @0,
+                                   @"skipNameCount": @(skipNames.count),
+                                   @"includeGeneratedSponsors": @(includeGeneratedSponsors),
+                               }];
         return;
     }
 
@@ -3164,6 +3267,16 @@ didReceiveResponse:(NSURLResponse *)response
 
     self.autoSkipMarkers = (markers.count > 0) ? [markers copy] : nil;
     self.suppressedSkipMarker = -1;
+    [self _logPlaybackAutoSkipEvent:@"Auto-Skip-Marker berechnet"
+                            episode:episode
+                        currentTime:[self time]
+                           duration:self.duration
+                           metadata:@{
+                               @"chapterCount": @(chapterCount),
+                               @"markerCount": @(markers.count),
+                               @"skipNameCount": @(skipNames.count),
+                               @"includeGeneratedSponsors": @(includeGeneratedSponsors),
+                           }];
 }
 
 

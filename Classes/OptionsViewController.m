@@ -53,6 +53,7 @@ enum {
     kRowSmartHome,
     kRowEmailFeedback,
     kRowDonateToDeveloper,
+    kRowCrashLogs,
     kNumberOfRows
 };
 
@@ -73,10 +74,18 @@ enum {
     return NO;
 }
 
++ (BOOL)crashLogMailAvailable
+{
+    return [ICDiagnosticLogger isTestFlightBuild];
+}
+
 - (NSInteger)settingsRowForIndexPath:(NSIndexPath*)indexPath
 {
     NSInteger row = indexPath.row;
     if (![OptionsViewController iCloudSyncSettingsAvailable] && row >= kRowiCloudSync) {
+        row++;
+    }
+    if (![OptionsViewController crashLogMailAvailable] && row >= kRowCrashLogs) {
         row++;
     }
     return row;
@@ -146,7 +155,14 @@ enum {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return [OptionsViewController iCloudSyncSettingsAvailable] ? kNumberOfRows : kNumberOfRows-1;
+    NSInteger rows = kNumberOfRows;
+    if (![OptionsViewController iCloudSyncSettingsAvailable]) {
+        rows--;
+    }
+    if (![OptionsViewController crashLogMailAvailable]) {
+        rows--;
+    }
+    return rows;
 }
 
 
@@ -207,6 +223,12 @@ enum {
         case kRowDonateToDeveloper:
             cell.textLabel.text = @"Support InstacastPlus".ls;
             cell.imageView.image = [UIImage systemImageNamed:@"heart"];
+            cell.backgroundColor = [[[ICAppearanceManager sharedManager] appearance].tintColor colorWithAlphaComponent:0.08];
+            break;
+        case kRowCrashLogs:
+            cell.textLabel.text = @"Crash Logs per Mail schicken".ls;
+            cell.imageView.image = [UIImage systemImageNamed:@"doc.text.magnifyingglass"];
+            cell.accessoryType = UITableViewCellAccessoryNone;
             cell.backgroundColor = [[[ICAppearanceManager sharedManager] appearance].tintColor colorWithAlphaComponent:0.08];
             break;
     }
@@ -302,6 +324,9 @@ enum {
             [self.navigationController pushViewController:controller animated:YES];
             break;
         }
+        case kRowCrashLogs:
+            [self emailCrashLogsClicked];
+            break;
     }
 }
 
@@ -327,6 +352,29 @@ enum {
         [self presentViewController:mailComposer animated:YES completion:nil];
     } else {
         // Show an alert if email is not set up on the device
+        [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
+    }
+}
+
+- (void)emailCrashLogsClicked {
+    if ([MFMailComposeViewController canSendMail]) {
+        MFMailComposeViewController *mailComposer = [[MFMailComposeViewController alloc] init];
+        mailComposer.mailComposeDelegate = self;
+
+        NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+        NSString *buildNumber = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleVersion"];
+        NSString *subject = [NSString stringWithFormat:@"%@ %@ (%@)", @"Crash Logs InstacastPlus".ls, appVersion, buildNumber];
+        [mailComposer setSubject:subject];
+        [mailComposer setToRecipients:@[@"info@instacast.ch"]];
+        [mailComposer setMessageBody:[[ICDiagnosticLogger shared] crashLogMailBody] isHTML:NO];
+
+        NSArray<ICDiagnosticMailAttachment *> *attachments = [[ICDiagnosticLogger shared] crashLogMailAttachments];
+        for (ICDiagnosticMailAttachment *attachment in attachments) {
+            [mailComposer addAttachmentData:(NSData *)attachment.data mimeType:attachment.mimeType fileName:attachment.fileName];
+        }
+
+        [self presentViewController:mailComposer animated:YES completion:nil];
+    } else {
         [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
     }
 }

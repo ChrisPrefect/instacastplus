@@ -130,6 +130,19 @@ private struct ICDiagnosticLogLine: Encodable {
     let disk: ICDiagnosticDiskSnapshot
 }
 
+@objc class ICDiagnosticMailAttachment: NSObject {
+    @objc let fileName: String
+    @objc let mimeType: String
+    @objc let data: NSData
+
+    @objc init(fileName: String, mimeType: String, data: NSData) {
+        self.fileName = fileName
+        self.mimeType = mimeType
+        self.data = data
+        super.init()
+    }
+}
+
 @objc class ICDiagnosticLogger: NSObject, @unchecked Sendable {
     private static let _shared = ICDiagnosticLogger()
     @objc static var shared: ICDiagnosticLogger { _shared }
@@ -145,6 +158,14 @@ private struct ICDiagnosticLogLine: Encodable {
     private override init() {
         super.init()
         encoder.outputFormatting = [.sortedKeys]
+    }
+
+    @objc static var isTestFlightBuild: Bool {
+#if DEBUG
+        return false
+#else
+        return Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+#endif
     }
 
     @objc func start() {
@@ -180,6 +201,40 @@ private struct ICDiagnosticLogLine: Encodable {
 
     @objc var previousSessionState: String? {
         UserDefaults.standard.string(forKey: Self.previousSessionStateKey)
+    }
+
+    @objc func crashLogMailAttachments() -> [ICDiagnosticMailAttachment] {
+        queue.sync {
+            self.ensureStartedLocked()
+            self.appendLocked(category: "diagnostics", message: "Crash-Log-Mail vorbereitet", metadata: [
+                "previousSessionEndedUnexpectedly": self.previousSessionEndedUnexpectedly ? "true" : "false",
+                "previousSessionState": self.previousSessionState ?? "",
+            ])
+        }
+
+        let files: [(String, String, URL)] = [
+            ("Diagnostics.jsonl", "application/x-ndjson", diagnosticsLogURL()),
+            ("DiagnosticsSessionState.json", "application/json", sessionStateURL()),
+            ("Application.Log", "text/plain", URL(fileURLWithPath: (Bundle.pathToLogsDirectory() as NSString).appendingPathComponent("Application.Log"))),
+        ]
+
+        return files.compactMap { fileName, mimeType, url in
+            guard let data = NSData(contentsOf: url) else { return nil }
+            return ICDiagnosticMailAttachment(fileName: fileName, mimeType: mimeType, data: data)
+        }
+    }
+
+    @objc func crashLogMailBody() -> String {
+        let metadata = appMetadataLocked()
+        return [
+            "InstacastPlus Crash Logs",
+            "",
+            "appVersion: \(metadata["appVersion"] ?? "")",
+            "build: \(metadata["build"] ?? "")",
+            "systemVersion: \(metadata["systemVersion"] ?? "")",
+            "previousSessionEndedUnexpectedly: \(previousSessionEndedUnexpectedly)",
+            "previousSessionState: \(previousSessionState ?? "")",
+        ].joined(separator: "\n")
     }
 
     @objc func logStorageLayout(_ reason: String) {
@@ -259,6 +314,17 @@ private struct ICDiagnosticLogLine: Encodable {
                     "previousEndedUnexpectedly": endedUnexpectedly ? "true" : "false",
                 ]
             )
+            if endedUnexpectedly {
+                appendLocked(
+                    category: "crash",
+                    message: "Vorherige Session unerwartet beendet",
+                    metadata: [
+                        "previousSessionID": previousState.sessionID,
+                        "previousState": previousState.lastState,
+                        "previousTimestamp": Self.timestampString(from: Date(timeIntervalSince1970: previousState.timestamp)),
+                    ]
+                )
+            }
         } else {
             UserDefaults.standard.set(false, forKey: Self.previousSessionEndedUnexpectedlyKey)
             UserDefaults.standard.removeObject(forKey: Self.previousSessionStateKey)

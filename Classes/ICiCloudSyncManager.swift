@@ -210,24 +210,28 @@ import UIKit
     @objc func setEpisodesSyncEnabled(_ enabled: Bool) {
         guard episodesSyncEnabled != enabled else { return }
         defaults.set(enabled, forKey: ICiCloudSyncEpisodesEnabled)
+        logSyncEvent("Episode Sync-Schalter geändert", metadata: ["enabled": enabled])
         syncOptionsChanged()
     }
 
     @objc func setSubscriptionsSyncEnabled(_ enabled: Bool) {
         guard subscriptionsSyncEnabled != enabled else { return }
         defaults.set(enabled, forKey: ICiCloudSyncSubscriptionsEnabled)
+        logSyncEvent("Abo Sync-Schalter geändert", metadata: ["enabled": enabled])
         syncOptionsChanged()
     }
 
     @objc func setSettingsSyncEnabled(_ enabled: Bool) {
         guard settingsSyncEnabled != enabled else { return }
         defaults.set(enabled, forKey: ICiCloudSyncSettingsEnabled)
+        logSyncEvent("Einstellungs-Sync-Schalter geändert", metadata: ["enabled": enabled])
         syncOptionsChanged()
     }
 
     @objc func syncOptionsChanged() {
         guard isStarted else { return }
 
+        logSyncEvent("Sync-Optionen geändert")
         if anySyncEnabled {
             initializeSyncEngineIfNeeded()
             queueDeviceRecord()
@@ -237,6 +241,7 @@ import UIKit
                 await refreshAccountStatus()
             }
         } else if syncEngine != nil {
+            logSyncEvent("iCloud Sync deaktiviert")
             clearError()
             cancelInitialQueueTask()
             queueDeviceRecord()
@@ -365,24 +370,42 @@ import UIKit
         }
     }
 
+    private func logSyncEvent(_ message: String, metadata: [String: Any] = [:]) {
+        var details = metadata
+        details["episodesSyncEnabled"] = episodesSyncEnabled
+        details["subscriptionsSyncEnabled"] = subscriptionsSyncEnabled
+        details["settingsSyncEnabled"] = settingsSyncEnabled
+        details["anySyncEnabled"] = anySyncEnabled
+        details["pendingRecordZoneChanges"] = syncEngine?.state.pendingRecordZoneChanges.count ?? 0
+        details["isMainThread"] = Thread.isMainThread
+        ICDiagnosticLogger.shared.logEvent("icloud-sync", message: message, metadata: details as NSDictionary)
+    }
+
     private func scheduleCurrentEnabledDataForUpload() {
         cancelInitialQueueTask()
+        logSyncEvent("Initiale iCloud-Queue geplant")
         initialQueueTask = Task { @MainActor [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
+            self.logSyncEvent("Initiale iCloud-Queue gestartet")
             await self.queueCurrentEnabledDataForUpload()
             if !Task.isCancelled {
+                self.logSyncEvent("Initiale iCloud-Queue abgeschlossen")
                 self.postStateChanged()
             }
         }
     }
 
     private func cancelInitialQueueTask() {
+        if initialQueueTask != nil {
+            logSyncEvent("Initiale iCloud-Queue abgebrochen")
+        }
         initialQueueTask?.cancel()
         initialQueueTask = nil
     }
 
     private func queueCurrentEnabledDataForUpload() async {
+        logSyncEvent("iCloud Upload-Queue baut Daten auf")
         queueDeviceRecord()
 
         if episodesSyncEnabled {
@@ -400,6 +423,7 @@ import UIKit
             queueSettingsRecord()
             await Task.yield()
         }
+        logSyncEvent("iCloud Upload-Queue fertig")
     }
 
     private func queueDeviceRecord(stampLastSyncDate: Bool = false) {
@@ -631,7 +655,7 @@ import UIKit
 
             switch change {
             case .saveRecord(let recordID):
-                if let record = recordToSave(for: recordID) {
+                if let record = await recordToSave(for: recordID) {
                     recordsToSave.append(record)
                     validChangeCount += 1
                 } else {
@@ -651,22 +675,29 @@ import UIKit
         }
 
         guard !recordsToSave.isEmpty || !recordIDsToDelete.isEmpty else { return nil }
+        logSyncEvent("CKSyncEngine-Send-Batch materialisiert", metadata: [
+            "scopedChanges": scopedChanges.count,
+            "recordsToSave": recordsToSave.count,
+            "recordIDsToDelete": recordIDsToDelete.count,
+            "staleSaveChanges": staleSaveChanges.count,
+            "validChangeCount": validChangeCount,
+        ])
         return CKSyncEngine.RecordZoneChangeBatch(recordsToSave: recordsToSave,
                                                   recordIDsToDelete: recordIDsToDelete,
                                                   atomicByZone: false)
     }
 
-    private func recordToSave(for recordID: CKRecord.ID) -> CKRecord? {
+    private func recordToSave(for recordID: CKRecord.ID) async -> CKRecord? {
         if recordID.recordName.hasPrefix(RecordPrefix.device) {
             return deviceRecord(for: recordID)
         }
         if recordID.recordName.hasPrefix(RecordPrefix.episode) {
             guard episodesSyncEnabled else { return nil }
-            return episodeRecord(for: recordID)
+            return await episodeRecord(for: recordID)
         }
         if recordID.recordName.hasPrefix(RecordPrefix.subscription) {
             guard subscriptionsSyncEnabled else { return nil }
-            return subscriptionRecord(for: recordID)
+            return await subscriptionRecord(for: recordID)
         }
         if recordID.recordName == RecordPrefix.appSettings {
             guard settingsSyncEnabled else { return nil }
@@ -693,42 +724,90 @@ import UIKit
         return record
     }
 
-    private func episodeRecord(for recordID: CKRecord.ID) -> CKRecord? {
+    private func episodeRecord(for recordID: CKRecord.ID) async -> CKRecord? {
         let objectHash = String(recordID.recordName.dropFirst(RecordPrefix.episode.count))
-        guard let episode = databaseManager.episode(withObjectHash: objectHash) else {
-            return nil
-        }
-
         let updatedAt = episodeLocalModifiedDate(for: objectHash) ?? Date()
-        let payload: [String: Any] = [
-            "objectHash": objectHash,
-            "guid": episode.guid ?? "",
-            "feedURL": episode.feed.sourceURL?.absoluteString ?? "",
-            "played": episode.consumed,
-            "position": Int(episode.position),
-            "starred": episode.starred,
-            "duration": Int(episode.duration),
-            "deviceID": deviceID,
-            "updatedAt": updatedAt,
-        ]
+        guard let payload = await episodeStatePayload(forObjectHash: objectHash, updatedAt: updatedAt) else { return nil }
 
         let record = mutableRecord(recordType: RecordKind.episodeState, recordID: recordID)
         populate(record, payload: payload, updatedAt: updatedAt)
         return record
     }
 
-    private func subscriptionRecord(for recordID: CKRecord.ID) -> CKRecord? {
-        guard let feedURL = subscriptionRecordURL(for: recordID.recordName),
-              let feed = databaseManager.feed(withSourceURL: URL(string: feedURL)),
-              feed.subscribed else {
+    private func episodeStatePayload(forObjectHash objectHash: String, updatedAt: Date) async -> [String: Any]? {
+        guard let context = databaseManager.newBackgroundContext() else { return nil }
+        let currentDeviceID = deviceID
+        return await context.perform {
+            let request = NSFetchRequest<CDEpisode>(entityName: "Episode")
+            request.fetchLimit = 1
+            request.includesSubentities = false
+            request.predicate = NSPredicate(format: "objectHash == %@", objectHash)
+            guard let episode = try? context.fetch(request).first else { return nil }
+            return [
+                "objectHash": objectHash,
+                "guid": episode.guid ?? "",
+                "feedURL": episode.feed.sourceURL?.absoluteString ?? "",
+                "played": episode.consumed,
+                "position": Int(episode.position),
+                "starred": episode.starred,
+                "duration": Int(episode.duration),
+                "deviceID": currentDeviceID,
+                "updatedAt": updatedAt,
+            ]
+        }
+    }
+
+    private func subscriptionRecord(for recordID: CKRecord.ID) async -> CKRecord? {
+        guard let feedURL = subscriptionRecordURL(for: recordID.recordName) else {
             return nil
         }
 
         let updatedAt = subscriptionLocalModifiedDate(for: feedURL) ?? Date()
-        let payload = subscriptionPayload(for: feed, updatedAt: updatedAt)
+        guard let payload = await subscriptionPayload(forFeedURL: feedURL, updatedAt: updatedAt) else { return nil }
         let record = mutableRecord(recordType: RecordKind.subscription, recordID: recordID)
         populate(record, payload: payload, updatedAt: updatedAt)
         return record
+    }
+
+    private func subscriptionPayload(forFeedURL feedURL: String, updatedAt: Date) async -> [String: Any]? {
+        guard let context = databaseManager.newBackgroundContext() else { return nil }
+        let currentDeviceID = deviceID
+        let internalKeys = internalFeedPropertyKeys
+        return await context.perform {
+            let request = NSFetchRequest<CDFeed>(entityName: "Feed")
+            request.fetchLimit = 1
+            request.includesSubentities = false
+            request.predicate = NSPredicate(format: "sourceURL_ == %@ AND subscribed == YES", feedURL)
+            guard let feed = try? context.fetch(request).first else { return nil }
+
+            var properties: [[String: Any]] = []
+            for property in feed.properties as? Set<CDFeedProperty> ?? [] {
+                guard let key = property.key, !internalKeys.contains(key) else { continue }
+                var propertyPayload: [String: Any] = [
+                    "key": key,
+                    "valueType": Self.feedPropertyValueType(for: property),
+                    "boolValue": property.boolValue,
+                    "int32Value": Int(property.int32Value),
+                    "doubleValue": property.doubleValue,
+                ]
+                if let stringValue = property.stringValue {
+                    propertyPayload["stringValue"] = stringValue
+                }
+                properties.append(propertyPayload)
+            }
+
+            return [
+                "feedURL": feedURL,
+                "title": feed.title ?? "",
+                "rank": Int(feed.rank),
+                "parked": feed.parked,
+                "username": feed.username ?? "",
+                "password": feed.password ?? "",
+                "properties": properties,
+                "deviceID": currentDeviceID,
+                "updatedAt": updatedAt,
+            ]
+        }
     }
 
     private func appSettingsRecord(for recordID: CKRecord.ID) -> CKRecord {
@@ -1138,7 +1217,7 @@ import UIKit
     private func applyFeedPropertyPayload(_ property: [String: Any], to feed: CDFeed) {
         guard let key = property["key"] as? String, !key.isEmpty else { return }
 
-        switch property["valueType"] as? String ?? defaultFeedPropertyValueType(for: key) {
+        switch property["valueType"] as? String ?? Self.defaultFeedPropertyValueType(for: key) {
         case "string":
             feed.setString(property["stringValue"] as? String ?? "", forKey: key)
         case "double":
@@ -1404,7 +1483,7 @@ import UIKit
             guard let key = property.key, !internalFeedPropertyKeys.contains(key) else { continue }
             var propertyPayload: [String: Any] = [
                 "key": key,
-                "valueType": feedPropertyValueType(for: property),
+                "valueType": Self.feedPropertyValueType(for: property),
                 "boolValue": property.boolValue,
                 "int32Value": Int(property.int32Value),
                 "doubleValue": property.doubleValue,
@@ -1428,7 +1507,7 @@ import UIKit
         ]
     }
 
-    private func feedPropertyValueType(for property: CDFeedProperty) -> String {
+    private nonisolated static func feedPropertyValueType(for property: CDFeedProperty) -> String {
         if property.stringValue != nil {
             return "string"
         }
@@ -1438,8 +1517,8 @@ import UIKit
         return defaultFeedPropertyValueType(for: key)
     }
 
-    private func defaultFeedPropertyValueType(for key: String) -> String {
-        guard let value = defaults.object(forKey: key) else {
+    private nonisolated static func defaultFeedPropertyValueType(for key: String) -> String {
+        guard let value = UserDefaults.standard.object(forKey: key) else {
             return "bool"
         }
         if value is String {
@@ -1859,7 +1938,14 @@ import UIKit
         clearSyncProgress()
         deviceRecordShouldStampSyncDate = false
         syncedUserDataInCurrentRun = false
-        setSyncMetadata(displayStatus(for: error), forKey: Self.lastErrorKey)
+        let status = displayStatus(for: error)
+        let nsError = error as NSError
+        logSyncEvent("iCloud Sync Fehler", metadata: [
+            "domain": nsError.domain,
+            "code": nsError.code,
+            "status": status,
+        ])
+        setSyncMetadata(status, forKey: Self.lastErrorKey)
         postStateChanged()
     }
 
@@ -1901,11 +1987,23 @@ import UIKit
     }
 
     private func postStateChanged() {
-        NotificationCenter.default.post(name: NSNotification.Name.ICiCloudSyncStateDidChange, object: self)
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: NSNotification.Name.ICiCloudSyncStateDidChange, object: self)
+        } else {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: NSNotification.Name.ICiCloudSyncStateDidChange, object: self)
+            }
+        }
     }
 
     private func postDevicesChanged() {
-        NotificationCenter.default.post(name: NSNotification.Name.ICiCloudSyncDevicesDidChange, object: self)
+        if Thread.isMainThread {
+            NotificationCenter.default.post(name: NSNotification.Name.ICiCloudSyncDevicesDidChange, object: self)
+        } else {
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: NSNotification.Name.ICiCloudSyncDevicesDidChange, object: self)
+            }
+        }
     }
 }
 

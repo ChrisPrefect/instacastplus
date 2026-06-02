@@ -67,8 +67,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"General".ls;
-    self->appIconsArray = @[ @"appicon12", @"appicon13", @"appicon8", @"appicon9", @"appicon10", @"appicon11", @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7" ];
-    self->appIconNamesArray = @[ @"AppIcon-12", @"AppIcon-13", @"AppIcon-8", @"AppIcon-9", @"AppIcon-10", @"AppIcon-11", @"AppIcon-1", @"AppIcon-2", @"AppIcon-3", @"AppIcon-4", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7" ];
+    self->appIconsArray = @[ @"appicon13", @"appicon8", @"appicon9", @"appicon10", @"appicon11", @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7" ];
+    self->appIconNamesArray = @[ @"AppIcon-13", @"AppIcon-8", @"AppIcon-9", @"AppIcon-10", @"AppIcon-11", @"AppIcon-1", @"AppIcon-2", @"AppIcon-3", @"AppIcon-4", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7" ];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -1115,7 +1115,7 @@ API_AVAILABLE(ios(14.0)){
 {
     ChapterImageCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"chapter_cell" forIndexPath:indexPath];
     cell.chapterImageView.image = [UIImage imageNamed: self->appIconsArray[indexPath.item]];
-    cell.chapterImageView.layer.cornerRadius = 5;
+    cell.chapterImageView.layer.cornerRadius = 16;
     cell.chapterImageView.layer.masksToBounds = true;
     return cell;
 }
