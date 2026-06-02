@@ -36,6 +36,7 @@ enum {
 typedef NSInteger FeedParserFeedFormat;
 
 static NSString* kPodcastFeedParserErrorDomain = @"kPodcastFeedParserErrorDomain";
+NSString* const ICFeedParserHTTPStatusCodeErrorKey = @"ICHTTPStatusCode";
 
 static ArbitraryDateParser* gDateParser = nil;
 
@@ -211,6 +212,7 @@ start:
     NSHTTPURLResponse* response;
     NSError* error = nil;
     NSData* feedData = [self sendSynchronousRequest:request returningResponse:&response error:&error];
+    NSInteger statusCode = [response statusCode];
     
     if (!feedData || error || [response statusCode] == 401)
     {
@@ -269,6 +271,31 @@ start:
                                         userInfo:@{NSLocalizedDescriptionKey: @"Authentication failed.".ls, NSLocalizedRecoverySuggestionErrorKey : @"The feed could not be read because the username or password is incorrect.".ls }];
             }
         }
+    }
+
+    if (!error && statusCode >= 400) {
+        NSString* recoverySuggestion = nil;
+        if (statusCode == 401 || statusCode == 403) {
+            recoverySuggestion = @"The feed could not be read because the username or password is incorrect.".ls;
+        }
+        else if (statusCode == 404 || statusCode == 410) {
+            recoverySuggestion = @"The podcast feed can not be found.".ls;
+        }
+        else if (statusCode >= 500 && statusCode < 600) {
+            recoverySuggestion = @"The server is temporarily unavailable.".ls;
+        }
+        else {
+            recoverySuggestion = @"The server rejected the feed request.".ls;
+        }
+
+        error = [NSError errorWithDomain:NSURLErrorDomain
+                                    code:NSURLErrorBadServerResponse
+                                userInfo:@{
+            NSLocalizedDescriptionKey: @"Error reading podcast.".ls,
+            NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
+            ICFeedParserHTTPStatusCodeErrorKey: @(statusCode)
+        }];
+        goto end;
     }
     
     if ([response statusCode] == 304 || [self isCancelled]) {
@@ -350,12 +377,13 @@ parse:
         }
         
         if (_resultIsHTML) {
-            if ([response statusCode] == 404) {
+            if (statusCode == 404) {
                 error = [NSError errorWithDomain:NSURLErrorDomain
-                                            code:[error code]
+                                            code:NSURLErrorBadServerResponse
                                         userInfo:@{
                        NSLocalizedDescriptionKey:@"Error reading podcast.".ls,
-          NSLocalizedRecoverySuggestionErrorKey :@"The podcast feed can not be found.".ls
+          NSLocalizedRecoverySuggestionErrorKey :@"The podcast feed can not be found.".ls,
+                          ICFeedParserHTTPStatusCodeErrorKey: @(statusCode)
                          }];
 
             } else {

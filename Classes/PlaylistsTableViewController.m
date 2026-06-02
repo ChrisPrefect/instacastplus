@@ -560,11 +560,7 @@
 
 - (void) refresh:(id)sender
 {
-    [[SubscriptionManager sharedSubscriptionManager] refreshAllFeedsForce:YES etagHandling:YES completion:^(BOOL success, NSArray* newEpisodes, NSError* error) {
-        if (error) {
-            [self presentError:error];
-        }
-    }];
+    [[SubscriptionManager sharedSubscriptionManager] refreshAllFeedsForce:YES etagHandling:YES completion:nil];
 }
 
 

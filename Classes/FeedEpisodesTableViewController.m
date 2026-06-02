@@ -473,9 +473,6 @@
 {
     SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
     [sman refreshFeeds:@[self.feed] etagHandling:YES completion:^(BOOL success, NSArray* newEpisodes, NSError* error) {
-        if (error) {
-            [self presentError:error];
-        }
         if ([newEpisodes count] > 0) {
             PlaySoundFile(@"NewEpisodes",NO);
         }

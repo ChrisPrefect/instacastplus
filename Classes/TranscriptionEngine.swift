@@ -212,16 +212,14 @@ private struct ICDiagnosticLogLine: Encodable {
             ])
         }
 
-        let files: [(String, String, URL)] = [
-            ("Diagnostics.jsonl", "application/x-ndjson", diagnosticsLogURL()),
-            ("DiagnosticsSessionState.json", "application/json", sessionStateURL()),
-            ("Application.Log", "text/plain", URL(fileURLWithPath: (Bundle.pathToLogsDirectory() as NSString).appendingPathComponent("Application.Log"))),
+        let files: [(String, URL)] = [
+            ("Diagnostics.jsonl", diagnosticsLogURL()),
+            ("DiagnosticsSessionState.json", sessionStateURL()),
+            ("Application.Log", URL(fileURLWithPath: (Bundle.pathToLogsDirectory() as NSString).appendingPathComponent("Application.Log"))),
         ]
+        let data = combinedCrashLogMailAttachmentData(from: files)
 
-        return files.compactMap { fileName, mimeType, url in
-            guard let data = NSData(contentsOf: url) else { return nil }
-            return ICDiagnosticMailAttachment(fileName: fileName, mimeType: mimeType, data: data)
-        }
+        return [ICDiagnosticMailAttachment(fileName: "InstacastPlus-CrashLogs.txt", mimeType: "text/plain", data: data)]
     }
 
     @objc func crashLogMailBody() -> String {
@@ -235,6 +233,16 @@ private struct ICDiagnosticLogLine: Encodable {
             "previousSessionEndedUnexpectedly: \(previousSessionEndedUnexpectedly)",
             "previousSessionState: \(previousSessionState ?? "")",
         ].joined(separator: "\n")
+    }
+
+    @objc func clearCrashLogMailArtifacts() {
+        queue.async {
+            let fileManager = FileManager.default
+            let diagnosticsLog = self.logsDirectoryURL().appendingPathComponent("Diagnostics.jsonl")
+            let applicationLog = URL(fileURLWithPath: (Bundle.pathToLogsDirectory() as NSString).appendingPathComponent("Application.Log"))
+            try? fileManager.removeItem(at: diagnosticsLog)
+            try? fileManager.removeItem(at: applicationLog)
+        }
     }
 
     @objc func logStorageLayout(_ reason: String) {
@@ -365,6 +373,24 @@ private struct ICDiagnosticLogLine: Encodable {
             "sceneDidDisconnect",
         ]
         return !expectedStates.contains(state)
+    }
+
+    private func combinedCrashLogMailAttachmentData(from files: [(String, URL)]) -> NSData {
+        var combinedData = Data()
+        for (index, file) in files.enumerated() {
+            let (fileName, url) = file
+            if index > 0 {
+                combinedData.append(contentsOf: [0x0A, 0x0A])
+            }
+            combinedData.append(Data("===== \(fileName) =====\n".utf8))
+            if let fileData = try? Data(contentsOf: url) {
+                combinedData.append(fileData)
+                if fileData.last != 0x0A {
+                    combinedData.append(0x0A)
+                }
+            }
+        }
+        return combinedData as NSData
     }
 
     private func diagnosticsLogURL() -> URL {

@@ -14,6 +14,8 @@
 #import "ICMedia.h"
 #import "ICChapter.h"
 
+FOUNDATION_EXPORT NSString* const ICFeedParserHTTPStatusCodeErrorKey;
+
 @class ICFeed;
 @protocol ICFeedParserDelegate;
 

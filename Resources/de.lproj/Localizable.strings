@@ -517,6 +517,8 @@
 "The feed could not be read because the username or password is incorrect." = "Der Feed konnte nicht empfangen werden, da entweder Benutzername oder Passwort falsch ist.";
 "The podcast could not be read, either because the feed does not exist or because the feed format is not supported." = "Der Podcast konnte nicht gelesen werden, weil entweder der Feed nicht existiert oder das Format des Feeds unbekannt ist.";
 "The podcast feed can not be found." = "Der Podcast-Feed kann nicht gefunden werden.";
+"The server is temporarily unavailable." = "Der Server ist vorübergehend nicht erreichbar.";
+"The server rejected the feed request." = "Der Server hat die Feed-Anfrage abgelehnt.";
 "Untitled" = "Unbenannt";
 
 /* DirectoryLanguageViewController.m */
@@ -963,6 +965,15 @@
 "Timeout" = "Zeitüberschreitung";
 "Not found" = "Nicht gefunden";
 "No access" = "Kein Zugriff";
+"Domain not found." = "Domain nicht gefunden. Prüfe die Feed-Adresse.";
+"Feed not found or removed." = "Feed nicht gefunden oder verschoben. Suche auf der Podcast-Website nach einer neuen Feed-Adresse.";
+"Server temporarily unavailable." = "Temporäres Server- oder Netzwerkproblem. Prüfe deine Verbindung oder versuche es später erneut.";
+"No access." = "Zugriff verweigert. Prüfe Podcast-Login oder Zugriffsrechte.";
+"Website returned instead of podcast feed." = "Die Adresse liefert eine Webseite statt eines Podcast-Feeds.";
+"Feed contains invalid XML." = "Das Feed-XML ist fehlerhaft. Der Anbieter muss den Feed korrigieren.";
+"Unsupported podcast feed format." = "Der Feed ist kein gültiges RSS- oder Atom-XML. Der Anbieter muss den Feed korrigieren.";
+"Server rejected the feed request." = "Der Server hat die Feed-Anfrage abgelehnt. Versuche es später erneut oder prüfe die Feed-Adresse.";
+"Secure connection failed." = "Sichere Verbindung fehlgeschlagen. Versuche es später erneut oder kontaktiere den Podcast-Anbieter.";
 "Some podcasts could not be updated" = "Einige Podcasts konnten nicht aktualisiert werden";
 
 /* ApplePodcastChartsClient / DirectorySearchViewController */

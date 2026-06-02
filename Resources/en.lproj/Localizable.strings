@@ -515,6 +515,8 @@
 "The feed could not be read because the username or password is incorrect." = "The feed could not be read because the username or password is incorrect.";
 "The podcast could not be read, either because the feed does not exist or because the feed format is not supported." = "The podcast could not be read, either because the feed does not exist or because the feed format is not supported.";
 "The podcast feed can not be found." = "The podcast feed can not be found.";
+"The server is temporarily unavailable." = "The server is temporarily unavailable.";
+"The server rejected the feed request." = "The server rejected the feed request.";
 "Untitled" = "Untitled";
 
 /* DirectoryLanguageViewController.m */
@@ -960,6 +962,15 @@
 "Timeout" = "Timeout";
 "Not found" = "Not found";
 "No access" = "No access";
+"Domain not found." = "Domain not found. Check the feed address.";
+"Feed not found or removed." = "Feed not found or moved. Check the podcast website for a new feed address.";
+"Server temporarily unavailable." = "Temporary server or network issue. Check your connection or try again later.";
+"No access." = "Access denied. Check the podcast login or access permissions.";
+"Website returned instead of podcast feed." = "The address returned a website instead of a podcast feed.";
+"Feed contains invalid XML." = "The feed XML is malformed. The publisher needs to fix the feed.";
+"Unsupported podcast feed format." = "The feed is not valid RSS or Atom XML. The publisher needs to fix the feed.";
+"Server rejected the feed request." = "The server rejected the feed request. Try again later or check the feed address.";
+"Secure connection failed." = "Secure connection failed. Try again later or contact the podcast publisher.";
 "Some podcasts could not be updated" = "Some podcasts could not be updated";
 
 /* ApplePodcastChartsClient / DirectorySearchViewController */

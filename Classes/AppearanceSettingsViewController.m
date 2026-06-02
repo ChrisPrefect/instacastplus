@@ -119,7 +119,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kLanguage:
             return 1;
         case kEpisodesSection:
-            return 2;
+            return 3;
         case kAppearanceThemeSection:
             return [ICAppearanceManager sharedManager].nightSettingMode ? 2 : 1;
         case kFontSizeSection:
@@ -192,6 +192,16 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     {
         UITableViewCell* cell = [self detailCell];
         if (indexPath.row == 0) {
+            cell.textLabel.text = @"Tap on Episode".ls;
+
+            NSInteger tapAction = [USER_DEFAULTS integerForKey:TapOnEpisodeAction];
+            NSDictionary* tapActionTitles = @{
+                @(ICTapOnEpisodeActionPlay): @"Play Episode Action".ls,
+                @(ICTapOnEpisodeActionShowNotes): @"Show Notes".ls,
+                @(ICTapOnEpisodeActionOpenContextMenu): @"Open Long-Press Menu".ls,
+            };
+            cell.detailTextLabel.text = tapActionTitles[@(tapAction)] ?: @"Play Episode Action".ls;
+        } else if (indexPath.row == 1) {
             cell.textLabel.text = @"Swipe Right".ls;
             NSInteger action = [USER_DEFAULTS integerForKey:EpisodeSwipeRightAction];
             cell.detailTextLabel.text = [self _titleForSwipeAction:action];
@@ -662,40 +672,47 @@ API_AVAILABLE(ios(14.0)){
     {
         SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
         controller.valueType = kSettingTypeInteger;
-        controller.key = (indexPath.row == 0) ? EpisodeSwipeRightAction : EpisodeSwipeLeftAction;
-        controller.title = (indexPath.row == 0) ? @"Swipe Right".ls : @"Swipe Left".ls;
-        controller.values = @[
-            @(ICEpisodeSwipeActionTogglePlayed),
-            @(ICEpisodeSwipeActionToggleFavorite),
-            @(ICEpisodeSwipeActionDownload),
-            @(ICEpisodeSwipeActionAddToPlayNext),
-            @(ICEpisodeSwipeActionDelete),
-            @(ICEpisodeSwipeActionEpisodeInfo),
-            @(ICEpisodeSwipeActionTranscribe),
-            @(ICEpisodeSwipeActionSendToAppleWatch)
-        ];
-        controller.titles = @[
-            @"Mark as Played".ls,
-            @"Mark as Favorite".ls,
-            @"Download".ls,
-            @"Add to Play Next".ls,
-            @"Delete Episode from List".ls,
-            @"Show Show Notes".ls,
-            @"Transcribe".ls,
-            @"An Apple Watch senden".ls
-        ];
-        UIImageSymbolConfiguration* symbolConfig = [UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleMedium];
-        controller.images = @[
-            [UIImage systemImageNamed:@"circle" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"star" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"square.and.arrow.down" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"captions.bubble" withConfiguration:symbolConfig],
-            [UIImage systemImageNamed:@"applewatch" withConfiguration:symbolConfig],
-        ];
-        controller.footerText = @"Swipe Action Toggle Info".ls;
+        if (indexPath.row == 0) {
+            controller.key = TapOnEpisodeAction;
+            controller.title = @"Tap on Episode".ls;
+            controller.values = @[ @(ICTapOnEpisodeActionPlay), @(ICTapOnEpisodeActionShowNotes), @(ICTapOnEpisodeActionOpenContextMenu) ];
+            controller.titles = @[ @"Play Episode Action".ls, @"Show Notes".ls, @"Open Long-Press Menu".ls ];
+        } else {
+            controller.key = (indexPath.row == 1) ? EpisodeSwipeRightAction : EpisodeSwipeLeftAction;
+            controller.title = (indexPath.row == 1) ? @"Swipe Right".ls : @"Swipe Left".ls;
+            controller.values = @[
+                @(ICEpisodeSwipeActionTogglePlayed),
+                @(ICEpisodeSwipeActionToggleFavorite),
+                @(ICEpisodeSwipeActionDownload),
+                @(ICEpisodeSwipeActionAddToPlayNext),
+                @(ICEpisodeSwipeActionDelete),
+                @(ICEpisodeSwipeActionEpisodeInfo),
+                @(ICEpisodeSwipeActionTranscribe),
+                @(ICEpisodeSwipeActionSendToAppleWatch)
+            ];
+            controller.titles = @[
+                @"Mark as Played".ls,
+                @"Mark as Favorite".ls,
+                @"Download".ls,
+                @"Add to Play Next".ls,
+                @"Delete Episode from List".ls,
+                @"Show Show Notes".ls,
+                @"Transcribe".ls,
+                @"An Apple Watch senden".ls
+            ];
+            UIImageSymbolConfiguration* symbolConfig = [UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleMedium];
+            controller.images = @[
+                [UIImage systemImageNamed:@"circle" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"star" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"square.and.arrow.down" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"captions.bubble" withConfiguration:symbolConfig],
+                [UIImage systemImageNamed:@"applewatch" withConfiguration:symbolConfig],
+            ];
+            controller.footerText = @"Swipe Action Toggle Info".ls;
+        }
         [self.navigationController pushViewController:controller animated:YES];
         return;
     }

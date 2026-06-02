@@ -32,6 +32,7 @@
 
 
 @interface OptionsViewController () <MFMailComposeViewControllerDelegate>
+@property (nonatomic) BOOL sendingCrashLogMail;
 @end
 
 
@@ -373,6 +374,7 @@ enum {
             [mailComposer addAttachmentData:(NSData *)attachment.data mimeType:attachment.mimeType fileName:attachment.fileName];
         }
 
+        self.sendingCrashLogMail = YES;
         [self presentViewController:mailComposer animated:YES completion:nil];
     } else {
         [self presentAlertControllerWithTitle:@"Email not configured.".ls message:@"Please configure email on this device.".ls button:@"OK".ls animated:YES completion:NULL];
@@ -427,8 +429,15 @@ enum {
 
 - (void)mailComposeController:(MFMailComposeViewController*)controller didFinishWithResult:(MFMailComposeResult)result error:(NSError*)error
 {
+    BOOL clearCrashLogMailArtifacts = self.sendingCrashLogMail && result == MFMailComposeResultSent && !error;
+    self.sendingCrashLogMail = NO;
+
     [self dismissViewControllerAnimated:YES completion:^{
     }];
+
+    if (clearCrashLogMailArtifacts) {
+        [[ICDiagnosticLogger shared] clearCrashLogMailArtifacts];
+    }
 	
 	if (error) {
 		[self presentError:error];

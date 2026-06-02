@@ -502,47 +502,93 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         return @"Unknown error".ls;
     }
 
+    NSString* recoverySuggestion = [error.userInfo[NSLocalizedRecoverySuggestionErrorKey] description];
+    if ([recoverySuggestion isEqualToString:@"Returned content is a website and not a podcast feed.".ls]) {
+        return @"Website returned instead of podcast feed.".ls;
+    }
+    if ([recoverySuggestion isEqualToString:@"The podcast feed can not be found.".ls]) {
+        return @"Feed not found or removed.".ls;
+    }
+    if ([recoverySuggestion isEqualToString:@"The server is temporarily unavailable.".ls]) {
+        return @"Server temporarily unavailable.".ls;
+    }
+    if ([recoverySuggestion isEqualToString:@"The server rejected the feed request.".ls]) {
+        return @"Server rejected the feed request.".ls;
+    }
+    if ([recoverySuggestion isEqualToString:@"The feed could not be read because the username or password is incorrect.".ls]) {
+        return @"No access.".ls;
+    }
+    if ([recoverySuggestion isEqualToString:@"The podcast could not be read, either because the feed does not exist or because the feed format is not supported.".ls]) {
+        return @"Unsupported podcast feed format.".ls;
+    }
+
+    NSNumber* httpStatusCode = error.userInfo[ICFeedParserHTTPStatusCodeErrorKey];
+    if ([httpStatusCode respondsToSelector:@selector(integerValue)]) {
+        NSInteger statusCode = httpStatusCode.integerValue;
+        if (statusCode == 401 || statusCode == 403) {
+            return @"No access.".ls;
+        }
+        if (statusCode == 404 || statusCode == 410) {
+            return @"Feed not found or removed.".ls;
+        }
+        if (statusCode >= 500 && statusCode < 600) {
+            return @"Server temporarily unavailable.".ls;
+        }
+        if (statusCode >= 400 && statusCode < 500) {
+            return @"Server rejected the feed request.".ls;
+        }
+    }
+
     if ([error.domain isEqualToString:NSURLErrorDomain]) {
         switch (error.code) {
+            case NSURLErrorNotConnectedToInternet:
+                return @"No internet connection.".ls;
             case NSURLErrorTimedOut:
-                return @"Timeout".ls;
+            case NSURLErrorCannotConnectToHost:
+            case NSURLErrorNetworkConnectionLost:
+                return @"Server temporarily unavailable.".ls;
             case NSURLErrorCannotFindHost:
             case NSURLErrorDNSLookupFailed:
+                return @"Domain not found.".ls;
             case NSURLErrorFileDoesNotExist:
             case NSURLErrorResourceUnavailable:
-                return @"Not found".ls;
+                return @"Feed not found or removed.".ls;
             case NSURLErrorUserAuthenticationRequired:
             case NSURLErrorNoPermissionsToReadFile:
             case NSURLErrorDataNotAllowed:
-                return @"No access".ls;
+                return @"No access.".ls;
+            case NSURLErrorSecureConnectionFailed:
+            case NSURLErrorServerCertificateHasBadDate:
+            case NSURLErrorServerCertificateUntrusted:
+            case NSURLErrorServerCertificateHasUnknownRoot:
+            case NSURLErrorServerCertificateNotYetValid:
+                return @"Secure connection failed.".ls;
             default:
                 break;
         }
     }
 
-    NSString* lowerDescription = [[error localizedDescription] lowercaseString];
-    NSString* lowerRecovery = [[[error userInfo][NSLocalizedRecoverySuggestionErrorKey] description] lowercaseString];
-    NSString* lowerCombined = [NSString stringWithFormat:@"%@ %@", lowerDescription ?: @"", lowerRecovery ?: @""];
-
-    if ([lowerCombined rangeOfString:@"timeout"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"timed out"].location != NSNotFound) {
-        return @"Timeout".ls;
-    }
-    if ([lowerCombined rangeOfString:@"not found"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"cannot be found"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"404"].location != NSNotFound) {
-        return @"Not found".ls;
-    }
-    if ([lowerCombined rangeOfString:@"permission"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"forbidden"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"unauthorized"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"401"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"403"].location != NSNotFound ||
-        [lowerCombined rangeOfString:@"auth"].location != NSNotFound) {
-        return @"No access".ls;
+    if ([error.domain isEqualToString:NSXMLParserErrorDomain]) {
+        return @"Feed contains invalid XML.".ls;
     }
 
-    return error.localizedDescription ?: @"Unknown error".ls;
+    if ([error.domain isEqualToString:@"kPodcastFeedParserErrorDomain"]) {
+        return @"Unsupported podcast feed format.".ls;
+    }
+
+    if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCannotParseResponse) {
+        return @"Unsupported podcast feed format.".ls;
+    }
+
+    NSError* underlyingError = error.userInfo[NSUnderlyingErrorKey];
+    if ([underlyingError isKindOfClass:[NSError class]]) {
+        NSString* underlyingReason = [self _friendlyRefreshFailureReasonForError:underlyingError];
+        if (![underlyingReason isEqualToString:@"Unknown error".ls]) {
+            return underlyingReason;
+        }
+    }
+
+    return @"Unknown error".ls;
 }
 
 - (void) _beginRefreshTrackingForFeeds:(NSArray*)feeds
@@ -975,23 +1021,26 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     };
     
     feedParser.didEndWithError = ^(NSError* error) {
-        if (![self.refreshingFeedURLs containsObject:url]) {
-            return;
-        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf || ![strongSelf.refreshingFeedURLs containsObject:url]) {
+                return;
+            }
 
-        [self.feedsMergingURLs removeObject:url];
-        
-        if (completion) {
-            completion(NO, nil, error);
-        }
-        
-        if (!notificationBefore) {
-            [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:self userInfo:@{@"url" : feed.sourceURL}];
-        }
-        
-        ErrLog(@"error parsing '%@': %@", feed.title, [error description]);
-        [self _markFeedFailedForURL:url timedOut:NO error:error];
-        [self _finishParsingFeed:feed url:url shouldAutoDownload:NO];
+            [strongSelf.feedsMergingURLs removeObject:url];
+
+            if (completion) {
+                completion(NO, nil, error);
+            }
+
+            if (!notificationBefore) {
+                [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:strongSelf userInfo:@{@"url" : feed.sourceURL}];
+            }
+
+            ErrLog(@"error parsing '%@': %@", feed.title, [error description]);
+            [strongSelf _markFeedFailedForURL:url timedOut:NO error:error];
+            [strongSelf _finishParsingFeed:feed url:url shouldAutoDownload:NO];
+        });
     };
     
     [self.parserQueue addOperation:feedParser];

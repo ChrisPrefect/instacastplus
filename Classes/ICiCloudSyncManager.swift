@@ -143,6 +143,7 @@ import UIKit
     }
 
     @objc var statusText: String {
+        guard anySyncEnabled else { return NSLocalizedString("Aus", comment: "") }
         if let error = defaults.string(forKey: Self.lastErrorKey), !error.isEmpty {
             return error
         }
@@ -152,7 +153,7 @@ import UIKit
         if let status = defaults.string(forKey: Self.lastStatusKey), !status.isEmpty {
             return status
         }
-        return anySyncEnabled ? NSLocalizedString("Bereit", comment: "") : NSLocalizedString("Aus", comment: "")
+        return NSLocalizedString("Bereit", comment: "")
     }
 
     @objc var devices: [ICiCloudSyncDeviceInfo] {
