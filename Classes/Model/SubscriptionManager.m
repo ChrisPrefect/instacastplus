@@ -837,34 +837,14 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                                                       userInfo:(feed)?[NSDictionary dictionaryWithObject:feed forKey:@"feed"]:nil];
 }
 
-- (BOOL)_feedNeedsDurationMetadataRefreshForFeedObjectID:(NSManagedObjectID*)feedObjectID
+- (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed
 {
-    if (!feedObjectID || feedObjectID.isTemporaryID) {
-        return NO;
-    }
-
-    NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
-    if (!context) {
-        return NO;
-    }
-
-    __block BOOL needsRefresh = NO;
-    [context performBlockAndWait:^{
-        NSError* feedError = nil;
-        CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&feedError];
-        if (![feed isKindOfClass:[CDFeed class]] || feedError) {
-            return;
+    for (CDEpisode* episode in feed.episodes) {
+        if (!episode.archived && !episode.consumed && episode.position <= 0 && episode.duration <= 0) {
+            return YES;
         }
-
-        NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-        request.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == NO && consumed == NO && position <= 0 && duration <= 0", feed];
-        request.fetchLimit = 1;
-
-        NSError* countError = nil;
-        NSUInteger count = [context countForFetchRequest:request error:&countError];
-        needsRefresh = (!countError && count != NSNotFound && count > 0);
-    }];
-    return needsRefresh;
+    }
+    return NO;
 }
 
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
@@ -888,13 +868,14 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerWillParseFeedNotification object:self userInfo:@{@"url" : feed.sourceURL}];
     }
     
-    BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefreshForFeedObjectID:feed.objectID];
+    BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefresh:feed];
     ICFeedParser* feedParser = [ICFeedParser feedParser];
     if (etagHandling && !needsDurationMetadataRefresh) {
         feedParser.etag = feed.etag;
     }
     
     feedParser.url = [feed.sourceURL copy];
+    feedParser.userInfo = url;
     feedParser.username = feed.username;
     feedParser.password = feed.password;
     feedParser.timeout = 8;
@@ -1039,11 +1020,31 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 
             ErrLog(@"error parsing '%@': %@", feed.title, [error description]);
             [strongSelf _markFeedFailedForURL:url timedOut:NO error:error];
-            [strongSelf _finishParsingFeed:feed url:url shouldAutoDownload:NO];
+            [strongSelf _finishRefreshingURL:url];
         });
     };
     
     [self.parserQueue addOperation:feedParser];
+}
+
+
+- (void)_cancelRefreshParserForURL:(NSURL*)url
+{
+    if (!url) {
+        return;
+    }
+
+    for (NSOperation* operation in [self.parserQueue.operations copy]) {
+        if (![operation isKindOfClass:[ICFeedParser class]]) {
+            continue;
+        }
+
+        ICFeedParser* feedParser = (ICFeedParser*)operation;
+        NSURL* parserURL = ([feedParser.userInfo isKindOfClass:[NSURL class]]) ? feedParser.userInfo : feedParser.url;
+        if ([parserURL isEqual:url]) {
+            [feedParser cancel];
+        }
+    }
 }
 
 
@@ -1071,6 +1072,7 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         if (timedOutURLs.count > 0) {
             for (NSURL* url in timedOutURLs) {
                 [self _markFeedFailedForURL:url timedOut:YES error:nil];
+                [self _cancelRefreshParserForURL:url];
                 [self _finishRefreshingURL:url];
             }
         }

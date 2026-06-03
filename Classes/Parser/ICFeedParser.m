@@ -147,6 +147,46 @@ static ArbitraryDateParser* gDateParser = nil;
     }
 }
 
+- (BOOL)_finishParsingAsync:(BOOL)async error:(NSError*)error outError:(NSError**)outError
+{
+	if (async)
+	{
+        if (!_feed && !error) {
+            error = [NSError errorWithDomain:kPodcastFeedParserErrorDomain
+                                        code:0
+                                    userInfo:@{
+                   NSLocalizedDescriptionKey:@"Error reading podcast.".ls,
+      NSLocalizedRecoverySuggestionErrorKey :@"The podcast could not be read, either because the feed does not exist or because the feed format is not supported.".ls
+                     }];
+        }
+
+		if (!self.abortedNormally && error && [_feed.episodes count] == 0) {
+			[self performSelectorOnMainThread:@selector(_sendErrorToDelegate:) withObject:error waitUntilDone:NO];
+		}
+		else {
+			[self performSelectorOnMainThread:@selector(_sendDidParseFeedToDelegate:) withObject:_feed waitUntilDone:NO];
+		}
+	}
+    else
+    {
+        if ((!self.abortedNormally && error) || !_feed) {
+            if (outError) {
+                *outError = (error) ? error : [NSError errorWithDomain:kPodcastFeedParserErrorDomain
+                                                                  code:0
+                                                              userInfo:@{
+                                             NSLocalizedDescriptionKey:@"Error reading podcast.".ls,
+                                NSLocalizedRecoverySuggestionErrorKey :@"The podcast could not be read, either because the feed does not exist or because the feed format is not supported.".ls
+                                               }];
+            }
+		}
+    }
+
+	_elementContent = nil;
+	_elementAttributes = nil;
+
+    return (outError == nil || *outError == nil);
+}
+
 
 #pragma mark -
 #pragma mark Authentication Delegate
@@ -295,7 +335,7 @@ start:
             NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
             ICFeedParserHTTPStatusCodeErrorKey: @(statusCode)
         }];
-        goto end;
+        return [self _finishParsingAsync:async error:error outError:outError];
     }
     
     if ([response statusCode] == 304 || [self isCancelled]) {
@@ -549,43 +589,7 @@ parse:
     }
     
 end:
-	if (async)
-	{
-        if (!_feed && !error) {
-            error = [NSError errorWithDomain:kPodcastFeedParserErrorDomain
-                                        code:0
-                                    userInfo:@{
-                   NSLocalizedDescriptionKey:@"Error reading podcast.".ls,
-      NSLocalizedRecoverySuggestionErrorKey :@"The podcast could not be read, either because the feed does not exist or because the feed format is not supported.".ls
-                     }];
-        }
-        
-		if (!self.abortedNormally && error && [_feed.episodes count] == 0) {
-			[self performSelectorOnMainThread:@selector(_sendErrorToDelegate:) withObject:error waitUntilDone:NO];
-		}
-		else {
-			[self performSelectorOnMainThread:@selector(_sendDidParseFeedToDelegate:) withObject:_feed waitUntilDone:NO];
-		}
-	} 
-    else
-    {
-        if ((!self.abortedNormally && error) || !_feed) {
-            if (outError) {
-                *outError = (error) ? error : [NSError errorWithDomain:kPodcastFeedParserErrorDomain
-                                                                  code:0
-                                                              userInfo:@{
-                                             NSLocalizedDescriptionKey:@"Error reading podcast.".ls,
-                                NSLocalizedRecoverySuggestionErrorKey :@"The podcast could not be read, either because the feed does not exist or because the feed format is not supported.".ls
-                                               }];
-            }
-		}
-    }
-	
-	
-	_elementContent = nil;
-	_elementAttributes = nil;
-    
-    return (outError == nil || *outError == nil);
+    return [self _finishParsingAsync:async error:error outError:outError];
 }
 
 + (ICFeed*) parsedFeedWithURL:(NSURL*)url

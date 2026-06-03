@@ -19,9 +19,11 @@ method_start = subscription_source.index(
 normal_start = subscription_source.index("if (!force)", method_start)
 force_start = subscription_source.index("\n    else\n", normal_start)
 normal_refresh_block = subscription_source[normal_start:force_start]
-refresh_feed_start = subscription_source.index("- (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:")
+refresh_feed_start = subscription_source.index("- (void) refreshFeed:(CDFeed*)feed etagHandling:")
 check_timer_start = subscription_source.index("- (void) checkRefreshOperationsTimer:", refresh_feed_start)
 refresh_feed_block = subscription_source[refresh_feed_start:check_timer_start]
+refresh_feeds_start = subscription_source.index("- (void) refreshFeeds:(NSArray*)feeds etagHandling:(BOOL)etagHandling completion:")
+refresh_feeds_block = subscription_source[refresh_feeds_start:refresh_feed_start]
 
 require(
     "NSInteger remoteDuration = remoteEpisode.duration;" in normal_refresh_block
@@ -38,6 +40,12 @@ require(
     and "!episode.consumed" in subscription_source
     and "episode.position <= 0" in subscription_source,
     "Feeds with unplayed, unstarted local episodes missing duration must be detected before ETag handling.",
+)
+require(
+    "_feedObjectIDsNeedingDurationMetadataRefreshForFeeds:" not in subscription_source
+    and "_feedNeedsDurationMetadataRefreshForFeedObjectID:" not in subscription_source
+    and "preparingRefreshOperations" not in subscription_source,
+    "Pull-to-refresh must not be delayed by an extra duration-repair Core Data preflight before parser operations are queued.",
 )
 require(
     "BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefresh:feed];" in refresh_feed_block

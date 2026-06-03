@@ -35,3 +35,21 @@ require(
     "explicitEpisodeRelationshipObjectsWithFetchLimit:" in SOURCE,
     "Explicit episode-list membership must be fetched without faulting the relationship set.",
 )
+require(
+    "NSManagedObjectContext* mainContext = self.managedObjectContext;" in count_method,
+    "Async episode-list counts must capture the main context before background work starts instead of using a stale managed object later.",
+)
+require(
+    "existingObjectWithID:selfId error:" in count_method,
+    "Async episode-list count completion must re-fetch the main-context EpisodeList by objectID before updating cached count.",
+)
+require(
+    "calculatedList.cachedEpisodesCount" in count_method,
+    "Async episode-list count completion must update the validated main-context EpisodeList, not the originally captured self.",
+)
+for callback in count_method.split("dispatch_async(dispatch_get_main_queue(), ^{")[1:]:
+    body = callback.split("});", 1)[0]
+    require(
+        "self.cachedEpisodesCount" not in body,
+        "Main-queue count callbacks must not write to captured self; it can be an inaccessible Core Data fault by callback time.",
+    )

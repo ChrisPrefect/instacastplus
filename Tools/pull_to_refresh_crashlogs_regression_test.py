@@ -41,7 +41,7 @@ for ui_facing_statement in [
     "completion(NO, nil, error)",
     "SubscriptionManagerWillParseFeedNotification",
     "_markFeedFailedForURL:url",
-    "_finishParsingFeed:feed",
+    "_finishRefreshingURL:url",
 ]:
     require(ui_facing_statement in parser_error_block, f"{ui_facing_statement} is missing from the parser error path.")
     require(

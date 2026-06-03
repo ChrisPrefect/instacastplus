@@ -326,7 +326,21 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         return;
     }
 
+    NSManagedObjectContext* mainContext = self.managedObjectContext;
     NSManagedObjectID* selfId = [self objectID];
+    void (^completeOnMainContext)(NSUInteger) = ^(NSUInteger count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSError* mainError = nil;
+            CDEpisodeList* calculatedList = (CDEpisodeList*)[mainContext existingObjectWithID:selfId error:&mainError];
+            if (!calculatedList || mainError) {
+                ErrLog(@"error getting episode list in main context: %@", mainError);
+                return;
+            }
+
+            calculatedList.cachedEpisodesCount = @(count);
+            completion(count);
+        });
+    };
     
     NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
     [childContext performBlock:^{
@@ -342,10 +356,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
         NSUInteger explicitEpisodeCount = [contextSelf explicitEpisodeRelationshipCountInContext:childContext episodeList:contextSelf];
         if (explicitEpisodeCount > 0) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                self.cachedEpisodesCount = @(explicitEpisodeCount);
-                completion(explicitEpisodeCount);
-            });
+            completeOnMainContext(explicitEpisodeCount);
             return;
         }
         
@@ -447,11 +458,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         
         
         
-        dispatch_async(dispatch_get_main_queue(), ^{
-            NSUInteger count = [filteredObjectHashes count];
-            self.cachedEpisodesCount = @(count);
-            completion(count);
-        });
+        completeOnMainContext([filteredObjectHashes count]);
 
     }];
 }

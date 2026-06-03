@@ -177,10 +177,11 @@ require(
 
 
 require(
-    "_feedNeedsDurationMetadataRefreshForFeedObjectID:" in subscription_manager
-    and "countForFetchRequest" in subscription_manager
-    and "newBackgroundContext" in subscription_manager,
-    "Refresh duration metadata checks must be a background Core Data count, not a main-thread episode scan.",
+    "- (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed" in subscription_manager
+    and "_feedObjectIDsNeedingDurationMetadataRefreshForFeeds:" not in subscription_manager
+    and "_feedNeedsDurationMetadataRefreshForFeedObjectID:" not in subscription_manager
+    and "preparingRefreshOperations" not in subscription_manager,
+    "Refresh duration metadata checks must not add a Core Data preflight before parser operations are queued.",
 )
 require(
     "_autoDownloadEpisodesInFeedAsynchronously:" in subscription_manager
