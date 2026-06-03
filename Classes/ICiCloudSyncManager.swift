@@ -58,26 +58,27 @@ import UIKit
         return false
     }
 
-    private static let containerIdentifier = "iCloud.com.iteconomy.instacastplus"
-    private static let zoneName = "InstacastSync"
-    private static let schemaVersion = 1
+    private nonisolated static let containerIdentifier = "iCloud.com.iteconomy.instacastplus"
+    private nonisolated static let zoneName = "InstacastSync"
+    private nonisolated static let schemaVersion = 1
 
-    private static let deviceIDKey = "ICiCloudSyncDeviceID"
-    private static let engineStateKey = "ICiCloudSyncEngineState"
-    private static let knownRecordsKey = "ICiCloudSyncKnownRecords"
-    private static let deviceCacheKey = "ICiCloudSyncDeviceCache"
-    private static let subscriptionRecordURLsKey = "ICiCloudSyncSubscriptionRecordURLs"
-    private static let pendingEpisodeStatesKey = "ICiCloudSyncPendingEpisodeStates"
-    private static let pendingSubscriptionPayloadsKey = "ICiCloudSyncPendingSubscriptionPayloads"
-    private static let episodeLocalModifiedDatesKey = "ICiCloudSyncEpisodeLocalModifiedDates"
-    private static let subscriptionLocalModifiedDatesKey = "ICiCloudSyncSubscriptionLocalModifiedDates"
-    private static let settingsLocalModifiedDateKey = "ICiCloudSyncSettingsLocalModifiedDate"
-    private static let scrollPositionsLocalModifiedDateKey = "ICiCloudSyncScrollPositionsLocalModifiedDate"
-    private static let lastSyncDateKey = "ICiCloudSyncLastSyncDate"
-    private static let lastStatusKey = "ICiCloudSyncLastStatus"
-    private static let lastErrorKey = "ICiCloudSyncLastError"
-    private static let maximumRecordZoneChangesPerBatch = 200
-    private static let pendingChangeQueueChunkSize = 200
+    private nonisolated static let deviceIDKey = "ICiCloudSyncDeviceID"
+    private nonisolated static let engineStateKey = "ICiCloudSyncEngineState"
+    private nonisolated static let knownRecordsKey = "ICiCloudSyncKnownRecords"
+    private nonisolated static let deviceCacheKey = "ICiCloudSyncDeviceCache"
+    private nonisolated static let subscriptionRecordURLsKey = "ICiCloudSyncSubscriptionRecordURLs"
+    private nonisolated static let pendingEpisodeStatesKey = "ICiCloudSyncPendingEpisodeStates"
+    private nonisolated static let pendingSubscriptionPayloadsKey = "ICiCloudSyncPendingSubscriptionPayloads"
+    private nonisolated static let episodeLocalModifiedDatesKey = "ICiCloudSyncEpisodeLocalModifiedDates"
+    private nonisolated static let subscriptionLocalModifiedDatesKey = "ICiCloudSyncSubscriptionLocalModifiedDates"
+    private nonisolated static let settingsLocalModifiedDateKey = "ICiCloudSyncSettingsLocalModifiedDate"
+    private nonisolated static let scrollPositionsLocalModifiedDateKey = "ICiCloudSyncScrollPositionsLocalModifiedDate"
+    private nonisolated static let lastSyncDateKey = "ICiCloudSyncLastSyncDate"
+    private nonisolated static let lastStatusKey = "ICiCloudSyncLastStatus"
+    private nonisolated static let lastErrorKey = "ICiCloudSyncLastError"
+    private nonisolated static let deviceRecordShouldStampSyncDateKey = "ICiCloudSyncDeviceRecordShouldStampSyncDate"
+    private nonisolated static let maximumRecordZoneChangesPerBatch = 200
+    private nonisolated static let pendingChangeQueueChunkSize = 200
 
     private enum RecordKind {
         static let device = "ICDevice"
@@ -385,14 +386,18 @@ import UIKit
     private func scheduleCurrentEnabledDataForUpload() {
         cancelInitialQueueTask()
         logSyncEvent("Initiale iCloud-Queue geplant")
-        initialQueueTask = Task { @MainActor [weak self] in
+        initialQueueTask = Task.detached(priority: .utility) { [weak self] in
             await Task.yield()
             guard let self, !Task.isCancelled else { return }
-            self.logSyncEvent("Initiale iCloud-Queue gestartet")
+            await MainActor.run {
+                self.logSyncEvent("Initiale iCloud-Queue gestartet")
+            }
             await self.queueCurrentEnabledDataForUpload()
             if !Task.isCancelled {
-                self.logSyncEvent("Initiale iCloud-Queue abgeschlossen")
-                self.postStateChanged()
+                await MainActor.run {
+                    self.logSyncEvent("Initiale iCloud-Queue abgeschlossen")
+                    self.postStateChanged()
+                }
             }
         }
     }
@@ -430,6 +435,7 @@ import UIKit
     private func queueDeviceRecord(stampLastSyncDate: Bool = false) {
         if stampLastSyncDate {
             deviceRecordShouldStampSyncDate = true
+            setSyncMetadata(true, forKey: Self.deviceRecordShouldStampSyncDateKey)
         }
         addPendingSave(deviceRecordID(for: deviceID))
     }
@@ -439,11 +445,11 @@ import UIKit
         guard episodesSyncEnabled, !objectHashes.isEmpty, !Task.isCancelled else { return }
 
         let now = Date()
-        setEpisodeLocalModifiedDates(objectHashes.reduce(into: [String: Date]()) { partialResult, objectHash in
-            partialResult[objectHash] = now
-        })
         for chunk in chunked(objectHashes, size: Self.pendingChangeQueueChunkSize) {
             guard episodesSyncEnabled, !Task.isCancelled else { return }
+            setEpisodeLocalModifiedDates(chunk.reduce(into: [String: Date]()) { partialResult, objectHash in
+                partialResult[objectHash] = now
+            })
             addPendingSaves(chunk.map { episodeRecordID(forObjectHash: $0) })
             await Task.yield()
         }
@@ -592,7 +598,11 @@ import UIKit
         queueDeviceRecord(stampLastSyncDate: true)
     }
 
-    func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
+    nonisolated func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
+        await handleEventOnMain(event, syncEngine: syncEngine)
+    }
+
+    private func handleEventOnMain(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
         switch event {
         case .stateUpdate(let event):
             persistStateSerialization(event.stateSerialization)
@@ -642,10 +652,11 @@ import UIKit
         }
     }
 
-    func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
+    nonisolated func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
         let scopedChanges = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
         guard !scopedChanges.isEmpty else { return nil }
 
+        let snapshot = Self.syncEngineCallbackSnapshot()
         var recordsToSave: [CKRecord] = []
         var recordIDsToDelete: [CKRecord.ID] = []
         var staleSaveChanges: [CKSyncEngine.PendingRecordZoneChange] = []
@@ -656,7 +667,7 @@ import UIKit
 
             switch change {
             case .saveRecord(let recordID):
-                if let record = await recordToSave(for: recordID) {
+                if let record = Self.recordToSaveForSyncEngineCallback(for: recordID, snapshot: snapshot) {
                     recordsToSave.append(record)
                     validChangeCount += 1
                 } else {
@@ -676,7 +687,7 @@ import UIKit
         }
 
         guard !recordsToSave.isEmpty || !recordIDsToDelete.isEmpty else { return nil }
-        logSyncEvent("CKSyncEngine-Send-Batch materialisiert", metadata: [
+        Self.logSyncEvent("CKSyncEngine-Send-Batch materialisiert", snapshot: snapshot, pendingRecordZoneChanges: syncEngine.state.pendingRecordZoneChanges.count, metadata: [
             "scopedChanges": scopedChanges.count,
             "recordsToSave": recordsToSave.count,
             "recordIDsToDelete": recordIDsToDelete.count,
@@ -688,57 +699,92 @@ import UIKit
                                                   atomicByZone: false)
     }
 
-    private func recordToSave(for recordID: CKRecord.ID) async -> CKRecord? {
+    private struct SyncEngineCallbackSnapshot {
+        let episodesSyncEnabled: Bool
+        let subscriptionsSyncEnabled: Bool
+        let settingsSyncEnabled: Bool
+        let anySyncEnabled: Bool
+        let deviceID: String
+        let deviceRecordShouldStampSyncDate: Bool
+        let knownRecords: [String: Data]
+        let subscriptionRecordURLs: [String: String]
+        let episodeLocalModifiedDates: [String: TimeInterval]
+        let subscriptionLocalModifiedDates: [String: TimeInterval]
+        let settingsLocalModifiedDate: Date?
+        let scrollPositionsLocalModifiedDate: Date?
+        let lastSyncDate: Date?
+    }
+
+    private nonisolated static func syncEngineCallbackSnapshot() -> SyncEngineCallbackSnapshot {
+        let defaults = UserDefaults.standard
+        let episodesEnabled = defaults.bool(forKey: ICiCloudSyncEpisodesEnabled)
+        let subscriptionsEnabled = defaults.bool(forKey: ICiCloudSyncSubscriptionsEnabled)
+        let settingsEnabled = defaults.bool(forKey: ICiCloudSyncSettingsEnabled)
+        return SyncEngineCallbackSnapshot(
+            episodesSyncEnabled: episodesEnabled,
+            subscriptionsSyncEnabled: subscriptionsEnabled,
+            settingsSyncEnabled: settingsEnabled,
+            anySyncEnabled: episodesEnabled || subscriptionsEnabled || settingsEnabled,
+            deviceID: deviceIDForSyncEngineCallback(),
+            deviceRecordShouldStampSyncDate: defaults.bool(forKey: Self.deviceRecordShouldStampSyncDateKey),
+            knownRecords: normalizedDataDictionaryForSyncEngineCallback(forKey: Self.knownRecordsKey),
+            subscriptionRecordURLs: defaults.dictionary(forKey: Self.subscriptionRecordURLsKey) as? [String: String] ?? [:],
+            episodeLocalModifiedDates: defaults.dictionary(forKey: Self.episodeLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:],
+            subscriptionLocalModifiedDates: defaults.dictionary(forKey: Self.subscriptionLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:],
+            settingsLocalModifiedDate: defaults.object(forKey: Self.settingsLocalModifiedDateKey) as? Date,
+            scrollPositionsLocalModifiedDate: defaults.object(forKey: Self.scrollPositionsLocalModifiedDateKey) as? Date,
+            lastSyncDate: defaults.object(forKey: Self.lastSyncDateKey) as? Date
+        )
+    }
+
+    private nonisolated static func recordToSaveForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord? {
         if recordID.recordName.hasPrefix(RecordPrefix.device) {
-            return deviceRecord(for: recordID)
+            return deviceRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
         }
         if recordID.recordName.hasPrefix(RecordPrefix.episode) {
-            guard episodesSyncEnabled else { return nil }
-            return await episodeRecord(for: recordID)
+            guard snapshot.episodesSyncEnabled else { return nil }
+            return episodeRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
         }
         if recordID.recordName.hasPrefix(RecordPrefix.subscription) {
-            guard subscriptionsSyncEnabled else { return nil }
-            return await subscriptionRecord(for: recordID)
+            guard snapshot.subscriptionsSyncEnabled else { return nil }
+            return subscriptionRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
         }
         if recordID.recordName == RecordPrefix.appSettings {
-            guard settingsSyncEnabled else { return nil }
-            return appSettingsRecord(for: recordID)
+            guard snapshot.settingsSyncEnabled else { return nil }
+            return appSettingsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
         }
         if recordID.recordName == RecordPrefix.listScrollPositions {
-            guard episodesSyncEnabled else { return nil }
-            return listScrollPositionsRecord(for: recordID)
+            guard snapshot.episodesSyncEnabled else { return nil }
+            return listScrollPositionsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
         }
         return nil
     }
 
-    private func deviceRecord(for recordID: CKRecord.ID) -> CKRecord {
-        let record = mutableRecord(recordType: RecordKind.device, recordID: recordID)
+    private nonisolated static func deviceRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
         let now = Date()
-        var payload = localDevicePayload()
-        if deviceRecordShouldStampSyncDate {
+        var payload = localDevicePayloadForSyncEngineCallback(snapshot: snapshot)
+        if snapshot.deviceRecordShouldStampSyncDate {
             payload["lastSyncDate"] = now
         }
         payload["updatedAt"] = now
-        populate(record, payload: payload, updatedAt: now)
-        record["deviceID"] = deviceID as CKRecordValue
-        updateDeviceCache(with: payload)
+        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.device, recordID: recordID, knownRecords: snapshot.knownRecords)
+        populateForSyncEngineCallback(record, payload: payload, updatedAt: now, deviceID: snapshot.deviceID)
+        record["deviceID"] = snapshot.deviceID as CKRecordValue
         return record
     }
 
-    private func episodeRecord(for recordID: CKRecord.ID) async -> CKRecord? {
+    private nonisolated static func episodeRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord? {
         let objectHash = String(recordID.recordName.dropFirst(RecordPrefix.episode.count))
-        let updatedAt = episodeLocalModifiedDate(for: objectHash) ?? Date()
-        guard let payload = await episodeStatePayload(forObjectHash: objectHash, updatedAt: updatedAt) else { return nil }
-
-        let record = mutableRecord(recordType: RecordKind.episodeState, recordID: recordID)
-        populate(record, payload: payload, updatedAt: updatedAt)
+        let updatedAt = date(from: snapshot.episodeLocalModifiedDates[objectHash]) ?? Date()
+        guard let payload = episodeStatePayloadForSyncEngineCallback(forObjectHash: objectHash, updatedAt: updatedAt, deviceID: snapshot.deviceID) else { return nil }
+        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.episodeState, recordID: recordID, knownRecords: snapshot.knownRecords)
+        populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
-    private func episodeStatePayload(forObjectHash objectHash: String, updatedAt: Date) async -> [String: Any]? {
-        guard let context = databaseManager.newBackgroundContext() else { return nil }
-        let currentDeviceID = deviceID
-        return await context.perform {
+    private nonisolated static func episodeStatePayloadForSyncEngineCallback(forObjectHash objectHash: String, updatedAt: Date, deviceID: String) -> [String: Any]? {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return nil }
+        return context.performAndWait {
             let request = NSFetchRequest<CDEpisode>(entityName: "Episode")
             request.fetchLimit = 1
             request.includesSubentities = false
@@ -752,29 +798,25 @@ import UIKit
                 "position": Int(episode.position),
                 "starred": episode.starred,
                 "duration": Int(episode.duration),
-                "deviceID": currentDeviceID,
+                "deviceID": deviceID,
                 "updatedAt": updatedAt,
             ]
         }
     }
 
-    private func subscriptionRecord(for recordID: CKRecord.ID) async -> CKRecord? {
-        guard let feedURL = subscriptionRecordURL(for: recordID.recordName) else {
-            return nil
-        }
-
-        let updatedAt = subscriptionLocalModifiedDate(for: feedURL) ?? Date()
-        guard let payload = await subscriptionPayload(forFeedURL: feedURL, updatedAt: updatedAt) else { return nil }
-        let record = mutableRecord(recordType: RecordKind.subscription, recordID: recordID)
-        populate(record, payload: payload, updatedAt: updatedAt)
+    private nonisolated static func subscriptionRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord? {
+        guard let feedURL = snapshot.subscriptionRecordURLs[recordID.recordName] else { return nil }
+        let updatedAt = date(from: snapshot.subscriptionLocalModifiedDates[feedURL]) ?? Date()
+        guard let payload = subscriptionPayloadForSyncEngineCallback(forFeedURL: feedURL, updatedAt: updatedAt, deviceID: snapshot.deviceID) else { return nil }
+        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.subscription, recordID: recordID, knownRecords: snapshot.knownRecords)
+        populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
-    private func subscriptionPayload(forFeedURL feedURL: String, updatedAt: Date) async -> [String: Any]? {
-        guard let context = databaseManager.newBackgroundContext() else { return nil }
-        let currentDeviceID = deviceID
-        let internalKeys = internalFeedPropertyKeys
-        return await context.perform {
+    private nonisolated static func subscriptionPayloadForSyncEngineCallback(forFeedURL feedURL: String, updatedAt: Date, deviceID: String) -> [String: Any]? {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return nil }
+        let internalKeys = internalFeedPropertyKeysForSyncEngineCallback()
+        return context.performAndWait {
             let request = NSFetchRequest<CDFeed>(entityName: "Feed")
             request.fetchLimit = 1
             request.includesSubentities = false
@@ -805,46 +847,274 @@ import UIKit
                 "username": feed.username ?? "",
                 "password": feed.password ?? "",
                 "properties": properties,
-                "deviceID": currentDeviceID,
+                "deviceID": deviceID,
                 "updatedAt": updatedAt,
             ]
         }
     }
 
-    private func appSettingsRecord(for recordID: CKRecord.ID) -> CKRecord {
-        let updatedAt = settingsLocalModifiedDate() ?? Date()
-        let record = mutableRecord(recordType: RecordKind.appSettings, recordID: recordID)
-        populate(record, payload: appSettingsPayload(updatedAt: updatedAt), updatedAt: updatedAt)
+    private nonisolated static func appSettingsRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+        let updatedAt = snapshot.settingsLocalModifiedDate ?? Date()
+        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.appSettings, recordID: recordID, knownRecords: snapshot.knownRecords)
+        populateForSyncEngineCallback(record, payload: appSettingsPayloadForSyncEngineCallback(updatedAt: updatedAt, deviceID: snapshot.deviceID), updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
-    private func listScrollPositionsRecord(for recordID: CKRecord.ID) -> CKRecord {
-        let updatedAt = scrollPositionsLocalModifiedDate() ?? ICListScrollPositionsLastModifiedDate() ?? Date()
-        let record = mutableRecord(recordType: RecordKind.listScrollPositions, recordID: recordID)
+    private nonisolated static func listScrollPositionsRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+        let updatedAt = snapshot.scrollPositionsLocalModifiedDate ?? ICListScrollPositionsLastModifiedDate() ?? Date()
         let payload: [String: Any] = [
             "positions": ICListScrollPositionsSnapshot() ?? [:],
             "lastModified": updatedAt,
-            "deviceID": deviceID,
+            "deviceID": snapshot.deviceID,
             "updatedAt": updatedAt,
         ]
-        populate(record, payload: payload, updatedAt: updatedAt)
+        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.listScrollPositions, recordID: recordID, knownRecords: snapshot.knownRecords)
+        populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
-    private func populate(_ record: CKRecord, payload: [String: Any], updatedAt: Date) {
+    private nonisolated static func mutableRecordForSyncEngineCallback(recordType: CKRecord.RecordType, recordID: CKRecord.ID, knownRecords: [String: Data]) -> CKRecord {
+        if let knownRecord = knownRecordForSyncEngineCallback(for: recordID, knownRecords: knownRecords), knownRecord.recordType == recordType {
+            return knownRecord
+        }
+        return CKRecord(recordType: recordType, recordID: recordID)
+    }
+
+    private nonisolated static func populateForSyncEngineCallback(_ record: CKRecord, payload: [String: Any], updatedAt: Date, deviceID: String) {
         record["schemaVersion"] = Self.schemaVersion as CKRecordValue
         record["updatedAt"] = updatedAt as CKRecordValue
         record["deviceID"] = deviceID as CKRecordValue
-        if let data = propertyListData(from: payload) {
+        if let data = propertyListDataForSyncEngineCallback(from: payload) {
             record.encryptedValues["payload"] = data as CKRecordValue
         }
     }
 
-    private func mutableRecord(recordType: CKRecord.RecordType, recordID: CKRecord.ID) -> CKRecord {
-        if let knownRecord = knownRecord(for: recordID), knownRecord.recordType == recordType {
-            return knownRecord
+    private nonisolated static func localDevicePayloadForSyncEngineCallback(snapshot: SyncEngineCallbackSnapshot) -> [String: Any] {
+        let marketingName = deviceMarketingNameForSyncEngineCallback()
+        var payload: [String: Any] = [
+            "deviceID": snapshot.deviceID,
+            "name": marketingName,
+            "model": marketingName,
+            "systemVersion": ProcessInfo.processInfo.operatingSystemVersionString,
+            "appVersion": appVersionStringForSyncEngineCallback(),
+            "episodesEnabled": snapshot.episodesSyncEnabled,
+            "subscriptionsEnabled": snapshot.subscriptionsSyncEnabled,
+            "settingsEnabled": snapshot.settingsSyncEnabled,
+        ]
+        if let lastSyncDate = snapshot.lastSyncDate {
+            payload["lastSyncDate"] = lastSyncDate
         }
-        return CKRecord(recordType: recordType, recordID: recordID)
+        return payload
+    }
+
+    private nonisolated static func appSettingsPayloadForSyncEngineCallback(updatedAt: Date, deviceID: String) -> [String: Any] {
+        let defaults = UserDefaults.standard
+        let domain = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
+        var values: [String: Any] = [:]
+        for (key, value) in domain {
+            guard shouldSyncSettingsKeyForSyncEngineCallback(key), isValidSettingsValueForSyncEngineCallback(value) else { continue }
+            values[key] = value
+        }
+
+        let credentials = ICRemoteChapterCredentialStore.backupCredentialValues()
+        return [
+            "values": values,
+            "credentials": credentials,
+            "deviceID": deviceID,
+            "updatedAt": updatedAt,
+        ]
+    }
+
+    private nonisolated static func shouldSyncSettingsKeyForSyncEngineCallback(_ key: String) -> Bool {
+        if syncMetadataKeysForSyncEngineCallback().contains(key) { return false }
+        if key.hasPrefix("ICiCloudSync") { return false }
+        if transientSettingsKeysForSyncEngineCallback().contains(key) { return false }
+        return true
+    }
+
+    private nonisolated static func syncMetadataKeysForSyncEngineCallback() -> Set<String> {
+        [
+            Self.deviceIDKey,
+            Self.engineStateKey,
+            Self.knownRecordsKey,
+            Self.deviceCacheKey,
+            Self.subscriptionRecordURLsKey,
+            Self.pendingEpisodeStatesKey,
+            Self.pendingSubscriptionPayloadsKey,
+            Self.episodeLocalModifiedDatesKey,
+            Self.subscriptionLocalModifiedDatesKey,
+            Self.settingsLocalModifiedDateKey,
+            Self.scrollPositionsLocalModifiedDateKey,
+            Self.lastSyncDateKey,
+            Self.lastStatusKey,
+            Self.lastErrorKey,
+            Self.deviceRecordShouldStampSyncDateKey,
+        ]
+    }
+
+    private nonisolated static func transientSettingsKeysForSyncEngineCallback() -> Set<String> {
+        [
+            LastRefreshSubscriptionDate,
+            FirstLaunchDate,
+            kUIPersistenceMainSidebarItem,
+            kUIPersistenceSubscriptionsSelectedFeedUID,
+            kUIPersistenceSubscriptionsSearchTerm,
+            kUIPersistencePlaylistsSelectedPlaylistUID,
+            kUIPersistenceBookmarkSelectedEpisodeGUID,
+            kUIPersistenceDirectorySearchSearchString,
+            kUIPersistenceDirectorySearchSelectedScopeIndex,
+            UIStateSelectedFeed,
+            UIStateSelectedEpisode,
+            kUIPersistenceListScrollPositions,
+            kUIPersistenceListScrollPositionsLastModified,
+            UncompletedSleepTimeInterval,
+            "TranscriptionBackgroundTaskActive",
+        ]
+    }
+
+    private nonisolated static func internalFeedPropertyKeysForSyncEngineCallback() -> Set<String> {
+        [
+            "episodeLoadingComplete",
+            "loadedEpisodeCount",
+            "totalExpectedEpisodes",
+            "cachedPlayerTintColor",
+        ]
+    }
+
+    private nonisolated static func isValidSettingsValueForSyncEngineCallback(_ value: Any) -> Bool {
+        switch value {
+        case is String, is NSNumber, is Date, is Data:
+            return true
+        case let array as [Any]:
+            return array.allSatisfy { isValidSettingsValueForSyncEngineCallback($0) }
+        case let dictionary as [String: Any]:
+            return dictionary.values.allSatisfy { isValidSettingsValueForSyncEngineCallback($0) }
+        case let dictionary as NSDictionary:
+            for (key, value) in dictionary {
+                guard key is String, isValidSettingsValueForSyncEngineCallback(value) else { return false }
+            }
+            return true
+        case let array as NSArray:
+            return array.allSatisfy { isValidSettingsValueForSyncEngineCallback($0) }
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func knownRecordForSyncEngineCallback(for recordID: CKRecord.ID, knownRecords: [String: Data]) -> CKRecord? {
+        guard let data = knownRecords[recordID.recordName] else { return nil }
+        do {
+            let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
+            unarchiver.requiresSecureCoding = true
+            defer { unarchiver.finishDecoding() }
+            return CKRecord(coder: unarchiver)
+        } catch {
+            return nil
+        }
+    }
+
+    private nonisolated static func normalizedDataDictionaryForSyncEngineCallback(forKey key: String) -> [String: Data] {
+        guard let rawRecords = UserDefaults.standard.dictionary(forKey: key) else { return [:] }
+        var records: [String: Data] = [:]
+        for (recordName, value) in rawRecords {
+            if let data = value as? Data {
+                records[recordName] = data
+            } else if let data = value as? NSData {
+                records[recordName] = data as Data
+            }
+        }
+        return records
+    }
+
+    private nonisolated static func propertyListDataForSyncEngineCallback(from dictionary: [String: Any]) -> Data? {
+        try? PropertyListSerialization.data(fromPropertyList: dictionary, format: .binary, options: 0)
+    }
+
+    private nonisolated static func deviceIDForSyncEngineCallback() -> String {
+        let defaults = UserDefaults.standard
+        if let stored = defaults.string(forKey: Self.deviceIDKey), !stored.isEmpty {
+            return stored
+        }
+        let newID = UUID().uuidString
+        defaults.set(newID, forKey: Self.deviceIDKey)
+        return newID
+    }
+
+    private nonisolated static func deviceMarketingNameForSyncEngineCallback() -> String {
+        let identifier = deviceHardwareIdentifierForSyncEngineCallback()
+        if let name = deviceMarketingNamesForSyncEngineCallback()[identifier] {
+            return name
+        }
+        return identifier.isEmpty ? "Unknown Device" : identifier
+    }
+
+    private nonisolated static func deviceHardwareIdentifierForSyncEngineCallback() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingCString: $0) ?? ""
+            }
+        }
+    }
+
+    private nonisolated static func appVersionStringForSyncEngineCallback() -> String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        if version.isEmpty { return build }
+        if build.isEmpty { return version }
+        return "\(version) (\(build))"
+    }
+
+    private nonisolated static func deviceMarketingNamesForSyncEngineCallback() -> [String: String] {
+        [
+            "iPhone12,1": "iPhone 11",
+            "iPhone12,3": "iPhone 11 Pro",
+            "iPhone12,5": "iPhone 11 Pro Max",
+            "iPhone12,8": "iPhone SE (2nd generation)",
+            "iPhone13,1": "iPhone 12 mini",
+            "iPhone13,2": "iPhone 12",
+            "iPhone13,3": "iPhone 12 Pro",
+            "iPhone13,4": "iPhone 12 Pro Max",
+            "iPhone14,2": "iPhone 13 Pro",
+            "iPhone14,3": "iPhone 13 Pro Max",
+            "iPhone14,4": "iPhone 13 mini",
+            "iPhone14,5": "iPhone 13",
+            "iPhone14,6": "iPhone SE (3rd generation)",
+            "iPhone14,7": "iPhone 14",
+            "iPhone14,8": "iPhone 14 Plus",
+            "iPhone15,2": "iPhone 14 Pro",
+            "iPhone15,3": "iPhone 14 Pro Max",
+            "iPhone15,4": "iPhone 15",
+            "iPhone15,5": "iPhone 15 Plus",
+            "iPhone16,1": "iPhone 15 Pro",
+            "iPhone16,2": "iPhone 15 Pro Max",
+            "iPhone17,1": "iPhone 16 Pro",
+            "iPhone17,2": "iPhone 16 Pro Max",
+            "iPhone17,3": "iPhone 16",
+            "iPhone17,4": "iPhone 16 Plus",
+            "iPhone17,5": "iPhone 16e",
+            "iPhone18,1": "iPhone 17 Pro",
+            "iPhone18,2": "iPhone 17 Pro Max",
+            "iPhone18,3": "iPhone 17",
+            "iPhone18,4": "iPhone Air",
+        ]
+    }
+
+    private nonisolated static func date(from timeInterval: TimeInterval?) -> Date? {
+        guard let timeInterval, timeInterval > 0 else { return nil }
+        return Date(timeIntervalSince1970: timeInterval)
+    }
+
+    private nonisolated static func logSyncEvent(_ message: String, snapshot: SyncEngineCallbackSnapshot, pendingRecordZoneChanges: Int, metadata: [String: Any] = [:]) {
+        var details = metadata
+        details["episodesSyncEnabled"] = snapshot.episodesSyncEnabled
+        details["subscriptionsSyncEnabled"] = snapshot.subscriptionsSyncEnabled
+        details["settingsSyncEnabled"] = snapshot.settingsSyncEnabled
+        details["anySyncEnabled"] = snapshot.anySyncEnabled
+        details["pendingRecordZoneChanges"] = pendingRecordZoneChanges
+        details["isMainThread"] = Thread.isMainThread
+        ICDiagnosticLogger.shared.logEvent("icloud-sync", message: message, metadata: details as NSDictionary)
     }
 
     private func handleAccountChange(_ event: CKSyncEngine.Event.AccountChange) {
@@ -1587,6 +1857,7 @@ import UIKit
             Self.lastSyncDateKey,
             Self.lastStatusKey,
             Self.lastErrorKey,
+            Self.deviceRecordShouldStampSyncDateKey,
         ]
     }
 
@@ -1630,10 +1901,6 @@ import UIKit
         }
     }
 
-    private func propertyListData(from dictionary: [String: Any]) -> Data? {
-        try? PropertyListSerialization.data(fromPropertyList: dictionary, format: .binary, options: 0)
-    }
-
     private func payloadDictionary(from record: CKRecord) -> [String: Any]? {
         guard let rawPayload = record.encryptedValues["payload"] else { return nil }
         let data: Data
@@ -1662,18 +1929,6 @@ import UIKit
             }
         }
         return records
-    }
-
-    private func knownRecord(for recordID: CKRecord.ID) -> CKRecord? {
-        guard let data = knownRecords()[recordID.recordName] else { return nil }
-        do {
-            let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
-            unarchiver.requiresSecureCoding = true
-            defer { unarchiver.finishDecoding() }
-            return CKRecord(coder: unarchiver)
-        } catch {
-            return nil
-        }
     }
 
     private func rememberServerRecord(_ record: CKRecord) {
@@ -1876,6 +2131,7 @@ import UIKit
             setStatus(NSLocalizedString("Keine Änderungen", comment: ""))
         }
         deviceRecordShouldStampSyncDate = false
+        setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
         syncedUserDataInCurrentRun = false
         postStateChanged()
     }
@@ -1938,6 +2194,7 @@ import UIKit
     private func setError(_ error: Error) {
         clearSyncProgress()
         deviceRecordShouldStampSyncDate = false
+        setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
         syncedUserDataInCurrentRun = false
         let status = displayStatus(for: error)
         let nsError = error as NSError

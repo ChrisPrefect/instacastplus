@@ -500,6 +500,7 @@ enum {
 - (void)_appendTranscriptURLAttemptForRawValue:(NSString*)rawValue
                                        episode:(CDEpisode*)episode
                                       attempts:(NSMutableOrderedSet<NSString*>*)attempts;
+- (void) _syncChapterImageCollectionToCurrentArtwork;
 @end
 
 
@@ -568,20 +569,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             PlaybackManager* pman = [PlaybackManager playbackManager];
             if ([pman.artworks count] > 0) {
                 self->chapterImagesArray = pman.artworks;
-                // +1 for episode artwork at index 0
-                [self.chapterImagesCollection reloadData];
-                // Stay on episode artwork (index 0) until currentArtwork changes
+                [weakSelf _syncChapterImageCollectionToCurrentArtwork];
             }
         }];
 
         [pman addTaskObserver:self forKeyPath:@"currentArtwork" task:^(id obj, NSDictionary *change) {
-            PlaybackManager* pman = [PlaybackManager playbackManager];
-            if (self->chapterImagesArray.count > 0) {
-                // currentArtwork -1 = no chapter image active, show episode artwork (index 0)
-                // currentArtwork 0+ maps to collection index 1+
-                NSUInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
-                [weakSelf changeChapterImageIndex:collectionIndex];
-            }
+            [weakSelf _syncChapterImageCollectionToCurrentArtwork];
         }];
         
         [pman addTaskObserver:self forKeyPath:@"time" task:^(id obj, NSDictionary *change) {
@@ -2918,7 +2911,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         self.chapterImagesCollection.delegate = self;
         self.chapterImagesCollection.dataSource = self;
         [self.chapterImagesCollection reloadData];
-        [self updateCollectionsImage:0];
+        [self _syncChapterImageCollectionToCurrentArtwork];
         [self _applyTranscriptVisibility];
         [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
 
@@ -2994,6 +2987,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.tableView.scrollEnabled = hasContent;
 
     [self.chapterImagesCollection reloadData];
+    [self _syncChapterImageCollectionToCurrentArtwork];
     [self _applyTranscriptVisibility];
     [self _focusTranscriptCueAtIndex:self.activeTranscriptCueIndex animated:NO];
 }
@@ -3098,7 +3092,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     {
         self.videoViewController = nil;
     }
-    [self updateCollectionsImage:0];
+    [self _syncChapterImageCollectionToCurrentArtwork];
     if (self.isViewLoaded && self.view.window != nil) {
         [self.tableView scrollRectToVisible:CGRectMake(0, 0, 10, 10) animated:YES];
     }
@@ -3185,7 +3179,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     if (_image != image) {
         _image = image;
         self.imageView.image = image;
-        [self updateCollectionsImage:0];
+        [self _syncChapterImageCollectionToCurrentArtwork];
     }
 }
 
@@ -3875,12 +3869,21 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 }
 
 -(void)afterTimerSetCurrentImg:(NSTimer *)timer {
-    PlaybackManager* pman = [PlaybackManager playbackManager];
-    // currentArtwork 0 maps to collection index 1
-    NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
-    [self changeChapterImageIndex:collectionIndex];
+    [self _syncChapterImageCollectionToCurrentArtwork];
     [currentImageTimer invalidate];
     currentImageTimer = nil;
+}
+
+- (void)_syncChapterImageCollectionToCurrentArtwork
+{
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    if (!pman.movingVideo && [pman.artworks count] > 0)
+    {
+        self->chapterImagesArray = pman.artworks;
+    }
+
+    NSInteger collectionIndex = (pman.currentArtwork >= 0) ? pman.currentArtwork + 1 : 0;
+    [self changeChapterImageIndex:collectionIndex];
 }
 
 - (void)changeChapterImageIndex:(NSUInteger)indexNumber
@@ -3903,18 +3906,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             [self.chapterImagesCollection scrollToItemAtIndexPath:[NSIndexPath indexPathForRow:indexNumber inSection:0] atScrollPosition:UICollectionViewScrollPositionCenteredHorizontally animated:false];
         }
     }
-}
-
-- (void)updateCollectionsImage:(NSUInteger)indexNumber {
-    PlaybackManager* pman = [PlaybackManager playbackManager];
-    if (!pman.movingVideo && [pman.artworks count] > 0)
-    {
-        self->chapterImagesArray = pman.artworks;
-    }
-    [self.chapterImagesCollection reloadData];
-}
-
-- (void)updateCollectionsImage:(NSArray *)images atIndex:(NSUInteger)indexNumber {
 }
 
 @end

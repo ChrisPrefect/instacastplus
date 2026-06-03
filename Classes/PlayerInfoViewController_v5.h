@@ -32,7 +32,6 @@
 
 - (void) layoutHeaderView;
 - (void) reload;
-- (void)updateCollectionsImage:(NSArray *)images atIndex:(NSUInteger)indexNumber;
 - (void)changeChapterImageIndex:(NSUInteger)indexNumber;
 - (void)setTranscriptVisibleFromControl:(BOOL)visible;
 @end

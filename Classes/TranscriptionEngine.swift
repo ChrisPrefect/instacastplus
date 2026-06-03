@@ -236,13 +236,14 @@ private struct ICDiagnosticLogLine: Encodable {
     }
 
     @objc func clearCrashLogMailArtifacts() {
-        queue.async {
+        queue.sync {
             let fileManager = FileManager.default
             let diagnosticsLog = self.logsDirectoryURL().appendingPathComponent("Diagnostics.jsonl")
             let applicationLog = URL(fileURLWithPath: (Bundle.pathToLogsDirectory() as NSString).appendingPathComponent("Application.Log"))
             try? fileManager.removeItem(at: diagnosticsLog)
             try? fileManager.removeItem(at: applicationLog)
         }
+        (UIApplication.shared as? Application)?.initializeLoggers()
     }
 
     @objc func logStorageLayout(_ reason: String) {

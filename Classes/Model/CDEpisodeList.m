@@ -333,7 +333,10 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
             NSError* mainError = nil;
             CDEpisodeList* calculatedList = (CDEpisodeList*)[mainContext existingObjectWithID:selfId error:&mainError];
             if (!calculatedList || mainError) {
-                ErrLog(@"error getting episode list in main context: %@", mainError);
+                if (mainError) {
+                    ErrLog(@"error getting episode list in main context: %@", mainError);
+                }
+                completion(count);
                 return;
             }
 

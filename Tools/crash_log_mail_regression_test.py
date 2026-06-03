@@ -39,7 +39,8 @@ require("previousSessionEndedUnexpectedly" in LOGGER, "Crash log exports must in
 attachments = LOGGER.split("@objc func crashLogMailAttachments", 1)[1].split("\n    }", 1)[0]
 for file_name in ["Diagnostics.jsonl", "DiagnosticsSessionState.json", "Application.Log"]:
     require(file_name in attachments, f"Crash log mail must attach {file_name}.")
-require("NSData(contentsOf:" in attachments, "Crash log mail attachments must be loaded as NSData for MFMailComposeViewController.")
+require("combinedCrashLogMailAttachmentData" in attachments, "Crash log mail attachments must be combined into one NSData payload for MFMailComposeViewController.")
+require(attachments.count("ICDiagnosticMailAttachment(") == 1, "Crash log mail must create exactly one attachment.")
 
 body = LOGGER.split("@objc func crashLogMailBody", 1)[1].split("\n    }", 1)[0]
 for key in ["previousSessionEndedUnexpectedly", "previousSessionState", "appVersion", "build"]:
