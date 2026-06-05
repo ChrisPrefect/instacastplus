@@ -1,79 +1,32 @@
-## Agent Instructions
+# AGENTS.md
 
-- Building is allowed for larger changes.
-- Run builds/tests only for larger changes.
-- For small changes, do not run builds/tests; the user verifies directly.
-- If build/test verification is needed but not executed, provide exact commands for the user.
-- When I report a bug, don't start by trying to fix it. Instead, start by writing a test that reproduces the bug. Then, have subagents try to fix the bug and prove it with a passing test.
+This repository uses [CLAUDE.md](./CLAUDE.md) as the primary project instruction file.
+Read it before changing code. Do not duplicate or reinterpret it loosely.
 
-## Behavioral Guidelines
+## Bugfix Gate
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+When the user reports a bug, regression, crash, flaky UI behavior, or says a previous fix did not work:
 
-### 1. Think Before Coding
+1. Do not start by patching code.
+2. Restate the observed symptom, expected behavior, actual behavior, platform, and reproduction steps. If any of these are unclear, ask before changing code.
+3. Reproduce the bug or create the closest deterministic proof. For UI/lifecycle bugs, prefer simulator/app reproduction, logs, screenshots, or a focused source-aware regression test.
+4. Write or extend a failing regression test before the production fix. Confirm it fails for the intended reason.
+5. Only after the failing proof exists, identify the real root cause from code, logs, and lifecycle/state transitions.
+6. Do not use workarounds, fallback behavior, delays, broad reloads, speculative guards, or "try this" fixes.
+7. Make the smallest surgical code change that explains the failing test and the observed bug.
+8. Run the exact regression test again and any nearby focused checks needed to prove the fix.
+9. In the final response, state problem, root cause, fix, and validation commands.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+If the bug cannot be reproduced with the available information, stop and ask for the missing evidence instead of guessing.
 
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## Build And Test Policy
 
-### 2. Simplicity First
+Follow `CLAUDE.md`:
 
-**Minimum code that solves the problem. Nothing speculative.**
+- Do not run full builds automatically unless the change is large or build verification is specifically needed.
+- For small changes, prefer focused tests or `git diff --check`; the user can verify directly.
+- If build/test verification is needed but not executed, provide the exact commands.
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+## Scope Discipline
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-### 5. UI Reactivity
-
-**UI-Reaktivität hat oberste Priorität.**
-
-- Alle Funktionen, die die UI verlangsamen können, müssen asynchron im Hintergrund ausgeführt werden.
-- UI-Aktionen wie Taps, Switches, Navigation und App-Start dürfen keine großen Datenbank-Scans, Netzwerkoperationen, Dateizugriffe oder Sync-Queue-Aufbauten synchron ausführen.
-- UI-Updates müssen klein und gezielt bleiben; sichtbare Controls dürfen während der Interaktion nicht unnötig durch komplette Reloads neu aufgebaut werden.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+Follow `CLAUDE.md` and keep every changed line traceable to the user request. Do not refactor adjacent code, clean up unrelated code, or revert unrelated dirty files unless the user explicitly asks.

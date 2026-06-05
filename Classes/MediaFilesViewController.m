@@ -44,7 +44,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (BOOL)_isPodcastMode
 {
-    return (self.sortMode == kSortByPodcast && self.podcastSections.count > 0);
+    return (self.sortMode == kSortByPodcast);
 }
 
 - (BOOL)_isPodcastHeaderAtIndexPath:(NSIndexPath *)indexPath
@@ -74,7 +74,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 - (NSInteger)_deleteAllButtonSection
 {
     if ([self _isPodcastMode]) {
-        return self.podcastSections.count;
+        return MAX((NSInteger)self.podcastSections.count, 1);
     }
     return 1;
 }
@@ -290,7 +290,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
     if ([self _isPodcastMode]) {
-        return self.podcastSections.count + 1; // +1 for delete button
+        return MAX((NSInteger)self.podcastSections.count, 1) + 1; // +1 for delete button
     }
     return 2; // episodes + delete button
 }
@@ -302,6 +302,9 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     }
 
     if ([self _isPodcastMode]) {
+        if (self.podcastSections.count == 0 && section == 0) {
+            return 1;
+        }
         if (section < (NSInteger)self.podcastSections.count) {
             // +1 for podcast header row at index 0
             return [self.podcastSections[section][@"episodes"] count] + 1;
@@ -327,6 +330,24 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     // Podcast mode
     if ([self _isPodcastMode])
     {
+        if (self.podcastSections.count == 0 && indexPath.section == 0)
+        {
+            UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:PlaceholderCellIdentifier];
+            if (cell == nil) {
+                cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:PlaceholderCellIdentifier];
+                cell.backgroundColor = ICGroupCellBackgroundColor;
+            }
+
+            cell.accessoryView = nil;
+            cell.textLabel.text = @"Nothing downloaded yet.".ls;
+            cell.textLabel.textAlignment = NSTextAlignmentCenter;
+            cell.textLabel.font = [UIFont italicSystemFontOfSize:ICFontSize(15)];
+            cell.textLabel.textColor = ICMutedTextColor;
+            cell.selectionStyle = UITableViewCellSelectionStyleNone;
+
+            return cell;
+        }
+
         // Row 0 = podcast header cell
         if (indexPath.row == 0)
         {
@@ -532,7 +553,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     }
 
     if ([self _isPodcastMode]) {
-        return YES; // both header rows and episode rows are editable
+        return (indexPath.section < (NSInteger)self.podcastSections.count); // both header rows and episode rows are editable
     }
 
     // Flat mode

@@ -72,6 +72,9 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     defaults[WidgetThemeDefaultActive] = @YES;
     defaults[EpisodeSwipeLeftAction] = @(ICEpisodeSwipeActionAddToPlayNext);
     [defs registerDefaults:defaults];
+    if (@available(iOS 17.0, *)) {
+        [ICiCloudSyncManager purgeLegacyDefaultsBackedSyncMetadata];
+    }
 
     if (![defs objectForKey:FirstLaunchDate]) {
         [defs setObject:[NSDate date] forKey:FirstLaunchDate];
@@ -296,6 +299,9 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 
     [App initializeLoggers];
     [[ICDiagnosticLogger shared] start];
+    if (@available(iOS 17.0, *)) {
+        [ICiCloudSyncManager logSyncMetadataStorageSnapshot:@"launch"];
+    }
     [[ICDiagnosticLogger shared] recordLifecycle:@"applicationDidFinishLaunching"
                                         metadata:@{
                                             @"launchOptionsCount": @(launchOptions.count),

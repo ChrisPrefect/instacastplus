@@ -250,6 +250,16 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 - (void)toggleSyncOption:(UISwitch*)sender
 {
+    [[ICDiagnosticLogger shared] logEvent:@"icloud-sync-ui"
+                                  message:@"Sync-Schalter ValueChanged empfangen"
+                                 metadata:@{
+        @"row": @(sender.tag),
+        @"requestedOn": @(sender.on),
+        @"tracking": @(sender.tracking),
+        @"highlighted": @(sender.highlighted),
+    }];
+    [ICiCloudSyncManager logSyncMetadataStorageSnapshot:@"icloud-switch-value-changed"];
+
     switch (sender.tag) {
         case ICiCloudSyncOptionRowEpisodes:
             [[ICiCloudSyncManager sharedManager] setEpisodesSyncEnabled:sender.on];
@@ -261,7 +271,20 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
             [[ICiCloudSyncManager sharedManager] setSettingsSyncEnabled:sender.on];
             break;
     }
+
+    [[ICDiagnosticLogger shared] logEvent:@"icloud-sync-ui"
+                                  message:@"Sync-Schalter Manager-Aufruf beendet"
+                                 metadata:@{
+        @"row": @(sender.tag),
+        @"requestedOn": @(sender.on),
+    }];
     [self reloadStatusAndDevicesSections];
+    [[ICDiagnosticLogger shared] logEvent:@"icloud-sync-ui"
+                                  message:@"Sync-Schalter Status/Devices neu geladen"
+                                 metadata:@{
+        @"row": @(sender.tag),
+        @"requestedOn": @(sender.on),
+    }];
 }
 
 - (void)configureSyncNowCell:(UITableViewCell*)cell

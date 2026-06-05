@@ -501,6 +501,7 @@ enum {
                                        episode:(CDEpisode*)episode
                                       attempts:(NSMutableOrderedSet<NSString*>*)attempts;
 - (void) _syncChapterImageCollectionToCurrentArtwork;
+- (void)_setEpisodeArtworkForCell:(ChapterImageCell*)cell collectionView:(UICollectionView*)collectionView indexPath:(NSIndexPath*)indexPath imageURL:(NSURL*)imageURL;
 @end
 
 
@@ -3747,17 +3748,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         CDEpisode* episode = [AudioSession sharedAudioSession].episode;
         CDFeed* feed = episode.feed;
         NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
-        UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
-
-        if (cachedImage) {
-            cell.chapterImageView.image = cachedImage;
-            UIColor *averageColor = [self averageColorFromImage:cachedImage];
-            cell.contentView.backgroundColor = averageColor;
-        }
-        else {
-            cell.chapterImageView.image = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
-            cell.contentView.backgroundColor = [UIColor clearColor];
-        }
+        [self _setEpisodeArtworkForCell:cell collectionView:collectionView indexPath:indexPath imageURL:imageURL];
     }
     else
     {
@@ -3772,19 +3763,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                     UIColor *averageColor = [self averageColorFromImage:platformImage];
                     cell.contentView.backgroundColor = averageColor;
                 } else {
-                    // Fallback to episode/feed artwork when chapter image fails
                     CDEpisode* episode = [AudioSession sharedAudioSession].episode;
                     CDFeed* feed = episode.feed;
                     NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
-                    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
-                    if (cachedImage) {
-                        cell.chapterImageView.image = cachedImage;
-                        UIColor *averageColor = [self averageColorFromImage:cachedImage];
-                        cell.contentView.backgroundColor = averageColor;
-                    } else {
-                        cell.chapterImageView.image = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? [UIImage imageNamed:@"Podcast Placeholder 580"] : [UIImage imageNamed:@"Podcast Placeholder 320"];
-                        cell.contentView.backgroundColor = [UIColor clearColor];
-                    }
+                    [self _setEpisodeArtworkForCell:cell collectionView:collectionView indexPath:indexPath imageURL:imageURL];
                 }
             }];
         }
@@ -3817,6 +3799,41 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                      alpha:1.0];
     self.averageColorCache[key] = color;
     return color;
+}
+
+- (void)_setEpisodeArtworkForCell:(ChapterImageCell*)cell collectionView:(UICollectionView*)collectionView indexPath:(NSIndexPath*)indexPath imageURL:(NSURL*)imageURL
+{
+    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
+    if (cachedImage) {
+        cell.chapterImageView.image = cachedImage;
+        UIColor *averageColor = [self averageColorFromImage:cachedImage];
+        cell.contentView.backgroundColor = averageColor;
+        return;
+    }
+
+    UIImage* existingImage = self.image ?: self.imageView.image ?: cell.chapterImageView.image;
+    if (existingImage) {
+        cell.chapterImageView.image = existingImage;
+        UIColor *averageColor = [self averageColorFromImage:existingImage];
+        cell.contentView.backgroundColor = averageColor;
+    }
+
+    if (!imageURL) {
+        return;
+    }
+
+    [[ImageCacheManager sharedImageCacheManager] imageForURL:imageURL size:320 grayscale:NO sender:cell completion:^(UIImage *image) {
+        if (!image) {
+            return;
+        }
+        ChapterImageCell* currentCell = (ChapterImageCell*)[collectionView cellForItemAtIndexPath:indexPath];
+        if (currentCell != cell) {
+            return;
+        }
+        cell.chapterImageView.image = image;
+        UIColor *averageColor = [self averageColorFromImage:image];
+        cell.contentView.backgroundColor = averageColor;
+    }];
 }
 
 

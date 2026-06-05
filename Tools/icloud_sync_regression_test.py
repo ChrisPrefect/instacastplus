@@ -86,7 +86,7 @@ require("CKSyncEngine" in MANAGER, "iCloud Sync must use CKSyncEngine.")
 require("container.privateCloudDatabase" in MANAGER, "iCloud Sync must use the user's private CloudKit database.")
 require("stateSerialization: loadStateSerialization()" in MANAGER, "CKSyncEngine state must be persisted and restored.")
 require(".saveZone(CKRecordZone(zoneID: zoneID))" in MANAGER, "The custom CloudKit zone must be created by the sync engine.")
-require("syncEngine.sendChanges()" in MANAGER and "syncEngine.fetchChanges()" in MANAGER, "Manual sync must send and fetch changes explicitly.")
+require("syncEngine.sendChanges()" in MANAGER and "syncEngine.fetchChanges()" in MANAGER, "Sync must send and fetch changes explicitly.")
 require('record.encryptedValues["payload"]' in MANAGER, "Synced payloads must be stored in encrypted CloudKit fields.")
 require("handleSentRecordZoneChanges" in MANAGER and "serverRecordChanged" in MANAGER, "Sync must reconcile server change conflicts.")
 require("ICEpisodeState" in MANAGER and "ICSubscription" in MANAGER and "ICAppSettings" in MANAGER, "Episode, subscription, and settings records must be modeled.")
@@ -116,18 +116,18 @@ require("case .didFetchChanges:\n            markSyncCompletedIfFinished()" in e
 require("case .didSendChanges:\n            break" in event_handler, "A finished send operation must not overwrite failed record or zone send status.")
 require("as? [AnyHashable: Any]" in method_body(MANAGER, "@objc func shouldHandleRemoteNotification"), "Malformed remote notification payloads must not crash iCloud Sync detection.")
 
-queue_enabled_data = method_body(MANAGER, "private func queueCurrentEnabledDataForUpload")
-require("queueSettingsRecord()" in queue_enabled_data, "Manual Sync must queue settings immediately instead of relying on a debounce timer.")
-require("markSettingsLocallyChangedAndQueue()" not in queue_enabled_data, "Current enabled data upload must not use delayed settings queueing.")
-require("private func queueCurrentEnabledDataForUpload() async" in MANAGER, "Full iCloud queueing must be async so UI taps are not blocked.")
-require("await queueAllEpisodeStateRecords()" in queue_enabled_data, "Episode initial queueing must yield while collecting large libraries.")
-require("await queueAllSubscriptionRecords()" in queue_enabled_data, "Subscription initial queueing must yield while collecting large libraries.")
-require("Task.yield()" in queue_enabled_data, "Full iCloud queueing must yield back to the UI between large sync categories.")
+initial_upload_apply = method_body(MANAGER, "private func applyInitialUploadPlan")
+require("appSettingsRecordID()" in initial_upload_apply, "Initial settings upload must queue settings immediately instead of relying on a debounce timer.")
+require("markSettingsLocallyChangedAndQueue()" not in initial_upload_apply, "Current enabled data upload must not use delayed settings queueing.")
+require("buildInitialUploadPlan" in MANAGER, "Initial iCloud queueing must build the large upload plan away from the switch tap.")
+require("applyInitialEpisodeQueue" in initial_upload_apply, "Episode initial queueing must apply pending changes in chunks.")
+require("applyInitialSubscriptionQueue" in initial_upload_apply, "Subscription initial queueing must apply pending changes in chunks.")
+require("Task.yield()" in initial_upload_apply, "Full iCloud queueing must yield back to the UI between large sync categories.")
 
 start_body = source_between(MANAGER, "@objc func start()", "\n    @objc func setEpisodesSyncEnabled")
 require("queueDeviceRecord()" not in start_body, "App launch must not queue a device-only sync that makes Last Sync look current.")
 require("queueDeviceRecordForPendingUserDataIfNeeded()" in start_body, "App launch may only queue the device record when user data is already pending.")
-require("scheduleCurrentEnabledDataForUpload()" not in start_body, "App launch must not enqueue the whole library.")
+require("if hasInitialUploadBackfillWork" in start_body and "scheduleCurrentEnabledDataForUpload()" in start_body, "App launch may only resume an already-pending paged initial backfill.")
 require("queueCurrentEnabledDataForUpload()" not in start_body, "App launch must not synchronously queue the whole library.")
 
 sent_changes = method_body(MANAGER, "private func handleSentRecordZoneChanges")
@@ -152,7 +152,7 @@ require("snapshot.deviceRecordShouldStampSyncDate" in device_record, "Device rec
 require('if snapshot.deviceRecordShouldStampSyncDate {\n            payload["lastSyncDate"] = now' in device_record, "Device-only records must not move Last Sync to now.")
 queue_device_record = method_body(MANAGER, "private func queueDeviceRecord")
 require("setSyncMetadata(true, forKey: Self.deviceRecordShouldStampSyncDateKey)" in queue_device_record, "Device Last Sync stamping must survive CKSyncEngine queue callbacks and app restarts.")
-add_pending_saves = method_body(MANAGER, "private func addPendingSaves")
+add_pending_saves = method_body(MANAGER, "private func addPendingSaves(_ recordIDs: [CKRecord.ID], pendingKeys: inout Set<String>")
 require("containsUserDataRecordID(recordIDs)" in add_pending_saves, "Pending user data must be detected before queueing the device sync date.")
 require("queueDeviceRecord(stampLastSyncDate: true)" in add_pending_saves, "User-data changes must queue a device record that can publish the real data-sync date.")
 add_pending_delete = method_body(MANAGER, "private func addPendingDelete")
@@ -176,14 +176,21 @@ require('logSyncEvent("iCloud Sync deaktiviert"' in sync_options_changed, "Disab
 initial_queue_schedule = method_body(MANAGER, "private func scheduleCurrentEnabledDataForUpload")
 require('logSyncEvent("Initiale iCloud-Queue geplant"' in initial_queue_schedule, "Scheduling the initial upload queue must be logged.")
 require('logSyncEvent("Initiale iCloud-Queue gestartet"' in initial_queue_schedule, "Starting the initial upload queue must be logged after the UI-yield.")
-require('logSyncEvent("Initiale iCloud-Queue abgeschlossen"' in initial_queue_schedule, "Finishing the initial upload queue must be logged.")
-require("Task.detached" in initial_queue_schedule and "Task { @MainActor" not in initial_queue_schedule, "Initial iCloud queueing must not inherit the MainActor from the switch tap.")
+require('logSyncEvent("Initiale iCloud-Queue abgeschlossen"' in initial_upload_apply, "Finishing the initial upload queue must be logged.")
+require("Task.detached" in initial_queue_schedule and "Task { @MainActor" not in initial_queue_schedule, "Initial iCloud queue planning must not inherit the MainActor from the switch tap.")
+require("await self.queueCurrentEnabledDataForUpload()" not in initial_queue_schedule, "Detached initial iCloud queueing must not hop directly back to the MainActor.")
+require("buildInitialUploadPlan" in initial_queue_schedule and "applyInitialUploadPlan" in initial_queue_schedule, "Initial iCloud queueing must separate background planning from manager state application.")
+low_priority_sync = method_body(MANAGER, "private func scheduleLowPrioritySync")
+require("Task(priority: .background)" in low_priority_sync, "Automatic CloudKit sends must be background-priority.")
+require("Task.detached" not in low_priority_sync, "Automatic CloudKit sends must not call CKSyncEngine from a detached task.")
+require("MainActor.run" not in low_priority_sync, "Automatic CloudKit sends must not hand CKSyncEngine across actors via MainActor.run.")
 initial_queue_cancel = method_body(MANAGER, "private func cancelInitialQueueTask")
 require('logSyncEvent("Initiale iCloud-Queue abgebrochen"' in initial_queue_cancel, "Cancelling stale initial iCloud queueing must be logged.")
-enabled_upload_queue = method_body(MANAGER, "private func queueCurrentEnabledDataForUpload")
-require('logSyncEvent("iCloud Upload-Queue baut Daten auf"' in enabled_upload_queue, "Building the enabled-data upload queue must be logged.")
+require('logSyncEvent("iCloud Upload-Queue baut Daten auf"' in initial_upload_apply, "Building the enabled-data upload queue must be logged.")
 require("scheduleCurrentEnabledDataForUpload()" in sync_options_changed, "Toggling sync options must schedule initial queueing asynchronously.")
 require("queueCurrentEnabledDataForUpload()" not in sync_options_changed, "Toggling sync options must not synchronously queue the whole library on the switch tap.")
+require("initializeSyncEngineIfNeeded()" not in source_between(sync_options_changed, "if anySyncEnabled {", "} else if syncEngine != nil {"), "Toggling sync on must not synchronously create CKSyncEngine on the switch tap.")
+require("queueDeviceRecord()" not in source_between(sync_options_changed, "if anySyncEnabled {", "} else if syncEngine != nil {"), "Toggling sync on must not synchronously mutate CKSyncEngine pending changes on the switch tap.")
 require("cancelInitialQueueTask()" in MANAGER, "iCloud Sync must have a dedicated cancellation path for stale initial queueing.")
 disable_all_sync = source_between(sync_options_changed, "} else if syncEngine != nil {", "\n        }")
 require(
@@ -191,32 +198,37 @@ require(
     and disable_all_sync.find("cancelInitialQueueTask()") < disable_all_sync.find("queueDeviceRecord()"),
     "Disabling the last iCloud Sync category must cancel stale initial episode/subscription queueing before queuing the device-off record.",
 )
-episode_initial_queue = method_body(MANAGER, "private func queueAllEpisodeStateRecords")
+episode_initial_queue = method_body(MANAGER, "private func applyInitialEpisodeQueue")
 require(
-    "guard episodesSyncEnabled, !objectHashes.isEmpty, !Task.isCancelled else { return }" in episode_initial_queue
-    and "guard episodesSyncEnabled, !Task.isCancelled else { return }" in episode_initial_queue,
+    "guard episodesSyncEnabled, !Task.isCancelled else { return queuedRecords }" in episode_initial_queue,
     "Stale initial episode queueing must stop after async fetches when Episode sync has been disabled.",
 )
-subscription_initial_queue = method_body(MANAGER, "private func queueAllSubscriptionRecords")
+subscription_initial_queue = method_body(MANAGER, "private func applyInitialSubscriptionQueue")
 require(
-    "guard subscriptionsSyncEnabled, !feedURLs.isEmpty, !Task.isCancelled else { return }" in subscription_initial_queue
-    and "guard subscriptionsSyncEnabled, !Task.isCancelled else { return }" in subscription_initial_queue,
+    "guard subscriptionsSyncEnabled, !Task.isCancelled else { return queuedRecords }" in subscription_initial_queue,
     "Stale initial subscription queueing must stop after async fetches when Subscription sync has been disabled.",
 )
 
-episode_queue = method_body(MANAGER, "private func queueAllEpisodeStateRecords")
-episode_fetch = method_body(MANAGER, "private func episodeObjectHashesForInitialSync")
-require("private func queueAllEpisodeStateRecords() async" in MANAGER, "Initial episode queueing must be async.")
+episode_queue = method_body(MANAGER, "private func applyInitialEpisodeQueue")
+episode_fetch = method_body(MANAGER, "private nonisolated static func episodeObjectHashesForInitialUploadPlan")
+require("private func applyInitialEpisodeQueue" in MANAGER, "Initial episode queueing must be async.")
 require("performAndWait" not in episode_queue, "Initial episode queueing must not block the MainActor with performAndWait.")
 require("objectHashes.reduce(into:" not in episode_queue, "Initial episode queueing must not build one full local-modified-date dictionary on the MainActor.")
 require("await context.perform" in episode_fetch, "Initial episode queueing must fetch episode IDs on a Core Data background context.")
+require("fetchLimit = Self.pendingChangeQueueChunkSize + 1" in episode_fetch, "Initial episode queueing must fetch only one bounded page at a time.")
+require("while true" not in episode_fetch, "Initial episode queueing must not scan every matching episode in one task.")
+require("nextEpisodeBackfillOffset" in MANAGER, "Initial episode queueing must track a next-page cursor.")
 
-subscription_queue = method_body(MANAGER, "private func queueAllSubscriptionRecords")
-subscription_fetch = method_body(MANAGER, "private func subscribedFeedURLsForInitialSync")
-require("private func queueAllSubscriptionRecords() async" in MANAGER, "Initial subscription queueing must be async.")
+subscription_queue = method_body(MANAGER, "private func applyInitialSubscriptionQueue")
+subscription_fetch = method_body(MANAGER, "private nonisolated static func subscribedFeedURLsForInitialUploadPlan")
+require("private func applyInitialSubscriptionQueue" in MANAGER, "Initial subscription queueing must be async.")
 require("databaseManager.feeds" not in subscription_queue, "Initial subscription queueing must not scan feeds on the MainActor.")
-require("await subscribedFeedURLsForInitialSync()" in subscription_queue, "Initial subscription queueing must collect feed URLs off the UI path.")
+require("subscribedFeedURLsForInitialUploadPlan(offset:" in MANAGER, "Initial subscription queueing must collect feed URLs off the UI path.")
 require("await context.perform" in subscription_fetch, "Initial subscription queueing must fetch feed URLs on a Core Data background context.")
+require("fetchLimit = Self.pendingChangeQueueChunkSize + 1" in subscription_fetch, "Initial subscription queueing must fetch only one bounded page at a time.")
+require("while true" not in subscription_fetch, "Initial subscription queueing must not scan every subscribed feed in one task.")
+require("nextSubscriptionBackfillOffset" in MANAGER, "Initial subscription queueing must track a next-page cursor.")
+require("pendingKeys: &pendingKeys" in initial_upload_apply, "Initial queueing must reuse pending CKSyncEngine keys while adding chunks.")
 
 record_batch = method_body(MANAGER, "nonisolated func nextRecordZoneChangeBatch")
 require("maximumRecordZoneChangesPerBatch" in record_batch, "CloudKit record send batches must be capped.")
@@ -244,8 +256,9 @@ require("private nonisolated static func feedPropertyValueType" in MANAGER and "
 
 log_sync = method_body(MANAGER, "private func logSyncEvent")
 require('logEvent("icloud-sync"' in log_sync, "iCloud Sync must write switch and CKSyncEngine diagnostics to the shared diagnostic log.")
-for key in ["episodesSyncEnabled", "subscriptionsSyncEnabled", "settingsSyncEnabled", "anySyncEnabled", "pendingRecordZoneChanges", "isMainThread"]:
+for key in ["episodesSyncEnabled", "subscriptionsSyncEnabled", "settingsSyncEnabled", "anySyncEnabled", "actor", "syncEngineInitialized", "initialQueueTaskActive", "lowPrioritySyncTaskActive", "isMainThread", "threadID"]:
     require(f'"{key}"' in log_sync, f"iCloud Sync diagnostics must include {key}.")
+require("syncEngine?.state" not in log_sync, "iCloud Sync diagnostics must not read CKSyncEngine.state just to log.")
 require("Thread.isMainThread" in log_sync, "iCloud Sync diagnostics must record whether the event came from the main thread.")
 
 episodes_switch = method_body(MANAGER, "@objc func setEpisodesSyncEnabled")

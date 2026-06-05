@@ -15,9 +15,19 @@ def require(condition: bool, message: str) -> None:
 
 
 def method_body(source: str, signature: str) -> str:
-    start = source.find(signature)
-    if start < 0:
-        return ""
+    search_start = 0
+    while True:
+        start = source.find(signature, search_start)
+        if start < 0:
+            return ""
+
+        line_end = source.find("\n", start)
+        if line_end < 0:
+            return ""
+        if source[start:line_end].strip().endswith(";"):
+            search_start = line_end + 1
+            continue
+        break
 
     candidates = []
     for marker in ("\n- (", "\n+ (", "\n#pragma mark"):
@@ -30,11 +40,15 @@ def method_body(source: str, signature: str) -> str:
 
 
 player_info = read("Classes/PlayerInfoViewController_v5.m")
+image_cache = read("Classes/ImageCacheManager.m")
 
 layout_header = method_body(player_info, "- (void) layoutHeaderView")
 reload_body = method_body(player_info, "- (void) reload\n")
 set_image = method_body(player_info, "- (void) setImage:")
 sync_helper = method_body(player_info, "- (void)_syncChapterImageCollectionToCurrentArtwork")
+cell_for_item = method_body(player_info, "- (__kindof UICollectionViewCell *)collectionView:")
+local_image = method_body(image_cache, "- (IC_IMAGE*) localImageForImageURL:")
+episode_artwork_helper = method_body(player_info, "- (void)_setEpisodeArtworkForCell:")
 
 require(
     sync_helper,
@@ -65,4 +79,29 @@ require(
     and "[self updateCollectionsImage:0]" not in reload_body
     and "[self updateCollectionsImage:0]" not in set_image,
     "Layout/image refreshes still hard-reset the chapter image collection to the episode artwork page.",
+)
+require(
+    "return [self cachedImageForKey:cacheKey];" in local_image
+    and "initWithContentsOfFile" not in local_image,
+    "The image cache local lookup is now memory-only; PlayerInfo must not rely on it as the only episode-artwork load path after foreground memory eviction.",
+)
+require(
+    "localImageForImageURL:imageURL size:320 grayscale:NO" in cell_for_item
+    or "localImageForImageURL:imageURL size:320 grayscale:NO" in episode_artwork_helper,
+    "PlayerInfo chapter artwork cells must use a memory-only local lookup before falling back to async episode-artwork loading.",
+)
+require(
+    "imageForURL:imageURL size:320 grayscale:NO sender:cell completion:" in episode_artwork_helper,
+    "PlayerInfo chapter artwork cells must start the async disk/network episode-artwork load when the memory-only local lookup misses.",
+)
+require(
+    "self.image ?: self.imageView.image ?: cell.chapterImageView.image" in episode_artwork_helper
+    and "Podcast Placeholder 580" not in episode_artwork_helper
+    and "Podcast Placeholder 320" not in episode_artwork_helper,
+    "PlayerInfo must keep the existing artwork visible during async reloads instead of flashing the gray placeholder on a memory-cache miss.",
+)
+require(
+    "cellForItemAtIndexPath:indexPath" in episode_artwork_helper
+    and "if (currentCell != cell)" in episode_artwork_helper,
+    "Async episode-artwork completion must verify the collection cell still represents the same index path before replacing the image.",
 )
