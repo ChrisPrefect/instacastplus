@@ -114,7 +114,7 @@
 
 - (NSMutableOrderedSet<NSNumber*>*)_scaledVariantSizes
 {
-    NSMutableOrderedSet<NSNumber*>* scaledSizes = [NSMutableOrderedSet orderedSetWithArray:@[@(56), @(60), @(72), @(320)]];
+    NSMutableOrderedSet<NSNumber*>* scaledSizes = [NSMutableOrderedSet orderedSetWithArray:@[@(56), @(60), @(72), @(320), @(580)]];
     NSNumber* requestedSize = @(self.size);
     if (![scaledSizes containsObject:requestedSize]) {
         [scaledSizes addObject:requestedSize];
@@ -166,11 +166,18 @@
     return requestedImage;
 }
 
-- (IC_IMAGE*)_loadBestCachedVariantImage
+- (IC_IMAGE*)_loadCachedVariantImageLargeEnoughForSize:(NSInteger)minimumSize
 {
-    for (NSNumber* scaledSizeNumber in [self _scaledVariantSizes]) {
-        NSInteger size = [scaledSizeNumber integerValue];
-        NSURL* scaledFileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:size grayscale:self.grayscale];
+    NSArray<NSNumber*>* sortedSizes = [[self _scaledVariantSizes].array sortedArrayUsingComparator:^NSComparisonResult(NSNumber* first, NSNumber* second) {
+        return [second compare:first];
+    }];
+
+    for (NSNumber* scaledSizeNumber in sortedSizes) {
+        NSInteger candidateSize = [scaledSizeNumber integerValue];
+        if (candidateSize < minimumSize) {
+            continue;
+        }
+        NSURL* scaledFileURL = [ImageCacheManager fileURLToCachedImageForImageURL:self.url size:candidateSize grayscale:self.grayscale];
         NSString* scaledPath = [scaledFileURL path];
         if (![[NSFileManager defaultManager] fileExistsAtPath:scaledPath]) {
             continue;
@@ -271,8 +278,8 @@
         return;
     }
     
-    // If the exact size is missing, reuse any already cached variant and derive all sizes locally.
-    image = [self _loadBestCachedVariantImage];
+    // If the exact size is missing, reuse only a large-enough cached variant.
+    image = [self _loadCachedVariantImageLargeEnoughForSize:self.size];
     if (image && ![self isCancelled]) {
         IC_IMAGE* requestedImage = [self _persistScaledVariantsFromSourceImage:image];
         [[ImageCacheManager sharedImageCacheManager] saveContentHashIndex];

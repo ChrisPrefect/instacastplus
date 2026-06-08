@@ -58,8 +58,8 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"Appearance".ls;
-    self->appIconsArray = @[ @"appicon13", @"appicon8", @"appicon9", @"appicon10", @"appicon11", @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7" ];
-    self->appIconNamesArray = @[ @"AppIcon-13", @"AppIcon-8", @"AppIcon-9", @"AppIcon-10", @"AppIcon-11", @"AppIcon-1", @"AppIcon-2", @"AppIcon-3", @"AppIcon-4", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7" ];
+    self->appIconsArray = @[ @"appiconStandard", @"appiconCore", @"appiconClassicAlt1", @"appiconClassicAlt2", @"appiconClassicAlt3" ];
+    self->appIconNamesArray = @[ @"", @"InstacastPlus_Icon_Core", @"InstacastPlus_Icon_Classic_Alt1", @"InstacastPlus_Icon_Classic_Alt2", @"InstacastPlus_Icon_Classic_Alt3" ];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
@@ -913,7 +913,7 @@ API_AVAILABLE(ios(14.0)){
         }
         return (NSInteger)iconIndex;
     }
-    return -1;
+    return 0;
 }
 
 - (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath
@@ -936,7 +936,8 @@ API_AVAILABLE(ios(14.0)){
 
 - (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath
 {
-    NSString* appIconName = self->appIconNamesArray[indexPath.item];
+    NSString* selectedIconName = self->appIconNamesArray[indexPath.item];
+    NSString* appIconName = (selectedIconName.length > 0) ? selectedIconName : nil;
     [[UIApplication sharedApplication] setAlternateIconName:appIconName completionHandler:^(NSError * _Nullable error) {
         if (error != nil) {
             ErrLog(@"setAlternateIconName error: %@", error.localizedDescription);

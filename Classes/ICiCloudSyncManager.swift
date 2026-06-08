@@ -46,6 +46,29 @@ import UIKit
     }
 }
 
+@objcMembers final class ICiCloudSyncCounts: NSObject {
+    // "synced" = how many of "total" are already on iCloud; "total" = how many will be synced
+    // from this device (e.g. episodes with play state). Shown as "synced / total".
+    let episodesSynced: Int
+    let episodesTotal: Int
+    let subscriptionsSynced: Int
+    let subscriptionsTotal: Int
+    let settings: Int
+
+    init(episodesSynced: Int,
+         episodesTotal: Int,
+         subscriptionsSynced: Int,
+         subscriptionsTotal: Int,
+         settings: Int) {
+        self.episodesSynced = episodesSynced
+        self.episodesTotal = episodesTotal
+        self.subscriptionsSynced = subscriptionsSynced
+        self.subscriptionsTotal = subscriptionsTotal
+        self.settings = settings
+        super.init()
+    }
+}
+
 @available(iOS 17.0, *)
 @MainActor
 @objcMembers final class ICiCloudSyncManager: NSObject, CKSyncEngineDelegate {
@@ -71,6 +94,7 @@ import UIKit
     private nonisolated static let pendingSubscriptionPayloadsKey = "ICiCloudSyncPendingSubscriptionPayloads"
     private nonisolated static let episodeLocalModifiedDatesKey = "ICiCloudSyncEpisodeLocalModifiedDates"
     private nonisolated static let subscriptionLocalModifiedDatesKey = "ICiCloudSyncSubscriptionLocalModifiedDates"
+    private nonisolated static let subscriptionPayloadHashesKey = "ICiCloudSyncSubscriptionPayloadHashes"
     private nonisolated static let initialEpisodeBackfillOffsetKey = "ICiCloudSyncInitialEpisodeBackfillOffset"
     private nonisolated static let initialSubscriptionBackfillOffsetKey = "ICiCloudSyncInitialSubscriptionBackfillOffset"
     private nonisolated static let initialSettingsBackfillPendingKey = "ICiCloudSyncInitialSettingsBackfillPending"
@@ -80,7 +104,10 @@ import UIKit
     private nonisolated static let lastStatusKey = "ICiCloudSyncLastStatus"
     private nonisolated static let lastErrorKey = "ICiCloudSyncLastError"
     private nonisolated static let deviceRecordShouldStampSyncDateKey = "ICiCloudSyncDeviceRecordShouldStampSyncDate"
-    private nonisolated static let maximumRecordZoneChangesPerBatch = 200
+    // CloudKit allows up to 400 record operations per batch. Keeping it well above the backfill
+    // page size (200) means a page of episodes + the device record ship in ONE batch instead of
+    // a 200-record batch plus a 2-record leftover round-trip.
+    private nonisolated static let maximumRecordZoneChangesPerBatch = 400
     private nonisolated static let pendingChangeQueueChunkSize = 200
     private nonisolated static let syncMetadataDirectoryName = "iCloudSyncMetadata"
     private nonisolated static let knownRecordSystemFieldsDirectoryName = "KnownRecords"
@@ -95,6 +122,7 @@ import UIKit
             Self.pendingSubscriptionPayloadsKey,
             Self.episodeLocalModifiedDatesKey,
             Self.subscriptionLocalModifiedDatesKey,
+            Self.subscriptionPayloadHashesKey,
         ]
     }
 
@@ -124,13 +152,19 @@ import UIKit
     private var hasUnresolvedSyncFailures = false
     private var settingsDebounceWorkItem: DispatchWorkItem?
     private var scrollDebounceWorkItem: DispatchWorkItem?
+    private var applyPendingDebounceWorkItem: DispatchWorkItem?
     private var episodeLocalModifiedDatesCache: [String: TimeInterval]?
     private var episodeLocalModifiedDatesWriteWorkItem: DispatchWorkItem?
+    private var subscriptionPayloadHashesCache: [String: String]?
+    private var cachedSyncTotalCounts: (episodes: Int, subscriptions: Int, timestamp: Date)?
+    private var isRefreshingSyncTotalCounts = false
+    private var lastSyncedSettingsHash: String?
     private var initialQueueTask: Task<Void, Never>?
     private var lowPrioritySyncTask: Task<Void, Never>?
-    private var syncProgressTotal = 0
-    private var syncProgressCompleted = 0
-    private var syncProgressActive = false
+    private enum SyncActivityDirection { case up, down }
+    private var syncActivityDirection: SyncActivityDirection?
+    private var syncActivityStartDate: Date?
+    private var syncActivityRecordCount = 0
     private var deviceRecordShouldStampSyncDate = false
     private var syncedUserDataInCurrentRun = false
 
@@ -162,13 +196,90 @@ import UIKit
         defaults.object(forKey: Self.lastSyncDateKey) as? Date
     }
 
+    @objc var syncCounts: ICiCloudSyncCounts {
+        let totals = syncTotalCounts()
+        return ICiCloudSyncCounts(
+            episodesSynced: episodesSyncEnabled ? syncedCount(backfillKey: Self.initialEpisodeBackfillOffsetKey, total: totals.episodes) : 0,
+            episodesTotal: episodesSyncEnabled ? totals.episodes : 0,
+            subscriptionsSynced: subscriptionsSyncEnabled ? syncedCount(backfillKey: Self.initialSubscriptionBackfillOffsetKey, total: totals.subscriptions) : 0,
+            subscriptionsTotal: subscriptionsSyncEnabled ? totals.subscriptions : 0,
+            settings: settingsSyncEnabled ? syncedSettingsValueCount() : 0)
+    }
+
+    // How many of `total` are already synced: while the initial backfill runs, its persisted
+    // page cursor is how far we've gotten; once it's cleared the whole set is synced.
+    private func syncedCount(backfillKey: String, total: Int) -> Int {
+        guard let offset = (defaults.object(forKey: backfillKey) as? NSNumber)?.intValue else {
+            return total
+        }
+        return min(max(offset, 0), total)
+    }
+
+    // Stable totals of what's kept in iCloud, counted directly in Core Data so the number is
+    // the real total (e.g. "4490 episodes with play state") instead of a sync-progress figure.
+    // The count itself runs on a BACKGROUND context — never the main thread — because a
+    // count on the main context can block for seconds waiting on the SQLite store lock that
+    // the background backfill/refresh holds (this was a multi-second UI freeze when toggling a
+    // switch). The UI shows the last computed value and refreshes when a new one is ready.
+    private func syncTotalCounts() -> (episodes: Int, subscriptions: Int) {
+        let cached = cachedSyncTotalCounts
+        if cached == nil || Date().timeIntervalSince(cached!.timestamp) >= 2.0 {
+            refreshSyncTotalCountsInBackground()
+        }
+        return (cached?.episodes ?? 0, cached?.subscriptions ?? 0)
+    }
+
+    private func refreshSyncTotalCountsInBackground() {
+        guard !isRefreshingSyncTotalCounts else { return }
+        isRefreshingSyncTotalCounts = true
+        let episodesEnabled = episodesSyncEnabled
+        let subscriptionsEnabled = subscriptionsSyncEnabled
+        Task.detached(priority: .utility) { [weak self] in
+            let counts = await Self.computeSyncTotalCounts(episodesEnabled: episodesEnabled, subscriptionsEnabled: subscriptionsEnabled)
+            await MainActor.run {
+                guard let self else { return }
+                self.cachedSyncTotalCounts = (counts.episodes, counts.subscriptions, Date())
+                self.isRefreshingSyncTotalCounts = false
+                self.postStateChanged()
+            }
+        }
+    }
+
+    private nonisolated static func computeSyncTotalCounts(episodesEnabled: Bool, subscriptionsEnabled: Bool) async -> (episodes: Int, subscriptions: Int) {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return (0, 0) }
+        return await context.perform {
+            var episodes = 0
+            var subscriptions = 0
+            if episodesEnabled {
+                let request = NSFetchRequest<NSManagedObject>(entityName: "Episode")
+                request.predicate = NSPredicate(format: "feed.subscribed == YES AND archived == NO AND objectHash != nil AND (consumed == YES OR starred == YES OR position > 0)")
+                episodes = (try? context.count(for: request)) ?? 0
+            }
+            if subscriptionsEnabled {
+                let request = NSFetchRequest<NSManagedObject>(entityName: "Feed")
+                request.predicate = NSPredicate(format: "subscribed == YES AND sourceURL_ != nil")
+                subscriptions = (try? context.count(for: request)) ?? 0
+            }
+            return (episodes, subscriptions)
+        }
+    }
+
+    private func syncedSettingsValueCount() -> Int {
+        let domain = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
+        var count = 0
+        for (key, value) in domain where Self.shouldSyncSettingsKeyForSyncEngineCallback(key) && Self.isValidSettingsValueForSyncEngineCallback(value) {
+            count += 1
+        }
+        return count
+    }
+
     @objc var statusText: String {
         guard anySyncEnabled else { return NSLocalizedString("Aus", comment: "") }
         if let error = defaults.string(forKey: Self.lastErrorKey), !error.isEmpty {
             return error
         }
-        if let progress = syncProgressStatusText() {
-            return progress
+        if let activity = syncActivityStatusText() {
+            return activity
         }
         if let status = defaults.string(forKey: Self.lastStatusKey), !status.isEmpty {
             return status
@@ -311,6 +422,69 @@ import UIKit
         }
     }
 
+    // Deletes the entire CloudKit sync zone (all synced data, for every device) and wipes all
+    // local sync bookkeeping. If any category is still enabled, a fresh full re-upload starts.
+    @objc func deleteAllICloudDataWithCompletion(_ completion: @escaping (NSError?) -> Void) {
+        Task { @MainActor in
+            cancelInitialQueueTask()
+            cancelLowPrioritySyncTask()
+            setStatus(NSLocalizedString("Lösche iCloud-Daten…", comment: ""))
+            postStateChanged()
+
+            do {
+                _ = try await database.deleteRecordZone(withID: zoneID)
+            } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
+                // Already gone — treat as success.
+            } catch {
+                setError(error)
+                completion(error as NSError)
+                return
+            }
+
+            syncEngine = nil
+            resetAllLocalSyncMetadata()
+
+            if anySyncEnabled {
+                initializeSyncEngineIfNeeded()
+                resetInitialBackfillCursorsForEnabledOptions()
+                if settingsSyncEnabled {
+                    defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
+                }
+                scheduleCurrentEnabledDataForUpload()
+                setStatus(NSLocalizedString("iCloud-Daten gelöscht.", comment: ""))
+            } else {
+                setStatus(NSLocalizedString("Aus", comment: ""))
+            }
+            postStateChanged()
+            postDevicesChanged()
+            completion(nil)
+        }
+    }
+
+    private func resetAllLocalSyncMetadata() {
+        setSyncMetadata(nil, forKey: Self.engineStateKey)
+        Self.removeSyncMetadataValue(forKey: Self.knownRecordsKey)
+        Self.removeAllKnownRecordSystemFields()
+        for key in [Self.subscriptionRecordURLsKey, Self.subscriptionLocalModifiedDatesKey,
+                    Self.subscriptionPayloadHashesKey, Self.episodeLocalModifiedDatesKey,
+                    Self.deviceCacheKey, Self.pendingEpisodeStatesKey, Self.pendingSubscriptionPayloadsKey] {
+            setSyncMetadata(nil, forKey: key)
+        }
+        for key in [Self.settingsLocalModifiedDateKey, Self.scrollPositionsLocalModifiedDateKey,
+                    Self.lastSyncDateKey, Self.deviceRecordShouldStampSyncDateKey] {
+            defaults.removeObject(forKey: key)
+        }
+        episodeLocalModifiedDatesCache = nil
+        subscriptionPayloadHashesCache = nil
+        cachedSyncTotalCounts = nil
+        lastSyncedSettingsHash = nil
+        deviceRecordShouldStampSyncDate = false
+        syncedUserDataInCurrentRun = false
+        clearInitialUploadCursors()
+        clearSyncActivity()
+        clearError()
+    }
+
     @objc func shouldHandleRemoteNotification(_ userInfo: NSDictionary) -> Bool {
         guard let notification = userInfo as? [AnyHashable: Any] else { return false }
         return CKNotification(fromRemoteNotificationDictionary: notification) != nil
@@ -358,7 +532,6 @@ import UIKit
         postStateChanged()
         await initialQueueTask?.value
         queueDeviceRecordForPendingUserDataIfNeeded()
-        beginSyncProgress()
         postStateChanged()
 
         if let syncEngine {
@@ -466,13 +639,18 @@ import UIKit
 
             self.initializeSyncEngineIfNeeded()
             self.hasUnresolvedSyncFailures = false
-            self.beginSyncProgressIfNeeded()
             self.postStateChanged()
 
             do {
                 if let syncEngine = self.syncEngine {
                     try await syncEngine.sendChanges()
-                    try await syncEngine.fetchChanges()
+                    // While the initial backfill still has pages to upload, only send — defer the
+                    // fetch until everything is up. The last page clears the cursor before it
+                    // syncs, so that run still fetches. This stops the status flipping up/down
+                    // every page and saves a network round-trip per page.
+                    if !self.hasInitialUploadBackfillWork {
+                        try await syncEngine.fetchChanges()
+                    }
                 }
                 self.lowPrioritySyncTask = nil
                 if !self.hasUnresolvedSyncFailures {
@@ -856,19 +1034,6 @@ import UIKit
         Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
     }
 
-    private func addPendingDelete(_ recordID: CKRecord.ID) {
-        initializeSyncEngineIfNeeded()
-        let change = CKSyncEngine.PendingRecordZoneChange.deleteRecord(recordID)
-        let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
-        if !pendingKeys.contains(pendingChangeKey(change)) {
-            syncEngine?.state.add(pendingRecordZoneChanges: [change])
-        }
-        if isUserDataRecordID(recordID) {
-            queueDeviceRecord(stampLastSyncDate: true)
-        }
-        scheduleLowPrioritySync()
-    }
-
     private func pendingChangeKey(_ change: CKSyncEngine.PendingRecordZoneChange) -> String {
         switch change {
         case .saveRecord(let recordID):
@@ -933,14 +1098,12 @@ import UIKit
             await handleSentRecordZoneChanges(event, syncEngine: syncEngine)
 
         case .willFetchChanges, .willFetchRecordZoneChanges:
-            clearSyncProgress()
-            setStatus(NSLocalizedString("Empfange Änderungen…", comment: ""))
+            beginSyncActivity(.down)
             postStateChanged()
 
         case .willSendChanges:
             hasUnresolvedSyncFailures = false
-            beginSyncProgressIfNeeded()
-            setStatus(NSLocalizedString("Sende Änderungen…", comment: ""))
+            beginSyncActivity(.up)
             postStateChanged()
 
         case .didFetchChanges:
@@ -971,18 +1134,15 @@ import UIKit
         var recordIDsToDelete: [CKRecord.ID] = []
         var staleSaveChanges: [CKSyncEngine.PendingRecordZoneChange] = []
 
+        var saveRecordIDs: [CKRecord.ID] = []
         var validChangeCount = 0
         for change in scopedChanges {
             if validChangeCount >= Self.maximumRecordZoneChangesPerBatch { break }
 
             switch change {
             case .saveRecord(let recordID):
-                if let record = Self.recordToSaveForSyncEngineCallback(for: recordID, snapshot: snapshot) {
-                    recordsToSave.append(record)
-                    validChangeCount += 1
-                } else {
-                    staleSaveChanges.append(change)
-                }
+                saveRecordIDs.append(recordID)
+                validChangeCount += 1
             case .deleteRecord(let recordID):
                 recordIDsToDelete.append(recordID)
                 validChangeCount += 1
@@ -991,6 +1151,13 @@ import UIKit
                 break
             }
         }
+
+        // Materialize the whole batch with ONE Core Data fetch for the episodes instead of a
+        // fresh background context + fetch per record. The per-record approach was the upload
+        // bottleneck (1-2 min for 4400 episodes) and the store-lock contention that froze the UI.
+        let materialized = Self.materializeRecordsForSyncEngineCallback(saveRecordIDs, snapshot: snapshot)
+        recordsToSave = materialized.records
+        staleSaveChanges = materialized.stale
 
         if !staleSaveChanges.isEmpty {
             syncEngine.state.remove(pendingRecordZoneChanges: staleSaveChanges)
@@ -1007,6 +1174,63 @@ import UIKit
         return CKSyncEngine.RecordZoneChangeBatch(recordsToSave: recordsToSave,
                                                   recordIDsToDelete: recordIDsToDelete,
                                                   atomicByZone: false)
+    }
+
+    private nonisolated static func materializeRecordsForSyncEngineCallback(_ recordIDs: [CKRecord.ID], snapshot: SyncEngineCallbackSnapshot) -> (records: [CKRecord], stale: [CKSyncEngine.PendingRecordZoneChange]) {
+        var records: [CKRecord] = []
+        var stale: [CKSyncEngine.PendingRecordZoneChange] = []
+
+        let episodeRecordIDs = recordIDs.filter { $0.recordName.hasPrefix(RecordPrefix.episode) }
+        if !episodeRecordIDs.isEmpty {
+            if snapshot.episodesSyncEnabled {
+                let statesByHash = episodeStatesByObjectHash(episodeRecordIDs.map { String($0.recordName.dropFirst(RecordPrefix.episode.count)) })
+                for recordID in episodeRecordIDs {
+                    let objectHash = String(recordID.recordName.dropFirst(RecordPrefix.episode.count))
+                    guard var payload = statesByHash[objectHash] else {
+                        stale.append(.saveRecord(recordID))
+                        continue
+                    }
+                    let updatedAt = date(from: snapshot.episodeLocalModifiedDates[objectHash]) ?? Date()
+                    payload["updatedAt"] = updatedAt
+                    let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.episodeState, recordID: recordID)
+                    populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
+                    records.append(record)
+                }
+            } else {
+                stale.append(contentsOf: episodeRecordIDs.map { .saveRecord($0) })
+            }
+        }
+
+        // Device / subscription / settings / scroll records — only a handful per batch.
+        for recordID in recordIDs where !recordID.recordName.hasPrefix(RecordPrefix.episode) {
+            if let record = recordToSaveForSyncEngineCallback(for: recordID, snapshot: snapshot) {
+                records.append(record)
+            } else {
+                stale.append(.saveRecord(recordID))
+            }
+        }
+        return (records, stale)
+    }
+
+    private nonisolated static func episodeStatesByObjectHash(_ objectHashes: [String]) -> [String: [String: Any]] {
+        guard !objectHashes.isEmpty, let context = DatabaseManager.shared()?.newBackgroundContext() else { return [:] }
+        return context.performAndWait {
+            let request = NSFetchRequest<CDEpisode>(entityName: "Episode")
+            request.predicate = NSPredicate(format: "objectHash IN %@", objectHashes)
+            request.includesSubentities = false
+            let episodes = (try? context.fetch(request)) ?? []
+            var result: [String: [String: Any]] = [:]
+            for episode in episodes {
+                guard let objectHash = episode.objectHash else { continue }
+                result[objectHash] = [
+                    "objectHash": objectHash,
+                    "played": episode.consumed,
+                    "position": Int(episode.position),
+                    "starred": episode.starred,
+                ]
+            }
+            return result
+        }
     }
 
     private struct SyncEngineCallbackSnapshot {
@@ -1117,6 +1341,26 @@ import UIKit
         return record
     }
 
+    // Some feed-property keys embed the feed's `uid`, e.g. "<uid>_auto_skip_chapter_name" (the
+    // auto-skip chapter terms + per-chapter offsets). `uid` is a *per-device* random UUID, so a
+    // literal key would never match on another device. We translate the local uid prefix to a
+    // stable marker on upload and back to the receiving device's own uid on apply, so these
+    // settings actually sync. (Feeds themselves sync by URL hash, episodes by content hash —
+    // those were already device-stable; only these uid-prefixed properties were broken.)
+    private nonisolated static let feedUIDKeyMarker = "@@FEEDUID@@"
+
+    private nonisolated static func stableFeedPropertyKey(_ key: String, feedUID: String?) -> String {
+        guard let feedUID, !feedUID.isEmpty, key.hasPrefix(feedUID + "_") else { return key }
+        return feedUIDKeyMarker + key.dropFirst(feedUID.count)
+    }
+
+    private nonisolated static func localFeedPropertyKey(_ key: String, feedUID: String?) -> String {
+        guard key.hasPrefix(feedUIDKeyMarker) else { return key }
+        let suffix = key.dropFirst(feedUIDKeyMarker.count)
+        guard let feedUID, !feedUID.isEmpty else { return String(suffix) }
+        return feedUID + suffix
+    }
+
     private nonisolated static func subscriptionPayloadForSyncEngineCallback(forFeedURL feedURL: String, updatedAt: Date, deviceID: String) -> [String: Any]? {
         guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return nil }
         let internalKeys = internalFeedPropertyKeysForSyncEngineCallback()
@@ -1126,12 +1370,13 @@ import UIKit
             request.includesSubentities = false
             request.predicate = NSPredicate(format: "sourceURL_ == %@ AND subscribed == YES", feedURL)
             guard let feed = try? context.fetch(request).first else { return nil }
+            let feedUID = feed.uid
 
             var properties: [[String: Any]] = []
             for property in feed.properties as? Set<CDFeedProperty> ?? [] {
                 guard let key = property.key, !internalKeys.contains(key) else { continue }
                 var propertyPayload: [String: Any] = [
-                    "key": key,
+                    "key": stableFeedPropertyKey(key, feedUID: feedUID),
                     "valueType": Self.feedPropertyValueType(for: property),
                     "boolValue": property.boolValue,
                     "int32Value": Int(property.int32Value),
@@ -1461,6 +1706,9 @@ import UIKit
             syncedUserDataInCurrentRun = true
         }
 
+        beginSyncActivity(.down)
+        recordSyncActivity(event.modifications.filter { isUserDataRecordID($0.record.recordID) }.count)
+
         isApplyingRemoteChange = true
         defer {
             isApplyingRemoteChange = false
@@ -1468,10 +1716,18 @@ import UIKit
             postDevicesChanged()
         }
 
+        var processedSinceYield = 0
         for modification in event.modifications {
             let record = modification.record
             rememberServerRecord(record)
             await applyRemoteRecord(record)
+            // Yield periodically so a large initial download (thousands of episode
+            // states on a fresh device) doesn't block the main thread in one go.
+            processedSinceYield += 1
+            if processedSinceYield >= 50 {
+                processedSinceYield = 0
+                await Task.yield()
+            }
         }
 
         for deletion in event.deletions {
@@ -1544,7 +1800,8 @@ import UIKit
             syncEngine.state.add(pendingRecordZoneChanges: retryRecords)
         }
 
-        updateSyncProgressFromPendingChanges()
+        beginSyncActivity(.up)
+        recordSyncActivity(event.savedRecords.filter { isUserDataRecordID($0.recordID) }.count)
 
         if hasFailedRecordChanges {
             hasUnresolvedSyncFailures = true
@@ -1793,7 +2050,9 @@ import UIKit
     }
 
     private func applyFeedPropertyPayload(_ property: [String: Any], to feed: CDFeed) {
-        guard let key = property["key"] as? String, !key.isEmpty else { return }
+        guard let rawKey = property["key"] as? String, !rawKey.isEmpty else { return }
+        // Map a uid-relative marker key back to this device's own feed uid (see stableFeedPropertyKey).
+        let key = Self.localFeedPropertyKey(rawKey, feedUID: feed.uid)
 
         switch property["valueType"] as? String ?? Self.defaultFeedPropertyValueType(for: key) {
         case "string":
@@ -1869,107 +2128,278 @@ import UIKit
         setScrollPositionsLocalModifiedDate(remoteDate)
     }
 
-    @objc private func defaultsDidChange(_ notification: Notification) {
-        guard isStarted, settingsSyncEnabled, !isApplyingRemoteChange, !isWritingSyncMetadata else { return }
-        markSettingsLocallyChangedAndQueue()
+    // `nonisolated` so the runtime doesn't assert the main-queue executor at entry if the
+    // notification is ever delivered off the main thread (which would crash a MainActor
+    // method). Off-main UserDefaults changes aren't user-driven settings edits, so we ignore
+    // them. We only arm a debounced content check — see checkAndQueueSettingsChange.
+    @objc private nonisolated func defaultsDidChange(_ notification: Notification) {
+        guard Thread.isMainThread else { return }
+        MainActor.assumeIsolated {
+            guard isStarted, settingsSyncEnabled, !isApplyingRemoteChange, !isWritingSyncMetadata else { return }
+            scheduleSettingsChangeCheck()
+        }
     }
 
-    @objc private func coreDataDidChange(_ notification: Notification) {
+    // MUST stay `nonisolated`. NotificationCenter delivers this synchronously on whatever
+    // thread performed the Core Data change. A background feed-refresh merge (a child
+    // context saving into the main context) delivers it on that background thread. If this
+    // method were MainActor-isolated (the class default), the Swift runtime would assert
+    // the main-queue executor at method entry — `dispatch_assert_queue` → EXC_BREAKPOINT —
+    // and crash before any of our code runs. So we do only thread-safe work here (extract
+    // object IDs) and hop to the main actor for everything that touches our state.
+    @objc private nonisolated func coreDataDidChange(_ notification: Notification) {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: ICiCloudSyncEpisodesEnabled) || defaults.bool(forKey: ICiCloudSyncSubscriptionsEnabled) else { return }
+
+        // Of the freshly-inserted objects keep only the ones the sync cares about (new
+        // subscriptions / feed settings). A feed refresh inserts hundreds of episodes plus their
+        // chapters/media; those are brand-new and unheard, so they are never uploaded anyway.
+        // Crucially, NOT re-resolving them avoids firing a Core Data fault per object on the main
+        // thread, which contends with the background merge's writes for the SQLite store lock —
+        // the ~5s pull-to-refresh freeze. `objectID.entity.name` is immutable model metadata and
+        // fires no fault. ALL updates (real play-state changes) are still processed below.
+        let insertedIDs = Self.managedObjectIDs(in: notification, key: NSInsertedObjectsKey).filter {
+            $0.entity.name == "Feed" || $0.entity.name == "FeedProperty"
+        }
+        let updatedIDs = Self.managedObjectIDs(in: notification, key: NSUpdatedObjectsKey)
+        let deletedIDs = Self.managedObjectIDs(in: notification, key: NSDeletedObjectsKey)
+        guard !insertedIDs.isEmpty || !updatedIDs.isEmpty || !deletedIDs.isEmpty else { return }
+
+        if !Thread.isMainThread {
+            Self.logSyncEvent("Core-Data-Änderung vom Hintergrund-Thread empfangen", metadata: [
+                "insertedCount": insertedIDs.count,
+                "updatedCount": updatedIDs.count,
+                "deletedCount": deletedIDs.count,
+            ])
+        }
+
+        // NSManagedObjectID is documented as thread-safe; box it so it can cross to the
+        // main actor under strict concurrency.
+        let changes = CoreDataChangeIDs(inserted: insertedIDs, updated: updatedIDs, deleted: deletedIDs)
+        Task { @MainActor [weak self] in
+            self?.processSyncObjectIDs(inserted: changes.inserted, updated: changes.updated, deleted: changes.deleted)
+        }
+    }
+
+    private struct CoreDataChangeIDs: @unchecked Sendable {
+        let inserted: [NSManagedObjectID]
+        let updated: [NSManagedObjectID]
+        let deleted: [NSManagedObjectID]
+    }
+
+    private nonisolated static func managedObjectIDs(in notification: Notification, key: String) -> [NSManagedObjectID] {
+        guard let objects = notification.userInfo?[key] as? Set<NSManagedObject> else { return [] }
+        return objects.map { $0.objectID }
+    }
+
+    private func processSyncObjectIDs(inserted: [NSManagedObjectID], updated: [NSManagedObjectID], deleted: [NSManagedObjectID]) {
+        guard isStarted, !isApplyingRemoteChange else { return }
+        guard episodesSyncEnabled || subscriptionsSyncEnabled else { return }
+        guard let context = databaseManager.objectContext else { return }
+        let start = CFAbsoluteTimeGetCurrent()
+        func resolve(_ ids: [NSManagedObjectID]) -> [NSManagedObject] {
+            ids.compactMap { try? context.existingObject(with: $0) }
+        }
+        processSyncObjects(inserted: resolve(inserted),
+                           updated: resolve(updated),
+                           deleted: resolve(deleted))
+        // Watchdog: this runs on the main thread, so flag it if it ever gets expensive (e.g. a
+        // refresh that updates many episodes) so a future hang can be localized from the log.
+        let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+        if elapsedMs >= 100 {
+            logSyncEvent("Sync-Observer-Verarbeitung dauerte lange (Main-Thread)", metadata: [
+                "ms": elapsedMs,
+                "insertedCount": inserted.count,
+                "updatedCount": updated.count,
+                "deletedCount": deleted.count,
+            ])
+        }
+    }
+
+    private func processSyncObjects(inserted: [NSManagedObject],
+                                    updated: [NSManagedObject],
+                                    deleted: [NSManagedObject]) {
         guard isStarted, !isApplyingRemoteChange else { return }
 
-        let inserted = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
-        let updated = notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> ?? []
-        let deleted = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> ?? []
+        var episodeObjectHashes: [String] = []
+        var seenEpisodeHashes = Set<String>()
+        var feedURLsToQueue: [String] = []
+        var feedHashUpdates: [String: String] = [:]
+        var feedURLsToDelete: [String] = []
+        var seenFeedURLs = Set<String>()
 
         if episodesSyncEnabled {
-            for object in inserted.union(updated) {
+            for object in inserted + updated {
                 guard let episode = object as? CDEpisode else { continue }
-                let changed = object.changedValues()
-                if inserted.contains(object) || changed["consumed"] != nil || changed["starred"] != nil || changed["position"] != nil {
-                    markEpisodeLocallyChanged(episode)
-                }
+                guard let objectHash = episode.objectHash, !objectHash.isEmpty, !seenEpisodeHashes.contains(objectHash) else { continue }
+                // Only episodes with real state (played / favorite / position) are synced.
+                // "Unheard" is the implicit default and is never uploaded — unless the
+                // episode was synced before, so that resetting it back to unheard still
+                // propagates to the other devices.
+                let hasState = episode.consumed || episode.starred || episode.position > 0
+                let previouslySynced = episodeLocalModifiedDate(for: objectHash) != nil
+                guard hasState || previouslySynced else { continue }
+                seenEpisodeHashes.insert(objectHash)
+                episodeObjectHashes.append(objectHash)
             }
         }
 
         if subscriptionsSyncEnabled {
-            for object in inserted.union(updated) {
-                if let feed = object as? CDFeed, let urlString = feed.sourceURL?.absoluteString {
+            let storedHashes = subscriptionPayloadHashes()
+            func consider(_ feed: CDFeed) {
+                guard feed.subscribed, let urlString = feed.sourceURL?.absoluteString, !seenFeedURLs.contains(urlString) else { return }
+                let hash = subscriptionPayloadHash(for: feed)
+                // Skip feeds whose synced payload is unchanged. A feed refresh only touches
+                // lastUpdate/etag/contentHash, which aren't part of the payload, so this
+                // makes refresh-all a no-op for subscription sync.
+                guard storedHashes[urlString] != hash else { return }
+                seenFeedURLs.insert(urlString)
+                feedURLsToQueue.append(urlString)
+                feedHashUpdates[urlString] = hash
+            }
+            for object in inserted + updated {
+                if let feed = object as? CDFeed {
                     if feed.subscribed {
-                        setSubscriptionRecordURL(urlString, for: subscriptionRecordID(forFeedURL: urlString).recordName)
-                        markSubscriptionLocallyChanged(feedURL: urlString)
-                    } else {
-                        addPendingDelete(subscriptionRecordID(forFeedURL: urlString))
+                        consider(feed)
+                    } else if let urlString = feed.sourceURL?.absoluteString {
+                        feedURLsToDelete.append(urlString)
                     }
                 } else if let property = object as? CDFeedProperty,
                           let feed = property.feed,
-                          let urlString = feed.sourceURL?.absoluteString,
-                          feed.subscribed {
-                    markSubscriptionLocallyChanged(feedURL: urlString)
+                          let key = property.key, !internalFeedPropertyKeys.contains(key) {
+                    consider(feed)
                 }
             }
-
             for object in deleted {
                 if let feed = object as? CDFeed, let urlString = feed.sourceURL?.absoluteString {
-                    addPendingDelete(subscriptionRecordID(forFeedURL: urlString))
+                    feedURLsToDelete.append(urlString)
                 }
             }
         }
+
+        guard !episodeObjectHashes.isEmpty || !feedURLsToQueue.isEmpty || !feedURLsToDelete.isEmpty else { return }
+
+        // Build the pending-change key set once and thread it through all batches so
+        // queueing N changes stays O(N) instead of O(N²).
+        var pendingKeys = pendingRecordZoneChangeKeys()
+        var queuedUserData = false
+
+        if !episodeObjectHashes.isEmpty {
+            let now = Date()
+            var updates: [String: Date] = [:]
+            for hash in episodeObjectHashes { updates[hash] = now }
+            setEpisodeLocalModifiedDates(updates)
+            addPendingSaves(episodeObjectHashes.map { episodeRecordID(forObjectHash: $0) }, pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
+            queuedUserData = true
+        }
+
+        if !feedURLsToQueue.isEmpty {
+            applySubscriptionLocalChanges(feedURLs: feedURLsToQueue, hashes: feedHashUpdates)
+            addPendingSaves(feedURLsToQueue.map { subscriptionRecordID(forFeedURL: $0) }, pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
+            queuedUserData = true
+        }
+
+        for urlString in feedURLsToDelete {
+            let change = CKSyncEngine.PendingRecordZoneChange.deleteRecord(subscriptionRecordID(forFeedURL: urlString))
+            let key = pendingChangeKey(change)
+            if !pendingKeys.contains(key) {
+                pendingKeys.insert(key)
+                initializeSyncEngineIfNeeded()
+                syncEngine?.state.add(pendingRecordZoneChanges: [change])
+            }
+            removeSubscriptionPayloadHash(for: urlString)
+            queuedUserData = true
+        }
+
+        if queuedUserData {
+            queueDeviceRecord(stampLastSyncDate: true)
+            scheduleLowPrioritySync()
+        }
     }
 
-    @objc private func listScrollPositionsDidChange(_ notification: Notification) {
-        guard isStarted, episodesSyncEnabled, !isApplyingRemoteChange else { return }
-        let now = Date()
-        setScrollPositionsLocalModifiedDate(now)
-        scrollDebounceWorkItem?.cancel()
+    // `nonisolated` (see defaultsDidChange) so an off-main delivery can't trip the MainActor
+    // executor assertion at entry. Hops to the main actor for the actual work.
+    @objc private nonisolated func listScrollPositionsDidChange(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            guard let self, self.isStarted, self.episodesSyncEnabled, !self.isApplyingRemoteChange else { return }
+            let now = Date()
+            self.setScrollPositionsLocalModifiedDate(now)
+            self.scrollDebounceWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                Task { @MainActor in
+                    self?.queueListScrollPositionsRecord()
+                }
+            }
+            self.scrollDebounceWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
+        }
+    }
+
+    // `nonisolated` (see defaultsDidChange). This fires from feed-refresh code paths that may
+    // run on a background thread, so it must not be MainActor-isolated at entry. Processes
+    // pending episode states AND pending subscriptions on the main actor.
+    @objc private nonisolated func episodesWereAdded(_ notification: Notification) {
+        // Fires once PER FEED during a refresh. Applying pending remote states walks the whole
+        // pending list (with a main-thread fetch per entry), so doing it per feed is
+        // O(feeds × pending) on the main thread. Debounce it to run once after the refresh
+        // settles instead.
+        Task { @MainActor [weak self] in
+            self?.scheduleApplyPendingPayloads()
+        }
+    }
+
+    private func scheduleApplyPendingPayloads() {
+        guard isStarted else { return }
+        applyPendingDebounceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
-                self?.queueListScrollPositionsRecord()
+                guard let self, self.isStarted else { return }
+                self.applyPendingEpisodeStates()
+                await self.applyPendingSubscriptions()
             }
         }
-        scrollDebounceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
+        applyPendingDebounceWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: workItem)
     }
 
-    @objc private func episodesWereAdded(_ notification: Notification) {
-        guard isStarted else { return }
-        applyPendingEpisodeStates()
-        Task { @MainActor in
-            await applyPendingSubscriptions()
-        }
-    }
-
-    private func markEpisodeLocallyChanged(_ episode: CDEpisode) {
-        guard let objectHash = episode.objectHash, !objectHash.isEmpty else { return }
-        markEpisodeObjectHashLocallyChanged(objectHash)
-    }
-
-    private func markEpisodeObjectHashLocallyChanged(_ objectHash: String) {
-        setEpisodeLocalModifiedDate(Date(), for: objectHash)
-        addPendingSave(episodeRecordID(forObjectHash: objectHash))
-    }
-
-    private func markSubscriptionLocallyChanged(feedURL: String) {
-        let now = Date()
-        setSubscriptionLocalModifiedDate(now, for: feedURL)
-        addPendingSave(subscriptionRecordID(forFeedURL: feedURL))
-    }
-
-    private func markSettingsLocallyChangedAndQueue() {
-        let now = Date()
-        setSettingsLocalModifiedDate(now)
+    // Every UserDefaults write fires UserDefaults.didChangeNotification — including our own
+    // ICiCloudSync* metadata, the engine state and status. We therefore do NOT act per
+    // notification: we only (re)arm a debounced check. This both coalesces bursts and keeps
+    // the per-write cost to a single work-item reschedule.
+    private func scheduleSettingsChangeCheck() {
         settingsDebounceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
-                self?.queueSettingsRecord()
+                self?.checkAndQueueSettingsChange()
             }
         }
         settingsDebounceWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
     }
 
-    private func queueSettingsRecord() {
+    // CRITICAL: only queue when the actually-synced settings changed. Sync-internal
+    // UserDefaults keys are excluded from the synced payload, so writing them leaves this hash
+    // unchanged and we bail. Without this gate, queueing settings (which itself writes
+    // defaults) re-triggers defaultsDidChange in an unbounded main-thread feedback loop — the
+    // ~10s freeze when toggling a sync switch while settings sync is on.
+    private func checkAndQueueSettingsChange() {
+        guard isStarted, settingsSyncEnabled, !isApplyingRemoteChange else { return }
+        let hash = syncedSettingsHash()
+        guard hash != lastSyncedSettingsHash else { return }
+        lastSyncedSettingsHash = hash
         setSettingsLocalModifiedDate(Date())
         addPendingSave(appSettingsRecordID())
+    }
+
+    // Fingerprint of the settings values that are actually synced (the same filter used to
+    // build the ICAppSettings payload).
+    private func syncedSettingsHash() -> String {
+        let domain = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
+        var components: [String] = []
+        for (key, value) in domain where Self.shouldSyncSettingsKeyForSyncEngineCallback(key) && Self.isValidSettingsValueForSyncEngineCallback(value) {
+            components.append("\(key)=\(value)")
+        }
+        return Self.sha256Hex(components.sorted().joined(separator: "\u{1}"))
     }
 
     private func queueListScrollPositionsRecord() {
@@ -2349,6 +2779,70 @@ import UIKit
         setSyncMetadata(dates, forKey: Self.subscriptionLocalModifiedDatesKey)
     }
 
+    // Batches the record-URL, modified-date and payload-hash bookkeeping for a set of
+    // locally changed subscriptions into one disk write each, instead of one per feed.
+    private func applySubscriptionLocalChanges(feedURLs: [String], hashes: [String: String]) {
+        guard !feedURLs.isEmpty else { return }
+        let now = Date().timeIntervalSince1970
+        var urls = subscriptionRecordURLs()
+        var dates = subscriptionLocalModifiedDates()
+        for feedURL in feedURLs {
+            urls[Self.subscriptionRecordName(forFeedURL: feedURL)] = feedURL
+            dates[feedURL] = now
+        }
+        setSyncMetadata(urls, forKey: Self.subscriptionRecordURLsKey)
+        setSyncMetadata(dates, forKey: Self.subscriptionLocalModifiedDatesKey)
+        mergeSubscriptionPayloadHashes(hashes)
+    }
+
+    private func subscriptionPayloadHashes() -> [String: String] {
+        if let subscriptionPayloadHashesCache {
+            return subscriptionPayloadHashesCache
+        }
+        let hashes = Self.syncMetadataValue(forKey: Self.subscriptionPayloadHashesKey) as? [String: String] ?? [:]
+        subscriptionPayloadHashesCache = hashes
+        return hashes
+    }
+
+    private func mergeSubscriptionPayloadHashes(_ updates: [String: String]) {
+        guard !updates.isEmpty else { return }
+        var hashes = subscriptionPayloadHashes()
+        for (feedURL, hash) in updates {
+            hashes[feedURL] = hash
+        }
+        subscriptionPayloadHashesCache = hashes
+        setSyncMetadata(hashes, forKey: Self.subscriptionPayloadHashesKey)
+    }
+
+    private func removeSubscriptionPayloadHash(for feedURL: String) {
+        var hashes = subscriptionPayloadHashes()
+        guard hashes[feedURL] != nil else { return }
+        hashes.removeValue(forKey: feedURL)
+        subscriptionPayloadHashesCache = hashes
+        setSyncMetadata(hashes, forKey: Self.subscriptionPayloadHashesKey)
+    }
+
+    // Stable fingerprint of the fields that actually go into a synced subscription
+    // record (title, rank, parked, credentials, non-internal properties). Excludes
+    // refresh-only fields like lastUpdate/etag/contentHash so a feed refresh that only
+    // updates those does not look like a change.
+    private func subscriptionPayloadHash(for feed: CDFeed) -> String {
+        var components: [String] = [
+            feed.title ?? "",
+            String(feed.rank),
+            feed.parked ? "1" : "0",
+            feed.username ?? "",
+            feed.password ?? "",
+        ]
+        var propertyComponents: [String] = []
+        for property in feed.properties as? Set<CDFeedProperty> ?? [] {
+            guard let key = property.key, !internalFeedPropertyKeys.contains(key) else { continue }
+            propertyComponents.append("\(key)\u{1}\(Self.feedPropertyValueType(for: property))\u{1}\(property.boolValue ? 1 : 0)\u{1}\(property.int32Value)\u{1}\(property.doubleValue)\u{1}\(property.stringValue ?? "")")
+        }
+        components.append(contentsOf: propertyComponents.sorted())
+        return Self.sha256Hex(components.joined(separator: "\u{2}"))
+    }
+
     private func settingsLocalModifiedDate() -> Date? {
         defaults.object(forKey: Self.settingsLocalModifiedDateKey) as? Date
     }
@@ -2414,20 +2908,17 @@ import UIKit
     }
 
     private func markSyncCompleted() {
-        clearSyncProgress()
+        clearSyncActivity()
         if syncedUserDataInCurrentRun {
             let now = Date()
             setSyncMetadata(now, forKey: Self.lastSyncDateKey)
             var payload = localDevicePayload()
             payload["lastSyncDate"] = now
             updateDeviceCache(with: payload)
-            clearError()
-            setStatus(NSLocalizedString("Synchronisiert", comment: ""))
             postDevicesChanged()
-        } else {
-            clearError()
-            setStatus(NSLocalizedString("Keine Änderungen", comment: ""))
         }
+        clearError()
+        setStatus(NSLocalizedString("Synchronisation vollständig", comment: ""))
         deviceRecordShouldStampSyncDate = false
         setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
         syncedUserDataInCurrentRun = false
@@ -2442,34 +2933,39 @@ import UIKit
         return !syncEngine.state.pendingDatabaseChanges.isEmpty || !syncEngine.state.pendingRecordZoneChanges.isEmpty
     }
 
-    private func beginSyncProgress() {
-        syncProgressTotal = syncEngine?.state.pendingRecordZoneChanges.count ?? 0
-        syncProgressCompleted = 0
-        syncProgressActive = syncProgressTotal > 0
-    }
-
-    private func beginSyncProgressIfNeeded() {
-        if !syncProgressActive {
-            beginSyncProgress()
+    private func beginSyncActivity(_ direction: SyncActivityDirection) {
+        if syncActivityDirection != direction {
+            syncActivityDirection = direction
+            syncActivityStartDate = Date()
+            syncActivityRecordCount = 0
         }
     }
 
-    private func updateSyncProgressFromPendingChanges() {
-        guard syncProgressActive, syncProgressTotal > 0 else { return }
-        let pendingCount = syncEngine?.state.pendingRecordZoneChanges.count ?? 0
-        let completedCount = syncProgressTotal - pendingCount
-        syncProgressCompleted = min(syncProgressTotal, max(syncProgressCompleted, completedCount))
+    private func recordSyncActivity(_ count: Int) {
+        guard count > 0 else { return }
+        syncActivityRecordCount += count
     }
 
-    private func clearSyncProgress() {
-        syncProgressTotal = 0
-        syncProgressCompleted = 0
-        syncProgressActive = false
+    private func clearSyncActivity() {
+        syncActivityDirection = nil
+        syncActivityStartDate = nil
+        syncActivityRecordCount = 0
     }
 
-    private func syncProgressStatusText() -> String? {
-        guard syncProgressActive, syncProgressTotal > 0 else { return nil }
-        return String(format: NSLocalizedString("%ld/%ld Elemente", comment: ""), syncProgressCompleted, syncProgressTotal)
+    // "Lädt hoch… 12/s" — direction plus a throughput estimate (items per second).
+    private func syncActivityStatusText() -> String? {
+        guard let direction = syncActivityDirection else { return nil }
+        let base = direction == .up
+            ? NSLocalizedString("Synchronisation läuft, lädt hoch…", comment: "")
+            : NSLocalizedString("Synchronisation läuft, lädt herunter…", comment: "")
+        if let start = syncActivityStartDate, syncActivityRecordCount > 0 {
+            let elapsed = max(Date().timeIntervalSince(start), 0.001)
+            let rate = Int((Double(syncActivityRecordCount) / elapsed).rounded())
+            if rate > 0 {
+                return String(format: NSLocalizedString("%@ %ld/s", comment: ""), base, rate)
+            }
+        }
+        return base
     }
 
     private func markSyncCompletedIfFinished() {
@@ -2478,9 +2974,6 @@ import UIKit
             return
         }
         guard !hasPendingSyncChanges else {
-            beginSyncProgressIfNeeded()
-            updateSyncProgressFromPendingChanges()
-            setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
             postStateChanged()
             return
         }
@@ -2493,7 +2986,7 @@ import UIKit
     }
 
     private func setError(_ error: Error) {
-        clearSyncProgress()
+        clearSyncActivity()
         deviceRecordShouldStampSyncDate = false
         setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
         syncedUserDataInCurrentRun = false
@@ -2714,52 +3207,26 @@ import UIKit
     }
 
     private func setSyncMetadata(_ value: Any?, forKey key: String) {
+        // No per-write logging here: metadata writes are far too frequent to log each one
+        // (this once flooded the diagnostics log to 26 MB). Only genuine write failures are
+        // logged, which are the actionable cases.
         isWritingSyncMetadata = true
         if Self.isFileBackedSyncMetadataKey(key) {
             if let value {
                 do {
-                    let bytes = try Self.writeSyncMetadataValue(value, forKey: key)
+                    _ = try Self.writeSyncMetadataValue(value, forKey: key)
                     defaults.removeObject(forKey: key)
-                    logSyncMetadataDiagnostic(operation: "write", key: key, storage: "file", bytes: bytes, value: value)
-                    NSLog("[iCloudSync metadata] write key=%@ storage=file bytes=%ld mainThread=%@ thread=%u summary=%@",
-                          key,
-                          bytes,
-                          Thread.isMainThread ? "1" : "0",
-                          pthread_mach_thread_np(pthread_self()),
-                          Self.syncMetadataSummary(for: value))
                 } catch {
                     logSyncMetadataDiagnostic(operation: "write-failed", key: key, storage: "file", bytes: nil, value: value, error: error)
-                    NSLog("[iCloudSync metadata] write failed key=%@ storage=file mainThread=%@ thread=%u error=%@ summary=%@",
-                          key,
-                          Thread.isMainThread ? "1" : "0",
-                          pthread_mach_thread_np(pthread_self()),
-                          String(describing: error),
-                          Self.syncMetadataSummary(for: value))
                 }
             } else {
                 Self.removeSyncMetadataValue(forKey: key)
                 defaults.removeObject(forKey: key)
-                logSyncMetadataDiagnostic(operation: "remove", key: key, storage: "file", bytes: nil, value: nil)
-                NSLog("[iCloudSync metadata] remove key=%@ storage=file mainThread=%@ thread=%u",
-                      key,
-                      Thread.isMainThread ? "1" : "0",
-                      pthread_mach_thread_np(pthread_self()))
             }
         } else if let value {
             defaults.set(value, forKey: key)
-            logSyncMetadataDiagnostic(operation: "write", key: key, storage: "defaults", bytes: nil, value: value)
-            NSLog("[iCloudSync metadata] write key=%@ storage=defaults mainThread=%@ thread=%u summary=%@",
-                  key,
-                  Thread.isMainThread ? "1" : "0",
-                  pthread_mach_thread_np(pthread_self()),
-                  Self.syncMetadataSummary(for: value))
         } else {
             defaults.removeObject(forKey: key)
-            logSyncMetadataDiagnostic(operation: "remove", key: key, storage: "defaults", bytes: nil, value: nil)
-            NSLog("[iCloudSync metadata] remove key=%@ storage=defaults mainThread=%@ thread=%u",
-                  key,
-                  Thread.isMainThread ? "1" : "0",
-                  pthread_mach_thread_np(pthread_self()))
         }
         isWritingSyncMetadata = false
     }

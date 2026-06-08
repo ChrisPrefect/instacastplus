@@ -3801,9 +3801,22 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     return color;
 }
 
+- (NSInteger)_episodeArtworkCacheSizeForCollectionView:(UICollectionView*)collectionView
+{
+    CGFloat width = CGRectGetWidth(collectionView.bounds);
+    if (width <= 0) {
+        width = CGRectGetWidth(self.view.bounds);
+    }
+    if (width <= 0) {
+        width = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? 580.f : 320.f;
+    }
+    return (NSInteger)ceil(width);
+}
+
 - (void)_setEpisodeArtworkForCell:(ChapterImageCell*)cell collectionView:(UICollectionView*)collectionView indexPath:(NSIndexPath*)indexPath imageURL:(NSURL*)imageURL
 {
-    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
+    NSInteger artworkSize = [self _episodeArtworkCacheSizeForCollectionView:collectionView];
+    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:artworkSize grayscale:NO];
     if (cachedImage) {
         cell.chapterImageView.image = cachedImage;
         UIColor *averageColor = [self averageColorFromImage:cachedImage];
@@ -3822,7 +3835,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
 
-    [[ImageCacheManager sharedImageCacheManager] imageForURL:imageURL size:320 grayscale:NO sender:cell completion:^(UIImage *image) {
+    [[ImageCacheManager sharedImageCacheManager] imageForURL:imageURL size:artworkSize grayscale:NO sender:cell completion:^(UIImage *image) {
         if (!image) {
             return;
         }

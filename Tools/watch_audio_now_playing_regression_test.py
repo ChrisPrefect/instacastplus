@@ -66,11 +66,25 @@ require(
     "The Watch player must keep title, podcast, duration, elapsed time, and rate in MPNowPlayingInfoCenter.",
 )
 require(
+    "MPMediaItemPropertyArtwork" in watch_player
+    and "MPMediaItemArtwork" in watch_player
+    and "nowPlayingArtworkTask" in watch_player
+    and "loadNowPlayingArtwork" in watch_player,
+    "The Watch player must publish podcast artwork to MPNowPlayingInfoCenter so the native workout Now Playing screen shows cover art.",
+)
+require(
     "MPRemoteCommandCenter.shared()" in watch_player
     and "togglePlayPauseCommand" in watch_player
     and "playCommand" in watch_player
     and "pauseCommand" in watch_player,
     "The Watch player must register remote play/pause commands for the system Now Playing screen.",
+)
+require(
+    "skipForwardCommand" in watch_player
+    and "skipBackwardCommand" in watch_player
+    and "preferredIntervals = [NSNumber(value: episode.skipForwardSeconds)]" in watch_player
+    and "preferredIntervals = [NSNumber(value: episode.skipBackwardSeconds)]" in watch_player,
+    "The Watch player must register native skip forward/backward remote commands with the synced skip durations.",
 )
 require(
     "clearNowPlayingInfo" in watch_player

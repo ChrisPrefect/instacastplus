@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import MediaPlayer
+import UIKit
 
 @MainActor
 final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDelegate {
@@ -15,6 +16,10 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private var lastAutomaticReportDate: Date?
     private let dateFormatter = ISO8601DateFormatter()
     private var playbackGeneration = 0
+    private var nowPlayingArtworkTask: Task<Void, Never>?
+    private var nowPlayingArtwork: MPMediaItemArtwork?
+    private var nowPlayingArtworkURL: URL?
+    private var nowPlayingArtworkEpisodeHash: String?
 
     private override init() {
         super.init()
@@ -203,6 +208,22 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             }
             return .success
         }
+
+        commandCenter.skipForwardCommand.isEnabled = true
+        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.seekUsingCurrentEpisode(forward: true)
+            }
+            return .success
+        }
+
+        commandCenter.skipBackwardCommand.isEnabled = true
+        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                self?.seekUsingCurrentEpisode(forward: false)
+            }
+            return .success
+        }
     }
 
     private func toggleCurrentPlayback() async {
@@ -231,6 +252,12 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
     }
 
+    private func seekUsingCurrentEpisode(forward: Bool) {
+        guard let episode = currentEpisode() else { return }
+        let seconds = forward ? episode.skipForwardSeconds : episode.skipBackwardSeconds
+        seek(by: forward ? Double(seconds) : -Double(seconds))
+    }
+
     private func updateNowPlayingInfo(for episode: WatchEpisode? = nil) {
         guard
             let player,
@@ -257,7 +284,22 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         if !albumTitle.isEmpty {
             info[MPMediaItemPropertyAlbumTitle] = albumTitle
         }
+        if let artwork = nowPlayingArtwork,
+           nowPlayingArtworkEpisodeHash == episode.episodeHash,
+           nowPlayingArtworkURL == episode.imageURL {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
+
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.skipForwardCommand.preferredIntervals = [NSNumber(value: episode.skipForwardSeconds)]
+        commandCenter.skipBackwardCommand.preferredIntervals = [NSNumber(value: episode.skipBackwardSeconds)]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+
+        if let imageURL = episode.imageURL {
+            loadNowPlayingArtwork(from: imageURL, episodeHash: episode.episodeHash)
+        } else {
+            clearNowPlayingArtwork()
+        }
     }
 
     private func currentEpisode() -> WatchEpisode? {
@@ -267,6 +309,53 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
     private func clearNowPlayingInfo() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        clearNowPlayingArtwork()
+    }
+
+    private func loadNowPlayingArtwork(from url: URL, episodeHash: String) {
+        if nowPlayingArtworkURL == url, nowPlayingArtworkEpisodeHash == episodeHash {
+            return
+        }
+
+        nowPlayingArtworkTask?.cancel()
+        nowPlayingArtwork = nil
+        nowPlayingArtworkURL = url
+        nowPlayingArtworkEpisodeHash = episodeHash
+        nowPlayingArtworkTask = Task { [weak self] in
+            guard let image = await Self.image(from: url), !Task.isCancelled else { return }
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            await MainActor.run {
+                guard
+                    let self,
+                    self.playingEpisodeHash == episodeHash,
+                    self.nowPlayingArtworkURL == url
+                else {
+                    return
+                }
+                self.nowPlayingArtwork = artwork
+                self.updateNowPlayingInfo()
+            }
+        }
+    }
+
+    private func clearNowPlayingArtwork() {
+        nowPlayingArtworkTask?.cancel()
+        nowPlayingArtworkTask = nil
+        nowPlayingArtwork = nil
+        nowPlayingArtworkURL = nil
+        nowPlayingArtworkEpisodeHash = nil
+    }
+
+    private static func image(from url: URL) async -> UIImage? {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            if let httpResponse = response as? HTTPURLResponse, !(200..<300).contains(httpResponse.statusCode) {
+                return nil
+            }
+            return UIImage(data: data)
+        } catch {
+            return nil
+        }
     }
 
     private func startTimer() {

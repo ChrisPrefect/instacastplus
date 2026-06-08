@@ -45,7 +45,11 @@ set_sync_metadata = method_body(MANAGER, "private func setSyncMetadata")
 require("Self.isFileBackedSyncMetadataKey(key)" in set_sync_metadata, "Large iCloud metadata writes must branch away from UserDefaults.")
 require("Self.writeSyncMetadataValue" in set_sync_metadata, "Large iCloud metadata must be written to files.")
 require("defaults.set(value, forKey: key)" not in source_between(set_sync_metadata, "if let value {", "} else {"), "setSyncMetadata must not blindly write all values into UserDefaults.")
-require("NSLog" in set_sync_metadata and "iCloudSync metadata" in set_sync_metadata, "iCloud metadata writes must emit console diagnostics with key/size/thread.")
+# Per-write metadata logging was removed: logging every write (plus a synchronous NSLog) once
+# flooded the diagnostics log to 26 MB and spammed the console on the main thread. Only genuine
+# write failures may be logged now.
+require("NSLog" not in set_sync_metadata, "setSyncMetadata must not log every write (this flooded the diagnostics log).")
+require("write-failed" in set_sync_metadata, "Genuine iCloud metadata write failures must still be logged.")
 
 require("private nonisolated static func syncMetadataValue(forKey key: String) -> Any?" in MANAGER, "File-backed iCloud metadata needs a shared read path.")
 require("private nonisolated static func writeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared write path.")

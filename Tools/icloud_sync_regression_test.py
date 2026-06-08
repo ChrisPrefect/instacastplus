@@ -159,7 +159,7 @@ add_pending_delete = method_body(MANAGER, "private func addPendingDelete")
 require("isUserDataRecordID(recordID)" in add_pending_delete and "queueDeviceRecord(stampLastSyncDate: true)" in add_pending_delete, "User-data deletes must queue a device record that can publish the real data-sync date.")
 mark_completed = method_body(MANAGER, "private func markSyncCompleted")
 require("if syncedUserDataInCurrentRun" in mark_completed, "Last Sync must only update after user data was actually sent or received.")
-require('"Keine Änderungen"' in mark_completed, "No-op sync checks must report that nothing changed instead of pretending data synced.")
+require('"Synchronisation vollständig"' in mark_completed, "Completed syncs must report completion, not a misleading no-op status.")
 require("setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)" in mark_completed, "Completed syncs must clear persisted device Last Sync stamping.")
 
 devices_body = source_between(MANAGER, "@objc var devices: [ICiCloudSyncDeviceInfo] {", "\n    private override init()")

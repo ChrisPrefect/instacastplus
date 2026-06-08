@@ -1404,6 +1404,12 @@
 "Status" = "Status";
 "Devices" = "Devices";
 "Synced Devices" = "Synced Devices";
+"On iCloud" = "On iCloud";
+"Delete iCloud Data" = "Delete iCloud Data";
+"Removes all synced data from iCloud for all of your devices. Local data on this device is kept; if sync stays on, it is uploaded again." = "Removes all synced data from iCloud for all of your devices. Local data on this device is kept; if sync stays on, it is uploaded again.";
+"This removes all synced data from iCloud for all of your devices. This cannot be undone." = "This removes all synced data from iCloud for all of your devices. This cannot be undone.";
+"Lösche iCloud-Daten…" = "Deleting iCloud data…";
+"iCloud-Daten gelöscht." = "iCloud data deleted.";
 "This Device" = "This Device";
 "No synced devices yet" = "No synced devices yet";
 "Last Sync" = "Last Sync";
@@ -1423,6 +1429,10 @@
 "Sende Änderungen…" = "Sending changes…";
 "Synchronisiert" = "Synced";
 "Keine Änderungen" = "No changes";
+"Synchronisation läuft, lädt hoch…" = "Syncing, uploading…";
+"Synchronisation läuft, lädt herunter…" = "Syncing, downloading…";
+"%@ %ld/s" = "%@ %ld/s";
+"Synchronisation vollständig" = "Sync complete";
 "iCloud angemeldet." = "Signed in to iCloud.";
 "Kein iCloud Account verfügbar." = "No iCloud account available.";
 "iCloud Account gewechselt." = "iCloud account changed.";

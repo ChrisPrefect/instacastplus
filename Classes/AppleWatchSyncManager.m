@@ -410,6 +410,7 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         @"position": @(MAX(0, episode.position)),
         @"consumed": @(episode.consumed),
         @"mediaURL": mediaURL ?: @"",
+        @"expectedFileSize": @(MAX((int64_t)0, episode.preferedMedium.byteSize)),
         @"selectionSource": state.selectionSource ?: ICAppleWatchSelectionSourceManual,
         @"watchAddedDate": [self _stringFromDate:addedDate],
         @"skipForwardSeconds": @(skipForwardSeconds),

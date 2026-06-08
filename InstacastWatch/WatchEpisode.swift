@@ -45,6 +45,7 @@ struct WatchManifestEntry {
     let playbackOrder: Int?
     let skipForwardSeconds: Int
     let skipBackwardSeconds: Int
+    let expectedFileSize: Int64
 }
 
 struct WatchEpisode: Codable, Identifiable, Equatable {
@@ -193,13 +194,15 @@ extension WatchManifestEntry {
         self.playbackOrder = (dictionary["playbackOrder"] as? NSNumber)?.intValue
         self.skipForwardSeconds = max(1, (dictionary["skipForwardSeconds"] as? NSNumber)?.intValue ?? 30)
         self.skipBackwardSeconds = max(1, (dictionary["skipBackwardSeconds"] as? NSNumber)?.intValue ?? 30)
+        self.expectedFileSize = max(0, (dictionary["expectedFileSize"] as? NSNumber)?.int64Value ?? 0)
     }
 }
 
 extension WatchEpisode {
     init(entry: WatchManifestEntry, existing: WatchEpisode?) {
-        let canReuseDownload = existing?.mediaURL == entry.mediaURL
-        let canReuseLocalMetadata = canReuseDownload && existing?.localFileURL != nil
+        let canReuseManifestProgress = existing?.mediaURL == entry.mediaURL && existing?.status != .downloaded
+        let canReuseDownload = Self.canReuseDownloadedFile(from: existing, entry: entry)
+        let canReuseLocalMetadata = canReuseDownload
         self.episodeHash = entry.episodeHash
         self.feedIdentifier = entry.feedIdentifier
         self.title = entry.title
@@ -212,16 +215,16 @@ extension WatchEpisode {
         self.selectionSource = entry.selectionSource
         self.watchAddedDate = entry.watchAddedDate
         self.playbackOrder = entry.playbackOrder
-        self.status = canReuseDownload ? (existing?.status ?? .queued) : .queued
+        self.status = canReuseDownload ? .downloaded : (canReuseManifestProgress ? (existing?.status ?? .queued) : .queued)
         self.localFileURL = canReuseDownload ? existing?.localFileURL : nil
         self.actualFileSize = canReuseDownload ? (existing?.actualFileSize ?? 0) : 0
         self.actualDuration = canReuseDownload ? (existing?.actualDuration ?? 0) : 0
         self.lastPlaybackPosition = max(existing?.lastPlaybackPosition ?? 0, entry.position)
         self.lastPlaybackDate = existing?.lastPlaybackDate
         self.consumed = existing?.consumed ?? entry.consumed
-        self.lastError = canReuseDownload ? existing?.lastError : nil
-        self.downloadedBytes = canReuseDownload ? (existing?.downloadedBytes ?? 0) : 0
-        self.expectedBytes = canReuseDownload ? (existing?.expectedBytes ?? 0) : 0
+        self.lastError = canReuseDownload || canReuseManifestProgress ? existing?.lastError : nil
+        self.downloadedBytes = canReuseDownload ? (existing?.actualFileSize ?? 0) : (canReuseManifestProgress ? (existing?.downloadedBytes ?? 0) : 0)
+        self.expectedBytes = canReuseDownload ? (existing?.actualFileSize ?? 0) : max(entry.expectedFileSize, canReuseManifestProgress ? (existing?.expectedBytes ?? 0) : 0)
         self.skipForwardSeconds = entry.skipForwardSeconds
         self.skipBackwardSeconds = entry.skipBackwardSeconds
         self.chapters = canReuseLocalMetadata ? (existing?.chapters ?? []) : []
@@ -232,5 +235,24 @@ extension WatchEpisode {
         chapters.last { chapter in
             chapter.contains(position: position, episodeDuration: displayDuration)
         }
+    }
+
+    private static func canReuseDownloadedFile(from existing: WatchEpisode?, entry: WatchManifestEntry) -> Bool {
+        guard
+            let existing,
+            existing.status == .downloaded,
+            let localFileURL = existing.localFileURL,
+            FileManager.default.fileExists(atPath: localFileURL.path)
+        else {
+            return false
+        }
+
+        if existing.mediaURL == entry.mediaURL {
+            return true
+        }
+        if entry.expectedFileSize > 0 && existing.actualFileSize > 0 {
+            return existing.actualFileSize == entry.expectedFileSize
+        }
+        return true
     }
 }

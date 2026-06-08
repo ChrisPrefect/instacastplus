@@ -22,6 +22,7 @@ model = ElementTree.parse(ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" 
 watch_download_manager = read("InstacastWatch/WatchDownloadManager.swift")
 watch_connectivity = read("InstacastWatch/WatchConnectivityController.swift")
 watch_player = read("InstacastWatch/WatchPlayerController.swift")
+watch_episode = read("InstacastWatch/WatchEpisode.swift")
 watch_views = read("InstacastWatch/WatchEpisodeViews.swift")
 watch_chapter_extractor = read("InstacastWatch/WatchChapterExtractor.swift")
 watch_plist = read("InstacastWatch/Info.plist")
@@ -163,11 +164,12 @@ require(
     "episode.video" in manager
     and "episode.archived" in manager
     and "episode.preferedMedium.fileURL" in manager
+    and '"expectedFileSize": @(MAX((int64_t)0, episode.preferedMedium.byteSize))' in manager
     and "AppleWatchSendLatestCount" in manager
     and "AppleWatchOnlyUnplayed" in manager
     and "ICAppleWatchSelectionSourceManual" in manager
     and "ICAppleWatchSelectionSourceLatestRule" in manager,
-    "The iPhone manifest source must use the real episode media URL, exclude unsupported episodes, and support manual/latest-rule selection.",
+    "The iPhone manifest source must use the real episode media URL, include media size, exclude unsupported episodes, and support manual/latest-rule selection.",
 )
 
 require(
@@ -499,6 +501,15 @@ require(
     and "player.seek(by: -Double(episode.skipBackwardSeconds))" in watch_views
     and "player.seek(by: Double(episode.skipForwardSeconds))" in watch_views,
     "Configured global/per-podcast skip durations must be mirrored to the Watch and used by the Watch player controls.",
+)
+
+require(
+    "expectedFileSize" in watch_episode
+    and "canReuseDownloadedFile(from: existing, entry: entry)" in watch_episode
+    and "FileManager.default.fileExists(atPath: localFileURL.path)" in watch_episode
+    and "existing.actualFileSize == entry.expectedFileSize" in watch_episode
+    and "let canReuseDownload = existing?.mediaURL == entry.mediaURL" not in watch_episode,
+    "The Watch manifest merge must preserve an existing local download for the same episode when only the enclosure URL changes; exact mediaURL equality is too unstable for podcast CDN URLs.",
 )
 
 require(

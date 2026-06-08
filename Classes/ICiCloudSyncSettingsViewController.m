@@ -10,7 +10,9 @@
 typedef NS_ENUM(NSInteger, ICiCloudSyncSettingsSection) {
     ICiCloudSyncSettingsSectionStatus = 0,
     ICiCloudSyncSettingsSectionOptions,
+    ICiCloudSyncSettingsSectionStorage,
     ICiCloudSyncSettingsSectionDevices,
+    ICiCloudSyncSettingsSectionDelete,
     ICiCloudSyncSettingsSectionCount,
 };
 
@@ -21,10 +23,19 @@ typedef NS_ENUM(NSInteger, ICiCloudSyncOptionRow) {
     ICiCloudSyncOptionRowCount,
 };
 
+typedef NS_ENUM(NSInteger, ICiCloudSyncStorageRow) {
+    ICiCloudSyncStorageRowEpisodes = 0,
+    ICiCloudSyncStorageRowSubscriptions,
+    ICiCloudSyncStorageRowSettings,
+    ICiCloudSyncStorageRowCount,
+};
+
 static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 @interface ICiCloudSyncSettingsViewController ()
 @property (nonatomic, strong) NSRelativeDateTimeFormatter *relativeDateFormatter;
+@property (nonatomic, strong) ICiCloudSyncCounts *cachedCounts;
+@property (nonatomic, strong) NSTimer *relativeTimeRefreshTimer;
 @end
 
 @implementation ICiCloudSyncSettingsViewController
@@ -59,10 +70,26 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 {
     [super viewWillAppear:animated];
     [self updateAppearance];
+
+    // Keep the relative "Last Sync" timestamps fresh while the screen is open.
+    [self.relativeTimeRefreshTimer invalidate];
+    self.relativeTimeRefreshTimer = [NSTimer scheduledTimerWithTimeInterval:10.0
+                                                                     target:self
+                                                                   selector:@selector(reloadStatusAndDevicesSections)
+                                                                   userInfo:nil
+                                                                    repeats:YES];
+}
+
+- (void)viewWillDisappear:(BOOL)animated
+{
+    [super viewWillDisappear:animated];
+    [self.relativeTimeRefreshTimer invalidate];
+    self.relativeTimeRefreshTimer = nil;
 }
 
 - (void)dealloc
 {
+    [self.relativeTimeRefreshTimer invalidate];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -70,6 +97,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
+    self.cachedCounts = [ICiCloudSyncManager sharedManager].syncCounts;
     [self.tableView reloadData];
 }
 
@@ -92,8 +120,12 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
             return 2;
         case ICiCloudSyncSettingsSectionOptions:
             return ICiCloudSyncOptionRowCount;
+        case ICiCloudSyncSettingsSectionStorage:
+            return [ICiCloudSyncManager sharedManager].anySyncEnabled ? ICiCloudSyncStorageRowCount : 0;
         case ICiCloudSyncSettingsSectionDevices:
             return MAX(1, [ICiCloudSyncManager sharedManager].devices.count);
+        case ICiCloudSyncSettingsSectionDelete:
+            return 1;
     }
     return 0;
 }
@@ -139,6 +171,42 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         return cell;
     }
 
+    if (indexPath.section == ICiCloudSyncSettingsSectionStorage) {
+        ICiCloudSyncManager *manager = [ICiCloudSyncManager sharedManager];
+        ICiCloudSyncCounts *counts = self.cachedCounts ?: manager.syncCounts;
+        UITableViewCell *cell = [self detailCell];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.detailTextLabel.numberOfLines = 1;
+        switch (indexPath.row) {
+            case ICiCloudSyncStorageRowEpisodes:
+                cell.textLabel.text = @"Episodes".ls;
+                cell.detailTextLabel.text = [self storageDetailForSynced:counts.episodesSynced total:counts.episodesTotal enabled:manager.episodesSyncEnabled];
+                break;
+            case ICiCloudSyncStorageRowSubscriptions:
+                cell.textLabel.text = @"Subscriptions".ls;
+                cell.detailTextLabel.text = [self storageDetailForSynced:counts.subscriptionsSynced total:counts.subscriptionsTotal enabled:manager.subscriptionsSyncEnabled];
+                break;
+            case ICiCloudSyncStorageRowSettings:
+                cell.textLabel.text = @"Settings".ls;
+                cell.detailTextLabel.text = manager.settingsSyncEnabled
+                    ? [NSNumberFormatter localizedStringFromNumber:@(counts.settings) numberStyle:NSNumberFormatterDecimalStyle]
+                    : @"Off".ls;
+                break;
+        }
+        return cell;
+    }
+
+    if (indexPath.section == ICiCloudSyncSettingsSectionDelete) {
+        UITableViewCell *cell = [self buttonCell];
+        cell.textLabel.text = @"Delete iCloud Data".ls;
+        cell.textLabel.textColor = [UIColor systemRedColor];
+        cell.textLabel.enabled = YES;
+        cell.userInteractionEnabled = YES;
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        return cell;
+    }
+
     NSArray<ICiCloudSyncDeviceInfo*> *devices = [ICiCloudSyncManager sharedManager].devices;
     if (devices.count == 0) {
         UITableViewCell *cell = [self detailCell];
@@ -177,16 +245,31 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
             return nil;
         case ICiCloudSyncSettingsSectionOptions:
             return @"Sync Options".ls;
+        case ICiCloudSyncSettingsSectionStorage:
+            return [ICiCloudSyncManager sharedManager].anySyncEnabled ? @"On iCloud".ls : nil;
         case ICiCloudSyncSettingsSectionDevices:
             return @"Synced Devices".ls;
     }
     return nil;
 }
 
+- (NSString*)storageDetailForSynced:(NSInteger)synced total:(NSInteger)total enabled:(BOOL)enabled
+{
+    if (!enabled) {
+        return @"Off".ls;
+    }
+    NSString *syncedText = [NSNumberFormatter localizedStringFromNumber:@(synced) numberStyle:NSNumberFormatterDecimalStyle];
+    NSString *totalText = [NSNumberFormatter localizedStringFromNumber:@(total) numberStyle:NSNumberFormatterDecimalStyle];
+    return [NSString stringWithFormat:@"%@ / %@", syncedText, totalText];
+}
+
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
 {
     if (section == ICiCloudSyncSettingsSectionOptions) {
         return @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync.".ls;
+    }
+    if (section == ICiCloudSyncSettingsSectionDelete) {
+        return @"Removes all synced data from iCloud for all of your devices. Local data on this device is kept; if sync stays on, it is uploaded again.".ls;
     }
     return nil;
 }
@@ -225,6 +308,12 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+
+    if (indexPath.section == ICiCloudSyncSettingsSectionDelete) {
+        [self confirmAndDeleteICloudData];
+        return;
+    }
+
     if (indexPath.section == ICiCloudSyncSettingsSectionStatus && indexPath.row == 1) {
         if (![ICiCloudSyncManager sharedManager].anySyncEnabled) { return; }
 
@@ -246,6 +335,29 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
             });
         }];
     }
+}
+
+- (void)confirmAndDeleteICloudData
+{
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Delete iCloud Data".ls
+                                                                  message:@"This removes all synced data from iCloud for all of your devices. This cannot be undone.".ls
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel".ls style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Delete".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [[ICiCloudSyncManager sharedManager] deleteAllICloudDataWithCompletion:^(NSError * _Nullable error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (error) {
+                    [self presentAlertControllerWithTitle:@"iCloud Sync".ls
+                                                  message:[ICiCloudSyncManager sharedManager].statusText
+                                                   button:@"OK".ls
+                                                 animated:YES
+                                               completion:nil];
+                }
+                [self.tableView reloadData];
+            });
+        }];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)toggleSyncOption:(UISwitch*)sender
@@ -336,8 +448,11 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         return;
     }
 
+    self.cachedCounts = [ICiCloudSyncManager sharedManager].syncCounts;
+
     NSIndexSet *sections = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(ICiCloudSyncSettingsSectionStatus, 1)];
     NSMutableIndexSet *mutableSections = [sections mutableCopy];
+    [mutableSections addIndex:ICiCloudSyncSettingsSectionStorage];
     [mutableSections addIndex:ICiCloudSyncSettingsSectionDevices];
 
     [UIView performWithoutAnimation:^{

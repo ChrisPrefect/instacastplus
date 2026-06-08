@@ -11,6 +11,7 @@
 import Foundation
 import AVFoundation
 import UIKit
+import Darwin
 import Darwin.Mach
 import Security
 #if canImport(Speech)
@@ -243,7 +244,11 @@ private struct ICDiagnosticLogLine: Encodable {
             try? fileManager.removeItem(at: diagnosticsLog)
             try? fileManager.removeItem(at: applicationLog)
         }
-        (UIApplication.shared as? Application)?.initializeLoggers()
+        // UIApplication.shared must be touched on the main actor — hop there explicitly so this
+        // can't trip the main-thread assertion if called off the main thread.
+        Task { @MainActor in
+            (UIApplication.shared as? Application)?.initializeLoggers()
+        }
     }
 
     @objc func logStorageLayout(_ reason: String) {
@@ -339,6 +344,11 @@ private struct ICDiagnosticLogLine: Encodable {
             UserDefaults.standard.removeObject(forKey: Self.previousSessionStateKey)
         }
 
+        // Fold any backtrace captured by the crash handler during the previous session into
+        // the diagnostics log, then (re)arm the handler for this session.
+        loadAndClearPreviousCrashBacktraceLocked()
+        installCrashBacktraceHandler()
+
         writeSessionStateLocked(state: "launching")
         appendLocked(category: "session", message: "Diagnose-Logger gestartet", metadata: appMetadataLocked())
         appendLocked(category: "session", message: "Log-Dateien bereit", metadata: [
@@ -428,6 +438,24 @@ private struct ICDiagnosticLogLine: Encodable {
         try? data.write(to: sessionStateURL(), options: .atomic)
     }
 
+    private func crashBacktraceURL() -> URL {
+        logsDirectoryURL().appendingPathComponent("ICLastCrash.log")
+    }
+
+    private func loadAndClearPreviousCrashBacktraceLocked() {
+        let url = crashBacktraceURL()
+        guard let data = try? Data(contentsOf: url), !data.isEmpty,
+              let text = String(data: data, encoding: .utf8) else { return }
+        appendLocked(category: "crash-backtrace",
+                     message: "Stacktrace des vorherigen Absturzes",
+                     metadata: ["backtrace": text])
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    private func installCrashBacktraceHandler() {
+        ICInstallCrashBacktraceHandler(crashBacktraceURL().path)
+    }
+
     private func appendLocked(category: String, message: String, metadata: [String: String]) {
         let line = ICDiagnosticLogLine(
             timestamp: Self.timestampString(from: Date()),
@@ -446,11 +474,38 @@ private struct ICDiagnosticLogLine: Encodable {
         if FileManager.default.fileExists(atPath: url.path),
            let handle = try? FileHandle(forWritingTo: url) {
             defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
+            let endOffset = (try? handle.seekToEnd()) ?? 0
+            // Keep the diagnostics log bounded — if a bug ever floods it (e.g. a feedback loop),
+            // drop the oldest half rather than letting it grow without limit.
+            if endOffset > Self.maxDiagnosticsLogBytes {
+                trimDiagnosticsLogLocked(url: url)
+                if let reopened = try? FileHandle(forWritingTo: url) {
+                    defer { try? reopened.close() }
+                    _ = try? reopened.seekToEnd()
+                    try? reopened.write(contentsOf: payload)
+                    return
+                }
+            }
             try? handle.write(contentsOf: payload)
         } else {
             try? payload.write(to: url, options: .atomic)
         }
+    }
+
+    private static let maxDiagnosticsLogBytes: UInt64 = 6 * 1024 * 1024
+
+    // Rewrites the log keeping roughly its most recent half, starting at a line boundary.
+    private func trimDiagnosticsLogLocked(url: URL) {
+        guard let data = try? Data(contentsOf: url) else { return }
+        let keep = data.count / 2
+        var start = data.count - keep
+        if let newline = data[start...].firstIndex(of: 0x0A) {
+            start = newline + 1
+        }
+        let trimmed = data.subdata(in: start..<data.count)
+        var prefix = Data("{\"category\":\"diagnostics\",\"message\":\"Log gekürzt (Größenlimit)\"}\n".utf8)
+        prefix.append(trimmed)
+        try? prefix.write(to: url, options: .atomic)
     }
 
     private func stringifiedMetadata(from metadata: NSDictionary?) -> [String: String] {
@@ -3099,5 +3154,57 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
                            userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Download abgebrochen.", comment: "")])
         }
         return error as NSError
+    }
+}
+
+// MARK: - Crash backtrace capture
+//
+// Captures a backtrace for uncaught Obj-C exceptions and fatal signals (EXC_BAD_ACCESS,
+// EXC_BREAKPOINT / dispatch_assert_queue, SIGABRT, …) into a file that is folded into the
+// diagnostics log on the next launch. This makes standalone / TestFlight crashes
+// self-documenting — no attached debugger required. (Under the Xcode debugger the Mach
+// exception handler intercepts first, so these handlers fire when running WITHOUT a debugger.)
+
+// Set once in ICInstallCrashBacktraceHandler before any handler can run, then only read
+// from the handlers — hence nonisolated(unsafe) rather than a lock.
+nonisolated(unsafe) private var icCrashReportFD: Int32 = -1
+nonisolated(unsafe) private var icCrashSignalMarker: UnsafeMutablePointer<CChar>?
+nonisolated(unsafe) private var icCrashBacktraceBuffer: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+
+// Signal handlers must stay async-signal-safe: pre-allocated buffer + marker, and only
+// backtrace()/backtrace_symbols_fd()/write()/fsync()/raise() — no Swift allocation.
+private let icCrashSignalHandler: @convention(c) (Int32) -> Void = { signo in
+    if icCrashReportFD >= 0, let buffer = icCrashBacktraceBuffer {
+        if let marker = icCrashSignalMarker { _ = write(icCrashReportFD, marker, strlen(marker)) }
+        let frames = backtrace(buffer, 256)
+        backtrace_symbols_fd(buffer, frames, icCrashReportFD)
+        fsync(icCrashReportFD)
+    }
+    signal(signo, SIG_DFL)
+    raise(signo)
+}
+
+private let icCrashExceptionHandler: @convention(c) (NSException) -> Void = { exception in
+    guard icCrashReportFD >= 0 else { return }
+    // Runs in a normal (non-signal) context, so Foundation usage is fine here.
+    var text = "\n========== CRASH (NSException) ==========\n"
+    text += "name: \(exception.name.rawValue)\n"
+    text += "reason: \(exception.reason ?? "")\n"
+    text += exception.callStackSymbols.joined(separator: "\n")
+    text += "\n"
+    text.withCString { _ = write(icCrashReportFD, $0, strlen($0)) }
+    fsync(icCrashReportFD)
+}
+
+func ICInstallCrashBacktraceHandler(_ path: String) {
+    guard icCrashReportFD < 0 else { return }
+    let fd = path.withCString { open($0, O_WRONLY | O_CREAT | O_APPEND, 0o644) }
+    guard fd >= 0 else { return }
+    icCrashReportFD = fd
+    icCrashSignalMarker = strdup("\n========== CRASH (signal) ==========\n")
+    icCrashBacktraceBuffer = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 256)
+    NSSetUncaughtExceptionHandler(icCrashExceptionHandler)
+    for signo in [SIGABRT, SIGILL, SIGSEGV, SIGFPE, SIGBUS, SIGTRAP] {
+        signal(signo, icCrashSignalHandler)
     }
 }

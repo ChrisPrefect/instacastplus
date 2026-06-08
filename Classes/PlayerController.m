@@ -225,6 +225,15 @@ enum {
 
 #pragma mark -
 
+- (NSInteger)_episodeArtworkCacheSize
+{
+    CGFloat width = CGRectGetWidth(self.view.bounds);
+    if (width <= 0) {
+        width = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) ? 580.f : 320.f;
+    }
+    return (NSInteger)ceil(width);
+}
+
 - (void) _updateArtworkImage
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
@@ -315,9 +324,7 @@ enum {
         if (imageURL)
         {
             ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-            
-            NSInteger size = (([[UIDevice currentDevice] userInterfaceIdiom]) == UIUserInterfaceIdiomPad) ? 580 : 320;
-            
+            NSInteger size = [self _episodeArtworkCacheSize];
             [iman imageForURL:imageURL size:size grayscale:NO sender:self completion:^(UIImage *image) {
                 self.image = image;
                 // Scroll to current artwork (index 0 = episode artwork, index 1+ = chapter images)
@@ -581,7 +588,7 @@ enum {
     [self.controller updateChapterMarkers];
 
     NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
-    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:320 grayscale:NO];
+    UIImage* cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:imageURL size:[self _episodeArtworkCacheSize] grayscale:NO];
 
     if (cachedImage) {
         [self _updateDynamicTintColorWithImage:cachedImage];

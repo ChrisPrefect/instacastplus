@@ -41,6 +41,7 @@ def method_body(source: str, signature: str) -> str:
 
 player_info = read("Classes/PlayerInfoViewController_v5.m")
 image_cache = read("Classes/ImageCacheManager.m")
+image_operation = read("Classes/ICImageCacheOperation.m")
 
 layout_header = method_body(player_info, "- (void) layoutHeaderView")
 reload_body = method_body(player_info, "- (void) reload\n")
@@ -49,6 +50,7 @@ sync_helper = method_body(player_info, "- (void)_syncChapterImageCollectionToCur
 cell_for_item = method_body(player_info, "- (__kindof UICollectionViewCell *)collectionView:")
 local_image = method_body(image_cache, "- (IC_IMAGE*) localImageForImageURL:")
 episode_artwork_helper = method_body(player_info, "- (void)_setEpisodeArtworkForCell:")
+artwork_cache_size_helper = method_body(player_info, "- (NSInteger)_episodeArtworkCacheSizeForCollectionView:")
 
 require(
     sync_helper,
@@ -86,13 +88,16 @@ require(
     "The image cache local lookup is now memory-only; PlayerInfo must not rely on it as the only episode-artwork load path after foreground memory eviction.",
 )
 require(
-    "localImageForImageURL:imageURL size:320 grayscale:NO" in cell_for_item
-    or "localImageForImageURL:imageURL size:320 grayscale:NO" in episode_artwork_helper,
-    "PlayerInfo chapter artwork cells must use a memory-only local lookup before falling back to async episode-artwork loading.",
+    "_episodeArtworkCacheSizeForCollectionView:" in player_info
+    and "CGRectGetWidth(collectionView.bounds)" in artwork_cache_size_helper
+    and "CGRectGetWidth(self.view.bounds)" in artwork_cache_size_helper
+    and "NSInteger artworkSize = [self _episodeArtworkCacheSizeForCollectionView:collectionView]" in episode_artwork_helper
+    and "localImageForImageURL:imageURL size:artworkSize grayscale:NO" in episode_artwork_helper,
+    "PlayerInfo chapter artwork cells must request artwork at the displayed collection width before falling back to async episode-artwork loading.",
 )
 require(
-    "imageForURL:imageURL size:320 grayscale:NO sender:cell completion:" in episode_artwork_helper,
-    "PlayerInfo chapter artwork cells must start the async disk/network episode-artwork load when the memory-only local lookup misses.",
+    "imageForURL:imageURL size:artworkSize grayscale:NO sender:cell completion:" in episode_artwork_helper,
+    "PlayerInfo chapter artwork cells must start the async disk/network episode-artwork load at the displayed collection width when the memory-only local lookup misses.",
 )
 require(
     "self.image ?: self.imageView.image ?: cell.chapterImageView.image" in episode_artwork_helper
@@ -104,4 +109,10 @@ require(
     "cellForItemAtIndexPath:indexPath" in episode_artwork_helper
     and "if (currentCell != cell)" in episode_artwork_helper,
     "Async episode-artwork completion must verify the collection cell still represents the same index path before replacing the image.",
+)
+require(
+    "_loadCachedVariantImageLargeEnoughForSize" in image_operation
+    and "candidateSize < minimumSize" in image_operation
+    and "_loadBestCachedVariantImage" not in image_operation,
+    "Large player artwork requests must never upscale a cached 56/72pt thumbnail into the full-size cover.",
 )
