@@ -369,6 +369,9 @@
 		CE3EA69B2AA7A952001900EB /* FMResultSet.m in Sources */ = {isa = PBXBuildFile; fileRef = CE3EA6902AA7A952001900EB /* FMResultSet.m */; };
 		D04E8A14E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04E8A15E0F14B9D91F1E0AA /* ICTranscriptionDebugAutomation.swift */; };
 		D6A4823AE687A9FC8EC55A8A /* WidgetKitHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */; };
+		A1B2C3D4E5F6A7B800000020 /* ICIntentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000010 /* ICIntentBridge.swift */; };
+		A1B2C3D4E5F6A7B800000021 /* ICPlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000011 /* ICPlaybackIntents.swift */; };
+		A1B2C3D4E5F6A7B800000022 /* ICAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000012 /* ICAppShortcuts.swift */; };
 		D6FA25A2A5E5E241244604CB /* ProgressBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D4A18A6F2FA17A9B146E331 /* ProgressBarView.swift */; };
 		D85F00F86BD95E5A2DE2C3B4 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B0FE86222CBC7CF2304BE486 /* Foundation.framework */; };
 		DDD7F5C14DD2671EA92810C5 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 27C03CE231950A5FA4157032 /* SwiftUI.framework */; };
@@ -929,6 +932,9 @@
 		7151C9D64D31E80C30AE2762 /* InstacastBackupData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupData.h; sourceTree = "<group>"; };
 		74E0608347BE5D8CDADAC62E /* DonationViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DonationViewController.h; sourceTree = "<group>"; };
 		7B01C59626F02D3A649D0055 /* WidgetKitHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetKitHelper.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000010 /* ICIntentBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICIntentBridge.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000011 /* ICPlaybackIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICPlaybackIntents.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000012 /* ICAppShortcuts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICAppShortcuts.swift; sourceTree = "<group>"; };
 		7D97762C4DA733C845EACD81 /* WatchEpisode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchEpisode.swift; sourceTree = "<group>"; };
 		7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
 		7E61474F17CD3017CF8E8287 /* InstacastWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InstacastWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1205,6 +1211,9 @@
 				ED28C103136054494A8998FD /* TranscriptionQueueViewController.m */,
 				EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */,
 				6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */,
+				A1B2C3D4E5F6A7B800000010 /* ICIntentBridge.swift */,
+				A1B2C3D4E5F6A7B800000011 /* ICPlaybackIntents.swift */,
+				A1B2C3D4E5F6A7B800000012 /* ICAppShortcuts.swift */,
 				E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */,
 				D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */,
 			);
@@ -2502,7 +2511,6 @@
 		};
 		CDF9C6A12E90000000C0DE01 /* Copy Kimi Built-In Key */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -2745,6 +2753,9 @@
 				8189C509C0C8211E6CDCD159 /* ICBackupImportProgressView.m in Sources */,
 				E2BF2DBFB7B6377BA63CE29E /* WidgetDataExporter.m in Sources */,
 				D6A4823AE687A9FC8EC55A8A /* WidgetKitHelper.swift in Sources */,
+				A1B2C3D4E5F6A7B800000020 /* ICIntentBridge.swift in Sources */,
+				A1B2C3D4E5F6A7B800000021 /* ICPlaybackIntents.swift in Sources */,
+				A1B2C3D4E5F6A7B800000022 /* ICAppShortcuts.swift in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
 				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
 				165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */,
@@ -2947,7 +2958,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-13 AppIcon-8 AppIcon-9 AppIcon-10 AppIcon-11 AppIcon-1 AppIcon-2 AppIcon-3 AppIcon-4 AppIcon-5 AppIcon-6 AppIcon-7 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -2972,7 +2983,7 @@
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
-				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -3031,7 +3042,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-13 AppIcon-8 AppIcon-9 AppIcon-10 AppIcon-11 AppIcon-1 AppIcon-2 AppIcon-3 AppIcon-4 AppIcon-5 AppIcon-6 AppIcon-7 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -3057,7 +3068,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PRECOMPILE_PREFIX_HEADER = NO;
 				GCC_PREFIX_HEADER = Instacast_Prefix.pch;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",

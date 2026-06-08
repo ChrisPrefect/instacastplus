@@ -909,7 +909,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     NSDate *now = [NSDate date];
     [self _performMQTTBackgroundFlushIfNeeded:^{
         [self publishSleeptimerState];
-        _fellAsleepActive = YES;
+        self->_fellAsleepActive = YES;
         [self publishFellAsleepStateChangedAt:now];
     }];
 
@@ -964,7 +964,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
 {
     if (self.connected) {
         [self _performMQTTBackgroundFlushIfNeeded:^{
-            [_client publishMessage:@"1" toTopic:[self topic:@"episode-finished"] retain:NO];
+            [self->_client publishMessage:@"1" toTopic:[self topic:@"episode-finished"] retain:NO];
         }];
     } else {
         // Store for later when we reconnect

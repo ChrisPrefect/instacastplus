@@ -22,6 +22,11 @@
 #import "DatabaseManager.h"
 #import "CacheManager.h"
 #import "PlaybackManager.h"
+#import "AudioSession.h"
 #import "SubscriptionManager.h"
 #import "ICAppearanceManager.h"
 #import "Application.h"
+
+// App Intents (Siri / Shortcuts) support
+#import "CDList.h"
+#import "PlayerSpeedButton.h"
