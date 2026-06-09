@@ -2958,7 +2958,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-13 AppIcon-8 AppIcon-9 AppIcon-10 AppIcon-11 AppIcon-1 AppIcon-2 AppIcon-3 AppIcon-4 AppIcon-5 AppIcon-6 AppIcon-7 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -3042,7 +3042,7 @@
 				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ARCHS = "$(ARCHS_STANDARD)";
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-13 AppIcon-8 AppIcon-9 AppIcon-10 AppIcon-11 AppIcon-1 AppIcon-2 AppIcon-3 AppIcon-4 AppIcon-5 AppIcon-6 AppIcon-7 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-7 AppIcon-6 AppIcon-5 AppIcon-4 AppIcon-3 AppIcon-2 AppIcon-1 AppIcon InstacastPlus_Icon_Core InstacastPlus_Icon_Classic_Alt1 InstacastPlus_Icon_Classic_Alt2 InstacastPlus_Icon_Classic_Alt3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

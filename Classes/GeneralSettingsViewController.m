@@ -67,8 +67,8 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 
     self.clearsSelectionOnViewWillAppear = YES;
     self.navigationItem.title = @"General".ls;
-    self->appIconsArray = @[ @"appiconStandard", @"appicon13", @"appicon8", @"appicon9", @"appicon10", @"appicon11", @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7", @"appiconCore", @"appiconClassicAlt1", @"appiconClassicAlt2", @"appiconClassicAlt3" ];
-    self->appIconNamesArray = @[ @"", @"AppIcon-13", @"AppIcon-8", @"AppIcon-9", @"AppIcon-10", @"AppIcon-11", @"AppIcon-1", @"AppIcon-2", @"AppIcon-3", @"AppIcon-4", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7", @"InstacastPlus_Icon_Core", @"InstacastPlus_Icon_Classic_Alt1", @"InstacastPlus_Icon_Classic_Alt2", @"InstacastPlus_Icon_Classic_Alt3" ];
+    self->appIconsArray = @[ @"appiconStandard", @"appicon1", @"appicon2", @"appicon3", @"appicon4", @"appicon5", @"appicon6", @"appicon7", @"appiconCore", @"appiconClassicAlt1", @"appiconClassicAlt2", @"appiconClassicAlt3" ];
+    self->appIconNamesArray = @[ @"", @"AppIcon-1", @"AppIcon-2", @"AppIcon-3", @"AppIcon-4", @"AppIcon-5", @"AppIcon-6", @"AppIcon-7", @"InstacastPlus_Icon_Core", @"InstacastPlus_Icon_Classic_Alt1", @"InstacastPlus_Icon_Classic_Alt2", @"InstacastPlus_Icon_Classic_Alt3" ];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
