@@ -10,7 +10,7 @@
 #import <CoreData/CoreData.h>
 #import "CDBase.h"
 
-@class CDCategory, CDEpisode;
+@class CDCategory, CDEpisode, CDFeedProperty;
 
 @interface CDFeed : CDBase
 
@@ -77,6 +77,7 @@
 extern NSString* kUserDefinedFeedName;
 
 @interface CDFeed (FeedProperties)
+- (CDFeedProperty*) propertyForKey:(NSString*)key insertOnDemand:(BOOL)insertOnDemand;
 - (BOOL) boolForKey:(NSString*)defaultName;
 - (void) setBool:(BOOL)boolValue forKey:(NSString *)defaultName;
 

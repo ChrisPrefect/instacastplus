@@ -194,6 +194,12 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
             // Auto-refresh feeds on app launch
             [self _autoRefreshFeedsIfNeeded];
 
+            // Send pending iCloud changes and fetch the remote state (throttled in the
+            // manager). The sync engine never syncs on its own and pushes are best effort.
+            if (@available(iOS 17.0, *)) {
+                [[ICiCloudSyncManager sharedManager] performForegroundSyncIfNeeded];
+            }
+
             // Resume transcription queue after the initial scene setup has yielded once.
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[TranscriptionQueue shared] resumeIfNeeded];
@@ -515,6 +521,11 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
     // Auto-refresh feeds if last refresh was more than 30 minutes ago
     [self _autoRefreshFeedsIfNeeded];
+
+    // Send pending iCloud changes and fetch the remote state (throttled in the manager).
+    if (@available(iOS 17.0, *)) {
+        [[ICiCloudSyncManager sharedManager] performForegroundSyncIfNeeded];
+    }
 
     [playbackManager useCachedFileIfAvailableAfterStreamingDownload];
 

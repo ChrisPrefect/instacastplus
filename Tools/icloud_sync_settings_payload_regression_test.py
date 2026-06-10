@@ -21,31 +21,38 @@ def method_body(source, signature, next_marker="\n    private"):
 
 MANAGER = read("Classes/ICiCloudSyncManager.swift")
 
-for signature in [
-    "private nonisolated static func nonSettingsUserDefaultsKeysForSyncEngineCallback() -> Set<String>",
-    "private func nonSettingsUserDefaultsKeys() -> Set<String>",
+# There is exactly ONE implementation of the settings-key filters (the nonisolated static
+# one). The instance duplicates were removed on purpose: parallel copies are how the
+# uid-key payload bug slipped in.
+require("private func nonSettingsUserDefaultsKeys()" not in MANAGER, "Duplicate instance copy of nonSettingsUserDefaultsKeys must not come back.")
+require("private func shouldSyncSettingsKey(" not in MANAGER, "Duplicate instance copy of shouldSyncSettingsKey must not come back.")
+require("private func isValidSettingsValue(" not in MANAGER, "Duplicate instance copy of isValidSettingsValue must not come back.")
+
+body = method_body(MANAGER, "private nonisolated static func nonSettingsUserDefaultsKeysForSyncEngineCallback() -> Set<String>")
+for key in [
+    '"DownloadResumeInfos"',
+    '"DownloadResumeInfos_NSURLSession"',
+    '"EpisodeLoadingQueueKey"',
+    '"ICDiagnosticPreviousSessionEndedUnexpectedly"',
+    '"ICDiagnosticPreviousSessionState"',
 ]:
-    body = method_body(MANAGER, signature)
-    for key in [
-        '"DownloadResumeInfos"',
-        '"DownloadResumeInfos_NSURLSession"',
-        '"EpisodeLoadingQueueKey"',
-        '"ICDiagnosticPreviousSessionEndedUnexpectedly"',
-        '"ICDiagnosticPreviousSessionState"',
-    ]:
-        require(key in body, f"{key} must not be synced as an app setting.")
+    require(key in body, f"{key} must not be synced as an app setting.")
 
 static_should_sync = method_body(MANAGER, "private nonisolated static func shouldSyncSettingsKeyForSyncEngineCallback")
-instance_should_sync = method_body(MANAGER, "private func shouldSyncSettingsKey")
 require("nonSettingsUserDefaultsKeysForSyncEngineCallback().contains(key)" in static_should_sync, "SyncEngine app-settings payload must reject non-settings defaults keys.")
-require("nonSettingsUserDefaultsKeys().contains(key)" in instance_should_sync, "MainActor app-settings payload must reject non-settings defaults keys.")
+require('key.hasPrefix("ICiCloudSync")' in static_should_sync, "Sync-internal defaults keys must never be part of the settings payload (feedback-loop guard).")
 
 static_valid = method_body(MANAGER, "private nonisolated static func isValidSettingsValueForSyncEngineCallback")
-instance_valid = method_body(MANAGER, "private func isValidSettingsValue")
-for body in [static_valid, instance_valid]:
-    require("case is String, is NSNumber, is Date:" in body, "Settings sync should only accept scalar preference values.")
-    require("is Data" not in body, "Settings sync must not upload arbitrary Data blobs from UserDefaults.")
-    require("case let array" not in body and "case let dictionary" not in body, "Settings sync must not upload arrays/dictionaries from the whole defaults domain.")
+require("case is String, is NSNumber, is Date:" in static_valid, "Settings sync should only accept scalar preference values.")
+require("is Data" not in static_valid, "Settings sync must not upload arbitrary Data blobs from UserDefaults.")
+require("case let array" not in static_valid and "case let dictionary" not in static_valid, "Settings sync must not upload arrays/dictionaries from the whole defaults domain.")
 
 apply_remote = method_body(MANAGER, "private func applyRemoteAppSettings")
-require("shouldSyncSettingsKey(key)" in apply_remote, "Remote settings apply must not write excluded non-settings defaults keys.")
+require("Self.shouldSyncSettingsKeyForSyncEngineCallback(key)" in apply_remote, "Remote settings apply must not write excluded non-settings defaults keys.")
+require("setStoredSyncedSettingsHash(syncedSettingsHash())" in apply_remote, "Remote settings apply must re-baseline the persisted hash (echo guard).")
+
+# The baseline hash must be persisted — an in-memory baseline re-uploaded the whole
+# settings record on every app start with a fresh updatedAt, breaking last-writer-wins.
+queue_check = method_body(MANAGER, "private func checkAndQueueSettingsChange")
+require("storedSyncedSettingsHash()" in queue_check, "Settings queueing must compare against the persisted baseline hash.")
+require("private var lastSyncedSettingsHash" not in MANAGER, "The in-memory settings hash baseline must not come back.")

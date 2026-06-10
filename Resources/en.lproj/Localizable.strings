@@ -1430,6 +1430,7 @@
 "Synchronisiert" = "Synced";
 "Keine Änderungen" = "No changes";
 "Synchronisation läuft, lädt hoch…" = "Syncing, uploading…";
+"Lädt hoch… %ld / %ld" = "Uploading… %ld / %ld";
 "Synchronisation läuft, lädt herunter…" = "Syncing, downloading…";
 "%@ %ld/s" = "%@ %ld/s";
 "Synchronisation vollständig" = "Sync complete";

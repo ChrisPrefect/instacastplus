@@ -596,7 +596,11 @@
         if (self.tableView.window) {
             if (!self.needsFullReload) {
                 self.needsFullReload = YES;
-                [self performSelector:@selector(_performCoalescedReload) withObject:nil afterDelay:0.2];
+                // During a refresh every merged feed fires this notification; a full
+                // reloadData every 0.2s contends with the merge writes for the store
+                // lock. Stretch the coalescing window while the refresh is running.
+                NSTimeInterval delay = [SubscriptionManager sharedSubscriptionManager].refreshing ? 1.0 : 0.2;
+                [self performSelector:@selector(_performCoalescedReload) withObject:nil afterDelay:delay];
             }
         } else {
             self.needsFullReload = YES;

@@ -148,6 +148,21 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     return [self formattedLastRefreshDate];
 }
 
+// Returns YES if the two values differ (nil-safe). Used to avoid dirtying objects on
+// every refresh merge: Core Data marks an object as updated even when a setter writes
+// the identical value, and an always-dirty feed made every refresh fan out into FRC
+// notifications, full table reloads and iCloud-sync change checks per feed.
+static BOOL ICFeedValueDiffers(id currentValue, id newValue)
+{
+    if (currentValue == newValue) {
+        return NO;
+    }
+    if (!currentValue || !newValue) {
+        return YES;
+    }
+    return ![currentValue isEqual:newValue];
+}
+
 - (BOOL)_isSynchronizationPausedForFeed:(CDFeed*)feed
 {
     if (!feed) {
@@ -929,8 +944,12 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                             }
                         }
 
-                        localFeed.contentHash = parsedFeed.contentHash;
-                        localFeed.etag = parsedFeed.etag;
+                        if (ICFeedValueDiffers(localFeed.contentHash, parsedFeed.contentHash)) {
+                            localFeed.contentHash = parsedFeed.contentHash;
+                        }
+                        if (ICFeedValueDiffers(localFeed.etag, parsedFeed.etag)) {
+                            localFeed.etag = parsedFeed.etag;
+                        }
                     }
 
                     if (weakFeedParser.username && ![weakFeedParser.username isEqualToString:localFeed.username]) {
@@ -1280,11 +1299,21 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
                 localFeed.sourceURL = remoteFeed.changedSourceURL;
             }
         }
-        localFeed.etag = remoteFeed.etag;
-        localFeed.title = remoteFeed.title;
-        localFeed.linkURL = remoteFeed.linkURL;
-        localFeed.paymentURL = remoteFeed.paymentURL;
-        localFeed.imageURL = remoteFeed.imageURL;
+        if (ICFeedValueDiffers(localFeed.etag, remoteFeed.etag)) {
+            localFeed.etag = remoteFeed.etag;
+        }
+        if (ICFeedValueDiffers(localFeed.title, remoteFeed.title)) {
+            localFeed.title = remoteFeed.title;
+        }
+        if (ICFeedValueDiffers(localFeed.linkURL, remoteFeed.linkURL)) {
+            localFeed.linkURL = remoteFeed.linkURL;
+        }
+        if (ICFeedValueDiffers(localFeed.paymentURL, remoteFeed.paymentURL)) {
+            localFeed.paymentURL = remoteFeed.paymentURL;
+        }
+        if (ICFeedValueDiffers(localFeed.imageURL, remoteFeed.imageURL)) {
+            localFeed.imageURL = remoteFeed.imageURL;
+        }
 
         NSMutableDictionary* localEpisodeIndex = [NSMutableDictionary dictionary];
         for(CDEpisode* episode in localFeed.episodes) {

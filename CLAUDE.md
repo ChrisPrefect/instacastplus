@@ -153,7 +153,24 @@ Farben: Immer `ICTintColor` für Akzentfarbe (passt sich an Appearance an), `[UI
 
 ## Auto-Refresh
 
-`_autoRefreshFeedsIfNeeded` in SceneDelegate: Beim App-Start und Foreground-Wechsel werden alle Feeds refreshed, wenn der letzte Refresh > 30 Minuten her ist. Non-blocking, kein UI-Feedback. Statische `_lastAutoRefreshDate` als Cooldown. `refreshAllFeedsForce:NO` respektiert individuelle Feed-AutoRefresh-Einstellungen.
+`_autoRefreshFeedsIfNeeded` in SceneDelegate: Beim App-Start und Foreground-Wechsel werden alle Feeds refreshed, wenn der letzte Refresh > 30 Minuten her ist. Non-blocking, kein UI-Feedback. Statische `_lastAutoRefreshDate` als Cooldown. ACHTUNG: Auf iOS ignoriert `refreshAllFeedsForce:` das force-Flag — alle nicht-geparkten Feeds werden immer refreshed; die per-Feed-AutoRefresh-Intervalle existieren nur im alten Nicht-iOS-Pfad und haben kein iOS-UI.
+
+Refresh-Merge: Feed-Setter (etag/title/linkURL/paymentURL/imageURL/contentHash) NUR via `ICFeedValueDiffers`-Diff-Check schreiben — Core Data markiert Objekte auch bei identischem Wert als updated. Unveränderte Feeds dürfen nur durch `lastUpdate` dirty werden, sonst feuern FRC-Reload-Kaskade + iCloud-Sync-Observer pro Feed. Reload-Coalescing in `SubscriptionsTableViewController` während `refreshing`: 1s statt 0.2s.
+
+## iCloud Sync (`ICiCloudSyncManager`, iOS 17+)
+
+CKSyncEngine mit `automaticallySync=false` → synct NIE von selbst. Fetch/Send: Push, lokale Änderung, manuell, `performForegroundSyncIfNeeded` (SceneDelegate bei Launch+Foreground, 15-min-Throttle).
+
+Regeln (alle waren mal Bugs):
+- **Engine-Callbacks:** Episoden UND Abos batch-weise materialisieren — EIN Fetch pro Send-Batch (`objectHash IN`/`sourceURL_ IN`, properties-Prefetch). NIEMALS Context+Fetch pro Record (SQLite-Lock-Contention → UI-Freeze beim Toggle).
+- **Echo-Prävention:** Remote-Applies tracken tatsächlich mutierte ObjectIDs (`remoteAppliedObjectIDs`), Observer konsumiert sie. Zeitfenster-Flags reichen NICHT — ObjectsDidChange wird gebatcht zugestellt, oft nach Flag-Reset.
+- **Observer-Filter:** `coreDataDidChange` filtert synchron zur Notification per `changedValuesForCurrentEvent` (Episoden: consumed/starred/position; Feeds: sync-relevante Keys; FeedProperty: nicht-internal; Rest: drop). Später ist das Change-Dictionary leer.
+- **Apply:** Immer Gleichheits-Checks (nur echte Diffs schreiben) + Fingerprint nachführen: Abo-Payload-Hash nach Apply UND beim Backfill-Queueing; Settings-Hash-Baseline persistent (`ICiCloudSyncSettingsSyncedHash`) — In-Memory-Baseline → Re-Upload bei jedem Start mit frischem updatedAt → bricht Last-Writer-Wins.
+- **FeedProperty-Apply:** Alle 4 Wertfelder direkt schreiben (`propertyForKey:insertOnDemand:`), NIE Typ raten — uid-präfixte Keys haben keine UserDefaults-Defaults, die Typ-Heuristik lieferte "bool" für Doubles.
+- **Toggle-OFF:** Device-Record final senden (`sendFinalDeviceRecordUpdate`) — `scheduleLowPrioritySync` läuft mit allem-aus nicht mehr an. Kategorie aus = EINGEFROREN: nichts wird mehr angewendet (applyRemote* UND applyPending* enabled-gated); Pendings bleiben liegen (Engine liefert gefetchte Records nie erneut — NIE löschen).
+- **Abo-Löschungen nur live:** Einschalten des Abo-Syncs darf NIE Abos löschen — `suppressSubscriptionDeletionsKey` wird beim Enable gesetzt und erst nach dem ersten vollständigen Fetch (`didFetchChanges`, nicht markSyncCompleted — Backfill-Läufe sind send-only!) gelöscht. Nachhol-Deletions aus der Aus-Phase werden verworfen; die lokale Kopie gewinnt (Vereinigungs-Semantik), Backfill lädt sie wieder hoch.
+- **Status:** Während Backfill durchgängig „Lädt hoch… X / Y", kein „vollständig"-Flipping pro Page.
+- Settings-VC cached `devices` (`deviceList`) — der Manager-Getter liest pro Aufruf die Cache-Datei von Disk.
 
 ## macOS "Designed for iPad"
 

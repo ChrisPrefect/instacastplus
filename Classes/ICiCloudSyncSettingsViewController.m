@@ -35,6 +35,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 @interface ICiCloudSyncSettingsViewController ()
 @property (nonatomic, strong) NSRelativeDateTimeFormatter *relativeDateFormatter;
 @property (nonatomic, strong) ICiCloudSyncCounts *cachedCounts;
+@property (nonatomic, strong) NSArray<ICiCloudSyncDeviceInfo*> *cachedDevices;
 @property (nonatomic, strong) NSTimer *relativeTimeRefreshTimer;
 @end
 
@@ -98,7 +99,19 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
     self.cachedCounts = [ICiCloudSyncManager sharedManager].syncCounts;
+    self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
     [self.tableView reloadData];
+}
+
+// The manager's `devices` getter reads and parses the device-cache file from disk on
+// every call — cache it per reload instead of hitting the disk from every table callback
+// (row count, cell, row height, 10s timer).
+- (NSArray<ICiCloudSyncDeviceInfo*>*)deviceList
+{
+    if (!self.cachedDevices) {
+        self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
+    }
+    return self.cachedDevices;
 }
 
 - (void)syncStateDidChange:(NSNotification*)notification
@@ -123,7 +136,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         case ICiCloudSyncSettingsSectionStorage:
             return [ICiCloudSyncManager sharedManager].anySyncEnabled ? ICiCloudSyncStorageRowCount : 0;
         case ICiCloudSyncSettingsSectionDevices:
-            return MAX(1, [ICiCloudSyncManager sharedManager].devices.count);
+            return MAX(1, [self deviceList].count);
         case ICiCloudSyncSettingsSectionDelete:
             return 1;
     }
@@ -207,7 +220,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         return cell;
     }
 
-    NSArray<ICiCloudSyncDeviceInfo*> *devices = [ICiCloudSyncManager sharedManager].devices;
+    NSArray<ICiCloudSyncDeviceInfo*> *devices = [self deviceList];
     if (devices.count == 0) {
         UITableViewCell *cell = [self detailCell];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -282,7 +295,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == ICiCloudSyncSettingsSectionDevices && [ICiCloudSyncManager sharedManager].devices.count > 0) {
+    if (indexPath.section == ICiCloudSyncSettingsSectionDevices && [self deviceList].count > 0) {
         return ICiCloudSyncSettingsDeviceRowHeight;
     }
     return UITableViewAutomaticDimension;
@@ -449,6 +462,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     }
 
     self.cachedCounts = [ICiCloudSyncManager sharedManager].syncCounts;
+    self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
 
     NSIndexSet *sections = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(ICiCloudSyncSettingsSectionStatus, 1)];
     NSMutableIndexSet *mutableSections = [sections mutableCopy];
