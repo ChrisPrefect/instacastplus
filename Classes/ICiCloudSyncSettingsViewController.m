@@ -194,17 +194,21 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         switch (indexPath.row) {
             case ICiCloudSyncStorageRowEpisodes:
                 cell.textLabel.text = @"Episodes".ls;
-                cell.detailTextLabel.text = [self storageDetailForSynced:counts.episodesSynced total:counts.episodesTotal enabled:manager.episodesSyncEnabled];
+                cell.detailTextLabel.text = [self storageDetailForSynced:counts.episodesSynced total:counts.episodesTotal enabled:manager.episodesSyncEnabled available:counts.countsAvailable];
                 break;
             case ICiCloudSyncStorageRowSubscriptions:
                 cell.textLabel.text = @"Subscriptions".ls;
-                cell.detailTextLabel.text = [self storageDetailForSynced:counts.subscriptionsSynced total:counts.subscriptionsTotal enabled:manager.subscriptionsSyncEnabled];
+                cell.detailTextLabel.text = [self storageDetailForSynced:counts.subscriptionsSynced total:counts.subscriptionsTotal enabled:manager.subscriptionsSyncEnabled available:counts.countsAvailable];
                 break;
             case ICiCloudSyncStorageRowSettings:
                 cell.textLabel.text = @"Settings".ls;
-                cell.detailTextLabel.text = manager.settingsSyncEnabled
-                    ? [NSNumberFormatter localizedStringFromNumber:@(counts.settings) numberStyle:NSNumberFormatterDecimalStyle]
-                    : @"Off".ls;
+                if (!manager.settingsSyncEnabled) {
+                    cell.detailTextLabel.text = @"Off".ls;
+                } else if (!counts.countsAvailable) {
+                    cell.detailTextLabel.text = @"…";
+                } else {
+                    cell.detailTextLabel.text = [NSNumberFormatter localizedStringFromNumber:@(counts.settings) numberStyle:NSNumberFormatterDecimalStyle];
+                }
                 break;
         }
         return cell;
@@ -266,10 +270,15 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     return nil;
 }
 
-- (NSString*)storageDetailForSynced:(NSInteger)synced total:(NSInteger)total enabled:(BOOL)enabled
+- (NSString*)storageDetailForSynced:(NSInteger)synced total:(NSInteger)total enabled:(BOOL)enabled available:(BOOL)available
 {
     if (!enabled) {
         return @"Off".ls;
+    }
+    // The totals are computed on a background context; show a placeholder instead of a
+    // misleading "0 / 0" until the first count is in.
+    if (!available) {
+        return @"…";
     }
     NSString *syncedText = [NSNumberFormatter localizedStringFromNumber:@(synced) numberStyle:NSNumberFormatterDecimalStyle];
     NSString *totalText = [NSNumberFormatter localizedStringFromNumber:@(total) numberStyle:NSNumberFormatterDecimalStyle];

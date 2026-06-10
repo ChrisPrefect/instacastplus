@@ -1436,6 +1436,7 @@
 "Lädt hoch… %ld / %ld" = "Lädt hoch… %ld / %ld";
 "Synchronisation läuft, lädt herunter…" = "Synchronisation läuft, lädt herunter…";
 "%@ %ld/s" = "%@ %ld/s";
+"%@ %ld/%ld" = "%@ %ld/%ld";
 "Synchronisation vollständig" = "Synchronisation vollständig";
 "iCloud angemeldet." = "iCloud angemeldet.";
 "Kein iCloud Account verfügbar." = "Kein iCloud-Account verfügbar.";

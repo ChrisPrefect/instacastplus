@@ -13,6 +13,12 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 @interface CDEpisodeList ()
 @property (nonatomic) NSNumber* cachedEpisodesCount;
+// Completions waiting for the in-flight background count (main thread only). During a
+// sync/refresh every save invalidates the cached count and badge/widgets/UI all re-ask
+// at once; running one throwaway background context per request put several parallel
+// counts on the store at the same time and crashed under load (use-after-free, iPad
+// SIGSEGV 10.06.2026). Only one count per list runs at a time — late callers attach here.
+@property (nonatomic, strong) NSMutableArray<void (^)(NSUInteger)>* pendingCountCompletions;
 @end
 
 @implementation CDEpisodeList {
@@ -326,40 +332,63 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         return;
     }
 
+    if (!self.pendingCountCompletions) {
+        self.pendingCountCompletions = [[NSMutableArray alloc] init];
+    }
+    [self.pendingCountCompletions addObject:[completion copy]];
+    if (self.pendingCountCompletions.count > 1) {
+        // A count for this list is already in flight; it serves this completion too.
+        return;
+    }
+
     NSManagedObjectContext* mainContext = self.managedObjectContext;
     NSManagedObjectID* selfId = [self objectID];
-    void (^completeOnMainContext)(NSUInteger) = ^(NSUInteger count) {
+    __weak CDEpisodeList* weakSelf = self;
+    void (^completeOnMainContext)(NSUInteger, BOOL) = ^(NSUInteger count, BOOL updateCache) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSError* mainError = nil;
-            CDEpisodeList* calculatedList = (CDEpisodeList*)[mainContext existingObjectWithID:selfId error:&mainError];
-            if (!calculatedList || mainError) {
-                if (mainError) {
+            if (updateCache) {
+                NSError* mainError = nil;
+                CDEpisodeList* calculatedList = (CDEpisodeList*)[mainContext existingObjectWithID:selfId error:&mainError];
+                if (calculatedList && !mainError) {
+                    calculatedList.cachedEpisodesCount = @(count);
+                }
+                else if (mainError) {
                     ErrLog(@"error getting episode list in main context: %@", mainError);
                 }
-                completion(count);
-                return;
             }
 
-            calculatedList.cachedEpisodesCount = @(count);
-            completion(count);
+            CDEpisodeList* strongSelf = weakSelf;
+            NSArray* completions = [strongSelf.pendingCountCompletions copy];
+            [strongSelf.pendingCountCompletions removeAllObjects];
+            if (completions.count > 0) {
+                for (void (^pendingCompletion)(NSUInteger) in completions) {
+                    pendingCompletion(count);
+                }
+            }
+            else {
+                // List object went away while counting — still serve the original caller.
+                completion(count);
+            }
         });
     };
-    
+
     NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
     [childContext performBlock:^{
-        
+
         childContext.persistentStoreCoordinator = DMANAGER.storeCoordinator;
-        
+
         NSError* error;
         CDEpisodeList* contextSelf = (CDEpisodeList*)[childContext existingObjectWithID:selfId error:&error];
         if (error) {
             ErrLog(@"error getting episode list in child context: %@", error);
+            // Drain waiting completions (without caching) so future counts aren't blocked.
+            completeOnMainContext(0, NO);
             return;
         }
 
         NSUInteger explicitEpisodeCount = [contextSelf explicitEpisodeRelationshipCountInContext:childContext episodeList:contextSelf];
         if (explicitEpisodeCount > 0) {
-            completeOnMainContext(explicitEpisodeCount);
+            completeOnMainContext(explicitEpisodeCount, YES);
             return;
         }
         
@@ -461,7 +490,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         
         
         
-        completeOnMainContext([filteredObjectHashes count]);
+        completeOnMainContext([filteredObjectHashes count], YES);
 
     }];
 }

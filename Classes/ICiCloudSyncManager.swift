@@ -54,17 +54,22 @@ import UIKit
     let subscriptionsSynced: Int
     let subscriptionsTotal: Int
     let settings: Int
+    // false while the background count hasn't produced a value yet — the UI shows a
+    // placeholder then instead of a misleading "0 / 0".
+    let countsAvailable: Bool
 
     init(episodesSynced: Int,
          episodesTotal: Int,
          subscriptionsSynced: Int,
          subscriptionsTotal: Int,
-         settings: Int) {
+         settings: Int,
+         countsAvailable: Bool) {
         self.episodesSynced = episodesSynced
         self.episodesTotal = episodesTotal
         self.subscriptionsSynced = subscriptionsSynced
         self.subscriptionsTotal = subscriptionsTotal
         self.settings = settings
+        self.countsAvailable = countsAvailable
         super.init()
     }
 }
@@ -171,6 +176,14 @@ import UIKit
     private var remoteAppliedObjectIDs: Set<NSManagedObjectID> = []
     private var lastForegroundSyncDate: Date?
     private var didPruneEpisodeLocalModifiedDates = false
+    // In-memory cache for the two pending-payload stores. A single fetch can store
+    // thousands of payloads (episode states arriving while episode sync is off) —
+    // re-reading and re-writing the whole plist per record was quadratic disk I/O on
+    // the main thread and froze the device for the duration of the download.
+    private var pendingPayloadsCache: [String: [String: [String: Any]]] = [:]
+    private var dirtyPendingPayloadKeys: Set<String> = []
+    private var pendingPayloadsWriteWorkItem: DispatchWorkItem?
+    private var syncActivityExpectedCount = 0
     private var initialQueueTask: Task<Void, Never>?
     private var lowPrioritySyncTask: Task<Void, Never>?
     private enum SyncActivityDirection { case up, down }
@@ -215,7 +228,8 @@ import UIKit
             episodesTotal: episodesSyncEnabled ? totals.episodes : 0,
             subscriptionsSynced: subscriptionsSyncEnabled ? syncedCount(backfillKey: Self.initialSubscriptionBackfillOffsetKey, total: totals.subscriptions) : 0,
             subscriptionsTotal: subscriptionsSyncEnabled ? totals.subscriptions : 0,
-            settings: settingsSyncEnabled ? totals.settings : 0)
+            settings: settingsSyncEnabled ? totals.settings : 0,
+            countsAvailable: cachedSyncTotalCounts != nil)
     }
 
     // How many of `total` are already synced: while the initial backfill runs, its persisted
@@ -442,6 +456,9 @@ import UIKit
             // the plan task — never synchronously in the switch tap (engine-state access
             // is queue-sensitive; that was part of the toggle freeze).
             scheduleCurrentEnabledDataForUpload()
+            // Apply payloads that were stored while the category was off (debounced,
+            // enabled-gated — no engine access in the switch tap).
+            scheduleApplyPendingPayloads()
             setStatus(NSLocalizedString("iCloud prüfen…", comment: ""))
             Task { @MainActor in
                 await refreshAccountStatus()
@@ -537,6 +554,8 @@ import UIKit
         }
         episodeLocalModifiedDatesCache = nil
         subscriptionPayloadHashesCache = nil
+        pendingPayloadsCache = [:]
+        dirtyPendingPayloadKeys = []
         cachedSyncTotalCounts = nil
         deviceRecordShouldStampSyncDate = false
         syncedUserDataInCurrentRun = false
@@ -969,6 +988,12 @@ import UIKit
                 scheduleLowPrioritySync()
             } else if hasInitialUploadBackfillWork {
                 scheduleCurrentEnabledDataForUpload()
+            } else {
+                // Nothing to upload (e.g. a fresh device with no local data enabling a
+                // category) — sync anyway: the FETCH is what brings the other devices'
+                // data in. Without this a fresh device sat on "Bereit" with nothing
+                // until the user tapped manual sync.
+                scheduleLowPrioritySync()
             }
             postStateChanged()
         }
@@ -1797,7 +1822,7 @@ import UIKit
         }
 
         beginSyncActivity(.down)
-        recordSyncActivity(event.modifications.filter { isUserDataRecordID($0.record.recordID) }.count)
+        syncActivityExpectedCount += event.modifications.filter { isUserDataRecordID($0.record.recordID) }.count
 
         isApplyingRemoteChange = true
         defer {
@@ -1807,15 +1832,21 @@ import UIKit
         }
 
         var processedSinceYield = 0
-        for modification in event.modifications {
+        var modificationCountsByType: [String: Int] = [:]
+        for modification in orderedModifications(event.modifications) {
             let record = modification.record
+            modificationCountsByType[record.recordType, default: 0] += 1
             rememberServerRecord(record)
             await applyRemoteRecord(record)
+            if isUserDataRecordID(record.recordID) {
+                recordSyncActivity(1)
+            }
             // Yield periodically so a large initial download (thousands of episode
             // states on a fresh device) doesn't block the main thread in one go.
             processedSinceYield += 1
             if processedSinceYield >= 50 {
                 processedSinceYield = 0
+                postStateChanged()
                 await Task.yield()
             }
         }
@@ -1825,8 +1856,40 @@ import UIKit
             applyRemoteDeletion(deletion)
         }
 
+        logSyncEvent("Remote-Änderungen verarbeitet", metadata: [
+            "modifications": event.modifications.count,
+            "deletions": event.deletions.count,
+            "byType": modificationCountsByType.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","),
+        ])
+
+        // One coalesced write for everything the apply pass parked in the pending stores —
+        // and a deterministic flush before the app could be killed mid-download.
+        flushPendingPayloads()
         databaseManager.save()
         markSyncCompletedIfFinished()
+    }
+
+    // Apply subscriptions last and in the user's list order (rank): the per-feed network
+    // subscribe makes that phase slow, so the visible top of the list should fill in
+    // first. Everything else (device records, episode states) keeps its original order.
+    private func orderedModifications(_ modifications: [CKDatabase.RecordZoneChange.Modification]) -> [CKDatabase.RecordZoneChange.Modification] {
+        guard modifications.contains(where: { $0.record.recordType == RecordKind.subscription }) else {
+            return modifications
+        }
+        var others: [CKDatabase.RecordZoneChange.Modification] = []
+        var subscriptions: [(modification: CKDatabase.RecordZoneChange.Modification, rank: Int)] = []
+        for modification in modifications {
+            if modification.record.recordType == RecordKind.subscription {
+                let rank = (payloadDictionary(from: modification.record)?["rank"] as? NSNumber)?.intValue ?? Int.max
+                subscriptions.append((modification, rank))
+            } else {
+                others.append(modification)
+            }
+        }
+        let sortedSubscriptions = subscriptions.enumerated()
+            .sorted { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) }
+            .map { $0.element.modification }
+        return others + sortedSubscriptions
     }
 
     private func handleSentDatabaseChanges(_ event: CKSyncEngine.Event.SentDatabaseChanges) {
@@ -1966,11 +2029,19 @@ import UIKit
         case RecordKind.episodeState:
             if episodesSyncEnabled {
                 applyRemoteEpisodeState(payload, recordName: record.recordID.recordName)
+            } else {
+                // Category is off: do NOT apply, but keep the payload. The engine's change
+                // token advances with this fetch and the record is never delivered again —
+                // dropping it here made data that arrived while a category was off
+                // unrecoverable. Applied (enabled-gated) once the category is turned on.
+                storePendingEpisodeState(payload, recordName: record.recordID.recordName)
             }
 
         case RecordKind.subscription:
             if subscriptionsSyncEnabled {
                 await applyRemoteSubscription(payload, recordName: record.recordID.recordName)
+            } else {
+                storePendingSubscription(payload, recordName: record.recordID.recordName)
             }
 
         case RecordKind.appSettings:
@@ -2073,7 +2144,7 @@ import UIKit
     private func storePendingEpisodeState(_ payload: [String: Any], recordName: String) {
         var pending = pendingPayloads(forKey: Self.pendingEpisodeStatesKey)
         pending[recordName] = payload
-        setSyncMetadata(pending, forKey: Self.pendingEpisodeStatesKey)
+        setPendingPayloads(pending, forKey: Self.pendingEpisodeStatesKey)
     }
 
     private func applyPendingEpisodeStates() {
@@ -2101,6 +2172,7 @@ import UIKit
         }
         guard !episodesByHash.isEmpty else { return }
 
+        let initialCount = pending.count
         for (recordName, payload) in pending {
             guard let objectHash = payload["objectHash"] as? String,
                   let episode = episodesByHash[objectHash] else { continue }
@@ -2108,8 +2180,12 @@ import UIKit
             pending.removeValue(forKey: recordName)
         }
 
-        setSyncMetadata(pending, forKey: Self.pendingEpisodeStatesKey)
+        setPendingPayloads(pending, forKey: Self.pendingEpisodeStatesKey)
         databaseManager.save()
+        logSyncEvent("Wartende Episoden-Status verarbeitet", metadata: [
+            "applied": initialCount - pending.count,
+            "remaining": pending.count,
+        ])
     }
 
     private func applyRemoteSubscription(_ payload: [String: Any], recordName: String) async {
@@ -2119,6 +2195,7 @@ import UIKit
         let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
         if let localDate = subscriptionLocalModifiedDate(for: feedURL),
            localDate.compare(remoteDate) == .orderedDescending {
+            logSyncEvent("Remote-Abo übersprungen (lokal neuer)", metadata: ["feedURL": feedURL])
             addPendingSave(subscriptionRecordID(forFeedURL: feedURL))
             return
         }
@@ -2148,12 +2225,20 @@ import UIKit
             return feed
         }
 
-        let subscribed = await withCheckedContinuation { continuation in
-            subscriptionManager.subscribeFeed(with: url, options: ICSubscribeOptions(rawValue: 0)!) { feed, _ in
-                continuation.resume(returning: feed != nil)
+        logSyncEvent("Remote-Abo wird abonniert", metadata: ["feedURL": feedURL])
+        let result: (subscribed: Bool, errorDescription: String?) = await withCheckedContinuation { continuation in
+            subscriptionManager.subscribeFeed(with: url, options: ICSubscribeOptions(rawValue: 0)!) { feed, error in
+                continuation.resume(returning: (feed != nil, error?.localizedDescription))
             }
         }
-        guard subscribed else { return nil }
+        guard result.subscribed else {
+            logSyncEvent("Remote-Abo konnte nicht abonniert werden", metadata: [
+                "feedURL": feedURL,
+                "error": result.errorDescription ?? "unbekannt",
+            ])
+            return nil
+        }
+        logSyncEvent("Remote-Abo abonniert", metadata: ["feedURL": feedURL])
         return databaseManager.feed(withSourceURL: url)
     }
 
@@ -2236,7 +2321,7 @@ import UIKit
     private func storePendingSubscription(_ payload: [String: Any], recordName: String) {
         var pending = pendingPayloads(forKey: Self.pendingSubscriptionPayloadsKey)
         pending[recordName] = payload
-        setSyncMetadata(pending, forKey: Self.pendingSubscriptionPayloadsKey)
+        setPendingPayloads(pending, forKey: Self.pendingSubscriptionPayloadsKey)
     }
 
     private func applyPendingSubscriptions() async {
@@ -2247,6 +2332,7 @@ import UIKit
         var pending = pendingPayloads(forKey: Self.pendingSubscriptionPayloadsKey)
         guard !pending.isEmpty else { return }
 
+        let initialCount = pending.count
         for (recordName, payload) in pending {
             guard let feedURL = payload["feedURL"] as? String else { continue }
             if let feed = await subscribedFeed(for: feedURL) {
@@ -2258,8 +2344,12 @@ import UIKit
             }
         }
 
-        setSyncMetadata(pending, forKey: Self.pendingSubscriptionPayloadsKey)
+        setPendingPayloads(pending, forKey: Self.pendingSubscriptionPayloadsKey)
         databaseManager.save()
+        logSyncEvent("Wartende Abo-Payloads verarbeitet", metadata: [
+            "applied": initialCount - pending.count,
+            "remaining": pending.count,
+        ])
     }
 
     private func applyRemoteAppSettings(_ payload: [String: Any]) {
@@ -2727,7 +2817,40 @@ import UIKit
     }
 
     private func pendingPayloads(forKey key: String) -> [String: [String: Any]] {
-        Self.syncMetadataValue(forKey: key) as? [String: [String: Any]] ?? [:]
+        if let cached = pendingPayloadsCache[key] {
+            return cached
+        }
+        let payloads = Self.syncMetadataValue(forKey: key) as? [String: [String: Any]] ?? [:]
+        pendingPayloadsCache[key] = payloads
+        return payloads
+    }
+
+    // All writers of the two pending stores go through here: cache + ONE coalesced disk
+    // write (plus an explicit flush at the end of each fetch event) instead of a full
+    // plist write per stored record.
+    private func setPendingPayloads(_ payloads: [String: [String: Any]], forKey key: String) {
+        pendingPayloadsCache[key] = payloads
+        dirtyPendingPayloadKeys.insert(key)
+        schedulePendingPayloadsWrite()
+    }
+
+    private func schedulePendingPayloadsWrite() {
+        pendingPayloadsWriteWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                self?.flushPendingPayloads()
+            }
+        }
+        pendingPayloadsWriteWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
+    }
+
+    private func flushPendingPayloads() {
+        guard !dirtyPendingPayloadKeys.isEmpty else { return }
+        for key in dirtyPendingPayloadKeys {
+            setSyncMetadata(pendingPayloadsCache[key] ?? [:], forKey: key)
+        }
+        dirtyPendingPayloadKeys.removeAll()
     }
 
     private func deviceCache() -> [String: [String: Any]] {
@@ -3079,6 +3202,7 @@ import UIKit
             syncActivityDirection = direction
             syncActivityStartDate = Date()
             syncActivityRecordCount = 0
+            syncActivityExpectedCount = 0
         }
     }
 
@@ -3091,14 +3215,19 @@ import UIKit
         syncActivityDirection = nil
         syncActivityStartDate = nil
         syncActivityRecordCount = 0
+        syncActivityExpectedCount = 0
     }
 
-    // "Lädt hoch… 12/s" — direction plus a throughput estimate (items per second).
+    // "Lädt herunter… 6/51" when the total is known (fetch events report it up front),
+    // otherwise a throughput estimate ("12/s").
     private func syncActivityStatusText() -> String? {
         guard let direction = syncActivityDirection else { return nil }
         let base = direction == .up
             ? NSLocalizedString("Synchronisation läuft, lädt hoch…", comment: "")
             : NSLocalizedString("Synchronisation läuft, lädt herunter…", comment: "")
+        if syncActivityExpectedCount > 0 {
+            return String(format: NSLocalizedString("%@ %ld/%ld", comment: ""), base, syncActivityRecordCount, syncActivityExpectedCount)
+        }
         if let start = syncActivityStartDate, syncActivityRecordCount > 0 {
             let elapsed = max(Date().timeIntervalSince(start), 0.001)
             let rate = Int((Double(syncActivityRecordCount) / elapsed).rounded())
