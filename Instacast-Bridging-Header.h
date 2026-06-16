@@ -24,6 +24,8 @@
 #import "PlaybackManager.h"
 #import "AudioSession.h"
 #import "SubscriptionManager.h"
+#import "EpisodeLoadingManager.h"
+#import "ICFeed.h"
 #import "ICAppearanceManager.h"
 #import "Application.h"
 

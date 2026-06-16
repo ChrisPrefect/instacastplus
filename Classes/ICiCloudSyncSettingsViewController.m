@@ -34,7 +34,6 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 @interface ICiCloudSyncSettingsViewController ()
 @property (nonatomic, strong) NSRelativeDateTimeFormatter *relativeDateFormatter;
-@property (nonatomic, strong) ICiCloudSyncCounts *cachedCounts;
 @property (nonatomic, strong) NSArray<ICiCloudSyncDeviceInfo*> *cachedDevices;
 @property (nonatomic, strong) NSTimer *relativeTimeRefreshTimer;
 @end
@@ -72,13 +71,23 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     [super viewWillAppear:animated];
     [self updateAppearance];
 
-    // Keep the relative "Last Sync" timestamps fresh while the screen is open.
+    // Refresh the hard cloud inventory, the device list and the relative timestamps on
+    // appear and then every 30 seconds while the screen stays open.
+    [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
     [self.relativeTimeRefreshTimer invalidate];
-    self.relativeTimeRefreshTimer = [NSTimer scheduledTimerWithTimeInterval:10.0
+    self.relativeTimeRefreshTimer = [NSTimer scheduledTimerWithTimeInterval:30.0
                                                                      target:self
-                                                                   selector:@selector(reloadStatusAndDevicesSections)
+                                                                   selector:@selector(refreshCloudStateTick)
                                                                    userInfo:nil
                                                                     repeats:YES];
+
+    // A parked settings payload means the user enabled settings sync while iCloud
+    // already had settings and hasn't decided yet — ask (again) now.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(presentInitialSettingsChoiceIfNeeded)
+                                                 name:ICiCloudSyncManager.initialSettingsChoiceNeededNotification
+                                               object:nil];
+    [self presentInitialSettingsChoiceIfNeeded];
 }
 
 - (void)viewWillDisappear:(BOOL)animated
@@ -86,6 +95,45 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     [super viewWillDisappear:animated];
     [self.relativeTimeRefreshTimer invalidate];
     self.relativeTimeRefreshTimer = nil;
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:ICiCloudSyncManager.initialSettingsChoiceNeededNotification
+                                                  object:nil];
+}
+
+// Settings sync was enabled while iCloud already held another device's settings: the
+// user decides which side wins — nothing is applied or published until then ("Später"
+// keeps the choice pending; it is asked again the next time this screen opens).
+- (void)presentInitialSettingsChoiceIfNeeded
+{
+    if (![ICiCloudSyncManager sharedManager].hasPendingInitialSettingsChoice) {
+        return;
+    }
+    if (self.presentedViewController) {
+        return;
+    }
+
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"iCloud Settings Found".ls
+                                                                   message:@"Another device already uploaded its settings to iCloud. Which settings should be used?".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    WEAK_SELF
+    [alert addAction:[UIAlertAction actionWithTitle:@"Use iCloud Settings".ls
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction* action) {
+        STRONG_SELF
+        [[ICiCloudSyncManager sharedManager] resolveInitialSettingsAdoptingCloud];
+        [self reloadStatusAndDevicesSections];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Use My Settings for All Devices".ls
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction* action) {
+        STRONG_SELF
+        [[ICiCloudSyncManager sharedManager] resolveInitialSettingsPublishingLocal];
+        [self reloadStatusAndDevicesSections];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Decide Later".ls
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)dealloc
@@ -98,7 +146,6 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 {
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICGroupCellSelectedBackgroundColor;
-    self.cachedCounts = [ICiCloudSyncManager sharedManager].syncCounts;
     self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
     [self.tableView reloadData];
 }
@@ -134,7 +181,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         case ICiCloudSyncSettingsSectionOptions:
             return ICiCloudSyncOptionRowCount;
         case ICiCloudSyncSettingsSectionStorage:
-            return [ICiCloudSyncManager sharedManager].anySyncEnabled ? ICiCloudSyncStorageRowCount : 0;
+            return ICiCloudSyncStorageRowCount;
         case ICiCloudSyncSettingsSectionDevices:
             return MAX(1, [self deviceList].count);
         case ICiCloudSyncSettingsSectionDelete:
@@ -185,8 +232,9 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     }
 
     if (indexPath.section == ICiCloudSyncSettingsSectionStorage) {
-        ICiCloudSyncManager *manager = [ICiCloudSyncManager sharedManager];
-        ICiCloudSyncCounts *counts = self.cachedCounts ?: manager.syncCounts;
+        // Hard record counts straight from iCloud (refreshed on appear + every 30s) —
+        // never derived from local data or sync progress.
+        ICiCloudSyncCloudInventory *inventory = [ICiCloudSyncManager sharedManager].cloudInventory;
         UITableViewCell *cell = [self detailCell];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         cell.accessoryType = UITableViewCellAccessoryNone;
@@ -194,21 +242,15 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         switch (indexPath.row) {
             case ICiCloudSyncStorageRowEpisodes:
                 cell.textLabel.text = @"Episodes".ls;
-                cell.detailTextLabel.text = [self storageDetailForSynced:counts.episodesSynced total:counts.episodesTotal enabled:manager.episodesSyncEnabled available:counts.countsAvailable];
+                cell.detailTextLabel.text = inventory ? [NSNumberFormatter localizedStringFromNumber:@(inventory.episodeStates) numberStyle:NSNumberFormatterDecimalStyle] : @"…";
                 break;
             case ICiCloudSyncStorageRowSubscriptions:
                 cell.textLabel.text = @"Subscriptions".ls;
-                cell.detailTextLabel.text = [self storageDetailForSynced:counts.subscriptionsSynced total:counts.subscriptionsTotal enabled:manager.subscriptionsSyncEnabled available:counts.countsAvailable];
+                cell.detailTextLabel.text = inventory ? [NSNumberFormatter localizedStringFromNumber:@(inventory.subscriptions) numberStyle:NSNumberFormatterDecimalStyle] : @"…";
                 break;
             case ICiCloudSyncStorageRowSettings:
                 cell.textLabel.text = @"Settings".ls;
-                if (!manager.settingsSyncEnabled) {
-                    cell.detailTextLabel.text = @"Off".ls;
-                } else if (!counts.countsAvailable) {
-                    cell.detailTextLabel.text = @"…";
-                } else {
-                    cell.detailTextLabel.text = [NSNumberFormatter localizedStringFromNumber:@(counts.settings) numberStyle:NSNumberFormatterDecimalStyle];
-                }
+                cell.detailTextLabel.text = inventory ? [NSNumberFormatter localizedStringFromNumber:@(inventory.settings) numberStyle:NSNumberFormatterDecimalStyle] : @"…";
                 break;
         }
         return cell;
@@ -255,6 +297,43 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     return [NSString stringWithFormat:@"%@\n%@: %@", categories, @"Last Sync".ls, dateString];
 }
 
+// Stale entries from old installations (every install registers under a fresh device
+// ID) can be swiped away; the record deletion also cleans the lists on the other
+// devices. The live current device cannot be removed — it would just re-announce
+// itself on its next sync.
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    if (indexPath.section != ICiCloudSyncSettingsSectionDevices) {
+        return nil;
+    }
+    NSArray<ICiCloudSyncDeviceInfo*> *devices = [self deviceList];
+    if (indexPath.row >= devices.count) {
+        return nil;
+    }
+    ICiCloudSyncDeviceInfo *device = devices[indexPath.row];
+    if (device.isCurrentDevice) {
+        return nil;
+    }
+
+    WEAK_SELF
+    UIContextualAction *deleteAction =
+        [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                title:@"Remove".ls
+                                              handler:^(UIContextualAction *action, UIView *sourceView, void (^completionHandler)(BOOL)) {
+        STRONG_SELF
+        if (!self) {
+            completionHandler(NO);
+            return;
+        }
+        [[ICiCloudSyncManager sharedManager] deleteDeviceWithID:device.deviceID];
+        self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:ICiCloudSyncSettingsSectionDevices]
+                      withRowAnimation:UITableViewRowAnimationAutomatic];
+        completionHandler(YES);
+    }];
+    return [UISwipeActionsConfiguration configurationWithActions:@[deleteAction]];
+}
+
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
 {
     switch (section) {
@@ -263,26 +342,11 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         case ICiCloudSyncSettingsSectionOptions:
             return @"Sync Options".ls;
         case ICiCloudSyncSettingsSectionStorage:
-            return [ICiCloudSyncManager sharedManager].anySyncEnabled ? @"On iCloud".ls : nil;
+            return @"On iCloud".ls;
         case ICiCloudSyncSettingsSectionDevices:
             return @"Synced Devices".ls;
     }
     return nil;
-}
-
-- (NSString*)storageDetailForSynced:(NSInteger)synced total:(NSInteger)total enabled:(BOOL)enabled available:(BOOL)available
-{
-    if (!enabled) {
-        return @"Off".ls;
-    }
-    // The totals are computed on a background context; show a placeholder instead of a
-    // misleading "0 / 0" until the first count is in.
-    if (!available) {
-        return @"…";
-    }
-    NSString *syncedText = [NSNumberFormatter localizedStringFromNumber:@(synced) numberStyle:NSNumberFormatterDecimalStyle];
-    NSString *totalText = [NSNumberFormatter localizedStringFromNumber:@(total) numberStyle:NSNumberFormatterDecimalStyle];
-    return [NSString stringWithFormat:@"%@ / %@", syncedText, totalText];
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
@@ -353,6 +417,9 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
                                                  animated:YES
                                                completion:nil];
                 }
+                // A manual sync changes what is on iCloud — refresh the hard
+                // inventory (and with it the device list) right away.
+                [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
                 [self reloadStatusAndDevicesSections];
             });
         }];
@@ -412,6 +479,9 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         @"row": @(sender.tag),
         @"requestedOn": @(sender.on),
     }];
+    // Every switch interaction kicks off sync work — refresh the iCloud inventory
+    // (and device list) immediately instead of waiting for the next 30s tick.
+    [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
     [self reloadStatusAndDevicesSections];
     [[ICDiagnosticLogger shared] logEvent:@"icloud-sync-ui"
                                   message:@"Sync-Schalter Status/Devices neu geladen"
@@ -464,13 +534,18 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     return cell;
 }
 
+- (void)refreshCloudStateTick
+{
+    [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
+    [self reloadStatusAndDevicesSections];
+}
+
 - (void)reloadStatusAndDevicesSections
 {
     if (!self.isViewLoaded) {
         return;
     }
 
-    self.cachedCounts = [ICiCloudSyncManager sharedManager].syncCounts;
     self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
 
     NSIndexSet *sections = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(ICiCloudSyncSettingsSectionStatus, 1)];

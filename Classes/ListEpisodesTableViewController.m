@@ -666,22 +666,25 @@
     CDPlaylist* playlist = [self _playlist];
     self.userAction = YES;
 
+    CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
+
+    // Data source mutation and the row animation MUST be adjacent: the side effects
+    // below save and post notifications — removing the cache of the PLAYING episode
+    // synchronously stops playback, whose notifications reload this table. With that
+    // reload between the array mutation and deleteRows, UITableView asserted
+    // ("Invalid number of rows" — TestFlight crash "Beim Löschen einer Folge,
+    // während sie lief"). Removing from allEpisodes by OBJECT, not by row: with an
+    // active search filter the row indexes of the two arrays differ.
+    [self _removeEpisode:episode fromArrayProperty:@"episodes"];
+    [self _removeEpisode:episode fromArrayProperty:@"allEpisodes"];
+    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
+
     if (playlist) {
-        CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
         [playlist removeEpisode:episode];
         [DMANAGER save];
-        [self _removeEpisode:episode fromArrayProperty:@"episodes"];
-        [self _removeEpisode:episode fromArrayProperty:@"allEpisodes"];
-        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
     } else {
-        CDEpisode* episode = [self.episodes objectAtIndex:indexPath.row];
-
-        [[self mutableArrayValueForKey:@"episodes"] removeObjectAtIndex:indexPath.row];
-        [[self mutableArrayValueForKey:@"allEpisodes"] removeObjectAtIndex:indexPath.row];
-
         [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
         [DMANAGER setEpisode:episode archived:YES];
-        [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
     }
 
     [self _updateToolbarItemsAnimated:NO];

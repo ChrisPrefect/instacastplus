@@ -112,13 +112,49 @@ require("markSyncCompletedIfFinished()" in background_sync, "Background sync mus
 event_handler = method_body(MANAGER, "private func handleEventOnMain")
 require("nonisolated func handleEvent" in MANAGER and "await handleEventOnMain" in MANAGER, "CKSyncEngine event callbacks must enter through a nonisolated delegate wrapper.")
 require("hasUnresolvedSyncFailures = true" in event_handler, "Fetch zone errors must be remembered until the sync finishes.")
-require("case .didFetchChanges:\n            markSyncCompletedIfFinished()" in event_handler, "Fetch completion must not overwrite a failed or unfinished sync status.")
+# The case body may carry extra fetch-completion logic (e.g. ending the subscription
+# deletion suppression) — what matters is that completion is only marked CONDITIONALLY.
+did_fetch_changes_block = event_handler.split("case .didFetchChanges:")[1].split("case .")[0]
+require(
+    "markSyncCompletedIfFinished()" in did_fetch_changes_block
+    and "markSyncCompleted()" not in did_fetch_changes_block,
+    "Fetch completion must not overwrite a failed or unfinished sync status.",
+)
 require("case .didSendChanges:\n            break" in event_handler, "A finished send operation must not overwrite failed record or zone send status.")
 require("as? [AnyHashable: Any]" in method_body(MANAGER, "@objc func shouldHandleRemoteNotification"), "Malformed remote notification payloads must not crash iCloud Sync detection.")
 
 initial_upload_apply = method_body(MANAGER, "private func applyInitialUploadPlan")
-require("appSettingsRecordID()" in initial_upload_apply, "Initial settings upload must queue settings immediately instead of relying on a debounce timer.")
+# The initial settings publish is FETCH-GATED: enabling settings sync must first adopt
+# an existing cloud state. The old eager publish stamped a fresh localModifiedDate and
+# won last-writer-wins against the real remote settings (they were silently discarded).
+require("appSettingsRecordID()" not in initial_upload_apply, "Enabling settings sync must not eagerly publish local settings before the first fetch.")
 require("markSettingsLocallyChangedAndQueue()" not in initial_upload_apply, "Current enabled data upload must not use delayed settings queueing.")
+did_fetch_block = method_body(MANAGER, "private func handleEventOnMain").split("case .didFetchChanges:")[1].split("case .")[0]
+require(
+    "initialSettingsBackfillPendingKey" in did_fetch_block and "addPendingSave(appSettingsRecordID())" in did_fetch_block,
+    "The initial settings publish must happen after the first complete fetch, only when no remote settings arrived.",
+)
+apply_remote_settings = method_body(MANAGER, "private func applyRemoteAppSettings")
+# Enable phase: arriving cloud settings are PARKED and the user chooses (adopt cloud
+# vs. publish local) — nothing is silently applied or published in either direction.
+require(
+    "pendingInitialSettingsPayloadKey" in apply_remote_settings
+    and "initialSettingsChoiceNeededNotification" in apply_remote_settings,
+    "Remote settings arriving during the enable phase must be parked for a user choice, not silently applied.",
+)
+adopt_settings = method_body(MANAGER, "private func adoptSettingsPayload")
+require(
+    "removeObject(forKey: Self.initialSettingsBackfillPendingKey)" in adopt_settings,
+    "Adopting cloud settings must consume the initial-publish marker.",
+)
+require(
+    "func resolveInitialSettingsAdoptingCloud" in MANAGER and "func resolveInitialSettingsPublishingLocal" in MANAGER,
+    "Both initial-settings choices must be offered.",
+)
+require(
+    "!hasPendingInitialSettingsChoice" in did_fetch_changes_block,
+    "The fetch-gated initial publish must wait while the settings choice is pending.",
+)
 require("buildInitialUploadPlan" in MANAGER, "Initial iCloud queueing must build the large upload plan away from the switch tap.")
 require("applyInitialEpisodeQueue" in initial_upload_apply, "Episode initial queueing must apply pending changes in chunks.")
 require("applyInitialSubscriptionQueue" in initial_upload_apply, "Subscription initial queueing must apply pending changes in chunks.")
@@ -140,13 +176,20 @@ require("markSyncCompleted()" not in database_changes, "Creating the CloudKit zo
 require("markSyncCompletedIfFinished()" in MANAGER, "Sync completion must check pending CKSyncEngine changes before showing Synced.")
 
 require("as? NSData" in method_body(MANAGER, "private func payloadDictionary"), "CloudKit payload decoding must accept NSData from encryptedValues.")
-require("normalizedDataDictionary" in MANAGER, "Persisted CKRecord system fields must survive UserDefaults NSData bridging.")
-require("private func deviceHardwareIdentifier()" in MANAGER, "Device records must read the hardware identifier instead of relying on generic UIDevice.model.")
-require("private func deviceMarketingName()" in MANAGER, "Device records must store a user-facing Apple marketing model name.")
+# System fields moved from UserDefaults to dedicated metadata files; the remaining
+# bridging hazard is the encrypted payload value, which must tolerate NSData.
+require(
+    "writeKnownRecordSystemFields" in MANAGER and "as? NSData" in MANAGER,
+    "Persisted CKRecord system fields must survive Data/NSData bridging.",
+)
+require("deviceHardwareIdentifierForSyncEngineCallback()" in MANAGER, "Device records must read the hardware identifier instead of relying on generic UIDevice.model.")
+require("deviceMarketingNameForSyncEngineCallback()" in MANAGER, "Device records must store a user-facing Apple marketing model name.")
 require('"iPhone18,1": "iPhone 17 Pro"' in MANAGER, "iPhone 17 Pro must be displayed by marketing name.")
 require('"iPhone18,2": "iPhone 17 Pro Max"' in MANAGER, "iPhone 17 Pro Max must be displayed by marketing name.")
-local_device_payload = method_body(MANAGER, "private func localDevicePayload")
-require('"name": marketingName' in local_device_payload and '"model": marketingName' in local_device_payload, "Local device payload must not store generic iPhone/iPad names.")
+# localDevicePayload delegates to the static devicePayload builder since the
+# nonisolated-callback consolidation — the marketing-name invariant lives there now.
+device_payload = method_body(MANAGER, "private nonisolated static func devicePayload")
+require('"name": marketingName' in device_payload and '"model": marketingName' in device_payload, "Local device payload must not store generic iPhone/iPad names.")
 device_record = method_body(MANAGER, "private nonisolated static func deviceRecordForSyncEngineCallback")
 require("snapshot.deviceRecordShouldStampSyncDate" in device_record, "Device records may stamp Last Sync only when user data was synced.")
 require('if snapshot.deviceRecordShouldStampSyncDate {\n            payload["lastSyncDate"] = now' in device_record, "Device-only records must not move Last Sync to now.")
@@ -155,8 +198,16 @@ require("setSyncMetadata(true, forKey: Self.deviceRecordShouldStampSyncDateKey)"
 add_pending_saves = method_body(MANAGER, "private func addPendingSaves(_ recordIDs: [CKRecord.ID], pendingKeys: inout Set<String>")
 require("containsUserDataRecordID(recordIDs)" in add_pending_saves, "Pending user data must be detected before queueing the device sync date.")
 require("queueDeviceRecord(stampLastSyncDate: true)" in add_pending_saves, "User-data changes must queue a device record that can publish the real data-sync date.")
-add_pending_delete = method_body(MANAGER, "private func addPendingDelete")
-require("isUserDataRecordID(recordID)" in add_pending_delete and "queueDeviceRecord(stampLastSyncDate: true)" in add_pending_delete, "User-data deletes must queue a device record that can publish the real data-sync date.")
+# Deletes are queued inline in the local-change handler now; they must still end in a
+# device record that publishes the real data-sync date.
+require(
+    "PendingRecordZoneChange.deleteRecord(subscriptionRecordID" in MANAGER,
+    "Subscription deletes must be queued through the sync engine.",
+)
+require(
+    "if queuedUserData {\n            queueDeviceRecord(stampLastSyncDate: true)" in MANAGER,
+    "User-data deletes must queue a device record that can publish the real data-sync date.",
+)
 mark_completed = method_body(MANAGER, "private func markSyncCompleted")
 require("if syncedUserDataInCurrentRun" in mark_completed, "Last Sync must only update after user data was actually sent or received.")
 require('"Synchronisation vollständig"' in mark_completed, "Completed syncs must report completion, not a misleading no-op status.")
@@ -240,18 +291,19 @@ for key in ["scopedChanges", "recordsToSave", "recordIDsToDelete", "staleSaveCha
     require(f'"{key}"' in record_batch, f"CKSyncEngine send-batch diagnostics must include {key}.")
 record_to_save = method_body(MANAGER, "private nonisolated static func recordToSaveForSyncEngineCallback")
 require("await " not in record_to_save, "CKSyncEngine record materialization must stay synchronous once the engine asks for a batch.")
-require("episodeRecordForSyncEngineCallback" in record_to_save, "Episode records must be materialized through the queue-local CKSyncEngine callback path.")
-require("subscriptionRecordForSyncEngineCallback" in record_to_save, "Subscription records must be materialized through the queue-local CKSyncEngine callback path.")
-episode_record = method_body(MANAGER, "private nonisolated static func episodeRecordForSyncEngineCallback")
-require("databaseManager.episode" not in episode_record, "Episode record materialization must not touch the main Core Data context from CKSyncEngine queues.")
-require("episodeStatePayloadForSyncEngineCallback" in episode_record, "Episode record materialization must fetch a queue-safe payload snapshot.")
-episode_payload = method_body(MANAGER, "private nonisolated static func episodeStatePayloadForSyncEngineCallback")
-require("DatabaseManager.shared()" in episode_payload and "context.performAndWait" in episode_payload, "Episode payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
-subscription_record = method_body(MANAGER, "private nonisolated static func subscriptionRecordForSyncEngineCallback")
-require("databaseManager.feed" not in subscription_record and "subscriptionPayload(for: feed" not in subscription_record, "Subscription record materialization must not touch the main Core Data context from CKSyncEngine queues.")
-require("subscriptionPayloadForSyncEngineCallback" in subscription_record, "Subscription record materialization must fetch a queue-safe payload snapshot.")
-subscription_payload = method_body(MANAGER, "private nonisolated static func subscriptionPayloadForSyncEngineCallback")
-require("DatabaseManager.shared()" in subscription_payload and "context.performAndWait" in subscription_payload, "Subscription payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
+# Episode/subscription records are batch-materialized (ONE fetch per send batch) —
+# the per-record callback path was the store-lock contention that froze the UI.
+materialize_batch = method_body(MANAGER, "private nonisolated static func materializeRecordsForSyncEngineCallback")
+require("await " not in materialize_batch, "CKSyncEngine batch materialization must stay synchronous once the engine asks for a batch.")
+require("episodeStatesByObjectHash" in materialize_batch, "Episode records must be batch-materialized through the queue-local CKSyncEngine callback path.")
+require("subscriptionPayloadsByFeedURL" in materialize_batch, "Subscription records must be batch-materialized through the queue-local CKSyncEngine callback path.")
+require("databaseManager.episode" not in materialize_batch and "databaseManager.feed" not in materialize_batch, "Record materialization must not touch the main Core Data context from CKSyncEngine queues.")
+episode_states_fetch = method_body(MANAGER, "private nonisolated static func episodeStatesByObjectHash")
+require("newBackgroundContext()" in episode_states_fetch and "context.performAndWait" in episode_states_fetch, "Episode payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
+require('NSPredicate(format: "objectHash IN %@"' in episode_states_fetch, "Episode payload snapshots must use ONE batch fetch, not a fetch per record.")
+subscription_payloads_fetch = method_body(MANAGER, "private nonisolated static func subscriptionPayloadsByFeedURL")
+require("newBackgroundContext()" in subscription_payloads_fetch and "context.performAndWait" in subscription_payloads_fetch, "Subscription payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
+require('relationshipKeyPathsForPrefetching = ["properties"]' in subscription_payloads_fetch, "Subscription payload snapshots must prefetch feed properties instead of faulting per feed.")
 require("private nonisolated static func feedPropertyValueType" in MANAGER and "private nonisolated static func defaultFeedPropertyValueType" in MANAGER, "Background subscription payload snapshots must not call main-actor feed property helpers.")
 
 log_sync = method_body(MANAGER, "private func logSyncEvent")
@@ -281,12 +333,12 @@ require("Thread.isMainThread" in post_state and "DispatchQueue.main.async" in po
 post_devices = method_body(MANAGER, "private func postDevicesChanged")
 require("Thread.isMainThread" in post_devices and "DispatchQueue.main.async" in post_devices, "iCloud Sync device notifications must be delivered on the main queue for UIKit observers.")
 
-settings_key_filter = method_body(MANAGER, "private func shouldSyncSettingsKey")
+settings_key_filter = method_body(MANAGER, "private nonisolated static func shouldSyncSettingsKeyForSyncEngineCallback")
 require('if key.hasPrefix("ICiCloudSync") { return false }' in settings_key_filter, "iCloud Sync opt-in switches must stay local to each device.")
 require("private var syncOptionKeys" not in MANAGER, "Settings sync must not whitelist iCloud Sync opt-in switches.")
 apply_settings = method_body(MANAGER, "private func applyRemoteAppSettings")
 require("syncOptionsChanged()" not in apply_settings, "Applying synced settings must not re-run full iCloud option queueing.")
-transient_keys = method_body(MANAGER, "private var transientSettingsKeys")
+transient_keys = method_body(MANAGER, "private nonisolated static func transientSettingsKeysForSyncEngineCallback")
 for key in [
     "kUIPersistenceMainSidebarItem",
     "kUIPersistenceSubscriptionsSelectedFeedUID",
@@ -336,9 +388,11 @@ require("UITableViewCellStyleSubtitle" in SETTINGS, "Device rows need a full-wid
 require("ICiCloudSyncSettingsDeviceRowHeight" in SETTINGS, "Device rows must be tall enough for two-line sync details.")
 require("heightForRowAtIndexPath" in SETTINGS, "The iCloud Sync settings table must explicitly size multiline rows.")
 require('@"%@\\n%@: %@"' in SETTINGS, "Device details must put Last Sync on a second line when all categories are enabled.")
-require("%ld/%ld Elemente" in MANAGER, "Sync status must expose item progress while sending changes.")
-require("beginSyncProgress()" in MANAGER and "updateSyncProgressFromPendingChanges()" in MANAGER, "Sync progress must be tracked from CKSyncEngine pending changes.")
-require("clearSyncProgress()" in MANAGER, "Transient sync progress must be cleared after completion or errors.")
+# Status redesign: per-category progress ("Lädt herunter… 31/51 Abonnements") instead
+# of a flat item counter, driven by the sync-activity tracker.
+require('"%@ %ld/%ld %@"' in MANAGER, "Sync status must expose per-category item progress while syncing.")
+require("beginSyncActivity(" in MANAGER and "recordSyncActivity(" in MANAGER, "Sync progress must be tracked from CKSyncEngine activity.")
+require("clearSyncActivity()" in MANAGER, "Transient sync progress must be cleared after completion or errors.")
 
 options_icloud_row = source_between(OPTIONS, "case kRowiCloudSync:", "\n            break;")
 require("[ICiCloudSyncManager sharedManager].anySyncEnabled" not in options_icloud_row, "The main settings menu must not show an On/Off status for iCloud Sync.")

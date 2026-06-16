@@ -30,3 +30,7 @@ Follow `CLAUDE.md`:
 ## Scope Discipline
 
 Follow `CLAUDE.md` and keep every changed line traceable to the user request. Do not refactor adjacent code, clean up unrelated code, or revert unrelated dirty files unless the user explicitly asks.
+
+## UI-Reaktivität
+
+UI-Reaktivität hat oberste Priorität. Sync-, Abonnier- und Massen-Ladevorgänge (iCloud Sync, Feed-Hydration, Episoden-Nachladen) müssen mit niedriger Priorität asynchron im Hintergrund ausgeführt werden — die UI darf dadurch nie blockieren oder stottern, auch nicht bei 1000 Abonnements. Große Core-Data-Schreibvorgänge gehören in kleine Batches mit Pausen, nie in einen einzelnen Main-Context-Push (siehe CLAUDE.md „iCloud Sync").

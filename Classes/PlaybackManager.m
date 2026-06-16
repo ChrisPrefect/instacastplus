@@ -29,6 +29,7 @@
 #import "CDChapter.h"
 #import "ICMetadataParser.h"
 #import "ICImageCacheOperation.h"
+#import "CacheManager.h"
 #import <MediaPlayer/MediaPlayer.h>
 
 #define SEND_UPDATE [self _sendUpdateNotification];
@@ -171,6 +172,9 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
                        password:(NSString*)password;
 - (void)detachFromPlaybackAndContinueCaching;
 - (void)stop;
+- (void)cancelAndDiscardPartialCache;
+- (BOOL)matchesEpisodeHash:(NSString*)episodeHash;
++ (BOOL)cancelDetachedLoaderForEpisodeHash:(NSString*)episodeHash;
 @end
 
 @interface ICStreamingCacheLoader ()
@@ -256,6 +260,37 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     [self stop];
 }
 
+- (BOOL)matchesEpisodeHash:(NSString*)episodeHash
+{
+    return (episodeHash.length > 0 && [self.episode.objectHash isEqualToString:episodeHash]);
+}
+
++ (BOOL)cancelDetachedLoaderForEpisodeHash:(NSString*)episodeHash
+{
+    if (episodeHash.length == 0) {
+        return NO;
+    }
+
+    ICStreamingCacheLoader* matchingLoader = nil;
+    NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
+    @synchronized(detachedSet) {
+        for (ICStreamingCacheLoader* loader in [detachedSet copy]) {
+            if ([loader matchesEpisodeHash:episodeHash]) {
+                matchingLoader = loader;
+                [detachedSet removeObject:loader];
+                break;
+            }
+        }
+    }
+
+    if (!matchingLoader) {
+        return NO;
+    }
+
+    [matchingLoader cancelAndDiscardPartialCache];
+    return YES;
+}
+
 - (BOOL)isCacheComplete
 {
     return self.cacheCoverageComplete;
@@ -328,6 +363,16 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         stopBlock();
     } else {
         dispatch_sync(self.resourceLoaderQueue, stopBlock);
+    }
+}
+
+- (void)cancelAndDiscardPartialCache
+{
+    NSURL* tempURL = self.tempURL;
+    self.progressChangeHandler = nil;
+    [self stop];
+    if (tempURL) {
+        [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
     }
 }
 
@@ -971,6 +1016,7 @@ didReceiveResponse:(NSURLResponse *)response
 
         // Reload chapters when generated chapters are added or deleted
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_generatedChaptersDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_cacheManagerDidCancelStreamingCacheEpisode:) name:CacheManagerDidCancelStreamingCacheEpisodeNotification object:nil];
 #else
         dispatch_async(dispatch_get_main_queue(), ^{
             [self initializeMikey];
@@ -984,6 +1030,12 @@ didReceiveResponse:(NSURLResponse *)response
 	}
 	
 	return self;
+}
+
+- (void)_cacheManagerDidCancelStreamingCacheEpisode:(NSNotification*)notification
+{
+    CDEpisode* episode = notification.userInfo[@"episode"];
+    [self cancelStreamingCacheForEpisode:episode];
 }
 
 
@@ -1566,11 +1618,15 @@ didReceiveResponse:(NSURLResponse *)response
 	BOOL isCached = [eman episodeIsCached:anEpisode];
 	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
 
-    BOOL shouldCacheViaStream = (!isCached &&
-                                 ![eman isCachingEpisode:anEpisode] &&
-                                 [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] &&
-                                 media.fileURL != nil &&
-                                 anEpisode.objectHash.length > 0);
+    BOOL canCacheViaStream = (!isCached &&
+                              [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] &&
+                              ![eman automaticCachingDisabledForEpisode:anEpisode] &&
+                              media.fileURL != nil &&
+                              anEpisode.objectHash.length > 0);
+    if (canCacheViaStream && [eman isCachingSourceOfEpisode:anEpisode]) {
+        [eman cancelCachingEpisode:anEpisode disableAutoDownload:NO];
+    }
+    BOOL shouldCacheViaStream = canCacheViaStream;
 
     // workaround for a bug in the feed parser up to version 3.0.2
     NSString* urlString = [url absoluteString];
@@ -2463,6 +2519,44 @@ didReceiveResponse:(NSURLResponse *)response
 
     BOOL wasPlaying = (self.player.rate > 0 || self.state == ShouldRunState);
     [self openWithEpisode:episode at:resumeTime autostart:wasPlaying];
+#endif
+}
+
+- (BOOL) cancelStreamingCacheForEpisode:(CDEpisode*)episode
+{
+#if TARGET_OS_IPHONE
+    NSString* episodeHash = episode.objectHash;
+    if (episodeHash.length == 0) {
+        return NO;
+    }
+
+    BOOL stoppedLoader = [ICStreamingCacheLoader cancelDetachedLoaderForEpisodeHash:episodeHash];
+    if (self.streamCacheLoader && [self.streamCacheLoader matchesEpisodeHash:episodeHash]) {
+        BOOL hasPlayer = (self.player != nil);
+        NSTimeInterval resumeTime = hasPlayer ? [self time] : 0;
+        if (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1 && self.duration > 0) {
+            resumeTime = self.seekingPosition * self.duration;
+        }
+        BOOL wasPlaying = (self.player.rate > 0 || self.state == ShouldRunState);
+
+        ICStreamingCacheLoader* loader = self.streamCacheLoader;
+        self.streamCacheLoader = nil;
+        self.streamingCacheActive = NO;
+        self.streamingCacheProgress = 0.0;
+        self.streamingCacheComplete = NO;
+        [loader cancelAndDiscardPartialCache];
+        [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:episode];
+        stoppedLoader = YES;
+
+        if (hasPlayer) {
+            [self openWithEpisode:episode at:resumeTime autostart:wasPlaying];
+        } else {
+            [self _sendUpdateNotification];
+        }
+    }
+    return stoppedLoader;
+#else
+    return NO;
 #endif
 }
 

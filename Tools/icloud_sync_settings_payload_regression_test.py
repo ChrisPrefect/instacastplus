@@ -47,7 +47,9 @@ require("case is String, is NSNumber, is Date:" in static_valid, "Settings sync 
 require("is Data" not in static_valid, "Settings sync must not upload arbitrary Data blobs from UserDefaults.")
 require("case let array" not in static_valid and "case let dictionary" not in static_valid, "Settings sync must not upload arrays/dictionaries from the whole defaults domain.")
 
-apply_remote = method_body(MANAGER, "private func applyRemoteAppSettings")
+# The value-writing core lives in adoptSettingsPayload (shared by the normal apply and
+# the user's "use iCloud settings" choice from the enable dialog).
+apply_remote = method_body(MANAGER, "private func adoptSettingsPayload")
 require("Self.shouldSyncSettingsKeyForSyncEngineCallback(key)" in apply_remote, "Remote settings apply must not write excluded non-settings defaults keys.")
 require("setStoredSyncedSettingsHash(syncedSettingsHash())" in apply_remote, "Remote settings apply must re-baseline the persisted hash (echo guard).")
 

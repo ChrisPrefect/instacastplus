@@ -74,6 +74,64 @@ import UIKit
     }
 }
 
+// Hard record counts straight from the CloudKit zone — what is actually ON iCloud,
+// independent of local state, switches or sync progress.
+@objcMembers final class ICiCloudSyncCloudInventory: NSObject {
+    let episodeStates: Int
+    let subscriptions: Int
+    let settings: Int
+    let fetchDate: Date
+
+    init(episodeStates: Int, subscriptions: Int, settings: Int, fetchDate: Date) {
+        self.episodeStates = episodeStates
+        self.subscriptions = subscriptions
+        self.settings = settings
+        self.fetchDate = fetchDate
+        super.init()
+    }
+}
+
+// Record-type counters shared with the (serially executing) CloudKit operation callbacks.
+// Collects the inventory from a change-stream fetch. Deduplicated by record name:
+// a nil-token CKFetchRecordZoneChangesOperation streams CHANGES, so a record that is
+// modified while the fetch runs can be delivered twice (the phantom "ICDevice=3,
+// ICListScrollPositions=2" counts) — and deletions during the stream must subtract.
+private final class ICCloudInventoryCountsBox: @unchecked Sendable {
+    private var recordNamesByType: [String: Set<String>] = [:]
+    private var deviceRecordIDs: [CKRecord.ID] = []
+    private let lock = NSLock()
+
+    func record(_ record: CKRecord) {
+        lock.lock()
+        recordNamesByType[record.recordType, default: []].insert(record.recordID.recordName)
+        if record.recordType == "ICDevice", !deviceRecordIDs.contains(record.recordID) {
+            deviceRecordIDs.append(record.recordID)
+        }
+        lock.unlock()
+    }
+
+    func remove(recordName: String) {
+        lock.lock()
+        for type in recordNamesByType.keys {
+            recordNamesByType[type]?.remove(recordName)
+        }
+        deviceRecordIDs.removeAll { $0.recordName == recordName }
+        lock.unlock()
+    }
+
+    func snapshot() -> [String: Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordNamesByType.mapValues { $0.count }
+    }
+
+    func deviceIDs() -> [CKRecord.ID] {
+        lock.lock()
+        defer { lock.unlock() }
+        return deviceRecordIDs
+    }
+}
+
 @available(iOS 17.0, *)
 @MainActor
 @objcMembers final class ICiCloudSyncManager: NSObject, CKSyncEngineDelegate {
@@ -103,9 +161,16 @@ import UIKit
     private nonisolated static let initialEpisodeBackfillOffsetKey = "ICiCloudSyncInitialEpisodeBackfillOffset"
     private nonisolated static let initialSubscriptionBackfillOffsetKey = "ICiCloudSyncInitialSubscriptionBackfillOffset"
     private nonisolated static let initialSettingsBackfillPendingKey = "ICiCloudSyncInitialSettingsBackfillPending"
+    private nonisolated static let pendingInitialSettingsPayloadKey = "ICiCloudSyncPendingInitialSettingsPayload"
+    @objc static let initialSettingsChoiceNeededNotification = "ICiCloudSyncInitialSettingsChoiceNeeded"
     private nonisolated static let settingsLocalModifiedDateKey = "ICiCloudSyncSettingsLocalModifiedDate"
     private nonisolated static let settingsSyncedHashKey = "ICiCloudSyncSettingsSyncedHash"
     private nonisolated static let suppressSubscriptionDeletionsKey = "ICiCloudSyncSuppressSubscriptionDeletions"
+    private nonisolated static let cloudInventoryKey = "ICiCloudSyncCloudInventory"
+    private nonisolated static let subscriptionListSettingsLocalModifiedDateKey = "ICiCloudSyncSubscriptionListSettingsLocalModifiedDate"
+    private nonisolated static let subscriptionListSettingsBaselineKey = "ICiCloudSyncSubscriptionListSettingsBaseline"
+    // Mirrors the file-private kManualFeedOrderKey in DatabaseManager.m.
+    private nonisolated static let manualFeedOrderDefaultsKey = "ManualFeedOrder"
     private nonisolated static let scrollPositionsLocalModifiedDateKey = "ICiCloudSyncScrollPositionsLocalModifiedDate"
     private nonisolated static let lastSyncDateKey = "ICiCloudSyncLastSyncDate"
     private nonisolated static let lastStatusKey = "ICiCloudSyncLastStatus"
@@ -139,6 +204,7 @@ import UIKit
         static let subscription = "ICSubscription"
         static let appSettings = "ICAppSettings"
         static let listScrollPositions = "ICListScrollPositions"
+        static let subscriptionListSettings = "ICSubscriptionListSettings"
     }
 
     private enum RecordPrefix {
@@ -147,6 +213,7 @@ import UIKit
         static let subscription = "subscription_"
         static let appSettings = "settings_app"
         static let listScrollPositions = "settings_listScrollPositions"
+        static let subscriptionListSettings = "settings_subscriptionList"
     }
 
     private let defaults = UserDefaults.standard
@@ -184,8 +251,19 @@ import UIKit
     private var dirtyPendingPayloadKeys: Set<String> = []
     private var pendingPayloadsWriteWorkItem: DispatchWorkItem?
     private var syncActivityExpectedCount = 0
+    private var syncActivityKindLabel: String?
+    private var isFetchingCloudInventory = false
+    private var isHydratingStubFeeds = false
+    private var hydrationCompletedCount = 0
+    private var hydrationTotalCount = 0
+    private var hydrationFailedFeedIDs: Set<NSManagedObjectID> = []
+    private var isWaitingForEpisodeLoader = false
+    private var episodeLoaderWaitGeneration = 0
+    private var needsSubscriptionListSortApply = false
     private var initialQueueTask: Task<Void, Never>?
     private var lowPrioritySyncTask: Task<Void, Never>?
+    private var syncRetryAttempt = 0
+    private var syncRetryWorkItem: DispatchWorkItem?
     private enum SyncActivityDirection { case up, down }
     private var syncActivityDirection: SyncActivityDirection?
     private var syncActivityStartDate: Date?
@@ -311,7 +389,13 @@ import UIKit
         if let error = defaults.string(forKey: Self.lastErrorKey), !error.isEmpty {
             return error
         }
-        if let activity = syncActivityStatusText() {
+        if isHydratingStubFeeds, hydrationTotalCount > 0 {
+            return String(format: NSLocalizedString("Lade Podcast-Folgen… %ld/%ld", comment: ""), hydrationCompletedCount, hydrationTotalCount)
+        }
+        // While the initial backfill pages through, the stable "Lädt hoch… X / Y"
+        // (lastStatus, updated per page) wins over the per-batch activity counter —
+        // alternating between the two number formats read as status "flickering".
+        if !hasInitialUploadBackfillWork, let activity = syncActivityStatusText() {
             return activity
         }
         if let status = defaults.string(forKey: Self.lastStatusKey), !status.isEmpty {
@@ -371,6 +455,7 @@ import UIKit
         center.addObserver(self, selector: #selector(coreDataDidChange(_:)), name: .NSManagedObjectContextObjectsDidChange, object: databaseManager.objectContext)
         center.addObserver(self, selector: #selector(listScrollPositionsDidChange(_:)), name: NSNotification.Name.ICListScrollPositionsDidChange, object: nil)
         center.addObserver(self, selector: #selector(episodesWereAdded(_:)), name: NSNotification.Name.SubscriptionManagerDidAddEpisodes, object: nil)
+        center.addObserver(self, selector: #selector(episodeLoadingDidFinish(_:)), name: NSNotification.Name.EpisodeLoadingManagerDidFinishLoading, object: nil)
 
         if anySyncEnabled {
             initializeSyncEngineIfNeeded()
@@ -382,6 +467,10 @@ import UIKit
             // whose normal trigger (new episodes added) didn't fire again before the app
             // was quit — without this they could sit in the pending store indefinitely.
             scheduleApplyPendingPayloads()
+            // Publishes the sort mode/settings if their fingerprint baseline is missing
+            // (devices that enabled subscription sync before this record type existed).
+            scheduleSettingsChangeCheck()
+            hydrateStubFeedsIfNeeded()
             Task { @MainActor in
                 await refreshAccountStatus()
             }
@@ -402,6 +491,10 @@ import UIKit
         lastForegroundSyncDate = now
         logSyncEvent("Foreground-Sync angestoßen")
         scheduleLowPrioritySync()
+        // Resume any interrupted episode loading for stub feeds; feeds that failed in
+        // the previous session/run get one fresh attempt per foreground entry.
+        hydrationFailedFeedIDs.removeAll()
+        hydrateStubFeedsIfNeeded()
     }
 
     @objc func setEpisodesSyncEnabled(_ enabled: Bool) {
@@ -441,6 +534,7 @@ import UIKit
             defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
         } else {
             defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
+            setSyncMetadata(nil, forKey: Self.pendingInitialSettingsPayloadKey)
             setStoredSyncedSettingsHash(nil)
         }
         logSyncEvent("Einstellungs-Sync-Schalter geändert", metadata: ["enabled": enabled])
@@ -520,6 +614,9 @@ import UIKit
 
             syncEngine = nil
             resetAllLocalSyncMetadata()
+            // The "On iCloud" rows kept showing the pre-delete counts (stale cache,
+            // refreshed only every 30s) — reflect the now-empty zone immediately.
+            storeCloudInventory([:])
 
             if anySyncEnabled {
                 initializeSyncEngineIfNeeded()
@@ -544,11 +641,13 @@ import UIKit
         Self.removeAllKnownRecordSystemFields()
         for key in [Self.subscriptionRecordURLsKey, Self.subscriptionLocalModifiedDatesKey,
                     Self.subscriptionPayloadHashesKey, Self.episodeLocalModifiedDatesKey,
-                    Self.deviceCacheKey, Self.pendingEpisodeStatesKey, Self.pendingSubscriptionPayloadsKey] {
+                    Self.deviceCacheKey, Self.pendingEpisodeStatesKey, Self.pendingSubscriptionPayloadsKey,
+                    Self.pendingInitialSettingsPayloadKey] {
             setSyncMetadata(nil, forKey: key)
         }
         for key in [Self.settingsLocalModifiedDateKey, Self.settingsSyncedHashKey,
                     Self.scrollPositionsLocalModifiedDateKey, Self.suppressSubscriptionDeletionsKey,
+                    Self.subscriptionListSettingsLocalModifiedDateKey, Self.subscriptionListSettingsBaselineKey,
                     Self.lastSyncDateKey, Self.deviceRecordShouldStampSyncDateKey] {
             defaults.removeObject(forKey: key)
         }
@@ -595,6 +694,104 @@ import UIKit
                 completion(.failed)
             }
         }
+    }
+
+    // Last known hard cloud inventory (persisted, so the screen can show the previous
+    // state right away — even before sync is ever enabled).
+    @objc var cloudInventory: ICiCloudSyncCloudInventory? {
+        guard let stored = defaults.dictionary(forKey: Self.cloudInventoryKey),
+              let fetchDate = stored["fetchDate"] as? Date else { return nil }
+        return ICiCloudSyncCloudInventory(episodeStates: (stored["episodeStates"] as? NSNumber)?.intValue ?? 0,
+                                          subscriptions: (stored["subscriptions"] as? NSNumber)?.intValue ?? 0,
+                                          settings: (stored["settings"] as? NSNumber)?.intValue ?? 0,
+                                          fetchDate: fetchDate)
+    }
+
+    // Counts the records that are actually ON iCloud, by type, with a full zone listing
+    // (metadata only, no payloads). Deliberately not a CKQuery: recordName is not
+    // queryable without dashboard-managed indexes. Runs independently of the sync engine
+    // and of the enabled switches.
+    @objc func refreshCloudInventory() {
+        guard !isFetchingCloudInventory else { return }
+        isFetchingCloudInventory = true
+
+        let box = ICCloudInventoryCountsBox()
+        let configuration = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
+        configuration.desiredKeys = []
+        let operation = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID],
+                                                          configurationsByRecordZoneID: [zoneID: configuration])
+        operation.fetchAllChanges = true
+        operation.qualityOfService = .utility
+        operation.recordWasChangedBlock = { _, result in
+            if case .success(let record) = result {
+                box.record(record)
+            }
+        }
+        operation.recordWithIDWasDeletedBlock = { recordID, _ in
+            box.remove(recordName: recordID.recordName)
+        }
+        operation.fetchRecordZoneChangesResultBlock = { [weak self] result in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isFetchingCloudInventory = false
+                switch result {
+                case .success:
+                    self.storeCloudInventory(box.snapshot())
+                    self.fetchDeviceRecordsForInventory(box.deviceIDs())
+                case .failure(let error):
+                    if let ckError = error as? CKError, ckError.code == .zoneNotFound || ckError.code == .userDeletedZone {
+                        self.storeCloudInventory([:])
+                    } else {
+                        self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen", metadata: [
+                            "error": error.localizedDescription,
+                        ])
+                    }
+                }
+            }
+        }
+        database.add(operation)
+    }
+
+    // The device list used to stay empty ("Noch keine synchronisierten Geräte") until a
+    // category was enabled, because the cache only fills via sync engine events. The
+    // inventory fetch above carries no payloads (desiredKeys = []), so fetch the handful
+    // of ICDevice records separately and feed the cache — the list is then correct as
+    // soon as the sync page opens, even before anything is enabled.
+    private func fetchDeviceRecordsForInventory(_ recordIDs: [CKRecord.ID]) {
+        guard !recordIDs.isEmpty else { return }
+        let operation = CKFetchRecordsOperation(recordIDs: recordIDs)
+        operation.qualityOfService = .utility
+        operation.fetchRecordsResultBlock = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.postDevicesChanged()
+            }
+        }
+        operation.perRecordResultBlock = { [weak self] _, result in
+            guard case .success(let record) = result else { return }
+            Task { @MainActor [weak self] in
+                guard let self, let payload = self.payloadDictionary(from: record) else { return }
+                self.updateDeviceCache(with: payload)
+            }
+        }
+        database.add(operation)
+    }
+
+    private func storeCloudInventory(_ countsByType: [String: Int]) {
+        // The three rows count USER objects only. Helper records (scroll positions,
+        // the sort-order singleton, device entries) must not leak into them — they
+        // showed "Einstellungen: 1" although settings sync was never enabled.
+        let stored: [String: Any] = [
+            "episodeStates": countsByType[RecordKind.episodeState] ?? 0,
+            "subscriptions": countsByType[RecordKind.subscription] ?? 0,
+            "settings": countsByType[RecordKind.appSettings] ?? 0,
+            "fetchDate": Date(),
+        ]
+        setSyncMetadata(stored, forKey: Self.cloudInventoryKey)
+        logSyncEvent("Cloud-Inventar aktualisiert", metadata: [
+            "byType": countsByType.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","),
+        ])
+        postStateChanged()
     }
 
     private func performManualSync() async throws {
@@ -743,6 +940,10 @@ import UIKit
             } catch {
                 self.lowPrioritySyncTask = nil
                 self.setError(error)
+                let ckError = error as? CKError
+                self.scheduleSyncRetryAfterFailure(code: ckError?.code,
+                                                   retryAfter: ckError?.retryAfterSeconds,
+                                                   reason: "lowPrioritySync")
             }
         }
     }
@@ -753,6 +954,56 @@ import UIKit
         }
         lowPrioritySyncTask?.cancel()
         lowPrioritySyncTask = nil
+    }
+
+    // CKSyncEngine runs with automaticallySync = false and never retries on its own.
+    // Without this, a failed first sync (flaky network or zone setup right after
+    // enabling a category) left "could not complete" standing indefinitely — nothing
+    // ran again until the user tapped manual sync. Transient failures are retried
+    // with exponential backoff (or the server-provided retry-after) while the app
+    // is running; the backoff resets on the next completed sync.
+    private func scheduleSyncRetryAfterFailure(code: CKError.Code?, retryAfter: TimeInterval? = nil, reason: String) {
+        guard isStarted, anySyncEnabled else { return }
+        if let code, !Self.isTransientCloudKitErrorCode(code) {
+            return
+        }
+        guard syncRetryWorkItem == nil else { return }
+        syncRetryAttempt += 1
+        let backoff = min(300.0, 15.0 * pow(2.0, Double(syncRetryAttempt - 1)))
+        let delay = retryAfter ?? backoff
+        logSyncEvent("Sync-Wiederholung geplant", metadata: [
+            "delaySeconds": Int(delay),
+            "attempt": syncRetryAttempt,
+            "reason": reason,
+            "errorCode": code?.rawValue ?? -1,
+        ])
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.syncRetryWorkItem = nil
+                guard self.isStarted, self.anySyncEnabled else { return }
+                self.scheduleLowPrioritySync()
+            }
+        }
+        syncRetryWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func resetSyncRetryBackoff() {
+        syncRetryAttempt = 0
+        syncRetryWorkItem?.cancel()
+        syncRetryWorkItem = nil
+    }
+
+    // Retrying cannot fix a missing account, parental restrictions, a full quota or a
+    // record format from a newer app version — everything else is worth another attempt.
+    private nonisolated static func isTransientCloudKitErrorCode(_ code: CKError.Code) -> Bool {
+        switch code {
+        case .notAuthenticated, .permissionFailure, .managedAccountRestricted, .quotaExceeded, .incompatibleVersion:
+            return false
+        default:
+            return true
+        }
     }
 
     private struct InitialUploadSnapshot {
@@ -930,7 +1181,6 @@ import UIKit
         ])
         let hasInitialWork = plan.snapshot.episodeBackfillOffset != nil
         || plan.snapshot.subscriptionBackfillOffset != nil
-        || plan.snapshot.settingsBackfillPending
         guard hasInitialWork else {
             // Still publish the device record: turning a category OFF queues no backfill
             // work, but the other devices' lists must see the new option flags. This runs
@@ -958,19 +1208,28 @@ import UIKit
             setSyncMetadata(plan.subscriptionRecordURLs, forKey: Self.subscriptionRecordURLsKey)
             setSyncMetadata(plan.subscriptionLocalModifiedDates, forKey: Self.subscriptionLocalModifiedDatesKey)
             mergeSubscriptionPayloadHashes(plan.subscriptionPayloadHashes)
+            if plan.snapshot.subscriptionBackfillOffset == 0, Self.hasLocalManualFeedOrder() {
+                // The list sort mode + saved manual order travel with the subscriptions.
+                // Only published when a manual order exists: a device enabling sync with
+                // an empty or sort-mode-only state must never stamp a record with a fresh
+                // updatedAt — under last-writer-wins that displaces (and effectively
+                // erases) the real sort state of the other devices. A sort-mode-only
+                // state publishes when the user actually changes it (checkAndQueue).
+                setSyncMetadata(plan.createdAt, forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
+                setSyncMetadata(Self.subscriptionListSettingsFingerprint(), forKey: Self.subscriptionListSettingsBaselineKey)
+                addPendingSaves([subscriptionListSettingsRecordID()], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
+                queuedUserData = true
+            }
             queuedUserData = await applyInitialSubscriptionQueue(plan.subscribedFeedURLs, pendingKeys: &pendingKeys) || queuedUserData
             guard !Task.isCancelled else { return }
             await Task.yield()
         }
 
-        if plan.snapshot.settingsBackfillPending, settingsSyncEnabled {
-            setSettingsLocalModifiedDate(plan.createdAt)
-            setStoredSyncedSettingsHash(syncedSettingsHash())
-            addPendingSaves([appSettingsRecordID()], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
-            queuedUserData = true
-            defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
-            await Task.yield()
-        }
+        // Settings deliberately NOT queued here. The old eager publish stamped a fresh
+        // localModifiedDate before the first fetch — the enabling device then won
+        // last-writer-wins against the REAL cloud settings and silently discarded them
+        // (the "iPad never received the iPhone settings" bug). The initial settings
+        // publish now happens in didFetchChanges, only if no remote settings arrived.
 
         if queuedUserData {
             queueDeviceRecord(stampLastSyncDate: true)
@@ -999,10 +1258,12 @@ import UIKit
         }
     }
 
+    // The settings marker is NOT upload-backfill work anymore: the initial settings
+    // publish is fetch-gated (didFetchChanges) so an enabling device first adopts an
+    // existing cloud state instead of displacing it under last-writer-wins.
     private var hasInitialUploadBackfillWork: Bool {
         (episodesSyncEnabled && defaults.object(forKey: Self.initialEpisodeBackfillOffsetKey) != nil)
         || (subscriptionsSyncEnabled && defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) != nil)
-        || (settingsSyncEnabled && defaults.bool(forKey: Self.initialSettingsBackfillPendingKey))
     }
 
     private func updateInitialUploadCursors(from plan: InitialUploadPlan) {
@@ -1161,6 +1422,7 @@ import UIKit
         || recordID.recordName.hasPrefix(RecordPrefix.subscription)
         || recordID.recordName == RecordPrefix.appSettings
         || recordID.recordName == RecordPrefix.listScrollPositions
+        || recordID.recordName == RecordPrefix.subscriptionListSettings
     }
 
     private func hasPendingUserDataChanges() -> Bool {
@@ -1224,12 +1486,28 @@ import UIKit
                 defaults.removeObject(forKey: Self.suppressSubscriptionDeletionsKey)
                 logSyncEvent("Abo-Löschungs-Unterdrückung beendet (erster Fetch abgeschlossen)")
             }
+            // Initial settings publish, fetch-gated: the first complete fetch after
+            // enabling settings sync brought no remote settings record (a parked
+            // payload means one DID arrive and the user's choice is still pending) —
+            // this device's settings seed the cloud.
+            if settingsSyncEnabled, !hasUnresolvedSyncFailures,
+               defaults.bool(forKey: Self.initialSettingsBackfillPendingKey),
+               !hasPendingInitialSettingsChoice {
+                defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
+                setSettingsLocalModifiedDate(Date())
+                setStoredSyncedSettingsHash(syncedSettingsHash())
+                addPendingSave(appSettingsRecordID())
+                logSyncEvent("Initiale Einstellungen werden hochgeladen (keine in iCloud gefunden)")
+            }
             markSyncCompletedIfFinished()
 
         case .didFetchRecordZoneChanges(let event):
             if let error = event.error {
                 hasUnresolvedSyncFailures = true
                 setError(error)
+                scheduleSyncRetryAfterFailure(code: (error as? CKError)?.code,
+                                              retryAfter: (error as? CKError)?.retryAfterSeconds,
+                                              reason: "fetchZoneChanges")
             } else {
                 markSyncCompletedIfFinished()
             }
@@ -1287,6 +1565,10 @@ import UIKit
             "recordIDsToDelete": recordIDsToDelete.count,
             "staleSaveChanges": staleSaveChanges.count,
             "validChangeCount": validChangeCount,
+            // Identifies what keeps re-queueing in repeated small batches (record names
+            // carry only hashes/prefixes, no user content).
+            "recordNames": recordsToSave.prefix(6).map { $0.recordID.recordName }.joined(separator: ","),
+            "deleteNames": recordIDsToDelete.prefix(3).map { $0.recordName }.joined(separator: ","),
         ])
         return CKSyncEngine.RecordZoneChangeBatch(recordsToSave: recordsToSave,
                                                   recordIDsToDelete: recordIDsToDelete,
@@ -1477,7 +1759,58 @@ import UIKit
             guard snapshot.episodesSyncEnabled else { return nil }
             return listScrollPositionsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
         }
+        if recordID.recordName == RecordPrefix.subscriptionListSettings {
+            guard snapshot.subscriptionsSyncEnabled else { return nil }
+            return subscriptionListSettingsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
+        }
         return nil
+    }
+
+    // The feed-list sort mode and the saved manual order belong to the SUBSCRIPTIONS:
+    // they sync with subscription sync (not settings sync), so a device that only has
+    // subscriptions enabled shows the same list the same way. Without the saved manual
+    // order, "Manual" was not even offered in the receiving device's sort menu.
+    private nonisolated static func subscriptionListSettingsRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+        let defaults = UserDefaults.standard
+        let updatedAt = defaults.object(forKey: Self.subscriptionListSettingsLocalModifiedDateKey) as? Date ?? Date()
+        var payload: [String: Any] = [
+            "sortMode": defaults.string(forKey: FeedListSortMode) ?? "",
+            "updatedAt": updatedAt,
+        ]
+        if let manualOrder = defaults.array(forKey: Self.manualFeedOrderDefaultsKey) as? [String], !manualOrder.isEmpty {
+            payload["manualOrder"] = manualOrder
+        }
+        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.subscriptionListSettings, recordID: recordID)
+        populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
+        return record
+    }
+
+    // The "v2:" format prefix makes migrated baselines recognizable: on a baseline
+    // written by an older build, checkAndQueueSettingsChange decides between a one-time
+    // repair re-publish (device owns a manual order) and silently recording the baseline
+    // (sort-mode-only device — publishing would race the real state under LWW; exactly
+    // that race flipped the iPhone off "manual" once).
+    private nonisolated static let subscriptionListSettingsFingerprintPrefix = "v2:"
+
+    private nonisolated static func subscriptionListSettingsFingerprint() -> String {
+        let defaults = UserDefaults.standard
+        let sortMode = defaults.string(forKey: FeedListSortMode) ?? ""
+        let manualOrder = (defaults.array(forKey: manualFeedOrderDefaultsKey) as? [String]) ?? []
+        return subscriptionListSettingsFingerprintPrefix + sha256Hex(([sortMode] + manualOrder).joined(separator: "\u{1}"))
+    }
+
+    // A device without any list sort state (fresh install, sort menu never used) has
+    // nothing to publish — and must never defend that emptiness under last-writer-wins.
+    private nonisolated static func hasLocalSubscriptionListSettings() -> Bool {
+        let defaults = UserDefaults.standard
+        if let sortMode = defaults.string(forKey: FeedListSortMode), !sortMode.isEmpty { return true }
+        if let manualOrder = defaults.array(forKey: manualFeedOrderDefaultsKey) as? [String], !manualOrder.isEmpty { return true }
+        return false
+    }
+
+    private nonisolated static func hasLocalManualFeedOrder() -> Bool {
+        let manualOrder = UserDefaults.standard.array(forKey: manualFeedOrderDefaultsKey) as? [String]
+        return manualOrder?.isEmpty == false
     }
 
     private nonisolated static func deviceRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
@@ -1648,6 +1981,8 @@ import UIKit
             kUIPersistenceListScrollPositionsLastModified,
             UncompletedSleepTimeInterval,
             "TranscriptionBackgroundTaskActive",
+            // Travels with subscription sync (ICSubscriptionListSettings), not settings sync.
+            FeedListSortMode,
         ]
     }
 
@@ -1667,6 +2002,7 @@ import UIKit
         "loadedEpisodeCount",
         "totalExpectedEpisodes",
         "cachedPlayerTintColor",
+        "durationMetadataRefreshAttempted",
     ]
 
     private nonisolated static func isValidSettingsValueForSyncEngineCallback(_ value: Any) -> Bool {
@@ -1822,7 +2158,14 @@ import UIKit
         }
 
         beginSyncActivity(.down)
-        syncActivityExpectedCount += event.modifications.filter { isUserDataRecordID($0.record.recordID) }.count
+
+        // Per-category progress for the status line ("Lädt herunter… 31/51 Abonnements").
+        // orderedModifications groups the records by type, so the label switches once per
+        // category instead of flickering.
+        var expectedByType: [String: Int] = [:]
+        for modification in event.modifications where isUserDataRecordID(modification.record.recordID) {
+            expectedByType[modification.record.recordType, default: 0] += 1
+        }
 
         isApplyingRemoteChange = true
         defer {
@@ -1836,6 +2179,14 @@ import UIKit
         for modification in orderedModifications(event.modifications) {
             let record = modification.record
             modificationCountsByType[record.recordType, default: 0] += 1
+            if isUserDataRecordID(record.recordID) {
+                let label = Self.activityKindLabel(forRecordType: record.recordType)
+                if label != syncActivityKindLabel {
+                    syncActivityKindLabel = label
+                    syncActivityRecordCount = 0
+                    syncActivityExpectedCount = expectedByType[record.recordType] ?? 0
+                }
+            }
             rememberServerRecord(record)
             await applyRemoteRecord(record)
             if isUserDataRecordID(record.recordID) {
@@ -1862,11 +2213,17 @@ import UIKit
             "byType": modificationCountsByType.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","),
         ])
 
+        // Replay a received manual sort order onto the feed ranks now that all
+        // subscription records of this batch are applied.
+        applySubscriptionListSortIfNeeded()
+
         // One coalesced write for everything the apply pass parked in the pending stores —
         // and a deterministic flush before the app could be killed mid-download.
         flushPendingPayloads()
         databaseManager.save()
         markSyncCompletedIfFinished()
+        // Newly applied subscriptions are stubs — load their episodes one by one.
+        hydrateStubFeedsIfNeeded()
     }
 
     // Apply subscriptions last and in the user's list order (rank): the per-feed network
@@ -1908,6 +2265,9 @@ import UIKit
         if hasFailedDatabaseChanges {
             hasUnresolvedSyncFailures = true
             postStateChanged()
+            // A failed zone save is the classic first-enable failure (the custom zone
+            // doesn't exist yet) — without a retry the sync stalls right there.
+            scheduleSyncRetryAfterFailure(code: nil, reason: "failedDatabaseChanges")
         } else if !hasUnresolvedSyncFailures {
             markSyncCompletedIfFinished()
         }
@@ -1933,16 +2293,19 @@ import UIKit
         var retryRecords: [CKSyncEngine.PendingRecordZoneChange] = []
         var retryZones: [CKSyncEngine.PendingDatabaseChange] = []
         var hasFailedRecordChanges = false
+        var lastFailureCode: CKError.Code?
 
         for failedSave in event.failedRecordSaves {
             if !(await handleFailedRecordSave(failedSave, retryRecords: &retryRecords, retryZones: &retryZones)) {
                 hasFailedRecordChanges = true
+                lastFailureCode = failedSave.error.code
             }
         }
 
         for (recordID, error) in event.failedRecordDeletes {
             if !handleFailedRecordDelete(recordID: recordID, error: error) {
                 hasFailedRecordChanges = true
+                lastFailureCode = error.code
             }
         }
 
@@ -1959,6 +2322,9 @@ import UIKit
         if hasFailedRecordChanges {
             hasUnresolvedSyncFailures = true
             postStateChanged()
+            // Covers both real failures and the re-queued conflict/zone repairs above —
+            // nothing else triggers the next send attempt.
+            scheduleSyncRetryAfterFailure(code: lastFailureCode, reason: "failedRecordSends")
         } else if !hasUnresolvedSyncFailures {
             markSyncCompletedIfFinished()
         }
@@ -2054,12 +2420,109 @@ import UIKit
                 applyRemoteListScrollPositions(payload)
             }
 
+        case RecordKind.subscriptionListSettings:
+            if subscriptionsSyncEnabled {
+                applyRemoteSubscriptionListSettings(payload)
+            } else {
+                storePendingSubscription(payload, recordName: record.recordID.recordName)
+            }
+
         default:
             break
         }
     }
 
+    private func applyRemoteSubscriptionListSettings(_ payload: [String: Any]) {
+        let remoteSortMode = (payload["sortMode"] as? String) ?? ""
+        let remoteManualOrder = (payload["manualOrder"] as? [String]) ?? []
+        // An EMPTY record (published by a pre-fix build on a freshly installed device)
+        // must not win last-writer-wins against a real local state: ignore it entirely —
+        // applying it would re-stamp localModifiedDate/baseline and silence this device
+        // forever — and push the real local state back up instead.
+        guard !remoteSortMode.isEmpty || !remoteManualOrder.isEmpty else {
+            if Self.hasLocalSubscriptionListSettings() {
+                addPendingSave(subscriptionListSettingsRecordID())
+            }
+            return
+        }
+        // A record WITHOUT a manual order must never displace a local manual-order
+        // state, regardless of its timestamp: it carries strictly less information
+        // (sort-mode-only devices, e.g. one where the user tried the sort menu while
+        // "Manual" was still missing) and would flip the active mode on the device
+        // that owns the real order. Push the richer local state back up instead.
+        if remoteManualOrder.isEmpty,
+           defaults.string(forKey: FeedListSortMode) == "manual",
+           databaseManager.hasManualFeedOrder() {
+            addPendingSave(subscriptionListSettingsRecordID())
+            return
+        }
+        let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
+        if let localDate = defaults.object(forKey: Self.subscriptionListSettingsLocalModifiedDateKey) as? Date,
+           localDate.compare(remoteDate) == .orderedDescending {
+            // Only defend the local state if one actually exists — a pre-fix build may
+            // have stamped localModifiedDate on a device that has nothing to defend.
+            if Self.hasLocalSubscriptionListSettings() {
+                addPendingSave(subscriptionListSettingsRecordID())
+                return
+            }
+        }
+        if !remoteSortMode.isEmpty {
+            defaults.set(remoteSortMode, forKey: FeedListSortMode)
+        }
+        if !remoteManualOrder.isEmpty {
+            defaults.set(remoteManualOrder, forKey: Self.manualFeedOrderDefaultsKey)
+        }
+        setSyncMetadata(remoteDate, forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
+        // Re-baseline so applying the payload doesn't read as a local change and echo back.
+        setSyncMetadata(Self.subscriptionListSettingsFingerprint(), forKey: Self.subscriptionListSettingsBaselineKey)
+        // The actual reordering happens once at the end of the apply batch, after all
+        // subscription records (and their stub feeds) of this fetch exist.
+        needsSubscriptionListSortApply = true
+    }
+
+    // Writing the defaults alone changes nothing visible: the feed list orders by the
+    // feeds' rank values. Replay the synced manual order onto the ranks once the apply
+    // batch is done — that also makes "Manual" appear (and be checked) in the sort menu.
+    private func applySubscriptionListSortIfNeeded() {
+        guard needsSubscriptionListSortApply else { return }
+        needsSubscriptionListSortApply = false
+        guard defaults.string(forKey: FeedListSortMode) == "manual",
+              databaseManager.hasManualFeedOrder() else { return }
+        // restoreManualFeedOrder rewrites every feed's rank without diff checks — shield
+        // them all from the change observer so nothing echoes back as a local edit.
+        if let feeds = databaseManager.feeds as? [CDFeed] {
+            for feed in feeds {
+                remoteAppliedObjectIDs.insert(feed.objectID)
+            }
+        }
+        databaseManager.restoreManualFeedOrder()
+        // The restore can produce ranks that differ from the cloud's (e.g. a feed whose
+        // sourceURL changed after a redirect no longer matches the synced order and sorts
+        // to the end). Refresh the payload-hash baseline so neither the change observer
+        // nor the periodic hash sweep uploads the APPLIED order as a fresh local edit —
+        // that re-upload stamped new updatedAt dates and rewrote the ranks on the other
+        // devices ("iPhone lost its manual sort order").
+        var appliedHashes: [String: String] = [:]
+        for feed in (databaseManager.feeds as? [CDFeed]) ?? [] {
+            if let feedURL = feed.sourceURL?.absoluteString {
+                appliedHashes[feedURL] = subscriptionPayloadHash(for: feed)
+            }
+        }
+        mergeSubscriptionPayloadHashes(appliedHashes)
+        logSyncEvent("Synchronisierte Sortierreihenfolge angewendet")
+    }
+
     private func applyRemoteDeletion(_ deletion: CKDatabase.RecordZoneChange.Deletion) {
+        if deletion.recordType == RecordKind.device {
+            let deletedDeviceID = String(deletion.recordID.recordName.dropFirst(RecordPrefix.device.count))
+            removeDeviceFromCache(deletedDeviceID)
+            if deletedDeviceID == deviceID {
+                // Another device removed THIS one (it cannot tell which entry is the
+                // live install) — re-announce ourselves so the lists stay truthful.
+                queueDeviceRecord()
+            }
+            return
+        }
         if deletion.recordType == RecordKind.subscription && subscriptionsSyncEnabled {
             let recordName = deletion.recordID.recordName
             // Deletions are only propagated "live": the catch-up fetch right after
@@ -2095,9 +2558,31 @@ import UIKit
             return
         }
 
-        let played = (payload["played"] as? Bool) ?? false
-        let starred = (payload["starred"] as? Bool) ?? false
-        let position = max(0, (payload["position"] as? NSNumber)?.int32Value ?? Int32((payload["position"] as? Int) ?? 0))
+        var played = (payload["played"] as? Bool) ?? false
+        var starred = (payload["starred"] as? Bool) ?? false
+        var position = max(0, (payload["position"] as? NSNumber)?.int32Value ?? Int32((payload["position"] as? Int) ?? 0))
+
+        // First reconciliation: an episode WITHOUT a sync date has never been part of
+        // the sync dialog — its local state is an independent stand, not an outdated
+        // one. Merge by content instead of timestamp (user decision 12.06.): heard
+        // beats unheard, the farther playback position wins, favorite beats
+        // non-favorite. Once the episode has a sync date, deliberate live edits win
+        // by recency again (otherwise nothing could ever be reset to unheard).
+        var localWon = false
+        if episodeLocalModifiedDate(for: objectHash) == nil {
+            if episode.consumed && !played {
+                played = true
+                localWon = true
+            }
+            if !played && episode.position > position {
+                position = episode.position
+                localWon = true
+            }
+            if episode.starred && !starred {
+                starred = true
+                localWon = true
+            }
+        }
 
         var didMutate = false
         if episode.consumed != played {
@@ -2120,7 +2605,15 @@ import UIKit
             remoteAppliedObjectIDs.insert(episode.objectID)
         }
 
-        setEpisodeLocalModifiedDate(remoteDate, for: objectHash)
+        if localWon {
+            // The merge kept local state the cloud doesn't have — push the merged
+            // result back up with a fresh date so the other devices adopt it (their
+            // copy already has a sync date, so plain recency applies there).
+            setEpisodeLocalModifiedDate(Date(), for: objectHash)
+            addPendingSave(episodeRecordID(forObjectHash: objectHash))
+        } else {
+            setEpisodeLocalModifiedDate(remoteDate, for: objectHash)
+        }
     }
 
     private func episode(for payload: [String: Any]) -> CDEpisode? {
@@ -2200,7 +2693,7 @@ import UIKit
             return
         }
 
-        guard let feed = await subscribedFeed(for: feedURL) else {
+        guard let feed = subscribedFeed(for: feedURL, title: payload["title"] as? String) else {
             storePendingSubscription(payload, recordName: recordName)
             return
         }
@@ -2213,7 +2706,7 @@ import UIKit
         mergeSubscriptionPayloadHashes([feedURL: subscriptionPayloadHash(for: feed)])
     }
 
-    private func subscribedFeed(for feedURL: String) async -> CDFeed? {
+    private func subscribedFeed(for feedURL: String, title: String?) -> CDFeed? {
         guard let url = URL(string: feedURL) else { return nil }
         if let feed = databaseManager.feed(withSourceURL: url) {
             if !feed.subscribed {
@@ -2225,21 +2718,20 @@ import UIKit
             return feed
         }
 
-        logSyncEvent("Remote-Abo wird abonniert", metadata: ["feedURL": feedURL])
-        let result: (subscribed: Bool, errorDescription: String?) = await withCheckedContinuation { continuation in
-            subscriptionManager.subscribeFeed(with: url, options: ICSubscribeOptions(rawValue: 0)!) { feed, error in
-                continuation.resume(returning: (feed != nil, error?.localizedDescription))
-            }
-        }
-        guard result.subscribed else {
-            logSyncEvent("Remote-Abo konnte nicht abonniert werden", metadata: [
-                "feedURL": feedURL,
-                "error": result.errorDescription ?? "unbekannt",
-            ])
+        // Phase 1 of the two-phase apply: create a lightweight local STUB — no network,
+        // no episodes. The whole list shows up immediately (in rank order) and the UI
+        // stays responsive no matter how many subscriptions arrive. Episodes are loaded
+        // one feed at a time by the low-priority hydration queue (phase 2), which derives
+        // its work from the data (lastUpdate == nil) and therefore survives app kills.
+        guard let stub = ICFeed.feed() as? ICFeed else { return nil }
+        stub.sourceURL = url
+        stub.title = (title?.isEmpty == false) ? title : feedURL
+        guard let feed = subscriptionManager.subscribeParserFeed(stub, autodownload: false, options: .subscribeOptionDontManageRanking) else {
+            logSyncEvent("Remote-Abo-Stub konnte nicht angelegt werden", metadata: ["feedURL": feedURL])
             return nil
         }
-        logSyncEvent("Remote-Abo abonniert", metadata: ["feedURL": feedURL])
-        return databaseManager.feed(withSourceURL: url)
+        remoteAppliedObjectIDs.insert(feed.objectID)
+        return feed
     }
 
     // Equality-checked like applyRemoteEpisodeState: only real differences are written, so an
@@ -2334,8 +2826,15 @@ import UIKit
 
         let initialCount = pending.count
         for (recordName, payload) in pending {
+            // The list-settings singleton parks in the same pending store while the
+            // category is off — it is not a feed payload.
+            if recordName == RecordPrefix.subscriptionListSettings {
+                applyRemoteSubscriptionListSettings(payload)
+                pending.removeValue(forKey: recordName)
+                continue
+            }
             guard let feedURL = payload["feedURL"] as? String else { continue }
-            if let feed = await subscribedFeed(for: feedURL) {
+            if let feed = subscribedFeed(for: feedURL, title: payload["title"] as? String) {
                 applySubscriptionPayload(payload, to: feed)
                 let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
                 setSubscriptionLocalModifiedDate(remoteDate, for: feedURL)
@@ -2344,21 +2843,40 @@ import UIKit
             }
         }
 
+        applySubscriptionListSortIfNeeded()
         setPendingPayloads(pending, forKey: Self.pendingSubscriptionPayloadsKey)
         databaseManager.save()
         logSyncEvent("Wartende Abo-Payloads verarbeitet", metadata: [
             "applied": initialCount - pending.count,
             "remaining": pending.count,
         ])
+        hydrateStubFeedsIfNeeded()
     }
 
     private func applyRemoteAppSettings(_ payload: [String: Any]) {
+        // Enable phase (marker still set, nothing published yet) and the cloud already
+        // has settings: the USER decides (12.06.) — adopt the cloud state or overwrite
+        // it with this device's settings. Park the payload and ask; nothing is applied
+        // or published until the choice is made (the fetch-gated initial publish is
+        // held back by the parked payload).
+        if defaults.bool(forKey: Self.initialSettingsBackfillPendingKey) {
+            setSyncMetadata(payload, forKey: Self.pendingInitialSettingsPayloadKey)
+            logSyncEvent("Einstellungs-Wahl erforderlich (iCloud hat bereits Einstellungen)")
+            postStateChanged()
+            NotificationCenter.default.post(name: NSNotification.Name(Self.initialSettingsChoiceNeededNotification), object: nil)
+            return
+        }
         let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
         if let localDate = settingsLocalModifiedDate(), localDate.compare(remoteDate) == .orderedDescending {
             addPendingSave(appSettingsRecordID())
             return
         }
+        adoptSettingsPayload(payload)
+    }
 
+    // Shared apply core: writes the synced values, re-baselines and refreshes the UI.
+    private func adoptSettingsPayload(_ payload: [String: Any]) {
+        let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
         guard let values = payload["values"] as? [String: Any] else { return }
         for (key, value) in values where Self.shouldSyncSettingsKeyForSyncEngineCallback(key) && Self.isValidSettingsValueForSyncEngineCallback(value) {
             defaults.set(value, forKey: key)
@@ -2372,9 +2890,38 @@ import UIKit
         // Re-baseline so the apply itself doesn't read as a local settings change on the
         // next debounced check (that echoed the record back up with a fresh updatedAt).
         setStoredSyncedSettingsHash(syncedSettingsHash())
+        // Remote settings adopted — the fetch-gated initial publish is obsolete.
+        defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
         defaults.synchronize()
         ICAppearanceManager.shared()?.updateAppearance()
         NotificationCenter.default.post(name: NSNotification.Name("MainMenuListUIDsDidChangeNotification"), object: nil)
+        postStateChanged()
+    }
+
+    // MARK: - Initial settings choice (user decision on enabling settings sync)
+
+    @objc var hasPendingInitialSettingsChoice: Bool {
+        Self.syncMetadataValue(forKey: Self.pendingInitialSettingsPayloadKey) != nil
+    }
+
+    // "Einstellungen aus iCloud übernehmen": apply the parked cloud settings here.
+    @objc func resolveInitialSettingsAdoptingCloud() {
+        guard let payload = Self.syncMetadataValue(forKey: Self.pendingInitialSettingsPayloadKey) as? [String: Any] else { return }
+        setSyncMetadata(nil, forKey: Self.pendingInitialSettingsPayloadKey)
+        defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
+        adoptSettingsPayload(payload)
+        logSyncEvent("Einstellungs-Wahl: iCloud-Stand übernommen")
+    }
+
+    // "Meine Einstellungen für alle verwenden": publish this device's settings with a
+    // fresh date — the other devices adopt them via plain recency.
+    @objc func resolveInitialSettingsPublishingLocal() {
+        setSyncMetadata(nil, forKey: Self.pendingInitialSettingsPayloadKey)
+        defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
+        setSettingsLocalModifiedDate(Date())
+        setStoredSyncedSettingsHash(syncedSettingsHash())
+        addPendingSave(appSettingsRecordID())
+        logSyncEvent("Einstellungs-Wahl: lokale Einstellungen veröffentlicht")
         postStateChanged()
     }
 
@@ -2397,7 +2944,7 @@ import UIKit
     @objc private nonisolated func defaultsDidChange(_ notification: Notification) {
         guard Thread.isMainThread else { return }
         MainActor.assumeIsolated {
-            guard isStarted, settingsSyncEnabled, !isApplyingRemoteChange, !isWritingSyncMetadata else { return }
+            guard isStarted, settingsSyncEnabled || subscriptionsSyncEnabled, !isApplyingRemoteChange, !isWritingSyncMetadata else { return }
             scheduleSettingsChangeCheck()
         }
     }
@@ -2474,22 +3021,36 @@ import UIKit
         }
     }
 
+    // Position changes are queued like any other episode edit: the player saves every
+    // ~30s while playing and each tick uploads one small record right away, so other
+    // devices stay current. This is deliberately NOT throttled — the historical
+    // background cpu_resource kills attributed to it actually came from the widget
+    // exporter doing full episode fetches on every save (fixed via SQL counts), the
+    // upload itself costs a few milliseconds per tick.
     private nonisolated static func syncRelevantUpdatedObjectIDs(in notification: Notification) -> [NSManagedObjectID] {
         guard let objects = notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> else { return [] }
-        return objects.compactMap { object in
+        var ids: [NSManagedObjectID] = []
+        for object in objects {
             switch object.objectID.entity.name {
             case "Episode":
                 let changedKeys = object.changedValuesForCurrentEvent().keys
-                return changedKeys.contains(where: { syncRelevantEpisodeKeys.contains($0) }) ? object.objectID : nil
+                if changedKeys.contains(where: { syncRelevantEpisodeKeys.contains($0) }) {
+                    ids.append(object.objectID)
+                }
             case "Feed":
                 let changedKeys = object.changedValuesForCurrentEvent().keys
-                return changedKeys.contains(where: { syncRelevantFeedKeys.contains($0) }) ? object.objectID : nil
+                if changedKeys.contains(where: { syncRelevantFeedKeys.contains($0) }) {
+                    ids.append(object.objectID)
+                }
             case "FeedProperty":
-                return isInternalFeedProperty(object) ? nil : object.objectID
+                if !isInternalFeedProperty(object) {
+                    ids.append(object.objectID)
+                }
             default:
-                return nil
+                break
             }
         }
+        return ids
     }
 
     // Only feed deletions matter to the sync (they queue the subscription-record delete).
@@ -2719,12 +3280,35 @@ import UIKit
     // defaults) re-triggers defaultsDidChange in an unbounded main-thread feedback loop — the
     // ~10s freeze when toggling a sync switch while settings sync is on.
     private func checkAndQueueSettingsChange() {
-        guard isStarted, settingsSyncEnabled, !isApplyingRemoteChange else { return }
-        let hash = syncedSettingsHash()
-        guard hash != storedSyncedSettingsHash() else { return }
-        setStoredSyncedSettingsHash(hash)
-        setSettingsLocalModifiedDate(Date())
-        addPendingSave(appSettingsRecordID())
+        guard isStarted, !isApplyingRemoteChange else { return }
+        if settingsSyncEnabled {
+            let hash = syncedSettingsHash()
+            if hash != storedSyncedSettingsHash() {
+                setStoredSyncedSettingsHash(hash)
+                setSettingsLocalModifiedDate(Date())
+                addPendingSave(appSettingsRecordID())
+            }
+        }
+        // hasLocalSubscriptionListSettings: a device without sort state publishes nothing
+        // (and keeps no baseline) — see the backfill counterpart for the LWW rationale.
+        if subscriptionsSyncEnabled, Self.hasLocalSubscriptionListSettings() {
+            let fingerprint = Self.subscriptionListSettingsFingerprint()
+            let storedBaseline = defaults.string(forKey: Self.subscriptionListSettingsBaselineKey)
+            if fingerprint != storedBaseline {
+                let isFormatMigration = !(storedBaseline?.hasPrefix(Self.subscriptionListSettingsFingerprintPrefix) ?? false)
+                if isFormatMigration, !Self.hasLocalManualFeedOrder() {
+                    // Baseline format migration on a sort-mode-only device: nothing worth
+                    // publishing — record the baseline silently so only a REAL future
+                    // change publishes. A migration publish from here would race the
+                    // manual-order device's repair publish under last-writer-wins.
+                    setSyncMetadata(fingerprint, forKey: Self.subscriptionListSettingsBaselineKey)
+                } else {
+                    setSyncMetadata(fingerprint, forKey: Self.subscriptionListSettingsBaselineKey)
+                    setSyncMetadata(Date(), forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
+                    addPendingSave(subscriptionListSettingsRecordID())
+                }
+            }
+        }
     }
 
     // Baseline hash of the last queued/applied settings payload. Persisted: an in-memory
@@ -2752,6 +3336,143 @@ import UIKit
 
     private func queueListScrollPositionsRecord() {
         addPendingSave(listScrollPositionsRecordID())
+    }
+
+    // MARK: - Stub-feed hydration (phase 2 of the subscription apply)
+
+    // Loads the episodes of stub feeds (subscribed but never refreshed) ONE at a time,
+    // so even hundreds of fresh subscriptions never block the UI. The queue is derived
+    // from the data (lastUpdate == nil) on every step — an app kill simply resumes on
+    // the next launch/foreground/fetch.
+    // NOT gated on subscriptionsSyncEnabled: stub feeds are local subscriptions that
+    // already exist — filling in their episodes is local cleanup, not a sync operation,
+    // and must finish even if the user turns the category off mid-hydration.
+    private func hydrateStubFeedsIfNeeded() {
+        guard isStarted, !isHydratingStubFeeds else { return }
+        // Feeds that already failed are excluded from the run AND the count: with them
+        // included, every trigger (each fetch batch ends in one) restarted a doomed
+        // "Lade Podcast-Folgen… 0/3" run every ~10s — endless requests, status noise
+        // and a pending-states sweep per round. They retry on the next foreground entry.
+        let pendingStubCount = stubFeedObjectIDs().filter { !hydrationFailedFeedIDs.contains($0) }.count
+        guard pendingStubCount > 0 else { return }
+        isHydratingStubFeeds = true
+        isWaitingForEpisodeLoader = false
+        hydrationCompletedCount = 0
+        hydrationTotalCount = pendingStubCount
+        logSyncEvent("Podcast-Folgen-Nachladen gestartet", metadata: ["count": pendingStubCount])
+        postStateChanged()
+        hydrateNextStubFeed()
+    }
+
+    // episodes.@count == 0 keeps regularly subscribed feeds (which also have no
+    // lastUpdate until their first refresh, but carry their initial episodes) out.
+    // parked == NO honors the per-feed sync-stop switch: it travels in the
+    // subscription payload, so a feed the user parked on the source device (e.g. a
+    // dead feed URL) is never polled here — same rule as the regular refresh.
+    private func stubFeedObjectIDs() -> [NSManagedObjectID] {
+        guard let context = databaseManager.objectContext else { return [] }
+        let request = NSFetchRequest<NSManagedObjectID>(entityName: "Feed")
+        request.resultType = .managedObjectIDResultType
+        request.predicate = NSPredicate(format: "subscribed == YES AND parked == NO AND lastUpdate == nil AND episodes.@count == 0")
+        request.sortDescriptors = [NSSortDescriptor(key: "rank", ascending: true)]
+        return (try? context.fetch(request)) ?? []
+    }
+
+    private func hydrateNextStubFeed() {
+        guard isStarted else {
+            finishStubFeedHydration()
+            return
+        }
+        // Skip feeds that already failed this session so an offline device doesn't spin
+        // on the same feed; they are retried on the next hydration trigger.
+        guard let nextID = stubFeedObjectIDs().first(where: { !hydrationFailedFeedIDs.contains($0) }),
+              let context = databaseManager.objectContext,
+              let feed = (try? context.existingObject(with: nextID)) as? CDFeed else {
+            finishStubFeedHydration()
+            return
+        }
+
+        subscriptionManager.hydrateStubFeed(feed) { [weak self] success, _, _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if success {
+                    self.hydrationCompletedCount += 1
+                } else {
+                    self.hydrationFailedFeedIDs.insert(nextID)
+                }
+                self.postStateChanged()
+                if EpisodeLoadingManager.shared().isLoading {
+                    // The background loader is still working through this feed's older
+                    // episodes. Wait for its finish notification: queueing the next stub
+                    // now would pile feeds into the loader, whose state persistence
+                    // rewrites ALL pending feeds' episode data on every feed finish —
+                    // the quadratic-plist trap that froze the iPad.
+                    self.waitForEpisodeLoader()
+                } else {
+                    self.scheduleNextStubHydration()
+                }
+            }
+        }
+    }
+
+    private func scheduleNextStubHydration() {
+        // No fixed pacing delay: a plain run-loop hop lets pending UI events drain;
+        // the real breathing room comes from the network parse of the next feed and
+        // the adaptive episode batches (fast devices run at full speed, slow devices
+        // are protected by the measured batch size, not by an arbitrary sleep).
+        DispatchQueue.main.async { [weak self] in
+            Task { @MainActor in
+                self?.hydrateNextStubFeed()
+            }
+        }
+    }
+
+    private func waitForEpisodeLoader() {
+        isWaitingForEpisodeLoader = true
+        episodeLoaderWaitGeneration += 1
+        let generation = episodeLoaderWaitGeneration
+        // Failsafe: a cancelled load (e.g. unsubscribe mid-hydration) posts no finish
+        // notification — don't let the hydration queue hang on it forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
+            Task { @MainActor in
+                guard let self, self.isWaitingForEpisodeLoader,
+                      self.episodeLoaderWaitGeneration == generation else { return }
+                self.isWaitingForEpisodeLoader = false
+                self.scheduleNextStubHydration()
+            }
+        }
+    }
+
+    // `nonisolated` (see defaultsDidChange) so an off-main delivery can't trip the
+    // MainActor executor assertion at entry. Hops to the main actor for the actual work.
+    @objc private nonisolated func episodeLoadingDidFinish(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            guard let self, self.isWaitingForEpisodeLoader else { return }
+            self.isWaitingForEpisodeLoader = false
+            self.scheduleNextStubHydration()
+        }
+    }
+
+    private func finishStubFeedHydration() {
+        guard isHydratingStubFeeds else { return }
+        isHydratingStubFeeds = false
+        isWaitingForEpisodeLoader = false
+        let completedCount = hydrationCompletedCount
+        logSyncEvent("Podcast-Folgen-Nachladen beendet", metadata: [
+            "completed": completedCount,
+            "failed": hydrationFailedFeedIDs.count,
+        ])
+        hydrationCompletedCount = 0
+        hydrationTotalCount = 0
+        // hydrationFailedFeedIDs deliberately survives the run: clearing it here made
+        // every subsequent trigger retry the same dead feeds immediately. It resets on
+        // foreground entry (and app start) for a fresh attempt.
+        postStateChanged()
+        // The freshly hydrated episodes may have remote play states waiting in the
+        // pending store — apply them in one batch now instead of on the next sync.
+        if completedCount > 0 {
+            applyPendingEpisodeStates()
+        }
     }
 
     private func localDevicePayload() -> [String: Any] {
@@ -2863,6 +3584,26 @@ import UIKit
         cache[id] = payload
         setSyncMetadata(cache, forKey: Self.deviceCacheKey)
         postDevicesChanged()
+    }
+
+    private func removeDeviceFromCache(_ deviceID: String) {
+        var cache = deviceCache()
+        guard cache.removeValue(forKey: deviceID) != nil else { return }
+        setSyncMetadata(cache, forKey: Self.deviceCacheKey)
+        postDevicesChanged()
+    }
+
+    // Removes a stale device entry — every (re-)installation registers under a fresh
+    // device ID, so old installs linger in everyone's device list forever. Deletes the
+    // ICDevice record from CloudKit; the other devices clean up their cached entry when
+    // the deletion arrives in their next fetch. The CURRENT device cannot be removed.
+    @objc func deleteDevice(withID targetDeviceID: String) {
+        guard !targetDeviceID.isEmpty, targetDeviceID != deviceID else { return }
+        initializeSyncEngineIfNeeded()
+        syncEngine?.state.add(pendingRecordZoneChanges: [.deleteRecord(deviceRecordID(for: targetDeviceID))])
+        removeDeviceFromCache(targetDeviceID)
+        logSyncEvent("Geräte-Eintrag wird entfernt", metadata: ["targetDeviceID": targetDeviceID])
+        scheduleLowPrioritySync()
     }
 
     private func deviceParticipates(_ payload: [String: Any]) -> Bool {
@@ -3084,6 +3825,10 @@ import UIKit
         CKRecord.ID(recordName: RecordPrefix.listScrollPositions, zoneID: zoneID)
     }
 
+    private func subscriptionListSettingsRecordID() -> CKRecord.ID {
+        CKRecord.ID(recordName: RecordPrefix.subscriptionListSettings, zoneID: zoneID)
+    }
+
     private nonisolated static func sha256Hex(_ string: String) -> String {
         let digest = SHA256.hash(data: Data(string.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
@@ -3113,6 +3858,13 @@ import UIKit
     }
 
     private func markSyncCompleted() {
+        // A send finishing while the fetch-apply loop is still running must not flip the
+        // status to "complete" and wipe the download progress (that was the per-second
+        // status flicker). The fetch path calls this again when it actually finishes.
+        guard !isApplyingRemoteChange else {
+            postStateChanged()
+            return
+        }
         clearSyncActivity()
         if syncedUserDataInCurrentRun {
             let now = Date()
@@ -3123,6 +3875,7 @@ import UIKit
             postDevicesChanged()
         }
         clearError()
+        resetSyncRetryBackoff()
         deviceRecordShouldStampSyncDate = false
         setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
         syncedUserDataInCurrentRun = false
@@ -3216,6 +3969,20 @@ import UIKit
         syncActivityStartDate = nil
         syncActivityRecordCount = 0
         syncActivityExpectedCount = 0
+        syncActivityKindLabel = nil
+    }
+
+    private nonisolated static func activityKindLabel(forRecordType recordType: String) -> String? {
+        switch recordType {
+        case RecordKind.episodeState:
+            return NSLocalizedString("Episodes", comment: "")
+        case RecordKind.subscription:
+            return NSLocalizedString("Subscriptions", comment: "")
+        case RecordKind.appSettings, RecordKind.listScrollPositions:
+            return NSLocalizedString("Settings", comment: "")
+        default:
+            return nil
+        }
     }
 
     // "Lädt herunter… 6/51" when the total is known (fetch events report it up front),
@@ -3226,6 +3993,9 @@ import UIKit
             ? NSLocalizedString("Synchronisation läuft, lädt hoch…", comment: "")
             : NSLocalizedString("Synchronisation läuft, lädt herunter…", comment: "")
         if syncActivityExpectedCount > 0 {
+            if let kind = syncActivityKindLabel {
+                return String(format: NSLocalizedString("%@ %ld/%ld %@", comment: ""), base, syncActivityRecordCount, syncActivityExpectedCount, kind)
+            }
             return String(format: NSLocalizedString("%@ %ld/%ld", comment: ""), base, syncActivityRecordCount, syncActivityExpectedCount)
         }
         if let start = syncActivityStartDate, syncActivityRecordCount > 0 {
@@ -3235,7 +4005,10 @@ import UIKit
                 return String(format: NSLocalizedString("%@ %ld/s", comment: ""), base, rate)
             }
         }
-        return base
+        // An activity that hasn't moved a single record (e.g. the empty fetch pass of
+        // every sync run) shows nothing — flashing "lädt herunter…" although iCloud
+        // was empty confused more than it informed.
+        return nil
     }
 
     private func markSyncCompletedIfFinished() {

@@ -17,6 +17,7 @@
 #import "CDEpisode+ShowNotes.h"
 #import "EpisodeLoadingManager.h"
 #import "ICMedia.h"
+#import "InstacastPlus-Swift.h"
 
 NSString* SubscriptionManagerWillStartRefreshingFeedsNotification = @"SubscriptionManagerWillStartRefreshingFeedsNotification";
 NSString* SubscriptionManagerDidStartRefreshingFeedsNotification = @"SubscriptionManagerDidStartRefreshingFeedsNotification";
@@ -852,19 +853,45 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
                                                       userInfo:(feed)?[NSDictionary dictionaryWithObject:feed forKey:@"feed"]:nil];
 }
 
+// Marks that this feed already got its one full duration-metadata parse.
+static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadataRefreshAttempted";
+
 - (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed
 {
-    for (CDEpisode* episode in feed.episodes) {
-        if (!episode.archived && !episode.consumed && episode.position <= 0 && episode.duration <= 0) {
-            return YES;
-        }
+    // At most ONE full (etag-less) parse per feed, ever: if the feed didn't deliver
+    // durations on that pass it never will, and whenever the feed content actually
+    // changes the regular merge updates durations anyway (updateLocalFeedInfo).
+    // Re-forcing a full download+merge on EVERY refresh (introduced 25.04. with the
+    // transcript feature) defeated the etag cache — refreshes took 3-4x longer.
+    if ([feed boolForKey:kFeedPropertyDurationRefreshAttempted]) {
+        return NO;
     }
-    return NO;
+
+    // Count via SQL instead of iterating the episodes relationship: the old loop ran
+    // on the main thread for every feed when a refresh started and fired thousands of
+    // faults — the multi-second freeze right after pull-to-refresh.
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:feed.managedObjectContext];
+    request.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == NO AND consumed == NO AND position <= 0 AND duration <= 0", feed];
+    request.includesSubentities = NO;
+    NSUInteger count = [feed.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count != NSNotFound && count > 0);
 }
 
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
-{    
+{
     if (!feed || [self _isSynchronizationPausedForFeed:feed]) {
+        if (completion) {
+            completion(YES, @[], nil);
+        }
+        return;
+    }
+
+    // iCloud sync stubs (subscribed, never refreshed, no episodes) belong to the
+    // sequential hydration queue — a regular refresh would merge the FULL feed in one
+    // main-context push. Same for feeds whose episode backlog is still loading in the
+    // background: merging would insert that backlog in one block, duplicating the work.
+    if ((!feed.lastUpdate && feed.episodes.count == 0) || [[EpisodeLoadingManager sharedManager] isLoadingFeed:feed]) {
         if (completion) {
             completion(YES, @[], nil);
         }
@@ -924,6 +951,12 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
                 __block NSMutableArray<NSManagedObjectID*>* newEpisodeObjectIDs = [NSMutableArray array];
                 __block NSError* mergeError = nil;
 
+                // Profiling for the reported multi-second freeze during pull-to-refresh:
+                // the child context's fetches and save push run through the MAIN-queue
+                // parent, so this duration is main-thread time even though the block
+                // runs on the merge queue.
+                CFAbsoluteTime mergeStartTime = CFAbsoluteTimeGetCurrent();
+
                 [mergeContext performBlockAndWait:^{
                     NSError* feedFetchError = nil;
                     CDFeed* localFeed = (CDFeed*)[mergeContext existingObjectWithID:feedObjectID error:&feedFetchError];
@@ -966,7 +999,10 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
                     }
                 }];
 
+                CFTimeInterval mergeSeconds = CFAbsoluteTimeGetCurrent() - mergeStartTime;
+
                 dispatch_async(dispatch_get_main_queue(), ^{
+                    CFAbsoluteTime mainStartTime = CFAbsoluteTimeGetCurrent();
                     __strong typeof(weakSelf) strongSelfInner = weakSelf;
                     if (!strongSelfInner) {
                         return;
@@ -993,6 +1029,12 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
                         return;
                     }
 
+                    if (needsDurationMetadataRefresh) {
+                        // The one full duration pass for this feed is done — from now on
+                        // the etag cache works again (see _feedNeedsDurationMetadataRefresh).
+                        [feed setBool:YES forKey:kFeedPropertyDurationRefreshAttempted];
+                    }
+
                     NSMutableArray* allNewEpisodes = [NSMutableArray arrayWithCapacity:newEpisodeObjectIDs.count];
                     for (NSManagedObjectID* objectID in newEpisodeObjectIDs) {
                         CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext objectWithID:objectID];
@@ -1011,6 +1053,19 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
                     }
 
                     [strongSelfInner _finishParsingFeed:feed url:url shouldAutoDownload:([allNewEpisodes count] > 0)];
+
+                    CFTimeInterval mainSeconds = CFAbsoluteTimeGetCurrent() - mainStartTime;
+                    if (mergeSeconds > 0.05 || mainSeconds > 0.05) {
+                        [[ICDiagnosticLogger shared] logEvent:@"feed-refresh-profile"
+                                                      message:@"Feed-Merge-Timing"
+                                                     metadata:@{
+                            @"feed": feed.title ?: @"",
+                            @"mergeSeconds": [NSString stringWithFormat:@"%.3f", mergeSeconds],
+                            @"mainSeconds": [NSString stringWithFormat:@"%.3f", mainSeconds],
+                            @"newEpisodes": @(allNewEpisodes.count).stringValue,
+                            @"remainingFeeds": @(strongSelfInner.refreshingFeedURLs.count).stringValue,
+                        }];
+                    }
 
                     if (completion) {
                         completion(YES, allNewEpisodes, nil);
@@ -1042,7 +1097,120 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
             [strongSelf _finishRefreshingURL:url];
         });
     };
-    
+
+    [self.parserQueue addOperation:feedParser];
+}
+
+// Initial number of episodes inserted synchronously when hydrating a stub feed.
+// Keep in sync with kInitialEpisodeLimit in DatabaseManager.m.
+static const NSInteger kHydrationInitialEpisodeLimit = 50;
+
+- (void) hydrateStubFeed:(CDFeed*)feed completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
+{
+    if (!feed || !feed.sourceURL) {
+        if (completion) {
+            completion(NO, nil, nil);
+        }
+        return;
+    }
+
+    ICFeedParser* feedParser = [ICFeedParser feedParser];
+    feedParser.url = [feed.sourceURL copy];
+    feedParser.username = feed.username;
+    feedParser.password = feed.password;
+    feedParser.timeout = 8;
+    // Hydration is silent low-priority background work — it must never prompt and
+    // never compete with user-initiated network traffic.
+    feedParser.qualityOfService = NSQualityOfServiceUtility;
+    feedParser.dontAskForCredentials = YES;
+#if TARGET_OS_IPHONE
+    feedParser.allowsCellularAccess = [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
+#endif
+
+    NSManagedObjectID* feedObjectID = feed.objectID;
+    __weak typeof(self) weakSelf = self;
+    feedParser.didParseFeedBlock = ^(ICFeed* parsedFeed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf || !parsedFeed) {
+                if (completion) {
+                    completion(NO, nil, nil);
+                }
+                return;
+            }
+
+            CDFeed* localFeed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:NULL];
+            if (![localFeed isKindOfClass:[CDFeed class]] || !localFeed.subscribed) {
+                if (completion) {
+                    completion(NO, nil, nil);
+                }
+                return;
+            }
+
+            [strongSelf updateLocalFeedInfo:localFeed withRemoteFeed:parsedFeed force:NO];
+            if (ICFeedValueDiffers(localFeed.contentHash, parsedFeed.contentHash)) {
+                localFeed.contentHash = parsedFeed.contentHash;
+            }
+            if (ICFeedValueDiffers(localFeed.etag, parsedFeed.etag)) {
+                localFeed.etag = parsedFeed.etag;
+            }
+
+            // Categories are only ever created on subscribe — replicate that here, the
+            // stub was created without them.
+            if (localFeed.categories.count == 0 && parsedFeed.categories.count > 0) {
+                NSMutableSet* categories = [[NSMutableSet alloc] init];
+                for (ICCategory* parserCategory in parsedFeed.categories) {
+                    CDCategory* category = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:DMANAGER.objectContext];
+                    category.title = parserCategory.title;
+                    if (parserCategory.parent) {
+                        CDCategory* parentCategory = [NSEntityDescription insertNewObjectForEntityForName:@"Category" inManagedObjectContext:DMANAGER.objectContext];
+                        parentCategory.title = parserCategory.parent.title;
+                        category.parent = parentCategory;
+                    }
+                    [categories addObject:category];
+                }
+                localFeed.categories = categories;
+            }
+
+            NSArray* sortedEpisodes = [parsedFeed.episodes sortedArrayUsingDescriptors:
+                @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO]]];
+            NSInteger totalEpisodeCount = sortedEpisodes.count;
+            NSInteger initialLoadCount = MIN(kHydrationInitialEpisodeLimit, totalEpisodeCount);
+            if (initialLoadCount > 0) {
+                [DMANAGER addParserEpisodes:[sortedEpisodes subarrayWithRange:NSMakeRange(0, initialLoadCount)]
+                                     toFeed:localFeed
+                               markConsumed:NO];
+            }
+
+            // Takes the feed out of the stub hydration queue.
+            localFeed.lastUpdate = [NSDate date];
+
+            if (totalEpisodeCount > initialLoadCount) {
+                [localFeed setBool:NO forKey:kFeedPropertyEpisodeLoadingComplete];
+                [localFeed setInteger:totalEpisodeCount forKey:kFeedPropertyTotalExpectedEpisodes];
+                [localFeed setInteger:initialLoadCount forKey:kFeedPropertyLoadedEpisodeCount];
+                [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:localFeed
+                                                                    parserEpisodes:sortedEpisodes
+                                                                        startIndex:initialLoadCount];
+            } else {
+                [localFeed setBool:YES forKey:kFeedPropertyEpisodeLoadingComplete];
+            }
+
+            [DMANAGER save];
+
+            if (completion) {
+                completion(YES, @[], nil);
+            }
+        });
+    };
+    feedParser.didEndWithError = ^(NSError* error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) {
+                completion(NO, nil, error);
+            }
+        });
+    };
+
     [self.parserQueue addOperation:feedParser];
 }
 

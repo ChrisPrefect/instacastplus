@@ -3298,16 +3298,31 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 }
 
 
+// The up-next playlist (and on an episode switch also chapters/bookmarks) mutates
+// outside this controller; UIKit can still request rows that just vanished before the
+// reload notification lands (TestFlight crash: NSSingleObjectArray objectAtIndex: in
+// heightForRowAtIndexPath after "Ende überspringen" + restart). Out-of-range requests
+// get a disposable blank cell / dummy height; the pending reload removes the row.
+- (UITableViewCell*) _placeholderCellForOutOfRangeRow
+{
+    UITableViewCell* cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.backgroundColor = self.tableView.backgroundColor;
+    return cell;
+}
+
 // Customize the appearance of table view cells.
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    
+
     if ([self _hasChapters] && indexPath.section == [self _chaptersSection])
     {
+        if (indexPath.row >= [self.chapters count]) {
+            return [self _placeholderCellForOutOfRangeRow];
+        }
         ChaptersTableViewCell* cell = (ChaptersTableViewCell*)[tableView dequeueReusableCellWithIdentifier:kChapterCell forIndexPath:indexPath];
         cell.backgroundColor = self.tableView.backgroundColor;
-        
+
         CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
         cell.objectValue = chapter;
         
@@ -3379,9 +3394,12 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
     else if ([self _hasBookmarks] && indexPath.section == [self _bookmarksSection])
     {
+        if (indexPath.row >= [self.bookmarks count]) {
+            return [self _placeholderCellForOutOfRangeRow];
+        }
         PlayerBookmarksTableViewCell* cell = (PlayerBookmarksTableViewCell*)[tableView dequeueReusableCellWithIdentifier:kBookmarkCell forIndexPath:indexPath];
         cell.backgroundColor = self.tableView.backgroundColor;
-        
+
         CDBookmark* bookmark = [self.bookmarks objectAtIndex:indexPath.row];
         
         cell.textLabel.text = bookmark.title;
@@ -3394,6 +3412,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     
     if ([self _hasUpNext] && indexPath.section == [self _upNextSection])
     {
+        if (indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
+            return [self _placeholderCellForOutOfRangeRow];
+        }
         EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[tableView dequeueReusableCellWithIdentifier:kUpNextCell forIndexPath:indexPath];
 
         CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
@@ -3489,16 +3510,25 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 {
     if ([self _hasChapters] && indexPath.section == [self _chaptersSection])
     {
+        if (indexPath.row >= [self.chapters count]) {
+            return 44;
+        }
         CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
         return [ChaptersTableViewCell proposedHeightWithTitle:chapter.title tableBounds:self.tableView.bounds];
     }
     else if ([self _hasBookmarks] && indexPath.section == [self _bookmarksSection])
     {
+        if (indexPath.row >= [self.bookmarks count]) {
+            return 44;
+        }
         CDBookmark* bookmark = [self.bookmarks objectAtIndex:indexPath.row];
         return [PlayerBookmarksTableViewCell proposedHeightWithTitle:bookmark.title tableBounds:self.tableView.bounds];
     }
     else if ([self _hasUpNext] && indexPath.section == [self _upNextSection])
     {
+        if (indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
+            return 44;
+        }
         CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
         return [EpisodesTableViewCell proposedHeightWithObjectValue:episode tableSize:self.tableView.bounds.size imageSize:CGSizeMake(56, 56) embedded:YES editing:self.editing upNextStyle:YES];
     }

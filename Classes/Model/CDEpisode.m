@@ -46,13 +46,19 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
             }
         }
     }
-    [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
-                                           message:@"Episode-Transcript-Artefakte beim Modell-Update entfernt"
-                                              path:transcriptCachePath
-                                          metadata:@{
-                                              @"episodeHash": episodeHash,
-                                              @"removedFiles": @(removedFileCount),
-                                          }];
+    // Only log when something was actually removed: this runs for EVERY episode that
+    // flips to consumed — an iCloud play-state apply marks thousands in one pass, and
+    // a log event per no-op call (with its disk/memory snapshot) flooded the log and
+    // burned main-thread time (3114 events in two minutes).
+    if (removedFileCount > 0) {
+        [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
+                                               message:@"Episode-Transcript-Artefakte beim Modell-Update entfernt"
+                                                  path:transcriptCachePath
+                                              metadata:@{
+                                                  @"episodeHash": episodeHash,
+                                                  @"removedFiles": @(removedFileCount),
+                                              }];
+    }
 }
 
 //@synthesize temporarySavedProperities;
@@ -273,7 +279,8 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
 }
 
 - (void) setDownloaded:(BOOL)downloaded {
-    [self willAccessValueForKey:@"downloaded"];
+    // willChange/didChange must pair up — the willACCESS here left KVO unbalanced.
+    [self willChangeValueForKey:@"downloaded"];
     [self setPrimitiveValue:@(downloaded) forKey:@"downloaded"];
     [self didChangeValueForKey:@"downloaded"];
     [self.feed invalidateCounts];

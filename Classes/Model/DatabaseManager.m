@@ -19,6 +19,7 @@
 #import "ICMedia.h"
 #import "ICCategory.h"
 #import "EpisodeLoadingManager.h"
+#import "InstacastPlus-Swift.h"
 
 #import "UIManager.h"
 #import "ICFTSController.h"
@@ -1043,6 +1044,10 @@ NS_INLINE NSString* _DataStoreFile(void) {
         return;
     }
 
+    // Sub-profiling for the 1-2.6s main-thread batches measured on the iPad during
+    // stub hydration: splits insert work from the save (with its notification fanout).
+    CFAbsoluteTime insertStartTime = CFAbsoluteTimeGetCurrent();
+
     [self beginInterruptSaving];
 
     @autoreleasepool {
@@ -1093,7 +1098,20 @@ NS_INLINE NSString* _DataStoreFile(void) {
     }
 
     [self endInterruptSaving];
+
+    CFTimeInterval insertSeconds = CFAbsoluteTimeGetCurrent() - insertStartTime;
+    CFAbsoluteTime saveStartTime = CFAbsoluteTimeGetCurrent();
     [self save];
+    CFTimeInterval saveSeconds = CFAbsoluteTimeGetCurrent() - saveStartTime;
+    if (insertSeconds + saveSeconds > 0.2) {
+        [[ICDiagnosticLogger shared] logEvent:@"feed-refresh-profile"
+                                      message:@"Episoden-Insert-Detail"
+                                     metadata:@{
+            @"insertSeconds": [NSString stringWithFormat:@"%.3f", insertSeconds],
+            @"saveSeconds": [NSString stringWithFormat:@"%.3f", saveSeconds],
+            @"episodes": @(episodes.count).stringValue,
+        }];
+    }
 }
 
 - (CDEpisode*) addUnsubscribedFeed:(ICFeed*)parserFeed andEpisode:(ICEpisode*)parserEpisode

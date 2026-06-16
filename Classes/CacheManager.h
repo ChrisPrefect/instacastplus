@@ -15,6 +15,7 @@ extern NSString* CacheManagerDidAddEpisodeToCachingQueueNotification;
 extern NSString* CacheManagerDidUpdateNotification;
 extern NSString* CacheManagerDidStartCachingEpisodeNotification;		// userinfo = episode
 extern NSString* CacheManagerDidFinishCachingEpisodeNotification;		// userinfo = episode
+extern NSString* CacheManagerDidCancelStreamingCacheEpisodeNotification;	// userinfo = episode
 extern NSString* CacheManagerDidLoadFeedImageNotification;
 extern NSString* CacheManagerDidClearCacheNotification;                 // userinfo = episode
 
@@ -39,6 +40,7 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 - (BOOL) isCachingFeed:(CDFeed*)feed;
 - (void) cancelCaching;
 - (void) cancelCachingEpisode:(CDEpisode*)episode disableAutoDownload:(BOOL)disableAutodownload;
+- (void) cancelStreamingCacheForEpisode:(CDEpisode*)episode disableAutoDownload:(BOOL)disableAutodownload;
 - (void) cancelCachingFeed:(CDFeed*)feed;
 
 
@@ -60,6 +62,7 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 
 - (BOOL) autoCacheEpisode:(CDEpisode*)episode enableFilters:(BOOL)filters;
 - (BOOL) autoCacheFeed:(CDFeed*)feed;
+- (BOOL) automaticCachingDisabledForEpisode:(CDEpisode*)episode;
 - (void) resetAutoCacheForFeed:(CDFeed*)feed;
 
 

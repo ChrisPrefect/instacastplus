@@ -504,7 +504,11 @@
     }
     [self updateAppearance];
     _didRestoreScrollPosition = NO;
-    
+
+    // The sort mode/manual order can change behind this view's back (iCloud sync) —
+    // rebuild the menu so "Manual" and the checkmarks reflect the current state.
+    [self _refreshSortMenu];
+
     NSString* searchTerm = [USER_DEFAULTS objectForKey:kUIPersistenceSubscriptionsSearchTerm];
     if (searchTerm) {
         self.searchBar.text = searchTerm;

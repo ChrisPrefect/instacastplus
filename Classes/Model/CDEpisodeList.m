@@ -26,6 +26,11 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     NSNumber* _cachedEpisodesCount;
 }
 
+// NSManagedObject subclasses get NO automatic property synthesis
+// (NS_REQUIRES_PROPERTY_DEFINITIONS) — without this line the accessors don't exist at
+// runtime and calling them throws "unrecognized selector".
+@synthesize pendingCountCompletions = _pendingCountCompletions;
+
 
 @dynamic icon;
 @dynamic query;
@@ -132,6 +137,101 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     return result;
 }
 
+// The store predicate of this smart list — shared by the episode fetch and the cheap
+// SQL count below so both always agree.
+- (NSPredicate*) _episodesMainPredicate
+{
+    NSMutableArray* subPredicates = [[NSMutableArray alloc] init];
+    [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived == NO"]];
+
+    if (!self.audio) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"video == YES"]];
+    }
+
+    if (!self.video) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"video == NO"]];
+    }
+
+    if (!self.unplayed) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == YES OR (consumed == NO AND position > 0)"]];
+    }
+
+    if (!self.unfinished) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"position == 0"]];
+    }
+
+    if (!self.played) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == NO"]];
+    }
+
+    if (!self.starred) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"starred == NO"]];
+    }
+
+    if (!self.notStarred) {
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"starred == YES"]];
+    }
+
+    if (!self.downloaded || !self.notDownloaded) {
+        // `downloaded` is a TRANSIENT episode attribute (no store column) — a SQL
+        // predicate on it matches nothing, which left the "Downloaded" list empty
+        // although the files were all there. Filter against the cache manager's
+        // object hashes instead.
+        NSArray* cachedHashes = [[[CacheManager sharedCacheManager] cachedEpisodes] valueForKey:@"objectHash"];
+        if (!self.downloaded) {
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"NOT (objectHash IN %@)", cachedHashes ?: @[]]];
+        } else {
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", cachedHashes ?: @[]]];
+        }
+    }
+
+    if ([self.includedFeeds count] > 0)
+    {
+        NSMutableArray* includedFeedsSubPredicates = [[NSMutableArray alloc] init];
+        for(CDFeed* feed in self.includedFeeds) {
+            [includedFeedsSubPredicates addObject:[NSPredicate predicateWithFormat:@"feed == %@", feed]];
+        }
+
+        [subPredicates addObject:[NSCompoundPredicate orPredicateWithSubpredicates:includedFeedsSubPredicates]];
+    }
+
+    if ([self.query length] > 0) {
+        NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.query];
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"guid IN %@", episodeGuids]];
+    }
+
+    return [NSCompoundPredicate andPredicateWithSubpredicates:subPredicates];
+}
+
+// Counts via SQL instead of materializing the episodes. The background-context guard
+// in numberOfEpisodes used to fall back to `[[self sortedEpisodes] count]` — the widget
+// exporter calls that for every list on every Core Data save, and the resulting
+// full two-stage fetches over the whole episode table kept a background thread above
+// 80% CPU until the system killed the app (cpu_resource_fatal, 12.06.).
+- (NSUInteger) _countEpisodesViaStore
+{
+    NSManagedObjectContext* context = self.managedObjectContext;
+    if (!context) {
+        return 0;
+    }
+
+    NSFetchRequest* explicitRequest = [[NSFetchRequest alloc] init];
+    explicitRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
+    explicitRequest.includesSubentities = NO;
+    explicitRequest.predicate = [NSPredicate predicateWithFormat:@"episodeLists CONTAINS %@", self];
+    NSUInteger explicitCount = [context countForFetchRequest:explicitRequest error:NULL];
+    if (explicitCount != NSNotFound && explicitCount > 0) {
+        return explicitCount;
+    }
+
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
+    request.includesSubentities = NO;
+    request.predicate = [self _episodesMainPredicate];
+    NSUInteger count = [context countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
+}
+
 - (NSArray*) _sortedEpisodesWithFetchLimit:(NSUInteger)fetchLimit
 {
     NSArray* explicitEpisodes = [self explicitEpisodeRelationshipObjectsWithFetchLimit:fetchLimit];
@@ -142,67 +242,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
-    NSMutableArray* subPredicates = [[NSMutableArray alloc] init];
-    [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed.subscribed == YES AND archived == NO"]];
-    
-    if (!self.audio) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"video == YES"]];
-    }
-    
-    if (!self.video) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"video == NO"]];
-    }
-    
-    if (!self.unplayed) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == YES OR (consumed == NO AND position > 0)"]];
-    }
-    
-    if (!self.unfinished) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"position == 0"]];
-    }
-    
-    if (!self.played) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"consumed == NO"]];
-    }
-    
-    if (!self.starred) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"starred == NO"]];
-    }
-    
-    if (!self.notStarred) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"starred == YES"]];
-    }
-
-    if (!self.downloaded) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"downloaded == NO"]];
-    } else if (!self.notDownloaded) {
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"downloaded == YES"]];
-    }
-    
-    if ([self.includedFeeds count] > 0)
-    {
-        NSMutableArray* includedFeedsSubPredicates = [[NSMutableArray alloc] init];
-        for(CDFeed* feed in self.includedFeeds) {
-            [includedFeedsSubPredicates addObject:[NSPredicate predicateWithFormat:@"feed == %@", feed]];
-        }
-        
-        [subPredicates addObject:[NSCompoundPredicate orPredicateWithSubpredicates:includedFeedsSubPredicates]];
-    }
-    
-    if ([self.query length] > 0) {
-        NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.query];
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"guid IN %@", episodeGuids]];
-    }
-    
-    // add filters for order value
-//    if (self.orderBy && ![self.orderBy isEqualToString:@"timeLeft"]) {
-//        [subPredicates addObject:[NSPredicate predicateWithFormat:@"%K != nil", self.orderBy]];
-//    }
-    
-    // fetch from sql store
-    NSPredicate* mainPredicate = [NSCompoundPredicate andPredicateWithSubpredicates:subPredicates];
-
-    fetchRequest.predicate = mainPredicate;
+    fetchRequest.predicate = [self _episodesMainPredicate];
     fetchRequest.includesSubentities = NO;
     fetchRequest.resultType = NSDictionaryResultType;
     
@@ -312,18 +352,32 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 - (NSUInteger) numberOfEpisodes
 {
     if (!self.cachedEpisodesCount) {
+        // Instances living in a throwaway background context (e.g. the widget exporter's)
+        // must NEVER start the deferred async count: it captures self.managedObjectContext,
+        // which is deallocated together with the caller — the delayed blocks then message
+        // a dangling pointer (both iPad SIGSEGVs of 10.06.2026, triggered on every save
+        // during the sync). Count synchronously inside the owning context instead.
+        if (self.managedObjectContext != DMANAGER.objectContext) {
+            return [self _countEpisodesViaStore];
+        }
         [self perform:^(id sender) {
             [self calculateNumberOfEpisodesCompletion:^(NSUInteger numberOfEpisodes) {
             }];
         } afterDelay:0.1];
     }
-    
+
     return [self.cachedEpisodesCount unsignedIntegerValue];
 }
 
 - (void) calculateNumberOfEpisodesCompletion:(void (^)(NSUInteger numberOfEpisodes))completion
 {
     if (!completion) {
+        return;
+    }
+
+    // See numberOfEpisodes: never capture a non-main context in the async machinery.
+    if (self.managedObjectContext != DMANAGER.objectContext) {
+        completion([self _countEpisodesViaStore]);
         return;
     }
     

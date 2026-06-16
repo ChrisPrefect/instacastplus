@@ -109,7 +109,7 @@
 "Okay" = "Okay";
 "Thank you! Your donation is appreciated!." = "Herzlichen Dank für die Unterstützung!";
 
-"If not played after" = "Wenn nicht angespielt innert";
+"If not played after" = "Wenn nicht angespielt innerhalb";
 "Keep only newest" = "Nur neueste behalten";
 "1 Episode" = "1 Folge";
 "%d Episodes" = "%d Folgen";
@@ -1434,9 +1434,11 @@
 "Keine Änderungen" = "Keine Änderungen";
 "Synchronisation läuft, lädt hoch…" = "Synchronisation läuft, lädt hoch…";
 "Lädt hoch… %ld / %ld" = "Lädt hoch… %ld / %ld";
+"Lade Podcast-Folgen… %ld/%ld" = "Lade Podcast-Folgen… %ld/%ld";
 "Synchronisation läuft, lädt herunter…" = "Synchronisation läuft, lädt herunter…";
 "%@ %ld/s" = "%@ %ld/s";
 "%@ %ld/%ld" = "%@ %ld/%ld";
+"%@ %ld/%ld %@" = "%@ %ld/%ld %@";
 "Synchronisation vollständig" = "Synchronisation vollständig";
 "iCloud angemeldet." = "iCloud angemeldet.";
 "Kein iCloud Account verfügbar." = "Kein iCloud-Account verfügbar.";
@@ -1453,3 +1455,10 @@
 /* TestFlight diagnostics */
 "Crash Logs per Mail schicken" = "Crash Logs per Mail schicken";
 "Crash Logs InstacastPlus" = "Crash Logs InstacastPlus";
+
+/* iCloud settings sync: initial choice dialog */
+"iCloud Settings Found" = "iCloud-Einstellungen gefunden";
+"Another device already uploaded its settings to iCloud. Which settings should be used?" = "Ein anderes Gerät hat bereits Einstellungen in iCloud abgelegt. Welche Einstellungen sollen verwendet werden?";
+"Use iCloud Settings" = "Einstellungen aus iCloud übernehmen";
+"Use My Settings for All Devices" = "Meine Einstellungen für alle Geräte verwenden";
+"Decide Later" = "Später entscheiden";

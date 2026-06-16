@@ -517,6 +517,17 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (void)_debouncedListsReload {
+    // The Core Data channel fires for EVERY save — during playback the position save
+    // re-triggers it every ~30s, forever. Together with the (formerly expensive) list
+    // counts this kept a background thread busy until the system killed the app for
+    // CPU usage. One lists export per minute is plenty for widgets; the explicit
+    // triggers (refresh finished, playlist changed, entering background) stay direct.
+    static CFAbsoluteTime lastCoreDataListsExport = 0;
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (now - lastCoreDataListsExport < 60.0) {
+        return;
+    }
+    lastCoreDataListsExport = now;
     [self exportListsSnapshot];
     [WidgetKitHelper reloadListsTimeline];
 }

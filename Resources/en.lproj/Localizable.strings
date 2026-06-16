@@ -1431,9 +1431,11 @@
 "Keine Änderungen" = "No changes";
 "Synchronisation läuft, lädt hoch…" = "Syncing, uploading…";
 "Lädt hoch… %ld / %ld" = "Uploading… %ld / %ld";
+"Lade Podcast-Folgen… %ld/%ld" = "Loading episodes… %ld/%ld";
 "Synchronisation läuft, lädt herunter…" = "Syncing, downloading…";
 "%@ %ld/s" = "%@ %ld/s";
 "%@ %ld/%ld" = "%@ %ld/%ld";
+"%@ %ld/%ld %@" = "%@ %ld/%ld %@";
 "Synchronisation vollständig" = "Sync complete";
 "iCloud angemeldet." = "Signed in to iCloud.";
 "Kein iCloud Account verfügbar." = "No iCloud account available.";
@@ -1450,3 +1452,10 @@
 /* TestFlight diagnostics */
 "Crash Logs per Mail schicken" = "Send Crash Logs by Email";
 "Crash Logs InstacastPlus" = "Crash Logs InstacastPlus";
+
+/* iCloud settings sync: initial choice dialog */
+"iCloud Settings Found" = "iCloud Settings Found";
+"Another device already uploaded its settings to iCloud. Which settings should be used?" = "Another device already uploaded its settings to iCloud. Which settings should be used?";
+"Use iCloud Settings" = "Use iCloud Settings";
+"Use My Settings for All Devices" = "Use My Settings for All Devices";
+"Decide Later" = "Decide Later";

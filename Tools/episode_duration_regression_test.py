@@ -36,9 +36,9 @@ require(
 )
 require(
     "- (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed" in subscription_source
-    and "episode.duration <= 0" in subscription_source
-    and "!episode.consumed" in subscription_source
-    and "episode.position <= 0" in subscription_source,
+    and "duration <= 0" in subscription_source
+    and "consumed == NO" in subscription_source
+    and "position <= 0" in subscription_source,
     "Feeds with unplayed, unstarted local episodes missing duration must be detected before ETag handling.",
 )
 require(
@@ -46,6 +46,28 @@ require(
     and "_feedNeedsDurationMetadataRefreshForFeedObjectID:" not in subscription_source
     and "preparingRefreshOperations" not in subscription_source,
     "Pull-to-refresh must not be delayed by an extra duration-repair Core Data preflight before parser operations are queued.",
+)
+# The duration repair runs AT MOST ONCE per feed: a feed that never delivers durations
+# must not permanently lose its etag cache (refreshes took 3-4x longer and the per-feed
+# episodes loop on the main thread froze the UI for seconds on pull-to-refresh).
+require(
+    'kFeedPropertyDurationRefreshAttempted = @"durationMetadataRefreshAttempted"' in subscription_source
+    and "[feed boolForKey:kFeedPropertyDurationRefreshAttempted]" in subscription_source
+    and "[feed setBool:YES forKey:kFeedPropertyDurationRefreshAttempted]" in subscription_source,
+    "The duration-metadata repair must be attempted at most once per feed (persisted flag).",
+)
+require(
+    "countForFetchRequest" in subscription_source[
+        subscription_source.index("- (BOOL)_feedNeedsDurationMetadataRefresh:(CDFeed*)feed") :
+        subscription_source.index("- (void) refreshFeed:(CDFeed*)feed etagHandling:")
+    ]
+    and "for (CDEpisode* episode in feed.episodes)" not in subscription_source,
+    "The duration-hole check must use a SQL count, not fault in the whole episodes relationship on the main thread.",
+)
+sync_manager_source = (ROOT / "Classes" / "ICiCloudSyncManager.swift").read_text()
+require(
+    '"durationMetadataRefreshAttempted",' in sync_manager_source,
+    "The duration-repair marker is an internal feed property and must not trigger subscription sync uploads.",
 )
 require(
     "BOOL needsDurationMetadataRefresh = [self _feedNeedsDurationMetadataRefresh:feed];" in refresh_feed_block

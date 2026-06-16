@@ -41,6 +41,13 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 - (void) refreshAllFeedsForce:(BOOL)force etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)handler;
 
 - (void) refreshFeeds:(NSArray*)feeds etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)handler;
+- (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)handler;
+
+// Phase 2 of the iCloud two-phase subscription apply: fills a stub feed (subscribed, but
+// never refreshed, no episodes) with content. Unlike refreshFeed:, this never merges the
+// full feed in one main-context push — it follows the subscribeFeed:withOptions: pattern:
+// the newest episodes are inserted directly, the rest loads via EpisodeLoadingManager.
+- (void) hydrateStubFeed:(CDFeed*)feed completion:(ICSubscriptionManagerRefreshCompletionBlock)completion;
 
 //- (void) callbackWhenRefreshCompleted:(void(^)())handler;
 - (void) updateLocalFeedInfo:(CDFeed*)localFeed withRemoteFeed:(ICFeed*)remoteFeed force:(BOOL)force;

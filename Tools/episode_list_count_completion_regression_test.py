@@ -24,21 +24,28 @@ count_method = source_between(
 )
 main_completion = source_between(
     count_method,
-    "void (^completeOnMainContext)(NSUInteger) = ^(NSUInteger count) {",
-    "    };",
+    "void (^completeOnMainContext)(NSUInteger, BOOL) = ^(NSUInteger count, BOOL updateCache) {",
+    "\n    };",
 )
 normalized_main_completion = " ".join(main_completion.split())
 
 require(
-    "if (!calculatedList || mainError) { if (mainError) { ErrLog(" in normalized_main_completion,
+    "if (calculatedList && !mainError) { calculatedList.cachedEpisodesCount = @(count); }" in normalized_main_completion,
+    "Episode-list count completion must only cache the count when the main-context re-fetch succeeded.",
+)
+require(
+    "else if (mainError) { ErrLog(" in normalized_main_completion,
     "Episode-list count completion must only log when the main-context re-fetch produced a real NSError.",
 )
 require(
-    "if (!calculatedList || mainError) { if (mainError) { ErrLog(" in normalized_main_completion
-    and "completion(count); return; }" in normalized_main_completion,
-    "Episode-list count completion must still run when the main-context list cannot be re-fetched.",
+    "ErrLog(@\"error getting episode list in main context: %@\", mainError); return;" not in normalized_main_completion,
+    "Episode-list count completion must still run after a main-context re-fetch error (no early return).",
 )
 require(
-    "ErrLog(@\"error getting episode list in main context: %@\", mainError); return;" not in normalized_main_completion,
-    "Episode-list count completion must not log a null main-context error when the context/list is simply gone.",
+    "completion(count);" in normalized_main_completion,
+    "Episode-list count completion must still serve the original caller when the list object went away while counting.",
+)
+require(
+    "for (void (^pendingCompletion)(NSUInteger) in completions) { pendingCompletion(count); }" in normalized_main_completion,
+    "Episode-list count completion must drain every waiting completion.",
 )

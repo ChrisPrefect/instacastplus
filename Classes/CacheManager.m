@@ -34,6 +34,7 @@ NSString* CacheManagerDidUpdateNotification = @"CacheManagerDidUpdateNotificatio
 NSString* CacheManagerDidLoadFeedImageNotification = @"CacheManagerDidLoadFeedImageNotification";
 NSString* CacheManagerDidStartCachingEpisodeNotification = @"CacheManagerDidStartCachingEpisodeNotification";
 NSString* CacheManagerDidFinishCachingEpisodeNotification = @"CacheManagerDidFinishCachingEpisodeNotification";
+NSString* CacheManagerDidCancelStreamingCacheEpisodeNotification = @"CacheManagerDidCancelStreamingCacheEpisodeNotification";
 NSString* CacheManagerDidClearCacheNotification = @"CacheManagerDidClearCacheNotification";
 
 NSString* CacheManagerWiFiDidBecomeAvailableNotification = @"CacheManagerWiFiDidBecomeAvailableNotification";
@@ -232,6 +233,15 @@ static void ICClearAllTranscriptCache(void)
                 [self willChangeValueForKey:@"cachedEpisodes"];
                 [self->_cachedEpisodes addObjectsFromArray:cachedEpisodes];
                 [self didChangeValueForKey:@"cachedEpisodes"];
+
+                // `downloaded` is a TRANSIENT episode attribute: it is YES only in the
+                // process that finished the download. Restore it for the cached
+                // episodes on every launch so cells and lists see the right state.
+                for (CDEpisode* episode in cachedEpisodes) {
+                    if (!episode.downloaded) {
+                        episode.downloaded = YES;
+                    }
+                }
 
                 [self saveFileIndex];
                 [self restoreCachingEpisodes];
@@ -582,7 +592,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 		return NO;
 	}
     
-    if ([self.cacheHistory episodeDidAutoDownload:episode]) {
+    if ([self automaticCachingDisabledForEpisode:episode]) {
         return NO;
     }
     
@@ -616,6 +626,11 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 		}
 	}
 	return YES;
+}
+
+- (BOOL) automaticCachingDisabledForEpisode:(CDEpisode*)episode
+{
+    return [self.cacheHistory episodeDidAutoDownload:episode];
 }
 
 - (void) resetAutoCacheForFeed:(CDFeed*)feed
@@ -788,6 +803,7 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 
 - (void) cancelCachingEpisode:(CDEpisode*)episode disableAutoDownload:(BOOL)disableAutodownload
 {
+    BOOL hasStreamingCache = [self _hasStreamingCacheForEpisode:episode];
 	CACHE_OPERATION_CLASS* operation = [self _cacheOperationForEpisode:episode];
 	if (operation)  {
 		//BOOL executing = [operation isExecuting];
@@ -812,8 +828,54 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
         [self coalescedPerformSelector:@selector(_postDidUpdateNotification) afterDelay:0.1];
     }
 
+    if (hasStreamingCache) {
+        [self cancelStreamingCacheForEpisode:episode disableAutoDownload:disableAutodownload];
+        return;
+    }
+
     if (disableAutodownload) {
         [self.cacheHistory setEpisode:episode didAutoDownload:YES];
+    }
+}
+
+- (void) cancelStreamingCacheForEpisode:(CDEpisode*)episode disableAutoDownload:(BOOL)disableAutodownload
+{
+    NSString* key = [self _streamingCacheKeyForEpisode:episode];
+    if (!key) {
+        return;
+    }
+
+    if (disableAutodownload) {
+        [self.cacheHistory setEpisode:episode didAutoDownload:YES];
+    }
+
+    if (!_streamingCacheProgresses[key]) {
+        return;
+    }
+
+    [_streamingCacheProgresses removeObjectForKey:key];
+
+    BOOL removedEpisode = NO;
+    for (CDEpisode* cachingEpisode in [_cachingEpisodes copy]) {
+        if ([cachingEpisode isEqual:episode] || [cachingEpisode.objectHash isEqualToString:key]) {
+            if (!removedEpisode) {
+                [self willChangeValueForKey:@"cachingEpisodes"];
+                removedEpisode = YES;
+            }
+            [_cachingEpisodes removeObject:cachingEpisode];
+        }
+    }
+    if (removedEpisode) {
+        [self didChangeValueForKey:@"cachingEpisodes"];
+    }
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidCancelStreamingCacheEpisodeNotification
+                                                        object:self
+                                                      userInfo:@{ @"episode" : episode }];
+    [self _postDidUpdateNotification];
+    [self recalculateDownloadedBytesInBackground];
+    if (![self isCaching]) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
     }
 }
 

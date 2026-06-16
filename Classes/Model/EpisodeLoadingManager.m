@@ -11,6 +11,7 @@
 #import "CDFeed+Helper.h"
 #import "ICEpisode.h"
 #import "ICMedia.h"
+#import "InstacastPlus-Swift.h"
 
 // Notifications
 NSString* const EpisodeLoadingManagerDidStartLoadingNotification = @"EpisodeLoadingManagerDidStartLoadingNotification";
@@ -25,17 +26,23 @@ NSString* const kFeedPropertyLoadedEpisodeCount = @"loadedEpisodeCount";
 // NSUserDefaults key for persistence
 static NSString* const kUserDefaultsEpisodeLoadingQueueKey = @"EpisodeLoadingQueueKey";
 
-// Batch size for background loading
-static const NSInteger kEpisodeBatchSize = 50;
-
-// Delay between main-queue batches to keep UI responsive
-static const NSTimeInterval kBatchDelay = 0.25;
+// Adaptive batching: the batch size follows the MEASURED main-thread cost of the
+// previous batch, so fast devices process big batches at full speed while slow ones
+// automatically fall back to small batches that fit into the target slice. No fixed
+// pacing delays — between batches the work hops through the background prep queue,
+// which gives the main run loop room to handle pending UI events. (Fixed 50-episode
+// batches took 1-2.6s each on an iPad 6 — the app was unusable during hydration.)
+static const NSTimeInterval kTargetBatchSeconds = 0.1;
+static const NSInteger kMinEpisodeBatchSize = 10;
+static const NSInteger kMaxEpisodeBatchSize = 200;
+static const NSInteger kInitialAdaptiveBatchSize = 50;
 
 @interface EpisodeLoadingManager ()
 @property (nonatomic, strong) NSOperationQueue* loadingQueue;
 @property (nonatomic, strong) NSMutableDictionary<NSString*, NSDictionary*>* pendingLoads;
 @property (nonatomic, strong) NSLock* lock;
 @property (nonatomic, copy) NSString* activeFeedURL; // currently loading feed (sequential)
+@property (nonatomic) NSInteger adaptiveBatchSize;   // guarded by lock
 @end
 
 @implementation EpisodeLoadingManager
@@ -59,6 +66,7 @@ static const NSTimeInterval kBatchDelay = 0.25;
         _loadingQueue.qualityOfService = NSQualityOfServiceBackground; // Niedrige Priorität
         _pendingLoads = [[NSMutableDictionary alloc] init];
         _lock = [[NSLock alloc] init];
+        _adaptiveBatchSize = kInitialAdaptiveBatchSize;
     }
     return self;
 }
@@ -296,8 +304,11 @@ static const NSTimeInterval kBatchDelay = 0.25;
         return;
     }
 
-    // Take a batch
-    NSInteger batchEnd = MIN(kEpisodeBatchSize, episodes.count);
+    // Take a batch — sized by the measured duration of the previous one.
+    [_lock lock];
+    NSInteger batchSize = _adaptiveBatchSize;
+    [_lock unlock];
+    NSInteger batchEnd = MIN(batchSize, (NSInteger)episodes.count);
     NSArray* batch = [episodes subarrayWithRange:NSMakeRange(0, batchEnd)];
     [episodes removeObjectsInRange:NSMakeRange(0, batchEnd)];
     NSArray<ICEpisode*>* parserEpisodes = [self _deserializeEpisodes:batch];
@@ -324,12 +335,35 @@ static const NSTimeInterval kBatchDelay = 0.25;
             }
 
             if (parserEpisodes.count > 0) {
+                CFAbsoluteTime batchStartTime = CFAbsoluteTimeGetCurrent();
                 [DMANAGER addParserEpisodes:parserEpisodes toFeed:feed markConsumed:NO];
 
                 // Update progress in feed properties
                 NSInteger loaded = [feed integerForKey:kFeedPropertyLoadedEpisodeCount];
                 [feed setInteger:loaded + parserEpisodes.count forKey:kFeedPropertyLoadedEpisodeCount];
                 [DMANAGER save];
+
+                CFTimeInterval batchSeconds = CFAbsoluteTimeGetCurrent() - batchStartTime;
+
+                // Adapt the next batch to the measured cost: aim for the target slice,
+                // smooth with the previous size to avoid oscillation.
+                NSTimeInterval perEpisode = MAX(batchSeconds / parserEpisodes.count, 0.0001);
+                NSInteger idealSize = (NSInteger)(kTargetBatchSeconds / perEpisode);
+                [self->_lock lock];
+                NSInteger smoothed = (self->_adaptiveBatchSize + idealSize) / 2;
+                self->_adaptiveBatchSize = MAX(kMinEpisodeBatchSize, MIN(kMaxEpisodeBatchSize, smoothed));
+                [self->_lock unlock];
+
+                if (batchSeconds > 0.05) {
+                    [[ICDiagnosticLogger shared] logEvent:@"feed-refresh-profile"
+                                                  message:@"Episoden-Batch-Insert-Timing"
+                                                 metadata:@{
+                        @"feed": feed.title ?: @"",
+                        @"batchSeconds": [NSString stringWithFormat:@"%.3f", batchSeconds],
+                        @"episodes": @(parserEpisodes.count).stringValue,
+                        @"nextBatchSize": @(self.adaptiveBatchSize).stringValue,
+                    }];
+                }
             }
 
             // Notify observers
@@ -337,12 +371,12 @@ static const NSTimeInterval kBatchDelay = 0.25;
                                                                 object:self
                                                               userInfo:@{@"feed": feed, @"count": @(parserEpisodes.count)}];
 
-            // Continue or finish — delay next batch to keep UI responsive
+            // Continue or finish. No fixed pacing delay: the next batch is prepared on
+            // the background queue first, so the main run loop drains pending UI events
+            // in between — fast devices run at full speed, slow ones are protected by
+            // the adaptive batch size instead of an arbitrary sleep.
             if (episodes.count > 0) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kBatchDelay * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{
-                    [self _startLoadingForFeedURL:feedURL];
-                });
+                [self _startLoadingForFeedURL:feedURL];
             } else {
                 [self _finishLoadingForFeedURL:feedURL];
             }

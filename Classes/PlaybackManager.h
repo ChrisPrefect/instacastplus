@@ -63,6 +63,7 @@
 @property (nonatomic, readonly) BOOL streamingCacheComplete;
 
 - (void) useCachedFileIfAvailableAfterStreamingDownload;
+- (BOOL) cancelStreamingCacheForEpisode:(CDEpisode*)episode;
 
 @property (nonatomic) double position;
 @property (nonatomic, readonly) double playablePosition;
