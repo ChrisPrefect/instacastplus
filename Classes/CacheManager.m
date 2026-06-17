@@ -486,12 +486,16 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
 		return NO;
 	}
 
+	CDMedium* media = [episode preferedMedium];
+	if (!media.fileURL || episode.objectHash.length == 0) {
+		return NO;
+	}
+
 	NSURL* url = [self URLForCachedEpisode:episode];
 	if (!url) {
 		return NO;
 	}
-    
-	CDMedium* media = [episode preferedMedium];
+
 	CDFeed* feed = episode.feed;
 #if TARGET_OS_IPHONE
 	CACHE_OPERATION_CLASS* cacheOperation = [[CACHE_OPERATION_CLASS alloc] initWithURL:media.fileURL
@@ -504,6 +508,9 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
                                                                                tempURL:[self tempURLForCachedEpisode:episode]
                                                                             identifier:episode.objectHash];
 #endif
+	if (!cacheOperation) {
+		return NO;
+	}
 	cacheOperation.delegate = self;
 	cacheOperation.userInfo = episode;
 	cacheOperation.username = feed.username;
@@ -974,7 +981,19 @@ static NSString* ICSanitizeFilenameComponent(NSString* string)
     if (!error) {
         for(NSString* filename in directoryContent)
         {
-            NSString* hash = [[filename stringByDeletingPathExtension] stringByDeletingPathExtension];
+            if (![[filename pathExtension] isEqualToString:@"part"]) {
+                continue;
+            }
+
+            NSString* nameWithoutPartExtension = [filename stringByDeletingPathExtension];
+            NSString* nameWithoutMediaExtension = [nameWithoutPartExtension stringByDeletingPathExtension];
+            NSString* hash = nil;
+            NSRange lastDash = [nameWithoutMediaExtension rangeOfString:@" - " options:NSBackwardsSearch];
+            if (lastDash.location != NSNotFound) {
+                hash = [nameWithoutMediaExtension substringFromIndex:NSMaxRange(lastDash)];
+            } else {
+                hash = nameWithoutMediaExtension;
+            }
             CDEpisode* episode = [DMANAGER episodeWithObjectHash:hash];
             if (episode) {
                 [partiallyCachedEpisodes addObject:episode];

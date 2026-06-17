@@ -828,11 +828,34 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
     }
 
 
+    __block NSInteger remainingRefreshCompletions = eligibleFeeds.count;
+    __block BOOL allRefreshesSucceeded = YES;
+    __block NSError* firstRefreshError = nil;
+    __block NSMutableArray* batchNewEpisodes = [[NSMutableArray alloc] init];
+    ICSubscriptionManagerRefreshCompletionBlock batchCompletion = nil;
+    if (completion) {
+        batchCompletion = ^(BOOL success, NSArray* newEpisodes, NSError* error) {
+            if (!success) {
+                allRefreshesSucceeded = NO;
+                if (!firstRefreshError) {
+                    firstRefreshError = error;
+                }
+            }
+            if (newEpisodes.count > 0) {
+                [batchNewEpisodes addObjectsFromArray:newEpisodes];
+            }
+            remainingRefreshCompletions--;
+            if (remainingRefreshCompletions == 0) {
+                completion(allRefreshesSucceeded, [batchNewEpisodes copy], firstRefreshError);
+            }
+        };
+    }
+
     for(CDFeed* feed in eligibleFeeds)
     {
         [self refreshFeed:feed
              etagHandling:etagHandling
-               completion:(([eligibleFeeds lastObject] == feed) ? completion : nil)];
+               completion:batchCompletion];
     }
     
 }
@@ -900,6 +923,9 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
 
     NSURL* url = [feed.sourceURL copy];
     if (!url) {
+        if (completion) {
+            completion(YES, @[], nil);
+        }
         return;
     }
     [self.refreshingFeedURLs addObject:url];

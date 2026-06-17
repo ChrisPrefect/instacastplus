@@ -105,9 +105,7 @@ static const NSInteger kInitialAdaptiveBatchSize = 50;
     _pendingLoads[feedURL] = loadInfo;
     [_lock unlock];
 
-    // Don't save loading state here — it would write megabytes of episode data to NSUserDefaults.
-    // State is saved when feeds finish or are cancelled, which is sufficient for crash recovery.
-    // If the app crashes mid-load, at most one batch of episodes will be re-processed (deduplication handles it).
+    [self _saveLoadingState];
 
     [[NSNotificationCenter defaultCenter] postNotificationName:EpisodeLoadingManagerDidStartLoadingNotification
                                                         object:self
@@ -313,16 +311,6 @@ static const NSInteger kInitialAdaptiveBatchSize = 50;
     [episodes removeObjectsInRange:NSMakeRange(0, batchEnd)];
     NSArray<ICEpisode*>* parserEpisodes = [self _deserializeEpisodes:batch];
 
-    // Update pending loads with remaining episodes
-    NSDictionary* updatedInfo = @{
-        @"feedURL": feedURL,
-        @"episodes": episodes
-    };
-
-    [_lock lock];
-    _pendingLoads[feedURL] = updatedInfo;
-    [_lock unlock];
-
     // Insert episodes on main thread (Core Data requirement)
     dispatch_async(dispatch_get_main_queue(), ^{
         @autoreleasepool {
@@ -376,6 +364,15 @@ static const NSInteger kInitialAdaptiveBatchSize = 50;
             // in between — fast devices run at full speed, slow ones are protected by
             // the adaptive batch size instead of an arbitrary sleep.
             if (episodes.count > 0) {
+                // Keep the persisted queue at the pre-batch state until finish/cancel.
+                // A crash may re-process inserted episodes, but it cannot lose the active batch.
+                NSDictionary* updatedInfo = @{
+                    @"feedURL": feedURL,
+                    @"episodes": episodes
+                };
+                [self->_lock lock];
+                self->_pendingLoads[feedURL] = updatedInfo;
+                [self->_lock unlock];
                 [self _startLoadingForFeedURL:feedURL];
             } else {
                 [self _finishLoadingForFeedURL:feedURL];
@@ -421,6 +418,7 @@ static const NSInteger kInitialAdaptiveBatchSize = 50;
     [_lock unlock];
 
     [USER_DEFAULTS setObject:allLoads forKey:kUserDefaultsEpisodeLoadingQueueKey];
+    [USER_DEFAULTS synchronize];
 }
 
 #pragma mark - Episode Serialization

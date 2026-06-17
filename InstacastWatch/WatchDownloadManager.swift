@@ -24,7 +24,7 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     func replaceManifest(entries: [WatchManifestEntry]) {
         let removed = WatchManifestStore.shared.applyManifest(entries: entries)
         for episode in removed {
-            removeEpisode(hash: episode.episodeHash)
+            deleteRemovedManifestEpisode(episode)
         }
         WatchConnectivityController.shared.send(type: "watch.ackManifest", payload: [
             "episodeHashes": entries.map(\.episodeHash),
@@ -105,9 +105,15 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         activeTasksByHash[hash]?.cancel()
         activeTasksByHash[hash] = nil
         guard let episode = WatchManifestStore.shared.removeEpisode(hash: hash) else { return }
+        deleteRemovedManifestEpisode(episode)
+    }
+
+    private func deleteRemovedManifestEpisode(_ episode: WatchEpisode) {
+        activeTasksByHash[episode.episodeHash]?.cancel()
+        activeTasksByHash[episode.episodeHash] = nil
         WatchStorageManager.shared.removeLocalFile(for: episode)
         WatchConnectivityController.shared.send(type: "watch.deleted", payload: [
-            "episodeHash": hash,
+            "episodeHash": episode.episodeHash,
             "timestamp": timestamp(),
         ])
         WatchConnectivityController.shared.sendStorageStatus()
