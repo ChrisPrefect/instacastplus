@@ -45,11 +45,13 @@ require("configuration.automaticallySync = false" in engine_init, "CKSyncEngine 
 
 low_priority_sync = method_body(MANAGER, "private func scheduleLowPrioritySync")
 require("lowPrioritySyncTask" in MANAGER, "Automatic iCloud sends need a coalesced low-priority task.")
-require("Task(priority: .background)" in low_priority_sync, "Automatic iCloud sends must run at background priority.")
-require("Task.detached" not in low_priority_sync, "Automatic iCloud sends must not take CKSyncEngine off the manager actor with Task.detached.")
-require("try await syncEngine.sendChanges()" in low_priority_sync, "Low-priority automatic sync must still send queued changes.")
-require("try await syncEngine.fetchChanges()" in low_priority_sync, "Low-priority automatic sync must still fetch remote changes.")
+require("Task.detached(priority: .background)" in low_priority_sync, "Automatic iCloud sends must run from a detached background scheduler.")
+require("await self.performLowPrioritySync()" in low_priority_sync, "Automatic iCloud sends must leave any CKSyncEngine delegate callback task before calling sendChanges.")
 require("MainActor.run" not in low_priority_sync, "Low-priority automatic sync must not hand CKSyncEngine across actors via MainActor.run.")
+
+perform_low_priority_sync = method_body(MANAGER, "private func performLowPrioritySync")
+require("try await syncEngine.sendChanges()" in perform_low_priority_sync, "Low-priority automatic sync must still send queued changes.")
+require("try await syncEngine.fetchChanges()" in perform_low_priority_sync, "Low-priority automatic sync must still fetch remote changes.")
 
 plan_builder = method_body(MANAGER, "private nonisolated static func buildInitialUploadPlan")
 require("episodeObjectHashesForInitialUploadPlan(offset:" in plan_builder, "Initial upload planning must page episode identifiers off the UI path.")

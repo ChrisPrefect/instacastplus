@@ -906,45 +906,52 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private func scheduleLowPrioritySync() {
         guard anySyncEnabled, lowPrioritySyncTask == nil else { return }
         logSyncEvent("iCloud Sync mit niedriger Priorität geplant")
-        lowPrioritySyncTask = Task(priority: .background) { [weak self] in
+        // CKSyncEngine asserts when sendChanges recurses from one of its delegate tasks.
+        // Detached scheduling drops that callback task context before the manager syncs.
+        lowPrioritySyncTask = Task.detached(priority: .background) { [weak self] in
             await Task.yield()
-            guard let self, self.anySyncEnabled, !Task.isCancelled else {
-                self?.lowPrioritySyncTask = nil
-                return
-            }
+            guard let self else { return }
+            await self.performLowPrioritySync()
+        }
+    }
 
-            self.initializeSyncEngineIfNeeded()
-            self.hasUnresolvedSyncFailures = false
-            self.postStateChanged()
+    private func performLowPrioritySync() async {
+        guard anySyncEnabled, !Task.isCancelled else {
+            lowPrioritySyncTask = nil
+            return
+        }
 
-            do {
-                if let syncEngine = self.syncEngine {
-                    try await syncEngine.sendChanges()
-                    // While the initial backfill still has pages to upload, only send — defer the
-                    // fetch until everything is up. The last page clears the cursor before it
-                    // syncs, so that run still fetches. This stops the status flipping up/down
-                    // every page and saves a network round-trip per page.
-                    if !self.hasInitialUploadBackfillWork {
-                        try await syncEngine.fetchChanges()
-                    }
+        initializeSyncEngineIfNeeded()
+        hasUnresolvedSyncFailures = false
+        postStateChanged()
+
+        do {
+            if let syncEngine = syncEngine {
+                try await syncEngine.sendChanges()
+                // While the initial backfill still has pages to upload, only send — defer the
+                // fetch until everything is up. The last page clears the cursor before it
+                // syncs, so that run still fetches. This stops the status flipping up/down
+                // every page and saves a network round-trip per page.
+                if !hasInitialUploadBackfillWork {
+                    try await syncEngine.fetchChanges()
                 }
-                self.lowPrioritySyncTask = nil
-                if !self.hasUnresolvedSyncFailures {
-                    self.markSyncCompletedIfFinished()
-                } else {
-                    self.postStateChanged()
-                }
-                if self.anySyncEnabled, self.hasPendingSyncChanges {
-                    self.scheduleLowPrioritySync()
-                }
-            } catch {
-                self.lowPrioritySyncTask = nil
-                self.setError(error)
-                let ckError = error as? CKError
-                self.scheduleSyncRetryAfterFailure(code: ckError?.code,
-                                                   retryAfter: ckError?.retryAfterSeconds,
-                                                   reason: "lowPrioritySync")
             }
+            lowPrioritySyncTask = nil
+            if !hasUnresolvedSyncFailures {
+                markSyncCompletedIfFinished()
+            } else {
+                postStateChanged()
+            }
+            if anySyncEnabled, hasPendingSyncChanges {
+                scheduleLowPrioritySync()
+            }
+        } catch {
+            lowPrioritySyncTask = nil
+            setError(error)
+            let ckError = error as? CKError
+            scheduleSyncRetryAfterFailure(code: ckError?.code,
+                                          retryAfter: ckError?.retryAfterSeconds,
+                                          reason: "lowPrioritySync")
         }
     }
 
