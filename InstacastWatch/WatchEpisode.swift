@@ -250,9 +250,9 @@ extension WatchEpisode {
         if existing.mediaURL == entry.mediaURL {
             return true
         }
-        if entry.expectedFileSize > 0 && existing.actualFileSize > 0 {
-            return existing.actualFileSize == entry.expectedFileSize
+        guard entry.expectedFileSize > 0, existing.actualFileSize > 0 else {
+            return false
         }
-        return true
+        return existing.actualFileSize == entry.expectedFileSize
     }
 }

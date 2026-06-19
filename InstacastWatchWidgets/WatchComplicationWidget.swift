@@ -17,7 +17,15 @@ struct WatchComplicationWidget: Widget {
         }
         .configurationDisplayName("InstacastPlus")
         .description("InstacastPlus")
-        .supportedFamilies([.accessoryCircular, .accessoryInline, .accessoryCorner, .accessoryRectangular])
+        .supportedFamilies(supportedFamilies)
+    }
+
+    private var supportedFamilies: [WidgetFamily] {
+        #if os(watchOS)
+        [.accessoryCircular, .accessoryInline, .accessoryCorner, .accessoryRectangular]
+        #else
+        [.accessoryCircular, .accessoryInline, .accessoryRectangular]
+        #endif
     }
 }
 
@@ -47,18 +55,31 @@ private struct WatchComplicationView: View {
     var body: some View {
         switch family {
         case .accessoryInline:
-            Label("InstacastPlus", systemImage: "play.circle.fill")
+            Label {
+                Text("InstacastPlus")
+            } icon: {
+                Image("ComplicationIcon")
+            }
         case .accessoryRectangular:
             HStack(spacing: 6) {
-                Image(systemName: "play.circle.fill")
+                complicationIcon
+                    .frame(width: 18, height: 18)
                 Text("InstacastPlus")
                     .lineLimit(1)
             }
+        #if os(watchOS)
         case .accessoryCorner:
-            Image(systemName: "play.circle.fill")
+            complicationIcon
                 .widgetLabel("InstacastPlus")
+        #endif
         default:
-            Image(systemName: "play.circle.fill")
+            complicationIcon
         }
+    }
+
+    private var complicationIcon: some View {
+        Image("ComplicationIcon")
+            .resizable()
+            .scaledToFit()
     }
 }

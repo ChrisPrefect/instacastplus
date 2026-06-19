@@ -28,6 +28,10 @@ watch_chapter_extractor = read("InstacastWatch/WatchChapterExtractor.swift")
 watch_plist = read("InstacastWatch/Info.plist")
 watch_complication_path = ROOT / "InstacastWatchWidgets" / "WatchComplicationWidget.swift"
 watch_complication = watch_complication_path.read_text() if watch_complication_path.exists() else ""
+watch_complication_assets = {
+    str(path.relative_to(ROOT))
+    for path in (ROOT / "InstacastWatchWidgets" / "Assets.xcassets").rglob("*")
+} if (ROOT / "InstacastWatchWidgets" / "Assets.xcassets").exists() else set()
 feed_settings = read("Classes/FeedSettingsViewController.m")
 episodes_table = read("Classes/EpisodesTableViewController.m")
 episode_view = read("Classes/EpisodeViewController.m")
@@ -35,6 +39,7 @@ main_view = read("Classes/MainViewController_4.m")
 cell = read("Classes/EpisodesTableViewCell.m")
 apple_watch_controller = read("Classes/AppleWatchEpisodesViewController.m")
 donation_view = read("Classes/DonationViewController.m")
+watch_download_reuse = watch_episode.split("private static func canReuseDownloadedFile", 1)[1]
 
 
 watch_entity = model.find("./entity[@name='AppleWatchEpisodeState']")
@@ -96,7 +101,12 @@ require(
 require(
     "<key>UIBackgroundModes</key>" in watch_plist
     and "<string>audio</string>" in watch_plist,
-    "The Watch app must declare audio background mode so local episode playback continues after wrist down/app backgrounding.",
+    "The executable Watch app must declare UIBackgroundModes/audio so local episode playback continues after wrist down/app backgrounding on watchOS.",
+)
+
+require(
+    "<key>WKBackgroundModes</key>" not in watch_plist,
+    "The executable Watch app must not declare WKBackgroundModes; App Store Connect rejects that key for this watchOS bundle.",
 )
 
 require(
@@ -144,13 +154,27 @@ require(
 require(
     watch_complication_path.exists()
     and "struct WatchComplicationWidget" in watch_complication
-    and ".supportedFamilies([.accessoryCircular" in watch_complication
+    and ".supportedFamilies(supportedFamilies)" in watch_complication
+    and "private var supportedFamilies: [WidgetFamily]" in watch_complication
+    and "#if os(watchOS)" in watch_complication
+    and ".accessoryCircular" in watch_complication
     and ".accessoryInline" in watch_complication
     and ".accessoryCorner" in watch_complication
     and ".accessoryRectangular" in watch_complication
     and "InstacastWatchWidgets.appex" in project
     and "SDKROOT = watchos;" in project.split("InstacastWatchWidgets", 1)[1],
     "The app must ship a watchOS WidgetKit complication target so InstacastPlus appears in the Watch face complication picker.",
+)
+
+require(
+    'Image("ComplicationIcon")' in watch_complication
+    and "play.circle.fill" not in watch_complication
+    and any(path.endswith("ComplicationIcon.imageset/Contents.json") for path in watch_complication_assets)
+    and (ROOT / "InstacastWatchWidgets" / "Assets.xcassets" / "ComplicationIcon.imageset" / "ComplicationIcon@2x.png").read_bytes() == (ROOT / "InstacastWatch" / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon-44@2x.png").read_bytes()
+    and (ROOT / "InstacastWatchWidgets" / "Assets.xcassets" / "ComplicationIcon.imageset" / "ComplicationIcon@3x.png").read_bytes() == (ROOT / "InstacastWatch" / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon-29@3x.png").read_bytes()
+    and "path = InstacastWatchWidgets/Assets.xcassets;" in project
+    and "Assets.xcassets in Resources" in project.split("D222B9632F85B2B01C669878 /* Resources */ = {", 1)[1].split(");", 1)[0],
+    "The Watch complication must render the InstacastPlus icon asset, not a generic Play SF Symbol.",
 )
 
 require(
@@ -331,6 +355,12 @@ require(
 )
 
 require(
+    "if flag {\n                reportPosition(finished: true)\n            } else {\n                reportPosition(finished: false)\n            }" in watch_player
+    and "if flag, let finishedHash" in watch_player,
+    "The Watch player must not report an unsuccessfully finished playback callback as a completed episode.",
+)
+
+require(
     "seek(by seconds" in watch_player
     and "nextPlayableEpisode" in watch_player
     and "tickPlaybackPosition" in watch_player,
@@ -508,8 +538,10 @@ require(
     and "canReuseDownloadedFile(from: existing, entry: entry)" in watch_episode
     and "FileManager.default.fileExists(atPath: localFileURL.path)" in watch_episode
     and "existing.actualFileSize == entry.expectedFileSize" in watch_episode
+    and "guard entry.expectedFileSize > 0, existing.actualFileSize > 0 else {\n            return false\n        }" in watch_download_reuse
+    and "return true\n    }\n}" not in watch_download_reuse
     and "let canReuseDownload = existing?.mediaURL == entry.mediaURL" not in watch_episode,
-    "The Watch manifest merge must preserve an existing local download for the same episode when only the enclosure URL changes; exact mediaURL equality is too unstable for podcast CDN URLs.",
+    "The Watch manifest merge may reuse an existing local download after an enclosure URL change only with an exact positive file-size proof.",
 )
 
 require(

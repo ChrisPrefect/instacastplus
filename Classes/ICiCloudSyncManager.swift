@@ -253,6 +253,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private var syncActivityExpectedCount = 0
     private var syncActivityKindLabel: String?
     private var isFetchingCloudInventory = false
+    private var pendingCloudInventoryRefreshReason: String?
     private var isHydratingStubFeeds = false
     private var hydrationCompletedCount = 0
     private var hydrationTotalCount = 0
@@ -616,7 +617,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             resetAllLocalSyncMetadata()
             // The "On iCloud" rows kept showing the pre-delete counts (stale cache,
             // refreshed only every 30s) — reflect the now-empty zone immediately.
-            storeCloudInventory([:])
+            storeCloudInventory([:], reason: "deleteAllICloudData")
 
             if anySyncEnabled {
                 initializeSyncEngineIfNeeded()
@@ -712,8 +713,22 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     // queryable without dashboard-managed indexes. Runs independently of the sync engine
     // and of the enabled switches.
     @objc func refreshCloudInventory() {
-        guard !isFetchingCloudInventory else { return }
+        refreshCloudInventory(reason: "settingsView")
+    }
+
+    private func refreshCloudInventory(reason: String) {
+        guard !isFetchingCloudInventory else {
+            pendingCloudInventoryRefreshReason = reason
+            var metadata: [String: Any] = ["reason": reason]
+            metadata.merge(syncDiagnosticsMetadata()) { current, _ in current }
+            logSyncEvent("Cloud-Inventar-Abfrage übersprungen", metadata: metadata)
+            return
+        }
+        pendingCloudInventoryRefreshReason = nil
         isFetchingCloudInventory = true
+        var metadata: [String: Any] = ["reason": reason]
+        metadata.merge(syncDiagnosticsMetadata()) { current, _ in current }
+        logSyncEvent("Cloud-Inventar-Abfrage gestartet", metadata: metadata)
 
         let box = ICCloudInventoryCountsBox()
         let configuration = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
@@ -736,17 +751,19 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
                 self.isFetchingCloudInventory = false
                 switch result {
                 case .success:
-                    self.storeCloudInventory(box.snapshot())
+                    self.storeCloudInventory(box.snapshot(), reason: reason)
                     self.fetchDeviceRecordsForInventory(box.deviceIDs())
                 case .failure(let error):
                     if let ckError = error as? CKError, ckError.code == .zoneNotFound || ckError.code == .userDeletedZone {
-                        self.storeCloudInventory([:])
+                        self.storeCloudInventory([:], reason: reason)
                     } else {
-                        self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen", metadata: [
-                            "error": error.localizedDescription,
-                        ])
+                        var metadata = self.cloudKitErrorMetadata(error)
+                        metadata["reason"] = reason
+                        metadata.merge(self.syncDiagnosticsMetadata()) { current, _ in current }
+                        self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen", metadata: metadata)
                     }
                 }
+                self.runPendingCloudInventoryRefreshIfNeeded()
             }
         }
         database.add(operation)
@@ -777,21 +794,33 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         database.add(operation)
     }
 
-    private func storeCloudInventory(_ countsByType: [String: Int]) {
+    private func storeCloudInventory(_ countsByType: [String: Int], reason: String) {
         // The three rows count USER objects only. Helper records (scroll positions,
         // the sort-order singleton, device entries) must not leak into them — they
         // showed "Einstellungen: 1" although settings sync was never enabled.
+        let fetchDate = Date()
         let stored: [String: Any] = [
             "episodeStates": countsByType[RecordKind.episodeState] ?? 0,
             "subscriptions": countsByType[RecordKind.subscription] ?? 0,
             "settings": countsByType[RecordKind.appSettings] ?? 0,
-            "fetchDate": Date(),
+            "fetchDate": fetchDate,
         ]
         setSyncMetadata(stored, forKey: Self.cloudInventoryKey)
         logSyncEvent("Cloud-Inventar aktualisiert", metadata: [
+            "reason": reason,
+            "episodeStates": stored["episodeStates"] ?? 0,
+            "subscriptions": stored["subscriptions"] ?? 0,
+            "settings": stored["settings"] ?? 0,
+            "fetchDate": fetchDate,
             "byType": countsByType.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ","),
         ])
         postStateChanged()
+    }
+
+    private func runPendingCloudInventoryRefreshIfNeeded() {
+        guard let reason = pendingCloudInventoryRefreshReason else { return }
+        pendingCloudInventoryRefreshReason = nil
+        refreshCloudInventory(reason: reason)
     }
 
     private func performManualSync() async throws {
@@ -923,6 +952,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
 
         initializeSyncEngineIfNeeded()
         hasUnresolvedSyncFailures = false
+        logSyncEvent("iCloud Sync mit niedriger Priorität gestartet", metadata: syncDiagnosticsMetadata())
         postStateChanged()
 
         do {
@@ -2884,12 +2914,21 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     // Shared apply core: writes the synced values, re-baselines and refreshes the UI.
     private func adoptSettingsPayload(_ payload: [String: Any]) {
         let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
-        guard let values = payload["values"] as? [String: Any] else { return }
+        guard let values = payload["values"] as? [String: Any] else {
+            logSyncEvent("Einstellungs-Payload ungültig", metadata: [
+                "hasValues": false,
+                "payloadKeyCount": payload.keys.count,
+            ])
+            return
+        }
+        var appliedSettingsValueCount = 0
         for (key, value) in values where Self.shouldSyncSettingsKeyForSyncEngineCallback(key) && Self.isValidSettingsValueForSyncEngineCallback(value) {
             defaults.set(value, forKey: key)
+            appliedSettingsValueCount += 1
         }
 
-        if let credentials = payload["credentials"] as? NSDictionary {
+        let credentials = payload["credentials"] as? NSDictionary
+        if let credentials {
             ICRemoteChapterCredentialStore.restoreBackupCredentialValues(credentials)
         }
 
@@ -2902,6 +2941,11 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         defaults.synchronize()
         ICAppearanceManager.shared()?.updateAppearance()
         NotificationCenter.default.post(name: NSNotification.Name("MainMenuListUIDsDidChangeNotification"), object: nil)
+        logSyncEvent("Einstellungs-Payload übernommen", metadata: [
+            "settingsValueCount": values.count,
+            "appliedSettingsValueCount": appliedSettingsValueCount,
+            "hasCredentials": credentials != nil,
+        ])
         postStateChanged()
     }
 
@@ -2913,7 +2957,15 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
 
     // "Einstellungen aus iCloud übernehmen": apply the parked cloud settings here.
     @objc func resolveInitialSettingsAdoptingCloud() {
-        guard let payload = Self.syncMetadataValue(forKey: Self.pendingInitialSettingsPayloadKey) as? [String: Any] else { return }
+        guard let payload = Self.syncMetadataValue(forKey: Self.pendingInitialSettingsPayloadKey) as? [String: Any] else {
+            logSyncEvent("Einstellungs-Wahl: iCloud-Stand fehlt", metadata: syncDiagnosticsMetadata())
+            postStateChanged()
+            return
+        }
+        logSyncEvent("Einstellungs-Wahl: iCloud-Stand wird übernommen", metadata: [
+            "settingsValueCount": (payload["values"] as? [String: Any])?.count ?? -1,
+            "hasCredentials": payload["credentials"] != nil,
+        ])
         setSyncMetadata(nil, forKey: Self.pendingInitialSettingsPayloadKey)
         defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
         adoptSettingsPayload(payload)
@@ -3872,6 +3924,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             postStateChanged()
             return
         }
+        let shouldRefreshCloudInventory = syncedUserDataInCurrentRun
         clearSyncActivity()
         if syncedUserDataInCurrentRun {
             let now = Date()
@@ -3885,7 +3938,9 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         resetSyncRetryBackoff()
         deviceRecordShouldStampSyncDate = false
         setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
-        syncedUserDataInCurrentRun = false
+        var completionMetadata = syncDiagnosticsMetadata()
+        completionMetadata["shouldRefreshCloudInventory"] = shouldRefreshCloudInventory
+        logSyncEvent("iCloud Sync abgeschlossen", metadata: completionMetadata)
         if hasInitialUploadBackfillWork {
             // The backfill continues page by page — keep showing upload progress instead
             // of flipping to "complete" and back once per page.
@@ -3895,8 +3950,12 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         } else {
             setStatus(NSLocalizedString("Synchronisation vollständig", comment: ""))
             postStateChanged()
+            if shouldRefreshCloudInventory {
+                refreshCloudInventory(reason: "syncCompletedWithUserData")
+            }
             pruneEpisodeLocalModifiedDatesIfNeeded()
         }
+        syncedUserDataInCurrentRun = false
     }
 
     private func backfillProgressStatusText() -> String {
@@ -3955,6 +4014,31 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private var hasPendingSyncChanges: Bool {
         guard let syncEngine else { return false }
         return !syncEngine.state.pendingDatabaseChanges.isEmpty || !syncEngine.state.pendingRecordZoneChanges.isEmpty
+    }
+
+    private func syncDiagnosticsMetadata() -> [String: Any] {
+        let inventory = cloudInventory
+        var metadata: [String: Any] = [
+            "pendingDatabaseChanges": syncEngine?.state.pendingDatabaseChanges.count ?? 0,
+            "pendingRecordZoneChanges": syncEngine?.state.pendingRecordZoneChanges.count ?? 0,
+            "hasInitialUploadBackfillWork": hasInitialUploadBackfillWork,
+            "episodeBackfillOffset": (defaults.object(forKey: Self.initialEpisodeBackfillOffsetKey) as? NSNumber)?.intValue ?? -1,
+            "subscriptionBackfillOffset": (defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) as? NSNumber)?.intValue ?? -1,
+            "initialSettingsBackfillPending": defaults.bool(forKey: Self.initialSettingsBackfillPendingKey),
+            "syncedUserDataInCurrentRun": syncedUserDataInCurrentRun,
+            "hasUnresolvedSyncFailures": hasUnresolvedSyncFailures,
+            "syncRetryAttempt": syncRetryAttempt,
+            "syncRetryScheduled": syncRetryWorkItem != nil,
+            "isFetchingCloudInventory": isFetchingCloudInventory,
+            "pendingCloudInventoryRefreshReason": pendingCloudInventoryRefreshReason ?? "",
+            "cloudInventoryEpisodeStates": inventory?.episodeStates ?? -1,
+            "cloudInventorySubscriptions": inventory?.subscriptions ?? -1,
+            "cloudInventorySettings": inventory?.settings ?? -1,
+        ]
+        if let fetchDate = inventory?.fetchDate {
+            metadata["cloudInventoryFetchDate"] = fetchDate
+        }
+        return metadata
     }
 
     private func beginSyncActivity(_ direction: SyncActivityDirection) {
@@ -4042,13 +4126,33 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         syncedUserDataInCurrentRun = false
         let status = displayStatus(for: error)
         let nsError = error as NSError
-        logSyncEvent("iCloud Sync Fehler", metadata: [
-            "domain": nsError.domain,
-            "code": nsError.code,
-            "status": status,
-        ])
+        var metadata = cloudKitErrorMetadata(error)
+        metadata["domain"] = nsError.domain
+        metadata["code"] = nsError.code
+        metadata["status"] = status
+        metadata.merge(syncDiagnosticsMetadata()) { current, _ in current }
+        logSyncEvent("iCloud Sync Fehler", metadata: metadata)
         setSyncMetadata(status, forKey: Self.lastErrorKey)
         postStateChanged()
+    }
+
+    private func cloudKitErrorMetadata(_ error: Error) -> [String: Any] {
+        let nsError = error as NSError
+        var metadata: [String: Any] = [
+            "domain": nsError.domain,
+            "code": nsError.code,
+            "description": nsError.localizedDescription,
+        ]
+        if let ckError = error as? CKError {
+            metadata["ckCode"] = ckError.code.rawValue
+            if let retryAfterSeconds = ckError.retryAfterSeconds {
+                metadata["retryAfterSeconds"] = Int(retryAfterSeconds.rounded(.up))
+            }
+            if let partialErrors = ckError.partialErrorsByItemID, !partialErrors.isEmpty {
+                metadata["partialErrorCount"] = partialErrors.count
+            }
+        }
+        return metadata
     }
 
     private func displayStatus(for error: Error) -> String {

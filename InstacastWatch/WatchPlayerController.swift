@@ -143,7 +143,11 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             let finishedHash = playingEpisodeHash
             isPlaying = false
             stopTimer()
-            reportPosition(finished: true)
+            if flag {
+                reportPosition(finished: true)
+            } else {
+                reportPosition(finished: false)
+            }
             self.player = nil
             playingEpisodeHash = nil
             currentPosition = 0

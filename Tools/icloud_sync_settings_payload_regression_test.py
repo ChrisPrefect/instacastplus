@@ -52,6 +52,12 @@ require("case let array" not in static_valid and "case let dictionary" not in st
 apply_remote = method_body(MANAGER, "private func adoptSettingsPayload")
 require("Self.shouldSyncSettingsKeyForSyncEngineCallback(key)" in apply_remote, "Remote settings apply must not write excluded non-settings defaults keys.")
 require("setStoredSyncedSettingsHash(syncedSettingsHash())" in apply_remote, "Remote settings apply must re-baseline the persisted hash (echo guard).")
+require('logSyncEvent("Einstellungs-Payload ungültig"' in apply_remote, "Malformed remote settings payloads must be visible in customer diagnostics.")
+require('"settingsValueCount"' in apply_remote and '"appliedSettingsValueCount"' in apply_remote, "Remote settings adoption logs must show how many values arrived and were applied.")
+
+adopt_choice = method_body(MANAGER, "@objc func resolveInitialSettingsAdoptingCloud")
+require('logSyncEvent("Einstellungs-Wahl: iCloud-Stand fehlt"' in adopt_choice, "Choosing iCloud settings with no parked payload must be logged instead of silently doing nothing.")
+require('"hasCredentials"' in adopt_choice and '"settingsValueCount"' in adopt_choice, "The explicit iCloud-settings adoption choice must log payload shape.")
 
 # The baseline hash must be persisted — an in-memory baseline re-uploaded the whole
 # settings record on every app start with a fresh updatedAt, breaking last-writer-wins.

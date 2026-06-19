@@ -212,6 +212,36 @@ mark_completed = method_body(MANAGER, "private func markSyncCompleted")
 require("if syncedUserDataInCurrentRun" in mark_completed, "Last Sync must only update after user data was actually sent or received.")
 require('"Synchronisation vollständig"' in mark_completed, "Completed syncs must report completion, not a misleading no-op status.")
 require("setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)" in mark_completed, "Completed syncs must clear persisted device Last Sync stamping.")
+require(
+    "let shouldRefreshCloudInventory = syncedUserDataInCurrentRun" in mark_completed
+    and "refreshCloudInventory(reason: \"syncCompletedWithUserData\")" in mark_completed
+    and mark_completed.find("refreshCloudInventory(reason: \"syncCompletedWithUserData\")") < mark_completed.find("syncedUserDataInCurrentRun = false"),
+    "A completed sync that moved user data must refresh the On iCloud inventory before clearing the run's user-data marker.",
+)
+
+cloud_inventory_refresh = method_body(MANAGER, "@objc func refreshCloudInventory()")
+require(
+    'refreshCloudInventory(reason: "settingsView")' in cloud_inventory_refresh,
+    "The Objective-C cloud inventory entry point must delegate to the reason-tagged refresher.",
+)
+cloud_inventory_refresh_reason = method_body(MANAGER, "private func refreshCloudInventory(reason: String)")
+require(
+    'logSyncEvent("Cloud-Inventar-Abfrage gestartet"' in cloud_inventory_refresh_reason
+    and 'logSyncEvent("Cloud-Inventar-Abfrage übersprungen"' in cloud_inventory_refresh_reason
+    and 'self.storeCloudInventory(box.snapshot(), reason: reason)' in cloud_inventory_refresh_reason
+    and 'self.storeCloudInventory([:], reason: reason)' in cloud_inventory_refresh_reason
+    and 'self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen"' in cloud_inventory_refresh_reason
+    and '"reason": reason' in cloud_inventory_refresh_reason
+    and "cloudKitErrorMetadata(error)" in cloud_inventory_refresh_reason,
+    "Cloud inventory fetches must log their reason, success/failure path, and CloudKit error metadata.",
+)
+require(
+    "private func storeCloudInventory(_ countsByType: [String: Int], reason: String)" in MANAGER,
+    "Cloud inventory storage must keep the fetch reason in diagnostics.",
+)
+store_cloud_inventory = method_body(MANAGER, "private func storeCloudInventory(_ countsByType: [String: Int], reason: String)")
+for key in ["episodeStates", "subscriptions", "settings", "fetchDate", "reason", "byType"]:
+    require(f'"{key}"' in store_cloud_inventory, f"Cloud inventory diagnostics must include {key}.")
 
 devices_body = source_between(MANAGER, "@objc var devices: [ICiCloudSyncDeviceInfo] {", "\n    private override init()")
 require("cache[deviceID] = localDevicePayload()" not in devices_body, "Devices must not inject the current device before a successful sync.")
@@ -326,6 +356,24 @@ require("error.localizedDescription" not in set_error, "Raw backend error descri
 require("syncedUserDataInCurrentRun = false" in set_error, "Failed syncs must not leak user-data activity into the next no-op sync.")
 require("setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)" in set_error, "Failed syncs must clear persisted device Last Sync stamping.")
 require('logSyncEvent("iCloud Sync Fehler"' in set_error and '"domain"' in set_error and '"code"' in set_error and '"status"' in set_error, "iCloud Sync errors must log domain/code/status for future crash triage.")
+require("syncDiagnosticsMetadata()" in set_error, "iCloud Sync errors must log pending-change and initial-backfill diagnostics.")
+require("private func syncDiagnosticsMetadata() -> [String: Any]" in MANAGER, "iCloud Sync diagnostics must include a focused state snapshot helper.")
+sync_diagnostics = method_body(MANAGER, "private func syncDiagnosticsMetadata() -> [String: Any]")
+for key in [
+    "pendingDatabaseChanges",
+    "pendingRecordZoneChanges",
+    "hasInitialUploadBackfillWork",
+    "episodeBackfillOffset",
+    "subscriptionBackfillOffset",
+    "initialSettingsBackfillPending",
+    "syncedUserDataInCurrentRun",
+    "hasUnresolvedSyncFailures",
+    "syncRetryAttempt",
+    "cloudInventoryEpisodeStates",
+    "cloudInventorySubscriptions",
+    "cloudInventorySettings",
+]:
+    require(f'"{key}"' in sync_diagnostics, f"iCloud Sync diagnostics must include {key}.")
 set_status = method_body(MANAGER, "private func setStatus")
 require("clearError()" in set_status, "New iCloud Sync status updates must clear stale raw errors from previous builds.")
 post_state = method_body(MANAGER, "private func postStateChanged")
