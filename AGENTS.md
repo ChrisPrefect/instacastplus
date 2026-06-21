@@ -19,6 +19,12 @@ When the user reports a bug, regression, crash, flaky UI behavior, or says a pre
 
 If the bug cannot be reproduced with the available information, stop and ask for the missing evidence instead of guessing.
 
+When a bug or release risk depends on external state — cloud schemas, server
+configuration, permissions, App Store Connect/TestFlight state, provisioning, or
+other production infrastructure — verify the real remote/production state directly
+against the expected state. Do not infer it from local code, development
+environments, or successful builds alone.
+
 ## Build And Test Policy
 
 Follow `CLAUDE.md`:
@@ -30,6 +36,12 @@ Follow `CLAUDE.md`:
 ## Scope Discipline
 
 Follow `CLAUDE.md` and keep every changed line traceable to the user request. Do not refactor adjacent code, clean up unrelated code, or revert unrelated dirty files unless the user explicitly asks.
+
+Normal active development is expected in this repository. "Dirty" only means Git has
+uncommitted changes; do not treat that as a blocker by itself. Ignore routine Xcode
+workspace/user-state churn such as `*.xcuserstate` and continue editing code for the
+user's task. When existing uncommitted code overlaps the requested change, read it and
+work with it instead of reverting it.
 
 ## UI-Reaktivität
 

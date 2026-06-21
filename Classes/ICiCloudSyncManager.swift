@@ -979,10 +979,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         } catch {
             lowPrioritySyncTask = nil
             setError(error)
-            let ckError = error as? CKError
-            scheduleSyncRetryAfterFailure(code: ckError?.code,
-                                          retryAfter: ckError?.retryAfterSeconds,
-                                          reason: "lowPrioritySync")
+            scheduleSyncRetryAfterFailure(error: error, reason: "lowPrioritySync")
         }
     }
 
@@ -1000,9 +997,20 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     // ran again until the user tapped manual sync. Transient failures are retried
     // with exponential backoff (or the server-provided retry-after) while the app
     // is running; the backoff resets on the next completed sync.
-    private func scheduleSyncRetryAfterFailure(code: CKError.Code?, retryAfter: TimeInterval? = nil, reason: String) {
+    private func scheduleSyncRetryAfterFailure(error: Error, reason: String) {
+        let ckError = error as? CKError
+        scheduleSyncRetryAfterFailure(code: ckError?.code,
+                                      retryAfter: ckError?.retryAfterSeconds,
+                                      reason: reason,
+                                      error: ckError)
+    }
+
+    private func scheduleSyncRetryAfterFailure(code: CKError.Code?, retryAfter: TimeInterval? = nil, reason: String, error: CKError? = nil) {
         guard isStarted, anySyncEnabled else { return }
-        if let code, !Self.isTransientCloudKitErrorCode(code) {
+        if let error, !Self.isTransientCloudKitError(error) {
+            return
+        }
+        if error == nil, let code, !Self.isTransientCloudKitErrorCode(code) {
             return
         }
         guard syncRetryWorkItem == nil else { return }
@@ -1033,11 +1041,21 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         syncRetryWorkItem = nil
     }
 
-    // Retrying cannot fix a missing account, parental restrictions, a full quota or a
-    // record format from a newer app version — everything else is worth another attempt.
+    private nonisolated static func isTransientCloudKitError(_ error: CKError) -> Bool {
+        if error.code == .partialFailure, let partialErrors = error.partialErrorsByItemID, !partialErrors.isEmpty {
+            return partialErrors.values.contains { partialError in
+                guard let partialCKError = partialError as? CKError else { return true }
+                return isTransientCloudKitError(partialCKError)
+            }
+        }
+        return isTransientCloudKitErrorCode(error.code)
+    }
+
+    // Retrying cannot fix a missing account, parental restrictions, a full quota, invalid
+    // request/schema arguments or a record format from a newer app version.
     private nonisolated static func isTransientCloudKitErrorCode(_ code: CKError.Code) -> Bool {
         switch code {
-        case .notAuthenticated, .permissionFailure, .managedAccountRestricted, .quotaExceeded, .incompatibleVersion:
+        case .notAuthenticated, .permissionFailure, .managedAccountRestricted, .quotaExceeded, .invalidArguments, .incompatibleVersion:
             return false
         default:
             return true
@@ -1629,9 +1647,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             if let error = event.error {
                 hasUnresolvedSyncFailures = true
                 setError(error)
-                scheduleSyncRetryAfterFailure(code: (error as? CKError)?.code,
-                                              retryAfter: (error as? CKError)?.retryAfterSeconds,
-                                              reason: "fetchZoneChanges")
+                scheduleSyncRetryAfterFailure(error: error, reason: "fetchZoneChanges")
             } else {
                 markSyncCompletedIfFinished()
             }

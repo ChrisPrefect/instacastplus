@@ -277,6 +277,24 @@ low_priority_sync = method_body(MANAGER, "private func scheduleLowPrioritySync")
 require("Task.detached(priority: .background)" in low_priority_sync, "Automatic CloudKit sends must cross a detached background scheduling boundary.")
 require("MainActor.run" not in low_priority_sync, "Automatic CloudKit sends must not hand CKSyncEngine across actors via MainActor.run.")
 require("await self.performLowPrioritySync()" in low_priority_sync, "Automatic CloudKit sends must leave any CKSyncEngine delegate callback task before calling sendChanges.")
+low_priority_perform = method_body(MANAGER, "private func performLowPrioritySync() async")
+require(
+    'scheduleSyncRetryAfterFailure(error: error, reason: "lowPrioritySync")' in low_priority_perform,
+    "Low-priority sync must classify the full CKError, not just the top-level partialFailure code.",
+)
+transient_cloudkit_error = method_body(MANAGER, "private nonisolated static func isTransientCloudKitError")
+require(
+    "error.code == .partialFailure" in transient_cloudkit_error
+    and "partialErrors.values.contains" in transient_cloudkit_error
+    and "isTransientCloudKitError(partialCKError)" in transient_cloudkit_error,
+    "CloudKit partialFailure retry decisions must inspect the underlying partial errors.",
+)
+transient_cloudkit_errors = method_body(MANAGER, "private nonisolated static func isTransientCloudKitErrorCode")
+require(
+    ".invalidArguments" in transient_cloudkit_errors
+    and transient_cloudkit_errors.find(".invalidArguments") < transient_cloudkit_errors.find("return false"),
+    "CloudKit invalidArguments must be non-transient so missing production schemas do not retry forever.",
+)
 initial_queue_cancel = method_body(MANAGER, "private func cancelInitialQueueTask")
 require('logSyncEvent("Initiale iCloud-Queue abgebrochen"' in initial_queue_cancel, "Cancelling stale initial iCloud queueing must be logged.")
 require('logSyncEvent("iCloud Upload-Queue baut Daten auf"' in initial_upload_apply, "Building the enabled-data upload queue must be logged.")
