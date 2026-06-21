@@ -200,14 +200,23 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     }
 
     private func downloadValidationError(for task: URLSessionDownloadTask, fileURL: URL) -> String? {
-        if let response = task.response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
-            return String(format: NSLocalizedString("Download fehlgeschlagen: HTTP %ld.", comment: ""), response.statusCode)
+        if let httpResponse = task.response as? HTTPURLResponse {
+            if !(200..<300).contains(httpResponse.statusCode) {
+                return String(format: NSLocalizedString("Download fehlgeschlagen: HTTP %ld.", comment: ""), httpResponse.statusCode)
+            }
+            if httpResponse.statusCode == 206 {
+                return NSLocalizedString("Download unvollständig: HTTP 206 Partial Content.", comment: "")
+            }
         }
 
         let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         if size <= 0 {
             return NSLocalizedString("Geladene Datei ist leer.", comment: "")
+        }
+        let expectedSize = task.countOfBytesExpectedToReceive
+        if expectedSize > 0, size < expectedSize {
+            return NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
         }
         return nil
     }

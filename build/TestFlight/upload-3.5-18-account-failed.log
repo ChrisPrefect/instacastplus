@@ -1,0 +1,5 @@
+2026-06-22 00:54:57.687 xcodebuild[12304:629859] [MT] IDEDistribution: -[IDEDistributionLogging _createLoggingBundleAtPath:]: Created bundle at path "/var/folders/nr/jydp6vgs7nn9117z0yc93tlh0000gp/T/Instacast_2026-06-22_00-54-57.687.xcdistributionlogs".
+error: exportArchive Failed to Use Accounts
+
+** EXPORT FAILED **
+

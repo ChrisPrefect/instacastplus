@@ -107,6 +107,7 @@ private struct ICDiagnosticSessionState: Codable {
     let sessionID: String
     let lastState: String
     let timestamp: TimeInterval
+    let metadata: [String: String]?
 }
 
 private struct ICDiagnosticMemorySnapshot: Encodable {
@@ -149,6 +150,7 @@ private struct ICDiagnosticLogLine: Encodable {
     @objc static var shared: ICDiagnosticLogger { _shared }
     private static let previousSessionEndedUnexpectedlyKey = "ICDiagnosticPreviousSessionEndedUnexpectedly"
     private static let previousSessionStateKey = "ICDiagnosticPreviousSessionState"
+    private static let previousSessionEndedInBackgroundKey = "ICDiagnosticPreviousSessionEndedInBackground"
 
     private let queue = DispatchQueue(label: "ICDiagnosticLogger.queue")
     private let encoder = JSONEncoder()
@@ -191,7 +193,7 @@ private struct ICDiagnosticLogLine: Encodable {
         let convertedMetadata = self.stringifiedMetadata(from: metadata)
         queue.async {
             self.ensureStartedLocked()
-            self.writeSessionStateLocked(state: state)
+            self.writeSessionStateLocked(state: state, metadata: convertedMetadata)
             self.appendLocked(category: "lifecycle", message: state, metadata: convertedMetadata)
         }
     }
@@ -204,11 +206,16 @@ private struct ICDiagnosticLogLine: Encodable {
         UserDefaults.standard.string(forKey: Self.previousSessionStateKey)
     }
 
+    @objc var previousSessionEndedInBackground: Bool {
+        UserDefaults.standard.bool(forKey: Self.previousSessionEndedInBackgroundKey)
+    }
+
     @objc func crashLogMailAttachments() -> [ICDiagnosticMailAttachment] {
         queue.sync {
             self.ensureStartedLocked()
             self.appendLocked(category: "diagnostics", message: "Crash-Log-Mail vorbereitet", metadata: [
                 "previousSessionEndedUnexpectedly": self.previousSessionEndedUnexpectedly ? "true" : "false",
+                "previousSessionEndedInBackground": self.previousSessionEndedInBackground ? "true" : "false",
                 "previousSessionState": self.previousSessionState ?? "",
             ])
         }
@@ -232,6 +239,7 @@ private struct ICDiagnosticLogLine: Encodable {
             "build: \(metadata["build"] ?? "")",
             "systemVersion: \(metadata["systemVersion"] ?? "")",
             "previousSessionEndedUnexpectedly: \(previousSessionEndedUnexpectedly)",
+            "previousSessionEndedInBackground: \(previousSessionEndedInBackground)",
             "previousSessionState: \(previousSessionState ?? "")",
         ].joined(separator: "\n")
     }
@@ -316,31 +324,40 @@ private struct ICDiagnosticLogLine: Encodable {
 
         if let previousState = loadPreviousSessionStateLocked() {
             let endedUnexpectedly = Self.didPreviousSessionEndUnexpectedly(previousState.lastState)
+            let endedInBackground = Self.didPreviousSessionEndInBackground(previousState.lastState)
+            let previousStateAge = max(0, Date().timeIntervalSince1970 - previousState.timestamp)
+            var previousMetadata = previousState.metadata ?? [:]
+            previousMetadata["previousSessionID"] = previousState.sessionID
+            previousMetadata["previousState"] = previousState.lastState
+            previousMetadata["previousTimestamp"] = Self.timestampString(from: Date(timeIntervalSince1970: previousState.timestamp))
+            previousMetadata["secondsSincePreviousState"] = String(format: "%.3f", previousStateAge)
+            previousMetadata["previousEndedUnexpectedly"] = endedUnexpectedly ? "true" : "false"
+            previousMetadata["previousSessionEndedInBackground"] = endedInBackground ? "true" : "false"
             UserDefaults.standard.set(endedUnexpectedly, forKey: Self.previousSessionEndedUnexpectedlyKey)
+            UserDefaults.standard.set(endedInBackground, forKey: Self.previousSessionEndedInBackgroundKey)
             UserDefaults.standard.set(previousState.lastState, forKey: Self.previousSessionStateKey)
             appendLocked(
                 category: "session",
                 message: "Vorherige Session gefunden",
-                metadata: [
-                    "previousSessionID": previousState.sessionID,
-                    "previousState": previousState.lastState,
-                    "previousTimestamp": Self.timestampString(from: Date(timeIntervalSince1970: previousState.timestamp)),
-                    "previousEndedUnexpectedly": endedUnexpectedly ? "true" : "false",
-                ]
+                metadata: previousMetadata
             )
             if endedUnexpectedly {
                 appendLocked(
                     category: "crash",
                     message: "Vorherige Session unerwartet beendet",
-                    metadata: [
-                        "previousSessionID": previousState.sessionID,
-                        "previousState": previousState.lastState,
-                        "previousTimestamp": Self.timestampString(from: Date(timeIntervalSince1970: previousState.timestamp)),
-                    ]
+                    metadata: previousMetadata
+                )
+            }
+            if endedInBackground {
+                appendLocked(
+                    category: "background-termination",
+                    message: "Vorherige Hintergrund-Session beendet",
+                    metadata: previousMetadata
                 )
             }
         } else {
             UserDefaults.standard.set(false, forKey: Self.previousSessionEndedUnexpectedlyKey)
+            UserDefaults.standard.set(false, forKey: Self.previousSessionEndedInBackgroundKey)
             UserDefaults.standard.removeObject(forKey: Self.previousSessionStateKey)
         }
 
@@ -349,7 +366,7 @@ private struct ICDiagnosticLogLine: Encodable {
         loadAndClearPreviousCrashBacktraceLocked()
         installCrashBacktraceHandler()
 
-        writeSessionStateLocked(state: "launching")
+        writeSessionStateLocked(state: "launching", metadata: nil)
         appendLocked(category: "session", message: "Diagnose-Logger gestartet", metadata: appMetadataLocked())
         appendLocked(category: "session", message: "Log-Dateien bereit", metadata: [
             "diagnosticsLogPath": diagnosticsLogURL().path,
@@ -378,12 +395,14 @@ private struct ICDiagnosticLogLine: Encodable {
 
     private static func didPreviousSessionEndUnexpectedly(_ state: String) -> Bool {
         let expectedStates: Set<String> = [
-            "applicationDidEnterBackground",
-            "sceneDidEnterBackground",
             "applicationWillTerminate",
             "sceneDidDisconnect",
         ]
         return !expectedStates.contains(state)
+    }
+
+    private static func didPreviousSessionEndInBackground(_ state: String) -> Bool {
+        state == "applicationDidEnterBackground" || state == "sceneDidEnterBackground"
     }
 
     private func combinedCrashLogMailAttachmentData(from files: [(String, URL)]) -> NSData {
@@ -432,8 +451,11 @@ private struct ICDiagnosticLogLine: Encodable {
         return try? JSONDecoder().decode(ICDiagnosticSessionState.self, from: data)
     }
 
-    private func writeSessionStateLocked(state: String) {
-        let sessionState = ICDiagnosticSessionState(sessionID: sessionID, lastState: state, timestamp: Date().timeIntervalSince1970)
+    private func writeSessionStateLocked(state: String, metadata: [String: String]?) {
+        let sessionState = ICDiagnosticSessionState(sessionID: sessionID,
+                                                    lastState: state,
+                                                    timestamp: Date().timeIntervalSince1970,
+                                                    metadata: metadata)
         guard let data = try? JSONEncoder().encode(sessionState) else { return }
         try? data.write(to: sessionStateURL(), options: .atomic)
     }

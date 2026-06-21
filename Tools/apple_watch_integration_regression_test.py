@@ -1,4 +1,5 @@
 from pathlib import Path
+import plistlib
 from xml.etree import ElementTree
 
 
@@ -26,6 +27,7 @@ watch_episode = read("InstacastWatch/WatchEpisode.swift")
 watch_views = read("InstacastWatch/WatchEpisodeViews.swift")
 watch_chapter_extractor = read("InstacastWatch/WatchChapterExtractor.swift")
 watch_plist = read("InstacastWatch/Info.plist")
+watch_plist_values = plistlib.loads((ROOT / "InstacastWatch" / "Info.plist").read_bytes())
 watch_complication_path = ROOT / "InstacastWatchWidgets" / "WatchComplicationWidget.swift"
 watch_complication = watch_complication_path.read_text() if watch_complication_path.exists() else ""
 watch_complication_assets = {
@@ -99,14 +101,8 @@ require(
 )
 
 require(
-    "<key>UIBackgroundModes</key>" in watch_plist
-    and "<string>audio</string>" in watch_plist,
-    "The executable Watch app must declare UIBackgroundModes/audio so local episode playback continues after wrist down/app backgrounding on watchOS.",
-)
-
-require(
-    "<key>WKBackgroundModes</key>" not in watch_plist,
-    "The executable Watch app must not declare WKBackgroundModes; App Store Connect rejects that key for this watchOS bundle.",
+    "audio" in watch_plist_values.get("UIBackgroundModes", []),
+    "The executable Watch app must declare UIBackgroundModes/audio; App Store Connect rejects WKBackgroundModes/audio for Watch audio.",
 )
 
 require(
@@ -296,9 +292,12 @@ require(
 require(
     "HTTPURLResponse" in watch_download_manager
     and "200..<300" in watch_download_manager
+    and "httpResponse.statusCode == 206" in watch_download_manager
+    and "countOfBytesExpectedToReceive" in watch_download_manager
+    and "size < expectedSize" in watch_download_manager
     and "downloadValidationError" in watch_download_manager
     and "isPlayable" in watch_download_manager,
-    "The Watch download manager must reject HTTP errors, empty files, and unplayable downloads before marking episodes downloaded.",
+    "The Watch download manager must reject HTTP errors, partial HTTP 206 responses, truncated files, empty files, and unplayable downloads before marking episodes downloaded.",
 )
 
 require(

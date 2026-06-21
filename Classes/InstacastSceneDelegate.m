@@ -77,6 +77,15 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 static NSDate* _lastAutoRefreshDate = nil;
 static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
+static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
+{
+    switch (state) {
+        case UIApplicationStateActive: return @"active";
+        case UIApplicationStateInactive: return @"inactive";
+        case UIApplicationStateBackground: return @"background";
+    }
+}
+
 @implementation InstacastSceneDelegate{
     struct {
         unsigned int apnRegisterSuccess:1;
@@ -477,9 +486,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
 
 - (void)sceneWillResignActive:(UIScene *)scene {
     [[ICDiagnosticLogger shared] recordLifecycle:@"sceneWillResignActive"
-                                        metadata:@{
-                                            @"role": scene.session.role ?: @"",
-                                        }];
+                                        metadata:[self _diagnosticLifecycleMetadataForScene:scene]];
     // Export widget snapshot early (before home screen becomes visible) so widgets
     // show fresh data as soon as the user switches away from the app.
     // sceneDidEnterBackground fires AFTER the home screen appears — too late for the
@@ -500,6 +507,27 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
         }
     }
 #endif
+}
+
+
+- (NSMutableDictionary*)_diagnosticLifecycleMetadataForScene:(UIScene*)scene
+{
+    PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+    CDEpisode* episode = playbackManager.playingEpisode;
+    BOOL playbackActive = (episode && playbackManager.ready && !playbackManager.paused);
+    NSMutableDictionary* metadata = [@{
+        @"role": scene.session.role ?: @"",
+        @"applicationState": ICApplicationStateDiagnosticString(App.applicationState),
+        @"backgroundTimeRemaining": @(App.backgroundTimeRemaining),
+        @"queuedTranscriptions": @([TranscriptionQueue shared].count),
+        @"playbackActive": @(playbackActive),
+        @"playbackEpisodeHash": episode.objectHash ?: @"",
+        @"playbackReady": @(playbackManager.ready),
+        @"playbackPaused": @(playbackManager.paused),
+        @"playbackTime": @(playbackManager.time),
+        @"playbackDuration": @(playbackManager.duration),
+    } mutableCopy];
+    return metadata;
 }
 
 
@@ -579,10 +607,7 @@ static const NSTimeInterval kAutoRefreshCooldown = 30 * 60; // 30 minutes
     // Use this method to save data, release shared resources, and store enough scene-specific state information
     // to restore the scene back to its current state.
     [[ICDiagnosticLogger shared] recordLifecycle:@"sceneDidEnterBackground"
-                                        metadata:@{
-                                            @"role": scene.session.role ?: @"",
-                                            @"queuedTranscriptions": @([TranscriptionQueue shared].count),
-                                        }];
+                                        metadata:[self _diagnosticLifecycleMetadataForScene:scene]];
     
     // Save changes in the application's managed object context when the application transitions to the background.
     [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];

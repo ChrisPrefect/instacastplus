@@ -1273,13 +1273,12 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             setSyncMetadata(plan.subscriptionRecordURLs, forKey: Self.subscriptionRecordURLsKey)
             setSyncMetadata(plan.subscriptionLocalModifiedDates, forKey: Self.subscriptionLocalModifiedDatesKey)
             mergeSubscriptionPayloadHashes(plan.subscriptionPayloadHashes)
-            if plan.snapshot.subscriptionBackfillOffset == 0, Self.hasLocalManualFeedOrder() {
-                // The list sort mode + saved manual order travel with the subscriptions.
-                // Only published when a manual order exists: a device enabling sync with
-                // an empty or sort-mode-only state must never stamp a record with a fresh
-                // updatedAt — under last-writer-wins that displaces (and effectively
-                // erases) the real sort state of the other devices. A sort-mode-only
-                // state publishes when the user actually changes it (checkAndQueue).
+            if plan.snapshot.subscriptionBackfillOffset == 0, Self.hasLocalSubscriptionListSettingsForInitialBackfill() {
+                // The list sort mode, saved manual order, episode-list filters and sidebar
+                // visibility travel with the subscriptions. Still do not publish a
+                // sort-mode-only state during initial backfill: it can race the real manual
+                // order under last-writer-wins. Local list/menu customizations are real
+                // durable user data and must seed the singleton on first upload.
                 setSyncMetadata(plan.createdAt, forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
                 setSyncMetadata(Self.subscriptionListSettingsFingerprint(), forKey: Self.subscriptionListSettingsBaselineKey)
                 addPendingSaves([subscriptionListSettingsRecordID()], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
@@ -1942,6 +1941,8 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         if let manualOrder = defaults.array(forKey: Self.manualFeedOrderDefaultsKey) as? [String], !manualOrder.isEmpty {
             payload["manualOrder"] = manualOrder
         }
+        payload["episodeLists"] = episodeListPayloadsForSyncEngineCallback()
+        payload["mainMenuListUIDs"] = mainMenuListUIDsForSyncEngineCallback()
         let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.subscriptionListSettings, recordID: recordID)
         populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
@@ -1952,13 +1953,77 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     // repair re-publish (device owns a manual order) and silently recording the baseline
     // (sort-mode-only device — publishing would race the real state under LWW; exactly
     // that race flipped the iPhone off "manual" once).
-    private nonisolated static let subscriptionListSettingsFingerprintPrefix = "v2:"
+    private nonisolated static let subscriptionListSettingsFingerprintPrefix = "v3:"
 
     private nonisolated static func subscriptionListSettingsFingerprint() -> String {
         let defaults = UserDefaults.standard
         let sortMode = defaults.string(forKey: FeedListSortMode) ?? ""
         let manualOrder = (defaults.array(forKey: manualFeedOrderDefaultsKey) as? [String]) ?? []
-        return subscriptionListSettingsFingerprintPrefix + sha256Hex(([sortMode] + manualOrder).joined(separator: "\u{1}"))
+        var components = ["sortMode=\(sortMode)", "manualOrder=\(manualOrder.joined(separator: "\u{1}"))"]
+        components.append("mainMenuListUIDs=\(mainMenuListUIDsForSyncEngineCallback().joined(separator: "\u{1}"))")
+        components.append(contentsOf: episodeListPayloadsForSyncEngineCallback().map { episodeListFingerprintComponent($0) })
+        return subscriptionListSettingsFingerprintPrefix + sha256Hex(components.joined(separator: "\u{2}"))
+    }
+
+    private nonisolated static func episodeListPayloadsForSyncEngineCallback() -> [[String: Any]] {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return [] }
+        return context.performAndWait {
+            let request = NSFetchRequest<CDEpisodeList>(entityName: "EpisodeList")
+            request.includesSubentities = false
+            request.relationshipKeyPathsForPrefetching = ["includedFeeds"]
+            request.sortDescriptors = [
+                NSSortDescriptor(key: "rank", ascending: true),
+                NSSortDescriptor(key: "uid", ascending: true),
+            ]
+            let lists = (try? context.fetch(request)) ?? []
+            return lists.compactMap { episodeListPayloadForSyncEngineCallback($0) }
+        }
+    }
+
+    private nonisolated static func episodeListPayloadForSyncEngineCallback(_ list: CDEpisodeList) -> [String: Any]? {
+        guard let uid = list.uid, !uid.isEmpty else { return nil }
+        let includedFeedURLs = ((list.includedFeeds as? Set<CDFeed>) ?? [])
+            .compactMap { $0.value(forKey: "sourceURL_") as? String }
+            .sorted()
+        return [
+            "uid": uid,
+            "name": list.name ?? "",
+            "icon": list.icon ?? "",
+            "rank": Int(list.rank),
+            "query": list.query ?? "",
+            "audio": list.audio,
+            "video": list.video,
+            "downloaded": list.downloaded,
+            "downloading": list.downloading,
+            "notDownloaded": list.notDownloaded,
+            "unplayed": list.unplayed,
+            "unfinished": list.unfinished,
+            "played": list.played,
+            "starred": list.starred,
+            "notStarred": list.notStarred,
+            "orderBy": list.orderBy ?? "",
+            "descending": list.descending,
+            "groupByPodcast": list.groupByPodcast,
+            "continuousPlayback": list.continuousPlayback,
+            "includedFeedURLs": includedFeedURLs,
+        ]
+    }
+
+    private nonisolated static func mainMenuListUIDsForSyncEngineCallback() -> [String] {
+        UserDefaults.standard.array(forKey: "MainMenuListUIDs") as? [String] ?? []
+    }
+
+    private nonisolated static func episodeListFingerprintComponent(_ payload: [String: Any]) -> String {
+        let keys = [
+            "uid", "name", "icon", "rank", "query", "audio", "video", "downloaded",
+            "downloading", "notDownloaded", "unplayed", "unfinished", "played",
+            "starred", "notStarred", "orderBy", "descending", "groupByPodcast",
+            "continuousPlayback",
+        ]
+        var components = keys.map { key in "\(key)=\(payload[key] ?? "")" }
+        let includedFeedURLs = payload["includedFeedURLs"] as? [String] ?? []
+        components.append("includedFeedURLs=\(includedFeedURLs.joined(separator: "\u{1}"))")
+        return components.joined(separator: "\u{1}")
     }
 
     // A device without any list sort state (fresh install, sort menu never used) has
@@ -1967,12 +2032,154 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         let defaults = UserDefaults.standard
         if let sortMode = defaults.string(forKey: FeedListSortMode), !sortMode.isEmpty { return true }
         if let manualOrder = defaults.array(forKey: manualFeedOrderDefaultsKey) as? [String], !manualOrder.isEmpty { return true }
+        if hasLocalEpisodeListSettings() { return true }
+        if hasLocalMainMenuListSettings() { return true }
         return false
     }
 
     private nonisolated static func hasLocalManualFeedOrder() -> Bool {
         let manualOrder = UserDefaults.standard.array(forKey: manualFeedOrderDefaultsKey) as? [String]
         return manualOrder?.isEmpty == false
+    }
+
+    private nonisolated static func hasLocalSubscriptionListSettingsForInitialBackfill() -> Bool {
+        hasLocalManualFeedOrder() || hasLocalEpisodeListSettings() || hasLocalMainMenuListSettings()
+    }
+
+    private nonisolated static func hasLocalEpisodeListSettings() -> Bool {
+        for payload in episodeListPayloadsForSyncEngineCallback() {
+            guard let uid = payload["uid"] as? String else { continue }
+            guard let defaultPayload = defaultEpisodeListPayload(uid: uid) else { return true }
+            if episodeListFingerprintComponent(payload) != episodeListFingerprintComponent(defaultPayload) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private nonisolated static func hasLocalMainMenuListSettings() -> Bool {
+        guard UserDefaults.standard.object(forKey: "MainMenuListUIDs") != nil else { return false }
+        return mainMenuListUIDsForSyncEngineCallback() != defaultMainMenuListUIDs()
+    }
+
+    private nonisolated static func defaultMainMenuListUIDs() -> [String] {
+        ["default.favorites", "default.unplayed", "default.started", "default.downloaded"]
+    }
+
+    private nonisolated static func defaultEpisodeListPayload(uid: String) -> [String: Any]? {
+        let defaults: [String: [String: Any]] = [
+            "default.favorites": [
+                "uid": "default.favorites",
+                "name": NSLocalizedString("Favorites", comment: ""),
+                "icon": "List Favorites",
+                "rank": 0,
+                "query": "",
+                "audio": true,
+                "video": true,
+                "downloaded": true,
+                "downloading": true,
+                "notDownloaded": true,
+                "unplayed": true,
+                "unfinished": true,
+                "played": true,
+                "starred": true,
+                "notStarred": false,
+                "orderBy": "pubDate",
+                "descending": true,
+                "groupByPodcast": false,
+                "continuousPlayback": true,
+                "includedFeedURLs": [],
+            ],
+            "default.unplayed": [
+                "uid": "default.unplayed",
+                "name": NSLocalizedString("Unplayed", comment: ""),
+                "icon": "List Unplayed",
+                "rank": 1,
+                "query": "",
+                "audio": true,
+                "video": true,
+                "downloaded": true,
+                "downloading": true,
+                "notDownloaded": true,
+                "unplayed": true,
+                "unfinished": true,
+                "played": false,
+                "starred": true,
+                "notStarred": true,
+                "orderBy": "pubDate",
+                "descending": true,
+                "groupByPodcast": false,
+                "continuousPlayback": true,
+                "includedFeedURLs": [],
+            ],
+            "default.started": [
+                "uid": "default.started",
+                "name": NSLocalizedString("Started", comment: ""),
+                "icon": "List Partially Played",
+                "rank": 2,
+                "query": "",
+                "audio": true,
+                "video": true,
+                "downloaded": true,
+                "downloading": true,
+                "notDownloaded": true,
+                "unplayed": false,
+                "unfinished": true,
+                "played": false,
+                "starred": true,
+                "notStarred": true,
+                "orderBy": "lastPlayed",
+                "descending": true,
+                "groupByPodcast": false,
+                "continuousPlayback": true,
+                "includedFeedURLs": [],
+            ],
+            "default.downloaded": [
+                "uid": "default.downloaded",
+                "name": NSLocalizedString("Downloaded", comment: ""),
+                "icon": "List Downloaded",
+                "rank": 3,
+                "query": "",
+                "audio": true,
+                "video": true,
+                "downloaded": true,
+                "downloading": true,
+                "notDownloaded": false,
+                "unplayed": true,
+                "unfinished": true,
+                "played": true,
+                "starred": true,
+                "notStarred": true,
+                "orderBy": "pubDate",
+                "descending": true,
+                "groupByPodcast": false,
+                "continuousPlayback": true,
+                "includedFeedURLs": [],
+            ],
+            "default.video": [
+                "uid": "default.video",
+                "name": NSLocalizedString("Videos", comment: ""),
+                "icon": "List Video",
+                "rank": 4,
+                "query": "",
+                "audio": false,
+                "video": true,
+                "downloaded": true,
+                "downloading": true,
+                "notDownloaded": true,
+                "unplayed": true,
+                "unfinished": true,
+                "played": true,
+                "starred": true,
+                "notStarred": true,
+                "orderBy": "pubDate",
+                "descending": true,
+                "groupByPodcast": false,
+                "continuousPlayback": true,
+                "includedFeedURLs": [],
+            ],
+        ]
+        return defaults[uid]
     }
 
     private nonisolated static func deviceRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
@@ -2145,6 +2352,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             "TranscriptionBackgroundTaskActive",
             // Travels with subscription sync (ICSubscriptionListSettings), not settings sync.
             FeedListSortMode,
+            "MainMenuListUIDs",
         ]
     }
 
@@ -2153,6 +2361,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             "DownloadResumeInfos",
             "DownloadResumeInfos_NSURLSession",
             "EpisodeLoadingQueueKey",
+            "ICDiagnosticPreviousSessionEndedInBackground",
             "ICDiagnosticPreviousSessionEndedUnexpectedly",
             "ICDiagnosticPreviousSessionState",
         ]
@@ -2369,6 +2578,8 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             applyRemoteDeletion(deletion)
         }
 
+        await applyPendingSubscriptions()
+
         logSyncEvent("Remote-Änderungen verarbeitet", metadata: [
             "modifications": event.modifications.count,
             "deletions": event.deletions.count,
@@ -2397,10 +2608,13 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         }
         var others: [CKDatabase.RecordZoneChange.Modification] = []
         var subscriptions: [(modification: CKDatabase.RecordZoneChange.Modification, rank: Int)] = []
+        var subscriptionListSettings: [CKDatabase.RecordZoneChange.Modification] = []
         for modification in modifications {
             if modification.record.recordType == RecordKind.subscription {
                 let rank = (payloadDictionary(from: modification.record)?["rank"] as? NSNumber)?.intValue ?? Int.max
                 subscriptions.append((modification, rank))
+            } else if modification.record.recordType == RecordKind.subscriptionListSettings {
+                subscriptionListSettings.append(modification)
             } else {
                 others.append(modification)
             }
@@ -2408,7 +2622,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         let sortedSubscriptions = subscriptions.enumerated()
             .sorted { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) }
             .map { $0.element.modification }
-        return others + sortedSubscriptions
+        return others + sortedSubscriptions + subscriptionListSettings
     }
 
     private func handleSentDatabaseChanges(_ event: CKSyncEngine.Event.SentDatabaseChanges) {
@@ -2595,29 +2809,40 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         }
     }
 
-    private func applyRemoteSubscriptionListSettings(_ payload: [String: Any]) {
+    @discardableResult
+    private func applyRemoteSubscriptionListSettings(_ payload: [String: Any]) -> Bool {
         let remoteSortMode = (payload["sortMode"] as? String) ?? ""
         let remoteManualOrder = (payload["manualOrder"] as? [String]) ?? []
+        let remoteEpisodeLists = (payload["episodeLists"] as? [[String: Any]]) ?? []
+        let hasRemoteEpisodeLists = !remoteEpisodeLists.isEmpty
+        let hasRemoteMainMenuListUIDs = payload.keys.contains("mainMenuListUIDs")
         // An EMPTY record (published by a pre-fix build on a freshly installed device)
         // must not win last-writer-wins against a real local state: ignore it entirely —
         // applying it would re-stamp localModifiedDate/baseline and silence this device
         // forever — and push the real local state back up instead.
-        guard !remoteSortMode.isEmpty || !remoteManualOrder.isEmpty else {
+        guard !remoteSortMode.isEmpty || !remoteManualOrder.isEmpty || hasRemoteEpisodeLists || hasRemoteMainMenuListUIDs else {
             if Self.hasLocalSubscriptionListSettings() {
                 addPendingSave(subscriptionListSettingsRecordID())
             }
-            return
+            return true
         }
         // A record WITHOUT a manual order must never displace a local manual-order
         // state, regardless of its timestamp: it carries strictly less information
         // (sort-mode-only devices, e.g. one where the user tried the sort menu while
         // "Manual" was still missing) and would flip the active mode on the device
-        // that owns the real order. Push the richer local state back up instead.
+        // that owns the real order. If the record also carries episode-list settings,
+        // merge those and push the richer local sort state back up afterwards.
+        var shouldApplySortSettings = true
+        var shouldRepairSortSettings = false
         if remoteManualOrder.isEmpty,
            defaults.string(forKey: FeedListSortMode) == "manual",
            databaseManager.hasManualFeedOrder() {
-            addPendingSave(subscriptionListSettingsRecordID())
-            return
+            guard hasRemoteEpisodeLists || hasRemoteMainMenuListUIDs else {
+                addPendingSave(subscriptionListSettingsRecordID())
+                return true
+            }
+            shouldApplySortSettings = false
+            shouldRepairSortSettings = true
         }
         let remoteDate = payload["updatedAt"] as? Date ?? Date(timeIntervalSince1970: 0)
         if let localDate = defaults.object(forKey: Self.subscriptionListSettingsLocalModifiedDateKey) as? Date,
@@ -2626,21 +2851,36 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             // have stamped localModifiedDate on a device that has nothing to defend.
             if Self.hasLocalSubscriptionListSettings() {
                 addPendingSave(subscriptionListSettingsRecordID())
-                return
+                return true
             }
         }
-        if !remoteSortMode.isEmpty {
+        if shouldApplySortSettings, !remoteSortMode.isEmpty {
             defaults.set(remoteSortMode, forKey: FeedListSortMode)
         }
-        if !remoteManualOrder.isEmpty {
+        if shouldApplySortSettings, !remoteManualOrder.isEmpty {
             defaults.set(remoteManualOrder, forKey: Self.manualFeedOrderDefaultsKey)
         }
-        setSyncMetadata(remoteDate, forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
+        let resolvedEpisodeListFeeds = hasRemoteEpisodeLists ? applyRemoteEpisodeLists(remoteEpisodeLists) : true
+        if hasRemoteMainMenuListUIDs {
+            let mainMenuListUIDs = (payload["mainMenuListUIDs"] as? [String]) ?? []
+            _ = applyRemoteMainMenuListUIDs(mainMenuListUIDs)
+        }
+        guard resolvedEpisodeListFeeds else {
+            storePendingSubscription(payload, recordName: RecordPrefix.subscriptionListSettings)
+            return false
+        }
+        setSyncMetadata(shouldRepairSortSettings ? Date() : remoteDate, forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
         // Re-baseline so applying the payload doesn't read as a local change and echo back.
         setSyncMetadata(Self.subscriptionListSettingsFingerprint(), forKey: Self.subscriptionListSettingsBaselineKey)
         // The actual reordering happens once at the end of the apply batch, after all
         // subscription records (and their stub feeds) of this fetch exist.
-        needsSubscriptionListSortApply = true
+        if shouldApplySortSettings {
+            needsSubscriptionListSortApply = true
+        }
+        if shouldRepairSortSettings {
+            addPendingSave(subscriptionListSettingsRecordID())
+        }
+        return true
     }
 
     // Writing the defaults alone changes nothing visible: the feed list orders by the
@@ -2673,6 +2913,185 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         }
         mergeSubscriptionPayloadHashes(appliedHashes)
         logSyncEvent("Synchronisierte Sortierreihenfolge angewendet")
+    }
+
+    private func applyRemoteEpisodeLists(_ payloads: [[String: Any]]) -> Bool {
+        guard !payloads.isEmpty, let context = databaseManager.objectContext else { return true }
+        let uids = payloads.compactMap { $0["uid"] as? String }.filter { !$0.isEmpty }
+        guard !uids.isEmpty else { return true }
+
+        let request = NSFetchRequest<CDEpisodeList>(entityName: "EpisodeList")
+        request.predicate = NSPredicate(format: "uid IN %@", uids)
+        request.includesSubentities = false
+        let existingLists = (try? context.fetch(request)) ?? []
+        var listsByUID: [String: CDEpisodeList] = [:]
+        for list in existingLists {
+            if let uid = list.uid {
+                listsByUID[uid] = list
+            }
+        }
+
+        let allIncludedFeedURLs = Set(payloads.flatMap { ($0["includedFeedURLs"] as? [String]) ?? [] })
+        var feedsByURL: [String: CDFeed] = [:]
+        if !allIncludedFeedURLs.isEmpty {
+            let feedRequest = NSFetchRequest<CDFeed>(entityName: "Feed")
+            feedRequest.predicate = NSPredicate(format: "sourceURL_ IN %@", Array(allIncludedFeedURLs))
+            feedRequest.includesSubentities = false
+            let feeds = (try? context.fetch(feedRequest)) ?? []
+            for feed in feeds {
+                if let urlString = feed.value(forKey: "sourceURL_") as? String {
+                    feedsByURL[urlString] = feed
+                }
+            }
+        }
+
+        var missingFeedURLs = Set<String>()
+        var didMutateAnyList = false
+        for payload in payloads {
+            guard let uid = payload["uid"] as? String, !uid.isEmpty else { continue }
+            let list: CDEpisodeList
+            if let existingList = listsByUID[uid] {
+                list = existingList
+            } else if let newList = NSEntityDescription.insertNewObject(forEntityName: "EpisodeList", into: context) as? CDEpisodeList {
+                list = newList
+                listsByUID[uid] = newList
+            } else {
+                continue
+            }
+            let result = applyRemoteEpisodeListPayload(payload, to: list, feedsByURL: feedsByURL)
+            missingFeedURLs.formUnion(result.missingFeedURLs)
+            didMutateAnyList = didMutateAnyList || result.didMutate
+        }
+
+        if !missingFeedURLs.isEmpty {
+            logSyncEvent("Listen-Einstellungen warten auf Abos", metadata: [
+                "missingFeedURLCount": missingFeedURLs.count,
+            ])
+            return false
+        }
+        if didMutateAnyList {
+            NotificationCenter.default.post(name: NSNotification.Name("MainMenuListUIDsDidChangeNotification"), object: nil)
+        }
+        return true
+    }
+
+    private func applyRemoteEpisodeListPayload(_ payload: [String: Any], to list: CDEpisodeList, feedsByURL: [String: CDFeed]) -> (missingFeedURLs: Set<String>, didMutate: Bool) {
+        var didMutate = false
+        var missingFeedURLs = Set<String>()
+
+        if let uid = payload["uid"] as? String, list.uid != uid {
+            list.uid = uid
+            didMutate = true
+        }
+        if let name = payload["name"] as? String, list.name != name {
+            list.name = name
+            didMutate = true
+        }
+        if let icon = payload["icon"] as? String, list.icon != icon {
+            list.icon = icon
+            didMutate = true
+        }
+        if let rank = Self.int32Value(payload["rank"]), list.rank != rank {
+            list.rank = rank
+            didMutate = true
+        }
+        if let queryValue = payload["query"] as? String {
+            let query = queryValue.isEmpty ? nil : queryValue
+            if list.query != query {
+                list.query = query
+                didMutate = true
+            }
+        }
+        if let audio = Self.boolValue(payload["audio"]), list.audio != audio {
+            list.audio = audio
+            didMutate = true
+        }
+        if let video = Self.boolValue(payload["video"]), list.video != video {
+            list.video = video
+            didMutate = true
+        }
+        if let downloaded = Self.boolValue(payload["downloaded"]), list.downloaded != downloaded {
+            list.downloaded = downloaded
+            didMutate = true
+        }
+        if let downloading = Self.boolValue(payload["downloading"]), list.downloading != downloading {
+            list.downloading = downloading
+            didMutate = true
+        }
+        if let notDownloaded = Self.boolValue(payload["notDownloaded"]), list.notDownloaded != notDownloaded {
+            list.notDownloaded = notDownloaded
+            didMutate = true
+        }
+        if let unplayed = Self.boolValue(payload["unplayed"]), list.unplayed != unplayed {
+            list.unplayed = unplayed
+            didMutate = true
+        }
+        if let unfinished = Self.boolValue(payload["unfinished"]), list.unfinished != unfinished {
+            list.unfinished = unfinished
+            didMutate = true
+        }
+        if let played = Self.boolValue(payload["played"]), list.played != played {
+            list.played = played
+            didMutate = true
+        }
+        if let starred = Self.boolValue(payload["starred"]), list.starred != starred {
+            list.starred = starred
+            didMutate = true
+        }
+        if let notStarred = Self.boolValue(payload["notStarred"]), list.notStarred != notStarred {
+            list.notStarred = notStarred
+            didMutate = true
+        }
+        if let orderBy = payload["orderBy"] as? String, list.orderBy != orderBy {
+            list.orderBy = orderBy
+            didMutate = true
+        }
+        if let descending = Self.boolValue(payload["descending"]), list.descending != descending {
+            list.descending = descending
+            didMutate = true
+        }
+        if let groupByPodcast = Self.boolValue(payload["groupByPodcast"]), list.groupByPodcast != groupByPodcast {
+            list.groupByPodcast = groupByPodcast
+            didMutate = true
+        }
+        if let continuousPlayback = Self.boolValue(payload["continuousPlayback"]), list.continuousPlayback != continuousPlayback {
+            list.continuousPlayback = continuousPlayback
+            didMutate = true
+        }
+
+        if let includedFeedURLs = payload["includedFeedURLs"] as? [String] {
+            let includedFeedURLSet = Set(includedFeedURLs)
+            var feeds: [CDFeed] = []
+            for urlString in includedFeedURLSet {
+                if let feed = feedsByURL[urlString] {
+                    feeds.append(feed)
+                } else {
+                    missingFeedURLs.insert(urlString)
+                }
+            }
+            if missingFeedURLs.isEmpty {
+                let currentFeedURLs = Set(((list.includedFeeds as? Set<CDFeed>) ?? []).compactMap { $0.sourceURL?.absoluteString })
+                if currentFeedURLs != includedFeedURLSet {
+                    let includedFeeds = Set(feeds)
+                    list.includedFeeds = includedFeeds
+                    didMutate = true
+                }
+            }
+        }
+
+        if didMutate {
+            remoteAppliedObjectIDs.insert(list.objectID)
+            list.invalidateCaches()
+        }
+        return (missingFeedURLs, didMutate)
+    }
+
+    private func applyRemoteMainMenuListUIDs(_ mainMenuListUIDs: [String]) -> Bool {
+        let currentUIDs = defaults.array(forKey: "MainMenuListUIDs") as? [String] ?? []
+        guard currentUIDs != mainMenuListUIDs else { return false }
+        defaults.set(mainMenuListUIDs, forKey: "MainMenuListUIDs")
+        NotificationCenter.default.post(name: NSNotification.Name("MainMenuListUIDsDidChangeNotification"), object: nil)
+        return true
     }
 
     private func applyRemoteDeletion(_ deletion: CKDatabase.RecordZoneChange.Deletion) {
@@ -2992,8 +3411,9 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             // The list-settings singleton parks in the same pending store while the
             // category is off — it is not a feed payload.
             if recordName == RecordPrefix.subscriptionListSettings {
-                applyRemoteSubscriptionListSettings(payload)
-                pending.removeValue(forKey: recordName)
+                if applyRemoteSubscriptionListSettings(payload) {
+                    pending.removeValue(forKey: recordName)
+                }
                 continue
             }
             guard let feedURL = payload["feedURL"] as? String else { continue }
@@ -3187,6 +3607,12 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private nonisolated static let syncRelevantFeedKeys: Set<String> = [
         "title", "rank", "parked", "username", "password", "subscribed", "sourceURL_", "properties",
     ]
+    private nonisolated static let syncRelevantEpisodeListKeys: Set<String> = [
+        "uid", "name", "rank", "icon", "query", "audio", "video", "downloaded",
+        "downloading", "notDownloaded", "unplayed", "unfinished", "played",
+        "starred", "notStarred", "orderBy", "descending", "groupByPodcast",
+        "continuousPlayback", "includedFeeds",
+    ]
 
     // Of the freshly-inserted objects keep only the ones the sync cares about (new
     // subscriptions / feed settings). A feed refresh inserts hundreds of episodes plus their
@@ -3200,6 +3626,8 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
                 return object.objectID
             case "FeedProperty":
                 return isInternalFeedProperty(object) ? nil : object.objectID
+            case "EpisodeList":
+                return object.objectID
             default:
                 return nil
             }
@@ -3229,6 +3657,11 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
                 }
             case "FeedProperty":
                 if !isInternalFeedProperty(object) {
+                    ids.append(object.objectID)
+                }
+            case "EpisodeList":
+                let changedKeys = object.changedValuesForCurrentEvent().keys
+                if changedKeys.contains(where: { syncRelevantEpisodeListKeys.contains($0) }) {
                     ids.append(object.objectID)
                 }
             default:
@@ -3304,6 +3737,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         var feedHashUpdates: [String: String] = [:]
         var feedURLsToDelete: [String] = []
         var seenFeedURLs = Set<String>()
+        var listSettingsChanged = false
 
         if episodesSyncEnabled {
             for object in inserted + updated {
@@ -3354,7 +3788,11 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             }
         }
 
-        guard !episodeObjectHashes.isEmpty || !feedURLsToQueue.isEmpty || !feedURLsToDelete.isEmpty else { return }
+        if subscriptionsSyncEnabled {
+            listSettingsChanged = (inserted + updated).contains { $0 is CDEpisodeList }
+        }
+
+        guard !episodeObjectHashes.isEmpty || !feedURLsToQueue.isEmpty || !feedURLsToDelete.isEmpty || listSettingsChanged else { return }
 
         // Build the pending-change key set once and thread it through all batches so
         // queueing N changes stays O(N) instead of O(N²).
@@ -3390,6 +3828,13 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
                 syncEngine?.state.add(pendingRecordZoneChanges: deleteChanges)
             }
             removeSubscriptionLocalSyncState(forFeedURLs: feedURLsToDelete)
+            queuedUserData = true
+        }
+
+        if listSettingsChanged {
+            setSyncMetadata(Date(), forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
+            setSyncMetadata(Self.subscriptionListSettingsFingerprint(), forKey: Self.subscriptionListSettingsBaselineKey)
+            addPendingSaves([subscriptionListSettingsRecordID()], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
             queuedUserData = true
         }
 
@@ -3481,7 +3926,10 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             let storedBaseline = defaults.string(forKey: Self.subscriptionListSettingsBaselineKey)
             if fingerprint != storedBaseline {
                 let isFormatMigration = !(storedBaseline?.hasPrefix(Self.subscriptionListSettingsFingerprintPrefix) ?? false)
-                if isFormatMigration, !Self.hasLocalManualFeedOrder() {
+                if isFormatMigration,
+                   !Self.hasLocalManualFeedOrder(),
+                   !Self.hasLocalEpisodeListSettings(),
+                   !Self.hasLocalMainMenuListSettings() {
                     // Baseline format migration on a sort-mode-only device: nothing worth
                     // publishing — record the baseline silently so only a REAL future
                     // change publishes. A migration publish from here would race the
@@ -3696,6 +4144,18 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             return "integer"
         }
         return "bool"
+    }
+
+    private nonisolated static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        return nil
+    }
+
+    private nonisolated static func int32Value(_ value: Any?) -> Int32? {
+        if let value = value as? NSNumber { return value.int32Value }
+        if let value = value as? Int { return Int32(value) }
+        return nil
     }
 
     private func payloadDictionary(from record: CKRecord) -> [String: Any]? {

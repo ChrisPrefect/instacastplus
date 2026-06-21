@@ -521,15 +521,9 @@
             return NO;
         }
 
-        for (UIView* view = gestureRecognizer.view; view; view = view.superview) {
-            if (![view isKindOfClass:[UIScrollView class]]) {
-                continue;
-            }
-
-            UIScrollView* scrollView = (UIScrollView*)view;
-            if (otherGestureRecognizer == scrollView.panGestureRecognizer) {
-                return YES;
-            }
+        if ([gestureRecognizer.view isKindOfClass:[UIScrollView class]]) {
+            UIScrollView* scrollView = (UIScrollView*)gestureRecognizer.view;
+            return (otherGestureRecognizer == scrollView.panGestureRecognizer);
         }
 
         return NO;

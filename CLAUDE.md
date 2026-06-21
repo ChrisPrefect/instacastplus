@@ -31,6 +31,7 @@ Release-Regeln:
 - Für externe TestFlight-Freigaben ASC API Key verwenden, Verarbeitung abwarten/pollen und erst nach App-Store-Connect-Status bestätigen.
 - Tester immer benachrichtigen.
 - `What to Test` jeweils selbst auf Deutsch setzen; kurz und konkret die nutzerrelevanten Änderungen dieser Version beschreiben.
+- Bei Watch-, Playback-, Download- oder Info.plist-Änderungen vor TestFlight IMMER das gebaute/archivierte Watch-Bundle prüfen: `plutil -p <archive-or-build>/Products/Applications/InstacastPlus.app/Watch/InstacastWatch.app/Info.plist` muss `UIBackgroundModes = (audio)` enthalten. Nicht aus Source-Plist oder einem grünen String-Test auf das Archiv schließen.
 - Build `3.4 (10)` wurde am 23.05.2026 bereits vom User für externe Tester freigegeben; nicht erneut freigeben.
 
 ## Architecture
@@ -64,6 +65,24 @@ Conventions: `DMANAGER` für DB. `NSNotifications` für State. Categories für F
 ## Player Controls Height
 
 `PlayerController.m`: `MAX(windowHeight - statusBarHeight - 44 - windowWidth - 70, 194)`. 70=Überlappung Chapter Art, 194 aus `PlayerControlView.xib`.
+
+## Apple Watch / watchOS Playback
+
+Watch-Playback darf nicht mehr durch falsche Projektannahmen brechen. Bekannte Regression: Eine spätere Änderung erzwang `WKBackgroundModes/audio`; App Store Connect lehnt diesen Wert für Watch-Audio mit 90362 ab. Für Long-Form-Audio muss das Watch-Bundle `UIBackgroundModes/audio` enthalten und der Player eine Long-Form-`AVAudioSession` aktivieren.
+
+Regeln:
+- Das ausführbare Watch-App-Bundle (`InstacastWatch.app`, NICHT die iOS-App) MUSS `UIBackgroundModes` mit `audio` enthalten. `WKBackgroundModes/audio` ist für Watch-Audio kein gültiger App-Store-Connect-Wert.
+- `WatchPlayerController` muss vor Playback `AVAudioSession` mit `.playback`, `mode: .default`, `policy: .longFormAudio` konfigurieren und per `activate(options: [])` asynchron aktivieren. Kein Rückbau auf `setActive(true)` oder foreground-artige Session.
+- `WatchDownloadManager` darf eine Datei erst als `.downloaded` markieren, wenn HTTP-Status, Dateigröße und AVFoundation-Playability stimmen. HTTP 206 Partial Content, leere Dateien und Dateien kleiner als `countOfBytesExpectedToReceive` müssen fehlschlagen; sonst entstehen kurze/trunkierte Dateien, die nur ein paar Sekunden spielen.
+- Ein Source-Test reicht bei Watch-Lifecycle-Themen nie allein. Immer das gebaute Produkt prüfen, weil Xcode/Archive-Processing Plists und eingebettete Watch-Bundles verändern kann.
+
+Pflichtchecks bei Änderungen an `InstacastWatch/`, `AppleWatchSyncManager`, Watch-Widgets, Watch-Downloads, Playback oder Watch-Info.plist:
+```bash
+python3 Tools/apple_watch_integration_regression_test.py
+python3 Tools/watch_audio_now_playing_regression_test.py
+xcodebuild -project Instacast.xcodeproj -scheme InstacastWatch -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO build
+WATCH_PLIST=$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug-iphoneos/InstacastPlus.app/Watch/InstacastWatch.app/Info.plist' -print -quit); plutil -p "$WATCH_PLIST"
+```
 
 ## iOS 26
 

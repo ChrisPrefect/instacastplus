@@ -976,6 +976,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, strong) NSDate *lastAutoSkipDate;
 @property (nonatomic, strong) NSArray *autoSkipMarkers;  // @[@{@"start": @(time), @"resume": @(time)}], resume == -1 → finish episode
 @property (nonatomic) NSInteger suppressedSkipMarker;    // Manual seek protection: marker index to suppress
+@property (nonatomic, strong) NSDate *lastBackgroundPlaybackDiagnosticDate;
 #if TARGET_OS_IPHONE
 @property (nonatomic, strong) ICStreamingCacheLoader* streamCacheLoader;
 #endif
@@ -1987,6 +1988,7 @@ didReceiveResponse:(NSURLResponse *)response
                     double skipTriggerTime = dur - skipEndPeriod;
 
                     if (currentTime >= skipTriggerTime && currentTime < dur) {
+                        AudioSession *session = [AudioSession sharedAudioSession];
                         [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende ausgelöst"
                                                     episode:episode
                                                 currentTime:currentTime
@@ -1997,8 +1999,6 @@ didReceiveResponse:(NSURLResponse *)response
                                                        @"feedSkipEndPeriod": @(periodFeedEnd),
                                                        @"globalSkipEndPeriod": @(periodGeneralEnd),
                                                    }];
-                        [weakSelf.player pause];
-                        [weakSelf close];
 
                         self->_changingPosition = YES;
                         if (!episode.consumed) {
@@ -2011,7 +2011,8 @@ didReceiveResponse:(NSURLResponse *)response
                         self->_changingPosition = NO;
                         [DMANAGER save];
                         // Remove consumed episode from Up Next playlist
-                        [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+                        [session eraseEpisodesFromUpNext:@[episode]];
+                        CDEpisode *nextEpisode = [session nextPlayableEpisode];
                         [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende abgeschlossen"
                                                     episode:episode
                                                 currentTime:currentTime
@@ -2021,7 +2022,14 @@ didReceiveResponse:(NSURLResponse *)response
                                                        @"skipTriggerTime": @(skipTriggerTime),
                                                        @"feedSkipEndPeriod": @(periodFeedEnd),
                                                        @"globalSkipEndPeriod": @(periodGeneralEnd),
+                                                       @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
                                                    }];
+                        if (nextEpisode) {
+                            weakSelf.inTransitionToNextTrack = YES;
+                            [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
+                        } else {
+                            [weakSelf closeAndSaveCurrentPosition:NO];
+                        }
                     }
                 }
             }
@@ -2066,6 +2074,7 @@ didReceiveResponse:(NSURLResponse *)response
     self.savedPositionObserver = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(30,25000) queue:NULL usingBlock:^(CMTime time) {
         if (weakSelf.ready && !weakSelf.paused) {
             [weakSelf _saveCurrentPlaybackPosition];
+            [weakSelf _logBackgroundPlaybackCheckpointIfNeeded];
         }
     }];
     
@@ -2200,6 +2209,7 @@ didReceiveResponse:(NSURLResponse *)response
             durationSeconds = 0;
         }
     }
+    AudioSession *session = [AudioSession sharedAudioSession];
     NSInteger dur = (NSInteger)durationSeconds;
     NSTimeInterval currentTime = [self time];
     [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gestartet"
@@ -2207,8 +2217,6 @@ didReceiveResponse:(NSURLResponse *)response
                         currentTime:currentTime
                            duration:durationSeconds
                            metadata:nil];
-    [self.player pause];
-    [self close];
     _changingPosition = YES;
     if (!episode.consumed) {
         [USER_DEFAULTS setInteger:[USER_DEFAULTS integerForKey:@"TotalEpisodesPlayedCount"] + 1 forKey:@"TotalEpisodesPlayedCount"];
@@ -2219,15 +2227,23 @@ didReceiveResponse:(NSURLResponse *)response
     _changingPosition = NO;
     [DMANAGER save];
     // Remove consumed episode from Up Next playlist
-    [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
+    [session eraseEpisodesFromUpNext:@[episode]];
+    CDEpisode *nextEpisode = [session nextPlayableEpisode];
     [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gespeichert"
                             episode:episode
                         currentTime:currentTime
                            duration:durationSeconds
                            metadata:@{
                                @"savedPosition": @(dur),
+                               @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
                            }];
     self.isAutoSkipping = NO;
+    if (nextEpisode) {
+        self.inTransitionToNextTrack = YES;
+        [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
+    } else {
+        [self closeAndSaveCurrentPosition:NO];
+    }
 }
 
 
@@ -2331,6 +2347,32 @@ didReceiveResponse:(NSURLResponse *)response
         
         [self _removeTemporarySavePosition];
     }
+}
+
+- (void)_logBackgroundPlaybackCheckpointIfNeeded
+{
+#if TARGET_OS_IPHONE
+    if (App.applicationState != UIApplicationStateBackground) {
+        return;
+    }
+    NSDate* now = [NSDate date];
+    if (self.lastBackgroundPlaybackDiagnosticDate && [now timeIntervalSinceDate:self.lastBackgroundPlaybackDiagnosticDate] < 60.0) {
+        return;
+    }
+    self.lastBackgroundPlaybackDiagnosticDate = now;
+    CDEpisode* episode = self.playingEpisode;
+    [[ICDiagnosticLogger shared] logEvent:@"background-playback"
+                                  message:@"Hintergrund-Playback-Checkpoint"
+                                 metadata:@{
+                                     @"episodeHash": episode.objectHash ?: @"",
+                                     @"currentTime": @(self.time),
+                                     @"duration": @(self.duration),
+                                     @"playbackReady": @(self.ready),
+                                     @"playbackPaused": @(self.paused),
+                                     @"playerRate": @(self.player.rate),
+                                     @"backgroundTimeRemaining": @(App.backgroundTimeRemaining),
+                                 }];
+#endif
 }
 
 - (void) restart

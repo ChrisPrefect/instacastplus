@@ -33,6 +33,7 @@ for key in [
     '"DownloadResumeInfos"',
     '"DownloadResumeInfos_NSURLSession"',
     '"EpisodeLoadingQueueKey"',
+    '"ICDiagnosticPreviousSessionEndedInBackground"',
     '"ICDiagnosticPreviousSessionEndedUnexpectedly"',
     '"ICDiagnosticPreviousSessionState"',
 ]:
