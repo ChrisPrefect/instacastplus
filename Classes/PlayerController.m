@@ -11,6 +11,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 #import "PlayerController.h"
+#import "PlaybackViewController.h"
 #import "PlayerView.h"
 
 #import "ICProgressSlider.h"
@@ -619,6 +620,10 @@ enum {
     [self addChildViewController:self.infoViewController];
     self.infoViewController.view.tintColor = self.view.tintColor;
     self.infoViewController.bottomScrollInset = CONTROLLER_HEIGHT;
+    if ([self.navigationController isKindOfClass:[PlaybackViewController class]]) {
+        PlaybackViewController* playbackController = (PlaybackViewController*)self.navigationController;
+        [playbackController addDismissalPanGestureRecognizerToView:self.infoViewController.chapterImagesCollection];
+    }
     [self.view insertSubview:self.infoViewController.view atIndex:0];
     [self.infoViewController didMoveToParentViewController:self];
 }

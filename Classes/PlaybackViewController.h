@@ -20,6 +20,7 @@
 
 - (void) presentFromParentViewController:(UIViewController*)parentViewController;
 - (void) presentFromParentViewController:(UIViewController*)parentViewController autostart:(BOOL)autostart completion:(void (^)(void))completion;
+- (void) addDismissalPanGestureRecognizerToView:(UIView*)view;
 
 @property (nonatomic, strong, readonly) ICPlaybackViewControllerDismissedAnimator* dismissalAnimator;
 @property (nonatomic, readonly) BOOL interactive;

@@ -55,18 +55,33 @@
         [[NSNotificationCenter defaultCenter] removeObserver:self];
     }
 
+    - (void) _ensureDismissalAnimator
+    {
+        if (self.dismissalAnimator) {
+            return;
+        }
+
+        self.dismissalAnimator = [[ICPlaybackViewControllerDismissedAnimator alloc] init];
+        self.dismissalAnimator.parent = self;
+    }
+
     - (void) viewDidLoad
     {
         [super viewDidLoad];
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
-        self.dismissalAnimator = [[ICPlaybackViewControllerDismissedAnimator alloc] init];
-        self.dismissalAnimator.parent = self;
+        [self _ensureDismissalAnimator];
+        [self addDismissalPanGestureRecognizerToView:self.navigationBar];
+    }
+
+    - (void) addDismissalPanGestureRecognizerToView:(UIView*)view
+    {
+        [self _ensureDismissalAnimator];
 
         UIPanGestureRecognizer* panGestureRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self.dismissalAnimator action:@selector(handlePan:)];
         panGestureRecognizer.delegate = self.dismissalAnimator;
-        [self.navigationBar addGestureRecognizer:panGestureRecognizer];
+        [view addGestureRecognizer:panGestureRecognizer];
     }
 
     - (UIColor*) _cachedPlayerTintColor
@@ -498,6 +513,26 @@
         }
 
         return YES;
+    }
+
+    - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer
+    {
+        if (![gestureRecognizer isKindOfClass:[UIPanGestureRecognizer class]]) {
+            return NO;
+        }
+
+        for (UIView* view = gestureRecognizer.view; view; view = view.superview) {
+            if (![view isKindOfClass:[UIScrollView class]]) {
+                continue;
+            }
+
+            UIScrollView* scrollView = (UIScrollView*)view;
+            if (otherGestureRecognizer == scrollView.panGestureRecognizer) {
+                return YES;
+            }
+        }
+
+        return NO;
     }
 
     - (void) handlePan:(UIPanGestureRecognizer*)recognizer

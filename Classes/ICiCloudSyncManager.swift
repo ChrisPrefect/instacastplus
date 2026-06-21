@@ -261,6 +261,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private var isWaitingForEpisodeLoader = false
     private var episodeLoaderWaitGeneration = 0
     private var needsSubscriptionListSortApply = false
+    private var pendingInitialUploadBatch: InitialUploadBatch?
     private var initialQueueTask: Task<Void, Never>?
     private var lowPrioritySyncTask: Task<Void, Never>?
     private var syncRetryAttempt = 0
@@ -1064,6 +1065,15 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         let subscriptionPayloadHashes: [String: String]
     }
 
+    private struct InitialUploadBatch {
+        var episodeRecordNames: Set<String>
+        var subscriptionRecordNames: Set<String>
+        let nextEpisodeBackfillOffset: Int?
+        let nextSubscriptionBackfillOffset: Int?
+        let hasEpisodeBackfill: Bool
+        let hasSubscriptionBackfill: Bool
+    }
+
     private struct InitialUploadPage {
         let values: [String]
         let nextOffset: Int?
@@ -1272,7 +1282,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             queueDeviceRecord(stampLastSyncDate: true)
         }
         if !Task.isCancelled {
-            updateInitialUploadCursors(from: plan)
+            recordInitialUploadBatchQueued(plan)
             logSyncEvent("Initiale iCloud-Queue abgeschlossen", metadata: [
                 "queuedUserData": queuedUserData,
                 "knownPendingKeyCount": pendingKeys.count,
@@ -1318,6 +1328,79 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             } else {
                 clearInitialSubscriptionBackfillCursor()
             }
+        }
+    }
+
+    private func recordInitialUploadBatchQueued(_ plan: InitialUploadPlan) {
+        let hasEpisodeBackfill = plan.snapshot.episodeBackfillOffset != nil && episodesSyncEnabled
+        let hasSubscriptionBackfill = plan.snapshot.subscriptionBackfillOffset != nil && subscriptionsSyncEnabled
+        let episodeRecordNames = hasEpisodeBackfill
+            ? Set(plan.episodeObjectHashes.map { RecordPrefix.episode + $0 })
+            : []
+        let subscriptionRecordNames = hasSubscriptionBackfill
+            ? Set(plan.subscribedFeedURLs.map { Self.subscriptionRecordName(forFeedURL: $0) })
+            : []
+
+        if hasEpisodeBackfill, episodeRecordNames.isEmpty {
+            updateInitialEpisodeBackfillCursor(nextOffset: plan.nextEpisodeBackfillOffset)
+        }
+        if hasSubscriptionBackfill, subscriptionRecordNames.isEmpty {
+            updateInitialSubscriptionBackfillCursor(nextOffset: plan.nextSubscriptionBackfillOffset)
+        }
+
+        guard !episodeRecordNames.isEmpty || !subscriptionRecordNames.isEmpty else {
+            pendingInitialUploadBatch = nil
+            return
+        }
+
+        pendingInitialUploadBatch = InitialUploadBatch(episodeRecordNames: episodeRecordNames,
+                                                       subscriptionRecordNames: subscriptionRecordNames,
+                                                       nextEpisodeBackfillOffset: plan.nextEpisodeBackfillOffset,
+                                                       nextSubscriptionBackfillOffset: plan.nextSubscriptionBackfillOffset,
+                                                       hasEpisodeBackfill: hasEpisodeBackfill,
+                                                       hasSubscriptionBackfill: hasSubscriptionBackfill)
+        logSyncEvent("Initiale iCloud-Queue wartet auf CloudKit-Bestätigung", metadata: [
+            "episodeRecordCount": episodeRecordNames.count,
+            "subscriptionRecordCount": subscriptionRecordNames.count,
+            "nextEpisodeBackfillOffset": plan.nextEpisodeBackfillOffset ?? -1,
+            "nextSubscriptionBackfillOffset": plan.nextSubscriptionBackfillOffset ?? -1,
+        ])
+    }
+
+    private func recordInitialUploadRecordsSaved(_ recordIDs: [CKRecord.ID]) {
+        guard var batch = pendingInitialUploadBatch else { return }
+        let savedNames = Set(recordIDs.map { $0.recordName })
+        batch.episodeRecordNames.subtract(savedNames)
+        batch.subscriptionRecordNames.subtract(savedNames)
+        pendingInitialUploadBatch = batch
+
+        guard batch.episodeRecordNames.isEmpty, batch.subscriptionRecordNames.isEmpty else { return }
+        if batch.hasEpisodeBackfill {
+            updateInitialEpisodeBackfillCursor(nextOffset: batch.nextEpisodeBackfillOffset)
+        }
+        if batch.hasSubscriptionBackfill {
+            updateInitialSubscriptionBackfillCursor(nextOffset: batch.nextSubscriptionBackfillOffset)
+        }
+        pendingInitialUploadBatch = nil
+        logSyncEvent("Initiale iCloud-Queue von CloudKit bestätigt", metadata: [
+            "nextEpisodeBackfillOffset": batch.nextEpisodeBackfillOffset ?? -1,
+            "nextSubscriptionBackfillOffset": batch.nextSubscriptionBackfillOffset ?? -1,
+        ])
+    }
+
+    private func updateInitialEpisodeBackfillCursor(nextOffset: Int?) {
+        if let nextOffset {
+            defaults.set(nextOffset, forKey: Self.initialEpisodeBackfillOffsetKey)
+        } else {
+            clearInitialEpisodeBackfillCursor()
+        }
+    }
+
+    private func updateInitialSubscriptionBackfillCursor(nextOffset: Int?) {
+        if let nextOffset {
+            defaults.set(nextOffset, forKey: Self.initialSubscriptionBackfillOffsetKey)
+        } else {
+            clearInitialSubscriptionBackfillCursor()
         }
     }
 
@@ -1455,11 +1538,15 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
     }
 
     private func isUserDataRecordID(_ recordID: CKRecord.ID) -> Bool {
-        recordID.recordName.hasPrefix(RecordPrefix.episode)
-        || recordID.recordName.hasPrefix(RecordPrefix.subscription)
-        || recordID.recordName == RecordPrefix.appSettings
-        || recordID.recordName == RecordPrefix.listScrollPositions
-        || recordID.recordName == RecordPrefix.subscriptionListSettings
+        Self.isUserDataRecordName(recordID.recordName)
+    }
+
+    private nonisolated static func isUserDataRecordName(_ recordName: String) -> Bool {
+        recordName.hasPrefix(RecordPrefix.episode)
+        || recordName.hasPrefix(RecordPrefix.subscription)
+        || recordName == RecordPrefix.appSettings
+        || recordName == RecordPrefix.listScrollPositions
+        || recordName == RecordPrefix.subscriptionListSettings
     }
 
     private func hasPendingUserDataChanges() -> Bool {
@@ -1592,6 +1679,15 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
         staleSaveChanges = materialized.stale
 
         if !staleSaveChanges.isEmpty {
+            let staleUserDataSaveChanges = staleSaveChanges.filter { change in
+                if case .saveRecord(let recordID) = change {
+                    return Self.isUserDataRecordName(recordID.recordName)
+                }
+                return false
+            }
+            if !staleUserDataSaveChanges.isEmpty {
+                Self.logStaleUserDataSaveChanges(staleUserDataSaveChanges, snapshot: snapshot, pendingRecordZoneChanges: syncEngine.state.pendingRecordZoneChanges.count)
+            }
             syncEngine.state.remove(pendingRecordZoneChanges: staleSaveChanges)
         }
 
@@ -1673,6 +1769,19 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             }
         }
         return (records, stale)
+    }
+
+    private nonisolated static func logStaleUserDataSaveChanges(_ changes: [CKSyncEngine.PendingRecordZoneChange], snapshot: SyncEngineCallbackSnapshot, pendingRecordZoneChanges: Int) {
+        let recordNames = changes.compactMap { change -> String? in
+            if case .saveRecord(let recordID) = change {
+                return recordID.recordName
+            }
+            return nil
+        }
+        logSyncEvent("iCloud Upload-Nutzerdaten nicht materialisiert", snapshot: snapshot, pendingRecordZoneChanges: pendingRecordZoneChanges, metadata: [
+            "staleUserDataSaveChanges": recordNames.count,
+            "recordNames": recordNames.prefix(8).joined(separator: ","),
+        ])
     }
 
     // One fetch (with the properties relationship prefetched) for the whole batch instead of
@@ -2322,6 +2431,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
                 updateDeviceCache(with: payload)
             }
         }
+        recordInitialUploadRecordsSaved(event.savedRecords.map { $0.recordID })
 
         for recordID in event.deletedRecordIDs {
             forgetServerRecord(for: recordID)
@@ -3924,6 +4034,7 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             postStateChanged()
             return
         }
+        guard verifyNoExpectedUserDataWasSkippedBeforeCompleting() else { return }
         let shouldRefreshCloudInventory = syncedUserDataInCurrentRun
         clearSyncActivity()
         if syncedUserDataInCurrentRun {
@@ -3956,6 +4067,75 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
             pruneEpisodeLocalModifiedDatesIfNeeded()
         }
         syncedUserDataInCurrentRun = false
+    }
+
+    private func verifyNoExpectedUserDataWasSkippedBeforeCompleting() -> Bool {
+        if syncedUserDataInCurrentRun {
+            return true
+        }
+
+        if let batch = pendingInitialUploadBatch,
+           !batch.episodeRecordNames.isEmpty || !batch.subscriptionRecordNames.isEmpty {
+            blockCompletionAndRequeue(reason: "pendingInitialUploadBatchNotSaved", metadata: [
+                "pendingInitialEpisodeRecords": batch.episodeRecordNames.count,
+                "pendingInitialSubscriptionRecords": batch.subscriptionRecordNames.count,
+            ])
+            return false
+        }
+
+        guard cachedSyncTotalCounts != nil else {
+            refreshSyncTotalCountsInBackground()
+            blockCompletionAndRequeue(reason: "localSyncCountsUnavailable", metadata: [:])
+            return false
+        }
+
+        let counts = syncTotalCounts()
+        let expectsEpisodes = episodesSyncEnabled && counts.episodes > 0
+        let expectsSubscriptions = subscriptionsSyncEnabled && counts.subscriptions > 0
+        let expectsSettings = settingsSyncEnabled && counts.settings > 0
+        guard expectsEpisodes || expectsSubscriptions || expectsSettings else {
+            return true
+        }
+
+        let inventory = cloudInventory
+        let cloudHasExpectedData = (!expectsEpisodes || (inventory?.episodeStates ?? 0) > 0)
+            && (!expectsSubscriptions || (inventory?.subscriptions ?? 0) > 0)
+            && (!expectsSettings || (inventory?.settings ?? 0) > 0)
+        if cloudHasExpectedData {
+            return true
+        }
+
+        if expectsEpisodes {
+            resetInitialEpisodeBackfillCursor()
+        }
+        if expectsSubscriptions {
+            resetInitialSubscriptionBackfillCursor()
+        }
+        if expectsSettings {
+            defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
+        }
+        blockCompletionAndRequeue(reason: "localDataExpectedButCloudInventoryEmpty", metadata: [
+            "localEpisodeCount": counts.episodes,
+            "localSubscriptionCount": counts.subscriptions,
+            "localSettingsCount": counts.settings,
+            "cloudInventoryEpisodeStates": inventory?.episodeStates ?? -1,
+            "cloudInventorySubscriptions": inventory?.subscriptions ?? -1,
+            "cloudInventorySettings": inventory?.settings ?? -1,
+        ])
+        refreshCloudInventory(reason: "completionBlockedWithExpectedUserData")
+        return false
+    }
+
+    private func blockCompletionAndRequeue(reason: String, metadata: [String: Any]) {
+        hasUnresolvedSyncFailures = true
+        clearSyncActivity()
+        var details = metadata
+        details["reason"] = reason
+        details.merge(syncDiagnosticsMetadata()) { current, _ in current }
+        logSyncEvent("iCloud Sync Abschluss blockiert", metadata: details)
+        setSyncMetadata(NSLocalizedString("iCloud Sync konnte nicht abgeschlossen werden.", comment: ""), forKey: Self.lastErrorKey)
+        scheduleCurrentEnabledDataForUpload()
+        postStateChanged()
     }
 
     private func backfillProgressStatusText() -> String {

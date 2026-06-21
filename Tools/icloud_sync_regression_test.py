@@ -213,6 +213,18 @@ require("if syncedUserDataInCurrentRun" in mark_completed, "Last Sync must only 
 require('"Synchronisation vollständig"' in mark_completed, "Completed syncs must report completion, not a misleading no-op status.")
 require("setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)" in mark_completed, "Completed syncs must clear persisted device Last Sync stamping.")
 require(
+    "verifyNoExpectedUserDataWasSkippedBeforeCompleting()" in mark_completed
+    and mark_completed.find("verifyNoExpectedUserDataWasSkippedBeforeCompleting()") < mark_completed.find('setStatus(NSLocalizedString("Synchronisation vollständig"'),
+    "A sync must not show complete after a zero-user-data run while local enabled categories still have data expected to upload.",
+)
+completion_guard = method_body(MANAGER, "private func verifyNoExpectedUserDataWasSkippedBeforeCompleting")
+require(
+    "resetInitialEpisodeBackfillCursor()" in completion_guard
+    and "resetInitialSubscriptionBackfillCursor()" in completion_guard
+    and "defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)" in completion_guard,
+    "The zero-cloud repair path must re-arm initial upload cursors for enabled local data before requeueing.",
+)
+require(
     "let shouldRefreshCloudInventory = syncedUserDataInCurrentRun" in mark_completed
     and "refreshCloudInventory(reason: \"syncCompletedWithUserData\")" in mark_completed
     and mark_completed.find("refreshCloudInventory(reason: \"syncCompletedWithUserData\")") < mark_completed.find("syncedUserDataInCurrentRun = false"),
@@ -289,6 +301,14 @@ require(
     "guard subscriptionsSyncEnabled, !Task.isCancelled else { return queuedRecords }" in subscription_initial_queue,
     "Stale initial subscription queueing must stop after async fetches when Subscription sync has been disabled.",
 )
+require(
+    "updateInitialUploadCursors(from: plan)" not in initial_upload_apply,
+    "Initial upload cursors must not advance before CloudKit confirms the queued user-data saves.",
+)
+require(
+    "recordInitialUploadBatchQueued(plan)" in initial_upload_apply,
+    "Initial upload queueing must remember how many user-data records are expected to be saved before it can report completion.",
+)
 
 episode_queue = method_body(MANAGER, "private func applyInitialEpisodeQueue")
 episode_fetch = method_body(MANAGER, "private nonisolated static func episodeObjectHashesForInitialUploadPlan")
@@ -328,6 +348,13 @@ require("await " not in materialize_batch, "CKSyncEngine batch materialization m
 require("episodeStatesByObjectHash" in materialize_batch, "Episode records must be batch-materialized through the queue-local CKSyncEngine callback path.")
 require("subscriptionPayloadsByFeedURL" in materialize_batch, "Subscription records must be batch-materialized through the queue-local CKSyncEngine callback path.")
 require("databaseManager.episode" not in materialize_batch and "databaseManager.feed" not in materialize_batch, "Record materialization must not touch the main Core Data context from CKSyncEngine queues.")
+require(
+    "logStaleUserDataSaveChanges(staleUserDataSaveChanges" in record_batch
+    and "staleUserDataSaveChanges" in record_batch,
+    "User-data saves that cannot be materialized must be diagnosed instead of being silently removed and reported as a completed sync.",
+)
+log_stale = method_body(MANAGER, "private nonisolated static func logStaleUserDataSaveChanges")
+require('logSyncEvent("iCloud Upload-Nutzerdaten nicht materialisiert"' in log_stale, "Stale user-data materialization must be visible in customer diagnostics.")
 episode_states_fetch = method_body(MANAGER, "private nonisolated static func episodeStatesByObjectHash")
 require("newBackgroundContext()" in episode_states_fetch and "context.performAndWait" in episode_states_fetch, "Episode payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
 require('NSPredicate(format: "objectHash IN %@"' in episode_states_fetch, "Episode payload snapshots must use ONE batch fetch, not a fetch per record.")
