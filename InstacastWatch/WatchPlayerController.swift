@@ -39,7 +39,33 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
     @discardableResult
     func play(_ episode: WatchEpisode) async -> Bool {
-        guard let localFileURL = episode.localFileURL else { return false }
+        guard let localFileURL = WatchStorageManager.shared.resolvedLocalFileURL(for: episode) else {
+            var metadata = WatchDiagnostics.metadata(for: episode)
+            metadata["localFileMissing"] = "true"
+            WatchDiagnostics.log("playback-start-failed", message: "Watch-Playback ohne lokale Datei", metadata: metadata)
+            WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
+                item.status = .queued
+                item.localFileURL = nil
+                item.actualFileSize = 0
+                item.actualDuration = 0
+                item.downloadedBytes = 0
+                item.expectedBytes = 0
+                item.chapters = []
+                item.chapterArtworkBaseURL = nil
+            }
+            WatchDownloadManager.shared.startQueuedDownloads()
+            return false
+        }
+
+        if localFileURL != episode.localFileURL {
+            WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
+                item.localFileURL = localFileURL
+            }
+            var metadata = WatchDiagnostics.metadata(for: episode)
+            metadata["pathRerooted"] = "true"
+            metadata["resolvedFileName"] = localFileURL.lastPathComponent
+            WatchDiagnostics.log("playback-pathRerooted", message: "Watch-Playbackpfad auf aktuellen Container normalisiert", metadata: metadata)
+        }
 
         playbackGeneration += 1
         let generation = playbackGeneration
@@ -48,8 +74,10 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             reportPosition(finished: false)
             player?.stop()
             do {
+                WatchDiagnostics.log("playback-start", message: "Watch-Playback startet", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: nil))
                 player = try AVAudioPlayer(contentsOf: localFileURL)
             } catch {
+                WatchDiagnostics.log("playback-start-failed", message: "Watch-Playback konnte Datei nicht oeffnen", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: error))
                 markEpisodePlaybackFailed(episode, error: error.localizedDescription)
                 return false
             }
@@ -66,6 +94,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         do {
             try await activateLongFormAudioSession()
         } catch {
+            WatchDiagnostics.log("playback-audio-session-failed", message: "Watch-Audiositzung konnte nicht aktiviert werden", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: error))
             markEpisodePlaybackFailed(episode, error: error.localizedDescription)
             return false
         }
@@ -80,6 +109,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             player.currentTime = startPosition
         }
         guard player.play() else {
+            WatchDiagnostics.log("playback-start-failed", message: "AVAudioPlayer.play() fehlgeschlagen", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: nil))
             markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
             return false
         }
@@ -139,8 +169,21 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let finishedTime = player.currentTime
+        let finishedDuration = player.duration
         Task { @MainActor in
             let finishedHash = playingEpisodeHash
+            let currentEpisode = finishedHash.flatMap { WatchManifestStore.shared.episode(hash: $0) }
+            var metadata: [String: String]
+            if let currentEpisode, let localFileURL = currentEpisode.localFileURL {
+                metadata = playbackMetadata(for: currentEpisode, fileURL: localFileURL, error: nil)
+            } else {
+                metadata = ["episodeHash": finishedHash ?? ""]
+            }
+            metadata["successfully"] = flag ? "true" : "false"
+            metadata["currentTime"] = "\(finishedTime)"
+            metadata["duration"] = "\(finishedDuration)"
+            WatchDiagnostics.log("audioPlayerDidFinishPlaying", message: "Watch-Playback beendet", metadata: metadata)
             isPlaying = false
             stopTimer()
             if flag {
@@ -156,6 +199,23 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
                 _ = await play(nextEpisode)
             }
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in
+            let hash = playingEpisodeHash
+            let currentEpisode = hash.flatMap { WatchManifestStore.shared.episode(hash: $0) }
+            var metadata: [String: String]
+            if let currentEpisode, let localFileURL = currentEpisode.localFileURL {
+                metadata = playbackMetadata(for: currentEpisode, fileURL: localFileURL, error: error)
+            } else {
+                metadata = ["episodeHash": hash ?? ""]
+                if let error {
+                    metadata["error"] = error.localizedDescription
+                }
+            }
+            WatchDiagnostics.log("audioPlayerDecodeErrorDidOccur", message: "Watch-Playback Decode-Fehler", metadata: metadata)
         }
     }
 
@@ -413,6 +473,28 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         } else {
             WatchConnectivityController.shared.send(type: "playback.watchPosition", payload: payload, delivery: .current)
         }
+    }
+
+    private func playbackMetadata(for episode: WatchEpisode, fileURL: URL, error: Error?) -> [String: String] {
+        var metadata = WatchDiagnostics.metadata(for: episode)
+        metadata["fileName"] = fileURL.lastPathComponent
+        metadata["filePathHash"] = WatchDiagnostics.stableHash(fileURL.path)
+        metadata["fileExists"] = FileManager.default.fileExists(atPath: fileURL.path) ? "true" : "false"
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let size = attributes[.size] as? NSNumber {
+            metadata["fileBytes"] = "\(size.int64Value)"
+        }
+        if let player {
+            metadata["playerCurrentTime"] = "\(player.currentTime)"
+            metadata["playerDuration"] = "\(player.duration)"
+            metadata["playerIsPlaying"] = player.isPlaying ? "true" : "false"
+        }
+        if let error {
+            metadata["error"] = error.localizedDescription
+            metadata["errorDomain"] = (error as NSError).domain
+            metadata["errorCode"] = "\((error as NSError).code)"
+        }
+        return metadata
     }
 
     private func markEpisodePlaybackFailed(_ episode: WatchEpisode, error: String) {

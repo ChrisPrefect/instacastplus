@@ -18,6 +18,14 @@ App Store Connect facts currently used by this project:
 - External tester group: `External Testers` (`aefb6bc1-71f0-4c9d-a792-9b455c0d9a23`)
 - Primary beta locale in ASC: `en-US`; still write `What to Test` in German.
 
+## Scope Discipline
+
+Keep TestFlight releases narrow. Do not run regression tests, broad build suites, long diff archaeology, or simulator checks just because the worktree already contains related changes. For a release-only request, the archive, upload, and ASC state are the required verification.
+
+Use only cheap release facts before building: `git status --short`, current version/build, latest ASC builds for the same marketing version, and at most a diff stat or changed-file list to draft `What to Test`.
+
+If a release blocker appears, read the failing log and fix only the explicit root cause when it is local and necessary for upload. Then rerun the minimum command that proves that exact blocker is gone. If the blocker is external or ambiguous, stop with the real error instead of expanding into unrelated tests or speculative fixes.
+
 ## Workflow
 
 1. Check the worktree and current version/build. Do not revert unrelated local changes. Ignore user-specific Xcode state files unless they block the release.
@@ -38,10 +46,12 @@ tail -n 30 build/TestFlight/archive-<version>-<build>.log
 
 Require `CFBundleShortVersionString=<version>`, `CFBundleVersion=<build>`, bundle ID `com.iteconomy.instacastplus`, team `L95F4M2LHG`, and `** ARCHIVE SUCCEEDED **`.
 
-6. Upload using the repo export options and log the full output:
+If the archive contains the embedded Watch app, check only its built `Info.plist` with `plutil`; require `UIBackgroundModes` to contain `audio`. Do not run Watch regression scripts for a release-only request unless the user explicitly asks.
+
+6. Upload using the repo export options, the ASC API key from the project docs, and log the full output:
 
 ```bash
-xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<version>-<build>.xcarchive -exportOptionsPlist build/TestFlight/ExportOptionsUpload.plist -allowProvisioningUpdates > build/TestFlight/upload-<version>-<build>.log 2>&1
+xcodebuild -exportArchive -archivePath build/TestFlight/InstacastPlus-<version>-<build>.xcarchive -exportOptionsPlist build/TestFlight/ExportOptionsUpload.plist -allowProvisioningUpdates -authenticationKeyPath /Users/Chris/Developer/AuthKey_7QUKV6MHZ2.p8 -authenticationKeyID 7QUKV6MHZ2 -authenticationKeyIssuerID 69a6de70-cba8-47e3-e053-5b8c7c11a4d1 > build/TestFlight/upload-<version>-<build>.log 2>&1
 ```
 
 7. Verify the upload log contains `Upload succeeded` and `** EXPORT SUCCEEDED **`.
@@ -79,4 +89,4 @@ Stop and report the real ASC error if processing fails, export compliance is mis
 
 ## Final Response
 
-Report the version, build number, archive/upload status, ASC build ID, processing/external-testing status, tester notification status, `What to Test`, local files changed by build-number updates, and the exact validation commands that succeeded.
+Report the version, build number, archive/upload status, ASC build ID, processing/external-testing status, tester notification status, `What to Test`, local files changed by the build-number update or any release-blocker fix, and the exact release validation commands that succeeded.

@@ -241,18 +241,12 @@ extension WatchEpisode {
         guard
             let existing,
             existing.status == .downloaded,
-            let localFileURL = existing.localFileURL,
-            FileManager.default.fileExists(atPath: localFileURL.path)
+            existing.localFileURL != nil,
+            existing.actualFileSize > 0
         else {
             return false
         }
 
-        if existing.mediaURL == entry.mediaURL {
-            return true
-        }
-        guard entry.expectedFileSize > 0, existing.actualFileSize > 0 else {
-            return false
-        }
-        return existing.actualFileSize == entry.expectedFileSize
+        return true
     }
 }

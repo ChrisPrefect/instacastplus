@@ -49,10 +49,14 @@
 
 - (void) _sendCompletionBlockImage:(IC_IMAGE*)image error:(NSError*)error
 {
-    __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (![weakSelf isCancelled] && weakSelf.didEndBlock) {
-            weakSelf.didEndBlock(image, error);
+        if ([self isCancelled]) {
+            return;
+        }
+
+        void (^completion)(IC_IMAGE*, NSError*) = self.didEndBlock;
+        if (completion) {
+            completion(image, error);
         }
     });
 }

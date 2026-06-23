@@ -4,8 +4,8 @@
 //
 //  Global playback-control App Intents (Siri / Shortcuts / Spotlight).
 //  These run in the app process in the background (`openAppWhenRun = false`);
-//  the ones that start audio conform to `AudioPlaybackIntent` so the system
-//  keeps the audio session alive.
+//  the ones that use the active playback context conform to `AudioPlaybackIntent`
+//  so the system executes them as audio playback actions.
 //
 //  All work is delegated to `ICIntentBridge` (which hops to the main actor).
 //
@@ -25,7 +25,7 @@ struct ICPlayIntent: AudioPlaybackIntent {
     }
 }
 
-struct ICPauseIntent: AppIntent {
+struct ICPauseIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Pause"
     static let description = IntentDescription("Pause playback.")
     static var openAppWhenRun: Bool { false }
@@ -47,7 +47,7 @@ struct ICPlayPauseIntent: AudioPlaybackIntent {
     }
 }
 
-struct ICSkipForwardIntent: AppIntent {
+struct ICSkipForwardIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Skip Forward"
     static let description = IntentDescription("Skip forward by your configured interval.")
     static var openAppWhenRun: Bool { false }
@@ -58,7 +58,7 @@ struct ICSkipForwardIntent: AppIntent {
     }
 }
 
-struct ICSkipBackwardIntent: AppIntent {
+struct ICSkipBackwardIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Skip Back"
     static let description = IntentDescription("Skip backward by your configured interval.")
     static var openAppWhenRun: Bool { false }
@@ -91,7 +91,7 @@ struct ICPreviousEpisodeIntent: AudioPlaybackIntent {
     }
 }
 
-struct ICNextChapterIntent: AppIntent {
+struct ICNextChapterIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Next Chapter"
     static let description = IntentDescription("Jump to the next chapter.")
     static var openAppWhenRun: Bool { false }
@@ -102,7 +102,7 @@ struct ICNextChapterIntent: AppIntent {
     }
 }
 
-struct ICPreviousChapterIntent: AppIntent {
+struct ICPreviousChapterIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Previous Chapter"
     static let description = IntentDescription("Jump to the previous chapter.")
     static var openAppWhenRun: Bool { false }
@@ -115,7 +115,7 @@ struct ICPreviousChapterIntent: AppIntent {
 
 // MARK: - Speed
 
-struct ICSetPlaybackSpeedIntent: AppIntent {
+struct ICSetPlaybackSpeedIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Set Playback Speed"
     static let description = IntentDescription("Set the playback speed (0.5×–3×).")
     static var openAppWhenRun: Bool { false }
@@ -135,7 +135,7 @@ struct ICSetPlaybackSpeedIntent: AppIntent {
     }
 }
 
-struct ICCyclePlaybackSpeedIntent: AppIntent {
+struct ICCyclePlaybackSpeedIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Cycle Playback Speed"
     static let description = IntentDescription("Cycle through your enabled playback speeds.")
     static var openAppWhenRun: Bool { false }
@@ -148,7 +148,7 @@ struct ICCyclePlaybackSpeedIntent: AppIntent {
 
 // MARK: - Sleep timer
 
-struct ICSetSleepTimerIntent: AppIntent {
+struct ICSetSleepTimerIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Set Sleep Timer"
     static let description = IntentDescription("Start a sleep timer for the given number of minutes.")
     static var openAppWhenRun: Bool { false }
@@ -166,7 +166,7 @@ struct ICSetSleepTimerIntent: AppIntent {
     }
 }
 
-struct ICCancelSleepTimerIntent: AppIntent {
+struct ICCancelSleepTimerIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Cancel Sleep Timer"
     static let description = IntentDescription("Cancel a running sleep timer.")
     static var openAppWhenRun: Bool { false }
@@ -179,7 +179,7 @@ struct ICCancelSleepTimerIntent: AppIntent {
 
 // MARK: - Episode flags
 
-struct ICMarkPlayedIntent: AppIntent {
+struct ICMarkPlayedIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Mark Current Episode as Played"
     static let description = IntentDescription("Mark the currently playing episode as played.")
     static var openAppWhenRun: Bool { false }
@@ -193,7 +193,7 @@ struct ICMarkPlayedIntent: AppIntent {
     }
 }
 
-struct ICToggleStarIntent: AppIntent {
+struct ICToggleStarIntent: AudioPlaybackIntent {
     static let title: LocalizedStringResource = "Star Current Episode"
     static let description = IntentDescription("Add or remove the currently playing episode from favorites.")
     static var openAppWhenRun: Bool { false }

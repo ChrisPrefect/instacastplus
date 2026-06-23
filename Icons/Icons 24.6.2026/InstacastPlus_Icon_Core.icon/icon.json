@@ -1,0 +1,36 @@
+{
+  "fill" : {
+    "automatic-gradient" : "srgb:1.00000,0.31373,0.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "Core Waves.svg",
+          "name" : "Core Waves",
+          "position" : {
+            "scale" : 2.2,
+            "translation-in-points" : [
+              -0.0028972592001537123,
+              -30.455972516800045
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

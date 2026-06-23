@@ -9,6 +9,7 @@
 #import "PlaybackManager.h"
 #import "AudioSession.h"
 #import "ICAppearanceManager.h"
+#import "InstacastPlus-Swift.h"
 
 #import <TargetConditionals.h>
 
@@ -292,6 +293,13 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     };
 
     BOOL didSend = [self _sendManifestPayload:payload];
+    [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Manifest gesendet" metadata:@{
+        @"type": ICAppleWatchManifestReplace,
+        @"entryCount": @(entries.count),
+        @"didSend": @(didSend),
+        @"reachable": @(self.reachable),
+        @"watchAppInstalled": @(self.watchAppInstalled),
+    }];
     if (didSend) {
         for (AppleWatchEpisodeState* state in [self allEpisodeStates]) {
             if (state.removingFromWatch || state.downloadedOnWatch || [state.watchStatus isEqualToString:ICAppleWatchStatusDownloading]) {
@@ -609,6 +617,9 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     NSError* contextError = nil;
     [session updateApplicationContext:payload error:&contextError];
     if (contextError) {
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Manifest applicationContext fehlgeschlagen" metadata:@{
+            @"error": contextError.localizedDescription ?: @"",
+        }];
         [self _transferUserInfo:payload];
     }
 
@@ -658,6 +669,9 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 
     if ([type isEqualToString:@"watch.ackManifest"]) {
         NSArray* episodeHashes = [payload[@"episodeHashes"] isKindOfClass:[NSArray class]] ? payload[@"episodeHashes"] : @[];
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Manifest bestaetigt" metadata:@{
+            @"episodeCount": @(episodeHashes.count),
+        }];
         for (NSString* episodeHash in episodeHashes) {
             AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
             if (state && !state.downloadedOnWatch && !state.removingFromWatch) {
@@ -679,6 +693,11 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
             state.watchDownloadedDate = [self _dateFromPayload:payload key:@"timestamp"] ?: [NSDate date];
             state.watchActualDuration = [payload[@"actualDuration"] intValue];
             state.watchActualFileSize = [payload[@"actualFileSize"] longLongValue];
+            [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Download abgeschlossen" metadata:@{
+                @"episodeHash": state.episodeHash ?: @"",
+                @"actualFileSize": @(state.watchActualFileSize),
+                @"actualDuration": @(state.watchActualDuration),
+            }];
             [self _clearCurrentWatchDownloadIfMatchesHash:state.episodeHash];
         }
         else {
@@ -688,6 +707,10 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     else if ([type isEqualToString:@"watch.downloadFailed"]) {
         NSString* error = [payload[@"error"] isKindOfClass:[NSString class]] ? payload[@"error"] : @"";
         AppleWatchEpisodeState* state = [self _updateStateForPayload:payload status:ICAppleWatchStatusFailed error:error];
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Download fehlgeschlagen" metadata:@{
+            @"episodeHash": state.episodeHash ?: ([payload[@"episodeHash"] isKindOfClass:[NSString class]] ? payload[@"episodeHash"] : @""),
+            @"error": error ?: @"",
+        }];
         [self _clearCurrentWatchDownloadIfMatchesHash:state.episodeHash ?: payload[@"episodeHash"]];
     }
     else if ([type isEqualToString:@"watch.deleted"]) {
@@ -707,9 +730,21 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
             }
         }
     }
+    else if ([type isEqualToString:@"watch.diagnostic"]) {
+        NSString* event = [payload[@"event"] isKindOfClass:[NSString class]] ? payload[@"event"] : @"";
+        NSString* message = [payload[@"message"] isKindOfClass:[NSString class]] ? payload[@"message"] : @"Watch-Diagnose";
+        NSDictionary* watchMetadata = [payload[@"metadata"] isKindOfClass:[NSDictionary class]] ? payload[@"metadata"] : @{};
+        NSMutableDictionary* metadata = [watchMetadata mutableCopy];
+        metadata[@"watchEvent"] = event ?: @"";
+        metadata[@"watchTimestamp"] = [payload[@"timestamp"] isKindOfClass:[NSString class]] ? payload[@"timestamp"] : @"";
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:message metadata:metadata];
+    }
     else if ([type isEqualToString:@"watch.downloadEvicted"]) {
         NSString* episodeHash = [payload[@"episodeHash"] isKindOfClass:[NSString class]] ? payload[@"episodeHash"] : nil;
         AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Download wegen Speicher entfernt" metadata:@{
+            @"episodeHash": episodeHash ?: @"",
+        }];
         [self _clearCurrentWatchDownloadIfMatchesHash:episodeHash];
         if (state) {
             state.watchStatus = ICAppleWatchStatusQueuedOnWatch;

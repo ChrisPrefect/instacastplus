@@ -22,6 +22,9 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     }
 
     func replaceManifest(entries: [WatchManifestEntry]) {
+        WatchDiagnostics.log("manifest-replace-received", message: "Watch empfaengt Replace-Manifest", metadata: [
+            "entryCount": "\(entries.count)",
+        ])
         let removed = WatchManifestStore.shared.applyManifest(entries: entries)
         for episode in removed {
             deleteRemovedManifestEpisode(episode)
@@ -34,6 +37,9 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     }
 
     func upsertManifest(entries: [WatchManifestEntry]) {
+        WatchDiagnostics.log("manifest-upsert-received", message: "Watch empfaengt Upsert-Manifest", metadata: [
+            "entryCount": "\(entries.count)",
+        ])
         WatchManifestStore.shared.upsert(entries: entries)
         WatchConnectivityController.shared.send(type: "watch.ackManifest", payload: [
             "episodeHashes": entries.map(\.episodeHash),
@@ -61,6 +67,10 @@ final class WatchDownloadManager: NSObject, ObservableObject {
 
         var request = URLRequest(url: episode.mediaURL)
         request.allowsCellularAccess = true
+        var metadata = WatchDiagnostics.metadata(for: episode)
+        metadata["freeBytes"] = "\(WatchStorageManager.shared.freeBytes())"
+        metadata["expectedBytes"] = "\(episode.expectedBytes)"
+        WatchDiagnostics.log("download-start", message: "Watch-Download startet", metadata: metadata)
         let task = session.downloadTask(with: request)
         task.taskDescription = episode.episodeHash
         task.priority = URLSessionTask.defaultPriority
@@ -109,6 +119,10 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     }
 
     private func deleteRemovedManifestEpisode(_ episode: WatchEpisode) {
+        if WatchPlayerController.shared.playingEpisodeHash == episode.episodeHash {
+            WatchDiagnostics.log("manifest-remove-deferred-playing", message: "Watch-Datei wird wegen laufender Wiedergabe nicht geloescht", metadata: WatchDiagnostics.metadata(for: episode))
+            return
+        }
         activeTasksByHash[episode.episodeHash]?.cancel()
         activeTasksByHash[episode.episodeHash] = nil
         WatchStorageManager.shared.removeLocalFile(for: episode)
@@ -167,7 +181,20 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         }
 
         for episode in WatchManifestStore.shared.episodes {
-            if let localFileURL = episode.localFileURL, !FileManager.default.fileExists(atPath: localFileURL.path) {
+            if episode.localFileURL != nil, let resolvedURL = WatchStorageManager.shared.resolvedLocalFileURL(for: episode) {
+                if resolvedURL != episode.localFileURL {
+                    WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
+                        item.localFileURL = resolvedURL
+                    }
+                    var metadata = WatchDiagnostics.metadata(for: episode)
+                    metadata["resolvedFileName"] = resolvedURL.lastPathComponent
+                    metadata["pathRerooted"] = "true"
+                    WatchDiagnostics.log("download-reconcile-pathRerooted", message: "Watch-Downloadpfad beim Reconcile normalisiert", metadata: metadata)
+                }
+            } else if episode.localFileURL != nil {
+                var metadata = WatchDiagnostics.metadata(for: episode)
+                metadata["localFileMissing"] = "true"
+                WatchDiagnostics.log("download-reconcile-localFileMissing", message: "Watch-Datei fehlt beim Reconcile", metadata: metadata)
                 WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
                     item.status = .queued
                     item.localFileURL = nil
@@ -200,11 +227,20 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     }
 
     private func downloadValidationError(for task: URLSessionDownloadTask, fileURL: URL) -> String? {
+        let hash = task.taskDescription ?? ""
         if let httpResponse = task.response as? HTTPURLResponse {
             if !(200..<300).contains(httpResponse.statusCode) {
+                WatchDiagnostics.log("download-validation-failed", message: "Watch-Download HTTP-Fehler", metadata: [
+                    "episodeHash": hash,
+                    "httpStatus": "\(httpResponse.statusCode)",
+                ])
                 return String(format: NSLocalizedString("Download fehlgeschlagen: HTTP %ld.", comment: ""), httpResponse.statusCode)
             }
             if httpResponse.statusCode == 206 {
+                WatchDiagnostics.log("download-validation-failed", message: "Watch-Download ist HTTP 206 Partial Content", metadata: [
+                    "episodeHash": hash,
+                    "httpStatus": "\(httpResponse.statusCode)",
+                ])
                 return NSLocalizedString("Download unvollständig: HTTP 206 Partial Content.", comment: "")
             }
         }
@@ -212,10 +248,19 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         if size <= 0 {
+            WatchDiagnostics.log("download-validation-failed", message: "Watch-Downloaddatei ist leer", metadata: [
+                "episodeHash": hash,
+                "actualBytes": "\(size)",
+            ])
             return NSLocalizedString("Geladene Datei ist leer.", comment: "")
         }
         let expectedSize = task.countOfBytesExpectedToReceive
         if expectedSize > 0, size < expectedSize {
+            WatchDiagnostics.log("download-validation-failed", message: "Watch-Downloaddatei ist unvollstaendig", metadata: [
+                "episodeHash": hash,
+                "actualBytes": "\(size)",
+                "expectedBytes": "\(expectedSize)",
+            ])
             return NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
         }
         return nil
@@ -278,6 +323,12 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
             let attributes = await downloadedFileAttributes(for: destination)
             if attributes.size <= 0 || !attributes.isPlayable {
                 try? FileManager.default.removeItem(at: destination)
+                WatchDiagnostics.log("download-validation-failed", message: "Watch-Audiodatei ist nicht spielbar", metadata: [
+                    "episodeHash": hash,
+                    "actualBytes": "\(attributes.size)",
+                    "actualDuration": "\(attributes.duration)",
+                    "isPlayable": attributes.isPlayable ? "true" : "false",
+                ])
                 markDownloadFailed(hash: hash, error: NSLocalizedString("Geladene Audiodatei konnte nicht validiert werden.", comment: ""))
                 return
             }
@@ -299,6 +350,13 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 item.chapters = chapterMetadata.chapters
                 item.chapterArtworkBaseURL = chapterMetadata.artworkBaseURL
             }
+            WatchDiagnostics.log("download-finished", message: "Watch-Download abgeschlossen", metadata: [
+                "episodeHash": hash,
+                "actualBytes": "\(attributes.size)",
+                "actualDuration": "\(attributes.duration)",
+                "isPlayable": attributes.isPlayable ? "true" : "false",
+                "fileName": destination.lastPathComponent,
+            ])
             WatchConnectivityController.shared.send(type: "watch.downloaded", payload: [
                 "episodeHash": hash,
                 "actualFileSize": attributes.size,

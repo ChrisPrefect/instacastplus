@@ -1,6 +1,6 @@
 ---
 name: instacast-test-first-bugfix
-description: "Use in the InstacastPlus repo when the user reports a bug, regression, crash, flaky UI behavior, or broken Objective-C, Swift, watchOS, widget, playback, sync, transcription, or list behavior. This skill enforces the project workflow: reproduce with a focused regression test first, identify the real root cause, then make the smallest fix and prove it with the test."
+description: "Use in the InstacastPlus repo when the user reports a bug, regression, crash, TestFlight/App Store Connect crash report, flaky UI behavior, or broken Objective-C, Swift, watchOS, widget, playback, sync, transcription, or list behavior. This skill enforces the project workflow: reproduce with a focused regression test first, identify the real root cause, then make the smallest fix and prove it with the test."
 ---
 
 # Instacast Test-First Bugfix
@@ -9,6 +9,7 @@ description: "Use in the InstacastPlus repo when the user reports a bug, regress
 
 1. Read [AGENTS.md](/Users/Chris/Developer/instacastplus/AGENTS.md) and [CLAUDE.md](/Users/Chris/Developer/instacastplus/CLAUDE.md) before editing.
 2. Build a short bug packet: symptom, expected behavior, actual behavior, platform, reproduction steps, and likely ownership area.
+   - For TestFlight/App Store Connect crash reports, query the real remote state first. Use ASC `betaFeedbackCrashSubmissions` sorted by `-createdDate`, inspect the newest relevant submission, and read `/crashLog` from that submission. Current ASC responses may provide `attributes.logText` instead of a downloadable `url`; use `logText` as the crash report. Record the remote submission ID, created date, app version/build, device, OS, exception, and crashing frame. Do not use local `build/CrashLogs` as the primary source unless the user explicitly points to a local file or the local incident ID/build exactly matches the remote report.
 3. Write or extend one focused failing regression test before fixing code.
    - Prefer `Tools/*_regression_test.py`.
    - Keep the test narrow and source-aware when a full simulator reproduction is impractical.

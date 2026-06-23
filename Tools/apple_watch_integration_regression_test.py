@@ -24,6 +24,7 @@ watch_download_manager = read("InstacastWatch/WatchDownloadManager.swift")
 watch_connectivity = read("InstacastWatch/WatchConnectivityController.swift")
 watch_player = read("InstacastWatch/WatchPlayerController.swift")
 watch_episode = read("InstacastWatch/WatchEpisode.swift")
+watch_storage = read("InstacastWatch/WatchStorageManager.swift")
 watch_views = read("InstacastWatch/WatchEpisodeViews.swift")
 watch_chapter_extractor = read("InstacastWatch/WatchChapterExtractor.swift")
 watch_plist = read("InstacastWatch/Info.plist")
@@ -535,12 +536,28 @@ require(
 require(
     "expectedFileSize" in watch_episode
     and "canReuseDownloadedFile(from: existing, entry: entry)" in watch_episode
-    and "FileManager.default.fileExists(atPath: localFileURL.path)" in watch_episode
-    and "existing.actualFileSize == entry.expectedFileSize" in watch_episode
-    and "guard entry.expectedFileSize > 0, existing.actualFileSize > 0 else {\n            return false\n        }" in watch_download_reuse
-    and "return true\n    }\n}" not in watch_download_reuse
+    and "FileManager.default.fileExists(atPath: localFileURL.path)" not in watch_episode
+    and "existing.actualFileSize > 0" in watch_download_reuse
+    and "return true" in watch_download_reuse
     and "let canReuseDownload = existing?.mediaURL == entry.mediaURL" not in watch_episode,
-    "The Watch manifest merge may reuse an existing local download after an enclosure URL change only with an exact positive file-size proof.",
+    "The Watch manifest merge must not invalidate a downloaded episode through a stale absolute localFileURL path.",
+)
+
+require(
+    "func resolvedLocalFileURL(for episode: WatchEpisode) -> URL?" in watch_storage
+    and "localFileURL?.lastPathComponent" in watch_storage
+    and "downloadsDirectory.appendingPathComponent(fileName)" in watch_storage
+    and "WatchStorageManager.shared.resolvedLocalFileURL(for: episode)" in watch_download_manager
+    and "WatchStorageManager.shared.resolvedLocalFileURL(for: episode)" in watch_player,
+    "Watch local files must be resolved by re-rooting persisted filenames into the current watch container.",
+)
+
+require(
+    "enum WatchDiagnostics" in watch_connectivity
+    and 'send(type: "watch.diagnostic"' in watch_connectivity
+    and 'isEqualToString:@"watch.diagnostic"' in manager
+    and 'logEvent:@"apple-watch"' in manager,
+    "Watch diagnostics must be forwarded to the iPhone diagnostic export.",
 )
 
 require(

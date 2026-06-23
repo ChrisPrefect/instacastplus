@@ -66,6 +66,14 @@ def main():
             continue
         data = detail.get("data", {})
         attrs = data.get("attributes", {})
+        log_text = attrs.get("logText")
+        if log_text:
+            out = f"/tmp/tf_crash_{sub_id}.crash"
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(log_text)
+            print(f"saved {out} ({len(log_text)} chars)")
+            continue
+
         log_url = attrs.get("url")
         if not log_url:
             print(f"no url for {sub_id}; attrs keys: {list(attrs.keys())}")

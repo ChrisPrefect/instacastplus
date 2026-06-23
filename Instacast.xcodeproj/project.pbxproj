@@ -200,6 +200,12 @@
 		CDE5000D2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt1.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE500032E1A000100000001 /* InstacastPlus_Icon_Classic_Alt1.icon */; };
 		CDE5000E2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE500042E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon */; };
 		CDE5000F2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt3.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE500052E1A000100000001 /* InstacastPlus_Icon_Classic_Alt3.icon */; };
+		CDE501B12E1A000100000001 /* AppIcon-2.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE501F12E1A000100000001 /* AppIcon-2.icon */; };
+		CDE501B22E1A000100000001 /* AppIcon-3.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE501F22E1A000100000001 /* AppIcon-3.icon */; };
+		CDE501B32E1A000100000001 /* AppIcon-4.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE501F32E1A000100000001 /* AppIcon-4.icon */; };
+		CDE501B42E1A000100000001 /* AppIcon-5.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE501F42E1A000100000001 /* AppIcon-5.icon */; };
+		CDE501B52E1A000100000001 /* AppIcon-6.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE501F52E1A000100000001 /* AppIcon-6.icon */; };
+		CDE501B62E1A000100000001 /* AppIcon-7.icon in Resources */ = {isa = PBXBuildFile; fileRef = CDE501F62E1A000100000001 /* AppIcon-7.icon */; };
 		1BA136C0177EE990007FB3DB /* MainSidebarController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BA136BF177EE990007FB3DB /* MainSidebarController.m */; };
 		1BA136C1178188CC007FB3DB /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1B8DBA581514E8E100F6A7CB /* StoreKit.framework */; };
 		1BA249A213BDEDD70091E7CF /* PlaybackManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BA249A113BDEDD70091E7CF /* PlaybackManager.m */; };
@@ -776,6 +782,12 @@
 		CDE500032E1A000100000001 /* InstacastPlus_Icon_Classic_Alt1.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = InstacastPlus_Icon_Classic_Alt1.icon; sourceTree = "<group>"; };
 		CDE500042E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = InstacastPlus_Icon_Classic_Alt2.icon; sourceTree = "<group>"; };
 		CDE500052E1A000100000001 /* InstacastPlus_Icon_Classic_Alt3.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = InstacastPlus_Icon_Classic_Alt3.icon; sourceTree = "<group>"; };
+		CDE501F12E1A000100000001 /* AppIcon-2.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AppIcon-2.icon"; sourceTree = "<group>"; };
+		CDE501F22E1A000100000001 /* AppIcon-3.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AppIcon-3.icon"; sourceTree = "<group>"; };
+		CDE501F32E1A000100000001 /* AppIcon-4.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AppIcon-4.icon"; sourceTree = "<group>"; };
+		CDE501F42E1A000100000001 /* AppIcon-5.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AppIcon-5.icon"; sourceTree = "<group>"; };
+		CDE501F52E1A000100000001 /* AppIcon-6.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AppIcon-6.icon"; sourceTree = "<group>"; };
+		CDE501F62E1A000100000001 /* AppIcon-7.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AppIcon-7.icon"; sourceTree = "<group>"; };
 		1BA136BE177EE990007FB3DB /* MainSidebarController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MainSidebarController.h; sourceTree = "<group>"; };
 		1BA136BF177EE990007FB3DB /* MainSidebarController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = MainSidebarController.m; sourceTree = "<group>"; };
 		1BA249A113BDEDD70091E7CF /* PlaybackManager.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PlaybackManager.m; sourceTree = "<group>"; };
@@ -1326,6 +1338,12 @@
 			isa = PBXGroup;
 			children = (
 				CDE500012E1A000100000001 /* InstacastPlus_Icon_Standard.icon */,
+				CDE501F12E1A000100000001 /* AppIcon-2.icon */,
+				CDE501F22E1A000100000001 /* AppIcon-3.icon */,
+				CDE501F32E1A000100000001 /* AppIcon-4.icon */,
+				CDE501F42E1A000100000001 /* AppIcon-5.icon */,
+				CDE501F52E1A000100000001 /* AppIcon-6.icon */,
+				CDE501F62E1A000100000001 /* AppIcon-7.icon */,
 				CDE500022E1A000100000001 /* InstacastPlus_Icon_Core.icon */,
 				CDE500032E1A000100000001 /* InstacastPlus_Icon_Classic_Alt1.icon */,
 				CDE500042E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon */,
@@ -2440,6 +2458,12 @@
 				1BA4C0F317C2500A00D04764 /* placeholder-72.png in Resources */,
 				1BA136BD177EE8C2007FB3DB /* Media.xcassets in Resources */,
 				CDE5000B2E1A000100000001 /* InstacastPlus_Icon_Standard.icon in Resources */,
+				CDE501B12E1A000100000001 /* AppIcon-2.icon in Resources */,
+				CDE501B22E1A000100000001 /* AppIcon-3.icon in Resources */,
+				CDE501B32E1A000100000001 /* AppIcon-4.icon in Resources */,
+				CDE501B42E1A000100000001 /* AppIcon-5.icon in Resources */,
+				CDE501B52E1A000100000001 /* AppIcon-6.icon in Resources */,
+				CDE501B62E1A000100000001 /* AppIcon-7.icon in Resources */,
 				CDE5000C2E1A000100000001 /* InstacastPlus_Icon_Core.icon in Resources */,
 				CDE5000D2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt1.icon in Resources */,
 				CDE5000E2E1A000100000001 /* InstacastPlus_Icon_Classic_Alt2.icon in Resources */,
@@ -2890,7 +2914,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -2971,7 +2995,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3055,7 +3079,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3115,7 +3139,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3144,7 +3168,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3177,7 +3201,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3254,7 +3278,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3287,7 +3311,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;

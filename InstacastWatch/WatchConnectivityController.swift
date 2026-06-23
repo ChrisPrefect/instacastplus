@@ -131,3 +131,52 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
         return dictionaries.compactMap { WatchManifestEntry(dictionary: $0, dateFormatter: dateFormatter) }
     }
 }
+
+@MainActor
+enum WatchDiagnostics {
+    static func log(_ event: String, message: String, metadata: [String: String] = [:], delivery: WatchConnectivityDelivery = .reliable) {
+        var payloadMetadata = metadata
+        payloadMetadata["event"] = event
+        payloadMetadata["timestamp"] = timestamp()
+        NSLog("[InstacastWatch][%@] %@ %@", event, message, payloadMetadata.description)
+        WatchConnectivityController.shared.send(type: "watch.diagnostic", payload: [
+            "event": event,
+            "message": message,
+            "metadata": payloadMetadata,
+            "timestamp": payloadMetadata["timestamp"] ?? "",
+        ], delivery: delivery)
+    }
+
+    static func metadata(for episode: WatchEpisode, prefix: String = "") -> [String: String] {
+        var values: [String: String] = [
+            "\(prefix)episodeHash": episode.episodeHash,
+            "\(prefix)status": episode.status.rawValue,
+            "\(prefix)mediaURLHash": stableHash(episode.mediaURL.absoluteString),
+            "\(prefix)mediaHost": episode.mediaURL.host ?? "",
+            "\(prefix)expectedBytes": "\(episode.expectedBytes)",
+            "\(prefix)downloadedBytes": "\(episode.downloadedBytes)",
+            "\(prefix)actualFileSize": "\(episode.actualFileSize)",
+            "\(prefix)actualDuration": "\(episode.actualDuration)",
+        ]
+        if let localFileURL = episode.localFileURL {
+            values["\(prefix)localFileName"] = localFileURL.lastPathComponent
+            values["\(prefix)localPathHash"] = stableHash(localFileURL.path)
+        }
+        return values
+    }
+
+    static func stableHash(_ value: String) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
+        return String(format: "%016llx", hash)
+    }
+
+    private static func timestamp() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: Date())
+    }
+}

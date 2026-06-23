@@ -26,6 +26,29 @@ final class WatchStorageManager {
         return downloadsDirectory.appendingPathComponent(fileName)
     }
 
+    func resolvedLocalFileURL(for episode: WatchEpisode) -> URL? {
+        var fileNames: [String] = []
+        if let fileName = episode.localFileURL?.lastPathComponent, !fileName.isEmpty {
+            fileNames.append(fileName)
+        }
+        let computedFileName = localFileURL(for: episode).lastPathComponent
+        if !computedFileName.isEmpty, !fileNames.contains(computedFileName) {
+            fileNames.append(computedFileName)
+        }
+
+        for fileName in fileNames {
+            let currentURL = downloadsDirectory.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: currentURL.path) {
+                return currentURL
+            }
+        }
+
+        if let localFileURL = episode.localFileURL, FileManager.default.fileExists(atPath: localFileURL.path) {
+            return localFileURL
+        }
+        return nil
+    }
+
     func removeLocalFile(for episode: WatchEpisode) {
         if let localFileURL = episode.localFileURL {
             try? FileManager.default.removeItem(at: localFileURL)
@@ -88,8 +111,9 @@ final class WatchStorageManager {
             return []
         }
 
+        let playingEpisodeHash = WatchPlayerController.shared.playingEpisodeHash
         let candidates = WatchManifestStore.shared.episodes
-            .filter { $0.episodeHash != episodeHash && $0.localFileURL != nil }
+            .filter { $0.episodeHash != episodeHash && $0.episodeHash != playingEpisodeHash && $0.localFileURL != nil }
             .sorted { first, second in
                 switch (first.playbackOrder, second.playbackOrder) {
                 case let (.some(firstOrder), .some(secondOrder)) where firstOrder != secondOrder:
