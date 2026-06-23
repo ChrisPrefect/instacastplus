@@ -23,6 +23,7 @@
 
 #import "UIManager.h"
 #import "ICFTSController.h"
+#import "ICSpotlightIndexer.h"
 
 // legacy migration
 #import "CDSmartPlaylist.h"
@@ -40,6 +41,7 @@ NSString* DatabaseManagerDidAddBookmarkNotification = @"DatabaseManagerDidAddBoo
 
 static NSString* kDefaultEpisodePositionMigrationDone = @"EpisodePositionMigrationDone";
 static NSString* kDefaultFTSMigrationDone = @"FTSMigrationDone";
+static NSString* kDefaultSpotlightMigrationDone = @"SpotlightMigrationDone";
 
 
 #if TARGET_OS_IPHONE
@@ -59,6 +61,7 @@ static NSString* kBookmarksProperty = @"bookmarks";
 @property (nonatomic, strong, readwrite) NSPersistentStoreCoordinator* storeCoordinator;
 @property (nonatomic, strong, readwrite) NSManagedObjectModel* objectModel;
 @property (nonatomic, strong, readwrite) ICFTSController* ftsController;
+@property (nonatomic, strong, readwrite) ICSpotlightIndexer* spotlightIndexer;
 @property (nonatomic, readwrite) BOOL ftsIndexing;
 
 
@@ -363,13 +366,19 @@ NS_INLINE NSString* _DataStoreFile(void) {
         
         _ftsController = [[ICFTSController alloc] initWithSearchIndexURL:[NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"FTSIndex.sqlite"]]];
         [_ftsController open];
+        _spotlightIndexer = [[ICSpotlightIndexer alloc] init];
 
         [self _migrateFTS];
+        [self _migrateSpotlight];
 
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(managedObjectContextObjectsDidChangeNotification:)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:self.objectContext];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(transcriptionDidFinishNotification:)
+                                                     name:ICTranscriptionDidFinishNotification
+                                                   object:nil];
 	}
 	return self;
 }
@@ -605,6 +614,35 @@ NS_INLINE NSString* _DataStoreFile(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [USER_DEFAULTS setBool:YES forKey:kDefaultFTSMigrationDone];
             self.ftsIndexing = NO;
+        });
+    }];
+}
+
+- (void) _migrateSpotlight
+{
+    if ([USER_DEFAULTS boolForKey:kDefaultSpotlightMigrationDone]) {
+        return;
+    }
+
+    NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    [childContext setParentContext:self.objectContext];
+
+    [childContext performBlock:^{
+        NSFetchRequest* feedRequest = [[NSFetchRequest alloc] init];
+        feedRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:childContext];
+        feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
+        feedRequest.fetchBatchSize = 25;
+
+        NSError* error;
+        NSArray* objects = [childContext executeFetchRequest:feedRequest error:&error];
+        if (error) {
+            ErrLog(@"error fetching feeds for spotlight from private context: %@", error);
+        }
+
+        [self.spotlightIndexer indexFeeds:objects];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [USER_DEFAULTS setBool:YES forKey:kDefaultSpotlightMigrationDone];
         });
     }];
 }
@@ -845,9 +883,11 @@ NS_INLINE NSString* _DataStoreFile(void) {
     {
         if ([insertedObject isKindOfClass:[CDEpisode class]]) {
             [self.ftsController addEpisode:(CDEpisode*)insertedObject];
+            [self.spotlightIndexer addEpisode:(CDEpisode*)insertedObject];
         }
         else if ([insertedObject isKindOfClass:[CDFeed class]]) {
             [self.ftsController addFeed:(CDFeed*)insertedObject];
+            [self.spotlightIndexer addFeed:(CDFeed*)insertedObject];
         }
     }
     
@@ -861,16 +901,44 @@ NS_INLINE NSString* _DataStoreFile(void) {
         else if ([updatedObject isKindOfClass:[CDFeed class]] && (cv[@"title"] || cv[@"author"] || cv[@"summary"])) {
             [self.ftsController updateFeed:(CDFeed*)updatedObject];
         }
+
+        if ([updatedObject isKindOfClass:[CDEpisode class]] &&
+            (cv[@"title"] || cv[@"subtitle"] || cv[@"summary"] || cv[@"fulltext"] ||
+             cv[@"transcriptsJSON_"] || cv[@"imageURL_"] || cv[@"duration"] ||
+             cv[@"pubDate"] || cv[@"lastDownloaded"] || cv[@"chapters"])) {
+            [self.spotlightIndexer updateEpisode:(CDEpisode*)updatedObject];
+        }
+        else if ([updatedObject isKindOfClass:[CDFeed class]] &&
+                 (cv[@"title"] || cv[@"displayTitle"] || cv[@"author"] || cv[@"summary"] ||
+                  cv[@"fulltext"] || cv[@"imageURL_"] || cv[@"pubDate"] || cv[@"lastUpdate"] ||
+                  cv[@"subscribed"])) {
+            [self.spotlightIndexer updateFeed:(CDFeed*)updatedObject];
+        }
     }
     
     for(NSManagedObject* deletedObject in deletedObjects)
     {
         if ([deletedObject isKindOfClass:[CDEpisode class]]) {
             [self.ftsController removeEpisode:(CDEpisode*)deletedObject];
+            [self.spotlightIndexer removeEpisode:(CDEpisode*)deletedObject];
         }
         else if ([deletedObject isKindOfClass:[CDFeed class]]) {
             [self.ftsController removeFeed:(CDFeed*)deletedObject];
+            [self.spotlightIndexer removeFeed:(CDFeed*)deletedObject];
         }
+    }
+}
+
+- (void) transcriptionDidFinishNotification:(NSNotification*)notification
+{
+    NSString* episodeHash = notification.userInfo[@"episodeHash"];
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    CDEpisode* episode = [self episodeWithObjectHash:episodeHash];
+    if (episode) {
+        [self.spotlightIndexer updateEpisode:episode];
     }
 }
 

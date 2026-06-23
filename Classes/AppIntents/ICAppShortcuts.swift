@@ -4,8 +4,7 @@
 //
 //  Zero-setup Siri phrases for the headline actions. Every phrase must contain
 //  the `\(.applicationName)` token. The system surfaces up to 10 App Shortcuts;
-//  the parameterized ones (Play podcast / Play list / Refresh) are added in the
-//  content-intents tier. Bilingual phrases are provided via AppShortcuts.xcstrings.
+//  bilingual phrases are provided via AppShortcuts.xcstrings.
 //
 
 import AppIntents
@@ -82,6 +81,26 @@ struct ICAppShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Mark as Played",
             systemImageName: "checkmark.circle"
+        )
+
+        AppShortcut(
+            intent: ICPlayPodcastIntent(),
+            phrases: [
+                "Play \(\.$podcast) in \(.applicationName)",
+                "Play the latest episode of \(\.$podcast) in \(.applicationName)"
+            ],
+            shortTitle: "Play Podcast",
+            systemImageName: "dot.radiowaves.left.and.right"
+        )
+
+        AppShortcut(
+            intent: ICPlayEpisodeIntent(),
+            phrases: [
+                "Play \(\.$episode) in \(.applicationName)",
+                "Play episode \(\.$episode) in \(.applicationName)"
+            ],
+            shortTitle: "Play Episode",
+            systemImageName: "play.rectangle"
         )
     }
 }

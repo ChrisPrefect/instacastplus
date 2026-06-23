@@ -336,6 +336,9 @@
 		BF81C67275563B9BDFDA692E /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9F49A1BF113FE64D009560D8 /* AVFoundation.framework */; };
 		C300DED378385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
 		C300DED478385F60CDCE084B /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C668B14C6578204577EC82B /* AppIntents.framework */; };
+		A1B2C3D4E5F6A7B800000023 /* ICContentIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000013 /* ICContentIntents.swift */; };
+		A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */; };
+		A1B2C3D4E5F6A7B800000041 /* CoreSpotlight.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */; };
 		C4245D14C313FB7C21BFAC5D /* ChapterGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F99AC8873233369D3A09C2 /* ChapterGenerator.swift */; };
 		C429E10F71C69A4E50E072FA /* WidgetEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C7CAB66C9B1869F56FADCC /* WidgetEmptyStateView.swift */; };
 		C5237A29974428AC2344CED1 /* WidgetImageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E9892C303D62A4A457BE3A /* WidgetImageLoader.swift */; };
@@ -948,6 +951,10 @@
 		A1B2C3D4E5F6A7B800000010 /* ICIntentBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICIntentBridge.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000011 /* ICPlaybackIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICPlaybackIntents.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000012 /* ICAppShortcuts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICAppShortcuts.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000013 /* ICContentIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppIntents/ICContentIntents.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000030 /* ICSpotlightIndexer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICSpotlightIndexer.h; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICSpotlightIndexer.m; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreSpotlight.framework; path = System/Library/Frameworks/CoreSpotlight.framework; sourceTree = SDKROOT; };
 		7D97762C4DA733C845EACD81 /* WatchEpisode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchEpisode.swift; sourceTree = "<group>"; };
 		7E3A03D1DEA9AEEE2C6F0DC9 /* WidgetModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetModels.swift; sourceTree = "<group>"; };
 		7E61474F17CD3017CF8E8287 /* InstacastWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InstacastWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1131,6 +1138,7 @@
 				CCA420203F2DE44E828D25C0 /* WhisperKit in Frameworks */,
 				67E9C9F11D2906B0D5935C63 /* WatchConnectivity.framework in Frameworks */,
 				C84346F0614BBB1CD0176549 /* CloudKit.framework in Frameworks */,
+				A1B2C3D4E5F6A7B800000041 /* CoreSpotlight.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1228,6 +1236,7 @@
 				A1B2C3D4E5F6A7B800000010 /* ICIntentBridge.swift */,
 				A1B2C3D4E5F6A7B800000011 /* ICPlaybackIntents.swift */,
 				A1B2C3D4E5F6A7B800000012 /* ICAppShortcuts.swift */,
+				A1B2C3D4E5F6A7B800000013 /* ICContentIntents.swift */,
 				E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */,
 				D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */,
 			);
@@ -1624,6 +1633,8 @@
 				1B9797BA12C239B500F964EC /* DatabaseManager.m */,
 				1B02D66119AF2AB40073151E /* ICFTSController.h */,
 				1B02D66219AF2AB40073151E /* ICFTSController.m */,
+				A1B2C3D4E5F6A7B800000030 /* ICSpotlightIndexer.h */,
+				A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */,
 				1BC9347518ED72FF0010053B /* Objects */,
 				1B55AAB218F687B200D3B49C /* FSCrossbucketConnection.h */,
 				1B55AAB318F687B200D3B49C /* FSCrossbucketConnection.m */,
@@ -2030,6 +2041,7 @@
 			isa = PBXGroup;
 			children = (
 				8C668B14C6578204577EC82B /* AppIntents.framework */,
+				A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */,
 				CDB981F32CB59B72000E7321 /* MediaPlayer.framework */,
 				CDA9C20C2CAF23A9000BEF00 /* CarPlay.framework */,
 				1B2A468419249C6E0042C3E5 /* CoreTelephony.framework */,
@@ -2784,6 +2796,8 @@
 				A1B2C3D4E5F6A7B800000020 /* ICIntentBridge.swift in Sources */,
 				A1B2C3D4E5F6A7B800000021 /* ICPlaybackIntents.swift in Sources */,
 				A1B2C3D4E5F6A7B800000022 /* ICAppShortcuts.swift in Sources */,
+				A1B2C3D4E5F6A7B800000023 /* ICContentIntents.swift in Sources */,
+				A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
 				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
 				165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */,

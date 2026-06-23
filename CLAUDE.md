@@ -112,6 +112,14 @@ Layout: `UIRectEdgeBottom` auf allen VCs mit Toolbar/Buttons. **Ausnahme:** `Pla
 
 `scrollView.bottomEdgeEffect.hidden = YES` (iOS 26+). Angewendet: `SubscriptionsTableVC`, `FeedEpisodesTableVC`, `DirectoryFeedVC`, `EpisodeVC`, `WebController`, `FeedVC`.
 
+## TODO iOS 27 Siri / Apple Intelligence
+
+Erst umsetzen, wenn lokal ein iOS-27-SDK/Xcode-Beta verfügbar ist; keine Stub-Typen oder Kompatibilitäts-Workarounds einbauen:
+- App-Intents auf die neuen Apple-App-Schemas für Audio/Podcasts mappen (`AppSchema.AudioEntity.podcastEpisode` / Podcast-Show, `AppSchema.AudioIntent.playAudio`).
+- Podcast-, Episode-, Kapitel- und Transkript-Metadaten als iOS-27-`IndexedEntity`/semantische Spotlight-Daten bereitstellen, damit die neue Siri Episoden inhaltlich findet und passende Playback-Intents ausführen kann.
+- Relevante Views mit iOS-27-View-Annotations versehen, sobald die API stabil ist.
+- Siri/App-Intent-Verhalten mit `AppIntentsTesting` gegen echte Podcast-/Episoden-Parameter absichern.
+
 ## Apple Podcast Charts
 
 Neue API: `rss.marketingtools.apple.com/api/v2/{country}/podcasts/top/{limit}/podcasts.json` (max 100, kein Genre).

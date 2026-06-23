@@ -202,7 +202,7 @@ enum ICIntentBridge {
     static func subscribedPodcasts() -> [ICPodcastInfo] {
         guard let context = DatabaseManager.shared()?.objectContext else { return [] }
         let request = NSFetchRequest<CDFeed>(entityName: "Feed")
-        request.predicate = NSPredicate(format: "subscribed == YES AND parked == NO")
+        request.predicate = NSPredicate(format: "subscribed == YES")
         request.sortDescriptors = [NSSortDescriptor(key: "rank", ascending: true)]
         let feeds = (try? context.fetch(request)) ?? []
         return feeds.compactMap { podcastInfo(from: $0) }

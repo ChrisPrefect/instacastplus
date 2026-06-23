@@ -11,10 +11,12 @@
 #import "InstacastAppDelegate.h"
 #import "InstacastPlus-Swift.h"
 #import <CarPlay/CarPlay.h>
+#import <CoreSpotlight/CoreSpotlight.h>
 
 #import <StoreKit/StoreKit.h>
 #import <UserNotifications/UserNotifications.h>
 #import "SubscriptionManager.h"
+#import "ICSpotlightIndexer.h"
 
 #import "UIManager.h"
 #import "CDEpisode+ShowNotes.h"
@@ -71,6 +73,8 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 @property (nonatomic, strong) NSDateFormatter* carPlayDateFormatter;
 @property (nonatomic, strong) NSMapTable<CPListItem*, id>* carPlayLegacyItemHandlers;
 @property (nonatomic) BOOL carPlayLastKnownIsPlaying;
+
+- (void)_handleSpotlightUserActivity:(NSUserActivity*)userActivity;
 
 @end
 
@@ -404,6 +408,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 }
 
 - (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity {
+    if ([userActivity.activityType isEqualToString:CSSearchableItemActionType]) {
+        [self _handleSpotlightUserActivity:userActivity];
+        return;
+    }
+
     if (![userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
         return;
     }
@@ -431,6 +440,40 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     NSURL *feedURL = [NSURL URLWithString:feedURLString];
     if (feedURL) {
         [self _handlePcastURL:feedURL episodeGUID:episodeGUID];
+    }
+}
+
+- (void)_handleSpotlightUserActivity:(NSUserActivity*)userActivity
+{
+    if (!self.mainViewController || !self.mainViewController.contentViewController) {
+        return;
+    }
+
+    NSString* uniqueIdentifier = userActivity.userInfo[CSSearchableItemActivityIdentifier];
+    NSString* episodeHash = [ICSpotlightIndexer objectHashFromEpisodeUniqueIdentifier:uniqueIdentifier];
+    if (episodeHash.length > 0) {
+        CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
+        if (episode) {
+            [self.mainViewController showShowNotesOfEpisode:episode animated:YES];
+        }
+        return;
+    }
+
+    NSString* sourceURLString = [ICSpotlightIndexer sourceURLStringFromPodcastUniqueIdentifier:uniqueIdentifier];
+    NSURL* sourceURL = [NSURL URLWithString:sourceURLString];
+    if (!sourceURL) {
+        return;
+    }
+
+    CDFeed* feed = [DMANAGER feedWithSourceURL:sourceURL];
+    if (!feed) {
+        return;
+    }
+
+    FeedEpisodesTableViewController* vc = [FeedEpisodesTableViewController episodesControllerWithFeed:feed];
+    UINavigationController* nav = [self.mainViewController.contentViewController.childViewControllers firstObject];
+    if ([nav isKindOfClass:[UINavigationController class]]) {
+        [nav pushViewController:vc animated:YES];
     }
 }
 

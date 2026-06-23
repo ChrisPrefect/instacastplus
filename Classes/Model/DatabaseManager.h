@@ -23,7 +23,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 
 #define DMANAGER [DatabaseManager sharedDatabaseManager]
 
-@class ICFeed, ICEpisode, ICMedia, ICFTSController, CDEpisodeList;
+@class ICFeed, ICEpisode, ICMedia, ICFTSController, ICSpotlightIndexer, CDEpisodeList;
 
 @interface DatabaseManager : NSObject
     
@@ -43,6 +43,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 #endif
 
 @property (nonatomic, strong, readonly) ICFTSController* ftsController;
+@property (nonatomic, strong, readonly) ICSpotlightIndexer* spotlightIndexer;
 @property (nonatomic, readonly) BOOL ftsIndexing;
 
 - (void) save;
