@@ -16,7 +16,8 @@ extern "C" {
 
     CGPathRef CreatePathForRoundedRect(CGRect rect, CGFloat radius);
     UIBezierPath* BezierPathForRoundedRect(CGRect rect, CGFloat radius);
-    
+    void ICLocalizeViewText(UIView* view);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

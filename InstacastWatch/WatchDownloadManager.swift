@@ -130,6 +130,8 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         activeTasksByHash[hash] = nil
         guard let episode = WatchManifestStore.shared.removeEpisode(hash: hash) else { return }
         deleteRemovedManifestEpisode(episode)
+        // Removing an episode freed space — try to backfill the next evicted one that now fits.
+        autoFillEvictedEpisodes()
     }
 
     private func deleteRemovedManifestEpisode(_ episode: WatchEpisode) {
@@ -157,7 +159,34 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         for episode in WatchManifestStore.shared.sortedEpisodes where episode.status == .queued {
             startDownload(for: episode)
         }
+        autoFillEvictedEpisodes()
         WatchConnectivityController.shared.sendStorageStatus()
+    }
+
+    // Keeps the watch as full as possible: pulls storage-evicted episodes back onto the watch when
+    // space becomes available. Strictly anti-thrash by construction — it re-downloads ONLY into
+    // genuinely free space (file size + the same reserve the rest of the code honors), highest
+    // priority first, and NEVER evicts another episode to make room. It runs only while the queue is
+    // idle, so it can't race or undo an in-flight download. Episodes whose size is still unknown
+    // (expectedBytes == 0, never successfully probed) are left for an explicit tap rather than guessed.
+    private func autoFillEvictedEpisodes() {
+        guard activeTasksByHash.isEmpty else { return }
+        let reserve = WatchStorageManager.minimumReserveBytes
+        var projectedFree = WatchStorageManager.shared.freeBytes()
+        for episode in WatchManifestStore.shared.sortedEpisodes
+        where episode.status == .evicted && episode.localFileURL == nil && episode.expectedBytes > 0 {
+            guard projectedFree - episode.expectedBytes >= reserve else { continue }
+            projectedFree -= episode.expectedBytes
+            WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
+                item.status = .queued
+                item.lastError = nil
+            }
+            guard let queued = WatchManifestStore.shared.episode(hash: episode.episodeHash) else { continue }
+            var metadata = WatchDiagnostics.metadata(for: queued)
+            metadata["projectedFreeAfter"] = "\(projectedFree)"
+            WatchDiagnostics.log("storage-autofill", message: "Watch laedt evictierte Folge bei freiem Speicher nach", metadata: metadata)
+            startDownload(for: queued)
+        }
     }
 
     private func reattachDownloadTasks(completion: @escaping @MainActor () -> Void) {
@@ -452,11 +481,11 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
         let hash = task.taskDescription ?? ""
         Task { @MainActor in
             activeTasksByHash[hash] = nil
-            guard let error else { return }
-            if (error as NSError).code == NSURLErrorCancelled {
-                return
+            if let error, (error as NSError).code != NSURLErrorCancelled {
+                markDownloadFailed(hash: hash, error: error.localizedDescription)
             }
-            markDownloadFailed(hash: hash, error: error.localizedDescription)
+            // The queue may now be idle — backfill any evicted episodes that fit the freed/leftover space.
+            autoFillEvictedEpisodes()
         }
     }
 

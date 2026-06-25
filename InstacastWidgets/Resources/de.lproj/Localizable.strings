@@ -35,3 +35,26 @@
 "widget.sleeptimer" = "Sleeptimer: %@";
 "widget.chapter" = "Kapitel %d / %d";
 "widget.next" = "Nächste";
+
+/* Widget App Intents */
+"Play/Pause" = "Abspielen/Pausieren";
+"Skip Forward" = "Vorwärts springen";
+"Skip Backward" = "Zurückspringen";
+"Next Chapter" = "Nächstes Kapitel";
+"Previous Chapter" = "Vorheriges Kapitel";
+"Next Episode" = "Nächste Folge";
+"Previous Episode" = "Vorherige Folge";
+"Cycle Speed" = "Geschwindigkeit wechseln";
+"Toggle Sleep Timer" = "Sleep-Timer umschalten";
+"Skip to Chapter" = "Zu Kapitel springen";
+"Toggle playback." = "Wiedergabe umschalten.";
+"Skip forward." = "Vorwärts springen.";
+"Skip backward." = "Zurückspringen.";
+"Go to next chapter." = "Zum nächsten Kapitel springen.";
+"Go to previous chapter." = "Zum vorherigen Kapitel springen.";
+"Play next episode." = "Nächste Folge abspielen.";
+"Play previous episode." = "Vorherige Folge abspielen.";
+"Cycle through playback speeds." = "Durch Wiedergabegeschwindigkeiten wechseln.";
+"Start or cancel sleep timer." = "Sleep-Timer starten oder abbrechen.";
+"Jump directly to a specific chapter." = "Direkt zu einem bestimmten Kapitel springen.";
+"Chapter Index" = "Kapitelindex";

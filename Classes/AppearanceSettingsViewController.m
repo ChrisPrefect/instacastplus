@@ -105,6 +105,15 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
+- (UIColor*) _archivedColorForDefaultsKey:(NSString*)defaultsKey
+{
+    NSData *colorData = [USER_DEFAULTS objectForKey:defaultsKey];
+    if (![colorData isKindOfClass:[NSData class]]) {
+        return nil;
+    }
+    return [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+}
+
 
 #pragma mark - Table view data source
 
@@ -722,6 +731,10 @@ API_AVAILABLE(ios(14.0)){
             self->colorPickerTarget = ColorPickerTargetPlayer;
             [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
             UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            self->selectedPlayerColor = [self _archivedColorForDefaultsKey:PlayerThemeColorCode];
+            if (self->selectedPlayerColor) {
+                picker.selectedColor = self->selectedPlayerColor;
+            }
             picker.delegate = self;
             [self presentViewController:picker animated:YES completion:nil];
         }
@@ -732,6 +745,10 @@ API_AVAILABLE(ios(14.0)){
             self->colorPickerTarget = ColorPickerTargetInterface;
             [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
             UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            self->selectedThemeColor = [self _archivedColorForDefaultsKey:InterfaceThemeColorCode];
+            if (self->selectedThemeColor) {
+                picker.selectedColor = self->selectedThemeColor;
+            }
             picker.delegate = self;
             [self presentViewController:picker animated:YES completion:nil];
         }

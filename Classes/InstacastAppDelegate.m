@@ -29,6 +29,7 @@
 #import "WidgetDataExporter.h"
 #import "InstacastPlus-Swift.h"
 #import "AppleWatchSyncManager.h"
+#import "ViewFunctions.h"
 
 #import "MainViewController_4.h"
 #import "SubscriptionsTableViewController.h"
@@ -311,6 +312,7 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 
     if ([DatabaseManager dataStoreNeedsMigration]) {
         UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
+        ICLocalizeViewText(migrationViewController.view);
         self.window.rootViewController = migrationViewController;
         [self performSelector:@selector(_startUpApplicationWithLaunchOptions:) withObject:launchOptions afterDelay:0.1];
     }

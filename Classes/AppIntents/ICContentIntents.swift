@@ -117,9 +117,9 @@ struct ICPlayPodcastIntent: AudioPlaybackIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let episode = await ICIntentBridge.playNewestEpisode(ofPodcastID: podcast.id)
         if let episode {
-            return .result(dialog: "Playing “\(episode.title)”.")
+            return .result(dialog: ICLocalizedIntentDialog("Playing “%@”.", episode.title))
         }
-        return .result(dialog: "No playable episode found.")
+        return .result(dialog: ICLocalizedIntentDialog("No playable episode found."))
     }
 }
 
@@ -138,8 +138,8 @@ struct ICPlayEpisodeIntent: AudioPlaybackIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let played = await ICIntentBridge.playEpisode(withID: episode.id)
         if let played {
-            return .result(dialog: "Playing “\(played.title)”.")
+            return .result(dialog: ICLocalizedIntentDialog("Playing “%@”.", played.title))
         }
-        return .result(dialog: "Episode not found.")
+        return .result(dialog: ICLocalizedIntentDialog("Episode not found."))
     }
 }

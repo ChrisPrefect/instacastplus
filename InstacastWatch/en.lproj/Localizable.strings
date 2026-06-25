@@ -23,3 +23,6 @@
 "Nicht genügend Speicher auf der Watch." = "Not enough storage on the Watch.";
 "%@ frei · %d geladen" = "%@ free · %d downloaded";
 "Speicher voll – Platz freigeben" = "Storage full – free up space";
+"Download unvollständig: HTTP 206 Partial Content." = "Download incomplete: HTTP 206 Partial Content.";
+"Geladene Datei ist unvollständig." = "Downloaded file is incomplete.";
+"Audiositzung konnte nicht aktiviert werden." = "Audio session could not be activated.";

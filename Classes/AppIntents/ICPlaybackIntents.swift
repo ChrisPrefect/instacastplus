@@ -11,6 +11,13 @@
 //
 
 import AppIntents
+import Foundation
+
+func ICLocalizedIntentDialog(_ key: String, _ arguments: CVarArg...) -> IntentDialog {
+    let format = NSLocalizedString(key, comment: "")
+    let text = String(format: format, locale: Locale.current, arguments: arguments)
+    return IntentDialog(stringLiteral: text)
+}
 
 // MARK: - Transport
 
@@ -131,7 +138,7 @@ struct ICSetPlaybackSpeedIntent: AudioPlaybackIntent {
         await ICIntentBridge.setSpeed(speed)
         let value = await ICIntentBridge.currentSpeed()
         let formatted = String(format: "%g", value)
-        return .result(dialog: "Playback speed set to \(formatted)×")
+        return .result(dialog: ICLocalizedIntentDialog("Playback speed set to %@×", formatted))
     }
 }
 
@@ -162,7 +169,7 @@ struct ICSetSleepTimerIntent: AudioPlaybackIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         await ICIntentBridge.setSleepTimer(minutes: minutes)
-        return .result(dialog: "Sleep timer set for \(minutes) minutes.")
+        return .result(dialog: ICLocalizedIntentDialog("Sleep timer set for %d minutes.", minutes))
     }
 }
 
@@ -187,9 +194,9 @@ struct ICMarkPlayedIntent: AudioPlaybackIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let title = await ICIntentBridge.markCurrentPlayed()
         if let title {
-            return .result(dialog: "Marked “\(title)” as played.")
+            return .result(dialog: ICLocalizedIntentDialog("Marked “%@” as played.", title))
         }
-        return .result(dialog: "Nothing is playing.")
+        return .result(dialog: ICLocalizedIntentDialog("Nothing is playing."))
     }
 }
 
@@ -201,9 +208,9 @@ struct ICToggleStarIntent: AudioPlaybackIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let starred = await ICIntentBridge.toggleStarCurrent()
         switch starred {
-        case .some(true):  return .result(dialog: "Added to favorites.")
-        case .some(false): return .result(dialog: "Removed from favorites.")
-        case .none:        return .result(dialog: "Nothing is playing.")
+        case .some(true):  return .result(dialog: ICLocalizedIntentDialog("Added to favorites."))
+        case .some(false): return .result(dialog: ICLocalizedIntentDialog("Removed from favorites."))
+        case .none:        return .result(dialog: ICLocalizedIntentDialog("Nothing is playing."))
         }
     }
 }

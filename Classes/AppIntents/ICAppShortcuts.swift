@@ -4,7 +4,7 @@
 //
 //  Zero-setup Siri phrases for the headline actions. Every phrase must contain
 //  the `\(.applicationName)` token. The system surfaces up to 10 App Shortcuts;
-//  bilingual phrases are provided via AppShortcuts.xcstrings.
+//  bilingual phrases are provided via the app's Localizable.strings files.
 //
 
 import AppIntents

@@ -42,6 +42,7 @@ cleanup = function_body(storage, "func cleanupIfNeeded(")
 start_download = function_body(download, "func startDownload(")
 queue_runner = function_body(download, "private func startQueuedDownloadsAfterReattach(")
 prioritize = function_body(download, "func prioritizeEpisode(")
+autofill = function_body(download, "private func autoFillEvictedEpisodes(")
 
 require(
     "case evicted" in episode,
@@ -75,7 +76,18 @@ require(
 require(
     "for episode in WatchManifestStore.shared.sortedEpisodes where episode.status == .queued" in queue_runner
     and ".evicted" not in queue_runner,
-    "The automatic Watch queue runner must not restart storage-evicted episodes.",
+    "The automatic Watch queue runner must start only queued episodes directly; storage-evicted "
+    "episodes are restarted exclusively through the controlled auto-fill path.",
+)
+
+require(
+    "guard activeTasksByHash.isEmpty" in autofill
+    and "status == .evicted" in autofill
+    and "episode.expectedBytes > 0" in autofill
+    and "WatchStorageManager.minimumReserveBytes" in autofill
+    and "projectedFree -= episode.expectedBytes" in autofill,
+    "Auto-fill must re-download evicted episodes only into free space above the reserve (never by "
+    "evicting another episode) and only while the queue is idle, so it cannot reintroduce the thrash.",
 )
 
 require(

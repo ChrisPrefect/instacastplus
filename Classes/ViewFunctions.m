@@ -7,6 +7,7 @@
 //
 
 #import "ViewFunctions.h"
+#import "Foundation+Localization.h"
 
 void DrawRoundedRectangle(CGRect aRect, CGFloat radius, BOOL stroke)
 {
@@ -76,4 +77,46 @@ UIBezierPath* BezierPathForRoundedRect(CGRect rect, CGFloat radius)
     CFRelease(path);
     
     return bezierPath;
+}
+
+void ICLocalizeViewText(UIView* view)
+{
+    if (!view) {
+        return;
+    }
+
+    if ([view isKindOfClass:[UILabel class]]) {
+        UILabel* label = (UILabel*)view;
+        label.text = label.text.ls;
+    }
+    else if ([view isKindOfClass:[UIButton class]]) {
+        UIButton* button = (UIButton*)view;
+        NSArray* states = @[@(UIControlStateNormal), @(UIControlStateHighlighted), @(UIControlStateSelected), @(UIControlStateDisabled)];
+        for (NSNumber* stateNumber in states) {
+            UIControlState state = (UIControlState)stateNumber.unsignedIntegerValue;
+            NSString* title = [button titleForState:state];
+            if (title.length > 0) {
+                [button setTitle:title.ls forState:state];
+            }
+        }
+    }
+    else if ([view isKindOfClass:[UITextField class]]) {
+        UITextField* textField = (UITextField*)view;
+        if (textField.placeholder.length > 0) {
+            textField.placeholder = textField.placeholder.ls;
+        }
+    }
+    else if ([view isKindOfClass:[UISegmentedControl class]]) {
+        UISegmentedControl* segmentedControl = (UISegmentedControl*)view;
+        for (NSInteger index = 0; index < segmentedControl.numberOfSegments; index++) {
+            NSString* title = [segmentedControl titleForSegmentAtIndex:index];
+            if (title.length > 0) {
+                [segmentedControl setTitle:title.ls forSegmentAtIndex:index];
+            }
+        }
+    }
+
+    for (UIView* subview in view.subviews) {
+        ICLocalizeViewText(subview);
+    }
 }

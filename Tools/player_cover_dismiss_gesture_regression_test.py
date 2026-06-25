@@ -46,11 +46,12 @@ require(
     "The cover dismissal pan must only begin for a clear downward gesture, so horizontal chapter-artwork paging remains unchanged.",
 )
 require(
-    "for (UIView* view = gestureRecognizer.view; view; view = view.superview)" not in simultaneous,
-    "The cover dismissal pan must not recognize simultaneously with ancestor scroll views; the player table view would move the header while the sheet transition moves the whole player.",
+    "return NO;" in simultaneous
+    and "otherGestureRecognizer == scrollView.panGestureRecognizer" not in simultaneous,
+    "Once the downward dismissal pan begins on the artwork collection, horizontal paging must be locked instead of recognizing simultaneously with the collection view pan.",
 )
 require(
-    "(UIScrollView*)gestureRecognizer.view" in simultaneous
-    and "otherGestureRecognizer == scrollView.panGestureRecognizer" in simultaneous,
-    "If simultaneous recognition is allowed, it must be limited to the scroll view that owns the dismissal pan, not the PlayerInfo table view ancestor.",
+    "_dismissalTranslationBaselineY = translation.y" in playback
+    and "translation.y - _dismissalTranslationBaselineY" in playback,
+    "The interactive dismissal must subtract the pan translation at UIGestureRecognizerStateBegan so the player does not jump when UIKit's pan threshold is crossed.",
 )

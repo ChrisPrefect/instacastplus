@@ -32,6 +32,7 @@
 #import "CDModel.h"
 #import "CDPlaylist.h"
 #import "CDFeed+Helper.h"
+#import "ViewFunctions.h"
 
 #import "SubscriptionsTableViewController.h"
 #import "PlaybackViewController.h"
@@ -181,6 +182,7 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 
         if ([DatabaseManager dataStoreNeedsMigration]) {
             UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
+            ICLocalizeViewText(migrationViewController.view);
             self.window.rootViewController = migrationViewController;
             InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
             self.mainViewController = nil;

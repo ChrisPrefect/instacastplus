@@ -35,3 +35,26 @@
 "widget.sleeptimer" = "Sleeptimer: %@";
 "widget.chapter" = "Chapter %d / %d";
 "widget.next" = "Next";
+
+/* Widget App Intents */
+"Play/Pause" = "Play/Pause";
+"Skip Forward" = "Skip Forward";
+"Skip Backward" = "Skip Backward";
+"Next Chapter" = "Next Chapter";
+"Previous Chapter" = "Previous Chapter";
+"Next Episode" = "Next Episode";
+"Previous Episode" = "Previous Episode";
+"Cycle Speed" = "Cycle Speed";
+"Toggle Sleep Timer" = "Toggle Sleep Timer";
+"Skip to Chapter" = "Skip to Chapter";
+"Toggle playback." = "Toggle playback.";
+"Skip forward." = "Skip forward.";
+"Skip backward." = "Skip backward.";
+"Go to next chapter." = "Go to next chapter.";
+"Go to previous chapter." = "Go to previous chapter.";
+"Play next episode." = "Play next episode.";
+"Play previous episode." = "Play previous episode.";
+"Cycle through playback speeds." = "Cycle through playback speeds.";
+"Start or cancel sleep timer." = "Start or cancel sleep timer.";
+"Jump directly to a specific chapter." = "Jump directly to a specific chapter.";
+"Chapter Index" = "Chapter Index";
