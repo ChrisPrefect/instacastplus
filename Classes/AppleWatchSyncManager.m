@@ -192,6 +192,33 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     return [[self stateForEpisodeHash:episode.objectHash] downloadedOnWatch];
 }
 
+- (NSInteger)watchStorageEvictedCount
+{
+    NSInteger count = 0;
+    for (AppleWatchEpisodeState* state in [self allEpisodeStates]) {
+        if ([state.watchStatus isEqualToString:ICAppleWatchStatusEvicted]) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+- (BOOL)watchStorageFull
+{
+    // The genuinely-stuck case worth surfacing: episodes were evicted for space AND nothing is
+    // currently downloaded, so the watch could not keep a single episode. Normal over-subscription
+    // (some downloaded, some evicted) is silent — the watch manages it automatically.
+    if ([self watchStorageEvictedCount] == 0) {
+        return NO;
+    }
+    for (AppleWatchEpisodeState* state in [self allEpisodeStates]) {
+        if ([state.watchStatus isEqualToString:ICAppleWatchStatusDownloaded]) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
 - (BOOL)canSendEpisodeToWatch:(CDEpisode*)episode
 {
     if (!episode || episode.video || episode.archived) {
@@ -744,10 +771,14 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
         [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Download wegen Speicher entfernt" metadata:@{
             @"episodeHash": episodeHash ?: @"",
+            @"reason": [payload[@"reason"] isKindOfClass:[NSString class]] ? payload[@"reason"] : @"",
         }];
         [self _clearCurrentWatchDownloadIfMatchesHash:episodeHash];
         if (state) {
-            state.watchStatus = ICAppleWatchStatusQueuedOnWatch;
+            // The watch evicted this for storage. Mirror that state instead of resetting to "queued"
+            // (which made the phone show "Wartet" while the watch showed "Speicher voll").
+            state.watchStatus = ICAppleWatchStatusEvicted;
+            state.watchLastError = @"Nicht genügend Speicher auf der Watch.".ls;
             state.watchDownloadedDate = nil;
             state.watchActualFileSize = 0;
             state.watchActualDuration = 0;
@@ -758,6 +789,20 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         self.watchUsedBytes = [payload[@"usedBytes"] longLongValue];
         self.watchTotalBytes = [payload[@"totalBytes"] longLongValue];
         self.watchDownloadBytes = [payload[@"instacastWatchDownloadBytes"] longLongValue];
+        // The single most important signal for the eviction/thrash diagnosis: does the wanted set
+        // fit? wantedBytes vs (freeBytes + downloadedBytes) shows it at a glance. Previously this
+        // arrived on the phone but was never written to the diagnostics log.
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Speicherstatus" metadata:@{
+            @"freeBytes": @(self.watchFreeBytes),
+            @"totalBytes": @(self.watchTotalBytes),
+            @"appDownloadBytes": @(self.watchDownloadBytes),
+            @"downloadedCount": payload[@"downloadedCount"] ?: @0,
+            @"downloadedBytes": payload[@"downloadedBytes"] ?: @0,
+            @"wantedBytes": payload[@"wantedBytes"] ?: @0,
+            @"episodeCount": payload[@"episodeCount"] ?: @0,
+            @"playingHash": payload[@"playingHash"] ?: @"",
+            @"watchTimestamp": payload[@"watchTimestamp"] ?: @"",
+        }];
     }
     else if ([type isEqualToString:@"playback.watchPosition"] || [type isEqualToString:@"playback.watchFinished"]) {
         [self _mergeWatchPlaybackPayload:payload finished:[type isEqualToString:@"playback.watchFinished"]];

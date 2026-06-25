@@ -18,6 +18,7 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchStatusQueuedOnWatch;
 FOUNDATION_EXPORT NSString* const ICAppleWatchStatusDownloading;
 FOUNDATION_EXPORT NSString* const ICAppleWatchStatusDownloaded;
 FOUNDATION_EXPORT NSString* const ICAppleWatchStatusFailed;
+FOUNDATION_EXPORT NSString* const ICAppleWatchStatusEvicted;
 FOUNDATION_EXPORT NSString* const ICAppleWatchStatusRemoving;
 
 @interface AppleWatchEpisodeState : CDBase

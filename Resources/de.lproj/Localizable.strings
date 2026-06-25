@@ -1278,6 +1278,9 @@
 "Auf Apple Watch" = "Auf Apple Watch";
 "Laedt auf Apple Watch" = "Lädt auf Apple Watch";
 "Fehler beim Laden" = "Fehler beim Laden";
+"Speicher voll" = "Speicher voll";
+"Nicht genügend Speicher auf der Watch." = "Nicht genügend Speicher auf der Watch.";
+"Kein Platz auf der Apple Watch – gib Speicher frei, um Folgen zu laden." = "Kein Platz auf der Apple Watch – gib Speicher frei, um Folgen zu laden.";
 "Wird entfernt" = "Wird entfernt";
 "Wartet auf Apple Watch" = "Wartet auf Apple Watch";
 "Jetzt synchronisieren" = "Jetzt synchronisieren";

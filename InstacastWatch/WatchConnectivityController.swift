@@ -52,12 +52,24 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
     }
 
     func sendStorageStatus() {
+        let episodes = WatchManifestStore.shared.episodes
+        let downloaded = episodes.filter { $0.status == .downloaded }
+        let downloadedBytes = downloaded.reduce(Int64(0)) { $0 + max(0, $1.actualFileSize) }
+        // Sum of what the manifest *wants* on the watch (actual size if known, else the expected size).
+        // Comparing this against freeBytes + downloadedBytes shows at a glance whether the desired
+        // set can ever fit — the root signal for the eviction/re-download thrash.
+        let wantedBytes = episodes.reduce(Int64(0)) { $0 + max($1.actualFileSize, $1.expectedBytes) }
         send(type: "watch.storageStatus", payload: [
             "freeBytes": WatchStorageManager.shared.freeBytes(),
             "usedBytes": WatchStorageManager.shared.usedBytes(),
             "totalBytes": WatchStorageManager.shared.totalBytes(),
             "instacastWatchDownloadBytes": WatchStorageManager.shared.downloadBytes(),
-            "episodeCount": WatchManifestStore.shared.episodes.count,
+            "episodeCount": episodes.count,
+            "downloadedCount": downloaded.count,
+            "downloadedBytes": downloadedBytes,
+            "wantedBytes": wantedBytes,
+            "playingHash": WatchPlayerController.shared.playingEpisodeHash ?? "",
+            "watchTimestamp": dateFormatter.string(from: Date()),
             "lastCleanupDate": dateFormatter.string(from: Date()),
         ])
     }

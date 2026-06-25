@@ -4,6 +4,11 @@ import Foundation
 final class WatchStorageManager {
     static let shared = WatchStorageManager()
 
+    /// The watch always keeps at least this much free space so watchOS is not starved — it suspends
+    /// apps and audio under storage pressure. Shared by the pre-download capacity check and the live
+    /// guard that aborts a running download before it eats into the reserve.
+    static let minimumReserveBytes: Int64 = 50 * 1024 * 1024
+
     private init() {}
 
     var downloadsDirectory: URL {
@@ -104,10 +109,15 @@ final class WatchStorageManager {
         return max(0, total - freeBytes())
     }
 
-    func cleanupIfNeeded(bytesNeeded: Int64, excluding episodeHash: String?) -> [WatchEpisode] {
+    func cleanupIfNeeded(bytesNeeded: Int64, excluding episodeHash: String?) -> [WatchEpisode]? {
         var removed: [WatchEpisode] = []
-        let minimumFreeBytes = max(bytesNeeded, 50 * 1024 * 1024)
-        if freeBytes() >= minimumFreeBytes {
+        // Reserve the file size PLUS the safety floor, so at least minimumReserveBytes stays free
+        // AFTER the download finishes. Otherwise an approved large download would drain free space
+        // to ~0 and the live guard (which trips below the same floor) would abort it near the end.
+        // bytesNeeded == 0 (size unknown) falls back to just the floor.
+        let minimumFreeBytes = max(bytesNeeded, 0) + Self.minimumReserveBytes
+        let currentFreeBytes = freeBytes()
+        if currentFreeBytes >= minimumFreeBytes {
             return []
         }
 
@@ -127,21 +137,58 @@ final class WatchStorageManager {
                 }
             }
 
-        for episode in candidates where freeBytes() < minimumFreeBytes {
-            removeLocalFile(for: episode)
-            WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
-                item.status = .queued
+        var projectedFreeBytes = currentFreeBytes
+        var selectedCandidates: [(episode: WatchEpisode, expectedBytes: Int64)] = []
+        for episode in candidates where projectedFreeBytes < minimumFreeBytes {
+            let expectedBytes = max(episode.expectedBytes, episode.actualFileSize)
+            let reclaimableBytes = localFileSize(for: episode)
+            guard reclaimableBytes > 0 else { continue }
+            projectedFreeBytes += reclaimableBytes
+            selectedCandidates.append((episode, expectedBytes))
+        }
+
+        guard projectedFreeBytes >= minimumFreeBytes else {
+            return nil
+        }
+
+        for selectedCandidate in selectedCandidates {
+            removeLocalFile(for: selectedCandidate.episode)
+            WatchManifestStore.shared.updateEpisode(hash: selectedCandidate.episode.episodeHash) { item in
+                item.status = .evicted
                 item.localFileURL = nil
                 item.actualFileSize = 0
                 item.downloadedBytes = 0
-                item.expectedBytes = 0
+                item.expectedBytes = selectedCandidate.expectedBytes
                 item.chapters = []
                 item.chapterArtworkBaseURL = nil
+                item.lastError = NSLocalizedString("Nicht genügend Speicher auf der Watch.", comment: "")
             }
-            removed.append(episode)
+            removed.append(selectedCandidate.episode)
+        }
+
+        if !removed.isEmpty {
+            WatchDiagnostics.log("storage-cleanup", message: "Watch-Speicher freigeraeumt", metadata: [
+                "bytesNeeded": "\(bytesNeeded)",
+                "minimumFreeBytes": "\(minimumFreeBytes)",
+                "freeBefore": "\(currentFreeBytes)",
+                "projectedFreeAfter": "\(projectedFreeBytes)",
+                "removedCount": "\(removed.count)",
+                "removedHashes": removed.map(\.episodeHash).joined(separator: ","),
+            ])
         }
 
         return removed
+    }
+
+    private func localFileSize(for episode: WatchEpisode) -> Int64 {
+        guard
+            let fileURL = resolvedLocalFileURL(for: episode),
+            let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+            let size = attributes[.size] as? NSNumber
+        else {
+            return 0
+        }
+        return size.int64Value
     }
 
 }

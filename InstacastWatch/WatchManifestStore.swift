@@ -214,6 +214,7 @@ final class WatchManifestStore: ObservableObject {
             "\(prefix).downloading": "\(counts[.downloading, default: 0])",
             "\(prefix).downloaded": "\(counts[.downloaded, default: 0])",
             "\(prefix).failed": "\(counts[.failed, default: 0])",
+            "\(prefix).evicted": "\(counts[.evicted, default: 0])",
             "\(prefix).removing": "\(counts[.removing, default: 0])",
         ]
     }

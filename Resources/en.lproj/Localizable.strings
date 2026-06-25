@@ -1253,6 +1253,9 @@
 "Auf Apple Watch" = "On Apple Watch";
 "Laedt auf Apple Watch" = "Loading on Apple Watch";
 "Fehler beim Laden" = "Download Error";
+"Speicher voll" = "Storage Full";
+"Nicht genügend Speicher auf der Watch." = "Not enough storage on the Watch.";
+"Kein Platz auf der Apple Watch – gib Speicher frei, um Folgen zu laden." = "No space on Apple Watch – free up space to load episodes.";
 "Wird entfernt" = "Removing";
 "Wartet auf Apple Watch" = "Waiting for Apple Watch";
 "Jetzt synchronisieren" = "Sync Now";

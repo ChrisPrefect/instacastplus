@@ -282,6 +282,11 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     else if (!manager.watchAppInstalled) {
         self.summaryLabel.text = @"Die InstacastPlus-Watch-App ist noch nicht installiert.".ls;
     }
+    else if ([manager watchStorageFull]) {
+        // Only surfaced when the watch could not keep a single episode — the rare case where the
+        // user actually has to act. Normal over-subscription is managed silently.
+        self.summaryLabel.text = @"Kein Platz auf der Apple Watch – gib Speicher frei, um Folgen zu laden.".ls;
+    }
     else {
         self.summaryLabel.text = nil;
     }

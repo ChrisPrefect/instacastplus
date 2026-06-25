@@ -21,10 +21,19 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private var nowPlayingArtworkURL: URL?
     private var nowPlayingArtworkEpisodeHash: String?
 
+    // Symptom-1 telemetry: detect playback that stops without a clean delegate callback.
+    private let playbackActiveHashKey = "InstacastWatchPlaybackActiveHash"
+    private let playbackActiveStartKey = "InstacastWatchPlaybackActiveStart"
+    private var lastStallReportedPosition: TimeInterval = -1
+
     private override init() {
         super.init()
         dateFormatter.formatOptions = [.withInternetDateTime]
         configureRemoteCommands()
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(handleAudioSessionInterruption(_:)),
+                                               name: AVAudioSession.interruptionNotification,
+                                               object: nil)
     }
 
     func togglePlayback(for episode: WatchEpisode) {
@@ -115,6 +124,8 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
         isPlaying = true
         currentPosition = player.currentTime
+        lastStallReportedPosition = -1
+        setPlaybackActiveMarker(for: episode.episodeHash)
         startTimer()
         updateNowPlayingInfo(for: episode)
         reportPosition(finished: false)
@@ -125,6 +136,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         playbackGeneration += 1
         player?.pause()
         isPlaying = false
+        clearPlaybackActiveMarker()
         stopTimer()
         reportPosition(finished: false)
         updateNowPlayingInfo()
@@ -194,6 +206,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             self.player = nil
             playingEpisodeHash = nil
             currentPosition = 0
+            clearPlaybackActiveMarker()
             clearNowPlayingInfo()
 
             if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
@@ -233,6 +246,79 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                 }
             }
         }
+    }
+
+    // Posted on an arbitrary thread — extract the Sendable values, then hop to the main actor.
+    @objc nonisolated private func handleAudioSessionInterruption(_ notification: Notification) {
+        let info = notification.userInfo
+        let rawType = info?[AVAudioSessionInterruptionTypeKey] as? UInt
+        let rawOptions = info?[AVAudioSessionInterruptionOptionKey] as? UInt
+        Task { @MainActor in
+            self.logAudioSessionInterruption(rawType: rawType, rawOptions: rawOptions)
+        }
+    }
+
+    private func logAudioSessionInterruption(rawType: UInt?, rawOptions: UInt?) {
+        guard let rawType, let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
+        var metadata: [String: String] = [
+            "episodeHash": playingEpisodeHash ?? "",
+            "wasPlaying": isPlaying ? "true" : "false",
+            "currentTime": "\(player?.currentTime ?? 0)",
+            "freeBytes": "\(WatchStorageManager.shared.freeBytes())",
+        ]
+        switch type {
+        case .began:
+            metadata["phase"] = "began"
+        case .ended:
+            metadata["phase"] = "ended"
+            if let rawOptions {
+                metadata["shouldResume"] = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume) ? "true" : "false"
+            }
+        @unknown default:
+            metadata["phase"] = "unknown"
+        }
+        WatchDiagnostics.log("playback-interruption", message: "Watch-Playback unterbrochen", metadata: metadata)
+    }
+
+    // Called once at app launch. If a playback session was still marked active, the previous process
+    // was suspended/killed while audio was playing — the prime suspect for "playback cuts out after a
+    // few seconds". Capture how long it had played, whether the file survived, and free space.
+    func checkForUnexpectedTermination() {
+        let defaults = UserDefaults.standard
+        guard let hash = defaults.string(forKey: playbackActiveHashKey), !hash.isEmpty else { return }
+        var metadata: [String: String] = ["episodeHash": hash]
+        if let start = defaults.object(forKey: playbackActiveStartKey) as? Date {
+            metadata["secondsSincePlaybackStart"] = String(format: "%.0f", Date().timeIntervalSince(start))
+            metadata["playbackStartDate"] = dateFormatter.string(from: start)
+        }
+        if let episode = WatchManifestStore.shared.episode(hash: hash) {
+            metadata["status"] = episode.status.rawValue
+            metadata["lastPlaybackPosition"] = "\(episode.lastPlaybackPosition)"
+            if let fileURL = WatchStorageManager.shared.resolvedLocalFileURL(for: episode) {
+                metadata["fileExists"] = "true"
+                if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                   let size = attributes[.size] as? NSNumber {
+                    metadata["fileBytes"] = "\(size.int64Value)"
+                }
+            } else {
+                metadata["fileExists"] = "false"
+            }
+        }
+        metadata["freeBytes"] = "\(WatchStorageManager.shared.freeBytes())"
+        WatchDiagnostics.log("playback-terminated-unexpectedly", message: "Watch-Playback wurde unerwartet beendet", metadata: metadata)
+        clearPlaybackActiveMarker()
+    }
+
+    private func setPlaybackActiveMarker(for episodeHash: String) {
+        let defaults = UserDefaults.standard
+        defaults.set(episodeHash, forKey: playbackActiveHashKey)
+        defaults.set(Date(), forKey: playbackActiveStartKey)
+    }
+
+    private func clearPlaybackActiveMarker() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: playbackActiveHashKey)
+        defaults.removeObject(forKey: playbackActiveStartKey)
     }
 
     private func configureRemoteCommands() {
@@ -437,7 +523,23 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 
     private func tickPlaybackPosition() {
-        guard let player, playingEpisodeHash != nil else { return }
+        guard let player, let hash = playingEpisodeHash else { return }
+        // We believe playback is running but the AVAudioPlayer has stopped without firing a delegate
+        // callback — the system deactivated/suspended the session or the file vanished underneath it.
+        // This is the 1-second-resolution signal for the "cuts out after a few seconds" report.
+        if isPlaying, !player.isPlaying, lastStallReportedPosition != player.currentTime {
+            lastStallReportedPosition = player.currentTime
+            var metadata: [String: String] = [
+                "episodeHash": hash,
+                "currentTime": "\(player.currentTime)",
+                "duration": "\(player.duration)",
+                "freeBytes": "\(WatchStorageManager.shared.freeBytes())",
+            ]
+            if let fileURL = WatchManifestStore.shared.episode(hash: hash)?.localFileURL {
+                metadata["fileExists"] = FileManager.default.fileExists(atPath: fileURL.path) ? "true" : "false"
+            }
+            WatchDiagnostics.log("playback-stalled", message: "Watch-Playback unerwartet gestoppt", metadata: metadata)
+        }
         currentPosition = player.currentTime
         updateNowPlayingInfo()
 
@@ -505,6 +607,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         playingEpisodeHash = nil
         isPlaying = false
         currentPosition = 0
+        clearPlaybackActiveMarker()
         clearNowPlayingInfo()
 
         WatchStorageManager.shared.removeLocalFile(for: episode)

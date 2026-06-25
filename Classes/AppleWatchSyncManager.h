@@ -44,6 +44,9 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchEpisodeStatesDidChangeNotification
 - (BOOL)isEpisodeDownloadedOnWatch:(CDEpisode*)episode;
 - (BOOL)canSendEpisodeToWatch:(CDEpisode*)episode;
 
+- (NSInteger)watchStorageEvictedCount;
+- (BOOL)watchStorageFull;
+
 - (void)sendEpisodeToWatch:(CDEpisode*)episode;
 - (void)removeEpisodeFromWatch:(CDEpisode*)episode;
 - (void)prioritizeEpisodeOnWatch:(CDEpisode*)episode;

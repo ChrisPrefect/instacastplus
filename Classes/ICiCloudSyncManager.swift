@@ -719,10 +719,9 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
 
     private func refreshCloudInventory(reason: String) {
         guard !isFetchingCloudInventory else {
+            // A refresh is already in flight; remember the reason so it re-runs afterwards.
+            // No diagnostics line here — this "skipped" path fired 253× in one capture (pure noise).
             pendingCloudInventoryRefreshReason = reason
-            var metadata: [String: Any] = ["reason": reason]
-            metadata.merge(syncDiagnosticsMetadata()) { current, _ in current }
-            logSyncEvent("Cloud-Inventar-Abfrage übersprungen", metadata: metadata)
             return
         }
         pendingCloudInventoryRefreshReason = nil
@@ -935,7 +934,8 @@ private final class ICCloudInventoryCountsBox: @unchecked Sendable {
 
     private func scheduleLowPrioritySync() {
         guard anySyncEnabled, lowPrioritySyncTask == nil else { return }
-        logSyncEvent("iCloud Sync mit niedriger Priorität geplant")
+        // No "scheduled" diagnostics line — it fired 171× in one capture and only brackets the
+        // "started"/"completed" events that already mark real sync activity.
         // CKSyncEngine asserts when sendChanges recurses from one of its delegate tasks.
         // Detached scheduling drops that callback task context before the manager syncs.
         lowPrioritySyncTask = Task.detached(priority: .background) { [weak self] in

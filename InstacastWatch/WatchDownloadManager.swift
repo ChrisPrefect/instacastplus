@@ -57,12 +57,26 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     func startDownload(for episode: WatchEpisode) {
         guard activeTasksByHash[episode.episodeHash] == nil, episode.localFileURL == nil else { return }
 
-        let removed = WatchStorageManager.shared.cleanupIfNeeded(bytesNeeded: episode.expectedBytes, excluding: episode.episodeHash)
+        guard let removed = WatchStorageManager.shared.cleanupIfNeeded(bytesNeeded: episode.expectedBytes, excluding: episode.episodeHash) else {
+            WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
+                item.status = .evicted
+                item.localFileURL = nil
+                item.actualFileSize = 0
+                item.downloadedBytes = 0
+                item.expectedBytes = max(item.expectedBytes, episode.expectedBytes)
+                item.lastError = NSLocalizedString("Nicht genügend Speicher auf der Watch.", comment: "")
+            }
+
+            var metadata = WatchDiagnostics.metadata(for: episode)
+            metadata["freeBytes"] = "\(WatchStorageManager.shared.freeBytes())"
+            metadata["expectedBytes"] = "\(episode.expectedBytes)"
+            WatchDiagnostics.log("download-storage-insufficient", message: "Watch-Speicher reicht nicht fuer Download", metadata: metadata)
+            sendStorageEviction(hash: episode.episodeHash)
+            WatchConnectivityController.shared.sendStorageStatus()
+            return
+        }
         for removedEpisode in removed {
-            WatchConnectivityController.shared.send(type: "watch.downloadEvicted", payload: [
-                "episodeHash": removedEpisode.episodeHash,
-                "timestamp": timestamp(),
-            ])
+            sendStorageEviction(hash: removedEpisode.episodeHash)
         }
 
         var request = URLRequest(url: episode.mediaURL)
@@ -93,7 +107,7 @@ final class WatchDownloadManager: NSObject, ObservableObject {
             return
         }
         guard let episode = WatchManifestStore.shared.episode(hash: hash) else { return }
-        if episode.status == .failed {
+        if episode.status == .failed || episode.status == .evicted {
             WatchManifestStore.shared.updateEpisode(hash: hash) { item in
                 item.status = .queued
                 item.lastError = nil
@@ -228,6 +242,8 @@ final class WatchDownloadManager: NSObject, ObservableObject {
 
     private func downloadValidationError(for task: URLSessionDownloadTask, fileURL: URL) -> String? {
         let hash = task.taskDescription ?? ""
+        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         if let httpResponse = task.response as? HTTPURLResponse {
             if !(200..<300).contains(httpResponse.statusCode) {
                 WatchDiagnostics.log("download-validation-failed", message: "Watch-Download HTTP-Fehler", metadata: [
@@ -236,7 +252,7 @@ final class WatchDownloadManager: NSObject, ObservableObject {
                 ])
                 return String(format: NSLocalizedString("Download fehlgeschlagen: HTTP %ld.", comment: ""), httpResponse.statusCode)
             }
-            if httpResponse.statusCode == 206 {
+            if httpResponse.statusCode == 206, !isCompletePartialContentResponse(httpResponse, actualSize: size) {
                 WatchDiagnostics.log("download-validation-failed", message: "Watch-Download ist HTTP 206 Partial Content", metadata: [
                     "episodeHash": hash,
                     "httpStatus": "\(httpResponse.statusCode)",
@@ -245,8 +261,6 @@ final class WatchDownloadManager: NSObject, ObservableObject {
             }
         }
 
-        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
         if size <= 0 {
             WatchDiagnostics.log("download-validation-failed", message: "Watch-Downloaddatei ist leer", metadata: [
                 "episodeHash": hash,
@@ -264,6 +278,73 @@ final class WatchDownloadManager: NSObject, ObservableObject {
             return NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
         }
         return nil
+    }
+
+    private func isCompletePartialContentResponse(_ response: HTTPURLResponse, actualSize: Int64) -> Bool {
+        guard
+            actualSize > 0,
+            let contentRange = response.value(forHTTPHeaderField: "Content-Range")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return false
+        }
+
+        let components = contentRange.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard components.count == 2, components[0].lowercased() == "bytes" else {
+            return false
+        }
+
+        let rangeAndTotal = components[1].split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+        guard
+            rangeAndTotal.count == 2,
+            let totalSize = Int64(rangeAndTotal[1])
+        else {
+            return false
+        }
+
+        // URLSession reassembles the complete file even when the final response is a *resumed*
+        // 206 whose Content-Range starts at an offset > 0 — the usual case after a background
+        // download is interrupted and continued (the customer's failing downloads showed partial
+        // bytes before the 206). The range bounds describe only the last network segment, not the
+        // file on disk, so requiring the range to start at byte 0 would reject every resumed
+        // download. Completeness is proven by the staged file matching the resource's declared
+        // total size; a truncated file has actualSize < totalSize and stays rejected, and the
+        // downstream AVURLAsset playability check guards against a same-size-but-corrupt file.
+        return totalSize == actualSize
+    }
+
+    // Stops a running download that is about to breach the free-space reserve, marks the episode as
+    // storage-evicted ("Speicher voll"), and tells the phone so its list/warning stays in sync.
+    private func abortDownloadForInsufficientStorage(hash: String, totalBytesExpectedToWrite: Int64) {
+        let episode = WatchManifestStore.shared.episode(hash: hash)
+        activeTasksByHash[hash]?.cancel()
+        activeTasksByHash[hash] = nil
+        lastProgressReportByHash[hash] = nil
+        WatchManifestStore.shared.updateEpisode(hash: hash) { item in
+            item.status = .evicted
+            item.localFileURL = nil
+            item.actualFileSize = 0
+            item.downloadedBytes = 0
+            if totalBytesExpectedToWrite > 0 {
+                item.expectedBytes = max(item.expectedBytes, totalBytesExpectedToWrite)
+            }
+            item.lastError = NSLocalizedString("Nicht genügend Speicher auf der Watch.", comment: "")
+        }
+        var metadata = episode.map { WatchDiagnostics.metadata(for: $0) } ?? ["episodeHash": hash]
+        metadata["freeBytes"] = "\(WatchStorageManager.shared.freeBytes())"
+        metadata["totalBytesExpected"] = "\(totalBytesExpectedToWrite)"
+        WatchDiagnostics.log("download-storage-aborted", message: "Watch-Download wegen Speichermangel abgebrochen", metadata: metadata)
+        sendStorageEviction(hash: hash)
+        WatchConnectivityController.shared.sendStorageStatus()
+    }
+
+    // Single channel for "this episode is storage-evicted / Speicher voll" so the phone applies one
+    // consistent status regardless of which path (pre-check, make-room eviction, or live abort) hit it.
+    private func sendStorageEviction(hash: String) {
+        WatchConnectivityController.shared.send(type: "watch.downloadEvicted", payload: [
+            "episodeHash": hash,
+            "reason": "storageFull",
+            "timestamp": timestamp(),
+        ])
     }
 
     private func markDownloadFailed(hash: String, error: String) {
@@ -386,6 +467,10 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                                 totalBytesExpectedToWrite: Int64) {
         let hash = downloadTask.taskDescription ?? ""
         Task { @MainActor in
+            // A late progress callback after the storage guard aborted (.evicted) or the task failed
+            // must not resurrect the episode back to .downloading.
+            let currentStatus = WatchManifestStore.shared.episode(hash: hash)?.status
+            if currentStatus == .evicted || currentStatus == .failed { return }
             WatchManifestStore.shared.updateEpisode(hash: hash) { item in
                 item.status = .downloading
                 item.downloadedBytes = totalBytesWritten
@@ -397,6 +482,17 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 return
             }
             lastProgressReportByHash[hash] = now
+
+            // Live storage guard: a download whose size the feed never declared (expectedBytes == 0,
+            // e.g. megaphone) slips past the pre-download capacity check, which could only reserve the
+            // 50 MB floor. If it now threatens that reserve, stop it before the watch is starved —
+            // storage pressure is what suspends the app and cuts playback. Runs at the same 2s cadence
+            // as the progress report, so it costs one extra volume stat every couple of seconds.
+            if WatchStorageManager.shared.freeBytes() < WatchStorageManager.minimumReserveBytes {
+                abortDownloadForInsufficientStorage(hash: hash, totalBytesExpectedToWrite: totalBytesExpectedToWrite)
+                return
+            }
+
             WatchConnectivityController.shared.send(type: "watch.downloadProgress", payload: [
                 "episodeHash": hash,
                 "downloadedBytes": totalBytesWritten,

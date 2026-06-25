@@ -10,6 +10,7 @@ enum WatchEpisodeStatus: String, Codable {
     case downloading
     case downloaded
     case failed
+    case evicted
     case removing
 }
 

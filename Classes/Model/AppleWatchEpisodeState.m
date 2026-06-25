@@ -14,6 +14,7 @@ NSString* const ICAppleWatchStatusQueuedOnWatch = @"queuedOnWatch";
 NSString* const ICAppleWatchStatusDownloading = @"downloading";
 NSString* const ICAppleWatchStatusDownloaded = @"downloaded";
 NSString* const ICAppleWatchStatusFailed = @"failed";
+NSString* const ICAppleWatchStatusEvicted = @"evictedOnWatch";
 NSString* const ICAppleWatchStatusRemoving = @"removing";
 
 @implementation AppleWatchEpisodeState
@@ -60,6 +61,9 @@ NSString* const ICAppleWatchStatusRemoving = @"removing";
     }
     if ([self.watchStatus isEqualToString:ICAppleWatchStatusFailed]) {
         return @"Fehler beim Laden".ls;
+    }
+    if ([self.watchStatus isEqualToString:ICAppleWatchStatusEvicted]) {
+        return @"Speicher voll".ls;
     }
     if ([self.watchStatus isEqualToString:ICAppleWatchStatusRemoving]) {
         return @"Wird entfernt".ls;

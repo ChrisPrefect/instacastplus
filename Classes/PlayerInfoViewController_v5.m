@@ -1394,13 +1394,15 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             }
         }
     }
-    [[ICDiagnosticLogger shared] logDirectoryEvent:@"file-delete"
-                                           message:@"Episode-Transcript-Artefakte entfernt"
-                                              path:directoryURL.path
-                                          metadata:@{
-                                              @"episodeHash": episodeHash,
-                                              @"removedFiles": @(removedFileCount),
-                                          }];
+    if (removedFileCount > 0) {
+        [[ICDiagnosticLogger shared] logDirectoryEvent:@"file-delete"
+                                               message:@"Episode-Transcript-Artefakte entfernt"
+                                                  path:directoryURL.path
+                                              metadata:@{
+                                                  @"episodeHash": episodeHash,
+                                                  @"removedFiles": @(removedFileCount),
+                                              }];
+    }
 }
 
 - (void)_clearAllTranscriptCache

@@ -3,6 +3,7 @@
 "Nicht verfügbar" = "Not Available";
 "Aktualisieren" = "Refresh";
 "Fehler" = "Error";
+"Speicher voll" = "Storage Full";
 "Wird entfernt" = "Removing";
 "Wartet" = "Waiting";
 "Download erneut versuchen" = "Retry Download";
@@ -19,3 +20,6 @@
 "Geladene Datei ist leer." = "Downloaded file is empty.";
 "Geladene Audiodatei konnte nicht validiert werden." = "Downloaded audio file could not be validated.";
 "Audiodatei konnte nicht abgespielt werden." = "Audio file could not be played.";
+"Nicht genügend Speicher auf der Watch." = "Not enough storage on the Watch.";
+"%@ frei · %d geladen" = "%@ free · %d downloaded";
+"Speicher voll – Platz freigeben" = "Storage full – free up space";

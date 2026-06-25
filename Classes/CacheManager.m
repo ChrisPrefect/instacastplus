@@ -70,13 +70,15 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
             }
         }
     }
-    [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
-                                           message:@"Transcript-Artefakte für Episode entfernt"
-                                              path:transcriptCachePath
-                                          metadata:@{
-                                              @"episodeHash": episodeHash,
-                                              @"removedFiles": @(removedFileCount),
-                                          }];
+    if (removedFileCount > 0) {
+        [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
+                                               message:@"Transcript-Artefakte für Episode entfernt"
+                                                  path:transcriptCachePath
+                                              metadata:@{
+                                                  @"episodeHash": episodeHash,
+                                                  @"removedFiles": @(removedFileCount),
+                                              }];
+    }
 }
 
 static void ICClearAllTranscriptCache(void)

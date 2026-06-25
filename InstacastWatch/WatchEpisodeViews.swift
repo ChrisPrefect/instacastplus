@@ -12,6 +12,42 @@ struct WatchEpisodeListView: View {
         Color(hex: store.accentColorHex)
     }
 
+    private var downloadedEpisodes: [WatchEpisode] {
+        store.episodes.filter { $0.status == .downloaded }
+    }
+
+    private var evictedEpisodes: [WatchEpisode] {
+        store.episodes.filter { $0.status == .evicted }
+    }
+
+    @ViewBuilder private var storageSummaryView: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label {
+                Text(String(format: NSLocalizedString("%@ frei · %d geladen", comment: ""),
+                            byteText(WatchStorageManager.shared.freeBytes()),
+                            downloadedEpisodes.count))
+            } icon: {
+                Image(systemName: "internaldrive")
+            }
+            .foregroundStyle(.secondary)
+
+            // Only the genuinely-stuck case is loud: storage is full and nothing could be loaded at
+            // all. Normal over-subscription stays silent — the per-row state shows what isn't loaded,
+            // and the newest episodes that fit are kept automatically.
+            if downloadedEpisodes.isEmpty, !evictedEpisodes.isEmpty {
+                Label {
+                    Text(NSLocalizedString("Speicher voll – Platz freigeben", comment: ""))
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(.orange)
+            }
+        }
+        .font(.system(size: 13))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+
     var body: some View {
         NavigationStack(path: $playerPath) {
             List {
@@ -21,6 +57,9 @@ struct WatchEpisodeListView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .allowsTightening(true)
+                    .listRowBackground(Color.clear)
+
+                storageSummaryView
                     .listRowBackground(Color.clear)
 
                 if store.sortedEpisodes.isEmpty {
@@ -165,6 +204,10 @@ private struct WatchEpisodeRow: View {
             Label(statusText, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
                 .lineLimit(1)
+        case .evicted:
+            Label(statusText, systemImage: "arrow.down.circle")
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         case .removing:
             Label(statusText, systemImage: "trash")
                 .foregroundStyle(.secondary)
@@ -187,6 +230,8 @@ private struct WatchEpisodeRow: View {
             return byteText(episode.downloadedBytes)
         case .failed:
             return NSLocalizedString("Fehler", comment: "")
+        case .evicted:
+            return NSLocalizedString("Speicher voll", comment: "")
         case .removing:
             return NSLocalizedString("Wird entfernt", comment: "")
         case .queued:
