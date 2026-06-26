@@ -61,6 +61,9 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
         let wantedBytes = episodes.reduce(Int64(0)) { $0 + max($1.actualFileSize, $1.expectedBytes) }
         send(type: "watch.storageStatus", payload: [
             "freeBytes": WatchStorageManager.shared.freeBytes(),
+            // Diagnostics only: the old typed Swift Int value that truncated into negatives on
+            // watchOS arm64_32. freeBytes is the raw NSNumber Int64 value used for gating.
+            "rawFreeBytes": WatchStorageManager.shared.rawAvailableBytes(),
             "usedBytes": WatchStorageManager.shared.usedBytes(),
             "totalBytes": WatchStorageManager.shared.totalBytes(),
             "instacastWatchDownloadBytes": WatchStorageManager.shared.downloadBytes(),

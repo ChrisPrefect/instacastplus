@@ -38,6 +38,9 @@ views = read("InstacastWatch/WatchEpisodeViews.swift")
 de_strings = read("InstacastWatch/de.lproj/Localizable.strings")
 en_strings = read("InstacastWatch/en.lproj/Localizable.strings")
 
+free_bytes = function_body(storage, "func freeBytes(")
+total_bytes = function_body(storage, "func totalBytes(")
+int64_volume_resource_value = function_body(storage, "private func int64VolumeResourceValue(")
 cleanup = function_body(storage, "func cleanupIfNeeded(")
 start_download = function_body(download, "func startDownload(")
 queue_runner = function_body(download, "private func startQueuedDownloadsAfterReattach(")
@@ -47,6 +50,26 @@ autofill = function_body(download, "private func autoFillEvictedEpisodes(")
 require(
     "case evicted" in episode,
     "Watch episodes need a distinct evicted status for downloads removed because of storage pressure.",
+)
+
+require(
+    "volumeAvailableCapacityForImportantUsageKey" not in storage
+    and "int64VolumeResourceValue(for: .volumeAvailableCapacityKey)" in free_bytes
+    and "volumeAvailableCapacity ??" not in free_bytes
+    and "max(0," in free_bytes,
+    "freeBytes() must read volumeAvailableCapacityKey as the underlying NSNumber Int64. "
+    "On watchOS arm64_32 the typed URLResourceValues.volumeAvailableCapacity is Int-sized and "
+    "truncated multi-GB values into negatives, making every storage check refuse downloads "
+    "('Speicher voll', 0 loaded). volumeAvailableCapacityForImportantUsageKey is unavailable on watchOS.",
+)
+
+require(
+    "int64VolumeResourceValue(for: .volumeTotalCapacityKey)" in total_bytes
+    and "getResourceValue" in int64_volume_resource_value
+    and "NSNumber" in int64_volume_resource_value
+    and ".int64Value" in int64_volume_resource_value,
+    "Watch storage capacity must be read from NSURL resource values as NSNumber.int64Value, not "
+    "through Swift URLResourceValues Int properties that truncate on watchOS arm64_32.",
 )
 
 require(

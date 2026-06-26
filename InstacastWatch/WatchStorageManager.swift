@@ -94,13 +94,22 @@ final class WatchStorageManager {
     }
 
     func freeBytes() -> Int64 {
+        // Read the raw NSNumber instead of URLResourceValues.volumeAvailableCapacity. The typed Swift
+        // property is Int-sized; on watchOS arm64_32 that truncates multi-GB capacities into negative
+        // values (customer log: about -755 MB while Settings showed about 18 GB free). That negative
+        // value made every pre-download check report "Speicher voll".
+        return max(0, int64VolumeResourceValue(for: .volumeAvailableCapacityKey))
+    }
+
+    /// The old typed Swift value. Used ONLY for diagnostics so a field log can show the arm64_32
+    /// truncation that used to feed negative free-space values into the storage checks.
+    func rawAvailableBytes() -> Int64 {
         let values = try? downloadsDirectory.resourceValues(forKeys: [.volumeAvailableCapacityKey])
         return Int64(values?.volumeAvailableCapacity ?? 0)
     }
 
     func totalBytes() -> Int64 {
-        let values = try? downloadsDirectory.resourceValues(forKeys: [.volumeTotalCapacityKey])
-        return Int64(values?.volumeTotalCapacity ?? 0)
+        return max(0, int64VolumeResourceValue(for: .volumeTotalCapacityKey))
     }
 
     func usedBytes() -> Int64 {
@@ -189,6 +198,18 @@ final class WatchStorageManager {
             return 0
         }
         return size.int64Value
+    }
+
+    private func int64VolumeResourceValue(for key: URLResourceKey) -> Int64 {
+        var value: AnyObject?
+        do {
+            try (downloadsDirectory as NSURL).getResourceValue(&value, forKey: key)
+        }
+        catch {
+            return 0
+        }
+        guard let number = value as? NSNumber else { return 0 }
+        return number.int64Value
     }
 
 }

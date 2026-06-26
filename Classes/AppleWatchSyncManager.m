@@ -794,6 +794,9 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         // arrived on the phone but was never written to the diagnostics log.
         [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Speicherstatus" metadata:@{
             @"freeBytes": @(self.watchFreeBytes),
+            // Diagnostics: the old typed Swift Int capacity value. A field log with freeBytes ~18 GB
+            // and rawFreeBytes negative confirms the watchOS arm64_32 truncation fix landed.
+            @"rawFreeBytes": payload[@"rawFreeBytes"] ?: @0,
             @"totalBytes": @(self.watchTotalBytes),
             @"appDownloadBytes": @(self.watchDownloadBytes),
             @"downloadedCount": payload[@"downloadedCount"] ?: @0,
