@@ -72,6 +72,18 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 @property (nonatomic, strong) NSDate *lastPlaybackStatsRefreshDate;
 @property (nonatomic, strong) NSMutableSet<NSString *> *pendingImageFetchKeys;
 
+// Heavy widget exports (per-list Core Data scans) deferred because they were requested
+// while the app was kept alive in the background by audio playback — running them there
+// burns sustained CPU and the system kills the app (cpu_resource_fatal). Flushed on the
+// next foreground. See _deferHeavyListsExportInBackgroundPlayback.
+@property (nonatomic) BOOL pendingListsExport;
+@property (nonatomic) BOOL pendingStatsRefresh;
+
+// Coalescing: a feed refresh posts several export triggers in a row. Run at most one heavy
+// lists pass at a time and collapse the burst into a single trailing rerun (main-thread only).
+@property (nonatomic) BOOL listsExportRunning;
+@property (nonatomic) BOOL listsExportQueuedAgain;
+
 // Cache last played episode so widget can show it after playback ends
 @property (nonatomic, strong) NSDictionary *lastPlayedEpisodeDict;
 @property (nonatomic, strong) NSDictionary *lastPlayedExtraFields;
@@ -188,6 +200,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     [nc addObserver:self selector:@selector(_widgetControlAction:) name:@"WidgetControlActionNotification" object:nil];
     [nc addObserver:self selector:@selector(_consumePendingWidgetActionNotification:) name:UIApplicationDidBecomeActiveNotification object:nil];
     [nc addObserver:self selector:@selector(_consumePendingWidgetActionNotification:) name:UIApplicationWillEnterForegroundNotification object:nil];
+
+    // Catch up on heavy exports that were deferred during background playback.
+    [nc addObserver:self selector:@selector(_flushDeferredExportsOnForeground:) name:UIApplicationWillEnterForegroundNotification object:nil];
+    [nc addObserver:self selector:@selector(_flushDeferredExportsOnForeground:) name:UIApplicationDidBecomeActiveNotification object:nil];
 
     // Initial export so widget config has data immediately
     // (exportAllSnapshots is also called in sceneDidEnterBackground)
@@ -324,6 +340,13 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (void)_coreDataDidChange:(NSNotification *)note {
+    // A routine ~30s playback-position save is a Core Data change too — but it must NOT kick
+    // off the heavy lists export. Only react when something that actually affects list
+    // membership/counts changed. Inspect the change set SYNCHRONOUSLY here; in the async
+    // block below changedValuesForCurrentEvent is already empty. (Same approach as
+    // ICiCloudSyncManager's change filter.)
+    if (![self _coreDataChangeAffectsLists:note]) return;
+
     dispatch_async(dispatch_get_main_queue(), ^{
         // Debounce: 3 seconds, fires frequently
         [self.listsDebounceTimer invalidate];
@@ -333,6 +356,40 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                                                                 userInfo:nil
                                                                  repeats:NO];
     });
+}
+
+- (BOOL)_coreDataChangeAffectsLists:(NSNotification *)note {
+    NSDictionary *info = note.userInfo;
+
+    // Inserted/deleted episodes, feeds or lists always change list contents.
+    for (NSString *bucket in @[ NSInsertedObjectsKey, NSDeletedObjectsKey ]) {
+        for (NSManagedObject *obj in info[bucket]) {
+            if ([obj isKindOfClass:[CDEpisode class]] ||
+                [obj isKindOfClass:[CDFeed class]] ||
+                [obj isKindOfClass:[CDList class]]) {
+                return YES;
+            }
+        }
+    }
+
+    // For updates, only membership-affecting keys matter — explicitly NOT `position`
+    // (the playback tick) and NOT `lastPlayed` etc.
+    static NSSet *relevantEpisodeKeys = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        relevantEpisodeKeys = [NSSet setWithObjects:@"consumed", @"starred", @"archived", @"feed", @"episodeLists", nil];
+    });
+    for (NSManagedObject *obj in info[NSUpdatedObjectsKey]) {
+        if ([obj isKindOfClass:[CDList class]] || [obj isKindOfClass:[CDFeed class]]) {
+            return YES;  // list rename/rank, feed (un)subscribe / park
+        }
+        if ([obj isKindOfClass:[CDEpisode class]]) {
+            for (NSString *changedKey in obj.changedValuesForCurrentEvent) {
+                if ([relevantEpisodeKeys containsObject:changedKey]) return YES;
+            }
+        }
+    }
+    return NO;
 }
 
 - (void)_widgetControlAction:(NSNotification *)note {
@@ -851,23 +908,43 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)exportListsSnapshot {
     if (!self.containerURL) return;
+    // Evaluate the background/playback gate on the main thread (UIApplication state),
+    // so off-main callers (e.g. image-prefetch completions) are handled correctly too.
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ [self exportListsSnapshot]; });
+        return;
+    }
+    if ([self _deferHeavyListsExportInBackgroundPlayback]) return;
 
+    // Coalesce bursts (a feed refresh posts several triggers) into a single pass: while one
+    // export is in flight, just remember another is wanted and run it once afterwards.
+    if (self.listsExportRunning) { self.listsExportQueuedAgain = YES; return; }
+    self.listsExportRunning = YES;
+
+    BOOL foreground = ([UIApplication sharedApplication].applicationState == UIApplicationStateActive);
     dispatch_async(self.listsExportQueue, ^{
+        CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
+        __block CFAbsoluteTime querySeconds = 0, countSeconds = 0, fetchSeconds = 0, imageSeconds = 0;
+        __block NSUInteger listCount = 0, episodeCount = 0;
         NSMutableArray *listIndex = [NSMutableArray array];
         NSMutableArray *episodeSnapshots = [NSMutableArray array];
         NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
 
+        CFAbsoluteTime queryStart = CFAbsoluteTimeGetCurrent();
         [backgroundContext performBlockAndWait:^{
             NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"List"];
             request.includesSubentities = YES;
             request.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
             NSArray *lists = [backgroundContext executeFetchRequest:request error:nil];
+            listCount = lists.count;
 
             for (CDList *list in lists) {
                 NSMutableDictionary *d = [NSMutableDictionary dictionary];
                 d[@"id"] = list.uid ?: @"";
                 d[@"name"] = list.name ?: @"";
+                CFAbsoluteTime cT = CFAbsoluteTimeGetCurrent();
                 d[@"episodeCount"] = @(list.numberOfEpisodes);
+                countSeconds += CFAbsoluteTimeGetCurrent() - cT;
 
                 if ([list isKindOfClass:[CDSmartPlaylist class]]) {
                     CDSmartPlaylist *smart = (CDSmartPlaylist *)list;
@@ -881,14 +958,20 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
                 [listIndex addObject:d];
 
+                CFAbsoluteTime fT = CFAbsoluteTimeGetCurrent();
                 NSArray *episodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
+                fetchSeconds += CFAbsoluteTimeGetCurrent() - fT;
+
                 NSMutableArray *episodeDicts = [NSMutableArray array];
                 NSInteger count = 0;
+                CFAbsoluteTime iT = CFAbsoluteTimeGetCurrent();
                 for (CDEpisode *ep in episodes) {
                     if (count >= kMaxEpisodesPerList) break;
                     [episodeDicts addObject:[self _episodeDictForEpisode:ep withImageSize:kImageSizeMedium]];
                     count++;
                 }
+                imageSeconds += CFAbsoluteTimeGetCurrent() - iT;
+                episodeCount += count;
 
                 NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
                 snapshot[@"listId"] = list.uid ?: @"";
@@ -900,11 +983,75 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 [episodeSnapshots addObject:@{ @"filename": filename, @"snapshot": snapshot }];
             }
         }];
+        querySeconds = CFAbsoluteTimeGetCurrent() - queryStart;
 
+        CFAbsoluteTime writeStart = CFAbsoluteTimeGetCurrent();
         for (NSDictionary *entry in episodeSnapshots) {
             [self _writeJSON:entry[@"snapshot"] toFile:entry[@"filename"]];
         }
         [self _writeJSON:listIndex toFile:kListsIndexFile];
+        CFAbsoluteTime writeSeconds = CFAbsoluteTimeGetCurrent() - writeStart;
+
+        // Per-phase breakdown so one foreground run pinpoints where the budget goes
+        // (target: total <= 0.100s). count = SQL counts, fetch = sorted episode fetches,
+        // image = dict build incl. image stat/MD5, write = JSON file writes.
+        [[ICDiagnosticLogger shared] logEvent:@"widget-export"
+                                      message:@"Listen-Export fertig"
+                                     metadata:@{ @"lists": [NSString stringWithFormat:@"%lu", (unsigned long)listCount],
+                                                 @"episodes": [NSString stringWithFormat:@"%lu", (unsigned long)episodeCount],
+                                                 @"total_s": [NSString stringWithFormat:@"%.3f", CFAbsoluteTimeGetCurrent() - startTime],
+                                                 @"query_s": [NSString stringWithFormat:@"%.3f", querySeconds],
+                                                 @"count_s": [NSString stringWithFormat:@"%.3f", countSeconds],
+                                                 @"fetch_s": [NSString stringWithFormat:@"%.3f", fetchSeconds],
+                                                 @"image_s": [NSString stringWithFormat:@"%.3f", imageSeconds],
+                                                 @"write_s": [NSString stringWithFormat:@"%.3f", writeSeconds],
+                                                 @"foreground": foreground ? @"1" : @"0" }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.listsExportRunning = NO;
+            if (self.listsExportQueuedAgain) {
+                self.listsExportQueuedAgain = NO;
+                [self exportListsSnapshot];
+            }
+        });
+    });
+}
+
+#pragma mark - Background-Playback Gate
+
+// The background CPU watchdog only fires while the app keeps running in the background —
+// which, for this app, means active audio playback. The heavy per-list Core Data scans in
+// exportListsSnapshot have no business running then (the playing file + position via MQTT/
+// iCloud are all that needs updating). Defer the export to the next foreground.
+// Root cause of the 26.06. cpu_resource_fatal: 48s CPU over 49s in exportListsSnapshot.
+- (BOOL)_deferHeavyListsExportInBackgroundPlayback {
+    if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
+        return NO;
+    }
+    PlaybackManager *pm = [PlaybackManager playbackManager];
+    if (pm.playingEpisode == nil || pm.isPaused) {
+        // Not playing → the app is about to be suspended, so no sustained background CPU.
+        return NO;
+    }
+    self.pendingListsExport = YES;
+    [[ICDiagnosticLogger shared] logEvent:@"widget-export"
+                                  message:@"Listen-Export im Hintergrund-Playback aufgeschoben"
+                                 metadata:@{ @"reason": @"background-playback" }];
+    return YES;
+}
+
+- (void)_flushDeferredExportsOnForeground:(NSNotification *)note {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.pendingListsExport) {
+            self.pendingListsExport = NO;
+            [self exportListsSnapshot];
+            [WidgetKitHelper reloadListsTimeline];
+        }
+        if (self.pendingStatsRefresh) {
+            self.pendingStatsRefresh = NO;
+            [self exportStatsSnapshot];
+            [WidgetKitHelper reloadStatsTimeline];
+        }
     });
 }
 
@@ -988,6 +1135,13 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             [self exportStatsSnapshot];
             [WidgetKitHelper reloadStatsTimeline];
         }
+        return;
+    }
+
+    // Same background-playback rule as the lists export: don't run the heavy stats
+    // Core Data counts while the app is kept alive in the background by playback.
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
+        self.pendingStatsRefresh = YES;
         return;
     }
 

@@ -2859,6 +2859,11 @@ didReceiveResponse:(NSURLResponse *)response
 - (void) seekForward
 {
     CDFeed* feed = self.playingEpisode.feed;
+    NSTimeInterval chapterTarget = [self _forwardSkipTargetNearChapterEndFromTime:self.time];
+    if (chapterTarget >= 0) {
+        [self seekToTime:[self _adjustTimeAfterSkipZone:chapterTarget]];
+        return;
+    }
     
 	NSInteger skipPeriod = [feed integerForKey:PlayerSkipForwardPeriod];
 	
@@ -2869,6 +2874,40 @@ didReceiveResponse:(NSURLResponse *)response
 	if (next < dur) {
 		[self seekToTime:[self _adjustTimeAfterSkipZone:next]];
 	}
+}
+
+- (NSTimeInterval)_forwardSkipTargetNearChapterEndFromTime:(NSTimeInterval)time
+{
+    CDFeed* feed = self.playingEpisode.feed;
+    NSInteger mode = [feed integerForKey:PlayerNearChapterEndForwardSkipMode];
+    if (mode <= 0) {
+        return -1;
+    }
+
+    NSInteger windowSeconds = [feed integerForKey:PlayerNearChapterEndForwardSkipWindow];
+    if (windowSeconds <= 0 || self.chapters.count < 2) {
+        return -1;
+    }
+
+    NSInteger extraSeconds = (mode == 1) ? 0 : mode;
+    NSInteger chapterCount = self.chapters.count;
+    for (NSInteger i = 0; i < chapterCount - 1; i++) {
+        ICMetadataChapter* chapter = self.chapters[i];
+        ICMetadataChapter* nextChapter = self.chapters[i + 1];
+        NSTimeInterval chapterStart = CMTimeGetSeconds(chapter.start);
+        NSTimeInterval nextChapterStart = CMTimeGetSeconds(nextChapter.start);
+
+        if (time >= chapterStart && time < nextChapterStart && nextChapterStart - time <= windowSeconds) {
+            NSTimeInterval target = nextChapterStart + extraSeconds;
+            NSTimeInterval duration = self.duration;
+            if (duration > 0) {
+                target = MIN(target, duration - 1);
+            }
+            return MAX(0, target);
+        }
+    }
+
+    return -1;
 }
 
 - (void) seekBackward

@@ -413,7 +413,7 @@ enum {
     [self _dismissPlayerWithCompletion:^{
         InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
         if (appDelegate.mainViewController) {
-            [appDelegate.mainViewController showShowNotesOfEpisode:episode animated:NO];
+            [appDelegate.mainViewController showEpisodeListOfEpisode:episode animated:NO];
         }
     }];
 }

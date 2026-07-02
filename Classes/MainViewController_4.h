@@ -15,6 +15,7 @@
 + (instancetype) mainViewController;
 
 - (void) showShowNotesOfEpisode:(CDEpisode*)episode animated:(BOOL)animated;
+- (void) showEpisodeListOfEpisode:(CDEpisode*)episode animated:(BOOL)animated;
 - (void) showUpNext;
 - (void) showTranscriptionQueue;
 @end

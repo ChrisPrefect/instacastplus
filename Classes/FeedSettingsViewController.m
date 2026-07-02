@@ -143,6 +143,11 @@ enum {
 
 #pragma mark - Table view data source
 
+- (BOOL)_nearChapterEndForwardSkipEnabled
+{
+    return [self.feed integerForKey:PlayerNearChapterEndForwardSkipMode] > 0;
+}
+
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
@@ -169,7 +174,7 @@ enum {
         case kAutoDeleteSettingsSection:
             return 4;
         case kPlaybackSection:
-            return 4;
+            return [self _nearChapterEndForwardSkipEnabled] ? 6 : 5;
         case kRestoreDeletedSection:
         {
             NSFetchRequest* countRequest = [[NSFetchRequest alloc] init];
@@ -403,8 +408,14 @@ enum {
     else if (indexPath.section == kPlaybackSection)
     {
         NSDictionary* v = @{ @5 : @"5 Seconds", @10 : @"10 Seconds", @20 : @"20 Seconds", @30 : @"30 Seconds", @60 : @"1 Minute", @120 : @"2 Minutes", @300 : @"5 Minutes", @600 : @"10 Minutes" };
-        
-        switch (indexPath.row) {
+        NSDictionary* chapterEndSkipModes = @{ @0 : @"Aus", @1 : @"Ein", @5 : @"Ein + 5 Sekunden", @10 : @"Ein + 10 Sekunden", @15 : @"Ein + 15 Sekunden", @20 : @"Ein + 20 Sekunden" };
+        NSDictionary* chapterEndSkipWindows = @{ @60 : @"1 Minute", @120 : @"2 Minutes", @180 : @"3 Minutes", @240 : @"4 Minutes", @300 : @"5 Minutes" };
+        NSInteger playbackRow = indexPath.row;
+        if (![self _nearChapterEndForwardSkipEnabled] && playbackRow >= 3) {
+            playbackRow++;
+        }
+
+        switch (playbackRow) {
             case 0:
             {
                 cell.accessoryView = nil;
@@ -430,6 +441,31 @@ enum {
                 break;
             }
             case 2:
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
+                cell.textLabel.text = @"Nahe am Ende eines Kapitels zum nächsten Kapitel springen".ls;
+                cell.textLabel.numberOfLines = 0;
+
+                NSInteger mode = [self.feed integerForKey:PlayerNearChapterEndForwardSkipMode];
+                NSString* localizedKey = chapterEndSkipModes[@(mode)];
+                cell.detailTextLabel.text = localizedKey.ls;
+
+                break;
+            }
+            case 3:
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
+                cell.textLabel.text = @"Ende des Kapitels ab".ls;
+
+                NSInteger seconds = [self.feed integerForKey:PlayerNearChapterEndForwardSkipWindow];
+                NSString* localizedKey = chapterEndSkipWindows[@(seconds)];
+                cell.detailTextLabel.text = localizedKey.ls;
+
+                break;
+            }
+            case 4:
                 cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Speed".ls;
@@ -466,7 +502,7 @@ enum {
 
 
                 break;
-            case 3:
+            case 5:
             {
                 cell.accessoryView = nil;
                 cell = [self detailCell];
@@ -779,19 +815,45 @@ enum {
     }
     else if (indexPath.section == kPlaybackSection)
     {
-        if (indexPath.row == 0 || indexPath.row == 1)
+        NSInteger playbackRow = indexPath.row;
+        if (![self _nearChapterEndForwardSkipEnabled] && playbackRow >= 3) {
+            playbackRow++;
+        }
+
+        if (playbackRow == 0 || playbackRow == 1)
         {
             SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
             controller.feed = self.feed;
             controller.valueType = kSettingTypeInteger;
-            controller.key = (indexPath.row == 0 ) ? PlayerSkipBackPeriod : PlayerSkipForwardPeriod;
-            controller.title = (indexPath.row == 0 ) ? @"Skipping Back".ls : @"Skipping Forward".ls;
+            controller.key = (playbackRow == 0 ) ? PlayerSkipBackPeriod : PlayerSkipForwardPeriod;
+            controller.title = (playbackRow == 0 ) ? @"Skipping Back".ls : @"Skipping Forward".ls;
             controller.values = @[ @(5), @(10), @(20), @(30), @(60), @(120), @(300), @(600) ];
             controller.titles = @[@"5 Seconds".ls, @"10 Seconds".ls, @"20 Seconds".ls, @"30 Seconds".ls, @"1 Minute".ls, @"2 Minutes".ls, @"5 Minutes".ls, @"10 Minutes".ls];
             [self.navigationController pushViewController:controller animated:YES];
         }
-        
-        else if (indexPath.row == 3)
+        else if (playbackRow == 2)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = PlayerNearChapterEndForwardSkipMode;
+            controller.title = @"Nahe am Ende eines Kapitels zum nächsten Kapitel springen".ls;
+            controller.values = @[ @(0), @(1), @(5), @(10), @(15), @(20) ];
+            controller.titles = @[ @"Aus".ls, @"Ein".ls, @"Ein + 5 Sekunden".ls, @"Ein + 10 Sekunden".ls, @"Ein + 15 Sekunden".ls, @"Ein + 20 Sekunden".ls ];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (playbackRow == 3)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = PlayerNearChapterEndForwardSkipWindow;
+            controller.title = @"Ende des Kapitels ab".ls;
+            controller.values = @[ @(60), @(120), @(180), @(240), @(300) ];
+            controller.titles = @[ @"1 Minute".ls, @"2 Minutes".ls, @"3 Minutes".ls, @"4 Minutes".ls, @"5 Minutes".ls ];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (playbackRow == 5)
         {
             SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
             controller.feed = self.feed;
@@ -802,7 +864,7 @@ enum {
             controller.titles = @[ @"Off".ls, @"Newer to Older".ls, @"Older to Newer".ls ];
             [self.navigationController pushViewController:controller animated:YES];
         }
-        else if (indexPath.row == 2)
+        else if (playbackRow == 4)
         {
             SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
             controller.feed = self.feed;
@@ -918,6 +980,9 @@ enum {
     }
     else if (section == kAggregateUnavailableEpisodesSection) {
         return @"Enable to show all episodes regardless of whether or not they are still available on the publisher's server.".ls;
+    }
+    else if (section == kPlaybackSection) {
+        return @"When skipping forward near a chapter end, jump to the next chapter; + seconds skips sponsor tails after the boundary.".ls;
     }
     
     

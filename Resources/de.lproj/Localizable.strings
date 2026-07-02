@@ -630,6 +630,15 @@
 
 "Auto Skip" = "Automatisches Überspringen";
 "Auto Skip Chapter" = "Kapitelname überspringen";
+"Nahe am Ende eines Kapitels zum nächsten Kapitel springen" = "Nahe am Ende eines Kapitels zum nächsten Kapitel springen";
+"Ende des Kapitels ab" = "Ende des Kapitels ab";
+"Ein" = "Ein";
+"Ein + 5 Sekunden" = "Ein + 5 Sekunden";
+"Ein + 10 Sekunden" = "Ein + 10 Sekunden";
+"Ein + 15 Sekunden" = "Ein + 15 Sekunden";
+"Ein + 20 Sekunden" = "Ein + 20 Sekunden";
+"4 Minutes" = "4 Minuten";
+"When skipping forward near a chapter end, jump to the next chapter; + seconds skips sponsor tails after the boundary." = "Beim Vorwärtsspulen kurz vor Kapitelende direkt zum nächsten Kapitel springen; + Sekunden überspringt Sponsor-Reste nach der Grenze.";
 "Skipping Start" = "Start überspringen";
 "Skipping End" = "Ende überspringen";
 "Skipping Chapter" = "Kapitel überspringen";

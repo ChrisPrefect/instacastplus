@@ -36,6 +36,10 @@
 	<integer>30</integer>
 	<key>PlayerSkipForwardPeriod</key>
 	<integer>30</integer>
+	<key>PlayerNearChapterEndForwardSkipMode</key>
+	<integer>0</integer>
+	<key>PlayerNearChapterEndForwardSkipWindow</key>
+	<integer>60</integer>
 	<key>EnableManualRefreshFinishedNotification</key>
 	<false/>
 	<key>EnableRefreshFailureNotification</key>

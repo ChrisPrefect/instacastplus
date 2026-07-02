@@ -10,6 +10,7 @@
 #import "MainViewController_4.h"
 #import "MainSidebarController.h"
 #import "SubscriptionsTableViewController.h"
+#import "FeedEpisodesTableViewController.h"
 #import "OptionsViewController.h"
 #import "ICNowPlayingActivityControl.h"
 #import "PlaybackViewController.h"
@@ -923,6 +924,36 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     
     SubscriptionsTableViewController* subscriptionTableViewController = [navigationController.viewControllers firstObject];
     [subscriptionTableViewController showEpisodeListForFeed:episode.feed animated:NO];
+}
+
+- (void) showEpisodeListOfEpisode:(CDEpisode*)episode animated:(BOOL)animated
+{
+    if (!episode || !episode.feed) {
+        return;
+    }
+
+    if (self.presentedViewController)
+    {
+        [self clearViewControllerPresentationQueue];
+        [self dismissViewControllerAnimated:NO completion:NULL];
+    }
+
+    [USER_DEFAULTS removeObjectForKey:kDefaultEpisodesSelectedEpisodeUID];
+    [USER_DEFAULTS removeObjectForKey:kUIPersistenceSubscriptionsSelectedFeedUID];
+
+    SubscriptionsTableViewController* controller = [SubscriptionsTableViewController subscriptionsController];
+    controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+
+    FeedEpisodesTableViewController* episodesController = [FeedEpisodesTableViewController episodesControllerWithFeed:episode.feed];
+
+    PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+    navController.view.tintColor = ICTintColor;
+    navController.viewControllers = @[ controller, episodesController ];
+    self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+    navController.toolbarHidden = NO;
+
+    self.sidebarController.selectedItemTag = kMainSidebarItemSubscriptions;
+    [self setSidebarShown:NO animated:animated];
 }
 
 - (void) showUpNext

@@ -51,6 +51,8 @@ extern NSString* AutoCacheStorageLimit;
 extern NSString* UISoundEnabled;
 extern NSString* PlayerSkipBackPeriod;
 extern NSString* PlayerSkipForwardPeriod;
+extern NSString* PlayerNearChapterEndForwardSkipMode;
+extern NSString* PlayerNearChapterEndForwardSkipWindow;
 extern NSString* PlayerAutoSkipEndPeriod;
 extern NSString* PlayerAutoSkipStartPeriod;
 extern NSString* PlayerReplayAfterPause;
