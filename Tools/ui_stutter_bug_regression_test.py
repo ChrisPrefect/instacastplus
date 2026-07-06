@@ -34,7 +34,7 @@ def method_body(source: str, signature: str) -> str:
         break
 
     candidates = []
-    for marker in ("\n- (", "\n+ (", "\n    private func ", "\n    func ", "\n    @objc", "\n#pragma mark"):
+    for marker in ("\n- (", "\n+ (", "\n    func ", "\n    func ", "\n    @objc", "\n#pragma mark"):
         index = source.find(marker, start + len(signature))
         if index > start:
             candidates.append(index)
@@ -70,7 +70,7 @@ itunes_store = read("Classes/STITunesStore.m")
 scene_delegate = read("Classes/InstacastSceneDelegate.m")
 app_delegate = read("Classes/InstacastAppDelegate.m")
 backup_importer = read("Classes/InstacastBackupImporter.m")
-icloud_sync = read("Classes/ICiCloudSyncManager.swift")
+icloud_sync = "\n".join(read("Classes/" + _n) for _n in ["ICiCloudSyncManager.swift", "ICiCloudSyncTypes.swift", "ICiCloudSyncManager+EngineRecords.swift", "ICiCloudSyncManager+RemoteApply.swift", "ICiCloudSyncManager+LocalChanges.swift", "ICiCloudSyncManager+Metadata.swift"])
 transcription_queue = read("Classes/TranscriptionQueue.swift")
 transcription_engine = read("Classes/TranscriptionEngine.swift")
 audio_analyzer = read("Classes/AudioAnalyzer.swift")
@@ -282,8 +282,8 @@ bug_present(
 )
 
 
-icloud_queue_all = method_body(icloud_sync, "private func queueAllEpisodeStateRecords")
-icloud_set_episode_date = method_body(icloud_sync, "private func setEpisodeLocalModifiedDate")
+icloud_queue_all = method_body(icloud_sync, "func queueAllEpisodeStateRecords")
+icloud_set_episode_date = method_body(icloud_sync, "func setEpisodeLocalModifiedDate")
 icloud_background = method_body(icloud_sync, "@objc func performBackgroundSyncWithCompletion")
 bug_present(
     "@MainActor" in icloud_sync and "for feed in databaseManager.feeds" in icloud_queue_all and "for episode in feed.episodes" in icloud_queue_all,
@@ -300,7 +300,7 @@ bug_present(
 
 
 bug_present(
-    "@MainActor" in transcription_queue and "private func persistQueue()" in transcription_queue and "data.write(to: queueFileURL" in transcription_queue,
+    "@MainActor" in transcription_queue and "func persistQueue()" in transcription_queue and "data.write(to: queueFileURL" in transcription_queue,
     "TranscriptionQueue is MainActor-isolated but persists queue JSON synchronously.",
 )
 bug_present(
@@ -308,7 +308,7 @@ bug_present(
     "TranscriptionEngine is MainActor-isolated and contains synchronous file reads.",
 )
 bug_present(
-    "@MainActor" in audio_analyzer and "try Data(contentsOf: url)" in audio_analyzer and "Task.detached" not in method_body(audio_analyzer, "private func loadCachedTimeline"),
+    "@MainActor" in audio_analyzer and "try Data(contentsOf: url)" in audio_analyzer and "Task.detached" not in method_body(audio_analyzer, "func loadCachedTimeline"),
     "AudioAnalyzer is MainActor-isolated and reads cached timelines synchronously.",
 )
 bug_present(

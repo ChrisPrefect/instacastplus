@@ -910,8 +910,10 @@ NS_INLINE NSString* _DataStoreFile(void) {
         }
         else if ([updatedObject isKindOfClass:[CDFeed class]] &&
                  (cv[@"title"] || cv[@"displayTitle"] || cv[@"author"] || cv[@"summary"] ||
-                  cv[@"fulltext"] || cv[@"imageURL_"] || cv[@"pubDate"] || cv[@"lastUpdate"] ||
+                  cv[@"fulltext"] || cv[@"imageURL_"] || cv[@"pubDate"] ||
                   cv[@"subscribed"])) {
+            // Deliberately NOT lastUpdate: a refresh rewrites lastUpdate on EVERY feed even when
+            // nothing changed — that re-indexed the whole subscription list on each pull-to-refresh.
             [self.spotlightIndexer updateFeed:(CDFeed*)updatedObject];
         }
     }

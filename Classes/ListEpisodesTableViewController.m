@@ -110,13 +110,18 @@
                 [weakSelf _updateToolbarLabels];
                 return;
             }
-            
-            if (!weakSelf.userAction) {
-                [weakSelf updateEpisodes];
-                [weakSelf reloadDataAndPreserveSelection];
 
-                [weakSelf _updateToolbarItemsAnimated:NO];
-                [weakSelf _updateToolbarLabels];
+            if (!weakSelf.userAction) {
+                // During a refresh every merged feed bumps the count — refetching and reloading
+                // the whole list per feed contends with the merges for the main thread (the
+                // pull-to-refresh stutter). Coalesce to one reload per second while refreshing,
+                // same pattern as SubscriptionsTableViewController.
+                if ([SubscriptionManager sharedSubscriptionManager].refreshing) {
+                    [weakSelf coalescedPerformSelector:@selector(_reloadListAfterCountChange) afterDelay:1.0];
+                }
+                else {
+                    [weakSelf _reloadListAfterCountChange];
+                }
             }
         }];
         
@@ -169,6 +174,27 @@
         [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
         _list_episodes_observing = NO;
     }
+}
+
+- (void) _reloadListAfterCountChange
+{
+    // A coalesced reload can fire after a swipe action armed suppressNextListReload —
+    // consume it here too so the swipe's row-level update is not followed by a full
+    // reload that shifts the scroll position.
+    if (self.suppressNextListReload) {
+        self.suppressNextListReload = NO;
+        [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarLabels];
+        return;
+    }
+    if (self.userAction) {
+        return;
+    }
+    [self updateEpisodes];
+    [self reloadDataAndPreserveSelection];
+
+    [self _updateToolbarItemsAnimated:NO];
+    [self _updateToolbarLabels];
 }
 
 - (void) viewDidLoad

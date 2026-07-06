@@ -49,6 +49,10 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 @property (nonatomic, copy) NSString* currentWatchDownloadHash;
 @property (nonatomic, readwrite) int64_t currentWatchDownloadedBytes;
 @property (nonatomic, readwrite) int64_t currentWatchExpectedBytes;
+// Per-episode live progress from watch.downloadProgress, keyed by episodeHash. Basis for the
+// aggregated "x MB von TOTAL MB" status instead of the per-download value that flipped between
+// episodes (User-Feedback 05.07.).
+@property (nonatomic, strong) NSMutableDictionary<NSString*, NSDictionary*>* watchDownloadProgressByHash;
 @property (nonatomic) BOOL started;
 @property (nonatomic) BOOL needsManifestSyncAfterActivation;
 
@@ -77,8 +81,55 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
 #else
         _supported = NO;
 #endif
+        _watchDownloadProgressByHash = [NSMutableDictionary dictionary];
     }
     return self;
+}
+
+// Aggregated download progress over the whole wanted set (downloaded + downloading + queued).
+// Returns YES while anything is still incomplete, so the UI can show "x MB von TOTAL MB".
+- (BOOL)watchDownloadProgressLoadedBytes:(int64_t*)outLoadedBytes totalBytes:(int64_t*)outTotalBytes
+{
+    int64_t loadedBytes = 0;
+    int64_t totalBytes = 0;
+    BOOL anyIncomplete = NO;
+
+    for (AppleWatchEpisodeState* state in [self visibleEpisodeStates]) {
+        // Evicted episodes are not loading; failed ones never will by themselves — counting
+        // them as incomplete kept "Watch lädt Podcasts (x von y)" showing forever.
+        if ([state.watchStatus isEqualToString:ICAppleWatchStatusEvicted] ||
+            [state.watchStatus isEqualToString:ICAppleWatchStatusFailed]) {
+            continue;
+        }
+
+        int64_t expectedBytes = 0;
+        int64_t doneBytes = 0;
+        if (state.downloadedOnWatch) {
+            expectedBytes = MAX((int64_t)0, state.watchActualFileSize);
+            doneBytes = expectedBytes;
+        }
+        else {
+            NSDictionary* progress = self.watchDownloadProgressByHash[state.episodeHash ?: @""];
+            expectedBytes = [progress[@"expectedBytes"] longLongValue];
+            doneBytes = MAX((int64_t)0, [progress[@"downloadedBytes"] longLongValue]);
+            if (expectedBytes <= 0) {
+                CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+                expectedBytes = MAX((int64_t)0, episode.preferedMedium.byteSize);
+            }
+            anyIncomplete = YES;
+        }
+
+        loadedBytes += MIN(doneBytes, expectedBytes);
+        totalBytes += expectedBytes;
+    }
+
+    if (outLoadedBytes) {
+        *outLoadedBytes = loadedBytes;
+    }
+    if (outTotalBytes) {
+        *outTotalBytes = totalBytes;
+    }
+    return anyIncomplete && totalBytes > 0;
 }
 
 - (void)dealloc
@@ -433,6 +484,22 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     NSInteger skipForwardSeconds = [self _skipSecondsForEpisode:episode key:PlayerSkipForwardPeriod fallback:30];
     NSInteger skipBackwardSeconds = [self _skipSecondsForEpisode:episode key:PlayerSkipBackPeriod fallback:30];
 
+    // Sponsor-/Kapitel-Skip-Regeln des Feeds, damit die Watch-Kapitelliste markieren kann, was
+    // übersprungen wird. Gleiche Semantik wie PlaybackManager: Namen matchen case-insensitiv per
+    // containsString; autoSkipSponsors = per-Feed-Override ("yes"/"no"), sonst globales Default.
+    NSString* skipNamesKey = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
+    NSString* skipNamesValue = [episode.feed stringForKey:skipNamesKey];
+    NSArray* skipChapterNames = (skipNamesValue.length > 0) ? [skipNamesValue componentsSeparatedByString:@".  "] : @[];
+    NSString* sponsorsValue = [episode.feed stringForKey:kFeedPropertyAutoSkipSponsors];
+    BOOL autoSkipSponsors;
+    if ([sponsorsValue isEqualToString:@"yes"]) {
+        autoSkipSponsors = YES;
+    } else if ([sponsorsValue isEqualToString:@"no"]) {
+        autoSkipSponsors = NO;
+    } else {
+        autoSkipSponsors = [USER_DEFAULTS boolForKey:kAutoSkipSponsors];
+    }
+
     return @{
         @"episodeHash": episode.objectHash ?: @"",
         @"feedIdentifier": feedIdentifier ?: @"",
@@ -450,6 +517,8 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         @"watchAddedDate": [self _stringFromDate:addedDate],
         @"skipForwardSeconds": @(skipForwardSeconds),
         @"skipBackwardSeconds": @(skipBackwardSeconds),
+        @"skipChapterNames": skipChapterNames ?: @[],
+        @"autoSkipSponsors": @(autoSkipSponsors),
     };
 }
 
@@ -562,6 +631,13 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     }
 
     AppleWatchEpisodeState* state = [self stateForEpisodeHash:episode.objectHash];
+    // PlaybackManagerDidUpdateNotification fires EVERY SECOND during playback. Without this
+    // diff-gate that meant one Core-Data save plus two WCSession sends per second for the whole
+    // playback session. Only propagate when position or consumed actually changed.
+    if (state.lastPhonePosition == episode.position && state.watchConsumed == episode.consumed) {
+        return;
+    }
+
     NSDate* now = [NSDate date];
     state.lastPhonePosition = episode.position;
     state.lastPhonePositionDate = now;
@@ -694,6 +770,21 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     self.lastWatchStatusDate = [NSDate date];
     BOOL shouldSyncAfterHandling = NO;
 
+    // Diagnostics are by far the highest-volume watch messages (every WatchDiagnostics.log event,
+    // and unreachable phases queue them up via transferUserInfo and deliver them in one burst).
+    // They change no model state — handle them without the Core-Data-save/notification tail below,
+    // which otherwise turns a reconnect burst into a main-thread freeze.
+    if ([type isEqualToString:@"watch.diagnostic"]) {
+        NSString* event = [payload[@"event"] isKindOfClass:[NSString class]] ? payload[@"event"] : @"";
+        NSString* message = [payload[@"message"] isKindOfClass:[NSString class]] ? payload[@"message"] : @"Watch-Diagnose";
+        NSDictionary* watchMetadata = [payload[@"metadata"] isKindOfClass:[NSDictionary class]] ? payload[@"metadata"] : @{};
+        NSMutableDictionary* metadata = [watchMetadata mutableCopy];
+        metadata[@"watchEvent"] = event ?: @"";
+        metadata[@"watchTimestamp"] = [payload[@"timestamp"] isKindOfClass:[NSString class]] ? payload[@"timestamp"] : @"";
+        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:message metadata:metadata];
+        return;
+    }
+
     if ([type isEqualToString:@"watch.ackManifest"]) {
         NSArray* episodeHashes = [payload[@"episodeHashes"] isKindOfClass:[NSArray class]] ? payload[@"episodeHashes"] : @[];
         [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Manifest bestaetigt" metadata:@{
@@ -757,15 +848,6 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
             }
         }
     }
-    else if ([type isEqualToString:@"watch.diagnostic"]) {
-        NSString* event = [payload[@"event"] isKindOfClass:[NSString class]] ? payload[@"event"] : @"";
-        NSString* message = [payload[@"message"] isKindOfClass:[NSString class]] ? payload[@"message"] : @"Watch-Diagnose";
-        NSDictionary* watchMetadata = [payload[@"metadata"] isKindOfClass:[NSDictionary class]] ? payload[@"metadata"] : @{};
-        NSMutableDictionary* metadata = [watchMetadata mutableCopy];
-        metadata[@"watchEvent"] = event ?: @"";
-        metadata[@"watchTimestamp"] = [payload[@"timestamp"] isKindOfClass:[NSString class]] ? payload[@"timestamp"] : @"";
-        [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:message metadata:metadata];
-    }
     else if ([type isEqualToString:@"watch.downloadEvicted"]) {
         NSString* episodeHash = [payload[@"episodeHash"] isKindOfClass:[NSString class]] ? payload[@"episodeHash"] : nil;
         AppleWatchEpisodeState* state = [self stateForEpisodeHash:episodeHash];
@@ -811,7 +893,12 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         [self _mergeWatchPlaybackPayload:payload finished:[type isEqualToString:@"playback.watchFinished"]];
     }
 
-    [DMANAGER save];
+    // Only save when a handler actually changed the model. High-frequency messages
+    // (downloadProgress every 2 s, storageStatus) previously forced a main-thread save plus the
+    // whole observer cascade per message — a reconnect burst froze the UI for many seconds.
+    if (DMANAGER.objectContext.hasChanges) {
+        [DMANAGER save];
+    }
     [self _postEpisodeStatesChanged];
     [self _refreshSessionStateAndNotify:YES];
     if (shouldSyncAfterHandling) {
@@ -843,6 +930,12 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     self.currentWatchDownloadTitle = episode.title ?: @"";
     self.currentWatchDownloadedBytes = MAX((int64_t)0, [payload[@"downloadedBytes"] longLongValue]);
     self.currentWatchExpectedBytes = MAX((int64_t)0, [payload[@"expectedBytes"] longLongValue]);
+    if (state.episodeHash.length > 0) {
+        self.watchDownloadProgressByHash[state.episodeHash] = @{
+            @"downloadedBytes": @(self.currentWatchDownloadedBytes),
+            @"expectedBytes": @(self.currentWatchExpectedBytes),
+        };
+    }
 }
 
 - (void)_clearCurrentWatchDownloadIfMatchesHash:(NSString*)episodeHash
@@ -850,6 +943,7 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
     if (![episodeHash isKindOfClass:[NSString class]] || episodeHash.length == 0) {
         return;
     }
+    [self.watchDownloadProgressByHash removeObjectForKey:episodeHash];
     if (self.currentWatchDownloadHash.length > 0 && ![self.currentWatchDownloadHash isEqualToString:episodeHash]) {
         return;
     }

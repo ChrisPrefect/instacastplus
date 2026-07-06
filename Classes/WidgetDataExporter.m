@@ -300,11 +300,20 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     dispatch_async(dispatch_get_main_queue(), ^{
         NSArray<CDEpisode *> *episodes = note.userInfo[@"episodes"];
         [self _updateStatsCacheForAddedEpisodes:episodes];
-        [self exportStatsSnapshot];
-        [self _debouncedListsExport];
-        [WidgetKitHelper reloadListsTimeline];
-        [WidgetKitHelper reloadStatsTimeline];
+        // This notification fires once PER FEED during a refresh. Exporting stats + lists and
+        // reloading both widget timelines per feed ran several full store fetches while the
+        // merges were still writing (store-lock contention = pull-to-refresh stutter). Debounce
+        // to one export after the adds settle; _feedsDidRefresh still exports at the end anyway.
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(_exportAfterEpisodesAdded) object:nil];
+        [self performSelector:@selector(_exportAfterEpisodesAdded) withObject:nil afterDelay:2.0];
     });
+}
+
+- (void)_exportAfterEpisodesAdded {
+    [self exportStatsSnapshot];
+    [self _debouncedListsExport];
+    [WidgetKitHelper reloadListsTimeline];
+    [WidgetKitHelper reloadStatsTimeline];
 }
 
 - (void)_cacheDidFinish:(NSNotification *)note {

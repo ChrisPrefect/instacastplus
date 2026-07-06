@@ -8,12 +8,25 @@ final class WatchDownloadManager: NSObject, ObservableObject {
 
     private var activeTasksByHash: [String: URLSessionDownloadTask] = [:]
     private var lastProgressReportByHash: [String: Date] = [:]
+    private var lastStorageStatusSendDate: Date?
+    // Staged files handed from didFinishDownloadingTo to didCompleteWithError (both on the
+    // serial URLSession delegate queue, hence the plain lock instead of actor isolation).
+    nonisolated(unsafe) private var stagedLocationsByHash: [String: URL] = [:]
+    nonisolated(unsafe) private let stagedLocationsLock = NSLock()
 
     private lazy var session: URLSession = {
+#if targetEnvironment(simulator)
+        // The watchOS simulator has no working nsurlsessiond for app background sessions —
+        // every background download task fails instantly with NSURLError -1 (XPC 4097,
+        // "remote session is unavailable"). A default session drives the exact same delegate
+        // callbacks, so all validation/storage paths behave identically for simulator tests.
+        let configuration = URLSessionConfiguration.default
+#else
         let configuration = URLSessionConfiguration.background(withIdentifier: Self.backgroundSessionIdentifier)
-        configuration.allowsCellularAccess = true
         configuration.sessionSendsLaunchEvents = true
         configuration.waitsForConnectivity = true
+#endif
+        configuration.allowsCellularAccess = true
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 
@@ -156,11 +169,19 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     }
 
     private func startQueuedDownloadsAfterReattach() {
-        for episode in WatchManifestStore.shared.sortedEpisodes where episode.status == .queued {
-            startDownload(for: episode)
-        }
+        startNextQueuedDownloadIfIdle()
         autoFillEvictedEpisodes()
         WatchConnectivityController.shared.sendStorageStatus()
+    }
+
+    // Sequential download policy (User-Entscheid 06.07.): one episode at a time, in playback
+    // order. Three parallel downloads competed for the watch's slow radio and none finished —
+    // sequential makes the first episode playable as early as possible. A user tap
+    // (prioritizeEpisode) still starts immediately and may run alongside the queue download.
+    private func startNextQueuedDownloadIfIdle() {
+        guard activeTasksByHash.isEmpty else { return }
+        guard let next = WatchManifestStore.shared.sortedEpisodes.first(where: { $0.status == .queued && $0.localFileURL == nil }) else { return }
+        startDownload(for: next)
     }
 
     // Keeps the watch as full as possible: pulls storage-evicted episodes back onto the watch when
@@ -185,8 +206,9 @@ final class WatchDownloadManager: NSObject, ObservableObject {
             var metadata = WatchDiagnostics.metadata(for: queued)
             metadata["projectedFreeAfter"] = "\(projectedFree)"
             WatchDiagnostics.log("storage-autofill", message: "Watch laedt evictierte Folge bei freiem Speicher nach", metadata: metadata)
-            startDownload(for: queued)
         }
+        // Re-queued episodes download one at a time like everything else.
+        startNextQueuedDownloadIfIdle()
     }
 
     private func reattachDownloadTasks(completion: @escaping @MainActor () -> Void) {
@@ -269,7 +291,7 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         return (size, duration, isPlayable)
     }
 
-    private func downloadValidationError(for task: URLSessionDownloadTask, fileURL: URL) -> String? {
+    private func downloadValidationError(for task: URLSessionDownloadTask, fileURL: URL, feedExpectedBytes: Int64) -> String? {
         let hash = task.taskDescription ?? ""
         let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
@@ -303,6 +325,20 @@ final class WatchDownloadManager: NSObject, ObservableObject {
                 "episodeHash": hash,
                 "actualBytes": "\(size)",
                 "expectedBytes": "\(expectedSize)",
+            ])
+            return NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
+        }
+        // A cleanly closed connection without Content-Length looks like a SUCCESSFUL download to
+        // URLSession even when only a prefix arrived (proven with megaphone-style mp3 streams:
+        // a 120 KB prefix of a 14 MB file passes every check above and AVFoundation's isPlayable,
+        // then plays for exactly 7.5 seconds — the customer's "stops after 6-8 seconds"). When the
+        // transport declared no size, fall back to the feed's enclosure length: anything below half
+        // the declared size is a truncated body, not a complete file.
+        if expectedSize <= 0, feedExpectedBytes > 0, size < feedExpectedBytes / 2 {
+            WatchDiagnostics.log("download-validation-failed", message: "Watch-Downloaddatei ist deutlich kleiner als im Feed deklariert", metadata: [
+                "episodeHash": hash,
+                "actualBytes": "\(size)",
+                "feedExpectedBytes": "\(feedExpectedBytes)",
             ])
             return NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
         }
@@ -393,6 +429,28 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter.string(from: Date())
     }
+
+    // Maps the transport's MIME type to a file extension so AVFoundation can identify the
+    // container when the media URL itself carries no extension (tracking redirects).
+    nonisolated static func fileExtension(forMIMEType mimeType: String?) -> String? {
+        guard let mimeType = mimeType?.lowercased().components(separatedBy: ";").first?.trimmingCharacters(in: .whitespaces) else {
+            return nil
+        }
+        switch mimeType {
+        case "audio/mpeg", "audio/mp3", "audio/mpeg3":
+            return "mp3"
+        case "audio/mp4", "audio/x-m4a", "audio/m4a", "audio/mp4a-latm":
+            return "m4a"
+        case "audio/aac", "audio/x-aac", "audio/aacp":
+            return "aac"
+        case "audio/ogg", "application/ogg":
+            return "ogg"
+        case "audio/wav", "audio/x-wav":
+            return "wav"
+        default:
+            return nil
+        }
+    }
 }
 
 extension WatchDownloadManager: URLSessionDownloadDelegate {
@@ -409,18 +467,31 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
             return
         }
 
-        Task { @MainActor in
+        // Only stage here. Validation/registration runs from didCompleteWithError, which the
+        // serial delegate queue delivers strictly AFTER this callback: a detached MainActor task
+        // started here raced didCompleteWithError's task — the next queued download began while
+        // the finished episode was still unregistered (file on disk but not yet an eviction
+        // candidate), so a tight-storage start was wrongly refused with "Speicher voll"
+        // (proven in the simulator with a 51 MB budget).
+        stagedLocationsLock.lock()
+        stagedLocationsByHash[hash] = stagedLocation
+        stagedLocationsLock.unlock()
+    }
+
+    @MainActor
+    private func processFinishedDownload(hash: String, stagedLocation: URL, downloadTask: URLSessionDownloadTask) async {
             guard let episode = WatchManifestStore.shared.episode(hash: hash) else {
                 try? FileManager.default.removeItem(at: stagedLocation)
                 return
             }
-            if let error = downloadValidationError(for: downloadTask, fileURL: stagedLocation) {
+            if let error = downloadValidationError(for: downloadTask, fileURL: stagedLocation, feedExpectedBytes: episode.expectedBytes) {
                 try? FileManager.default.removeItem(at: stagedLocation)
                 markDownloadFailed(hash: hash, error: error)
                 return
             }
 
-            let destination = WatchStorageManager.shared.localFileURL(for: episode, temporaryURL: stagedLocation)
+            let mimeExtension = Self.fileExtension(forMIMEType: downloadTask.response?.mimeType)
+            let destination = WatchStorageManager.shared.localFileURL(for: episode, temporaryURL: stagedLocation, fallbackExtension: mimeExtension)
             try? FileManager.default.removeItem(at: destination)
             do {
                 try FileManager.default.moveItem(at: stagedLocation, to: destination)
@@ -431,7 +502,11 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
             }
 
             let attributes = await downloadedFileAttributes(for: destination)
-            if attributes.size <= 0 || !attributes.isPlayable {
+            // duration <= 0 is a hard failure too: for a file AVFoundation cannot read (random
+            // bytes, unknown container) isPlayable still answers an optimistic true while the
+            // measured duration collapses to 0 — proven in the watch simulator. A finished
+            // podcast download always has a measurable duration.
+            if attributes.size <= 0 || !attributes.isPlayable || attributes.duration <= 0 {
                 try? FileManager.default.removeItem(at: destination)
                 WatchDiagnostics.log("download-validation-failed", message: "Watch-Audiodatei ist nicht spielbar", metadata: [
                     "episodeHash": hash,
@@ -440,6 +515,22 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                     "isPlayable": attributes.isPlayable ? "true" : "false",
                 ])
                 markDownloadFailed(hash: hash, error: NSLocalizedString("Geladene Audiodatei konnte nicht validiert werden.", comment: ""))
+                return
+            }
+            // Transport-independent truncation check: a truncated mp3/aac prefix is "playable" for
+            // AVFoundation, but its measured duration collapses to the received fraction (120 KB of
+            // a 90-minute episode measure as 7.5 s). The feed's duration hint is in the manifest —
+            // a file measuring under half of a substantial hint is a truncated body. The 10-minute
+            // floor keeps wrong hints on short episodes from rejecting good files.
+            if episode.durationHint >= 600, attributes.duration > 0, attributes.duration < episode.durationHint / 2 {
+                try? FileManager.default.removeItem(at: destination)
+                WatchDiagnostics.log("download-validation-failed", message: "Watch-Audiodatei ist deutlich kuerzer als im Feed deklariert", metadata: [
+                    "episodeHash": hash,
+                    "actualBytes": "\(attributes.size)",
+                    "actualDuration": "\(attributes.duration)",
+                    "durationHint": "\(episode.durationHint)",
+                ])
+                markDownloadFailed(hash: hash, error: NSLocalizedString("Geladene Datei ist unvollständig.", comment: ""))
                 return
             }
 
@@ -474,17 +565,40 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 "timestamp": timestamp(),
             ])
             WatchConnectivityController.shared.sendStorageStatus()
-        }
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let hash = task.taskDescription ?? ""
+        stagedLocationsLock.lock()
+        let stagedLocation = stagedLocationsByHash.removeValue(forKey: hash)
+        stagedLocationsLock.unlock()
+        let downloadTask = task as? URLSessionDownloadTask
+
         Task { @MainActor in
+            // Success path: validate + register the staged file FIRST, then advance the queue.
+            // The episode must be fully registered (localFileURL, .downloaded) before the next
+            // download's storage pre-check runs, otherwise it occupies disk space without being
+            // an eviction candidate.
+            if error == nil, let stagedLocation, let downloadTask {
+                await processFinishedDownload(hash: hash, stagedLocation: stagedLocation, downloadTask: downloadTask)
+            } else if let stagedLocation {
+                try? FileManager.default.removeItem(at: stagedLocation)
+            }
+
             activeTasksByHash[hash] = nil
             if let error, (error as NSError).code != NSURLErrorCancelled {
+                let nsError = error as NSError
+                WatchDiagnostics.log("download-transport-error", message: "Watch-Download Transportfehler", metadata: [
+                    "episodeHash": hash,
+                    "errorDomain": nsError.domain,
+                    "errorCode": "\(nsError.code)",
+                    "errorDescription": nsError.localizedDescription,
+                ])
                 markDownloadFailed(hash: hash, error: error.localizedDescription)
             }
-            // The queue may now be idle — backfill any evicted episodes that fit the freed/leftover space.
+            // Sequential queue: this download is done (success or failure) — start the next one,
+            // then backfill any evicted episodes that fit the freed/leftover space.
+            startNextQueuedDownloadIfIdle()
             autoFillEvictedEpisodes()
         }
     }
@@ -500,17 +614,26 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
             // must not resurrect the episode back to .downloading.
             let currentStatus = WatchManifestStore.shared.episode(hash: hash)?.status
             if currentStatus == .evicted || currentStatus == .failed { return }
-            WatchManifestStore.shared.updateEpisode(hash: hash) { item in
-                item.status = .downloading
-                item.downloadedBytes = totalBytesWritten
-                item.expectedBytes = max(0, totalBytesExpectedToWrite)
-            }
 
             let now = Date()
             if let last = lastProgressReportByHash[hash], now.timeIntervalSince(last) < 2 {
                 return
             }
             lastProgressReportByHash[hash] = now
+
+            // Behind the 2 s throttle: updateEpisode persists the whole manifest JSON to disk —
+            // running it on EVERY didWriteData callback burned disk writes several times a second.
+            WatchManifestStore.shared.updateEpisode(hash: hash) { item in
+                item.status = .downloading
+                item.downloadedBytes = totalBytesWritten
+                // Without Content-Length the transport reports -1. Overwriting with max(0, -1) = 0
+                // erased the feed's enclosure size on the FIRST progress callback — which is exactly
+                // the value the truncation validation falls back to when the transport declared no
+                // size. Keep the feed value unless the transport actually knows better.
+                if totalBytesExpectedToWrite > 0 {
+                    item.expectedBytes = totalBytesExpectedToWrite
+                }
+            }
 
             // Live storage guard: a download whose size the feed never declared (expectedBytes == 0,
             // e.g. megaphone) slips past the pre-download capacity check, which could only reserve the
@@ -528,6 +651,13 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 "expectedBytes": max(0, totalBytesExpectedToWrite),
                 "timestamp": timestamp(),
             ], delivery: .live)
+
+            // Keep the storage displays (watch header and iOS storage bar) moving while a
+            // download runs — previously the phone only got a storage status after completion.
+            if lastStorageStatusSendDate.map({ now.timeIntervalSince($0) >= 10 }) ?? true {
+                lastStorageStatusSendDate = now
+                WatchConnectivityController.shared.sendStorageStatus()
+            }
         }
     }
 }

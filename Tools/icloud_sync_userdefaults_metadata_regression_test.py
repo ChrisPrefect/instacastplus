@@ -14,9 +14,23 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def method_body(source, signature, next_marker="\n    private func "):
+def method_body(source, signature, next_marker=None):
+    # Brace-matching extraction: the old "cut at the next member" heuristic broke when
+    # the manager was split into files and member access became internal.
     require(signature in source, f"{signature} is missing.")
-    return source.split(signature, 1)[1].split(next_marker, 1)[0]
+    start = source.find(signature)
+    brace = source.find("{", start)
+    require(brace != -1, f"{signature} has no body.")
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace + 1:index]
+    raise AssertionError(f"Unterminated body: {signature}")
 
 
 def source_between(source, start, end):
@@ -25,7 +39,7 @@ def source_between(source, start, end):
     return source.split(start, 1)[1].split(end, 1)[0]
 
 
-MANAGER = read("Classes/ICiCloudSyncManager.swift")
+MANAGER = "\n".join(read("Classes/" + _n) for _n in ["ICiCloudSyncManager.swift", "ICiCloudSyncTypes.swift", "ICiCloudSyncManager+EngineRecords.swift", "ICiCloudSyncManager+RemoteApply.swift", "ICiCloudSyncManager+LocalChanges.swift", "ICiCloudSyncManager+Metadata.swift"])
 APP_DELEGATE = read("Classes/InstacastAppDelegate.m")
 
 for key in [
@@ -39,9 +53,9 @@ for key in [
     "subscriptionLocalModifiedDatesKey",
 ]:
     require(key in MANAGER, f"{key} must remain explicit iCloud sync metadata.")
-    require(key in method_body(MANAGER, "private nonisolated static var fileBackedSyncMetadataKeys"), f"{key} must be file-backed, not stored in UserDefaults.")
+    require(key in method_body(MANAGER, "nonisolated static var fileBackedSyncMetadataKeys"), f"{key} must be file-backed, not stored in UserDefaults.")
 
-set_sync_metadata = method_body(MANAGER, "private func setSyncMetadata")
+set_sync_metadata = method_body(MANAGER, "func setSyncMetadata")
 require("Self.isFileBackedSyncMetadataKey(key)" in set_sync_metadata, "Large iCloud metadata writes must branch away from UserDefaults.")
 require("Self.writeSyncMetadataValue" in set_sync_metadata, "Large iCloud metadata must be written to files.")
 require("defaults.set(value, forKey: key)" not in source_between(set_sync_metadata, "if let value {", "} else {"), "setSyncMetadata must not blindly write all values into UserDefaults.")
@@ -51,9 +65,9 @@ require("defaults.set(value, forKey: key)" not in source_between(set_sync_metada
 require("NSLog" not in set_sync_metadata, "setSyncMetadata must not log every write (this flooded the diagnostics log).")
 require("write-failed" in set_sync_metadata, "Genuine iCloud metadata write failures must still be logged.")
 
-require("private nonisolated static func syncMetadataValue(forKey key: String) -> Any?" in MANAGER, "File-backed iCloud metadata needs a shared read path.")
-require("private nonisolated static func writeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared write path.")
-require("private nonisolated static func removeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared remove path.")
+require("nonisolated static func syncMetadataValue(forKey key: String) -> Any?" in MANAGER, "File-backed iCloud metadata needs a shared read path.")
+require("nonisolated static func writeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared write path.")
+require("nonisolated static func removeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared remove path.")
 require("knownRecordSystemFieldsDirectoryName" in MANAGER, "CKRecord system fields must be stored as per-record files, not one huge knownRecords blob.")
 require("knownRecordSystemFieldsData(forRecordName:" in MANAGER, "CKSyncEngine record materialization must read only the requested known record system fields.")
 require("writeKnownRecordSystemFields" in MANAGER, "Remembering a server record must write only that record's system fields.")
@@ -63,12 +77,12 @@ require("migrateLegacySyncMetadataOutOfUserDefaults" not in MANAGER, "iCloud syn
 require("logPendingLegacySyncMetadataMigrationSummary" not in MANAGER, "iCloud sync is unreleased; do not keep migration diagnostics.")
 require("legacyUserDefaultsPlistURL" not in MANAGER, "iCloud sync is unreleased; no direct legacy defaults migration path is needed.")
 
-sync_metadata_value = method_body(MANAGER, "private nonisolated static func syncMetadataValue")
+sync_metadata_value = method_body(MANAGER, "nonisolated static func syncMetadataValue")
 require("if key == knownRecordsKey" in sync_metadata_value, "knownRecords must not be loaded as one dictionary blob.")
 file_backed_branch = source_between(sync_metadata_value, "if isFileBackedSyncMetadataKey(key) {", "\n        return UserDefaults.standard.object(forKey: key)")
 require("UserDefaults.standard.object(forKey: key)" not in file_backed_branch, "File-backed metadata reads must not fall back to legacy UserDefaults.")
-remember_server_record = method_body(MANAGER, "private func rememberServerRecord")
-forget_server_record = method_body(MANAGER, "private func forgetServerRecord")
+remember_server_record = method_body(MANAGER, "func rememberServerRecord")
+forget_server_record = method_body(MANAGER, "func forgetServerRecord")
 require("knownRecords()" not in remember_server_record and "setSyncMetadata(records, forKey: Self.knownRecordsKey)" not in remember_server_record, "rememberServerRecord must not rewrite a full knownRecords dictionary.")
 require("knownRecords()" not in forget_server_record and "setSyncMetadata(records, forKey: Self.knownRecordsKey)" not in forget_server_record, "forgetServerRecord must not rewrite a full knownRecords dictionary.")
 

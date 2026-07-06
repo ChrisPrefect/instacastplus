@@ -11,6 +11,10 @@
 @interface ICFTSController ()
 @property (nonatomic, strong) NSURL* searchIndexURL;
 @property (nonatomic, strong) FMDatabaseQueue *queue;
+// FMDatabaseQueue's inDatabase: is dispatch_SYNC — during a feed refresh the per-episode index
+// writes ran as synchronous SQLite writes on the main thread. Single-object writes hop through
+// this serial queue instead so the caller returns immediately; FIFO order is preserved.
+@property (nonatomic, strong) dispatch_queue_t writeQueue;
 @end
 
 @implementation ICFTSController
@@ -44,7 +48,9 @@ static NSDictionary* ICFTSEpisodeSnapshot(CDEpisode* episode)
     return @{
         @"title": ICFTSString(episode.title),
         @"summary": ICFTSString(episode.summary),
-        @"fulltext": ICFTSString([episode.fulltext stringByStrippingHTML]),
+        // Raw fulltext — the HTML stripping is expensive and runs in _replaceEpisodeSnapshot
+        // on the database queue, not on the (often main) thread taking the snapshot.
+        @"fulltext": ICFTSString(episode.fulltext),
         @"uid": uid,
         @"feed_uid": feedUID
     };
@@ -91,8 +97,9 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 - (void) _replaceEpisodeSnapshot:(NSDictionary*)episodeSnapshot inDatabase:(FMDatabase*)db
 {
     NSString* uid = episodeSnapshot[@"uid"];
+    NSString* fulltext = [ICFTSString(episodeSnapshot[@"fulltext"]) stringByStrippingHTML] ?: @"";
     [db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", uid];
-    if (![db executeUpdate:@"INSERT INTO episodes (title, summary, fulltext, uid, feed_uid) VALUES(?,?,?,?,?)", episodeSnapshot[@"title"], episodeSnapshot[@"summary"], episodeSnapshot[@"fulltext"], uid, episodeSnapshot[@"feed_uid"]]) {
+    if (![db executeUpdate:@"INSERT INTO episodes (title, summary, fulltext, uid, feed_uid) VALUES(?,?,?,?,?)", episodeSnapshot[@"title"], episodeSnapshot[@"summary"], fulltext, uid, episodeSnapshot[@"feed_uid"]]) {
         ErrLog(@"%@", [db lastErrorMessage]);
     }
 }
@@ -101,6 +108,8 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
 {
     if ((self = [super init])) {
         _searchIndexURL = url;
+        dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
+        _writeQueue = dispatch_queue_create("com.iteconomy.instacastplus.fts-write", attributes);
     }
 
     return self;
@@ -161,9 +170,11 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
         return;
     }
 
-    [self.queue inDatabase:^(FMDatabase *db) {
-        [self _replaceFeedSnapshot:feedSnapshot inDatabase:db];
-    }];
+    dispatch_async(self.writeQueue, ^{
+        [self.queue inDatabase:^(FMDatabase *db) {
+            [self _replaceFeedSnapshot:feedSnapshot inDatabase:db];
+        }];
+    });
 }
 
 - (void) updateFeed:(CDFeed*)feed
@@ -178,10 +189,12 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
         return;
     }
 
-    [self.queue inDatabase:^(FMDatabase *db) {
-        [db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", feedUID];
-        [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", feedUID];
-    }];
+    dispatch_async(self.writeQueue, ^{
+        [self.queue inDatabase:^(FMDatabase *db) {
+            [db executeUpdate:@"DELETE FROM feeds WHERE uid = ?", feedUID];
+            [db executeUpdate:@"DELETE FROM episodes WHERE feed_uid = ?", feedUID];
+        }];
+    });
 }
 
 - (void) addEpisode:(CDEpisode*)episode
@@ -191,9 +204,11 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
         return;
     }
 
-    [self.queue inDatabase:^(FMDatabase *db) {
-        [self _replaceEpisodeSnapshot:episodeSnapshot inDatabase:db];
-    }];
+    dispatch_async(self.writeQueue, ^{
+        [self.queue inDatabase:^(FMDatabase *db) {
+            [self _replaceEpisodeSnapshot:episodeSnapshot inDatabase:db];
+        }];
+    });
 }
 
 - (void) updateEpisode:(CDEpisode*)episode
@@ -208,9 +223,11 @@ static NSString* ICFTSQueryForSearchTerm(NSString* searchTerm, NSArray* columns)
         return;
     }
 
-    [self.queue inDatabase:^(FMDatabase *db) {
-        [db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", episodeUID];
-    }];
+    dispatch_async(self.writeQueue, ^{
+        [self.queue inDatabase:^(FMDatabase *db) {
+            [db executeUpdate:@"DELETE FROM episodes WHERE uid = ?", episodeUID];
+        }];
+    });
 }
 
 #pragma mark -

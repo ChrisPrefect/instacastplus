@@ -629,7 +629,7 @@
 
 "Auto Skip" = "Auto Skip";
 "Auto Skip Chapter" = "Auto Skip Chapter";
-"Nahe am Ende eines Kapitels zum nächsten Kapitel springen" = "Jump to the next chapter near the end of a chapter";
+"Sponsoren am Kapitelende überspringen" = "Skip sponsors at chapter ends";
 "Ende des Kapitels ab" = "Chapter end from";
 "Ein" = "On";
 "Ein + 5 Sekunden" = "On + 5 Seconds";
@@ -637,7 +637,7 @@
 "Ein + 15 Sekunden" = "On + 15 Seconds";
 "Ein + 20 Sekunden" = "On + 20 Seconds";
 "4 Minutes" = "4 Minutes";
-"When skipping forward near a chapter end, jump to the next chapter; + seconds skips sponsor tails after the boundary." = "When skipping forward near a chapter end, jump to the next chapter; + seconds skips sponsor tails after the boundary.";
+"Sponsor-Segmente, die am Ende eines Kapitels eingefügt sind, können mit einem Druck auf Vorwärts-Spulen übersprungen werden. Es wird direkt zum nächsten Kapitel gesprungen und je nach Einstellung zusätzlich einige Sekunden weiter." = "Sponsor segments inserted at the end of a chapter can be skipped with one Forward Skip tap. Instacast jumps directly to the next chapter and, depending on the setting, a few extra seconds further.";
 "Skipping Start" = "Skipping Start";
 "Skipping End" = "Skipping End";
 "Skipping Chapter" = "Skipping Chapter";
@@ -1538,3 +1538,4 @@
 "Play \\(\\.$episode) in \\(.applicationName)" = "Play \\(\\.$episode) in \\(.applicationName)";
 "Play episode \\(\\.$episode) in \\(.applicationName)" = "Play episode \\(\\.$episode) in \\(.applicationName)";
 "Watch lädt Podcasts (%@/%@)" = "Watch is downloading podcasts (%@/%@)";
+"Watch lädt Podcasts (%@ von %@)" = "Watch is downloading podcasts (%@ of %@)";

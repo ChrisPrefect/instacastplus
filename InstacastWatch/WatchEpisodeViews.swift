@@ -6,6 +6,7 @@ import CryptoKit
 struct WatchEpisodeListView: View {
     @EnvironmentObject private var store: WatchManifestStore
     @EnvironmentObject private var player: WatchPlayerController
+    @Environment(\.scenePhase) private var scenePhase
     @State private var playerPath: [String] = []
 
     private var accentColor: Color {
@@ -104,8 +105,28 @@ struct WatchEpisodeListView: View {
             }
             .onAppear {
                 popUnavailablePlayerIfNeeded()
+                showPlayerForActivePlaybackIfNeeded()
+            }
+            // Re-entering the app while an episode is playing lands on the player, not the list.
+            // Navigating back to the list DURING playback stays on the list (no phase change).
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    showPlayerForActivePlaybackIfNeeded()
+                }
             }
         }
+    }
+
+    private func showPlayerForActivePlaybackIfNeeded() {
+        guard
+            player.isPlaying,
+            let hash = player.playingEpisodeHash,
+            store.episode(hash: hash) != nil,
+            playerPath.last != hash
+        else {
+            return
+        }
+        playerPath = [hash]
     }
 
     private func handleTap(_ episode: WatchEpisode) {
@@ -333,6 +354,30 @@ private struct WatchPlayerView: View {
         GeometryReader { proxy in
             let compact = proxy.size.height < 220
 
+            // The player fills exactly one screen; scrolling up reveals the chapter list below.
+            // Scrolled to the top this renders the identical layout the player always had.
+            ScrollView {
+                VStack(spacing: 0) {
+                    playerControls(compact: compact)
+                        .frame(height: proxy.size.height, alignment: .top)
+
+                    if !episode.chapters.isEmpty {
+                        chapterListSection
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if episode.status == .downloaded, episode.localFileURL != nil, player.playingEpisodeHash != episode.episodeHash {
+                Task { @MainActor in
+                    _ = await player.play(episode)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func playerControls(compact: Bool) -> some View {
             VStack(alignment: .leading, spacing: compact ? 2 : 4) {
                 WatchPlayerHeader(
                     episode: episode,
@@ -413,14 +458,91 @@ private struct WatchPlayerView: View {
             .padding(.horizontal, compact ? 6 : 8)
             .padding(.top, compact ? 4 : 34)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    @ViewBuilder
+    private var chapterListSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(NSLocalizedString("Kapitel", comment: ""))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            ForEach(episode.chapters) { chapter in
+                chapterRow(chapter)
+            }
         }
-        .onAppear {
-            if episode.status == .downloaded, episode.localFileURL != nil, player.playingEpisodeHash != episode.episodeHash {
-                Task { @MainActor in
-                    _ = await player.play(episode)
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+    }
+
+    private enum ChapterPlayState {
+        case played
+        case active
+        case upcoming
+    }
+
+    private func chapterPlayState(_ chapter: WatchChapter) -> ChapterPlayState {
+        if chapter.contains(position: currentPosition, episodeDuration: episode.displayDuration) {
+            return .active
+        }
+        return currentPosition >= TimeInterval(chapterEndSeconds(chapter)) ? .played : .upcoming
+    }
+
+    private func chapterEndSeconds(_ chapter: WatchChapter) -> Int {
+        if let end = chapter.endSeconds {
+            return end
+        }
+        if let index = episode.chapters.firstIndex(of: chapter), index + 1 < episode.chapters.count {
+            return episode.chapters[index + 1].startSeconds
+        }
+        return episode.displayDuration
+    }
+
+    @ViewBuilder
+    private func chapterRow(_ chapter: WatchChapter) -> some View {
+        let state = chapterPlayState(chapter)
+        let willBeSkipped = episode.chapterWillBeSkipped(chapter)
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Group {
+                if willBeSkipped, state != .played {
+                    Image(systemName: "forward.fill")
+                        .foregroundStyle(.orange)
+                } else {
+                    switch state {
+                    case .played:
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.secondary)
+                    case .active:
+                        Image(systemName: "play.fill")
+                            .foregroundStyle(accentColor)
+                    case .upcoming:
+                        Image(systemName: "circle")
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .font(.system(size: 10))
+            .frame(width: 14, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(chapter.title.isEmpty ? formatPlayerTime(chapter.startSeconds) : chapter.title)
+                    .font(.system(size: 13, weight: state == .active ? .semibold : .regular))
+                    .foregroundStyle(state == .played ? AnyShapeStyle(.secondary) : (state == .active ? AnyShapeStyle(accentColor) : AnyShapeStyle(.primary)))
+                    .lineLimit(2)
+
+                if willBeSkipped {
+                    Text(NSLocalizedString("Wird übersprungen", comment: ""))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                } else {
+                    Text(formatPlayerTime(chapter.startSeconds))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
+        .opacity(state == .played || willBeSkipped ? 0.75 : 1)
     }
 }
 

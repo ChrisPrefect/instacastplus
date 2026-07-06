@@ -37,7 +37,7 @@ def source_between(source: str, start: str, end: str) -> str:
     return source.split(start, 1)[1].split(end, 1)[0]
 
 
-icloud_manager = read("Classes/ICiCloudSyncManager.swift")
+icloud_manager = "\n".join(read("Classes/" + _n) for _n in ["ICiCloudSyncManager.swift", "ICiCloudSyncTypes.swift", "ICiCloudSyncManager+EngineRecords.swift", "ICiCloudSyncManager+RemoteApply.swift", "ICiCloudSyncManager+LocalChanges.swift", "ICiCloudSyncManager+Metadata.swift"])
 appearance_settings = read("Classes/AppearanceSettingsViewController.m")
 subscription_manager = read("Classes/Model/SubscriptionManager.m")
 feed_parser = read("Classes/Parser/ICFeedParser.m")
@@ -50,7 +50,7 @@ disabled_guard = 'guard anySyncEnabled else { return NSLocalizedString("Aus", co
 require(disabled_guard in status_text, "Disabled iCloud Sync must always display Aus instead of stale receiving/sending/status text.")
 require(
     status_text.index(disabled_guard) < status_text.index("defaults.string(forKey: Self.lastErrorKey)")
-    and status_text.index(disabled_guard) < status_text.index("syncProgressStatusText()")
+    and status_text.index(disabled_guard) < status_text.index("syncActivityStatusText()")
     and status_text.index(disabled_guard) < status_text.index("defaults.string(forKey: Self.lastStatusKey)"),
     "The disabled iCloud Sync status guard must run before stale error/progress/status metadata is read.",
 )

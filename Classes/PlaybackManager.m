@@ -1377,6 +1377,19 @@ didReceiveResponse:(NSURLResponse *)response
 - (void) _setupRemotePlaybackCenterWithEpisode:(CDEpisode*)episode
 {
 #if TARGET_OS_IPHONE
+    // Diagnostics for the field report "lock screen shows Instacast but only a grayed-out play
+    // button": that is exactly the state after this method runs with episode == nil (all commands
+    // disabled) while now-playing info is still populated. Log every transition so the log shows
+    // who disabled the commands and whether a player was still active at that moment.
+    [[ICDiagnosticLogger shared] logEvent:@"remote-commands"
+                                  message:(episode ? @"Remote-Commands aktiviert" : @"Remote-Commands deaktiviert")
+                                 metadata:@{
+        @"episode": episode.title ?: @"",
+        @"playingEpisode": self.playingEpisode.title ?: @"",
+        @"playerRate": [NSString stringWithFormat:@"%.2f", self.player.rate],
+        @"changingEpisode": self.changingEpisode ? @"true" : @"false",
+    }];
+
     MPRemoteCommandCenter *rcc = [MPRemoteCommandCenter sharedCommandCenter];
     
     // reset all commands first
@@ -2876,6 +2889,11 @@ didReceiveResponse:(NSURLResponse *)response
 	}
 }
 
+- (BOOL) forwardSkipJumpsToNextChapter
+{
+    return [self _forwardSkipTargetNearChapterEndFromTime:self.time] >= 0;
+}
+
 - (NSTimeInterval)_forwardSkipTargetNearChapterEndFromTime:(NSTimeInterval)time
 {
     CDFeed* feed = self.playingEpisode.feed;
@@ -3239,6 +3257,20 @@ didReceiveResponse:(NSURLResponse *)response
                                      @"episodeHash": episodeHash,
                                  }];
 
+    // Snapshot feed-provided chapters (CDChapter, e.g. Podlove) on the calling
+    // thread — Core Data objects must not be touched from the parser completion.
+    NSMutableArray* feedChapterFallback = [NSMutableArray array];
+    for (CDChapter* cdChapter in [self.playingEpisode sortedChapters]) {
+        ICMetadataChapter* ch = [[ICMetadataChapter alloc] init];
+        ch.title = cdChapter.title;
+        ch.start = CMTimeMakeWithSeconds(cdChapter.timecode, NSEC_PER_SEC);
+        if (cdChapter.duration > 0) {
+            ch.end = CMTimeMakeWithSeconds(cdChapter.timecode + cdChapter.duration, NSEC_PER_SEC);
+        }
+        ch.link = cdChapter.linkURL;
+        [feedChapterFallback addObject:ch];
+    }
+
     ICMetadataParser* parser = [[ICMetadataParser alloc] initWithAsset:self.mediaAsset];
     [parser loadAsynchronouslyWithCompletionHandler:^(BOOL success, NSError *error) {
         
@@ -3277,6 +3309,20 @@ didReceiveResponse:(NSURLResponse *)response
                                              @"chapterCount": @([chapters count]),
                                              @"parserSuccess": @(success),
                                              @"error": error.localizedDescription ?: @"",
+                                         }];
+        }
+
+        // Media file has no embedded chapters, but the feed delivered chapters
+        // (CDChapter, e.g. Podlove Simple Chapters). The player UI lists those,
+        // so playback features (chapter title, chapter-end forward skip, auto
+        // skip) must use them too.
+        if ([chapters count] == 0 && feedChapterFallback.count > 0) {
+            chapters = feedChapterFallback;
+            [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
+                                          message:@"Feed-Kapitel für Playback geladen (Fallback)"
+                                         metadata:@{
+                                             @"episodeHash": episodeHash,
+                                             @"chapterCount": @(feedChapterFallback.count),
                                          }];
         }
 

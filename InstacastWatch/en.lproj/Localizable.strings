@@ -26,3 +26,5 @@
 "Download unvollständig: HTTP 206 Partial Content." = "Download incomplete: HTTP 206 Partial Content.";
 "Geladene Datei ist unvollständig." = "Downloaded file is incomplete.";
 "Audiositzung konnte nicht aktiviert werden." = "Audio session could not be activated.";
+"Kapitel" = "Chapters";
+"Wird übersprungen" = "Will be skipped";

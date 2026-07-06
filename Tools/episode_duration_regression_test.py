@@ -64,7 +64,7 @@ require(
     and "for (CDEpisode* episode in feed.episodes)" not in subscription_source,
     "The duration-hole check must use a SQL count, not fault in the whole episodes relationship on the main thread.",
 )
-sync_manager_source = (ROOT / "Classes" / "ICiCloudSyncManager.swift").read_text()
+sync_manager_source = "\n".join((ROOT / "Classes" / _n).read_text() for _n in ["ICiCloudSyncManager.swift", "ICiCloudSyncTypes.swift", "ICiCloudSyncManager+EngineRecords.swift", "ICiCloudSyncManager+RemoteApply.swift", "ICiCloudSyncManager+LocalChanges.swift", "ICiCloudSyncManager+Metadata.swift"])
 require(
     '"durationMetadataRefreshAttempted",' in sync_manager_source,
     "The duration-repair marker is an internal feed property and must not trigger subscription sync uploads.",

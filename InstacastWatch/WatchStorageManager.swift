@@ -25,8 +25,15 @@ final class WatchStorageManager {
         return directory
     }
 
-    func localFileURL(for episode: WatchEpisode, temporaryURL: URL? = nil) -> URL {
-        let ext = temporaryURL?.pathExtension.isEmpty == false ? temporaryURL!.pathExtension : episode.mediaURL.pathExtension
+    func localFileURL(for episode: WatchEpisode, temporaryURL: URL? = nil, fallbackExtension: String? = nil) -> URL {
+        var ext = temporaryURL?.pathExtension.isEmpty == false ? temporaryURL!.pathExtension : episode.mediaURL.pathExtension
+        if ext.isEmpty, let fallbackExtension, !fallbackExtension.isEmpty {
+            // Media URLs behind tracking redirects often carry no path extension. Without one
+            // AVFoundation cannot sniff the container: isPlayable answers an optimistic true and
+            // the measured duration collapses to 0, which blinded the download validation
+            // (proven in the simulator: 300 KB of random bytes passed as "downloaded").
+            ext = fallbackExtension
+        }
         let fileName = ext.isEmpty ? episode.episodeHash : "\(episode.episodeHash).\(ext)"
         return downloadsDirectory.appendingPathComponent(fileName)
     }
@@ -94,6 +101,23 @@ final class WatchStorageManager {
     }
 
     func freeBytes() -> Int64 {
+#if DEBUG
+        // Simulator-test seam (DEBUG only): models a small disk. The file
+        // "Application Support/WatchManifest/simulated-free-bytes.txt" holds the free space the
+        // volume would have with an EMPTY downloads directory — finished downloads and in-flight
+        // progress consume it, deletions free it. File absent = real volume capacity. The test
+        // harness writes the file into the simulator app container; release builds compile
+        // this out. (UserDefaults/launch-args do not reach the sandboxed watch app reliably.)
+        let seamURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("WatchManifest/simulated-free-bytes.txt")
+        if let text = try? String(contentsOf: seamURL, encoding: .utf8),
+           let simulatedBytes = Int64(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            let inProgressBytes = WatchManifestStore.shared.episodes
+                .filter { $0.status == .downloading }
+                .reduce(Int64(0)) { $0 + max(0, $1.downloadedBytes) }
+            return max(0, simulatedBytes - downloadBytes() - inProgressBytes)
+        }
+#endif
         // Read the raw NSNumber instead of URLResourceValues.volumeAvailableCapacity. The typed Swift
         // property is Int-sized; on watchOS arm64_32 that truncates multi-GB capacities into negative
         // values (customer log: about -755 MB while Settings showed about 18 GB free). That negative

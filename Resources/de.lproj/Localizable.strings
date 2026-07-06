@@ -630,7 +630,7 @@
 
 "Auto Skip" = "Automatisches Überspringen";
 "Auto Skip Chapter" = "Kapitelname überspringen";
-"Nahe am Ende eines Kapitels zum nächsten Kapitel springen" = "Nahe am Ende eines Kapitels zum nächsten Kapitel springen";
+"Sponsoren am Kapitelende überspringen" = "Sponsoren am Kapitelende überspringen";
 "Ende des Kapitels ab" = "Ende des Kapitels ab";
 "Ein" = "Ein";
 "Ein + 5 Sekunden" = "Ein + 5 Sekunden";
@@ -638,7 +638,7 @@
 "Ein + 15 Sekunden" = "Ein + 15 Sekunden";
 "Ein + 20 Sekunden" = "Ein + 20 Sekunden";
 "4 Minutes" = "4 Minuten";
-"When skipping forward near a chapter end, jump to the next chapter; + seconds skips sponsor tails after the boundary." = "Beim Vorwärtsspulen kurz vor Kapitelende direkt zum nächsten Kapitel springen; + Sekunden überspringt Sponsor-Reste nach der Grenze.";
+"Sponsor-Segmente, die am Ende eines Kapitels eingefügt sind, können mit einem Druck auf Vorwärts-Spulen übersprungen werden. Es wird direkt zum nächsten Kapitel gesprungen und je nach Einstellung zusätzlich einige Sekunden weiter." = "Sponsor-Segmente, die am Ende eines Kapitels eingefügt sind, können mit einem Druck auf Vorwärts-Spulen übersprungen werden. Es wird direkt zum nächsten Kapitel gesprungen und je nach Einstellung zusätzlich einige Sekunden weiter.";
 "Skipping Start" = "Start überspringen";
 "Skipping End" = "Ende überspringen";
 "Skipping Chapter" = "Kapitel überspringen";
@@ -1541,3 +1541,4 @@
 "Play \\(\\.$episode) in \\(.applicationName)" = "\\(\\.$episode) in \\(.applicationName) abspielen";
 "Play episode \\(\\.$episode) in \\(.applicationName)" = "Folge \\(\\.$episode) in \\(.applicationName) abspielen";
 "Watch lädt Podcasts (%@/%@)" = "Watch lädt Podcasts (%@/%@)";
+"Watch lädt Podcasts (%@ von %@)" = "Watch lädt Podcasts (%@ von %@)";

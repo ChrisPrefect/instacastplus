@@ -139,6 +139,7 @@
 @property (nonatomic, strong) ICVolumeThumbHitView *volumeHitView;
 @property (nonatomic, strong) UIImage* transcriptImageNormal;
 @property (nonatomic, strong) UIImage* transcriptImageActive;
+@property (nonatomic) BOOL forwardChapterSkipActive;
 @end
 
 @implementation PlaybackControlsViewController {
@@ -319,11 +320,31 @@
 - (void)_updateSkipButtonImages
 {
     NSInteger backSeconds = [self _configuredSkipSecondsForKey:PlayerSkipBackPeriod];
-    NSInteger forwardSeconds = [self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod];
     [self.backButton setImage:ICSkipIntervalImage(NO, backSeconds, 34.f)
                      forState:UIControlStateNormal];
-    [self.forwardButton setImage:ICSkipIntervalImage(YES, forwardSeconds, 34.f)
-                        forState:UIControlStateNormal];
+
+    if (self.forwardChapterSkipActive) {
+        [self.forwardButton setImage:ICSkipToNextChapterImage(34.f)
+                            forState:UIControlStateNormal];
+        self.forwardButton.accessibilityLabel = @"Next Chapter".ls;
+    }
+    else {
+        NSInteger forwardSeconds = [self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod];
+        [self.forwardButton setImage:ICSkipIntervalImage(YES, forwardSeconds, 34.f)
+                            forState:UIControlStateNormal];
+        self.forwardButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Forward".ls, (long)forwardSeconds, @"Seconds".ls];
+    }
+}
+
+- (void)_updateForwardChapterSkipStateIfNeeded
+{
+    PlaybackManager* pman = [PlaybackManager playbackManager];
+    BOOL active = pman.ready && [pman forwardSkipJumpsToNextChapter];
+    if (active == self.forwardChapterSkipActive) {
+        return;
+    }
+    self.forwardChapterSkipActive = active;
+    [self _updateSkipButtonImages];
 }
 
 - (NSInteger)_configuredSkipSecondsForKey:(NSString*)key
@@ -589,6 +610,7 @@
 	self.timeSlider.progress = [self _effectiveLoadProgressForPlaybackManager:pman];
 
     [self updateChapterTitle];
+    [self _updateForwardChapterSkipStateIfNeeded];
 }
 
 - (void) updateTimeUIDuringSliding
@@ -671,6 +693,7 @@
 - (void) updateControlsUI
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
+    self.forwardChapterSkipActive = (pman.ready && [pman forwardSkipJumpsToNextChapter]);
     [self _updateSkipButtonImages];
 	if (pman.paused) {
 		[self.playButton setImage:[[UIImage imageNamed:@"Player Play"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
@@ -685,8 +708,7 @@
 	}
     
     self.backButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Backward".ls, (long)[self _configuredSkipSecondsForKey:PlayerSkipBackPeriod], @"Seconds".ls];
-    self.forwardButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Forward".ls, (long)[self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod], @"Seconds".ls];
-    
+
     self.playButton.enabled = pman.ready;
     self.backButton.enabled = pman.ready;
     self.forwardButton.enabled = pman.ready;

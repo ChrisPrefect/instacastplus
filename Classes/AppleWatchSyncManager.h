@@ -29,6 +29,10 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchEpisodeStatesDidChangeNotification
 @property (nonatomic, readonly) int64_t currentWatchDownloadedBytes;
 @property (nonatomic, readonly) int64_t currentWatchExpectedBytes;
 
+// Aggregated progress over all episodes that should be on the watch ("x MB von TOTAL MB").
+// Returns YES while at least one episode is still loading.
+- (BOOL)watchDownloadProgressLoadedBytes:(int64_t* _Nullable)outLoadedBytes totalBytes:(int64_t* _Nullable)outTotalBytes;
+
 + (instancetype)sharedManager;
 
 - (void)start;

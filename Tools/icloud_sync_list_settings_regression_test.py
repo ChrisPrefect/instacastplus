@@ -37,7 +37,7 @@ def source_between(source: str, start: str, end: str) -> str:
     return source.split(start, 1)[1].split(end, 1)[0]
 
 
-manager = read("Classes/ICiCloudSyncManager.swift")
+manager = "\n".join(read("Classes/" + _n) for _n in ["ICiCloudSyncManager.swift", "ICiCloudSyncTypes.swift", "ICiCloudSyncManager+EngineRecords.swift", "ICiCloudSyncManager+RemoteApply.swift", "ICiCloudSyncManager+LocalChanges.swift", "ICiCloudSyncManager+Metadata.swift"])
 editor = read("Classes/EpisodeListEditorViewController.m")
 exporter = read("Classes/ImportExportSettingsViewController.m")
 importer = read("Classes/InstacastBackupImporter.m")
@@ -59,7 +59,7 @@ require(
     "Backup import must keep the same list-filter contract the iCloud payload now syncs.",
 )
 
-record_builder = method_body(manager, "private nonisolated static func subscriptionListSettingsRecordForSyncEngineCallback")
+record_builder = method_body(manager, "nonisolated static func subscriptionListSettingsRecordForSyncEngineCallback")
 for field in ['"episodeLists"', '"mainMenuListUIDs"']:
     require(field in record_builder, f"ICSubscriptionListSettings must upload {field}.")
 require(
@@ -67,12 +67,12 @@ require(
     "Subscription list settings must materialize CDEpisodeList payloads off the main thread.",
 )
 
-payload_builder = method_body(manager, "private nonisolated static func episodeListPayloadsForSyncEngineCallback")
+payload_builder = method_body(manager, "nonisolated static func episodeListPayloadsForSyncEngineCallback")
 require("newBackgroundContext()" in payload_builder, "Episode-list payload building must not fetch lists on the main context.")
 require('entityName: "EpisodeList"' in payload_builder, "Episode-list payload building must fetch CDEpisodeList rows.")
 require('relationshipKeyPathsForPrefetching = ["includedFeeds"]' in payload_builder, "Included feeds must be prefetched in one list-settings fetch.")
 
-single_payload = method_body(manager, "private nonisolated static func episodeListPayloadForSyncEngineCallback")
+single_payload = method_body(manager, "nonisolated static func episodeListPayloadForSyncEngineCallback")
 for field in [
     '"uid"',
     '"name"',
@@ -98,15 +98,15 @@ for field in [
     require(field in single_payload, f"Episode-list payload is missing {field}.")
 require("sourceURL_" in single_payload, "Included podcasts must sync by stable feed source URL, not local object IDs.")
 
-fingerprint = method_body(manager, "private nonisolated static func subscriptionListSettingsFingerprint")
+fingerprint = method_body(manager, "nonisolated static func subscriptionListSettingsFingerprint")
 require("episodeListPayloadsForSyncEngineCallback()" in fingerprint, "Episode-list metadata must affect the list-settings fingerprint.")
 require("mainMenuListUIDsForSyncEngineCallback()" in fingerprint, "Main-menu list visibility must affect the list-settings fingerprint.")
 
-has_local = method_body(manager, "private nonisolated static func hasLocalSubscriptionListSettings")
+has_local = method_body(manager, "nonisolated static func hasLocalSubscriptionListSettings")
 require("hasLocalEpisodeListSettings()" in has_local, "A customized episode-list state must be publishable even without manual feed order.")
 require("hasLocalMainMenuListSettings()" in has_local, "Main-menu visibility must be publishable as subscription list settings.")
 
-apply_remote = method_body(manager, "private func applyRemoteSubscriptionListSettings")
+apply_remote = method_body(manager, "func applyRemoteSubscriptionListSettings")
 for call in ["applyRemoteEpisodeLists", "applyRemoteMainMenuListUIDs"]:
     require(call in apply_remote, f"Remote subscription-list settings must call {call}.")
 require(
@@ -114,11 +114,11 @@ require(
     "Empty-record and LWW guards must consider list filters and main-menu visibility, not only sort order.",
 )
 
-apply_lists = method_body(manager, "private func applyRemoteEpisodeLists")
+apply_lists = method_body(manager, "func applyRemoteEpisodeLists")
 require('entityName: "EpisodeList"' in apply_lists, "Applying list settings must fetch existing CDEpisodeList objects by uid.")
 require("applyRemoteEpisodeListPayload" in apply_lists, "Applying list settings must delegate each payload to a narrow updater.")
 
-apply_single = method_body(manager, "private func applyRemoteEpisodeListPayload")
+apply_single = method_body(manager, "func applyRemoteEpisodeListPayload")
 for assignment in [
     "list.name = name",
     "list.icon = icon",
@@ -144,21 +144,21 @@ for assignment in [
 require("remoteAppliedObjectIDs.insert(list.objectID)" in apply_single, "Remote list mutations must be echo-suppressed.")
 require("list.invalidateCaches()" in apply_single, "Changing synced list filters must invalidate list caches.")
 
-apply_menu = method_body(manager, "private func applyRemoteMainMenuListUIDs")
+apply_menu = method_body(manager, "func applyRemoteMainMenuListUIDs")
 require('defaults.set(mainMenuListUIDs, forKey: "MainMenuListUIDs")' in apply_menu, "Remote main-menu visibility must update MainMenuListUIDs.")
 require("MainMenuListUIDsDidChangeNotification" in apply_menu, "Applying main-menu visibility must refresh sidebar/menu UI.")
 
-insert_filter = method_body(manager, "private nonisolated static func syncRelevantInsertedObjectIDs")
-update_filter = method_body(manager, "private nonisolated static func syncRelevantUpdatedObjectIDs")
+insert_filter = method_body(manager, "nonisolated static func syncRelevantInsertedObjectIDs")
+update_filter = method_body(manager, "nonisolated static func syncRelevantUpdatedObjectIDs")
 require('case "EpisodeList":' in insert_filter, "New local episode lists must queue subscription list settings.")
 require('case "EpisodeList":' in update_filter, "Edited local episode lists must queue subscription list settings.")
 require("syncRelevantEpisodeListKeys" in update_filter, "Episode-list queueing must be limited to payload fields.")
 
-process_objects = method_body(manager, "private func processSyncObjects")
+process_objects = method_body(manager, "func processSyncObjects")
 require("listSettingsChanged" in process_objects, "Core Data list changes must be carried through processSyncObjects.")
 require("subscriptionListSettingsRecordID()" in process_objects, "List changes must queue the ICSubscriptionListSettings singleton.")
 
-transient_keys = method_body(manager, "private nonisolated static func transientSettingsKeysForSyncEngineCallback")
+transient_keys = method_body(manager, "nonisolated static func transientSettingsKeysForSyncEngineCallback")
 require('"MainMenuListUIDs"' in transient_keys, "MainMenuListUIDs must not be duplicated in scalar app-settings sync.")
 
 print("iCloud list settings regression checks passed.")

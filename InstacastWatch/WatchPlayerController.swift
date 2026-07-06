@@ -104,7 +104,19 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             try await activateLongFormAudioSession()
         } catch {
             WatchDiagnostics.log("playback-audio-session-failed", message: "Watch-Audiositzung konnte nicht aktiviert werden", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: error))
-            markEpisodePlaybackFailed(episode, error: error.localizedDescription)
+            // A failed session activation (no Bluetooth headphones, dismissed route picker) says
+            // nothing about the file. The old markEpisodePlaybackFailed path DELETED the healthy
+            // download and showed "Fehler" — customer repro 05.07.: play without headphones →
+            // system hint, then the episode dropped to "Fehler" and re-downloaded. Just abort the
+            // start attempt and keep the download.
+            playbackGeneration += 1
+            player.stop()
+            self.player = nil
+            playingEpisodeHash = nil
+            isPlaying = false
+            currentPosition = 0
+            clearPlaybackActiveMarker()
+            clearNowPlayingInfo()
             return false
         }
 
@@ -198,7 +210,36 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             WatchDiagnostics.log("audioPlayerDidFinishPlaying", message: "Watch-Playback beendet", metadata: metadata)
             isPlaying = false
             stopTimer()
-            if flag {
+
+            // A truncated download plays its received prefix and then finishes "successfully" —
+            // measured: a 120 KB prefix of a 90-minute mp3 ends cleanly after 7.5 seconds and used
+            // to mark the whole episode as played on watch, phone and iCloud. If the played duration
+            // is under half of a substantial feed duration hint, the file is truncated: don't mark
+            // anything consumed, drop the corrupt file and re-download it instead.
+            let truncatedFile = flag
+                && (currentEpisode?.durationHint ?? 0) >= 600
+                && finishedDuration > 0
+                && finishedDuration < Double(currentEpisode?.durationHint ?? 0) / 2
+
+            if truncatedFile, let currentEpisode {
+                var truncatedMetadata = metadata
+                truncatedMetadata["durationHint"] = "\(currentEpisode.durationHint)"
+                WatchDiagnostics.log("playback-finished-truncated", message: "Watch-Datei ist trunkiert, wird neu geladen", metadata: truncatedMetadata)
+                reportPosition(finished: false)
+                WatchStorageManager.shared.removeLocalFile(for: currentEpisode)
+                WatchManifestStore.shared.updateEpisode(hash: currentEpisode.episodeHash) { item in
+                    item.status = .queued
+                    item.localFileURL = nil
+                    item.actualFileSize = 0
+                    item.actualDuration = 0
+                    item.downloadedBytes = 0
+                    // Keep expectedBytes: it is the size the re-download's truncation
+                    // validation falls back to when the transport declares none.
+                    item.chapters = []
+                    item.chapterArtworkBaseURL = nil
+                    item.lastError = NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
+                }
+            } else if flag {
                 reportPosition(finished: true)
             } else {
                 reportPosition(finished: false)
@@ -209,7 +250,9 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             clearPlaybackActiveMarker()
             clearNowPlayingInfo()
 
-            if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
+            if truncatedFile {
+                WatchDownloadManager.shared.startQueuedDownloads()
+            } else if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
                 _ = await play(nextEpisode)
             }
         }
@@ -235,8 +278,11 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     private func activateLongFormAudioSession() async throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, policy: .longFormAudio, options: [])
+        // Same Swift-6 trap class as the WatchConnectivity errorHandler: the SDK block is not
+        // NS_SWIFT_SENDABLE, so without @Sendable this completion would inherit MainActor
+        // isolation and crash (EXC_BREAKPOINT) when AVFAudio invokes it on its own queue.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            session.activate(options: []) { activated, error in
+            session.activate(options: []) { @Sendable activated, error in
                 if let error {
                     continuation.resume(throwing: error)
                 } else if activated {
@@ -321,11 +367,16 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         defaults.removeObject(forKey: playbackActiveStartKey)
     }
 
+    // MPRemoteCommandCenter invokes these handlers on MediaPlayer's own accessQueue and the SDK
+    // blocks are not NS_SWIFT_SENDABLE. Without @Sendable every handler formed here would inherit
+    // MainActor isolation (Swift 6) and the runtime traps off-main with EXC_BREAKPOINT — proven by
+    // symbolicated .ips vom 05.07.: mit verbundenen Kopfhörern feuert MediaRemote die Commands
+    // ~2 s nach Playback-Start und die App crashte sofort. Ohne Kopfhörer feuern sie nie.
     private func configureRemoteCommands() {
         let commandCenter = MPRemoteCommandCenter.shared()
 
         commandCenter.togglePlayPauseCommand.isEnabled = true
-        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+        commandCenter.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in
                 await self?.toggleCurrentPlayback()
             }
@@ -333,7 +384,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
 
         commandCenter.playCommand.isEnabled = true
-        commandCenter.playCommand.addTarget { [weak self] _ in
+        commandCenter.playCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in
                 await self?.playCurrentEpisode()
             }
@@ -341,7 +392,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
 
         commandCenter.pauseCommand.isEnabled = true
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
+        commandCenter.pauseCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in
                 self?.pauseCurrentEpisode()
             }
@@ -349,18 +400,19 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
 
         commandCenter.changePlaybackPositionCommand.isEnabled = true
-        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+        commandCenter.changePlaybackPositionCommand.addTarget { @Sendable [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
+            let position = event.positionTime
             Task { @MainActor in
-                self?.seek(to: event.positionTime)
+                self?.seek(to: position)
             }
             return .success
         }
 
         commandCenter.skipForwardCommand.isEnabled = true
-        commandCenter.skipForwardCommand.addTarget { [weak self] _ in
+        commandCenter.skipForwardCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in
                 self?.seekUsingCurrentEpisode(forward: true)
             }
@@ -368,7 +420,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
 
         commandCenter.skipBackwardCommand.isEnabled = true
-        commandCenter.skipBackwardCommand.addTarget { [weak self] _ in
+        commandCenter.skipBackwardCommand.addTarget { @Sendable [weak self] _ in
             Task { @MainActor in
                 self?.seekUsingCurrentEpisode(forward: false)
             }
@@ -473,7 +525,9 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         nowPlayingArtworkEpisodeHash = episodeHash
         nowPlayingArtworkTask = Task { [weak self] in
             guard let image = await Self.image(from: url), !Task.isCancelled else { return }
-            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            // MediaPlayer calls the artwork request handler on its own queue — same Swift-6
+            // isolation trap as the remote command handlers without @Sendable.
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
             await MainActor.run {
                 guard
                     let self,

@@ -233,8 +233,21 @@ require(
 require(
     "if (weakSelf.suppressNextListReload)" in list_observing
     and "weakSelf.suppressNextListReload = NO;" in list_observing
-    and list_observing.find("if (weakSelf.suppressNextListReload)") < list_observing.find("reloadDataAndPreserveSelection"),
+    and list_observing.find("if (weakSelf.suppressNextListReload)") < list_observing.find("_reloadListAfterCountChange"),
     "ListEpisodesTableViewController must consume the delayed list invalidation from swipe actions before it can full-reload the table and shift scroll position.",
+)
+# The count-change reload is coalesced during a refresh; the deferred execution must
+# consume the swipe suppression flag as well before it may full-reload.
+reload_after_count_change = method_body(
+    list_episodes_source,
+    "- (void) _reloadListAfterCountChange",
+)
+require(
+    "if (self.suppressNextListReload)" in reload_after_count_change
+    and "self.suppressNextListReload = NO;" in reload_after_count_change
+    and reload_after_count_change.find("if (self.suppressNextListReload)")
+        < reload_after_count_change.find("reloadDataAndPreserveSelection"),
+    "The coalesced count-change reload must consume suppressNextListReload before full-reloading.",
 )
 require(
     "_removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:indexPath" in episodes_source

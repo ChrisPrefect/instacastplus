@@ -335,10 +335,14 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 
 - (NSString*)_statusTextForManager:(AppleWatchSyncManager*)manager
 {
-    if (manager.currentWatchExpectedBytes > 0) {
-        NSString* downloaded = [self _byteStringForBytes:manager.currentWatchDownloadedBytes];
-        NSString* expected = [self _byteStringForBytes:manager.currentWatchExpectedBytes];
-        return [NSString stringWithFormat:@"Watch lädt Podcasts (%@/%@)".ls, downloaded, expected];
+    // Aggregated over the whole wanted set instead of the per-download value, which flipped
+    // between episodes while several were loading (User-Feedback 05.07.).
+    int64_t loadedBytes = 0;
+    int64_t totalBytes = 0;
+    if ([manager watchDownloadProgressLoadedBytes:&loadedBytes totalBytes:&totalBytes]) {
+        NSString* downloaded = [self _byteStringForBytes:loadedBytes];
+        NSString* total = [self _byteStringForBytes:totalBytes];
+        return [NSString stringWithFormat:@"Watch lädt Podcasts (%@ von %@)".ls, downloaded, total];
     }
 
     return nil;

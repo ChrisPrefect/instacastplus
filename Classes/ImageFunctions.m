@@ -335,4 +335,27 @@ UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize)
     });
     return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
+
+UIImage* ICSkipToNextChapterImage(CGFloat pointSize)
+{
+    // Same canvas as ICSkipIntervalImage so the button layout doesn't shift
+    // when the forward button toggles between interval and chapter skip.
+    CGFloat sizeValue = MAX(24.f, pointSize);
+    CGSize size = CGSizeMake(sizeValue, sizeValue);
+    CGFloat scale = [UIScreen mainScreen].scale;
+    UIImage* image = ICImageFromByDrawingInContextWithScale(size, NO, scale, ^{
+        UIColor* color = [UIColor blackColor];
+        UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:sizeValue * 0.62f
+                                                                                             weight:UIImageSymbolWeightRegular];
+        UIImage* symbol = [[UIImage systemImageNamed:@"forward.end" withConfiguration:config] imageWithTintColor:color
+                                                                                              renderingMode:UIImageRenderingModeAlwaysOriginal];
+        CGSize symbolSize = symbol.size;
+        CGRect symbolRect = CGRectMake(ceilf((sizeValue - symbolSize.width) * 0.5f),
+                                       ceilf((sizeValue - symbolSize.height) * 0.5f),
+                                       symbolSize.width,
+                                       symbolSize.height);
+        [symbol drawInRect:symbolRect];
+    });
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
 #endif

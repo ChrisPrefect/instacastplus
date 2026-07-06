@@ -22,7 +22,24 @@ static NSString* const ICSpotlightEpisodePrefix = @"episode:";
 static NSString* const ICSpotlightDomainPrefix = @"com.iteconomy.instacastplus.feed.";
 static NSUInteger const ICSpotlightIndexBatchSize = 80;
 
+@interface ICSpotlightIndexer ()
+// Serial background queue for everything expensive: HTML stripping, reading transcript/chapter
+// files from disk and building CSSearchableItems. The Core-Data reads (raw snapshots) stay on
+// the calling thread; running the rest inline in the main-context ObjectsDidChange handler
+// stalled the UI during every feed refresh.
+@property (nonatomic, strong) dispatch_queue_t indexQueue;
+@end
+
 @implementation ICSpotlightIndexer
+
+- (instancetype)init
+{
+    if ((self = [super init])) {
+        dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0);
+        _indexQueue = dispatch_queue_create("com.iteconomy.instacastplus.spotlight-index", attributes);
+    }
+    return self;
+}
 
 + (NSString*)podcastUniqueIdentifierForSourceURLString:(NSString*)sourceURLString
 {
@@ -159,6 +176,8 @@ static NSArray<NSString*>* ICSpotlightGeneratedChapterTitlesForEpisodeHash(NSStr
     return titles;
 }
 
+// Raw snapshots read ONLY Core-Data values (must run on the context's thread) and defer all
+// text cleaning and file I/O to the searchable-item builders, which run on the index queue.
 static NSDictionary* ICSpotlightFeedSnapshot(CDFeed* feed)
 {
     NSString* sourceURLString = [feed.sourceURL absoluteString];
@@ -172,7 +191,7 @@ static NSDictionary* ICSpotlightFeedSnapshot(CDFeed* feed)
         @"domainIdentifier": ICSpotlightDomainIdentifierForSourceURLString(sourceURLString),
         @"title": title,
         @"subtitle": ICSpotlightString(feed.author),
-        @"summary": ICSpotlightCleanText(feed.summary ?: feed.fulltext),
+        @"summary": ICSpotlightString(feed.summary ?: feed.fulltext),
         @"sourceURL": sourceURLString,
         @"imageURL": [feed.imageURL absoluteString] ?: @"",
         @"pubDate": feed.pubDate ?: [NSNull null],
@@ -191,54 +210,34 @@ static NSDictionary* ICSpotlightEpisodeSnapshot(CDEpisode* episode)
     NSString* podcastTitle = ICSpotlightString(episode.feed.displayTitle ?: episode.feed.title);
     NSString* imageURL = [episode.imageURL absoluteString] ?: [episode.feed.imageURL absoluteString] ?: @"";
 
-    NSMutableArray<NSString*>* searchableStrings = [[NSMutableArray alloc] init];
-    NSMutableOrderedSet<NSString*>* keywords = [[NSMutableOrderedSet alloc] init];
-
-    ICSpotlightAppendString(searchableStrings, episode.title);
-    ICSpotlightAppendString(searchableStrings, episode.subtitle);
-    ICSpotlightAppendString(searchableStrings, podcastTitle);
-    ICSpotlightAppendString(searchableStrings, episode.author ?: episode.feed.author);
-    ICSpotlightAppendString(searchableStrings, episode.summary);
-    ICSpotlightAppendString(searchableStrings, episode.fulltext);
-
-    ICSpotlightAppendKeyword(keywords, episode.title);
-    ICSpotlightAppendKeyword(keywords, podcastTitle);
-    ICSpotlightAppendKeyword(keywords, episode.author ?: episode.feed.author);
-    ICSpotlightAppendKeyword(keywords, episode.feed.language);
-
+    NSMutableArray<NSString*>* chapterTitles = [[NSMutableArray alloc] init];
     for (CDChapter* chapter in [episode sortedChapters]) {
-        ICSpotlightAppendString(searchableStrings, chapter.title);
-        ICSpotlightAppendKeyword(keywords, chapter.title);
-    }
-
-    for (NSString* chapterTitle in ICSpotlightGeneratedChapterTitlesForEpisodeHash(objectHash)) {
-        ICSpotlightAppendString(searchableStrings, chapterTitle);
-        ICSpotlightAppendKeyword(keywords, chapterTitle);
-    }
-
-    for (NSDictionary* transcript in episode.transcripts) {
-        if (![transcript isKindOfClass:[NSDictionary class]]) {
-            continue;
+        NSString* chapterTitle = ICSpotlightString(chapter.title);
+        if (chapterTitle.length > 0) {
+            [chapterTitles addObject:chapterTitle];
         }
-        ICSpotlightAppendString(searchableStrings, transcript[@"title"]);
-        ICSpotlightAppendString(searchableStrings, transcript[@"language"]);
-        ICSpotlightAppendString(searchableStrings, transcript[@"url"]);
-        ICSpotlightAppendKeyword(keywords, transcript[@"title"]);
-        ICSpotlightAppendKeyword(keywords, transcript[@"language"]);
     }
 
-    ICSpotlightAppendString(searchableStrings, ICSpotlightTranscriptTextForEpisodeHash(objectHash));
-
-    NSString* searchableText = [searchableStrings componentsJoinedByString:@"\n"];
+    NSMutableArray<NSDictionary*>* transcripts = [[NSMutableArray alloc] init];
+    for (NSDictionary* transcript in episode.transcripts) {
+        if ([transcript isKindOfClass:[NSDictionary class]]) {
+            [transcripts addObject:transcript];
+        }
+    }
 
     return @{
         @"uniqueIdentifier": [ICSpotlightIndexer episodeUniqueIdentifierForObjectHash:objectHash],
         @"domainIdentifier": ICSpotlightDomainIdentifierForSourceURLString(sourceURLString),
+        @"objectHash": objectHash,
         @"title": ICSpotlightString(episode.title),
+        @"episodeSubtitle": ICSpotlightString(episode.subtitle),
         @"subtitle": podcastTitle,
-        @"summary": ICSpotlightCleanText(episode.summary ?: episode.fulltext),
-        @"searchableText": searchableText ?: @"",
-        @"keywords": keywords.array,
+        @"author": ICSpotlightString(episode.author ?: episode.feed.author),
+        @"language": ICSpotlightString(episode.feed.language),
+        @"summary": ICSpotlightString(episode.summary),
+        @"fulltext": ICSpotlightString(episode.fulltext),
+        @"chapterTitles": chapterTitles,
+        @"transcripts": transcripts,
         @"sourceURL": sourceURLString,
         @"episodeURL": [episode.linkURL absoluteString] ?: @"",
         @"imageURL": imageURL,
@@ -251,10 +250,12 @@ static NSDictionary* ICSpotlightEpisodeSnapshot(CDEpisode* episode)
 
 static CSSearchableItem* ICSpotlightSearchableItemForFeedSnapshot(NSDictionary* snapshot)
 {
+    NSString* summary = ICSpotlightCleanText(snapshot[@"summary"]);
+
     CSSearchableItemAttributeSet* attributeSet = [[CSSearchableItemAttributeSet alloc] initWithItemContentType:@"public.audio"];
     attributeSet.displayName = snapshot[@"title"];
     attributeSet.title = snapshot[@"title"];
-    attributeSet.contentDescription = snapshot[@"summary"];
+    attributeSet.contentDescription = summary;
     attributeSet.artist = snapshot[@"subtitle"];
     attributeSet.URL = [NSURL URLWithString:snapshot[@"sourceURL"]];
     attributeSet.streamable = @(YES);
@@ -271,7 +272,7 @@ static CSSearchableItem* ICSpotlightSearchableItemForFeedSnapshot(NSDictionary* 
     ICSpotlightAppendString(keywords, snapshot[@"title"]);
     ICSpotlightAppendString(keywords, snapshot[@"subtitle"]);
     attributeSet.keywords = keywords;
-    attributeSet.textContent = [@[ snapshot[@"title"], snapshot[@"subtitle"], snapshot[@"summary"] ] componentsJoinedByString:@"\n"];
+    attributeSet.textContent = [@[ snapshot[@"title"], snapshot[@"subtitle"], summary ] componentsJoinedByString:@"\n"];
 
     return [[CSSearchableItem alloc] initWithUniqueIdentifier:snapshot[@"uniqueIdentifier"]
                                              domainIdentifier:snapshot[@"domainIdentifier"]
@@ -280,10 +281,50 @@ static CSSearchableItem* ICSpotlightSearchableItemForFeedSnapshot(NSDictionary* 
 
 static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionary* snapshot)
 {
+    NSString* objectHash = snapshot[@"objectHash"];
+
+    NSMutableArray<NSString*>* searchableStrings = [[NSMutableArray alloc] init];
+    NSMutableOrderedSet<NSString*>* keywords = [[NSMutableOrderedSet alloc] init];
+
+    ICSpotlightAppendString(searchableStrings, snapshot[@"title"]);
+    ICSpotlightAppendString(searchableStrings, snapshot[@"episodeSubtitle"]);
+    ICSpotlightAppendString(searchableStrings, snapshot[@"subtitle"]);
+    ICSpotlightAppendString(searchableStrings, snapshot[@"author"]);
+    ICSpotlightAppendString(searchableStrings, snapshot[@"summary"]);
+    ICSpotlightAppendString(searchableStrings, snapshot[@"fulltext"]);
+
+    ICSpotlightAppendKeyword(keywords, snapshot[@"title"]);
+    ICSpotlightAppendKeyword(keywords, snapshot[@"subtitle"]);
+    ICSpotlightAppendKeyword(keywords, snapshot[@"author"]);
+    ICSpotlightAppendKeyword(keywords, snapshot[@"language"]);
+
+    for (NSString* chapterTitle in snapshot[@"chapterTitles"]) {
+        ICSpotlightAppendString(searchableStrings, chapterTitle);
+        ICSpotlightAppendKeyword(keywords, chapterTitle);
+    }
+
+    for (NSString* chapterTitle in ICSpotlightGeneratedChapterTitlesForEpisodeHash(objectHash)) {
+        ICSpotlightAppendString(searchableStrings, chapterTitle);
+        ICSpotlightAppendKeyword(keywords, chapterTitle);
+    }
+
+    for (NSDictionary* transcript in snapshot[@"transcripts"]) {
+        ICSpotlightAppendString(searchableStrings, transcript[@"title"]);
+        ICSpotlightAppendString(searchableStrings, transcript[@"language"]);
+        ICSpotlightAppendString(searchableStrings, transcript[@"url"]);
+        ICSpotlightAppendKeyword(keywords, transcript[@"title"]);
+        ICSpotlightAppendKeyword(keywords, transcript[@"language"]);
+    }
+
+    ICSpotlightAppendString(searchableStrings, ICSpotlightTranscriptTextForEpisodeHash(objectHash));
+
+    NSString* fallbackSummary = ICSpotlightString(snapshot[@"summary"]);
+    NSString* summary = ICSpotlightCleanText(fallbackSummary.length > 0 ? fallbackSummary : snapshot[@"fulltext"]);
+
     CSSearchableItemAttributeSet* attributeSet = [[CSSearchableItemAttributeSet alloc] initWithItemContentType:@"public.audio"];
     attributeSet.displayName = snapshot[@"title"];
     attributeSet.title = snapshot[@"title"];
-    attributeSet.contentDescription = snapshot[@"summary"];
+    attributeSet.contentDescription = summary;
     attributeSet.containerDisplayName = snapshot[@"subtitle"];
     attributeSet.album = snapshot[@"subtitle"];
     attributeSet.artist = snapshot[@"subtitle"];
@@ -291,8 +332,8 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
     attributeSet.streamable = snapshot[@"streamable"];
     attributeSet.URL = [NSURL URLWithString:snapshot[@"episodeURL"]];
     attributeSet.thumbnailURL = [NSURL URLWithString:snapshot[@"imageURL"]];
-    attributeSet.keywords = snapshot[@"keywords"];
-    attributeSet.textContent = snapshot[@"searchableText"];
+    attributeSet.keywords = keywords.array;
+    attributeSet.textContent = [searchableStrings componentsJoinedByString:@"\n"];
 
     if (![snapshot[@"pubDate"] isKindOfClass:[NSNull class]]) {
         attributeSet.contentCreationDate = snapshot[@"pubDate"];
@@ -359,7 +400,9 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
         [self removeFeed:feed];
         return;
     }
-    [self _indexSearchableItems:@[ ICSpotlightSearchableItemForFeedSnapshot(snapshot) ]];
+    dispatch_async(self.indexQueue, ^{
+        [self _indexSearchableItems:@[ ICSpotlightSearchableItemForFeedSnapshot(snapshot) ]];
+    });
 }
 
 - (void)updateFeed:(CDFeed*)feed
@@ -390,7 +433,9 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
         [self removeEpisode:episode];
         return;
     }
-    [self _indexSearchableItems:@[ ICSpotlightSearchableItemForEpisodeSnapshot(snapshot) ]];
+    dispatch_async(self.indexQueue, ^{
+        [self _indexSearchableItems:@[ ICSpotlightSearchableItemForEpisodeSnapshot(snapshot) ]];
+    });
 }
 
 - (void)updateEpisode:(CDEpisode*)episode

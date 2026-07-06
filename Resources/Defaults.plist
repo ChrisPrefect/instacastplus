@@ -39,7 +39,7 @@
 	<key>PlayerNearChapterEndForwardSkipMode</key>
 	<integer>0</integer>
 	<key>PlayerNearChapterEndForwardSkipWindow</key>
-	<integer>60</integer>
+	<integer>180</integer>
 	<key>EnableManualRefreshFinishedNotification</key>
 	<false/>
 	<key>EnableRefreshFailureNotification</key>

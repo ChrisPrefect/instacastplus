@@ -79,6 +79,10 @@
 - (void) seekForward;
 - (void) seekBackward;
 
+// YES while the playhead is inside the configured near-chapter-end window,
+// i.e. seekForward will jump to the next chapter instead of skipping the interval.
+- (BOOL) forwardSkipJumpsToNextChapter;
+
 - (void) rewind30Seconds;
 
 - (void) nextChapter;

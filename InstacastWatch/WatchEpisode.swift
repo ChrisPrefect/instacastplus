@@ -47,6 +47,8 @@ struct WatchManifestEntry {
     let skipForwardSeconds: Int
     let skipBackwardSeconds: Int
     let expectedFileSize: Int64
+    let skipChapterNames: [String]
+    let autoSkipSponsors: Bool
 }
 
 struct WatchEpisode: Codable, Identifiable, Equatable {
@@ -76,6 +78,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     var expectedBytes: Int64
     var skipForwardSeconds: Int
     var skipBackwardSeconds: Int
+    var skipChapterNames: [String]
+    var autoSkipSponsors: Bool
     var chapters: [WatchChapter]
     var chapterArtworkBaseURL: URL?
 
@@ -121,6 +125,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         case expectedBytes
         case skipForwardSeconds
         case skipBackwardSeconds
+        case skipChapterNames
+        case autoSkipSponsors
         case chapters
         case chapterArtworkBaseURL
     }
@@ -151,6 +157,8 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         expectedBytes = try container.decode(Int64.self, forKey: .expectedBytes)
         skipForwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipForwardSeconds) ?? 30)
         skipBackwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipBackwardSeconds) ?? 30)
+        skipChapterNames = try container.decodeIfPresent([String].self, forKey: .skipChapterNames) ?? []
+        autoSkipSponsors = try container.decodeIfPresent(Bool.self, forKey: .autoSkipSponsors) ?? false
         chapters = try container.decodeIfPresent([WatchChapter].self, forKey: .chapters) ?? []
         chapterArtworkBaseURL = try container.decodeIfPresent(URL.self, forKey: .chapterArtworkBaseURL)
     }
@@ -196,6 +204,8 @@ extension WatchManifestEntry {
         self.skipForwardSeconds = max(1, (dictionary["skipForwardSeconds"] as? NSNumber)?.intValue ?? 30)
         self.skipBackwardSeconds = max(1, (dictionary["skipBackwardSeconds"] as? NSNumber)?.intValue ?? 30)
         self.expectedFileSize = max(0, (dictionary["expectedFileSize"] as? NSNumber)?.int64Value ?? 0)
+        self.skipChapterNames = (dictionary["skipChapterNames"] as? [String]) ?? []
+        self.autoSkipSponsors = (dictionary["autoSkipSponsors"] as? NSNumber)?.boolValue ?? false
     }
 }
 
@@ -228,6 +238,8 @@ extension WatchEpisode {
         self.expectedBytes = canReuseDownload ? (existing?.actualFileSize ?? 0) : max(entry.expectedFileSize, canReuseManifestProgress ? (existing?.expectedBytes ?? 0) : 0)
         self.skipForwardSeconds = entry.skipForwardSeconds
         self.skipBackwardSeconds = entry.skipBackwardSeconds
+        self.skipChapterNames = entry.skipChapterNames
+        self.autoSkipSponsors = entry.autoSkipSponsors
         self.chapters = canReuseLocalMetadata ? (existing?.chapters ?? []) : []
         self.chapterArtworkBaseURL = canReuseLocalMetadata ? existing?.chapterArtworkBaseURL : nil
     }
@@ -235,6 +247,20 @@ extension WatchEpisode {
     func currentChapter(at position: TimeInterval) -> WatchChapter? {
         chapters.last { chapter in
             chapter.contains(position: position, episodeDuration: displayDuration)
+        }
+    }
+
+    // Same first-order semantics as PlaybackManager's matchingSkipNameForChapter on the phone:
+    // case-insensitive containsString against the feed's skip chapter names. Generated sponsor
+    // chapters exist only on the phone; file-embedded sponsor chapters carry a "Sponsor:" title
+    // (ChapterGenerator convention), which the sponsor toggle covers here.
+    func chapterWillBeSkipped(_ chapter: WatchChapter) -> Bool {
+        let lowerTitle = chapter.title.lowercased()
+        if autoSkipSponsors, lowerTitle.hasPrefix("sponsor:") {
+            return true
+        }
+        return skipChapterNames.contains { name in
+            !name.isEmpty && lowerTitle.contains(name.lowercased())
         }
     }
 

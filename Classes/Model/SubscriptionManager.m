@@ -1528,12 +1528,24 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 localEpisode.duration = (int32_t)remoteDuration;
             }
             BOOL newer = ([remoteEpisode.pubDate timeIntervalSince1970] > [localEpisode.pubDate timeIntervalSince1970]);
-            
+
             if (newer) {
-                localEpisode.fulltext = remoteEpisode.textDescription;
-                localEpisode.imageURL = remoteEpisode.imageURL;
+                // Diff-gate every write: Core Data marks the episode as updated even when the
+                // value is identical, and each dirtied episode fires the whole observer cascade
+                // (FRC reloads, widget export, Spotlight/FTS re-index) after the merge push.
+                if (!localEpisode.fulltext || ![localEpisode.fulltext isEqualToString:remoteEpisode.textDescription]) {
+                    localEpisode.fulltext = remoteEpisode.textDescription;
+                }
+                if (!localEpisode.imageURL || ![localEpisode.imageURL isEqual:remoteEpisode.imageURL]) {
+                    localEpisode.imageURL = remoteEpisode.imageURL;
+                }
                 localEpisode.pubDate = remoteEpisode.pubDate;
-                localEpisode.transcripts = remoteEpisode.transcripts;
+
+                NSArray* localTranscripts = localEpisode.transcripts ?: @[];
+                NSArray* remoteTranscripts = remoteEpisode.transcripts ?: @[];
+                if (![localTranscripts isEqualToArray:remoteTranscripts]) {
+                    localEpisode.transcripts = remoteTranscripts;
+                }
             }
             else {
                 if (!localEpisode.fulltext || ![localEpisode.fulltext isEqualToString:remoteEpisode.textDescription]) {

@@ -3,3 +3,11 @@
 .env.*
 !.env.example
 KimiBuiltin.env
+
+# Local Watch simulator build output.
+build/WatchSim/
+build/WatchSimProducts/
+
+# Xcode user-local state.
+xcuserdata/
+*.xcuserstate

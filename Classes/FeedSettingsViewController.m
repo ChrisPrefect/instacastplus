@@ -411,61 +411,29 @@ enum {
         NSDictionary* chapterEndSkipModes = @{ @0 : @"Aus", @1 : @"Ein", @5 : @"Ein + 5 Sekunden", @10 : @"Ein + 10 Sekunden", @15 : @"Ein + 15 Sekunden", @20 : @"Ein + 20 Sekunden" };
         NSDictionary* chapterEndSkipWindows = @{ @60 : @"1 Minute", @120 : @"2 Minutes", @180 : @"3 Minutes", @240 : @"4 Minutes", @300 : @"5 Minutes" };
         NSInteger playbackRow = indexPath.row;
-        if (![self _nearChapterEndForwardSkipEnabled] && playbackRow >= 3) {
-            playbackRow++;
-        }
 
         switch (playbackRow) {
             case 0:
             {
                 cell.accessoryView = nil;
                 cell = [self detailCell];
-                cell.textLabel.text = @"Skipping Back".ls;
-                
-                NSInteger period = [self.feed integerForKey:PlayerSkipBackPeriod];
-                NSString* localizedKey = v[@(period)];
-                cell.detailTextLabel.text = localizedKey.ls;
-                
+                cell.textLabel.text = @"Continuous Playback".ls;
+
+                NSInteger mode = [self.feed integerForKey:ContinuousPlayFromFeed];
+                switch (mode) {
+                    case ContinuousPlaybackOn:
+                        cell.detailTextLabel.text = @"Newer to Older".ls;
+                        break;
+                    case ContinuousPlaybackReverse:
+                        cell.detailTextLabel.text = @"Older to Newer".ls;
+                        break;
+                    default:
+                        cell.detailTextLabel.text = @"Off".ls;
+                        break;
+                }
                 break;
             }
             case 1:
-            {
-                cell.accessoryView = nil;
-                cell = [self detailCell];
-                cell.textLabel.text = @"Skipping Forward".ls;
-                
-                NSInteger period = [self.feed integerForKey:PlayerSkipForwardPeriod];
-                NSString* localizedKey = v[@(period)];
-                cell.detailTextLabel.text = localizedKey.ls;
-                
-                break;
-            }
-            case 2:
-            {
-                cell.accessoryView = nil;
-                cell = [self detailCell];
-                cell.textLabel.text = @"Nahe am Ende eines Kapitels zum nächsten Kapitel springen".ls;
-                cell.textLabel.numberOfLines = 0;
-
-                NSInteger mode = [self.feed integerForKey:PlayerNearChapterEndForwardSkipMode];
-                NSString* localizedKey = chapterEndSkipModes[@(mode)];
-                cell.detailTextLabel.text = localizedKey.ls;
-
-                break;
-            }
-            case 3:
-            {
-                cell.accessoryView = nil;
-                cell = [self detailCell];
-                cell.textLabel.text = @"Ende des Kapitels ab".ls;
-
-                NSInteger seconds = [self.feed integerForKey:PlayerNearChapterEndForwardSkipWindow];
-                NSString* localizedKey = chapterEndSkipWindows[@(seconds)];
-                cell.detailTextLabel.text = localizedKey.ls;
-
-                break;
-            }
-            case 4:
                 cell.accessoryView = nil;
                 cell = [self detailCell];
                 cell.textLabel.text = @"Speed".ls;
@@ -502,24 +470,72 @@ enum {
 
 
                 break;
+            case 2:
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
+                cell.textLabel.text = @"Skipping Back".ls;
+
+                NSInteger period = [self.feed integerForKey:PlayerSkipBackPeriod];
+                NSString* localizedKey = v[@(period)];
+                cell.detailTextLabel.text = localizedKey.ls;
+
+                break;
+            }
+            case 3:
+            {
+                cell.accessoryView = nil;
+                cell = [self detailCell];
+                cell.textLabel.text = @"Skipping Forward".ls;
+
+                NSInteger period = [self.feed integerForKey:PlayerSkipForwardPeriod];
+                NSString* localizedKey = v[@(period)];
+                cell.detailTextLabel.text = localizedKey.ls;
+
+                break;
+            }
+            case 4:
+            {
+                static NSString *ChapterEndSponsorSkipCellIdentifier = @"ChapterEndSponsorSkipCell";
+                cell = [tableView dequeueReusableCellWithIdentifier:ChapterEndSponsorSkipCellIdentifier];
+                if (cell == nil) {
+                    cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:ChapterEndSponsorSkipCellIdentifier];
+                    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+                    cell.selectedBackgroundView = [[UIView alloc] init];
+                }
+
+                cell.accessoryView = nil;
+                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+                cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+                cell.backgroundColor = ICGroupCellBackgroundColor;
+                cell.selectedBackgroundView.backgroundColor = ICGroupCellSelectedBackgroundColor;
+                cell.textLabel.textColor = ICTextColor;
+                cell.textLabel.font = [UIFont systemFontOfSize:ICFontSize(17)];
+                cell.textLabel.numberOfLines = 1;
+                cell.textLabel.adjustsFontSizeToFitWidth = YES;
+                cell.textLabel.minimumScaleFactor = 0.85;
+                cell.detailTextLabel.textColor = ICMutedTextColor;
+                cell.detailTextLabel.font = [UIFont systemFontOfSize:ICFontSize(15)];
+                cell.detailTextLabel.numberOfLines = 1;
+                cell.detailTextLabel.adjustsFontSizeToFitWidth = YES;
+                cell.detailTextLabel.minimumScaleFactor = 0.85;
+                cell.textLabel.text = @"Sponsoren am Kapitelende überspringen".ls;
+
+                NSInteger mode = [self.feed integerForKey:PlayerNearChapterEndForwardSkipMode];
+                NSString* localizedKey = chapterEndSkipModes[@(mode)];
+                cell.detailTextLabel.text = localizedKey.ls;
+
+                break;
+            }
             case 5:
             {
                 cell.accessoryView = nil;
                 cell = [self detailCell];
-                cell.textLabel.text = @"Continuous Playback".ls;
+                cell.textLabel.text = @"Ende des Kapitels ab".ls;
 
-                NSInteger mode = [self.feed integerForKey:ContinuousPlayFromFeed];
-                switch (mode) {
-                    case ContinuousPlaybackOn:
-                        cell.detailTextLabel.text = @"Newer to Older".ls;
-                        break;
-                    case ContinuousPlaybackReverse:
-                        cell.detailTextLabel.text = @"Older to Newer".ls;
-                        break;
-                    default:
-                        cell.detailTextLabel.text = @"Off".ls;
-                        break;
-                }
+                NSInteger seconds = [self.feed integerForKey:PlayerNearChapterEndForwardSkipWindow];
+                NSString* localizedKey = chapterEndSkipWindows[@(seconds)];
+                cell.detailTextLabel.text = localizedKey.ls;
                 break;
             }
             default:
@@ -816,44 +832,8 @@ enum {
     else if (indexPath.section == kPlaybackSection)
     {
         NSInteger playbackRow = indexPath.row;
-        if (![self _nearChapterEndForwardSkipEnabled] && playbackRow >= 3) {
-            playbackRow++;
-        }
 
-        if (playbackRow == 0 || playbackRow == 1)
-        {
-            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-            controller.feed = self.feed;
-            controller.valueType = kSettingTypeInteger;
-            controller.key = (playbackRow == 0 ) ? PlayerSkipBackPeriod : PlayerSkipForwardPeriod;
-            controller.title = (playbackRow == 0 ) ? @"Skipping Back".ls : @"Skipping Forward".ls;
-            controller.values = @[ @(5), @(10), @(20), @(30), @(60), @(120), @(300), @(600) ];
-            controller.titles = @[@"5 Seconds".ls, @"10 Seconds".ls, @"20 Seconds".ls, @"30 Seconds".ls, @"1 Minute".ls, @"2 Minutes".ls, @"5 Minutes".ls, @"10 Minutes".ls];
-            [self.navigationController pushViewController:controller animated:YES];
-        }
-        else if (playbackRow == 2)
-        {
-            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-            controller.feed = self.feed;
-            controller.valueType = kSettingTypeInteger;
-            controller.key = PlayerNearChapterEndForwardSkipMode;
-            controller.title = @"Nahe am Ende eines Kapitels zum nächsten Kapitel springen".ls;
-            controller.values = @[ @(0), @(1), @(5), @(10), @(15), @(20) ];
-            controller.titles = @[ @"Aus".ls, @"Ein".ls, @"Ein + 5 Sekunden".ls, @"Ein + 10 Sekunden".ls, @"Ein + 15 Sekunden".ls, @"Ein + 20 Sekunden".ls ];
-            [self.navigationController pushViewController:controller animated:YES];
-        }
-        else if (playbackRow == 3)
-        {
-            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-            controller.feed = self.feed;
-            controller.valueType = kSettingTypeInteger;
-            controller.key = PlayerNearChapterEndForwardSkipWindow;
-            controller.title = @"Ende des Kapitels ab".ls;
-            controller.values = @[ @(60), @(120), @(180), @(240), @(300) ];
-            controller.titles = @[ @"1 Minute".ls, @"2 Minutes".ls, @"3 Minutes".ls, @"4 Minutes".ls, @"5 Minutes".ls ];
-            [self.navigationController pushViewController:controller animated:YES];
-        }
-        else if (playbackRow == 5)
+        if (playbackRow == 0)
         {
             SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
             controller.feed = self.feed;
@@ -864,7 +844,7 @@ enum {
             controller.titles = @[ @"Off".ls, @"Newer to Older".ls, @"Older to Newer".ls ];
             [self.navigationController pushViewController:controller animated:YES];
         }
-        else if (playbackRow == 4)
+        else if (playbackRow == 1)
         {
             SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
             controller.feed = self.feed;
@@ -890,6 +870,39 @@ enum {
                                  @"Faster (1.5x)".ls,
                                  @"Fast (2x)".ls,
                                  @"Crazy (3x)".ls, nil];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (playbackRow == 2 || playbackRow == 3)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = (playbackRow == 2 ) ? PlayerSkipBackPeriod : PlayerSkipForwardPeriod;
+            controller.title = (playbackRow == 2 ) ? @"Skipping Back".ls : @"Skipping Forward".ls;
+            controller.values = @[ @(5), @(10), @(20), @(30), @(60), @(120), @(300), @(600) ];
+            controller.titles = @[@"5 Seconds".ls, @"10 Seconds".ls, @"20 Seconds".ls, @"30 Seconds".ls, @"1 Minute".ls, @"2 Minutes".ls, @"5 Minutes".ls, @"10 Minutes".ls];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (playbackRow == 4)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = PlayerNearChapterEndForwardSkipMode;
+            controller.title = @"Sponsoren am Kapitelende überspringen".ls;
+            controller.values = @[ @(0), @(1), @(5), @(10), @(15), @(20) ];
+            controller.titles = @[ @"Aus".ls, @"Ein".ls, @"Ein + 5 Sekunden".ls, @"Ein + 10 Sekunden".ls, @"Ein + 15 Sekunden".ls, @"Ein + 20 Sekunden".ls ];
+            [self.navigationController pushViewController:controller animated:YES];
+        }
+        else if (playbackRow == 5)
+        {
+            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+            controller.feed = self.feed;
+            controller.valueType = kSettingTypeInteger;
+            controller.key = PlayerNearChapterEndForwardSkipWindow;
+            controller.title = @"Ende des Kapitels ab".ls;
+            controller.values = @[ @(60), @(120), @(180), @(240), @(300) ];
+            controller.titles = @[ @"1 Minute".ls, @"2 Minutes".ls, @"3 Minutes".ls, @"4 Minutes".ls, @"5 Minutes".ls ];
             [self.navigationController pushViewController:controller animated:YES];
         }
     }
@@ -982,7 +995,7 @@ enum {
         return @"Enable to show all episodes regardless of whether or not they are still available on the publisher's server.".ls;
     }
     else if (section == kPlaybackSection) {
-        return @"When skipping forward near a chapter end, jump to the next chapter; + seconds skips sponsor tails after the boundary.".ls;
+        return @"Sponsor-Segmente, die am Ende eines Kapitels eingefügt sind, können mit einem Druck auf Vorwärts-Spulen übersprungen werden. Es wird direkt zum nächsten Kapitel gesprungen und je nach Einstellung zusätzlich einige Sekunden weiter.".ls;
     }
     
     

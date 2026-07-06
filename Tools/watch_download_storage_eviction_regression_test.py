@@ -97,10 +97,21 @@ require(
 )
 
 require(
-    "for episode in WatchManifestStore.shared.sortedEpisodes where episode.status == .queued" in queue_runner
+    "startNextQueuedDownloadIfIdle()" in queue_runner
     and ".evicted" not in queue_runner,
     "The automatic Watch queue runner must start only queued episodes directly; storage-evicted "
     "episodes are restarted exclusively through the controlled auto-fill path.",
+)
+
+# Sequential download policy (User-Entscheid 06.07.): downloads run one at a time in playback
+# order so the first episode becomes playable as early as possible.
+sequential_starter = function_body(download, "private func startNextQueuedDownloadIfIdle(")
+require(
+    "guard activeTasksByHash.isEmpty" in sequential_starter
+    and "$0.status == .queued" in sequential_starter
+    and ".evicted" not in sequential_starter,
+    "Automatic Watch downloads must run sequentially: start the next queued episode only while "
+    "no download is active, never touching evicted episodes directly.",
 )
 
 require(

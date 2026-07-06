@@ -285,9 +285,11 @@ require(
 )
 
 require(
-    "episode.status == .queued" in watch_download_manager
-    and "episode.status == .queued || episode.status == .failed" not in watch_download_manager,
-    "Failed Watch downloads must not be retried automatically by the queue runner.",
+    "$0.status == .queued" in watch_download_manager
+    and "$0.status == .queued || $0.status == .failed" not in watch_download_manager
+    and "startNextQueuedDownloadIfIdle" in watch_download_manager,
+    "The sequential queue runner must start only .queued episodes (one at a time) and must not "
+    "retry failed Watch downloads automatically.",
 )
 
 require(
@@ -311,7 +313,7 @@ require(
 require(
     "stagedLocation" in watch_download_manager
     and "moveItem(at: location, to: stagedLocation)" in watch_download_manager
-    and "downloadValidationError(for: downloadTask, fileURL: stagedLocation)" in watch_download_manager,
+    and "downloadValidationError(for: downloadTask, fileURL: stagedLocation, feedExpectedBytes: episode.expectedBytes)" in watch_download_manager,
     "The Watch download manager must move URLSession's temporary file before returning from didFinishDownloadingTo.",
 )
 
@@ -470,13 +472,24 @@ require(
 )
 
 require(
-    "ScrollView" not in watch_views
-    and '.navigationTitle("Episode")' not in watch_views
+    '.navigationTitle("Episode")' not in watch_views
     and "Slider(" not in watch_views
     and "value: Binding" not in watch_views
     and "playerProgressFraction" in watch_views
     and "CompactSkipButton" in watch_views,
-    "The Watch player must be a non-scrolling page with a compact progress bar, no generic Episode title, and no watchOS slider stepper controls.",
+    "The Watch player must keep the compact progress bar, no generic Episode title, and no watchOS slider stepper controls.",
+)
+
+# User-Entscheid 06.07.: Der Player ist die erste, exakt bildschirmhohe Seite einer ScrollView;
+# darunter liegt die Kapitelliste (gespielt/aktiv/kommend). Beim App-Einstieg mit laufender
+# Wiedergabe wird direkt der Player gezeigt.
+require(
+    "ScrollView" in watch_views
+    and "chapterListSection" in watch_views
+    and "chapterPlayState" in watch_views
+    and "showPlayerForActivePlaybackIfNeeded" in watch_views,
+    "The Watch player must be the first full-height page of a ScrollView with the chapter list "
+    "below, and entering the app during playback must land on the player.",
 )
 
 require(
@@ -564,10 +577,12 @@ require(
     "storageProgressTrackView" in apple_watch_controller
     and "storageUsedProgressView" in apple_watch_controller
     and "storagePodcastProgressView" in apple_watch_controller
-    and '"Watch lädt Podcasts (%@/%@)"' in apple_watch_controller
+    and '"Watch lädt Podcasts (%@ von %@)"' in apple_watch_controller
+    and "watchDownloadProgressLoadedBytes" in apple_watch_controller
     and '"%ld auf der Watch\\n%ld werden geladen"' not in apple_watch_controller
     and "showsPlaybackProgress = NO" in apple_watch_controller,
-    "The iOS Apple Watch page must show stable Watch download/storage status and disable normal cell playback progress bars.",
+    "The iOS Apple Watch page must show the AGGREGATED Watch download status (x MB von TOTAL MB "
+    "over all loading episodes — User-Entscheid 06.07.) and disable normal cell playback progress bars.",
 )
 
 require(

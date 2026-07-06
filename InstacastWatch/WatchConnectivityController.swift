@@ -34,9 +34,16 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
         switch delivery {
         case .reliable:
             if WCSession.default.isReachable {
-                WCSession.default.sendMessage(message, replyHandler: nil) { _ in
-                    WCSession.default.transferUserInfo(message)
-                }
+                // WatchConnectivity invokes the error handler on its own NSOperationQueue and the
+                // SDK block is not NS_SWIFT_SENDABLE — without @Sendable this closure inherits the
+                // surrounding MainActor isolation (Swift 6) and the runtime traps off-main with
+                // EXC_BREAKPOINT. Every FAILED reliable send crashed the whole app ("crasht sofort
+                // beim Play", 11 identische .ips vom 05.07.). The message copy is a local value
+                // type that is never mutated again, so handing it across is safe.
+                nonisolated(unsafe) let fallbackMessage = message
+                WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: { @Sendable _ in
+                    WCSession.default.transferUserInfo(fallbackMessage)
+                })
             } else {
                 WCSession.default.transferUserInfo(message)
             }

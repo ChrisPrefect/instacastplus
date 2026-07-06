@@ -28,6 +28,11 @@
 		0DB2440CD95BAD55C356BB6E /* WhisperKitBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */; };
 		165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B874ED55A5A0F6ED98DD872E /* TranscriptionEngine.swift */; };
 		1741894CCC3BF64933A78F04 /* ICiCloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */; };
+		8601A983E0134FCDDC88D8EC /* ICiCloudSyncTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7578F62996A0B752DEAE3C13 /* ICiCloudSyncTypes.swift */; };
+		05661A634E09F9D8F3A97B7A /* ICiCloudSyncManager+EngineRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CC697C5D7E5F0CF48EAE87 /* ICiCloudSyncManager+EngineRecords.swift */; };
+		75DC7C8B9D54C7C90D4E1FD6 /* ICiCloudSyncManager+RemoteApply.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CAB36C986B980AFA974DE85 /* ICiCloudSyncManager+RemoteApply.swift */; };
+		27DA8B61F714ADDEC7DD7BF9 /* ICiCloudSyncManager+LocalChanges.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2268D627546FE31082B14DEB /* ICiCloudSyncManager+LocalChanges.swift */; };
+		90FB575953CEB0673A917A10 /* ICiCloudSyncManager+Metadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28616888B017BABEF9BC4AB /* ICiCloudSyncManager+Metadata.swift */; };
 		188B3C742E175728004D14A5 /* SkipTimeCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C722E175728004D14A5 /* SkipTimeCell.m */; };
 		188B3C752E175728004D14A5 /* SkipTimeCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = 188B3C732E175728004D14A5 /* SkipTimeCell.xib */; };
 		188B3C7A2E175728004D14A5 /* ChapterSkipListViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */; };
@@ -943,6 +948,11 @@
 		6C7721F9E1AC80BA0B6EF28A /* ICBackupImportProgressView.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; path = ICBackupImportProgressView.h; sourceTree = "<group>"; };
 		6D294C45DC205F05467440EC /* SharedConstants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedConstants.swift; sourceTree = "<group>"; };
 		6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ICiCloudSyncManager.swift; sourceTree = "<group>"; };
+		7578F62996A0B752DEAE3C13 /* ICiCloudSyncTypes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ICiCloudSyncTypes.swift"; sourceTree = "<group>"; };
+		12CC697C5D7E5F0CF48EAE87 /* ICiCloudSyncManager+EngineRecords.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ICiCloudSyncManager+EngineRecords.swift"; sourceTree = "<group>"; };
+		9CAB36C986B980AFA974DE85 /* ICiCloudSyncManager+RemoteApply.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ICiCloudSyncManager+RemoteApply.swift"; sourceTree = "<group>"; };
+		2268D627546FE31082B14DEB /* ICiCloudSyncManager+LocalChanges.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ICiCloudSyncManager+LocalChanges.swift"; sourceTree = "<group>"; };
+		E28616888B017BABEF9BC4AB /* ICiCloudSyncManager+Metadata.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "ICiCloudSyncManager+Metadata.swift"; sourceTree = "<group>"; };
 		6D7680A7EBB0F850D04672C4 /* AppleWatchEpisodesViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = AppleWatchEpisodesViewController.m; sourceTree = "<group>"; };
 		6FA31224D071849FE16A7472 /* StatsWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StatsWidget.swift; sourceTree = "<group>"; };
 		7151C9D64D31E80C30AE2762 /* InstacastBackupData.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupData.h; sourceTree = "<group>"; };
@@ -1233,6 +1243,11 @@
 				ED28C103136054494A8998FD /* TranscriptionQueueViewController.m */,
 				EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */,
 				6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */,
+				7578F62996A0B752DEAE3C13 /* ICiCloudSyncTypes.swift */,
+				12CC697C5D7E5F0CF48EAE87 /* ICiCloudSyncManager+EngineRecords.swift */,
+				9CAB36C986B980AFA974DE85 /* ICiCloudSyncManager+RemoteApply.swift */,
+				2268D627546FE31082B14DEB /* ICiCloudSyncManager+LocalChanges.swift */,
+				E28616888B017BABEF9BC4AB /* ICiCloudSyncManager+Metadata.swift */,
 				A1B2C3D4E5F6A7B800000010 /* ICIntentBridge.swift */,
 				A1B2C3D4E5F6A7B800000011 /* ICPlaybackIntents.swift */,
 				A1B2C3D4E5F6A7B800000012 /* ICAppShortcuts.swift */,
@@ -2814,6 +2829,11 @@
 				27AB83E1F94A3303C22D3425 /* AppleWatchEpisodesViewController.m in Sources */,
 				90C7F61E3C4DF59CB43D455E /* Model5.xcdatamodeld in Sources */,
 				1741894CCC3BF64933A78F04 /* ICiCloudSyncManager.swift in Sources */,
+				8601A983E0134FCDDC88D8EC /* ICiCloudSyncTypes.swift in Sources */,
+				05661A634E09F9D8F3A97B7A /* ICiCloudSyncManager+EngineRecords.swift in Sources */,
+				75DC7C8B9D54C7C90D4E1FD6 /* ICiCloudSyncManager+RemoteApply.swift in Sources */,
+				27DA8B61F714ADDEC7DD7BF9 /* ICiCloudSyncManager+LocalChanges.swift in Sources */,
+				90FB575953CEB0673A917A10 /* ICiCloudSyncManager+Metadata.swift in Sources */,
 				57D9F457CC96238BEEB70419 /* ICiCloudSyncSettingsViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2926,7 +2946,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
@@ -2939,6 +2959,7 @@
 				MARKETING_VERSION = 3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "InstacastPlus Watch Development";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
@@ -3151,7 +3172,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
@@ -3164,6 +3185,7 @@
 				MARKETING_VERSION = 3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "InstacastPlus Watch Development";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
@@ -3181,7 +3203,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -3194,6 +3216,7 @@
 				MARKETING_VERSION = 3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus.watchkitapp.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "InstacastPlus Watch Widgets Development";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
@@ -3291,7 +3314,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 21;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -3304,6 +3327,7 @@
 				MARKETING_VERSION = 3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.iteconomy.instacastplus.watchkitapp.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "InstacastPlus Watch Widgets Development";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "watchos watchsimulator";
