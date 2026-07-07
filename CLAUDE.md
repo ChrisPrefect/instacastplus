@@ -10,8 +10,10 @@ Podcast-App iOS/macOS, Objective-C. v3.2, min iOS 13.0. CarPlay, AVFoundation, O
 xcodebuild -project Instacast.xcodeproj -scheme Instacast build          # iPhone
 xcodebuild -project Instacast.xcodeproj -scheme "Instacast HD" build     # iPad
 xcodebuild -project Instacast.xcodeproj -scheme InstacastMac build       # macOS
-xcodebuild -project Instacast.xcodeproj -scheme "Instacast Tests" test   # Tests
+for t in Tools/*regression_test*.py; do python3 "$t"; done                # Tests (kein XCTest-Scheme im Projekt)
 ```
+
+Simulator-Smoke-Test: iOS-App NIE mit `CODE_SIGNING_ALLOWED=NO` für den Simulator bauen — das entfernt alle Entitlements, `CKContainer.init` trapt dann beim Launch (EXC_BREAKPOINT in `ICiCloudSyncManager.init`) und die App Group fehlt (Widget-Exporte no-op). Normale Simulator-Destination ohne Flags signiert lokal automatisch.
 
 ## TestFlight / App Store Connect
 
