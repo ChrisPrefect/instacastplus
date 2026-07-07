@@ -5,31 +5,33 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Deliberate display order since 640a79bd: Core icon first, then Standard and the
+# repository icons in curated (non-numeric) order.
 EXPECTED_UI_ICONS = [
+    "appiconCore",
     "appiconStandard",
     "appicon1",
+    "appicon4",
     "appicon2",
     "appicon3",
-    "appicon4",
     "appicon5",
     "appicon6",
     "appicon7",
-    "appiconCore",
     "appiconClassicAlt1",
     "appiconClassicAlt2",
     "appiconClassicAlt3",
 ]
 
 EXPECTED_ICON_NAMES = [
+    "InstacastPlus_Icon_Core",
     "",
     "AppIcon-1",
+    "AppIcon-4",
     "AppIcon-2",
     "AppIcon-3",
-    "AppIcon-4",
     "AppIcon-5",
     "AppIcon-6",
     "AppIcon-7",
-    "InstacastPlus_Icon_Core",
     "InstacastPlus_Icon_Classic_Alt1",
     "InstacastPlus_Icon_Classic_Alt2",
     "InstacastPlus_Icon_Classic_Alt3",

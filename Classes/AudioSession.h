@@ -33,6 +33,14 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 - (CDEpisode*) nextPlayableEpisode;
 - (void) disableContinuousPlaybackForCurrentEpisode;
 
+// Episode list (CDEpisodeList uid) the current playback belongs to. When that list has
+// continuousPlayback enabled, the end-of-episode flow plays the next episode of the
+// list — the play-next queue itself stays untouched. Managed by playEpisode: — list
+// screens arm it via notePlaybackSourceEpisodeList: BEFORE starting playback; it stays
+// set while the playing episode is a member of the list and clears otherwise.
+@property (nonatomic, copy, readonly) NSString* sourceEpisodeListUID;
+- (void) notePlaybackSourceEpisodeList:(CDEpisodeList*)list;
+
 @property (nonatomic, readonly, strong) CDEpisode* episode;
 
 - (BOOL) canRestorePlaybackState;

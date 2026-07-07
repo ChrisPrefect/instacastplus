@@ -42,5 +42,9 @@ extern NSString* kEpisodeIconUnplayed;
 - (void) invalidateCaches;
 - (void) invalidateSortedEpisodes;
 
+// In-memory membership check against the list's live filter predicate — no store fetch.
+// Used by the incremental widget export to find lists affected by one episode change.
+- (BOOL) evaluatesEpisodeNow:(CDEpisode*)episode;
+
 //- (void) addNumberOfEpisodes:(NSInteger)number;
 @end

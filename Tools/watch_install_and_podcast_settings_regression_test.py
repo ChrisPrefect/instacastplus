@@ -24,10 +24,18 @@ require(
     'return @"Installiere die InstacastPlus-Watch-App über die Watch-App auf deinem iPhone.' in empty_message_block,
     "The detailed Watch install instructions should appear only in the empty-state row.",
 )
+# Since d3f40ec9 (31.05.) the not-installed empty state uses a dedicated setup cell with an
+# explicit "Watch-App öffnen" button instead of a disclosure-indicator row.
+setup_cell_block = watch_controller.split("- (void)_configureWatchSetupCell", 1)[1].split("- (BOOL)_emptyMessageOpensWatchApp", 1)[0]
 require(
     "_emptyMessageOpensWatchApp" in empty_cell_block
-    and "UITableViewCellAccessoryDisclosureIndicator" in empty_cell_block,
-    "The Watch install instruction row should visibly behave like an actionable link.",
+    and "_configureWatchSetupCell" in empty_cell_block,
+    "The Watch install empty state must use the dedicated setup cell when the app is missing.",
+)
+require(
+    '@"Watch-App öffnen".ls' in setup_cell_block
+    and "_watchInstallButtonAction" in setup_cell_block,
+    "The Watch install setup cell must offer an explicit button that opens the Watch app.",
 )
 require(
     '- (void)_openWatchApp' in watch_controller

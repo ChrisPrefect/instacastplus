@@ -284,7 +284,6 @@ bug_present(
 
 icloud_queue_all = method_body(icloud_sync, "func queueAllEpisodeStateRecords")
 icloud_set_episode_date = method_body(icloud_sync, "func setEpisodeLocalModifiedDate")
-icloud_background = method_body(icloud_sync, "@objc func performBackgroundSyncWithCompletion")
 bug_present(
     "@MainActor" in icloud_sync and "for feed in databaseManager.feeds" in icloud_queue_all and "for episode in feed.episodes" in icloud_queue_all,
     "iCloud sync queues all episode-state records by scanning every feed/episode on MainActor.",
@@ -293,10 +292,13 @@ bug_present(
     "var dates = episodeLocalModifiedDates()" in icloud_set_episode_date and "setSyncMetadata(dates" in icloud_set_episode_date,
     "iCloud sync rewrites the full episode local-modified-date dictionary per changed episode.",
 )
-bug_present(
-    "Task { @MainActor in" in icloud_background and "fetchChanges()" in icloud_background,
-    "iCloud background sync runs CKSyncEngine fetch work from a MainActor task.",
-)
+# NOTE: no check for `Task { @MainActor in` around `fetchChanges()` in
+# performBackgroundSyncWithCompletion. ICiCloudSyncManager is a @MainActor class, so even a
+# plain `Task { }` there inherits main-actor isolation — and `syncEngine.fetchChanges()` is a
+# nonisolated async call that executes OFF the caller's actor per SE-0338 (Swift 6.0). Only
+# the cheap pre/post state updates run on main, which they must anyway. The former grep was a
+# false positive: it pinned a `Task {}` + `MainActor.run` shape with identical isolation
+# semantics to the current code.
 
 
 bug_present(

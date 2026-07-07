@@ -22,6 +22,7 @@
 
 static NSString* kPlaybackStateEpisode = @"PlaybackEpisode";
 static NSString* kPlaybackStatePlaylist = @"PlaybackPlaylist";
+static NSString* kPlaybackStateSourceList = @"PlaybackSourceList";
 
 NSString* AudioSessionAudioRouteDidChangeNotification = @"AudioSessionAudioRouteDidChangeNotification";
 NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestorePlaybackNotification";
@@ -37,6 +38,11 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 @property BOOL playerWasPlayingBeforeWentToBackground;
 @property BOOL continuousPlaybackTemporarilyDisabled;
 @property BOOL autoStopDisabled;
+
+@property (nonatomic, copy, readwrite) NSString* sourceEpisodeListUID;
+// Armed by a list screen right before it initiates playback; consumed by the next
+// playEpisode: (which may run later, e.g. behind the cellular-streaming alert).
+@property (nonatomic, copy) NSString* pendingSourceEpisodeListUID;
 
 @end
 
@@ -331,6 +337,29 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
         anEpisode = [currentPlaylist firstObject];
     }
 
+    // If no episode from Up Next, continue the episode list the playback was started
+    // from when its "Continuous Playback" flag is on. Replaces the old behavior of
+    // erasing the queue and pre-filling it with the next 10 list episodes
+    // (User-Entscheid 08.07.: end-of-episode check instead of queue manipulation).
+    if (!anEpisode && self.episode && self.sourceEpisodeListUID.length > 0) {
+        CDEpisodeList* sourceList = [self _episodeListWithUID:self.sourceEpisodeListUID];
+
+        if (sourceList.continuousPlayback) {
+            NSArray* episodes = [sourceList sortedEpisodes];
+            NSUInteger currentIdx = [episodes indexOfObject:self.episode];
+            // The finished episode is already consumed here and may have dropped out of
+            // a dynamic list (e.g. "Unplayed") — then continue with the first playable one.
+            NSUInteger startIdx = (currentIdx != NSNotFound) ? currentIdx + 1 : 0;
+            for (NSUInteger i = startIdx; i < episodes.count; i++) {
+                CDEpisode* candidate = episodes[i];
+                if (![candidate isEqual:self.episode] && !candidate.consumed && [candidate preferedMedium]) {
+                    anEpisode = candidate;
+                    break;
+                }
+            }
+        }
+    }
+
     // If no episode from Up Next, check per-feed continuous play setting
     if (!anEpisode && self.episode) {
         CDFeed* feed = self.episode.feed;
@@ -390,16 +419,63 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
     [self playEpisode:anEpisode queueUpCurrent:queueUpCurrent at:0 autostart:YES];
 }
 
+- (void) notePlaybackSourceEpisodeList:(CDEpisodeList*)list
+{
+    // nil list (e.g. a manual playlist screen) arms an explicit "no source" — the next
+    // playEpisode: clears any previous source instead of falling back to it.
+    self.pendingSourceEpisodeListUID = list.uid ?: @"";
+}
+
+- (CDEpisodeList*) _episodeListWithUID:(NSString*)listUID
+{
+    if (listUID.length == 0) {
+        return nil;
+    }
+    for (CDList* list in DMANAGER.lists) {
+        if ([list isKindOfClass:[CDEpisodeList class]] && [list.uid isEqualToString:listUID]) {
+            return (CDEpisodeList*)list;
+        }
+    }
+    return nil;
+}
+
+// Resolve the playback source list for the episode that is about to start. An explicit
+// arm from a list screen wins. Otherwise the current source survives only while the new
+// episode still belongs to that list — the list's own continuation and manual playback
+// of other list members keep it, playing something outside the list ends it. (Without
+// this, one play from e.g. "Unplayed" — continuousPlayback on by default — would make
+// EVERY later single-episode playback continue with that list forever.)
+- (void) _resolvePlaybackSourceListForEpisode:(CDEpisode*)anEpisode
+{
+    if (self.pendingSourceEpisodeListUID != nil) {
+        NSString* pendingUID = self.pendingSourceEpisodeListUID;
+        self.pendingSourceEpisodeListUID = nil;
+        // The armed list only sticks when the started episode actually belongs to it —
+        // a stale arm (cancelled cellular alert, playback then started elsewhere) or an
+        // explicit "no source" arm ends the previous continuation instead.
+        CDEpisodeList* pendingList = [self _episodeListWithUID:pendingUID];
+        self.sourceEpisodeListUID = [pendingList evaluatesEpisodeNow:anEpisode] ? pendingUID : nil;
+        return;
+    }
+    if (self.sourceEpisodeListUID.length > 0) {
+        CDEpisodeList* sourceList = [self _episodeListWithUID:self.sourceEpisodeListUID];
+        if (!sourceList || ![sourceList evaluatesEpisodeNow:anEpisode]) {
+            self.sourceEpisodeListUID = nil;
+        }
+    }
+}
+
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart
 {
     if (!anEpisode) {
         return;
     }
-    
+
     [self resetSession];
-    
+
     CDEpisode* currentEpisode = self.episode;
 
+    [self _resolvePlaybackSourceListForEpisode:anEpisode];
     self.episode = anEpisode;
     // Don't automatically remove from Up Next - user wants manual control
     // [self eraseEpisodesFromUpNext:@[anEpisode]];
@@ -539,17 +615,23 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 		}
 		
 		[USER_DEFAULTS setObject:hashes forKey:kPlaybackStatePlaylist];
-		
+
 	} else {
 		[USER_DEFAULTS removeObjectForKey:kPlaybackStatePlaylist];
 	}
-	
+
+	if (self.sourceEpisodeListUID.length > 0) {
+		[USER_DEFAULTS setObject:self.sourceEpisodeListUID forKey:kPlaybackStateSourceList];
+	} else {
+		[USER_DEFAULTS removeObjectForKey:kPlaybackStateSourceList];
+	}
 }
 
 - (void) _restorePlaybackStateFromUserDefaults
 {
 	NSString* episodeHash = [USER_DEFAULTS objectForKey:kPlaybackStateEpisode];
 	NSArray* playlistHashes = [USER_DEFAULTS objectForKey:kPlaybackStatePlaylist];
+	self.sourceEpisodeListUID = [USER_DEFAULTS stringForKey:kPlaybackStateSourceList];
 
 	[self restorePlaybackStateWithEpisodeHash:episodeHash playlistHashes:playlistHashes time:-1];
 }

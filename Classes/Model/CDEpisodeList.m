@@ -137,6 +137,19 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     return result;
 }
 
+- (BOOL) evaluatesEpisodeNow:(CDEpisode*)episode
+{
+    if (!episode) {
+        return NO;
+    }
+    // Mirror _sortedEpisodesWithFetchLimit: a list with explicit members is keyed by the
+    // relationship only; otherwise the live filter predicate decides.
+    if ([[self explicitEpisodeRelationshipObjectsWithFetchLimit:1] count] > 0) {
+        return [episode.episodeLists containsObject:self];
+    }
+    return [[self _episodesMainPredicate] evaluateWithObject:episode];
+}
+
 // The store predicate of this smart list — shared by the episode fetch and the cheap
 // SQL count below so both always agree.
 - (NSPredicate*) _episodesMainPredicate

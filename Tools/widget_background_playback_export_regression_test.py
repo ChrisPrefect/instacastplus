@@ -69,8 +69,8 @@ require(
 )
 
 require(
-    '"consumed", @"starred", @"archived", @"feed", @"episodeLists"' in core_data_affects_lists
-    and '"position"' not in core_data_affects_lists
+    '"consumed", @"starred", @"archived", @"feed", @"episodeLists"' in method_body(implementation, "+ (NSSet *)_relevantEpisodeKeys")
+    and '"position"' not in method_body(implementation, "+ (NSSet *)_relevantEpisodeKeys")
     and "obj.changedValuesForCurrentEvent" in core_data_affects_lists,
     "Playback-position saves must not trigger heavy list exports; only list membership keys should.",
 )
@@ -125,4 +125,43 @@ require(
     and "self.pendingStatsRefresh = YES" in stats_during_playback
     and stats_during_playback.find("applicationState != UIApplicationStateActive") < stats_during_playback.find("NSDate *now"),
     "Playback stats refresh must defer before running throttled Core Data counts in background playback.",
+)
+
+
+# --- Incremental lists export (User-Vorgabe 08.07.) ------------------------------------
+# A changed episode only re-exports the lists it belongs(ed) to (per-list count + limit-14
+# fetch) instead of a full all-lists scan per trigger. Playback transitions and small
+# consumed/starred toggles use this path; the full exportListsSnapshot stays as periodic
+# reconciliation and remains gated during background playback.
+incremental = method_body(implementation, "- (void)_exportListsAffectedByEpisodeHashes:")
+episode_finish = method_body(implementation, "- (void)_episodeDidFinish:")
+episode_change = method_body(implementation, "- (void)_playbackDidChangeEpisode:")
+core_data = method_body(implementation, "- (void)_coreDataDidChange:")
+require(
+    "_exportListsAffectedByEpisodeHashes" in episode_finish
+    and "exportListsSnapshot" not in episode_finish
+    and "_debouncedListsExport" not in episode_finish,
+    "Episode finish must use the incremental per-episode export, never a full lists scan.",
+)
+require(
+    "_exportListsAffectedByEpisodeHashes" in episode_change,
+    "Episode change must use the incremental per-episode export.",
+)
+require(
+    "_exportListsAffectedByEpisodeHashes:episodeHashes" in core_data
+    and "_debouncedListsReload" in core_data,
+    "Small episode updates go incremental; structural changes keep the throttled full reload.",
+)
+require(
+    "_deferHeavyListsExportInBackgroundPlayback" not in incremental,
+    "The incremental path is the cheap one — it must not be deferred in background playback.",
+)
+require(
+    "evaluatesEpisodeNow" in incremental and "_episodeHashesInSnapshotFileForListUID" in incremental,
+    "Affected lists = episode currently in the snapshot file OR newly matching the list filter.",
+)
+require(
+    "sortedEpisodesWithLimit:kMaxEpisodesPerList" in method_body(implementation, "- (void)_buildSnapshotForList:")
+    and "_episodeDictForEpisode" in method_body(implementation, "- (void)_buildSnapshotForList:"),
+    "The per-list builder must stay in sync with the full pass (limit + shared episode dict).",
 )

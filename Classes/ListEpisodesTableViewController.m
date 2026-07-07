@@ -553,31 +553,18 @@
 
 - (void) playComboButtonAction:(EpisodePlayComboButton*)button
 {
-    [super playComboButtonAction:button];
-
-    CDEpisodeList* episodeList = [self.list isKindOfClass:[CDEpisodeList class]] ? (CDEpisodeList*)self.list : nil;
-    if ((button.comboState != kEpisodePlayButtonComboStateFilling && button.comboState != kEpisodePlayButtonComboStateHolding) &&
-        episodeList.continuousPlayback)
+    // Continuous playback for lists: arm the list as the playback source BEFORE super
+    // initiates playback (the play may run deferred behind the cellular-streaming alert).
+    // The end-of-episode flow (AudioSession nextPlayableEpisode) checks the list's flag
+    // and plays its next episode. The play-next queue stays untouched (previously this
+    // erased the queue and pre-filled it with the next 10 list episodes).
+    if (button.comboState != kEpisodePlayButtonComboStateFilling && button.comboState != kEpisodePlayButtonComboStateHolding)
     {
-        AudioSession* session = [AudioSession sharedAudioSession];
-        [session eraseAllEpisodesFromUpNext];
-        
-        CDEpisode* episode = (CDEpisode*)button.userInfo;
-        NSInteger location = [self.allEpisodes indexOfObject:episode];
-        
-        if (location != NSNotFound)
-        {
-            if (location+1 < [self.allEpisodes count])
-            {
-                AudioSession* session = [AudioSession sharedAudioSession];
-                
-                // add only 10 episodes to up next
-                NSInteger length = MIN([self.allEpisodes count]-location-1, 10);
-                NSArray* remainingEpisodes = [self.allEpisodes subarrayWithRange:NSMakeRange(location+1, length)];
-                [session appendToUpNext:remainingEpisodes];
-            }
-        }
+        CDEpisodeList* episodeList = [self.list isKindOfClass:[CDEpisodeList class]] ? (CDEpisodeList*)self.list : nil;
+        [[AudioSession sharedAudioSession] notePlaybackSourceEpisodeList:episodeList];
     }
+
+    [super playComboButtonAction:button];
 }
 
 - (BOOL) canArchiveEpisodes

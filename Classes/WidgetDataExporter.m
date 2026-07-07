@@ -262,8 +262,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidChangeEpisode:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *previousHash = self.lastPlayedEpisodeDict[@"id"];
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
+        [self _exportListsAffectedByEpisodeHashes:[self _transitionEpisodeHashesWithPrevious:previousHash]];
         [WidgetKitHelper reloadNowPlayingTimeline];
     });
 }
@@ -279,14 +281,28 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_episodeDidFinish:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *previousHash = self.lastPlayedEpisodeDict[@"id"];
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
-        [self _debouncedListsExport];
+        // Incremental: only the lists containing the finished/next episode change here —
+        // never a full all-lists scan on a playback transition (User-Vorgabe 08.07.).
+        [self _exportListsAffectedByEpisodeHashes:[self _transitionEpisodeHashesWithPrevious:previousHash]];
         [self exportStatsSnapshot];
         [WidgetKitHelper reloadNowPlayingTimeline];
-        [WidgetKitHelper reloadListsTimeline];
         [WidgetKitHelper reloadStatsTimeline];
     });
+}
+
+- (NSArray<NSString *> *)_transitionEpisodeHashesWithPrevious:(NSString *)previousHash {
+    NSMutableArray *hashes = [NSMutableArray array];
+    NSString *currentHash = [PlaybackManager playbackManager].playingEpisode.objectHash;
+    if (currentHash.length > 0) {
+        [hashes addObject:currentHash];
+    }
+    if (previousHash.length > 0 && ![previousHash isEqualToString:currentHash]) {
+        [hashes addObject:previousHash];
+    }
+    return hashes;
 }
 
 - (void)_feedsDidRefresh:(NSNotification *)note {
@@ -356,7 +372,15 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // ICiCloudSyncManager's change filter.)
     if (![self _coreDataChangeAffectsLists:note]) return;
 
+    // A handful of updated episodes (consumed/starred toggles) only needs the incremental
+    // per-episode export; structural changes (inserts/deletes, feed/list updates, bulk
+    // passes like an iCloud states apply) fall back to the throttled full reload.
+    NSArray<NSString *> *episodeHashes = [self _episodeHashesForIncrementalUpdateFromNote:note];
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (episodeHashes.count > 0) {
+            [self _exportListsAffectedByEpisodeHashes:episodeHashes];
+            return;
+        }
         // Debounce: 3 seconds, fires frequently
         [self.listsDebounceTimer invalidate];
         self.listsDebounceTimer = [NSTimer scheduledTimerWithTimeInterval:3.0
@@ -365,6 +389,51 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                                                                 userInfo:nil
                                                                  repeats:NO];
     });
+}
+
+// Returns the changed episode hashes when the change set consists ONLY of episode field
+// updates (small count), nil when a full lists pass is needed. Must run synchronously to
+// the notification (changedValuesForCurrentEvent).
+- (NSArray<NSString *> *)_episodeHashesForIncrementalUpdateFromNote:(NSNotification *)note {
+    NSDictionary *info = note.userInfo;
+    if ([info[NSInsertedObjectsKey] count] > 0 || [info[NSDeletedObjectsKey] count] > 0) {
+        return nil;
+    }
+
+    NSMutableArray *hashes = [NSMutableArray array];
+    for (NSManagedObject *obj in info[NSUpdatedObjectsKey]) {
+        if ([obj isKindOfClass:[CDList class]] || [obj isKindOfClass:[CDFeed class]]) {
+            return nil;
+        }
+        if ([obj isKindOfClass:[CDEpisode class]]) {
+            // Same membership-relevant key filter as _coreDataChangeAffectsLists — episodes
+            // dirtied only by e.g. `position` don't need a lists export at all.
+            BOOL relevant = NO;
+            for (NSString *changedKey in obj.changedValuesForCurrentEvent) {
+                if ([[[self class] _relevantEpisodeKeys] containsObject:changedKey]) { relevant = YES; break; }
+            }
+            if (!relevant) {
+                continue;
+            }
+            NSString *objectHash = ((CDEpisode *)obj).objectHash;
+            if (objectHash.length > 0) {
+                [hashes addObject:objectHash];
+            }
+            if (hashes.count > 8) {
+                return nil;  // bulk change — one full pass is cheaper than many small ones
+            }
+        }
+    }
+    return hashes;
+}
+
++ (NSSet *)_relevantEpisodeKeys {
+    static NSSet *keys = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        keys = [NSSet setWithObjects:@"consumed", @"starred", @"archived", @"feed", @"episodeLists", nil];
+    });
+    return keys;
 }
 
 - (BOOL)_coreDataChangeAffectsLists:(NSNotification *)note {
@@ -383,11 +452,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     // For updates, only membership-affecting keys matter — explicitly NOT `position`
     // (the playback tick) and NOT `lastPlayed` etc.
-    static NSSet *relevantEpisodeKeys = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        relevantEpisodeKeys = [NSSet setWithObjects:@"consumed", @"starred", @"archived", @"feed", @"episodeLists", nil];
-    });
+    NSSet *relevantEpisodeKeys = [[self class] _relevantEpisodeKeys];
     for (NSManagedObject *obj in info[NSUpdatedObjectsKey]) {
         if ([obj isKindOfClass:[CDList class]] || [obj isKindOfClass:[CDFeed class]]) {
             return YES;  // list rename/rank, feed (un)subscribe / park
@@ -913,6 +978,150 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     return ([self _previousEpisodeForPlaybackManager:pm audioSession:as] != nil);
 }
 
+#pragma mark - Incremental Lists Export
+
+// Minimal-overhead path (User-Vorgabe 08.07.): a changed episode only re-exports the lists
+// it belongs(ed) to — per affected list one SQL count plus one limit-14 fetch — instead of
+// scanning every list with every episode on each trigger. Deliberately NOT gated in
+// background playback: this IS the cheap path, and playback transitions must reach the
+// lists widgets immediately. The full exportListsSnapshot remains as periodic
+// reconciliation (startup, backgrounding, feed refresh, foreground flush) and also picks
+// up what this path misses by design (episodes newly entering a smart playlist).
+- (void)_exportListsAffectedByEpisodeHashes:(NSArray<NSString *> *)episodeHashes {
+    if (!self.containerURL || episodeHashes.count == 0) return;
+
+    dispatch_async(self.listsExportQueue, ^{
+        CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
+        NSMutableArray *writes = [NSMutableArray array];
+        NSMutableDictionary *indexPatches = [NSMutableDictionary dictionary];
+        __block NSUInteger affectedLists = 0;
+
+        NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
+        [backgroundContext performBlockAndWait:^{
+            NSMutableArray<CDEpisode *> *episodes = [NSMutableArray array];
+            for (NSString *episodeHash in episodeHashes) {
+                NSFetchRequest *episodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+                episodeRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash == %@", episodeHash];
+                episodeRequest.fetchLimit = 1;
+                CDEpisode *episode = [[backgroundContext executeFetchRequest:episodeRequest error:nil] firstObject];
+                if (episode) {
+                    [episodes addObject:episode];
+                }
+            }
+            if (episodes.count == 0) return;
+
+            NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"List"];
+            request.includesSubentities = YES;
+            NSArray *lists = [backgroundContext executeFetchRequest:request error:nil];
+
+            for (CDList *list in lists) {
+                NSSet *hashesInFile = [self _episodeHashesInSnapshotFileForListUID:list.uid];
+                BOOL affects = NO;
+                for (CDEpisode *episode in episodes) {
+                    if ([hashesInFile containsObject:episode.objectHash ?: @""]) {
+                        affects = YES;  // update or removal of a currently shown episode
+                        break;
+                    }
+                    if ([list isKindOfClass:[CDSmartPlaylist class]]) {
+                        continue;  // additions arrive via the reconciliation pass
+                    }
+                    if ([list isKindOfClass:[CDEpisodeList class]]) {
+                        if ([(CDEpisodeList *)list evaluatesEpisodeNow:episode]) {
+                            affects = YES;  // episode newly enters the list
+                            break;
+                        }
+                    } else if ([[list sortedEpisodes] containsObject:episode]) {
+                        affects = YES;  // manual playlists are small
+                        break;
+                    }
+                }
+                if (!affects) continue;
+
+                affectedLists++;
+                [self _buildSnapshotForList:list intoWrites:writes indexPatches:indexPatches];
+            }
+        }];
+
+        for (NSDictionary *entry in writes) {
+            [self _writeJSON:entry[@"snapshot"] toFile:entry[@"filename"]];
+        }
+        [self _patchListsIndexWithEntries:indexPatches];
+
+        if (affectedLists > 0) {
+            [WidgetKitHelper reloadListsTimeline];
+        }
+        [[ICDiagnosticLogger shared] logEvent:@"widget-export"
+                                      message:@"Inkrementeller Listen-Export"
+                                     metadata:@{ @"episodes": [NSString stringWithFormat:@"%lu", (unsigned long)episodeHashes.count],
+                                                 @"affectedLists": [NSString stringWithFormat:@"%lu", (unsigned long)affectedLists],
+                                                 @"seconds": [NSString stringWithFormat:@"%.3f", CFAbsoluteTimeGetCurrent() - startTime] }];
+    });
+}
+
+// One list's index entry + episodes snapshot. Keep in sync with the full pass in
+// exportListsSnapshot. Must run inside the background context's queue.
+- (void)_buildSnapshotForList:(CDList *)list intoWrites:(NSMutableArray *)writes indexPatches:(NSMutableDictionary *)indexPatches {
+    NSMutableDictionary *d = [NSMutableDictionary dictionary];
+    d[@"id"] = list.uid ?: @"";
+    d[@"name"] = list.name ?: @"";
+    d[@"episodeCount"] = @(list.numberOfEpisodes);
+    if ([list isKindOfClass:[CDSmartPlaylist class]]) {
+        NSString *type = ((CDSmartPlaylist *)list).smartPredicate[@"type"];
+        d[@"type"] = type ? [NSString stringWithFormat:@"smart:%@", type] : @"smart";
+    } else if ([list isKindOfClass:[CDEpisodeList class]]) {
+        d[@"type"] = @"episode_list";
+    } else {
+        d[@"type"] = @"playlist";
+    }
+    indexPatches[list.uid ?: @""] = d;
+
+    NSMutableArray *episodeDicts = [NSMutableArray array];
+    for (CDEpisode *episode in [list sortedEpisodesWithLimit:kMaxEpisodesPerList]) {
+        if ((NSInteger)episodeDicts.count >= kMaxEpisodesPerList) break;
+        [episodeDicts addObject:[self _episodeDictForEpisode:episode withImageSize:kImageSizeMedium]];
+    }
+
+    NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
+    snapshot[@"listId"] = list.uid ?: @"";
+    snapshot[@"listName"] = list.name ?: @"";
+    snapshot[@"episodes"] = episodeDicts;
+    snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
+    [writes addObject:@{ @"filename": [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, list.uid ?: @"unknown"],
+                         @"snapshot": snapshot }];
+}
+
+- (NSSet *)_episodeHashesInSnapshotFileForListUID:(NSString *)listUID {
+    if (listUID.length == 0 || !self.containerURL) return [NSSet set];
+    NSURL *url = [self.containerURL URLByAppendingPathComponent:[NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, listUID]];
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    if (!data) return [NSSet set];
+    NSDictionary *snapshot = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    if (![snapshot isKindOfClass:[NSDictionary class]]) return [NSSet set];
+    NSMutableSet *hashes = [NSMutableSet set];
+    for (NSDictionary *episodeDict in snapshot[@"episodes"]) {
+        if ([episodeDict isKindOfClass:[NSDictionary class]] && [episodeDict[@"id"] isKindOfClass:[NSString class]]) {
+            [hashes addObject:episodeDict[@"id"]];
+        }
+    }
+    return hashes;
+}
+
+// Replaces only the entries of re-exported lists inside widget_lists.json. If no index
+// exists yet, the next reconciliation pass writes the complete one.
+- (void)_patchListsIndexWithEntries:(NSDictionary *)entriesByUID {
+    if (entriesByUID.count == 0 || !self.containerURL) return;
+    NSURL *url = [self.containerURL URLByAppendingPathComponent:kListsIndexFile];
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    NSArray *index = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
+    if (![index isKindOfClass:[NSArray class]]) return;
+    NSMutableArray *patched = [NSMutableArray arrayWithCapacity:index.count];
+    for (NSDictionary *entry in index) {
+        NSDictionary *replacement = [entry isKindOfClass:[NSDictionary class]] ? entriesByUID[entry[@"id"] ?: @""] : nil;
+        [patched addObject:replacement ?: entry];
+    }
+    [self _writeJSON:patched toFile:kListsIndexFile];
+}
+
 #pragma mark - Lists Export
 
 - (void)exportListsSnapshot {
@@ -1042,6 +1251,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         // Not playing → the app is about to be suspended, so no sustained background CPU.
         return NO;
     }
+
     self.pendingListsExport = YES;
     [[ICDiagnosticLogger shared] logEvent:@"widget-export"
                                   message:@"Listen-Export im Hintergrund-Playback aufgeschoben"

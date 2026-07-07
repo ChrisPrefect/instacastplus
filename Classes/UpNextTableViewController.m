@@ -13,6 +13,7 @@
 #import "EpisodePlayComboButton.h"
 #import "PlaybackViewController.h"
 #import "CacheManager.h"
+#import "EpisodeViewController.h"
 
 static NSString* kUpNextCell = @"UpNextCell";
 
@@ -593,7 +594,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     cell.embedded = NO;
     cell.usesNativeSwipeActions = YES;
     cell.objectValue = episode;
-    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
 
     // Wire up play button
     [cell.playAccessoryButton removeTarget:nil action:NULL forControlEvents:UIControlEventAllEvents];
@@ -643,6 +644,107 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath
 {
     return UITableViewCellEditingStyleNone;
+}
+
+// Same long-press semantics as every other episode list: favorite, played, episode info
+// and the list-specific remove action, with the shared titles/icons (see CLAUDE.md
+// Icon-Referenz). User-Entscheid 08.07.: all episode lists behave consistently.
+- (UIContextMenuConfiguration *)tableView:(UITableView *)tableView contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath point:(CGPoint)point
+{
+    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
+    if (indexPath.row >= (NSInteger)[playlist count]) {
+        return nil;
+    }
+    CDEpisode* episode = playlist[indexPath.row];
+
+    __weak UpNextTableViewController* weakSelf = self;
+    UIContextMenuConfiguration* config =
+        [UIContextMenuConfiguration configurationWithIdentifier:nil
+                                                previewProvider:nil
+                                                 actionProvider:^UIMenu*(NSArray<UIMenuElement*>* suggestedActions) {
+            NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
+
+            UIAction* favoriteAction = [UIAction actionWithTitle:(episode.starred) ? @"Unmark Favorite".ls : @"Mark as Favorite".ls
+                                                           image:[UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"]
+                                                      identifier:nil
+                                                         handler:^(UIAction *action) {
+                [DMANAGER markEpisode:episode asStarred:!episode.starred];
+            }];
+            [actions addObject:favoriteAction];
+
+            UIAction* playedAction = [UIAction actionWithTitle:episode.consumed ? @"Mark as Unplayed".ls : @"Mark as Played".ls
+                                                         image:[UIImage systemImageNamed:episode.consumed ? @"circle.fill" : @"circle"]
+                                                    identifier:nil
+                                                       handler:^(UIAction *action) {
+                BOOL flag = !episode.consumed;
+                [DMANAGER markEpisode:episode asConsumed:flag];
+                if (flag && [episode isEqual:[AudioSession sharedAudioSession].episode]) {
+                    [[AudioSession sharedAudioSession] stop];
+                }
+            }];
+            [actions addObject:playedAction];
+
+            UIAction* infoAction = [UIAction actionWithTitle:@"Episode Info".ls
+                                                       image:[UIImage systemImageNamed:@"info.circle"]
+                                                  identifier:nil
+                                                     handler:^(UIAction *action) {
+                [weakSelf _pushShowNotesOfEpisode:episode];
+            }];
+            [actions addObject:infoAction];
+
+            UIAction* removeAction = [UIAction actionWithTitle:@"Remove from Play Next".ls
+                                                         image:[UIImage systemImageNamed:@"list.bullet.indent"]
+                                                    identifier:nil
+                                                       handler:^(UIAction *action) {
+                UpNextTableViewController* strongSelf = weakSelf;
+                if (!strongSelf) return;
+                NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
+                if (currentIndexPath) {
+                    [strongSelf _removeEpisodeAtIndexPath:currentIndexPath];
+                }
+            }];
+            [actions addObject:removeAction];
+
+            return [UIMenu menuWithTitle:@"" children:actions];
+        }];
+    if (@available(iOS 16.0, *)) {
+        config.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
+    }
+    return config;
+}
+
+// Same tap semantics as every other episode list (EpisodesTableViewController): honor the
+// user's TapOnEpisodeAction setting. TestFlight feedback 13.06.: tapping a row in the
+// play-next list did nothing at all.
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
+    if (indexPath.row >= (NSInteger)[playlist count]) {
+        return;
+    }
+    CDEpisode* episode = playlist[indexPath.row];
+
+    NSInteger tapAction = [USER_DEFAULTS integerForKey:TapOnEpisodeAction];
+    if (tapAction == ICTapOnEpisodeActionShowNotes) {
+        [self _pushShowNotesOfEpisode:episode];
+    } else if (tapAction == ICTapOnEpisodeActionOpenContextMenu) {
+        [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    } else {
+        BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+        [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
+    }
+}
+
+- (void) _pushShowNotesOfEpisode:(CDEpisode*)episode
+{
+    UIBarButtonItem* backItem = [[UIBarButtonItem alloc] initWithTitle:@"" style:UIBarButtonItemStylePlain target:nil action:nil];
+    self.navigationItem.backBarButtonItem = backItem;
+
+    EpisodeViewController* controller = [EpisodeViewController episodeViewController];
+    controller.episode = episode;
+    controller.view.tintColor = ICTintColor;
+    [self.navigationController pushViewController:controller animated:YES];
 }
 
 #pragma mark - UITableViewDragDelegate
