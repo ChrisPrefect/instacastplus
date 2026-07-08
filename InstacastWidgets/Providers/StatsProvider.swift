@@ -4,6 +4,8 @@ import SwiftUI
 struct StatsEntry: TimelineEntry, Sendable {
     let date: Date
     let stats: WStats?
+    /// True when the app has never exported stats yet (widget freshly added, app not opened).
+    var needsData: Bool = false
 }
 
 struct StatsProvider: TimelineProvider {
@@ -18,7 +20,8 @@ struct StatsProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<StatsEntry>) -> Void) {
         let stats = SharedContainerReader.readStats()
-        let entry = StatsEntry(date: Date(), stats: stats)
+        let needsData = !SharedContainerReader.snapshotExists(ICWidgetConstants.statsFile)
+        let entry = StatsEntry(date: Date(), stats: stats, needsData: needsData)
         let timeline = Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(30 * 60)))
         completion(timeline)
     }

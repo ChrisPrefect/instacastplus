@@ -12,6 +12,8 @@ struct SmartListEntry: TimelineEntry, Sendable {
     let episodes: [WEpisode]
     let compact: Bool
     let order: SmartListOrder
+    /// True when the app has never exported list data yet (widget freshly added, app not opened).
+    var needsData: Bool = false
 }
 
 struct SmartListProvider: AppIntentTimelineProvider {
@@ -49,8 +51,30 @@ struct SmartListProvider: AppIntentTimelineProvider {
         return entry
     }
 
+    /// Snapshot file key for a configured source. Lists use their uid directly; a podcast
+    /// (entity id "feed:<uid>") is combined with the chosen filter, matching the file the app
+    /// exports on demand for configured podcast widgets.
+    static func snapshotKey(entityId: String, filter: SmartListPodcastFilter) -> String {
+        if entityId.hasPrefix("feed:") {
+            let uid = String(entityId.dropFirst("feed:".count))
+            return "feed.\(uid).\(filter.rawValue)"
+        }
+        return entityId
+    }
+
     func timeline(for configuration: SmartListConfigIntent, in context: Context) async -> Timeline<SmartListEntry> {
-        let entry = loadEntry(for: configuration)
+        var entry = loadEntry(for: configuration)
+        // Prompt to open the app when the data the selection needs has never been exported:
+        // either the app never ran at all (no index), or this specific podcast+filter snapshot
+        // hasn't been produced yet (freshly configured — the app exports it on next launch).
+        if !SharedContainerReader.snapshotExists(ICWidgetConstants.listsIndexFile) {
+            entry.needsData = true
+        } else if let listEntity = configuration.list {
+            let key = Self.snapshotKey(entityId: listEntity.id, filter: configuration.filter)
+            if !SharedContainerReader.snapshotExists(ICWidgetConstants.listEpisodesPrefix + key + ".json") {
+                entry.needsData = true
+            }
+        }
         return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(10 * 60)))
     }
 
@@ -60,7 +84,14 @@ struct SmartListProvider: AppIntentTimelineProvider {
         widgetLog.info("loadEntry: list=\(configuration.list?.id ?? "nil", privacy: .public), compact=\(compact)")
 
         if let listEntity = configuration.list {
-            if let listData = SharedContainerReader.readListEpisodes(listId: listEntity.id) {
+            // Record a selected podcast+filter so the app exports episode data for exactly this
+            // combo on its next run (the app can't read this widget-extension intent directly).
+            if listEntity.id.hasPrefix("feed:") {
+                recordRequestedPodcast(uid: String(listEntity.id.dropFirst("feed:".count)),
+                                       filter: configuration.filter.rawValue)
+            }
+            let key = Self.snapshotKey(entityId: listEntity.id, filter: configuration.filter)
+            if let listData = SharedContainerReader.readListEpisodes(listId: key) {
                 widgetLog.info("loaded \(listData.episodes.count) episodes for '\(listEntity.name, privacy: .public)'")
                 return entry(from: listData, compact: compact, order: order)
             }
@@ -76,6 +107,19 @@ struct SmartListProvider: AppIntentTimelineProvider {
 
         widgetLog.warning("no lists at all — empty state")
         return SmartListEntry(date: Date(), listName: "Episodes", listId: "", episodes: [], compact: compact, order: order)
+    }
+
+    /// Records a configured podcast+filter combo in the App Group defaults so the app exports
+    /// its episodes on the next run. Keeps a bounded, de-duplicated set.
+    private func recordRequestedPodcast(uid: String, filter: String) {
+        guard !uid.isEmpty,
+              let defaults = UserDefaults(suiteName: ICWidgetConstants.appGroupID) else { return }
+        let combo = ["uid": uid, "filter": filter]
+        var existing = (defaults.array(forKey: ICWidgetConstants.requestedPodcastKeysDefaultsKey) as? [[String: String]]) ?? []
+        if existing.contains(combo) { return }
+        existing.append(combo)
+        if existing.count > 24 { existing.removeFirst(existing.count - 24) }
+        defaults.set(existing, forKey: ICWidgetConstants.requestedPodcastKeysDefaultsKey)
     }
 
     private func entry(from listData: WListEpisodes, compact: Bool, order: SmartListOrder) -> SmartListEntry {

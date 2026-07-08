@@ -19,6 +19,8 @@
 "widget.empty.noepisodes" = "No Episodes";
 "widget.empty.nosubscriptions" = "No Subscriptions";
 "widget.empty.nostats" = "No Stats Available";
+"widget.needsdata" = "Open the app to load data";
+"widget.needsdata.hint" = "Tap to open";
 
 "widget.nowplaying.label" = "NOW PLAYING";
 "widget.listened.header" = "Listened";

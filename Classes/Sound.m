@@ -76,8 +76,18 @@ void PlayHapticFeedback(ICHapticFeedbackType type)
         return;
     }
 
-    UIImpactFeedbackStyle style = (type == ICHapticFeedbackMedium) ? UIImpactFeedbackStyleMedium : UIImpactFeedbackStyleLight;
-    UIImpactFeedbackGenerator* generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:style];
+    // Keep the generators alive and prepared (Apple best practice): allocating a
+    // fresh generator per event hits a cold Taptic Engine — main-thread latency
+    // exactly when a gesture animation is starting. Main thread only, no locking.
+    static UIImpactFeedbackGenerator* lightGenerator;
+    static UIImpactFeedbackGenerator* mediumGenerator;
+    if (!lightGenerator) {
+        lightGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+        mediumGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    }
+
+    UIImpactFeedbackGenerator* generator = (type == ICHapticFeedbackMedium) ? mediumGenerator : lightGenerator;
     [generator impactOccurred];
+    [generator prepare]; // keep the engine warm for a quick follow-up tap
 #endif
 }

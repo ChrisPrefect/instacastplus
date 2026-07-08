@@ -80,6 +80,7 @@ static NSString* kBookmarksProperty = @"bookmarks";
     NSArrayController*          _bookmarksController;
 #endif
     NSInteger                   _savingInterruption;
+    NSPersistentStoreCoordinator* _exportStoreCoordinator;
 }
 
 + (NSString*) pathToDocuments
@@ -653,7 +654,51 @@ NS_INLINE NSString* _DataStoreFile(void) {
     [self _migrateAddStartedList];
     [self _migrateDefaultListNamesToKeys];
     [self _migrateRemoveDuplicateFeeds];
+    [self _migrateRemoveDuplicateLists];
     [self _migrateRemoveObsoletePauseFeedProperty];
+}
+
+// Removes duplicate/orphan CDList rows. Historically many List rows accumulated with the SAME
+// uid (or a nil uid) — e.g. from earlier iCloud-sync / backup-import paths — which the app's
+// `lists` getter already hid by deduping on read, but which bloated the widget export ("157
+// lists") and the widget picker. This runs on every launch: it is idempotent (a no-op once
+// clean) and thereby also PREVENTS future accumulation regardless of how a stray row got in.
+- (void) _migrateRemoveDuplicateLists
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"List" inManagedObjectContext:self.objectContext];
+    request.includesSubentities = YES;
+    request.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+    NSArray* allLists = [self.objectContext executeFetchRequest:request error:nil];
+
+    NSMutableDictionary<NSString*, CDList*>* keepByUID = [NSMutableDictionary dictionary];
+    NSMutableArray<CDList*>* toDelete = [NSMutableArray array];
+
+    for (CDList* list in allLists) {
+        NSString* uid = list.uid;
+        if (uid.length == 0) {
+            [toDelete addObject:list];   // orphan without identity — never user-visible
+            continue;
+        }
+        CDList* kept = keepByUID[uid];
+        if (!kept) {
+            keepByUID[uid] = list;   // first row for this uid (lowest rank) wins
+        }
+        else {
+            // Same uid ⇒ redundant copy of the same logical list. Keep the first, drop the rest.
+            [toDelete addObject:list];
+        }
+    }
+
+    if (toDelete.count == 0) {
+        return;
+    }
+
+    for (CDList* list in toDelete) {
+        [self.objectContext deleteObject:list];
+    }
+    [self save];
+    DebugLog(@"[ListCleanup] removed %lu duplicate/orphan List rows, kept %lu unique", (unsigned long)toDelete.count, (unsigned long)keepByUID.count);
 }
 
 - (void) _migrateDefaultListNamesToKeys
@@ -1824,6 +1869,51 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     }
 
     NSManagedObjectContext* context = [container newBackgroundContext];
+    context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
+    return context;
+}
+
+- (NSManagedObjectContext*)newExportBackgroundContext
+{
+    NSPersistentContainer* container = [self persistentContainer];
+    if (!container) {
+        return nil;
+    }
+
+    // Lazily build a dedicated coordinator over the same store file. Two coordinators on one
+    // SQLite/WAL store is exactly the app+extension access pattern — readers on this second
+    // coordinator do not acquire the main coordinator's lock, so a multi-second export scan
+    // no longer starves main-thread Core Data (list load / cell faults) → no UI freeze.
+    @synchronized (self) {
+        if (!_exportStoreCoordinator) {
+            NSPersistentStoreDescription* mainDescription = container.persistentStoreDescriptions.firstObject;
+            NSURL* storeURL = mainDescription.URL;
+            if (!storeURL) {
+                return nil;
+            }
+            NSPersistentStoreCoordinator* coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:container.managedObjectModel];
+            NSDictionary* options = @{
+                NSMigratePersistentStoresAutomaticallyOption: @YES,
+                NSInferMappingModelAutomaticallyOption: @YES,
+                NSPersistentHistoryTrackingKey: @YES,
+            };
+            NSError* addError = nil;
+            NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                                 configuration:nil
+                                                                           URL:storeURL
+                                                                       options:options
+                                                                         error:&addError];
+            if (!store) {
+                ErrLog(@"Export store coordinator unavailable at %@: %@", storeURL.path, addError.localizedDescription ?: @"unknown error");
+                return nil;
+            }
+            _exportStoreCoordinator = coordinator;
+        }
+    }
+
+    NSManagedObjectContext* context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    context.persistentStoreCoordinator = _exportStoreCoordinator;
+    // Read-only usage; keep faults small and don't hold on to objects.
     context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
     return context;
 }

@@ -8,11 +8,34 @@ struct SmartListConfigIntent: WidgetConfigurationIntent {
     @Parameter(title: "List")
     var list: ListEntity?
 
+    // Only applies when a podcast is selected (lists carry their own filter). Default "unplayed"
+    // so a freshly added podcast widget shows useful data immediately.
+    @Parameter(title: "Filter", default: .unplayed)
+    var filter: SmartListPodcastFilter
+
     @Parameter(title: "Compact", default: true)
     var compact: Bool
 
     @Parameter(title: "Order", default: .columns)
     var order: SmartListOrder
+}
+
+/// Filter for a podcast source — mirrors the episode-list filters.
+enum SmartListPodcastFilter: String, AppEnum {
+    case unplayed
+    case all
+    case downloaded
+    case started
+    case favorites
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Filter"
+    static let caseDisplayRepresentations: [SmartListPodcastFilter: DisplayRepresentation] = [
+        .unplayed: "Unplayed",
+        .all: "Latest",
+        .downloaded: "Downloaded",
+        .started: "Started",
+        .favorites: "Favorites"
+    ]
 }
 
 enum SmartListOrder: String, AppEnum {

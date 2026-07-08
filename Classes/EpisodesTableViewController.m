@@ -319,6 +319,15 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = YES;
         [self _syncFloatingButtonVisibility];
+
+        // iOS 26's "swipe back from anywhere" gesture (interactiveContentPopGestureRecognizer)
+        // competes with the row swipe actions on the whole content area. Reproducible conflict
+        // (bestätigt 09.07.): while one cell's swipe-back animation is still settling, a swipe on
+        // another row is grabbed by the content-pop gesture and pops the WHOLE view back to the
+        // subscriptions list instead of revealing the row action. Disable the content-area pop
+        // on episode lists; the edge-swipe (interactivePopGestureRecognizer) and the back button
+        // keep working for navigation.
+        self.navigationController.interactiveContentPopGestureRecognizer.enabled = NO;
     }
 
     [self _setObserving:YES];
@@ -354,6 +363,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     if (@available(iOS 26.0, *)) {
         self.navigationController.toolbarHidden = NO;
         [self _hideAllFloatingButtons];
+        // Re-enable the swipe-back-from-anywhere gesture for the next screen (which has no
+        // row swipe actions to conflict with).
+        self.navigationController.interactiveContentPopGestureRecognizer.enabled = YES;
     }
     [super viewWillDisappear:animated];
 
@@ -1362,7 +1374,9 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     CDEpisode* episode = (CDEpisode*)[lEpisodes objectAtIndex:indexPath.row];
     EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
 
-    PlayHapticFeedback(ICHapticFeedbackLight);
+    // No app haptic here: UIKit already plays a system haptic for full-swipe
+    // contextual actions, and any main-thread work in this method delays the
+    // start of the swipe dismiss animation.
 
     switch (action) {
         case ICEpisodeSwipeActionTogglePlayed:

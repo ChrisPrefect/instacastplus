@@ -69,7 +69,11 @@ struct NowPlayingWidgetView: View {
 
     var body: some View {
         Group {
-            if let data = entry.data, let episode = data.episode {
+            if entry.needsData {
+                WidgetEmptyStateView(icon: "arrow.down.circle",
+                                     message: NSLocalizedString("widget.needsdata", comment: ""),
+                                     hint: NSLocalizedString("widget.needsdata.hint", comment: ""))
+            } else if let data = entry.data, let episode = data.episode {
                 switch family {
                 case .systemSmall:
                     smallView(episode: episode, data: data)
@@ -85,7 +89,7 @@ struct NowPlayingWidgetView: View {
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(ICWidgetConstants.playerURL())
+        .widgetURL(entry.needsData ? ICWidgetConstants.refreshWidgetsURL() : ICWidgetConstants.playerURL())
     }
 
     // MARK: - Small

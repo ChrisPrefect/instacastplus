@@ -10,6 +10,13 @@ enum SharedContainerReader {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ICWidgetConstants.appGroupID)
     }
 
+    /// Whether a snapshot file exists in the shared container. Used to distinguish "the app has
+    /// never exported for this widget yet" (→ prompt to open the app) from "exported but empty".
+    static func snapshotExists(_ filename: String) -> Bool {
+        guard let container = containerURL else { return false }
+        return FileManager.default.fileExists(atPath: container.appendingPathComponent(filename).path)
+    }
+
     // MARK: - Generic JSON reading
 
     static func read<T: Decodable & Sendable>(_ type: T.Type, from filename: String) -> T? {

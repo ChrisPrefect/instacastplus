@@ -51,7 +51,12 @@ struct SmartListWidgetView: View {
 
     var body: some View {
         Group {
-            if entry.episodes.isEmpty {
+            if entry.needsData {
+                WidgetEmptyStateView(icon: "arrow.down.circle",
+                                     message: NSLocalizedString("widget.needsdata", comment: ""),
+                                     hint: NSLocalizedString("widget.needsdata.hint", comment: ""))
+                    .widgetURL(ICWidgetConstants.refreshWidgetsURL())
+            } else if entry.episodes.isEmpty {
                 WidgetEmptyStateView(icon: "tray", message: NSLocalizedString("widget.empty.noepisodes", comment: ""))
             } else {
                 switch family {

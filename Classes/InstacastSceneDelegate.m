@@ -2519,6 +2519,17 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             [nav pushViewController:vc animated:YES];
         }
     }
+    else if ([host isEqualToString:@"refresh-widgets"]) {
+        // A freshly-added widget had no exported data and asked the user to open the app.
+        // Re-probe installed widgets and export their snapshots immediately.
+        [WidgetKitHelper refreshInstalledWidgets];
+        WidgetDataExporter *exporter = [WidgetDataExporter sharedExporter];
+        [exporter exportNowPlayingSnapshot];
+        [exporter exportListsSnapshot];
+        [exporter exportStatsSnapshot];
+        [exporter exportSettingsSnapshot];
+        [WidgetKitHelper reloadAllTimelines];
+    }
 }
 
 - (NSDictionary *)_queryParametersFromURL:(NSURL *)url {

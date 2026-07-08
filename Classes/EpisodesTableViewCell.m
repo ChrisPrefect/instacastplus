@@ -150,6 +150,9 @@
         
         // Long-press gesture removed — UITableView's contextMenuConfigurationForRowAtIndexPath handles long-press via UIContextMenu
 
+        // Legacy custom pan-swipe system. Disabled per-cell via setUsesNativeSwipeActions:
+        // (set YES in every controller's cellForRow) so UITableView's
+        // UISwipeActionsConfiguration is the sole swipe gesture.
         UIPanGestureRecognizer* panRecognizer = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePan:)];
         panRecognizer.delegate = self;
         [self addGestureRecognizer:panRecognizer];

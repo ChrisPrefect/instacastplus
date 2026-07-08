@@ -196,6 +196,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // Core Data changes (for smart playlist updates)
     [nc addObserver:self selector:@selector(_coreDataDidChange:) name:NSManagedObjectContextObjectsDidChangeNotification object:DMANAGER.objectContext];
 
+    // A newly-installed widget kind needs its snapshot populated immediately (WidgetKit does
+    // not wake the app for a Core Data export). Populate on the next foreground/launch probe.
+    [nc addObserver:self selector:@selector(_installedWidgetsDidChange:) name:@"ICWidgetInstalledKindsDidChange" object:nil];
+
     // Widget control actions (from Darwin notifications via WidgetKitHelper)
     [nc addObserver:self selector:@selector(_widgetControlAction:) name:@"WidgetControlActionNotification" object:nil];
     [nc addObserver:self selector:@selector(_consumePendingWidgetActionNotification:) name:UIApplicationDidBecomeActiveNotification object:nil];
@@ -205,10 +209,16 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     [nc addObserver:self selector:@selector(_flushDeferredExportsOnForeground:) name:UIApplicationWillEnterForegroundNotification object:nil];
     [nc addObserver:self selector:@selector(_flushDeferredExportsOnForeground:) name:UIApplicationDidBecomeActiveNotification object:nil];
 
+    // Probe installed widgets up front so the export gate has a fresh answer.
+    [WidgetKitHelper refreshInstalledWidgets];
+
     // Initial export so widget config has data immediately
-    // (exportAllSnapshots is also called in sceneDidEnterBackground)
+    // (exportAllSnapshots is also called in sceneDidEnterBackground).
+    // Each export method is gated on installed widgets, so this whole burst is a no-op
+    // when the user has no widgets.
     dispatch_async(dispatch_get_main_queue(), ^{
         [self _consumePendingWidgetActionIfNeeded];
+        if (![WidgetKitHelper hasInstalledWidgets]) return;
         [self exportListsSnapshot];
         [self exportSettingsSnapshot];
         [self exportNowPlayingSnapshot];
@@ -680,6 +690,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)exportNowPlayingSnapshot {
     if (!self.containerURL) return;
+    if (![WidgetKitHelper isNowPlayingWidgetInstalled]) return;
 
     PlaybackManager *pm = [PlaybackManager playbackManager];
     AudioSession *as = [AudioSession sharedAudioSession];
@@ -989,6 +1000,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 // up what this path misses by design (episodes newly entering a smart playlist).
 - (void)_exportListsAffectedByEpisodeHashes:(NSArray<NSString *> *)episodeHashes {
     if (!self.containerURL || episodeHashes.count == 0) return;
+    if (![WidgetKitHelper isSmartListWidgetInstalled]) return;
 
     dispatch_async(self.listsExportQueue, ^{
         CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
@@ -996,7 +1008,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         NSMutableDictionary *indexPatches = [NSMutableDictionary dictionary];
         __block NSUInteger affectedLists = 0;
 
-        NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
+        NSManagedObjectContext *backgroundContext = [DMANAGER newExportBackgroundContext];
         [backgroundContext performBlockAndWait:^{
             NSMutableArray<CDEpisode *> *episodes = [NSMutableArray array];
             for (NSString *episodeHash in episodeHashes) {
@@ -1012,10 +1024,18 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
             NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"List"];
             request.includesSubentities = YES;
+            request.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
             NSArray *lists = [backgroundContext executeFetchRequest:request error:nil];
 
+            // Dedupe by uid — same user-facing set as the full pass / the "Lists" menu.
+            NSMutableSet *seenUIDs = [NSMutableSet set];
+
             for (CDList *list in lists) {
-                NSSet *hashesInFile = [self _episodeHashesInSnapshotFileForListUID:list.uid];
+                NSString *uid = list.uid;
+                if (uid.length == 0 || [seenUIDs containsObject:uid]) continue;
+                [seenUIDs addObject:uid];
+
+                NSSet *hashesInFile = [self _episodeHashesInSnapshotFileForListUID:uid];
                 BOOL affects = NO;
                 for (CDEpisode *episode in episodes) {
                     if ([hashesInFile containsObject:episode.objectHash ?: @""]) {
@@ -1064,7 +1084,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"id"] = list.uid ?: @"";
     d[@"name"] = list.name ?: @"";
-    d[@"episodeCount"] = @(list.numberOfEpisodes);
     if ([list isKindOfClass:[CDSmartPlaylist class]]) {
         NSString *type = ((CDSmartPlaylist *)list).smartPredicate[@"type"];
         d[@"type"] = type ? [NSString stringWithFormat:@"smart:%@", type] : @"smart";
@@ -1073,13 +1092,16 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     } else {
         d[@"type"] = @"playlist";
     }
-    indexPatches[list.uid ?: @""] = d;
 
+    // Same as the full pass: only the capped episodes, no full numberOfEpisodes count.
     NSMutableArray *episodeDicts = [NSMutableArray array];
     for (CDEpisode *episode in [list sortedEpisodesWithLimit:kMaxEpisodesPerList]) {
         if ((NSInteger)episodeDicts.count >= kMaxEpisodesPerList) break;
         [episodeDicts addObject:[self _episodeDictForEpisode:episode withImageSize:kImageSizeMedium]];
     }
+
+    d[@"episodeCount"] = @(episodeDicts.count);
+    indexPatches[list.uid ?: @""] = d;
 
     NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
     snapshot[@"listId"] = list.uid ?: @"";
@@ -1088,6 +1110,23 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
     [writes addObject:@{ @"filename": [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, list.uid ?: @"unknown"],
                          @"snapshot": snapshot }];
+}
+
+// YES when the on-disk snapshot for this file already has the same episodes payload (the
+// per-run timestamp is deliberately excluded). Lets the full pass skip unchanged lists so a
+// reconciliation run does zero file writes when nothing changed.
+- (BOOL)_listSnapshotEpisodesUnchanged:(NSDictionary *)snapshot file:(NSString *)filename {
+    if (!self.containerURL || filename.length == 0) return NO;
+    NSURL *url = [self.containerURL URLByAppendingPathComponent:filename];
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    if (!data) return NO;
+    NSDictionary *existing = [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL];
+    if (![existing isKindOfClass:[NSDictionary class]]) return NO;
+    NSArray *oldEpisodes = existing[@"episodes"];
+    NSArray *newEpisodes = snapshot[@"episodes"];
+    if (![oldEpisodes isKindOfClass:[NSArray class]]) return NO;
+    BOOL sameName = [(existing[@"listName"] ?: @"") isEqual:(snapshot[@"listName"] ?: @"")];
+    return sameName && [newEpisodes isEqualToArray:oldEpisodes];
 }
 
 - (NSSet *)_episodeHashesInSnapshotFileForListUID:(NSString *)listUID {
@@ -1132,6 +1171,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         dispatch_async(dispatch_get_main_queue(), ^{ [self exportListsSnapshot]; });
         return;
     }
+    // Only the SmartList widget reads the per-list snapshots. If it isn't installed, the whole
+    // lists export (the expensive one) never runs — e.g. a user with only the last-played widget.
+    if (![WidgetKitHelper isSmartListWidgetInstalled]) return;
     if ([self _deferHeavyListsExportInBackgroundPlayback]) return;
 
     // Coalesce bursts (a feed refresh posts several triggers) into a single pass: while one
@@ -1146,7 +1188,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         __block NSUInteger listCount = 0, episodeCount = 0;
         NSMutableArray *listIndex = [NSMutableArray array];
         NSMutableArray *episodeSnapshots = [NSMutableArray array];
-        NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
+        NSManagedObjectContext *backgroundContext = [DMANAGER newExportBackgroundContext];
 
         CFAbsoluteTime queryStart = CFAbsoluteTimeGetCurrent();
         [backgroundContext performBlockAndWait:^{
@@ -1154,15 +1196,21 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             request.includesSubentities = YES;
             request.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
             NSArray *lists = [backgroundContext executeFetchRequest:request error:nil];
-            listCount = lists.count;
+
+            // Only the user-facing lists — the same deduped set the "Lists" menu shows
+            // (DMANAGER.lists). The raw store can hold many duplicate/orphan List rows with
+            // repeated or nil uids (accumulated over migrations/iCloud sync); processing all
+            // of them was the source of "157 lists" and the multi-second export. Dedupe by uid.
+            NSMutableSet *seenUIDs = [NSMutableSet set];
 
             for (CDList *list in lists) {
+                NSString *uid = list.uid;
+                if (uid.length == 0 || [seenUIDs containsObject:uid]) continue;
+                [seenUIDs addObject:uid];
+
                 NSMutableDictionary *d = [NSMutableDictionary dictionary];
-                d[@"id"] = list.uid ?: @"";
+                d[@"id"] = uid;
                 d[@"name"] = list.name ?: @"";
-                CFAbsoluteTime cT = CFAbsoluteTimeGetCurrent();
-                d[@"episodeCount"] = @(list.numberOfEpisodes);
-                countSeconds += CFAbsoluteTimeGetCurrent() - cT;
 
                 if ([list isKindOfClass:[CDSmartPlaylist class]]) {
                     CDSmartPlaylist *smart = (CDSmartPlaylist *)list;
@@ -1174,8 +1222,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                     d[@"type"] = @"playlist";
                 }
 
-                [listIndex addObject:d];
-
+                // Fetch only what the widget can show (capped at kMaxEpisodesPerList). We do NOT
+                // run the full numberOfEpisodes SQL count anymore (it was the dominant cost and
+                // the widget never displays a total > the capped list).
                 CFAbsoluteTime fT = CFAbsoluteTimeGetCurrent();
                 NSArray *episodes = [list sortedEpisodesWithLimit:kMaxEpisodesPerList];
                 fetchSeconds += CFAbsoluteTimeGetCurrent() - fT;
@@ -1191,21 +1240,52 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 imageSeconds += CFAbsoluteTimeGetCurrent() - iT;
                 episodeCount += count;
 
+                d[@"episodeCount"] = @(count);
+                [listIndex addObject:d];
+
                 NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
-                snapshot[@"listId"] = list.uid ?: @"";
+                snapshot[@"listId"] = uid;
                 snapshot[@"listName"] = list.name ?: @"";
                 snapshot[@"episodes"] = episodeDicts;
                 snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
 
-                NSString *filename = [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, list.uid ?: @"unknown"];
+                NSString *filename = [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, uid];
                 [episodeSnapshots addObject:@{ @"filename": filename, @"snapshot": snapshot }];
             }
+
+            // Append every subscribed podcast as a selectable widget option (after the lists,
+            // in the same order as the subscriptions list = rank). Only the index entry is
+            // written here — the episode payload for a podcast is exported on demand for the
+            // podcast+filter a widget is actually configured to show (see
+            // _exportConfiguredPodcastSnapshots), keeping the export minimal.
+            NSFetchRequest *feedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+            feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
+            feedRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
+            NSArray *feeds = [backgroundContext executeFetchRequest:feedRequest error:nil];
+            for (CDFeed *feed in feeds) {
+                NSString *feedUID = feed.uid;
+                if (feedUID.length == 0) continue;
+                [listIndex addObject:@{
+                    @"id": [NSString stringWithFormat:@"feed:%@", feedUID],
+                    @"name": feed.title ?: @"",
+                    @"type": @"podcast",
+                    @"episodeCount": @0,
+                }];
+            }
+
+            listCount = listIndex.count;
         }];
         querySeconds = CFAbsoluteTimeGetCurrent() - queryStart;
 
+        // Write only lists whose episode content actually changed (the snapshot timestamp is
+        // ignored in the comparison). Nothing changed → no file writes at all, matching the
+        // "export only when a list really changed" rule.
         CFAbsoluteTime writeStart = CFAbsoluteTimeGetCurrent();
+        NSUInteger changedFiles = 0;
         for (NSDictionary *entry in episodeSnapshots) {
+            if ([self _listSnapshotEpisodesUnchanged:entry[@"snapshot"] file:entry[@"filename"]]) continue;
             [self _writeJSON:entry[@"snapshot"] toFile:entry[@"filename"]];
+            changedFiles++;
         }
         [self _writeJSON:listIndex toFile:kListsIndexFile];
         CFAbsoluteTime writeSeconds = CFAbsoluteTimeGetCurrent() - writeStart;
@@ -1223,6 +1303,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                                                  @"fetch_s": [NSString stringWithFormat:@"%.3f", fetchSeconds],
                                                  @"image_s": [NSString stringWithFormat:@"%.3f", imageSeconds],
                                                  @"write_s": [NSString stringWithFormat:@"%.3f", writeSeconds],
+                                                 @"changed": [NSString stringWithFormat:@"%lu", (unsigned long)changedFiles],
                                                  @"foreground": foreground ? @"1" : @"0" }];
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1233,6 +1314,93 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             }
         });
     });
+
+    // Also refresh the on-demand podcast snapshots for whatever podcast+filter combos the
+    // installed widgets are configured to show (no-op when none are).
+    [self _exportConfiguredPodcastSnapshots];
+}
+
+// Exports 14 episodes for ONLY the podcast+filter combinations that installed SmartList widgets
+// are actually configured to show (via WidgetKitHelper.configuredPodcastSources). A podcast the
+// user never selected is never queried — this keeps the "all podcasts selectable" feature from
+// exploding into 45×filters exports.
+- (void)_exportConfiguredPodcastSnapshots {
+    if (!self.containerURL) return;
+    if (![WidgetKitHelper isSmartListWidgetInstalled]) return;
+
+    // The SmartList widget records the podcast+filter combos it is configured to show into the
+    // App Group defaults (it knows its own config; the app can't read a widget-extension intent
+    // type directly). Export episode data ONLY for those combos.
+    NSUserDefaults *shared = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.iteconomy.instacastplus"];
+    NSArray<NSDictionary<NSString *, NSString *> *> *combos = [shared arrayForKey:[WidgetKitHelper requestedPodcastKeysDefaultsKey]];
+    {
+        if (combos.count == 0) return;
+        dispatch_async(self.listsExportQueue, ^{
+            NSManagedObjectContext *ctx = [DMANAGER newExportBackgroundContext];
+            NSMutableArray *writes = [NSMutableArray array];
+            [ctx performBlockAndWait:^{
+                for (NSDictionary *combo in combos) {
+                    NSString *uid = combo[@"uid"];
+                    NSString *filter = combo[@"filter"] ?: @"unplayed";
+                    if (uid.length == 0) continue;
+
+                    NSFetchRequest *feedReq = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+                    feedReq.predicate = [NSPredicate predicateWithFormat:@"uid == %@", uid];
+                    feedReq.fetchLimit = 1;
+                    CDFeed *feed = [[ctx executeFetchRequest:feedReq error:nil] firstObject];
+                    if (!feed) continue;
+
+                    NSFetchRequest *epReq = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+                    epReq.predicate = [self _predicateForPodcastFilter:filter feedUID:uid];
+                    epReq.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO] ];
+                    epReq.fetchLimit = kMaxEpisodesPerList;
+                    NSArray *episodes = [ctx executeFetchRequest:epReq error:nil];
+
+                    NSMutableArray *episodeDicts = [NSMutableArray array];
+                    for (CDEpisode *ep in episodes) {
+                        [episodeDicts addObject:[self _episodeDictForEpisode:ep withImageSize:kImageSizeMedium]];
+                    }
+
+                    NSString *key = [NSString stringWithFormat:@"feed.%@.%@", uid, filter];
+                    NSMutableDictionary *snapshot = [NSMutableDictionary dictionary];
+                    snapshot[@"listId"] = key;
+                    snapshot[@"listName"] = feed.title ?: @"";
+                    snapshot[@"episodes"] = episodeDicts;
+                    snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
+                    [writes addObject:@{ @"filename": [NSString stringWithFormat:@"%@%@.json", kListEpisodesPrefix, key],
+                                         @"snapshot": snapshot }];
+                }
+            }];
+
+            NSUInteger changed = 0;
+            for (NSDictionary *entry in writes) {
+                if ([self _listSnapshotEpisodesUnchanged:entry[@"snapshot"] file:entry[@"filename"]]) continue;
+                [self _writeJSON:entry[@"snapshot"] toFile:entry[@"filename"]];
+                changed++;
+            }
+            if (changed > 0) {
+                dispatch_async(dispatch_get_main_queue(), ^{ [WidgetKitHelper reloadListsTimeline]; });
+            }
+        });
+    }
+}
+
+// Store predicate for a podcast source + filter — mirrors CDEpisodeList's filter semantics.
+- (NSPredicate *)_predicateForPodcastFilter:(NSString *)filter feedUID:(NSString *)uid {
+    NSMutableArray *subs = [NSMutableArray array];
+    [subs addObject:[NSPredicate predicateWithFormat:@"feed.uid == %@ AND feed.subscribed == YES AND archived == NO", uid]];
+    if ([filter isEqualToString:@"unplayed"]) {
+        [subs addObject:[NSPredicate predicateWithFormat:@"consumed == NO"]];
+    } else if ([filter isEqualToString:@"started"]) {
+        [subs addObject:[NSPredicate predicateWithFormat:@"consumed == NO AND position > 0"]];
+    } else if ([filter isEqualToString:@"favorites"]) {
+        [subs addObject:[NSPredicate predicateWithFormat:@"starred == YES"]];
+    } else if ([filter isEqualToString:@"downloaded"]) {
+        NSArray *cachedHashes = [[[CacheManager sharedCacheManager] cachedEpisodes] valueForKey:@"objectHash"];
+        [subs addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", cachedHashes ?: @[]]];
+    }
+    // "all": latest episodes, no extra filter.
+    return [NSCompoundPredicate andPredicateWithSubpredicates:subs];
 }
 
 #pragma mark - Background-Playback Gate
@@ -1259,8 +1427,23 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     return YES;
 }
 
+- (void)_installedWidgetsDidChange:(NSNotification *)note {
+    // A widget kind was just added. Populate every snapshot — each export self-gates on its
+    // own widget kind and skips unchanged files, so this is cheap and only fills what's needed.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self exportNowPlayingSnapshot];
+        [self exportListsSnapshot];
+        [self exportStatsSnapshot];
+        [self exportSettingsSnapshot];
+        [WidgetKitHelper reloadAllTimelines];
+    });
+}
+
 - (void)_flushDeferredExportsOnForeground:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Re-check whether any widgets are installed; the user may have added/removed one
+        // while the app was backgrounded. This gates all subsequent export work.
+        [WidgetKitHelper refreshInstalledWidgets];
         if (self.pendingListsExport) {
             self.pendingListsExport = NO;
             [self exportListsSnapshot];
@@ -1278,6 +1461,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)exportStatsSnapshot {
     if (!self.containerURL) return;
+    if (![WidgetKitHelper isStatsWidgetInstalled]) return;
     NSDate *now = [NSDate date];
     [self _updateStatsDayIfNeededForDate:now];
 
@@ -1345,6 +1529,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 - (void)_refreshStatsDuringPlaybackIfNeeded {
+    if (![WidgetKitHelper isStatsWidgetInstalled]) return;
     PlaybackManager *pm = [PlaybackManager playbackManager];
     if (pm.isPaused || !pm.playingEpisode) {
         BOOL wroteListeningDelta = [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
@@ -1395,6 +1580,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)exportSettingsSnapshot {
     if (!self.containerURL) return;
+    if (![WidgetKitHelper hasInstalledWidgets]) return;
     NSDictionary *settings = @{
         @"accentColorHex": [self _accentColorHex]
     };
@@ -1585,6 +1771,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_refreshStatsCacheInBackgroundWritingSnapshot:(BOOL)writeSnapshot reloadWhenDone:(BOOL)reloadWhenDone {
     if (!self.containerURL || self.statsRefreshInProgress) return;
+    // Stats cache is read only by the Stats widget — don't scan the store if it isn't installed.
+    if (![WidgetKitHelper isStatsWidgetInstalled]) return;
 
     self.statsRefreshInProgress = YES;
     [self _updateStatsDayIfNeededForDate:[NSDate date]];
@@ -1610,7 +1798,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             weekSec += [listeningLog[key] doubleValue];
         }
 
-        NSManagedObjectContext *backgroundContext = [DMANAGER newBackgroundContext];
+        NSManagedObjectContext *backgroundContext = [DMANAGER newExportBackgroundContext];
         if (backgroundContext) {
             [backgroundContext performBlockAndWait:^{
                 NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];

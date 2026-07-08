@@ -49,6 +49,12 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 - (void) save;
 - (NSManagedObjectContext*)newBackgroundContext;
 
+// Background context on a SEPARATE persistent store coordinator over the same SQLite file.
+// SQLite WAL mode allows concurrent readers across coordinators, so long read-only queries
+// (widget export) never contend for the main coordinator's store lock and can never block
+// the main-thread UI. Read-only: never call -save on this context.
+- (NSManagedObjectContext*)newExportBackgroundContext;
+
 - (void) beginInterruptSaving;
 - (void) endInterruptSaving;
 - (void) refreshAllObjects;

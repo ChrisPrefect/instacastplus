@@ -22,7 +22,11 @@ struct StatsWidgetView: View {
 
     var body: some View {
         Group {
-            if let stats = entry.stats {
+            if entry.needsData {
+                WidgetEmptyStateView(icon: "arrow.down.circle",
+                                     message: NSLocalizedString("widget.needsdata", comment: ""),
+                                     hint: NSLocalizedString("widget.needsdata.hint", comment: ""))
+            } else if let stats = entry.stats {
                 switch family {
                 case .systemSmall:
                     smallView(stats: stats)
@@ -34,7 +38,7 @@ struct StatsWidgetView: View {
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
-        .widgetURL(ICWidgetConstants.playerURL())
+        .widgetURL(entry.needsData ? ICWidgetConstants.refreshWidgetsURL() : ICWidgetConstants.playerURL())
     }
 
     // MARK: - Small

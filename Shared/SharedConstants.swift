@@ -20,6 +20,10 @@ enum ICWidgetConstants {
     static let smartListWidgetKind      = "SmartListWidget"
     static let statsWidgetKind          = "StatsWidget"
 
+    // App Group UserDefaults key: the podcast+filter combos SmartList widgets are configured to
+    // show. Written by the widget provider, read by the app's exporter (on-demand export).
+    static let requestedPodcastKeysDefaultsKey = "ICWidgetRequestedPodcastKeys"
+
     // Fallback URL (should never be needed, but prevents force-unwrap crashes)
     private static let fallbackURL = URL(string: "instacastplus://")!
 
@@ -61,6 +65,16 @@ enum ICWidgetConstants {
         components.scheme = urlScheme
         components.host = "list"
         components.path = "/\(listUID)"
+        return components.url ?? fallbackURL
+    }
+
+    /// Deep link a widget shows when it has no exported data yet. Opening it launches the app,
+    /// which immediately (re-)exports all installed widgets' snapshots.
+    static let refreshWidgetsHost = "refresh-widgets"
+    static func refreshWidgetsURL() -> URL {
+        var components = URLComponents()
+        components.scheme = urlScheme
+        components.host = refreshWidgetsHost
         return components.url ?? fallbackURL
     }
 }
