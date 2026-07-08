@@ -208,6 +208,10 @@ Stellen die IDENTISCH sein müssen:
 
 Farben: Immer `ICTintColor` für Akzentfarbe (passt sich an Appearance an), `[UIColor systemRedColor]` für destruktive Aktionen, `[UIColor colorWithWhite:0.5f alpha:1.0f]` für Grau. NIEMALS hardcodierte RGB-Werte für Rot.
 
+VoiceOver: Jeder Icon-only-Button (Glass Buttons, Toolbar-Items, Player-Controls) braucht ein `accessibilityLabel` mit Localizable-Key (`.ls`), gleiche Wortwahl wie das Context-Menü. Swipe-Aktionen (`UIContextualAction`, title:nil) haben kein Label-API — stattdessen `image.accessibilityLabel` setzen (siehe `_accessibilityLabelForSwipeAction:episode:`). Dekorative Icons (Volume-Min/Max): `isAccessibilityElement = NO`.
+
+Haptik: IMMER `PlayHapticFeedback(ICHapticFeedbackLight/Medium)` (Sound.h, respektiert `UIHapticsEnabled`-Setting, Default an, Schalter unter Darstellung neben „Interfacetöne"), NIE `AudioServicesPlaySystemSound(1519)` direkt. Genau EIN Haptic pro User-Aktion: am Gesten-Einstiegspunkt (`_performSwipeAction`-Kopf, Context-Menü-Handler), nicht in gemeinsam genutzten Helpern wie `_togglePlayNextForEpisode` (würde doppelt feuern). Light = Toggles/Skip, Medium = Play/Pause.
+
 ## Auto-Refresh
 
 `_autoRefreshFeedsIfNeeded` in SceneDelegate: Beim App-Start und Foreground-Wechsel werden alle Feeds refreshed, wenn der letzte Refresh > 30 Minuten her ist. Non-blocking, kein UI-Feedback. Statische `_lastAutoRefreshDate` als Cooldown. ACHTUNG: Auf iOS ignoriert `refreshAllFeedsForce:` das force-Flag — alle nicht-geparkten Feeds werden immer refreshed; die per-Feed-AutoRefresh-Intervalle existieren nur im alten Nicht-iOS-Pfad und haben kein iOS-UI.

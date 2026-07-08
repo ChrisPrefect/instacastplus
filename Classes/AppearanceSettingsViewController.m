@@ -167,7 +167,7 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         case kAppIconSuggestion:
             return 1;
         case kInterfaceSoundsSection:
-            return 1;
+            return 2;
         case kExternalBrowserSection:
             return 1;
         default:
@@ -462,9 +462,16 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         UISwitch* control = (UISwitch*)cell.accessoryView;
         control.tag = 0;
 
-        cell.textLabel.text = @"Interface Sounds".ls;
-        control.on = [USER_DEFAULTS boolForKey:UISoundEnabled];
-        [control addTarget:self action:@selector(toggleInterfaceSounds:) forControlEvents:UIControlEventValueChanged];
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Interface Sounds".ls;
+            control.on = [USER_DEFAULTS boolForKey:UISoundEnabled];
+            [control addTarget:self action:@selector(toggleInterfaceSounds:) forControlEvents:UIControlEventValueChanged];
+        }
+        else {
+            cell.textLabel.text = @"Haptic Feedback".ls;
+            control.on = [USER_DEFAULTS boolForKey:UIHapticsEnabled];
+            [control addTarget:self action:@selector(toggleHapticFeedback:) forControlEvents:UIControlEventValueChanged];
+        }
         return cell;
     }
     else if (indexPath.section == kExternalBrowserSection)
@@ -890,6 +897,15 @@ API_AVAILABLE(ios(14.0)){
 - (void) toggleInterfaceSounds:(UISwitch*)sender
 {
     [USER_DEFAULTS setBool:sender.on forKey:UISoundEnabled];
+}
+
+- (void) toggleHapticFeedback:(UISwitch*)sender
+{
+    [USER_DEFAULTS setBool:sender.on forKey:UIHapticsEnabled];
+    if (sender.on) {
+        // confirm re-enable with a sample tap
+        PlayHapticFeedback(ICHapticFeedbackMedium);
+    }
 }
 
 - (void) togglePureBlack:(UISwitch*)sender

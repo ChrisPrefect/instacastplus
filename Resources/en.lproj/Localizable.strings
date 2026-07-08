@@ -59,6 +59,7 @@
 "20 Seconds" = "20 Seconds";
 "30 Seconds" = "30 Seconds";
 "5 Minutes" = "5 Minutes";
+"0 Seconds" = "0 Seconds";
 "5 Seconds" = "5 Seconds";
 "15 Minutes" = "15 Minutes";
 "20 Minutes" = "20 Minutes";
@@ -388,6 +389,7 @@
 "General" = "General";
 "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data." = "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data.";
 "Interface Sounds" = "Interface Sounds";
+"Haptic Feedback" = "Haptic Feedback";
 "Open Links in External Browser" = "Open Links in External Browser";
 "Miscellaneous" = "Miscellaneous";
 "Dark mode" = "Dark mode";
@@ -1539,3 +1541,13 @@
 "Play episode \\(\\.$episode) in \\(.applicationName)" = "Play episode \\(\\.$episode) in \\(.applicationName)";
 "Watch lädt Podcasts (%@/%@)" = "Watch is downloading podcasts (%@/%@)";
 "Watch lädt Podcasts (%@ von %@)" = "Watch is downloading podcasts (%@ of %@)";
+
+/* VoiceOver accessibility labels */
+"Add Podcast" = "Add Podcast";
+"Sort" = "Sort";
+"Mark all" = "Mark all";
+"Cancel Download" = "Cancel Download";
+"Delete Episode" = "Delete Episode";
+"Previous Result" = "Previous Result";
+"Next Result" = "Next Result";
+"Playback Speed" = "Playback Speed";

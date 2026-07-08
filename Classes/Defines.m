@@ -52,6 +52,7 @@ NSString* AutoCacheNewAudioEpisodes = @"AutoCacheNewAudioEpisodes";
 NSString* AutoCacheNewVideoEpisodes = @"AutoCacheNewVideoEpisodes";
 NSString* AutoCacheStorageLimit = @"AutoCacheStorageLimit";
 NSString* UISoundEnabled = @"UISoundEnabled";
+NSString* UIHapticsEnabled = @"UIHapticsEnabled";
 NSString* PlayerSkipBackPeriod = @"PlayerSkipBackPeriod";
 NSString* PlayerSkipForwardPeriod = @"PlayerSkipForwardPeriod";
 NSString* PlayerNearChapterEndForwardSkipMode = @"PlayerNearChapterEndForwardSkipMode";

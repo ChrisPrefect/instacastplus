@@ -220,7 +220,6 @@
 		1BA3A3A013D58554007C719E /* AudioSession.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BA3A39F13D58554007C719E /* AudioSession.m */; };
 		1BA4C0F317C2500A00D04764 /* placeholder-72.png in Resources */ = {isa = PBXBuildFile; fileRef = 1BA4C0F117C2500A00D04764 /* placeholder-72.png */; };
 		1BA4C0F417C2500A00D04764 /* placeholder-72@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 1BA4C0F217C2500A00D04764 /* placeholder-72@2x.png */; };
-		1BA72EDA1774A03300FAFED1 /* GeneralSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BA72ED91774A03300FAFED1 /* GeneralSettingsViewController.m */; };
 		1BA7CFF817A53AB200121ED3 /* UIImageView+BorderedImage.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BA7CFF717A53AB200121ED3 /* UIImageView+BorderedImage.m */; };
 		1BA7D00312DF336A001615BF /* WebController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BA7D00212DF336A001615BF /* WebController.m */; };
 		1BA9948E1680638F0000309B /* Model.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = 1BA994891680638F0000309B /* Model.xcdatamodeld */; };
@@ -808,8 +807,6 @@
 		1BA3A39F13D58554007C719E /* AudioSession.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = AudioSession.m; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
 		1BA4C0F117C2500A00D04764 /* placeholder-72.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "placeholder-72.png"; sourceTree = "<group>"; };
 		1BA4C0F217C2500A00D04764 /* placeholder-72@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "placeholder-72@2x.png"; sourceTree = "<group>"; };
-		1BA72ED81774A03300FAFED1 /* GeneralSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = GeneralSettingsViewController.h; sourceTree = "<group>"; };
-		1BA72ED91774A03300FAFED1 /* GeneralSettingsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneralSettingsViewController.m; sourceTree = "<group>"; };
 		1BA7CFF617A53AB200121ED3 /* UIImageView+BorderedImage.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIImageView+BorderedImage.h"; sourceTree = "<group>"; };
 		1BA7CFF717A53AB200121ED3 /* UIImageView+BorderedImage.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIImageView+BorderedImage.m"; sourceTree = "<group>"; };
 		1BA7D00112DF336A001615BF /* WebController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WebController.h; sourceTree = "<group>"; };
@@ -1279,8 +1276,6 @@
 				188B3C7C2E175728004D14A5 /* ChapterSkipListViewController.m */,
 				1B6F95181468110E00894417 /* OptionsViewController.h */,
 				1B6F95191468110F00894417 /* OptionsViewController.m */,
-				1BA72ED81774A03300FAFED1 /* GeneralSettingsViewController.h */,
-				1BA72ED91774A03300FAFED1 /* GeneralSettingsViewController.m */,
 				CC000001AABB000000000002 /* AppearanceSettingsViewController.h */,
 				CC000001AABB000000000003 /* AppearanceSettingsViewController.m */,
 				CC000001AABB000000000005 /* PlaybackSettingsViewController.h */,
@@ -2779,7 +2774,6 @@
 				1BF41DA4178450F00071DFA9 /* _AlertStylePopoverAnimator.m in Sources */,
 				1B9CA94C16F9AFDE00A9A9A4 /* ICCacheHistory.m in Sources */,
 				1BB0D53F1A0A0B0300B619C8 /* Reachability.m in Sources */,
-				1BA72EDA1774A03300FAFED1 /* GeneralSettingsViewController.m in Sources */,
 				CC000001AABB000000000001 /* AppearanceSettingsViewController.m in Sources */,
 				CC000001AABB000000000004 /* PlaybackSettingsViewController.m in Sources */,
 				CC000001AABB00000000000D /* EnabledSpeedStepsViewController.m in Sources */,

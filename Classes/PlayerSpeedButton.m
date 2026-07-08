@@ -34,9 +34,12 @@
     
     NSString* title = [PlayerSpeedButton titleForSpeedControl:pman.speedControl];
     [self setTitle:title forState:UIControlStateNormal];
-    
+
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
     self.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
+
+    self.accessibilityLabel = @"Playback Speed".ls;
+    self.accessibilityValue = title;
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow
@@ -80,6 +83,7 @@
 - (void) _longTrackingTimerAction:(NSTimer*)timer
 {
     [PlaybackManager playbackManager].speedControl = PlaybackSpeedControlNormalSpeed;
+    PlayHapticFeedback(ICHapticFeedbackMedium);
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Playback set to original speed.".ls);
     
     VDModalInfo* modalInfo = [VDModalInfo modalInfo];
@@ -107,6 +111,7 @@
             PlaybackManager* pman = [PlaybackManager playbackManager];
             PlaybackSpeedControl nextSpeed = [PlayerSpeedButton nextEnabledSpeedAfter:pman.speedControl];
             pman.speedControl = nextSpeed;
+            PlayHapticFeedback(ICHapticFeedbackLight);
             NSString* title = [PlayerSpeedButton titleForSpeedControl:nextSpeed];
             NSString* announcement = [NSString stringWithFormat:@"Playback set to %@ speed.".ls, title];
             UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, announcement);

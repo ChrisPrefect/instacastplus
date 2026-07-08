@@ -49,6 +49,7 @@ extern NSString* AutoCacheNewVideoEpisodes;
 
 extern NSString* AutoCacheStorageLimit;
 extern NSString* UISoundEnabled;
+extern NSString* UIHapticsEnabled;
 extern NSString* PlayerSkipBackPeriod;
 extern NSString* PlayerSkipForwardPeriod;
 extern NSString* PlayerNearChapterEndForwardSkipMode;

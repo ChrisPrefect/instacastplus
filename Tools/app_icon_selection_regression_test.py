@@ -91,7 +91,6 @@ def assert_intermediate_assets_removed() -> None:
 
 def main() -> None:
     assert_controller(ROOT / "Classes/AppearanceSettingsViewController.m")
-    assert_controller(ROOT / "Classes/GeneralSettingsViewController.m")
     assert_project_settings()
     assert_intermediate_assets_removed()
     print("app icon selection regression checks passed")

@@ -432,6 +432,7 @@
             STRONG_SELF
             [self addAction:nil];
         }]];
+    self.floatingAddButton.accessibilityLabel = @"Add Podcast".ls;
 
     UIButtonConfiguration* sortConfig = [UIButtonConfiguration glassButtonConfiguration];
     sortConfig.image = [UIImage systemImageNamed:@"arrow.up.arrow.down"];
@@ -439,6 +440,7 @@
     self.floatingSortButton = [UIButton buttonWithConfiguration:sortConfig primaryAction:nil];
     self.floatingSortButton.menu = [self _buildSortMenu];
     self.floatingSortButton.showsMenuAsPrimaryAction = YES;
+    self.floatingSortButton.accessibilityLabel = @"Sort".ls;
 
     self.floatingAddButton.translatesAutoresizingMaskIntoConstraints = NO;
     self.floatingSortButton.translatesAutoresizingMaskIntoConstraints = NO;

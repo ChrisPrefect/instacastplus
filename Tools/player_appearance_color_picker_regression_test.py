@@ -33,6 +33,7 @@ def check_controller(path: str) -> None:
     )
 
 
+# GeneralSettingsViewController was deleted 08.07.2026 (dead code: the pre-split
+# settings page, never instantiated since 5d8d6958).
 check_controller("Classes/AppearanceSettingsViewController.m")
-check_controller("Classes/GeneralSettingsViewController.m")
 print("player appearance color picker regression checks passed")

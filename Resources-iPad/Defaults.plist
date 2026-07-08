@@ -28,6 +28,8 @@
 	<integer>200</integer>
 	<key>UISoundEnabled</key>
 	<true/>
+	<key>UIHapticsEnabled</key>
+	<true/>
 	<key>PlayerShakeAction</key>
 	<string>PlayerShakeActionNone</string>
 	<key>ContinuousPlayback</key>

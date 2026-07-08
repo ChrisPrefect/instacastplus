@@ -266,9 +266,11 @@
     
     [self.bookmarkButton setImage:[[UIImage imageNamed:@"Player Bookmark"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                        forState:UIControlStateNormal];
-    
+    self.bookmarkButton.accessibilityLabel = @"Add Bookmark".ls;
+
     [self.actionButton setImage:[[UIImage imageNamed:@"Player Share"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                      forState:UIControlStateNormal];
+    self.actionButton.accessibilityLabel = @"Share".ls;
     
     
     [self.volumeMinButton setImage:[[UIImage imageNamed:@"Player Volume Min"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
@@ -276,11 +278,13 @@
     [self.volumeMaxButton setImage:[[UIImage imageNamed:@"Player Volume Max"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                           forState:UIControlStateNormal];
 
-    // Icons are decorative only — not touchable
+    // Icons are decorative only — not touchable, hidden from VoiceOver
     self.volumeMinButton.enabled = NO;
     self.volumeMinButton.userInteractionEnabled = NO;
+    self.volumeMinButton.isAccessibilityElement = NO;
     self.volumeMaxButton.enabled = NO;
     self.volumeMaxButton.userInteractionEnabled = NO;
+    self.volumeMaxButton.isAccessibilityElement = NO;
 }
 
 - (void) updateAppearance
@@ -777,6 +781,7 @@
 - (void) togglePlay:(id)sender
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
+    PlayHapticFeedback(ICHapticFeedbackMedium);
     //devd to do-full screen
 	if (pman.paused) {
 		[pman play];
@@ -909,6 +914,7 @@
 	if (self.skipTimer) {
 		[self.skipTimer invalidate];
 		self.skipTimer = nil;
+		PlayHapticFeedback(ICHapticFeedbackLight);
 		[pman seekBackward];
         [self updateTimeUI];
 	}
@@ -956,6 +962,7 @@
 	if (self.skipTimer) {
 		[self.skipTimer invalidate];
 		self.skipTimer = nil;
+		PlayHapticFeedback(ICHapticFeedbackLight);
 		[pman seekForward];
         [self updateTimeUI];
 	}

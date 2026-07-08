@@ -79,3 +79,12 @@ require('"hasCredentials"' in adopt_choice and '"settingsValueCount"' in adopt_c
 queue_check = method_body(MANAGER, "func checkAndQueueSettingsChange")
 require("storedSyncedSettingsHash()" in queue_check, "Settings queueing must compare against the persisted baseline hash.")
 require("var lastSyncedSettingsHash" not in MANAGER, "The in-memory settings hash baseline must not come back.")
+
+# Device-local playback restore state must never travel as a "setting" (08.07.): syncing
+# PlaybackEpisode dirtied the settings hash on every episode switch (one settings upload
+# per change) and made other devices restore this device's episode after a restart.
+transient_keys = method_body(MANAGER, "nonisolated static func transientSettingsKeysForSyncEngineCallback")
+for key in ('"PlaybackEpisode"', '"PlaybackPlaylist"', '"PlaybackSourceList"',
+            '"TotalEpisodesPlayedCount"', '"TotalListeningTime"', '"SleepTimerFellAsleepCount"'):
+    require(key in transient_keys, f"{key} must be excluded from settings sync (device-local playback state).")
+print("settings payload regression checks passed")

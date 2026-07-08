@@ -782,6 +782,19 @@ extension ICiCloudSyncManager {
             kUIPersistenceListScrollPositionsLastModified,
             UncompletedSleepTimeInterval,
             "TranscriptionBackgroundTaskActive",
+            // Device-local playback restore state (AudioSession kPlaybackState* keys).
+            // Syncing PlaybackEpisode dirtied the settings hash on EVERY episode change
+            // (one settings upload per switch) and made another device restore this
+            // device's episode after a restart. Positions sync via episode states.
+            "PlaybackEpisode",
+            "PlaybackPlaylist",
+            "PlaybackSourceList",
+            // Per-device statistics counters (User-Entscheid 08.07.: Statistiken bleiben
+            // lokal). Synced as settings, last-writer-wins overwrote one device's counts
+            // with another's on every settings apply.
+            "TotalEpisodesPlayedCount",
+            "TotalListeningTime",
+            "SleepTimerFellAsleepCount",
             // Travels with subscription sync (ICSubscriptionListSettings), not settings sync.
             FeedListSortMode,
             "MainMenuListUIDs",

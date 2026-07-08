@@ -67,3 +67,17 @@ void PlaySoundFile(NSString* name, BOOL vibrate)
 	}
 #endif
 }
+
+void PlayHapticFeedback(ICHapticFeedbackType type)
+{
+#if TARGET_OS_IPHONE
+    // no haptics when disabled in settings
+    if (![USER_DEFAULTS boolForKey:UIHapticsEnabled]) {
+        return;
+    }
+
+    UIImpactFeedbackStyle style = (type == ICHapticFeedbackMedium) ? UIImpactFeedbackStyleMedium : UIImpactFeedbackStyleLight;
+    UIImpactFeedbackGenerator* generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:style];
+    [generator impactOccurred];
+#endif
+}

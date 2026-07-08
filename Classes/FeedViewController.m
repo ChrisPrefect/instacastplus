@@ -154,6 +154,7 @@
             STRONG_SELF
             [self reloadAction:nil];
         }]];
+    self.floatingReloadButton.accessibilityLabel = @"Reload".ls;
     self.floatingReloadButton.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Share button (bottom-center)
@@ -165,6 +166,7 @@
             STRONG_SELF
             [self actionAction:nil];
         }]];
+    self.floatingShareButton.accessibilityLabel = @"Share".ls;
     self.floatingShareButton.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Settings button (bottom-right)
@@ -176,6 +178,7 @@
             STRONG_SELF
             [self settingsAction:nil];
         }]];
+    self.floatingSettingsButton.accessibilityLabel = @"Settings".ls;
     self.floatingSettingsButton.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Match button appearance to app theme

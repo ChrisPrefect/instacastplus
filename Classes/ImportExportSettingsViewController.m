@@ -571,6 +571,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     // General
     if ([defaults objectForKey:DisableAutoLock]) [xml appendFormat:@"    <disableAutoLock>%@</disableAutoLock>\n", [defaults boolForKey:DisableAutoLock] ? @"true" : @"false"];
     if ([defaults objectForKey:UISoundEnabled]) [xml appendFormat:@"    <uiSoundEnabled>%@</uiSoundEnabled>\n", [defaults boolForKey:UISoundEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:UIHapticsEnabled]) [xml appendFormat:@"    <uiHapticsEnabled>%@</uiHapticsEnabled>\n", [defaults boolForKey:UIHapticsEnabled] ? @"true" : @"false"];
     if ([defaults objectForKey:ShowApplicationBadgeForUnseen]) [xml appendFormat:@"    <showBadge>%@</showBadge>\n", [defaults boolForKey:ShowApplicationBadgeForUnseen] ? @"true" : @"false"];
     if ([defaults objectForKey:kDefaultShowUnavailableEpisodes]) [xml appendFormat:@"    <showUnavailable>%@</showUnavailable>\n", [defaults boolForKey:kDefaultShowUnavailableEpisodes] ? @"true" : @"false"];
     if ([defaults objectForKey:OpenLinksInExternalBrowser]) [xml appendFormat:@"    <openLinksExternal>%@</openLinksExternal>\n", [defaults boolForKey:OpenLinksInExternalBrowser] ? @"true" : @"false"];

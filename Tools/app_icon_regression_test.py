@@ -6,7 +6,6 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 
 APPEARANCE = ROOT / "Classes" / "AppearanceSettingsViewController.m"
-GENERAL = ROOT / "Classes" / "GeneralSettingsViewController.m"
 PROJECT = ROOT / "Instacast.xcodeproj" / "project.pbxproj"
 MEDIA = ROOT / "Resources" / "Media.xcassets"
 
@@ -40,18 +39,10 @@ def project_alternate_icon_lists(project_source):
 
 def main():
     appearance_source = read(APPEARANCE)
-    general_source = read(GENERAL)
     project_source = read(PROJECT)
 
     appearance_previews = extract_array(appearance_source, "appIconsArray")
     appearance_names = extract_array(appearance_source, "appIconNamesArray")
-    general_previews = extract_array(general_source, "appIconsArray")
-    general_names = extract_array(general_source, "appIconNamesArray")
-
-    assert_true(
-        appearance_previews == general_previews and appearance_names == general_names,
-        "General and Appearance settings must show the same app icons in the same order.",
-    )
     assert_true(
         len(appearance_previews) == len(appearance_names),
         "Preview asset list and alternate icon name list must stay aligned.",
@@ -128,9 +119,8 @@ def main():
         if as_icon_document:
             assert_true(f"{icon_name}.icon in Resources" in project_source, f"{icon_name}.icon must be compiled by the asset catalog compiler.")
     assert_true(
-        "cell.chapterImageView.layer.cornerRadius = 16;" in appearance_source
-        and "cell.chapterImageView.layer.cornerRadius = 16;" in general_source,
-        "App icon previews must use the same rounded shape in General and Appearance settings.",
+        "cell.chapterImageView.layer.cornerRadius = 16;" in appearance_source,
+        "App icon previews must use the rounded shape in Appearance settings.",
     )
 
     for preview_name, alternate_name in zip(appearance_previews, appearance_names):

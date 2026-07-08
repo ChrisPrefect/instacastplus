@@ -24,6 +24,8 @@
 	<integer>200</integer>
 	<key>UISoundEnabled</key>
 	<true/>
+	<key>UIHapticsEnabled</key>
+	<true/>
 	<key>ContinuousPlayback</key>
 	<false/>
 	<key>LinkDropBox</key>

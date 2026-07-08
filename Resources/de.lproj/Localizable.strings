@@ -59,6 +59,7 @@
 "20 Seconds" = "20 Sekunden";
 "30 Seconds" = "30 Sekunden";
 "5 Minutes" = "5 Minuten";
+"0 Seconds" = "0 Sekunden";
 "5 Seconds" = "5 Sekunden";
 "15 Minutes" = "15 Minuten";
 "20 Minutes" = "20 Minuten";
@@ -390,6 +391,7 @@
 "General" = "Allgemein";
 "Help InstacastPlus improve its products and services by automatically sending reports upon application crash or failure. Reports do not include any personal or private data." = "Helfen Sie InstacastPlus beim Verbessern ihrer Produkte und Dienste, indem Sie die Reports automatisch versenden. Die Reports enthalten keinerlei persönliche oder private Daten.";
 "Interface Sounds" = "Interfacetöne";
+"Haptic Feedback" = "Haptisches Feedback";
 "Open Links in External Browser" = "Links im externen Browser öffnen";
 "Miscellaneous" = "Verschiedenes";
 "Dark mode" = "Dunkler Modus";
@@ -1542,3 +1544,13 @@
 "Play episode \\(\\.$episode) in \\(.applicationName)" = "Folge \\(\\.$episode) in \\(.applicationName) abspielen";
 "Watch lädt Podcasts (%@/%@)" = "Watch lädt Podcasts (%@/%@)";
 "Watch lädt Podcasts (%@ von %@)" = "Watch lädt Podcasts (%@ von %@)";
+
+/* VoiceOver accessibility labels */
+"Add Podcast" = "Podcast hinzufügen";
+"Sort" = "Sortieren";
+"Mark all" = "Alle markieren";
+"Cancel Download" = "Download abbrechen";
+"Delete Episode" = "Folge löschen";
+"Previous Result" = "Vorheriger Treffer";
+"Next Result" = "Nächster Treffer";
+"Playback Speed" = "Wiedergabegeschwindigkeit";

@@ -7,7 +7,6 @@
 //
 
 #import <QuartzCore/QuartzCore.h>
-#import <AudioToolbox/AudioToolbox.h>
 
 #import "EpisodesTableViewController.h"
 #import "EpisodesTableViewCell.h"
@@ -398,6 +397,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     self.floatingConsumeAllButton = [UIButton buttonWithConfiguration:consumeConfig primaryAction:nil];
     self.floatingConsumeAllButton.showsMenuAsPrimaryAction = YES;
     self.floatingConsumeAllButton.menu = [self _buildConsumeAllMenu];
+    self.floatingConsumeAllButton.accessibilityLabel = @"Mark all".ls;
 
     UIButtonConfiguration* editConfig = [UIButtonConfiguration glassButtonConfiguration];
     editConfig.image = [UIImage systemImageNamed:@"pencil"];
@@ -407,6 +407,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
             STRONG_SELF
             [self editForCachingAction:nil];
         }]];
+    self.floatingEditButton.accessibilityLabel = @"Edit".ls;
 
     for (UIButton* btn in @[self.floatingConsumeAllButton, self.floatingEditButton]) {
         btn.translatesAutoresizingMaskIntoConstraints = NO;
@@ -549,30 +550,35 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                           style:UIBarButtonItemStylePlain
                                                          target:self
                                                          action:@selector(editForCachingAction:)];
+        self.cacheItem.accessibilityLabel = @"Edit".ls;
     }
     if (!self.consumeAllItem) {
         self.consumeAllItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Toolbar Complete"]
                                                                style:UIBarButtonItemStylePlain
                                                               target:self
                                                               action:@selector(consumeAllAction:)];
+        self.consumeAllItem.accessibilityLabel = @"Mark all".ls;
     }
     if (!self.editItem) {
         self.editItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Edit"]
                                                          style:UIBarButtonItemStylePlain
                                                         target:self
                                                         action:@selector(showEditingOptionsForSelection:)];
+        self.editItem.accessibilityLabel = @"Edit".ls;
     }
     if (!self.playItem) {
         self.playItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Play"]
                                                          style:UIBarButtonItemStylePlain
                                                         target:self
                                                         action:@selector(showPlayingOptionsForSelection:)];
+        self.playItem.accessibilityLabel = @"Play".ls;
     }
     if (!self.downloadItem) {
         self.downloadItem = [[UIBarButtonItem alloc] initWithImage:[UIImage imageNamed:@"Multitoolbar Download"]
                                                              style:UIBarButtonItemStylePlain
                                                             target:self
                                                             action:@selector(downloadSelection:)];
+        self.downloadItem.accessibilityLabel = @"Download".ls;
     }
     if (!self.selectAllItem) {
         self.selectAllItem = [[UIBarButtonItem alloc] initWithTitle:@"All".ls
@@ -1059,7 +1065,6 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [[AudioSession sharedAudioSession] appendToUpNext:@[episode]];
         toastText = @"Added to Play Next".ls;
     }
-    AudioServicesPlaySystemSound(1519);
     [self _showPlayNextToastWithText:toastText added:!inUpNext];
 }
 
@@ -1074,6 +1079,40 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 - (void) _openPlayNextOverlayAction:(id)sender
 {
     [self _presentPlayNextViewController];
+}
+
+// VoiceOver label for image-only swipe actions. Uses the same wording as the
+// long-press context menu so both surfaces announce identically.
+- (NSString*) _accessibilityLabelForSwipeAction:(ICEpisodeSwipeAction)action episode:(CDEpisode*)episode
+{
+    switch (action) {
+        case ICEpisodeSwipeActionTogglePlayed:
+            return episode.consumed ? @"Mark as Unplayed".ls : @"Mark as Played".ls;
+        case ICEpisodeSwipeActionToggleFavorite:
+            return episode.starred ? @"Unmark Favorite".ls : @"Mark as Favorite".ls;
+        case ICEpisodeSwipeActionDownload:
+        {
+            CacheManager* cman = [CacheManager sharedCacheManager];
+            if ([cman episodeIsCached:episode]) {
+                return @"Delete Download".ls;
+            } else if ([cman isCachingEpisode:episode]) {
+                return @"Cancel Download".ls;
+            }
+            return @"Download".ls;
+        }
+        case ICEpisodeSwipeActionAddToPlayNext:
+            return [self _playNextActionTitleForEpisode:episode].ls;
+        case ICEpisodeSwipeActionDelete:
+            return @"Delete Episode".ls;
+        case ICEpisodeSwipeActionEpisodeInfo:
+            return @"Episode Info".ls;
+        case ICEpisodeSwipeActionTranscribe:
+            return NSLocalizedString(@"Transkribieren", nil);
+        case ICEpisodeSwipeActionSendToAppleWatch:
+            return [[AppleWatchSyncManager sharedManager] isEpisodeSelectedForWatch:episode] ? @"Von Apple Watch entfernen".ls : @"An Apple Watch senden".ls;
+        default:
+            return nil;
+    }
 }
 
 - (UIColor*) _tintColorForSwipeAction:(ICEpisodeSwipeAction)action episode:(CDEpisode*)episode
@@ -1171,7 +1210,11 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [strongSelf _performSwipeAction:swipeAction atIndexPath:currentIndexPath];
         completionHandler(YES);
     }];
-    action.image = [self _imageForSwipeAction:swipeAction episode:episode];
+    // UIContextualAction has no accessibilityLabel; with title:nil UIKit falls back
+    // to the image's accessibilityLabel for VoiceOver.
+    UIImage* image = [self _imageForSwipeAction:swipeAction episode:episode];
+    image.accessibilityLabel = [self _accessibilityLabelForSwipeAction:swipeAction episode:episode];
+    action.image = image;
     action.backgroundColor = [self _tintColorForSwipeAction:swipeAction episode:episode];
     return action;
 }
@@ -1319,6 +1362,8 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     CDEpisode* episode = (CDEpisode*)[lEpisodes objectAtIndex:indexPath.row];
     EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
 
+    PlayHapticFeedback(ICHapticFeedbackLight);
+
     switch (action) {
         case ICEpisodeSwipeActionTogglePlayed:
         {
@@ -1462,7 +1507,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [self _showTranscriptionToast];
     } else {
         // Already in queue — haptic feedback only
-        AudioServicesPlaySystemSound(1519);
+        PlayHapticFeedback(ICHapticFeedbackLight);
     }
     [self.tableView reloadData];
 }
@@ -1586,6 +1631,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                    image:[UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"]
                                               identifier:nil
                                                  handler:^(UIAction *action) {
+                                                     PlayHapticFeedback(ICHapticFeedbackLight);
                                                      [weakSelf toggleFavoriteAtIndexPath:indexPath];
                                                  }];
     [actions addObject:favoriteAction];
@@ -1597,6 +1643,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 handler:^(UIAction *action) {
                                                     __strong EpisodesTableViewController* strongSelf = weakSelf;
                                                     if (!strongSelf) return;
+                                                    PlayHapticFeedback(ICHapticFeedbackLight);
                                                     CDEpisode* ep = (CDEpisode*)[strongSelf.episodes objectAtIndex:indexPath.row];
                                                     BOOL flag = !ep.consumed;
                                                     strongSelf.userAction = YES;
@@ -1621,6 +1668,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                        image:[self _playNextActionImageForEpisode:episode configuration:nil]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
+                                                         PlayHapticFeedback(ICHapticFeedbackLight);
                                                          [weakSelf _togglePlayNextForEpisode:episode];
                                                      }];
         [actions addObject:playNextAction];
@@ -1719,7 +1767,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                              [weakSelf _showTranscriptionToastWithText:NSLocalizedString(@"Kapitelerkennung gestartet", nil)];
                                                              PlaySoundFile(@"AffirmIn", NO);
                                                          } else {
-                                                             AudioServicesPlaySystemSound(1519);
+                                                             PlayHapticFeedback(ICHapticFeedbackLight);
                                                          }
                                                      }];
         [actions addObject:chaptersAction];

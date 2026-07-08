@@ -423,6 +423,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
             STRONG_SELF
             [self actionAction:nil];
         }]];
+    self.floatingActionButton.accessibilityLabel = @"Share".ls;
     self.floatingActionButton.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Match button appearance to app theme

@@ -153,6 +153,7 @@
             STRONG_SELF
             [self backAction:nil];
         }]];
+    self.floatingBackButton.accessibilityLabel = @"Back".ls;
     self.floatingBackButton.hidden = YES; // initially hidden until canGoBack
     self.floatingBackButton.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -165,6 +166,7 @@
             STRONG_SELF
             [self forwardAction:nil];
         }]];
+    self.floatingForwardButton.accessibilityLabel = @"Forward".ls;
     self.floatingForwardButton.hidden = YES; // initially hidden until canGoForward
     self.floatingForwardButton.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -177,6 +179,7 @@
             STRONG_SELF
             [self showMoreInfoInExternalBrowser:nil];
         }]];
+    self.floatingSafariButton.accessibilityLabel = @"Open in Safari".ls;
     self.floatingSafariButton.translatesAutoresizingMaskIntoConstraints = NO;
 
     // Match button appearance to app theme (glass buttons may not inherit

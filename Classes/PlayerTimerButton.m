@@ -85,12 +85,14 @@
 {
     AudioSession* session = [AudioSession sharedAudioSession];
     NSString* announcement = nil;
+    self.accessibilityLabel = @"Sleep Timer".ls;
     //NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
     if (session.timerValue == PlaybackStopTimeNoValue)
     {
         [self setImage:[[UIImage imageNamed:@"timer_watch_devd"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
               forState:UIControlStateNormal];
         [self setTitle:nil forState:UIControlStateNormal];
+        self.accessibilityValue = nil;
         //session.timerValue = PlaybackStopTimeNoValue;
         announcement = @"Sleep Timer disabled.".ls;
     }
@@ -139,6 +141,7 @@
         NSInteger seconds = trunc(tRem - minutes * 60);
         NSString*remainingTime = [NSString stringWithFormat:@"%02ld:%02ld", (long)minutes, (long)seconds];
         [self setTitle:[NSString stringWithFormat:@"%@", remainingTime] forState:UIControlStateNormal];
+        self.accessibilityValue = remainingTime;
         //[self setTitle:[NSString stringWithFormat:@"%ld", (long)(tRem/60)+1] forState:UIControlStateNormal];
     }
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, announcement);

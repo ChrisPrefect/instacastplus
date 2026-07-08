@@ -843,6 +843,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         self.transcriptSearchButton = searchBtn;
     }
     self.transcriptSearchButton.hidden = YES;
+    self.transcriptSearchButton.accessibilityLabel = @"Search Transcript".ls;
 
     // — Transcript Search Bar —
     // Glass search field pill + glass navigation buttons, all inside a UIGlassContainerEffect
@@ -988,6 +989,10 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [contentView addSubview:closeBtn];
         self.transcriptSearchCloseButton = closeBtn;
     }
+
+    self.transcriptSearchUpButton.accessibilityLabel = @"Previous Result".ls;
+    self.transcriptSearchDownButton.accessibilityLabel = @"Next Result".ls;
+    self.transcriptSearchCloseButton.accessibilityLabel = @"Close".ls;
 
     self.transcriptSearchMatchRanges = @[];
     self.transcriptSearchCurrentIndex = NSNotFound;

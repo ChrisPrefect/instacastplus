@@ -6,7 +6,6 @@
 //  Copyright 2011 Vemedio. All rights reserved.
 //
 
-#import <AudioToolbox/AudioToolbox.h>
 
 #import "EpisodeViewController.h"
 #import "UIManager.h"
@@ -1310,7 +1309,7 @@
             } else {
                 [[AudioSession sharedAudioSession] appendToUpNext:@[self.episode]];
             }
-            AudioServicesPlaySystemSound(1519);
+            PlayHapticFeedback(ICHapticFeedbackLight);
         }]];
     }
 
@@ -1392,7 +1391,7 @@
             if (started) {
                 PlaySoundFile(@"AffirmIn", NO);
             } else {
-                AudioServicesPlaySystemSound(1519);
+                PlayHapticFeedback(ICHapticFeedbackLight);
             }
         }]];
     }
