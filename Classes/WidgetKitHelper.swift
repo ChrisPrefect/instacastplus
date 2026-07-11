@@ -38,23 +38,19 @@ import Foundation
 
     // MARK: - Installed-widget gate (per kind)
     //
-    // The app must export ONLY the data an actually-installed widget reads. A user with just
-    // the NowPlaying (last-played) widget must never trigger the expensive lists export, etc.
-    // `getCurrentConfigurations` is async, so we cache the installed widget kinds (persisted
-    // across launches) and answer synchronously from ObjC. Unknown (never probed) → assume
-    // installed, so the very first launch still populates before the first probe returns.
-    private nonisolated(unsafe) static var _installedKinds: Set<String>? = nil
-    private static let _installedKindsDefaultsKey = "ICWidgetInstalledKindsCache"
+    // The app must export ONLY the data an actually-installed widget reads. We DON'T use
+    // WidgetCenter.getCurrentConfigurations for this — that API decodes each widget's config
+    // intent in the app process, and the SmartList config intent lives only in the widget
+    // binary, so it logs ~N "Failed to instantiate SmartListConfigIntent" errors per call.
+    // Instead each widget records its kind (ICWidgetConstants.recordWidgetKindInstalled) when its
+    // timeline runs; we read that here. Nothing recorded yet → assume installed (first launch).
+    private static let _seenKindsDefaultsKey = "ICWidgetInstalledKindsCache"  // previously-seen set, for added-detection
 
     private static func cachedInstalledKinds() -> Set<String>? {
-        if let kinds = _installedKinds { return kinds }
-        if let saved = UserDefaults.standard.array(forKey: _installedKindsDefaultsKey) as? [String] {
-            return Set(saved)
-        }
-        return nil // never probed
+        ICWidgetConstants.installedWidgetKinds()
     }
 
-    /// Whether a specific widget kind is installed. Unknown → true (allow first populate).
+    /// Whether a specific widget kind is installed. Unknown (nothing recorded yet) → true.
     @objc public static func isWidgetKindInstalled(_ kind: String) -> Bool {
         guard let kinds = cachedInstalledKinds() else { return true }
         return kinds.contains(kind)
@@ -71,38 +67,25 @@ import Foundation
     @objc public static var isSmartListWidgetInstalled: Bool { isWidgetKindInstalled(ICWidgetConstants.smartListWidgetKind) }
     @objc public static var isStatsWidgetInstalled: Bool { isWidgetKindInstalled(ICWidgetConstants.statsWidgetKind) }
 
-    /// Refresh the cached installed-widget kinds. Call on launch and foreground.
+    /// Refresh installed-widget knowledge from the widgets' self-reports. Call on launch/foreground.
     @objc public static func refreshInstalledWidgets() {
-        if #available(iOS 14.0, *) {
-            if ProcessInfo.processInfo.isiOSAppOnMac {
-                _installedKinds = []
-                UserDefaults.standard.set([String](), forKey: _installedKindsDefaultsKey)
-                return
-            }
-            let previous = cachedInstalledKinds()
-            WidgetCenter.shared.getCurrentConfigurations { result in
-                if case .success(let configs) = result {
-                    let kinds = Set(configs.map { $0.kind })
-                    _installedKinds = kinds
-                    UserDefaults.standard.set(Array(kinds), forKey: _installedKindsDefaultsKey)
-                    // A newly-installed kind needs its snapshot populated now (the app won't be
-                    // woken by WidgetKit for it). Notify the exporter with the added kinds.
-                    let added = previous == nil ? kinds : kinds.subtracting(previous!)
-                    if !added.isEmpty {
-                        DispatchQueue.main.async {
-                            NotificationCenter.default.post(
-                                name: installedWidgetsDidChangeNotification,
-                                object: nil,
-                                userInfo: ["addedKinds": Array(added)]
-                            )
-                        }
-                    }
-                }
-                // .failure: keep the previous cached value.
-            }
-        } else {
-            _installedKinds = []
+        refreshInstalledWidgets(completion: nil)
+    }
+
+    /// Same, then run `completion`. Posts installedWidgetsDidChangeNotification for kinds that
+    /// newly appeared since last check (they need their snapshot exported now). Synchronous now
+    /// (no async WidgetCenter round-trip), so the completion runs immediately.
+    @objc public static func refreshInstalledWidgets(completion: (@Sendable () -> Void)?) {
+        let current = ICWidgetConstants.installedWidgetKinds() ?? []
+        let previous = Set(UserDefaults.standard.array(forKey: _seenKindsDefaultsKey) as? [String] ?? [])
+        UserDefaults.standard.set(Array(current), forKey: _seenKindsDefaultsKey)
+        let added = current.subtracting(previous)
+        if !added.isEmpty {
+            NotificationCenter.default.post(name: installedWidgetsDidChangeNotification,
+                                            object: nil,
+                                            userInfo: ["addedKinds": Array(added)])
         }
+        completion?()
     }
 
     /// Key in the App Group UserDefaults where SmartList widgets record the podcast+filter

@@ -60,3 +60,10 @@
 "Start or cancel sleep timer." = "Sleep-Timer starten oder abbrechen.";
 "Jump directly to a specific chapter." = "Direkt zu einem bestimmten Kapitel springen.";
 "Chapter Index" = "Kapitelindex";
+
+/* SmartList podcast filter names */
+"All" = "Alle";
+"Unplayed" = "Ungespielt";
+"Downloaded" = "Heruntergeladen";
+"Started" = "Angespielt";
+"Favorites" = "Favoriten";

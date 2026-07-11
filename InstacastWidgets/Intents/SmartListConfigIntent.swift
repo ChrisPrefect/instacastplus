@@ -8,9 +8,9 @@ struct SmartListConfigIntent: WidgetConfigurationIntent {
     @Parameter(title: "List")
     var list: ListEntity?
 
-    // Only applies when a podcast is selected (lists carry their own filter). Default "unplayed"
-    // so a freshly added podcast widget shows useful data immediately.
-    @Parameter(title: "Filter", default: .unplayed)
+    // Only applies when a podcast is selected (lists carry their own filter). Default "all" so a
+    // freshly added podcast widget always shows its latest episodes.
+    @Parameter(title: "Filter", default: .all)
     var filter: SmartListPodcastFilter
 
     @Parameter(title: "Compact", default: true)
@@ -22,19 +22,19 @@ struct SmartListConfigIntent: WidgetConfigurationIntent {
 
 /// Filter for a podcast source — mirrors the episode-list filters.
 enum SmartListPodcastFilter: String, AppEnum {
-    case unplayed
     case all
+    case unplayed
     case downloaded
     case started
     case favorites
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Filter"
     static let caseDisplayRepresentations: [SmartListPodcastFilter: DisplayRepresentation] = [
-        .unplayed: "Unplayed",
-        .all: "Latest",
-        .downloaded: "Downloaded",
-        .started: "Started",
-        .favorites: "Favorites"
+        .all: DisplayRepresentation(title: "All", image: .init(systemName: "tray.full")),
+        .unplayed: DisplayRepresentation(title: "Unplayed", image: .init(systemName: "circle")),
+        .downloaded: DisplayRepresentation(title: "Downloaded", image: .init(systemName: "arrow.down.circle.fill")),
+        .started: DisplayRepresentation(title: "Started", image: .init(systemName: "pause.circle.fill")),
+        .favorites: DisplayRepresentation(title: "Favorites", image: .init(systemName: "star.fill"))
     ]
 }
 
@@ -59,8 +59,24 @@ struct ListEntity: AppEntity, Sendable {
     var id: String
     let name: String
 
+    /// SF Symbol per list type / podcast, derived from the id — shown in the config picker.
+    static func iconName(for id: String) -> String {
+        if id.hasPrefix("feed:") || id.hasPrefix("feed.") { return "mic.fill" }
+        switch id {
+        case "default.unplayed":        return "circle"
+        case "default.favorites":       return "star.fill"
+        case "default.downloaded":      return "arrow.down.circle.fill"
+        case "default.started",
+             "default.partiallyplayed": return "pause.circle.fill"
+        case "default.recentlyplayed":  return "clock.arrow.circlepath"
+        case "default.mostrecent":      return "sparkles"
+        case "default.video":           return "video.fill"
+        default:                        return "list.bullet"
+        }
+    }
+
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(name)")
+        DisplayRepresentation(title: "\(name)", image: .init(systemName: Self.iconName(for: id)))
     }
 }
 

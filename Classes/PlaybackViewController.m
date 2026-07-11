@@ -520,6 +520,25 @@
             return NO;
         }
 
+        // When the pan starts on the chapter artwork (which lives inside the
+        // info list's table header), only allow the interactive dismissal while
+        // that list is scrolled to the very top. If the artwork has been pushed
+        // up (list scrolled down), a downward swipe must first scroll the
+        // artwork back into place instead of dismissing the player.
+        UITableView* enclosingTableView = nil;
+        for (UIView* view = gestureView; view != nil; view = view.superview) {
+            if ([view isKindOfClass:[UITableView class]]) {
+                enclosingTableView = (UITableView*)view;
+                break;
+            }
+        }
+        if (enclosingTableView) {
+            CGFloat topY = -enclosingTableView.contentInset.top;
+            if (enclosingTableView.contentOffset.y > topY + 1.0) {
+                return NO;
+            }
+        }
+
         return YES;
     }
 

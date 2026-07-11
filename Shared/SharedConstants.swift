@@ -24,6 +24,33 @@ enum ICWidgetConstants {
     // show. Written by the widget provider, read by the app's exporter (on-demand export).
     static let requestedPodcastKeysDefaultsKey = "ICWidgetRequestedPodcastKeys"
 
+    // App Group UserDefaults key: the LIST uids SmartList widgets are configured to show. The app
+    // only exports/reloads episode data for these lists — a list no widget shows costs nothing.
+    static let displayedListUIDsDefaultsKey = "ICWidgetDisplayedListUIDs"
+
+    // App Group UserDefaults key: {widgetKind: lastSeenUnixTime}. Each widget records itself here
+    // when its timeline runs, so the app knows which widget kinds are installed WITHOUT calling
+    // WidgetCenter.getCurrentConfigurations — which would try to decode the widget-only config
+    // intent in the app process and log ~N failures per call.
+    static let widgetKindLastSeenDefaultsKey = "ICWidgetKindLastSeen"
+
+    /// Widget side: record that a widget of this kind is present (called from its timeline).
+    static func recordWidgetKindInstalled(_ kind: String) {
+        guard let d = UserDefaults(suiteName: appGroupID) else { return }
+        var m = (d.dictionary(forKey: widgetKindLastSeenDefaultsKey) as? [String: Double]) ?? [:]
+        m[kind] = Date().timeIntervalSince1970
+        d.set(m, forKey: widgetKindLastSeenDefaultsKey)
+    }
+
+    /// App side: kinds seen within `seconds` (widgets refresh well inside a day). Returns nil when
+    /// nothing has ever been recorded, so the caller can fall back to "assume installed".
+    static func installedWidgetKinds(within seconds: TimeInterval = 24 * 3600) -> Set<String>? {
+        guard let d = UserDefaults(suiteName: appGroupID),
+              let m = d.dictionary(forKey: widgetKindLastSeenDefaultsKey) as? [String: Double] else { return nil }
+        let cutoff = Date().timeIntervalSince1970 - seconds
+        return Set(m.filter { $0.value >= cutoff }.keys)
+    }
+
     // Fallback URL (should never be needed, but prevents force-unwrap crashes)
     private static let fallbackURL = URL(string: "instacastplus://")!
 

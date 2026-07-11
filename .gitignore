@@ -7,6 +7,9 @@ KimiBuiltin.env
 # Local Watch simulator build output.
 build/WatchSim/
 build/WatchSimProducts/
+build/DeviceDD/
+build/TestFlight/*.xcarchive/
+build/TestFlight/*.log
 
 # Xcode user-local state.
 xcuserdata/

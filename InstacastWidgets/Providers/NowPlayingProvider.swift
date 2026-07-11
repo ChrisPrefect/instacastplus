@@ -20,6 +20,7 @@ struct NowPlayingProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<NowPlayingEntry>) -> Void) {
+        ICWidgetConstants.recordWidgetKindInstalled(ICWidgetConstants.nowPlayingWidgetKind)
         let data = SharedContainerReader.readNowPlaying()
         let needsData = !SharedContainerReader.snapshotExists(ICWidgetConstants.nowPlayingFile)
 

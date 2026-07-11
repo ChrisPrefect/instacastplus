@@ -723,7 +723,8 @@ static NSString* const ICAppleWatchSuppressedAutomaticEpisodeHashesKey = @"ICApp
         [[ICDiagnosticLogger shared] logEvent:@"apple-watch" message:@"Watch-Manifest applicationContext fehlgeschlagen" metadata:@{
             @"error": contextError.localizedDescription ?: @"",
         }];
-        [self _transferUserInfo:payload];
+        self.needsManifestSyncAfterActivation = YES;
+        return NO;
     }
 
     if (session.reachable) {

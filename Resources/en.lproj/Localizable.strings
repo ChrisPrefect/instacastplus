@@ -1551,3 +1551,7 @@
 "Previous Result" = "Previous Result";
 "Next Result" = "Next Result";
 "Playback Speed" = "Playback Speed";
+
+/* Widget-only default lists */
+"Recently Played" = "Recently Played";
+"Most Recent" = "Most Recent";

@@ -63,6 +63,7 @@ struct SmartListProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: SmartListConfigIntent, in context: Context) async -> Timeline<SmartListEntry> {
+        ICWidgetConstants.recordWidgetKindInstalled(ICWidgetConstants.smartListWidgetKind)
         var entry = loadEntry(for: configuration)
         // Prompt to open the app when the data the selection needs has never been exported:
         // either the app never ran at all (no index), or this specific podcast+filter snapshot
@@ -89,6 +90,9 @@ struct SmartListProvider: AppIntentTimelineProvider {
             if listEntity.id.hasPrefix("feed:") {
                 recordRequestedPodcast(uid: String(listEntity.id.dropFirst("feed:".count)),
                                        filter: configuration.filter.rawValue)
+            } else {
+                // A plain list: record its uid so the app only exports/reloads lists a widget shows.
+                recordDisplayedList(uid: listEntity.id)
             }
             let key = Self.snapshotKey(entityId: listEntity.id, filter: configuration.filter)
             if let listData = SharedContainerReader.readListEpisodes(listId: key) {
@@ -120,6 +124,21 @@ struct SmartListProvider: AppIntentTimelineProvider {
         existing.append(combo)
         if existing.count > 24 { existing.removeFirst(existing.count - 24) }
         defaults.set(existing, forKey: ICWidgetConstants.requestedPodcastKeysDefaultsKey)
+        // Force a flush so the app process sees the new combo immediately when the user opens it
+        // via the "open app" link (App Group UserDefaults don't sync across processes instantly).
+        defaults.synchronize()
+    }
+
+    /// Records a configured list uid so the app only exports/reloads lists a widget actually shows.
+    private func recordDisplayedList(uid: String) {
+        guard !uid.isEmpty,
+              let defaults = UserDefaults(suiteName: ICWidgetConstants.appGroupID) else { return }
+        var existing = (defaults.array(forKey: ICWidgetConstants.displayedListUIDsDefaultsKey) as? [String]) ?? []
+        if existing.contains(uid) { return }
+        existing.append(uid)
+        if existing.count > 24 { existing.removeFirst(existing.count - 24) }
+        defaults.set(existing, forKey: ICWidgetConstants.displayedListUIDsDefaultsKey)
+        defaults.synchronize()
     }
 
     private func entry(from listData: WListEpisodes, compact: Bool, order: SmartListOrder) -> SmartListEntry {

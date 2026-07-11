@@ -2520,15 +2520,18 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
         }
     }
     else if ([host isEqualToString:@"refresh-widgets"]) {
-        // A freshly-added widget had no exported data and asked the user to open the app.
-        // Re-probe installed widgets and export their snapshots immediately.
-        [WidgetKitHelper refreshInstalledWidgets];
-        WidgetDataExporter *exporter = [WidgetDataExporter sharedExporter];
-        [exporter exportNowPlayingSnapshot];
-        [exporter exportListsSnapshot];
-        [exporter exportStatsSnapshot];
-        [exporter exportSettingsSnapshot];
-        [WidgetKitHelper reloadAllTimelines];
+        // A freshly-added widget (or a newly-selected podcast) had no exported data and asked the
+        // user to open the app. Re-probe installed widgets FIRST, then export in the completion —
+        // otherwise the per-kind export gate would run against a stale cache (app last open before
+        // the widget was added) and skip the export the widget is waiting for.
+        [WidgetKitHelper refreshInstalledWidgetsWithCompletion:^{
+            WidgetDataExporter *exporter = [WidgetDataExporter sharedExporter];
+            [exporter exportNowPlayingSnapshot];
+            [exporter exportListsSnapshot];
+            [exporter exportStatsSnapshot];
+            [exporter exportSettingsSnapshot];
+            [WidgetKitHelper reloadAllTimelines];
+        }];
     }
 }
 

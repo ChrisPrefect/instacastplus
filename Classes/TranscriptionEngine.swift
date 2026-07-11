@@ -264,6 +264,9 @@ private struct ICDiagnosticLogLine: Encodable {
             self.ensureStartedLocked()
             var metadata: [String: String] = ["reason": reason]
             metadata.merge(self.directorySnapshot(named: "data", at: ICDocumentsDataDirectoryURL())) { _, new in new }
+            // Per-file breakdown of the Core Data / Data folder, so we can see what makes it large
+            // (the .sqlite store, an un-checkpointed -wal, an FMDB file, …).
+            metadata["dataFiles"] = self.fileBreakdown(at: ICDocumentsDataDirectoryURL())
             metadata.merge(self.directorySnapshot(named: "transcripts", at: ICTranscriptsDirectoryURL())) { _, new in new }
             metadata.merge(self.directorySnapshot(named: "logs", at: self.logsDirectoryURL())) { _, new in new }
             metadata.merge(self.directorySnapshot(named: "episodes", at: self.documentsDirectory().appendingPathComponent("Episodes", isDirectory: true))) { _, new in new }
@@ -272,6 +275,19 @@ private struct ICDiagnosticLogLine: Encodable {
             metadata.merge(self.directorySnapshot(named: "whisperModels", at: self.applicationSupportDirectory().appendingPathComponent("huggingface", isDirectory: true))) { _, new in new }
             self.appendLocked(category: "storage", message: "Storage-Snapshot", metadata: metadata)
         }
+    }
+
+    /// "name:bytes | name:bytes | …" for the immediate files in a directory (largest first).
+    private func fileBreakdown(at url: URL) -> String {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: [.fileSizeKey], options: []) else {
+            return ""
+        }
+        let sized = items.map { item -> (String, Int) in
+            let size = (try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            return (item.lastPathComponent, size)
+        }.sorted { $0.1 > $1.1 }
+        return sized.map { "\($0.0):\($0.1)" }.joined(separator: " | ")
     }
 
     func logEpisodeArtifacts(episodeHash: String, reason: String, audioURL: URL? = nil) {
@@ -321,6 +337,10 @@ private struct ICDiagnosticLogLine: Encodable {
     private func ensureStartedLocked() {
         guard !didStart else { return }
         didStart = true
+
+        #if DEBUG
+        startCPUHeartbeat()
+        #endif
 
         if let previousState = loadPreviousSessionStateLocked() {
             let endedUnexpectedly = Self.didPreviousSessionEndUnexpectedly(previousState.lastState)
@@ -478,7 +498,54 @@ private struct ICDiagnosticLogLine: Encodable {
         ICInstallCrashBacktraceHandler(crashBacktraceURL().path)
     }
 
+    #if DEBUG
+    /// Total process CPU usage (%), summed across all non-idle threads. ~100% = one core pegged.
+    private func processCPUPercent() -> Double {
+        var threadList: thread_act_array_t?
+        var threadCount = mach_msg_type_number_t(0)
+        guard task_threads(mach_task_self_, &threadList, &threadCount) == KERN_SUCCESS,
+              let threads = threadList else { return 0 }
+        defer {
+            vm_deallocate(mach_task_self_,
+                          vm_address_t(UInt(bitPattern: threads)),
+                          vm_size_t(Int(threadCount) * MemoryLayout<thread_t>.stride))
+        }
+        var total: Double = 0
+        for i in 0..<Int(threadCount) {
+            var info = thread_basic_info()
+            var count = mach_msg_type_number_t(THREAD_BASIC_INFO_COUNT)
+            let kr = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    thread_info(threads[i], thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
+                }
+            }
+            if kr == KERN_SUCCESS, (info.flags & TH_FLAGS_IDLE) == 0 {
+                total += Double(info.cpu_usage) / Double(TH_USAGE_SCALE) * 100.0
+            }
+        }
+        return total
+    }
+
+    /// Prints process CPU% to the console every 5s (Debug only), so sustained high CPU (heat) is
+    /// visible without Instruments. ~100%+ continuously = a busy loop to hunt down.
+    private func startCPUHeartbeat() {
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self else { return }
+            let cpu = self.processCPUPercent()
+            print(String(format: "🔥 [cpu] %.0f%%", cpu))
+            // Also persist to Diagnostics.jsonl so it survives after the console detaches.
+            self.logEvent("cpu", message: "CPU-Heartbeat", metadata: ["percent": String(format: "%.0f", cpu)] as NSDictionary)
+            self.startCPUHeartbeat()
+        }
+    }
+    #endif
+
     private func appendLocked(category: String, message: String, metadata: [String: String]) {
+        #if DEBUG
+        // Mirror every diagnostic event to the device/Xcode console (NSLog = unbuffered, shows up
+        // in `log stream` and devicectl --console) so it doesn't have to be mail-exported.
+        NSLog("📊 [%@] %@ %@", category, message, metadata.isEmpty ? "" : "\(metadata)")
+        #endif
         let line = ICDiagnosticLogLine(
             timestamp: Self.timestampString(from: Date()),
             sessionID: sessionID,

@@ -19,6 +19,7 @@ struct StatsProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping @Sendable (Timeline<StatsEntry>) -> Void) {
+        ICWidgetConstants.recordWidgetKindInstalled(ICWidgetConstants.statsWidgetKind)
         let stats = SharedContainerReader.readStats()
         let needsData = !SharedContainerReader.snapshotExists(ICWidgetConstants.statsFile)
         let entry = StatsEntry(date: Date(), stats: stats, needsData: needsData)

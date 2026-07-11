@@ -650,12 +650,149 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 - (void) _migrateDatabase
 {
-    [self _migrateOldSmartPlaylists];
-    [self _migrateAddStartedList];
-    [self _migrateDefaultListNamesToKeys];
-    [self _migrateRemoveDuplicateFeeds];
-    [self _migrateRemoveDuplicateLists];
-    [self _migrateRemoveObsoletePauseFeedProperty];
+    // Timing per step: these run on the main context at launch, so a slow one freezes the UI.
+    // A fresh install/first-launch after update prints where the time goes.
+#define IC_MIGRATE_STEP(sel) do { \
+    __unused CFAbsoluteTime _t0 = CFAbsoluteTimeGetCurrent(); \
+    [self sel]; \
+    DebugLog(@"[Migrate] %s %.1f ms", #sel, (CFAbsoluteTimeGetCurrent() - _t0) * 1000.0); \
+} while (0)
+
+    __unused CFAbsoluteTime migrateStart = CFAbsoluteTimeGetCurrent();
+    IC_MIGRATE_STEP(_migrateOldSmartPlaylists);
+    IC_MIGRATE_STEP(_migrateAddStartedList);
+    IC_MIGRATE_STEP(_migrateDefaultListNamesToKeys);
+    IC_MIGRATE_STEP(_migrateRemoveDuplicateFeeds);
+    IC_MIGRATE_STEP(_migrateRemoveDuplicateLists);
+    IC_MIGRATE_STEP(_ensureWidgetOnlyDefaultLists);
+    IC_MIGRATE_STEP(_migrateDefaultListOrderOnce);
+    IC_MIGRATE_STEP(_migrateRemoveObsoletePauseFeedProperty);
+    IC_MIGRATE_STEP(_deleteObsoleteDataStores);
+    DebugLog(@"[Migrate] TOTAL %.1f ms", (CFAbsoluteTimeGetCurrent() - migrateStart) * 1000.0);
+
+#undef IC_MIGRATE_STEP
+}
+
+// Deletes leftover old Core Data stores (DataStore<n>.sqlite for n != current MODEL_VERSION,
+// plus their -wal/-shm). A schema migration copies data into the new store but never removes the
+// old one — e.g. DataStore4.sqlite (287 MB) sat next to the live DataStore5.sqlite. Idempotent.
+- (void) _deleteObsoleteDataStores
+{
+    NSFileManager* fman = [NSFileManager defaultManager];
+    NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
+    NSString* current = _DataStoreFile();  // e.g. "DataStore5.sqlite" (also guards -wal/-shm)
+    NSArray* files = [fman contentsOfDirectoryAtPath:dataPath error:nil];
+    NSMutableArray* removed = [NSMutableArray array];
+    long long freedBytes = 0;
+    for (NSString* file in files) {
+        if (![file hasPrefix:@"DataStore"] || [file rangeOfString:@".sqlite"].location == NSNotFound) {
+            continue;
+        }
+        if ([file hasPrefix:current]) {
+            continue;  // the live store (and its -wal/-shm)
+        }
+        NSString* full = [dataPath stringByAppendingPathComponent:file];
+        long long size = [[fman attributesOfItemAtPath:full error:nil] fileSize];
+        NSError* err = nil;
+        if ([fman removeItemAtPath:full error:&err]) {
+            [removed addObject:file];
+            freedBytes += size;
+        } else {
+            ErrLog(@"[DataStoreCleanup] failed to remove %@: %@", file, err.localizedDescription);
+        }
+    }
+    // Log via the diagnostic logger (works in Release too) only when something was actually
+    // removed, so it confirms the self-cleanup ran on customer devices without adding noise.
+    if (removed.count > 0) {
+        [[ICDiagnosticLogger shared] logEvent:@"storage"
+                                      message:@"Obsolete Datenspeicher entfernt"
+                                     metadata:@{ @"files": [removed componentsJoinedByString:@", "],
+                                                 @"freedBytes": [NSString stringWithFormat:@"%lld", freedBytes] }];
+    }
+}
+
+// One-time: put the default lists in the order Most Recent, Recently Played, Favorites,
+// Downloaded, then the rest (leading negative ranks). Runs once so it never fights a user who
+// later reorders lists manually.
+- (void) _migrateDefaultListOrderOnce
+{
+    if ([USER_DEFAULTS boolForKey:@"ICDefaultListOrderMigrated_v1"]) {
+        return;
+    }
+    NSDictionary<NSString*, NSNumber*>* rankByUID = @{
+        @"default.mostrecent":     @(-4),
+        @"default.recentlyplayed": @(-3),
+        @"default.favorites":      @(-2),
+        @"default.downloaded":     @(-1),
+    };
+    NSFetchRequest* req = [[NSFetchRequest alloc] initWithEntityName:@"EpisodeList"];
+    req.predicate = [NSPredicate predicateWithFormat:@"uid IN %@", rankByUID.allKeys];
+    NSArray* lists = [self.objectContext executeFetchRequest:req error:nil];
+    for (CDEpisodeList* list in lists) {
+        NSNumber* rank = rankByUID[list.uid];
+        if (rank && list.rank != rank.intValue) {
+            list.rank = rank.intValue;
+        }
+    }
+    if (self.objectContext.hasChanges) {
+        [self save];
+    }
+    [USER_DEFAULTS setBool:YES forKey:@"ICDefaultListOrderMigrated_v1"];
+}
+
+// uids of the built-in "Recently Played" / "Most Recent" default lists.
+static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
+{
+    static NSArray* uids;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ uids = @[@"default.recentlyplayed", @"default.mostrecent"]; });
+    return uids;
+}
+
+// Recreates the "Recently Played" / "Most Recent" default lists for installs that never had them
+// (previously created only when migrating an old smart playlist). They appear in the "Lists" menu
+// (and therefore the SmartList widget picker); they are just not auto-pinned to the main sidebar
+// (MainMenuListUIDs), which the user considers optional. Idempotent.
+- (void) _ensureWidgetOnlyDefaultLists
+{
+    NSFetchRequest* req = [[NSFetchRequest alloc] initWithEntityName:@"EpisodeList"];
+    req.predicate = [NSPredicate predicateWithFormat:@"uid IN %@", ICWidgetOnlyDefaultListUIDs()];
+    NSArray* existing = [self.objectContext executeFetchRequest:req error:nil];
+    NSSet* existingUIDs = [NSSet setWithArray:[existing valueForKey:@"uid"]];
+
+    // "Show everything" base (all media, all play/star/download states) so the list is never
+    // empty; the two differ only in sort order.
+    void (^configureShowAll)(CDEpisodeList*) = ^(CDEpisodeList* l) {
+        l.audio = YES; l.video = YES;
+        l.unplayed = YES; l.played = YES; l.unfinished = YES;
+        l.starred = YES; l.notStarred = YES;
+        l.downloaded = YES; l.notDownloaded = YES;
+        l.descending = YES; l.groupByPodcast = NO;
+    };
+
+    // Leading negative ranks so these sort at the FRONT (order: Most Recent, Recently Played,
+    // Favorites, Downloaded, then the rest) — see _migrateDefaultListOrderOnce for existing installs.
+    if (![existingUIDs containsObject:@"default.recentlyplayed"]) {
+        CDEpisodeList* l = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+        configureShowAll(l);
+        l.name = @"Recently Played".ls;
+        l.icon = @"List Recently Played";
+        l.orderBy = @"lastPlayed";
+        l.rank = -3;
+        l.uid = @"default.recentlyplayed";
+    }
+    if (![existingUIDs containsObject:@"default.mostrecent"]) {
+        CDEpisodeList* l = [NSEntityDescription insertNewObjectForEntityForName:@"EpisodeList" inManagedObjectContext:self.objectContext];
+        configureShowAll(l);
+        l.name = @"Most Recent".ls;
+        l.icon = @"List Most Recent";
+        l.orderBy = @"pubDate";
+        l.rank = -4;
+        l.uid = @"default.mostrecent";
+    }
+    if (self.objectContext.hasChanges) {
+        [self save];
+    }
 }
 
 // Removes duplicate/orphan CDList rows. Historically many List rows accumulated with the SAME
@@ -1573,13 +1710,13 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     NSMutableSet *uniqueUIDs = [NSMutableSet set];
     NSMutableArray *uniqueResults = [NSMutableArray array];
     for (CDList *object in fetchedObjects) {
-        
+
         if (![uniqueUIDs containsObject:object.uid]) {
             if (object.uid != nil) {
                 [uniqueUIDs addObject:object.uid];
                 [uniqueResults addObject:object];
             }
-          
+
         }
     }
 #if TARGET_OS_IPHONE
@@ -1898,11 +2035,13 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
                 NSPersistentHistoryTrackingKey: @YES,
             };
             NSError* addError = nil;
+            __unused CFAbsoluteTime openStart = CFAbsoluteTimeGetCurrent();
             NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
                                                                  configuration:nil
                                                                            URL:storeURL
                                                                        options:options
                                                                          error:&addError];
+            DebugLog(@"[ExportCoordinator] first store open %.1f ms", (CFAbsoluteTimeGetCurrent() - openStart) * 1000.0);
             if (!store) {
                 ErrLog(@"Export store coordinator unavailable at %@: %@", storeURL.path, addError.localizedDescription ?: @"unknown error");
                 return nil;
@@ -1971,6 +2110,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     _persistentContainer.persistentStoreDescriptions = @[storeDescription];
     __block BOOL storeLoadFailed = NO;
     __block NSError* storeLoadError = nil;
+    __unused CFAbsoluteTime storeLoadStart = CFAbsoluteTimeGetCurrent();
     [_persistentContainer loadPersistentStoresWithCompletionHandler:^(NSPersistentStoreDescription *description, NSError *error) {
         if (error) {
             ErrLog(@"Failed to load persistent store: %@, %@", error, error.userInfo);
@@ -1978,6 +2118,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
             storeLoadError = error;
         }
     }];
+    DebugLog(@"[CoreData] persistent store load %.1f ms", (CFAbsoluteTimeGetCurrent() - storeLoadStart) * 1000.0);
 
     if (storeLoadFailed) {
         ErrLog(@"Persistent store unavailable at %@ (%@). Keeping existing files untouched.", storeURL.path, storeLoadError.localizedDescription ?: @"unknown error");

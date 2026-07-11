@@ -463,9 +463,17 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // For updates, only membership-affecting keys matter — explicitly NOT `position`
     // (the playback tick) and NOT `lastPlayed` etc.
     NSSet *relevantEpisodeKeys = [[self class] _relevantEpisodeKeys];
+    NSSet *relevantListFeedKeys = [[self class] _relevantListFeedKeys];
     for (NSManagedObject *obj in info[NSUpdatedObjectsKey]) {
         if ([obj isKindOfClass:[CDList class]] || [obj isKindOfClass:[CDFeed class]]) {
-            return YES;  // list rename/rank, feed (un)subscribe / park
+            // Ignore false/no-op updates: Core Data marks list/feed objects dirty during count
+            // recalcs, FRC housekeeping, faulting, etc. with an EMPTY (or irrelevant) change set.
+            // Those fired a needless lists export every ~30-60s during playback. Require a real
+            // membership-relevant key (rename/rank, filter flags, subscribe/park).
+            for (NSString *changedKey in obj.changedValuesForCurrentEvent) {
+                if ([relevantListFeedKeys containsObject:changedKey]) return YES;
+            }
+            continue;
         }
         if ([obj isKindOfClass:[CDEpisode class]]) {
             for (NSString *changedKey in obj.changedValuesForCurrentEvent) {
@@ -475,6 +483,23 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     }
     return NO;
 }
+
++ (NSSet *)_relevantListFeedKeys {
+    static NSSet *keys = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        keys = [NSSet setWithObjects:
+                // CDList / CDEpisodeList / CDSmartPlaylist edits that change what a widget shows
+                @"name", @"rank", @"icon", @"query", @"orderBy", @"descending", @"groupByPodcast",
+                @"audio", @"video", @"unplayed", @"unfinished", @"played",
+                @"starred", @"notStarred", @"downloaded", @"notDownloaded", @"includedFeeds",
+                // CDFeed edits that change membership
+                @"subscribed", @"parked", @"title", @"rank",
+                nil];
+    });
+    return keys;
+}
+
 
 - (void)_widgetControlAction:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -1112,9 +1137,11 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                          @"snapshot": snapshot }];
 }
 
-// YES when the on-disk snapshot for this file already has the same episodes payload (the
-// per-run timestamp is deliberately excluded). Lets the full pass skip unchanged lists so a
-// reconciliation run does zero file writes when nothing changed.
+// YES when the on-disk snapshot already has the same episodes payload. The per-run `timestamp`
+// AND the volatile `position` (playback progress) are ignored: a position tick while you listen
+// is NOT a real list change, so a list containing the currently-playing episode must not
+// re-write + reload the widget every export (that caused ~90s widget churn during playback).
+// Lets the full pass do zero writes when nothing membership-relevant changed.
 - (BOOL)_listSnapshotEpisodesUnchanged:(NSDictionary *)snapshot file:(NSString *)filename {
     if (!self.containerURL || filename.length == 0) return NO;
     NSURL *url = [self.containerURL URLByAppendingPathComponent:filename];
@@ -1126,7 +1153,23 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     NSArray *newEpisodes = snapshot[@"episodes"];
     if (![oldEpisodes isKindOfClass:[NSArray class]]) return NO;
     BOOL sameName = [(existing[@"listName"] ?: @"") isEqual:(snapshot[@"listName"] ?: @"")];
-    return sameName && [newEpisodes isEqualToArray:oldEpisodes];
+    return sameName && [[self _episodesForComparison:newEpisodes] isEqualToArray:[self _episodesForComparison:oldEpisodes]];
+}
+
+// Copies of the episode dicts with the volatile `position` removed, so only membership-relevant
+// changes (episode set, played/starred/downloaded state, title, …) count as "changed".
+- (NSArray *)_episodesForComparison:(NSArray *)episodes {
+    NSMutableArray *out = [NSMutableArray arrayWithCapacity:episodes.count];
+    for (id ep in episodes) {
+        if ([ep isKindOfClass:[NSDictionary class]]) {
+            NSMutableDictionary *copy = [ep mutableCopy];
+            [copy removeObjectForKey:@"position"];
+            [out addObject:copy];
+        } else {
+            [out addObject:ep];
+        }
+    }
+    return out;
 }
 
 - (NSSet *)_episodeHashesInSnapshotFileForListUID:(NSString *)listUID {
@@ -1203,6 +1246,13 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             // of them was the source of "157 lists" and the multi-second export. Dedupe by uid.
             NSMutableSet *seenUIDs = [NSMutableSet set];
 
+            // Episodes are exported only for lists a widget can actually show: the built-in
+            // default lists (any widget's fallback/common picks) plus the custom lists a widget is
+            // configured to display (recorded by the provider). Every list still appears in the
+            // index (the picker lists all of them); only the per-list episode payload is gated.
+            NSUserDefaults *sharedDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.iteconomy.instacastplus"];
+            NSSet *displayedListUIDs = [NSSet setWithArray:([sharedDefaults arrayForKey:@"ICWidgetDisplayedListUIDs"] ?: @[])];
+
             for (CDList *list in lists) {
                 NSString *uid = list.uid;
                 if (uid.length == 0 || [seenUIDs containsObject:uid]) continue;
@@ -1220,6 +1270,14 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                     d[@"type"] = @"episode_list";
                 } else {
                     d[@"type"] = @"playlist";
+                }
+
+                BOOL exportEpisodes = [uid hasPrefix:@"default."] || [displayedListUIDs containsObject:uid];
+                if (!exportEpisodes) {
+                    // Custom list no widget shows → index entry only, no episode fetch/file.
+                    d[@"episodeCount"] = @0;
+                    [listIndex addObject:d];
+                    continue;
                 }
 
                 // Fetch only what the widget can show (capped at kMaxEpisodesPerList). We do NOT
@@ -1262,6 +1320,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
             feedRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
             NSArray *feeds = [backgroundContext executeFetchRequest:feedRequest error:nil];
+            listCount = listIndex.count;  // actual lists only (before podcasts are appended)
+
             for (CDFeed *feed in feeds) {
                 NSString *feedUID = feed.uid;
                 if (feedUID.length == 0) continue;
@@ -1272,8 +1332,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                     @"episodeCount": @0,
                 }];
             }
-
-            listCount = listIndex.count;
         }];
         querySeconds = CFAbsoluteTimeGetCurrent() - queryStart;
 
