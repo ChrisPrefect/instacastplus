@@ -39,6 +39,7 @@
 #import "AppleWatchSyncManager.h"
 
 NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeUID";
+static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
 
 @interface EpisodesTableViewController ()
 @property (nonatomic, strong) NSDateFormatter* dateFormatter;
@@ -63,6 +64,14 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 @property (nonatomic, strong) UIButton* floatingConsumeAllButton API_AVAILABLE(ios(26.0));
 @property (nonatomic, strong) UIButton* floatingEditButton API_AVAILABLE(ios(26.0));
 @property (nonatomic, strong) UIToolbar* editingToolbar API_AVAILABLE(ios(26.0));
+
+- (void)_finishBulkEpisodeMutationWithCacheEpisodes:(NSMutableOrderedSet<CDEpisode*>*)cacheEpisodes
+                                           automatic:(BOOL)automatic
+                                           saveError:(NSError*)saveError
+                                           modalInfo:(VDModalInfo*)modalInfo
+                                         reloadTable:(BOOL)reloadTable;
+- (void)_finishClearPlayedCacheWithEpisodes:(NSMutableOrderedSet<CDEpisode*>*)episodesToClear
+                                  modalInfo:(VDModalInfo*)modalInfo;
 
 @end
 
@@ -97,6 +106,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFailCachingEpisodeNotification object:nil];
         [nc addObserver:self
                                                  selector:@selector(updateAppearance)
                                                      name:ICAppearanceManagerDidUpdateAppearanceNotification
@@ -468,7 +478,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
     BOOL hasSelection = (selectedCount > 0);
 
-    self.selectAllItem.title = ICEpisodeSelectionToggleTitleKey(selectedCount, rowCount).ls;
+    self.selectAllItem.title = [self _selectionToggleTitleKeyForSelectedCount:selectedCount rowCount:rowCount].ls;
     self.editItem.enabled = hasSelection;
     self.playItem.enabled = hasSelection;
     self.downloadItem.enabled = hasSelection;
@@ -529,7 +539,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                        identifier:nil
                                           handler:^(__unused UIAction* a) { STRONG_SELF [self _setAllAsConsumed:YES]; }]];
     }
-    if ([self.episodes count] - [self _numberOfNotPlayedDisplayEpisodes] > 0) {
+    if ([self _numberOfDisplayEpisodes] - [self _numberOfNotPlayedDisplayEpisodes] > 0) {
         [items addObject:[UIAction actionWithTitle:@"Mark all as Unplayed".ls
                                             image:[UIImage systemImageNamed:@"circle"]
                                        identifier:nil
@@ -621,7 +631,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
         NSInteger selectedCellsCount = [[self.tableView indexPathsForSelectedRows] count];
         NSInteger rowCount = [self.tableView numberOfRowsInSection:0];
 
-        self.selectAllItem.title = ICEpisodeSelectionToggleTitleKey(selectedCellsCount, rowCount).ls;
+        self.selectAllItem.title = [self _selectionToggleTitleKeyForSelectedCount:selectedCellsCount rowCount:rowCount].ls;
         self.editItem.enabled = (selectedCellsCount > 0);
         self.playItem.enabled = (selectedCellsCount > 0);
         self.downloadItem.enabled = (selectedCellsCount > 0);
@@ -699,6 +709,16 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 	return nonConsumed;
 }
 
+- (NSInteger)_numberOfDisplayEpisodes
+{
+    return self.episodes.count;
+}
+
+- (NSString*)_selectionToggleTitleKeyForSelectedCount:(NSUInteger)selectedCount rowCount:(NSUInteger)rowCount
+{
+    return ICEpisodeSelectionToggleTitleKey(selectedCount, rowCount);
+}
+
 - (NSInteger) _numberOfPlayedDisplayEpisodes
 {
 	// count non-consumed
@@ -725,6 +745,21 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
     [[self.episodes copy] enumerateObjectsUsingBlock:block];
 }
 
+- (void)loadEpisodeObjectIDsForBulkActionWithCompletion:(void (^)(NSArray<NSManagedObjectID*>*, NSError*))completion
+{
+    if (!completion) {
+        return;
+    }
+
+    NSMutableArray<NSManagedObjectID*>* episodeObjectIDs = [[NSMutableArray alloc] initWithCapacity:self.episodes.count];
+    for (CDEpisode* episode in [self.episodes copy]) {
+        if (episode.objectID) {
+            [episodeObjectIDs addObject:episode.objectID];
+        }
+    }
+    completion(episodeObjectIDs, nil);
+}
+
 
 - (void) _setAllAsConsumed:(BOOL)consumed
 {
@@ -737,81 +772,324 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
 	allConsumedModalInfo.size = CGSizeMake(125, 125);
 	
 	[allConsumedModalInfo show];
-	
-	[self perform:^(id sender) {
 
-        [DMANAGER.objectContext.undoManager disableUndoRegistration];
-        
-        [DMANAGER beginInterruptSaving];
-        [self enumerateEpisodesUsingBlock:^(CDEpisode* episode, NSUInteger idx, BOOL *stop) {
-            [DMANAGER markEpisode:episode asConsumed:consumed];
-        }];
-        [DMANAGER endInterruptSaving];
-        
+    [self loadEpisodeObjectIDsForBulkActionWithCompletion:^(NSArray<NSManagedObjectID*>* episodeObjectIDs, NSError* loadError) {
+        if (loadError) {
+            [allConsumedModalInfo close];
+            [self presentAlertControllerWithTitle:@"Unable to Load Episodes".ls
+                                          message:@"The episodes could not be loaded from this device. Try again.".ls
+                                           button:@"OK".ls
+                                         animated:YES
+                                       completion:nil];
+            return;
+        }
+
+        if (episodeObjectIDs.count == 0) {
+            [allConsumedModalInfo close];
+            return;
+        }
+
+        NSMutableSet<NSManagedObjectID*>* feedObjectIDsNeedingAutoDownload = [NSMutableSet set];
+        NSMutableOrderedSet<CDEpisode*>* cacheEpisodes = [NSMutableOrderedSet orderedSet];
+        [[ICiCloudSyncManager sharedManager] beginLocalOutboxBatch];
+        [self _setEpisodeObjectIDs:episodeObjectIDs
+                asConsumed:consumed
+              startingAt:0
+feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
+             cacheEpisodes:cacheEpisodes
+                 modalInfo:allConsumedModalInfo];
+    }];
+}
+
+- (void) _setEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
+           asConsumed:(BOOL)consumed
+            startingAt:(NSUInteger)startIndex
+feedObjectIDsNeedingAutoDownload:(NSMutableSet<NSManagedObjectID*>*)feedObjectIDsNeedingAutoDownload
+         cacheEpisodes:(NSMutableOrderedSet<CDEpisode*>*)cacheEpisodes
+             modalInfo:(VDModalInfo*)modalInfo
+{
+    NSUInteger endIndex = MIN(startIndex + kBulkEpisodeMutationBatchSize, episodeObjectIDs.count);
+    NSMutableArray<NSDictionary*>* previousStates = [NSMutableArray array];
+    NSMutableSet<NSManagedObjectID*>* batchFeedObjectIDs = [NSMutableSet set];
+    NSMutableOrderedSet<CDEpisode*>* batchCacheEpisodes = [NSMutableOrderedSet orderedSet];
+    [DMANAGER.objectContext.undoManager disableUndoRegistration];
+    for (NSUInteger index = startIndex; index < endIndex; index++) {
+        NSError* existingObjectError = nil;
+        CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeObjectIDs[index]
+                                                                               error:&existingObjectError];
+        if (existingObjectError || ![episode isKindOfClass:[CDEpisode class]] || episode.isDeleted) {
+            continue;
+        }
+        if (episode.consumed != consumed) {
+            [previousStates addObject:@{
+                @"episode": episode,
+                @"previousConsumed": @(episode.consumed),
+                @"previousPosition": @(episode.position),
+            }];
+            episode.consumed = consumed;
+            if (consumed) {
+                episode.position = 0;
+            }
+        }
+
+        if (consumed) {
+            if ([episode.feed boolForKey:AutoDeleteAfterMarkedAsPlayed] && !episode.starred) {
+                [batchCacheEpisodes addObject:episode];
+            }
+        } else if (episode.feed && !episode.feed.isDeleted && episode.feed.objectID) {
+            [batchFeedObjectIDs addObject:episode.feed.objectID];
+        }
+    }
+    NSError* saveError = previousStates.count > 0 ? [DMANAGER saveReturningError] : nil;
+    if (saveError) {
+        for (NSDictionary* previousState in previousStates) {
+            CDEpisode* episode = previousState[@"episode"];
+            episode.consumed = [previousState[@"previousConsumed"] boolValue];
+            episode.position = [previousState[@"previousPosition"] doubleValue];
+        }
+        [DMANAGER.objectContext processPendingChanges];
         [DMANAGER.objectContext.undoManager enableUndoRegistration];
-        [DMANAGER save];
-        
-        [self updateEpisodes];
-        [self.tableView reloadData];
-        [self _updateToolbarLabels];
-        [self _updateToolbarItemsAnimated:NO];
-        
-        [allConsumedModalInfo close];
-        
-    } afterDelay:0.3];
+        [self _finishBulkEpisodeMutationWithCacheEpisodes:cacheEpisodes
+                                                automatic:YES
+                                                saveError:saveError
+                                                modalInfo:modalInfo
+                                              reloadTable:YES];
+        return;
+    }
+    [DMANAGER.objectContext.undoManager enableUndoRegistration];
+    [feedObjectIDsNeedingAutoDownload unionSet:batchFeedObjectIDs];
+    [cacheEpisodes addObjectsFromArray:batchCacheEpisodes.array];
+
+    if (endIndex < episodeObjectIDs.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _setEpisodeObjectIDs:episodeObjectIDs
+                    asConsumed:consumed
+                     startingAt:endIndex
+feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
+                 cacheEpisodes:cacheEpisodes
+                      modalInfo:modalInfo];
+        });
+        return;
+    }
+
+    if (!consumed) {
+        for (NSManagedObjectID* feedObjectID in feedObjectIDsNeedingAutoDownload) {
+            NSError* existingObjectError = nil;
+            CDFeed* feed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID
+                                                                          error:&existingObjectError];
+            if (!existingObjectError && [feed isKindOfClass:[CDFeed class]] && !feed.isDeleted) {
+                [[SubscriptionManager sharedSubscriptionManager] autoDownloadEpisodesInFeedAsynchronously:feed];
+            }
+        }
+    }
+    [self _finishBulkEpisodeMutationWithCacheEpisodes:cacheEpisodes
+                                            automatic:YES
+                                            saveError:nil
+                                            modalInfo:modalInfo
+                                          reloadTable:YES];
 }
 
 - (void) _archiveAllPlayed
 {
     VDModalInfo* modelInfo = [VDModalInfo modalInfoWithProgressLabel:@"Deleting…".ls];
 	[modelInfo show];
-	
-	[self perform:^(id sender) {
-        
-        [DMANAGER.objectContext.undoManager disableUndoRegistration];
-        [self enumerateEpisodesUsingBlock:^(CDEpisode* episode, NSUInteger idx, BOOL *stop) {
-            if (episode.consumed && !episode.starred)
-            {
-                [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+
+    [self loadEpisodeObjectIDsForBulkActionWithCompletion:^(NSArray<NSManagedObjectID*>* episodeObjectIDs, NSError* loadError) {
+        if (loadError) {
+            [modelInfo close];
+            [self presentAlertControllerWithTitle:@"Unable to Load Episodes".ls
+                                          message:@"The episodes could not be loaded from this device. Try again.".ls
+                                           button:@"OK".ls
+                                         animated:YES
+                                       completion:nil];
+            return;
+        }
+        if (episodeObjectIDs.count == 0) {
+            [modelInfo close];
+            return;
+        }
+
+        [[ICiCloudSyncManager sharedManager] beginLocalOutboxBatch];
+        [self _archivePlayedEpisodeObjectIDs:episodeObjectIDs
+                                  startingAt:0
+                               cacheEpisodes:[NSMutableOrderedSet orderedSet]
+                                   modalInfo:modelInfo];
+    }];
+}
+
+- (void)_archivePlayedEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
+                            startingAt:(NSUInteger)startIndex
+                         cacheEpisodes:(NSMutableOrderedSet<CDEpisode*>*)cacheEpisodes
+                             modalInfo:(VDModalInfo*)modalInfo
+{
+    NSUInteger endIndex = MIN(startIndex + kBulkEpisodeMutationBatchSize, episodeObjectIDs.count);
+    NSMutableArray<NSDictionary*>* previousStates = [NSMutableArray array];
+    NSMutableOrderedSet<CDEpisode*>* batchCacheEpisodes = [NSMutableOrderedSet orderedSet];
+    [DMANAGER.objectContext.undoManager disableUndoRegistration];
+    for (NSUInteger index = startIndex; index < endIndex; index++) {
+        NSError* existingObjectError = nil;
+        CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeObjectIDs[index]
+                                                                               error:&existingObjectError];
+        if (existingObjectError || ![episode isKindOfClass:[CDEpisode class]] || episode.isDeleted) {
+            continue;
+        }
+        if (episode.consumed && !episode.starred) {
+            [batchCacheEpisodes addObject:episode];
+            if (!episode.archived) {
+                [previousStates addObject:@{
+                    @"episode": episode,
+                    @"previousArchived": @(episode.archived),
+                }];
                 episode.archived = YES;
             }
-        }];
+        }
+    }
+    NSError* saveError = previousStates.count > 0 ? [DMANAGER saveReturningError] : nil;
+    if (saveError) {
+        for (NSDictionary* previousState in previousStates) {
+            CDEpisode* episode = previousState[@"episode"];
+            episode.archived = [previousState[@"previousArchived"] boolValue];
+        }
+        [DMANAGER.objectContext processPendingChanges];
         [DMANAGER.objectContext.undoManager enableUndoRegistration];
-        [DMANAGER save];
-        
+        [self _finishBulkEpisodeMutationWithCacheEpisodes:cacheEpisodes
+                                                automatic:NO
+                                                saveError:saveError
+                                                modalInfo:modalInfo
+                                              reloadTable:NO];
+        return;
+    }
+    [DMANAGER.objectContext.undoManager enableUndoRegistration];
+    [cacheEpisodes addObjectsFromArray:batchCacheEpisodes.array];
+
+    if (endIndex < episodeObjectIDs.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _archivePlayedEpisodeObjectIDs:episodeObjectIDs
+                                      startingAt:endIndex
+                                   cacheEpisodes:cacheEpisodes
+                                       modalInfo:modalInfo];
+        });
+        return;
+    }
+
+    [self _finishBulkEpisodeMutationWithCacheEpisodes:cacheEpisodes
+                                            automatic:NO
+                                            saveError:nil
+                                            modalInfo:modalInfo
+                                          reloadTable:NO];
+}
+
+- (void)_finishBulkEpisodeMutationWithCacheEpisodes:(NSMutableOrderedSet<CDEpisode*>*)cacheEpisodes
+                                           automatic:(BOOL)automatic
+                                           saveError:(NSError*)saveError
+                                           modalInfo:(VDModalInfo*)modalInfo
+                                         reloadTable:(BOOL)reloadTable
+{
+    [[ICiCloudSyncManager sharedManager] endLocalOutboxBatch];
+    void (^finishUI)(NSError*) = ^(NSError* cacheError) {
         [self updateEpisodes];
-        [self.tableView reloadData];
+        if (reloadTable) [self.tableView reloadData];
         [self _updateToolbarLabels];
         [self _updateToolbarItemsAnimated:NO];
-        
-        [modelInfo close];
-        
-    } afterDelay:0.3];
+        [modalInfo close];
+
+        if (saveError) {
+            [self presentAlertControllerWithTitle:@"Unable to Save".ls
+                                          message:@"The changes could not be saved on this device. Check the available storage and try again.".ls
+                                           button:@"OK".ls
+                                         animated:YES
+                                       completion:nil];
+        } else if (automatic && cacheError) {
+            [self presentAlertControllerWithTitle:@"Download Could Not Be Removed".ls
+                                          message:cacheError.localizedDescription
+                                           button:@"OK".ls
+                                         animated:YES
+                                       completion:nil];
+        }
+    };
+
+    if (cacheEpisodes.count == 0) {
+        finishUI(nil);
+        return;
+    }
+    [[CacheManager sharedCacheManager] removeCacheForEpisodes:cacheEpisodes.array
+                                                    automatic:automatic
+                                                   completion:finishUI];
 }
 
 - (void) _clearCacheOfAllPlayed
 {
     VDModalInfo* modelInfo = [VDModalInfo modalInfoWithProgressLabel:@"Clearing…".ls];
 	[modelInfo show];
-	
-	[self perform:^(id sender) {
-        
-        CacheManager* cman = [CacheManager sharedCacheManager];
-        
-        [self enumerateEpisodesUsingBlock:^(CDEpisode* episode, NSUInteger idx, BOOL *stop) {
-            if (episode.consumed && [cman episodeIsCached:episode]) {
-                [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-            }
-        }];
-        
+
+    [self loadEpisodeObjectIDsForBulkActionWithCompletion:^(NSArray<NSManagedObjectID*>* episodeObjectIDs, NSError* loadError) {
+        if (loadError) {
+            [modelInfo close];
+            [self presentAlertControllerWithTitle:@"Unable to Load Episodes".ls
+                                          message:@"The episodes could not be loaded from this device. Try again.".ls
+                                           button:@"OK".ls
+                                         animated:YES
+                                       completion:nil];
+            return;
+        }
+        [self _clearPlayedCacheForEpisodeObjectIDs:episodeObjectIDs
+                                       cachedHashes:[CacheManager sharedCacheManager].cachedEpisodeObjectHashes
+                                         startingAt:0
+                                    episodesToClear:[NSMutableOrderedSet orderedSet]
+                                         modalInfo:modelInfo];
+    }];
+}
+
+- (void)_clearPlayedCacheForEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
+                                 cachedHashes:(NSSet<NSString*>*)cachedHashes
+                                  startingAt:(NSUInteger)startIndex
+                             episodesToClear:(NSMutableOrderedSet<CDEpisode*>*)episodesToClear
+                                   modalInfo:(VDModalInfo*)modalInfo
+{
+    NSUInteger endIndex = MIN(startIndex + kBulkEpisodeMutationBatchSize, episodeObjectIDs.count);
+    for (NSUInteger index = startIndex; index < endIndex; index++) {
+        NSError* existingObjectError = nil;
+        CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeObjectIDs[index]
+                                                                               error:&existingObjectError];
+        if (!existingObjectError &&
+            [episode isKindOfClass:[CDEpisode class]] &&
+            !episode.isDeleted &&
+            episode.consumed &&
+            [cachedHashes containsObject:episode.objectHash]) {
+            [episodesToClear addObject:episode];
+        }
+    }
+
+    if (endIndex < episodeObjectIDs.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _clearPlayedCacheForEpisodeObjectIDs:episodeObjectIDs
+                                           cachedHashes:cachedHashes
+                                             startingAt:endIndex
+                                        episodesToClear:episodesToClear
+                                             modalInfo:modalInfo];
+        });
+        return;
+    }
+
+    [self _finishClearPlayedCacheWithEpisodes:episodesToClear modalInfo:modalInfo];
+}
+
+- (void)_finishClearPlayedCacheWithEpisodes:(NSMutableOrderedSet<CDEpisode*>*)episodesToClear
+                                  modalInfo:(VDModalInfo*)modalInfo
+{
+    void (^finishUI)(NSError*) = ^(__unused NSError* error) {
         [self updateEpisodes];
-        [self.tableView reloadData];
         [self _updateToolbarLabels];
         [self _updateToolbarItemsAnimated:NO];
-        
-        [modelInfo close];
-        
-    } afterDelay:0.3];
+        [modalInfo close];
+    };
+    if (episodesToClear.count == 0) {
+        finishUI(nil);
+        return;
+    }
+    [[CacheManager sharedCacheManager] removeCacheForEpisodes:episodesToClear.array
+                                                    automatic:NO
+                                                   completion:finishUI];
 }
 
 
@@ -834,7 +1112,7 @@ NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeU
                                                 }]];
     }
     
-    if ([self.episodes count]-[self _numberOfNotPlayedDisplayEpisodes] > 0) {
+    if ([self _numberOfDisplayEpisodes]-[self _numberOfNotPlayedDisplayEpisodes] > 0) {
         [alert addAction:[UIAlertAction actionWithTitle:@"Mark all as Unplayed".ls
                                                   style:UIAlertActionStyleDefault
                                                 handler:^(UIAlertAction * action) {

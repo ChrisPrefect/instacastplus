@@ -149,8 +149,9 @@ require(
 )
 require(
     "beginStreamingCacheForEpisode:anEpisode" in playback_manager
-    and "updateStreamingCacheForEpisode:playingEpisode" in playback_manager
-    and "finishStreamingCacheForEpisode:innerSelf.episode" in playback_manager,
+    and "updateStreamingCacheForEpisode:anEpisode" in playback_manager
+    and "finishStreamingCacheForEpisode:innerSelf.episode" in playback_manager
+    and "leaseToken:innerSelf.leaseToken" in playback_manager,
     "Playback stream caching must publish begin/progress/finish state to CacheManager.",
 )
 

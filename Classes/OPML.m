@@ -7,6 +7,7 @@
 //
 
 #import "OPML.h"
+#import "InstacastBackupParser.h"
 
 NSString* OPMLFeedTitle = @"text";
 NSString* OPMLFeedType = @"type";
@@ -16,6 +17,7 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
 @interface OPMLParser () <NSXMLParserDelegate>
 @property (readwrite, strong) NSMutableArray* feeds;
 @property (readwrite, strong) NSData* data;
+@property (readwrite, strong) ICXMLImportParserBudget* budget;
 @end
 
 
@@ -34,6 +36,7 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
 	if ((self = [super init]))
 	{
 		_feeds = [[NSMutableArray alloc] init];
+		_budget = [[ICXMLImportParserBudget alloc] init];
 	}
 	
 	return self;
@@ -46,6 +49,15 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
     dispatch_async(dispatch_get_global_queue(0, 0), ^{
         
         NSData* data = self.data;
+        NSError* validationError = nil;
+        if (![ICXMLImportLimits validateData:data error:&validationError]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (errorHandler) {
+                    errorHandler(validationError);
+                }
+            });
+            return;
+        }
         
         NSString* utf8String = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
         if (!utf8String) {
@@ -55,10 +67,11 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
         
         NSXMLParser* xmlParser = [[NSXMLParser alloc] initWithData:data];
         [xmlParser setDelegate:self];
+        xmlParser.shouldResolveExternalEntities = NO;
         [xmlParser parse];
         
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSError* opmlError = [xmlParser parserError];
+            NSError* opmlError = self.budget.error ?: [xmlParser parserError];
 
             if (completion && !opmlError)
             {
@@ -82,6 +95,9 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
 
 - (void)parser:(NSXMLParser *)parser didStartElement:(NSString *)elementName namespaceURI:(NSString *)namespaceURI qualifiedName:(NSString *)qualifiedName attributes:(NSDictionary *)attributeDict
 {
+	if (![self.budget consumeElement:elementName attributes:attributeDict parser:parser]) {
+		return;
+	}
 	if ([elementName isEqualToString:@"opml"]) 
 	{
 		NSString* opmlVersion = [attributeDict objectForKey:@"version"];
@@ -92,6 +108,7 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
 	
 	if ([elementName isEqualToString:@"outline"])
 	{
+		if (![self.budget consumeObjectWithParser:parser]) return;
 		[self.feeds addObject:attributeDict];
 	}
 }
@@ -99,16 +116,40 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
 - (void)parser:(NSXMLParser *)parser didEndElement:(NSString *)elementName namespaceURI:(NSString *)namespaceURI qualifiedName:(NSString *)qName
 {	
 	// Noch keine Verwendung	
+	[self.budget finishElement];
 }
 
 - (void)parser:(NSXMLParser *)parser foundCharacters:(NSString *)string
 {
-	// Noch keine Verwendung
+	[self.budget consumeCharacters:string parser:parser];
 }
 
 - (void)parserDidEndDocument:(NSXMLParser *)parser 
 {
 
+}
+
+- (NSData *)parser:(NSXMLParser *)parser
+resolveExternalEntityName:(NSString *)name
+          systemID:(NSString *)systemID
+{
+	[self.budget rejectEntityWithParser:parser];
+	return nil;
+}
+
+- (void)parser:(NSXMLParser *)parser
+foundInternalEntityDeclarationWithName:(NSString *)name
+         value:(NSString *)value
+{
+	[self.budget rejectEntityWithParser:parser];
+}
+
+- (void)parser:(NSXMLParser *)parser
+foundExternalEntityDeclarationWithName:(NSString *)name
+      publicID:(NSString *)publicID
+      systemID:(NSString *)systemID
+{
+	[self.budget rejectEntityWithParser:parser];
 }
 
 @end
@@ -155,8 +196,9 @@ NSString* OPMLFeedHtmlUrl = @"htmlUrl";
 	NSString* titleHeader = [NSString stringWithFormat:@"\t<title>%@</title>", (title)?[title stringByEncodingStandardHTMLEntities]:@""];
 	
 	NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
-	NSLocale *locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US"];
+	NSLocale *locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
 	[dateFormatter setLocale:locale];
+	dateFormatter.calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
 	[dateFormatter setDateFormat:@"EEE, d MMM yyyy HH:mm:ss"];
 	[dateFormatter setTimeZone:[NSTimeZone timeZoneWithAbbreviation:@"GMT"]];
 	NSString* dateString = [[dateFormatter stringFromDate:[NSDate date]] stringByAppendingString:@" GMT"];

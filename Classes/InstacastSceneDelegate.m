@@ -57,8 +57,11 @@
 #import "PlayerSpeedButton.h"
 #import "Defines.h"
 #import "AppleWatchSyncManager.h"
+#import "InstacastBackupParser.h"
+#import "InstacastBackupImporter.h"
 
 extern NSString* MainMenuListUIDsDidChangeNotification;
+static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @"InstacastMainViewControllerDidBecomeReadyNotification";
 
 #define kDonate1ProductID @"donate_to_developer_1"
 #define kDonate5ProductID @"donate_to_developer_5"
@@ -74,8 +77,10 @@ extern NSString* MainMenuListUIDsDidChangeNotification;
 @property (nonatomic, strong) NSDateFormatter* carPlayDateFormatter;
 @property (nonatomic, strong) NSMapTable<CPListItem*, id>* carPlayLegacyItemHandlers;
 @property (nonatomic) BOOL carPlayLastKnownIsPlaying;
+@property (nonatomic, copy) NSSet<UIOpenURLContext*>* pendingOpenURLContexts;
 
 - (void)_handleSpotlightUserActivity:(NSUserActivity*)userActivity;
+- (void)_mainViewControllerDidBecomeReady:(NSNotification*)notification;
 
 @end
 
@@ -181,6 +186,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 #endif
 
         if ([DatabaseManager dataStoreNeedsMigration]) {
+            self.pendingOpenURLContexts = connectionOptions.URLContexts;
+            [[NSNotificationCenter defaultCenter] addObserver:self
+                                                     selector:@selector(_mainViewControllerDidBecomeReady:)
+                                                         name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                       object:nil];
             UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
             ICLocalizeViewText(migrationViewController.view);
             self.window.rootViewController = migrationViewController;
@@ -193,8 +203,19 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         }
         else
         {
-            MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
             InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
+            DatabaseManager* databaseManager = [DatabaseManager sharedDatabaseManager];
+            if (databaseManager.initializationError) {
+                self.mainViewController = nil;
+                appDelegate.mainViewController = nil;
+                [UIManager sharedManager].mainViewController = nil;
+                self.window.rootViewController = [InstacastAppDelegate databaseUnavailableViewControllerForError:databaseManager.initializationError];
+                appDelegate.window = self.window;
+                [appDelegate.window makeKeyAndVisible];
+                return;
+            }
+
+            MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
 
             self.mainViewController = mainViewController;
             appDelegate.mainViewController = mainViewController;
@@ -244,6 +265,23 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 //    }
 }
 
+- (void)_mainViewControllerDidBecomeReady:(NSNotification*)notification
+{
+    MainViewController_4* mainViewController = [notification.object isKindOfClass:[MainViewController_4 class]] ? notification.object : nil;
+    if (!mainViewController || self.window.rootViewController != mainViewController) {
+        return;
+    }
+
+    self.mainViewController = mainViewController;
+    if (self.pendingOpenURLContexts.count > 0) {
+        [self scene:self.window.windowScene openURLContexts:self.pendingOpenURLContexts];
+        self.pendingOpenURLContexts = nil;
+    }
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                  object:nil];
+}
+
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
     NSMutableArray* URLDescriptions = [NSMutableArray arrayWithCapacity:URLContexts.count];
     for (UIOpenURLContext *context in URLContexts) {
@@ -291,39 +329,40 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         else if ([subscribeSchemes containsObject:[url scheme]]) {
             [self _handlePcastURL:url];
         }
+        else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
+        {
+            [self.mainViewController openBackupFileURL:url];
+        }
         else if ([url isFileURL] && [[[url path] pathExtension] compare:@"opml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
         {
             self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
-            [self.mInfo show];
+            [self.mInfo showInWindow:self.window];
 
             __weak typeof(self) weakSelf = self;
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                BOOL accessGranted = [url startAccessingSecurityScopedResource];
-                if (!accessGranted) {
-                    ErrLog(@"Failed to access secure file");
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [weakSelf.mInfo close];
-                        weakSelf.mInfo = nil;
-                    });
-                    return;
-                }
-
-                NSData *opmlData = [NSData dataWithContentsOfURL:url];
-                [url stopAccessingSecurityScopedResource];
+                NSError* readError = nil;
+                NSData *opmlData = [ICXMLImportLimits readDataFromURL:url error:&readError];
 
                 if (!opmlData || opmlData.length == 0) {
-                    ErrLog(@"Invalid OPML data");
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [weakSelf.mInfo close];
                         weakSelf.mInfo = nil;
+                        [App showBackgroundErrorWithTitle:@"Import Error".ls
+                                                  message:readError.localizedDescription ?: @"The OPML file is empty or could not be read.".ls
+                                                 duration:8.0];
                     });
                     return;
                 }
 
-                [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
+                [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^(NSError* error) {
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [weakSelf.mInfo close];
                         weakSelf.mInfo = nil;
+                        if (error) {
+                            [App showBackgroundErrorWithTitle:@"Import Error".ls
+                                                      message:error.localizedDescription
+                                                     duration:8.0];
+                        }
                     });
                 } progress:^(float progress) {
                     dispatch_async(dispatch_get_main_queue(), ^{
@@ -514,6 +553,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                                         metadata:@{
                                             @"role": scene.session.role ?: @"",
                                         }];
+    InstacastAppDelegate *appDelegate = (InstacastAppDelegate *)App.delegate;
+    if (appDelegate.mainViewController) {
+        [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
+        [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
+    }
     [[TranscriptionQueue shared] resumeIfNeeded];
 #if !TARGET_OS_MACCATALYST
     // iPadOS Stage Manager: maximumSize freigeben (war startSize für initiale Grösse)
@@ -744,6 +788,7 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     [nc addObserver:self selector:@selector(carPlayDataDidUpdate:) name:CDPlaylistDidChangeEpisodesNotification object:nil];
     [nc addObserver:self selector:@selector(carPlayContextObjectsDidChange:) name:NSManagedObjectContextObjectsDidChangeNotification object:DMANAGER.objectContext];
     [nc addObserver:self selector:@selector(carPlayCacheDidUpdate:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+    [nc addObserver:self selector:@selector(carPlayCacheDidUpdate:) name:CacheManagerDidFailCachingEpisodeNotification object:nil];
     [nc addObserver:self selector:@selector(carPlayCacheDidUpdate:) name:CacheManagerDidClearCacheNotification object:nil];
 
     [nc addObserver:self selector:@selector(carPlayPlaybackDidUpdate:) name:PlaybackManagerDidStartNotification object:nil];
@@ -772,6 +817,7 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     [nc removeObserver:self name:CDPlaylistDidChangeEpisodesNotification object:nil];
     [nc removeObserver:self name:NSManagedObjectContextObjectsDidChangeNotification object:DMANAGER.objectContext];
     [nc removeObserver:self name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+    [nc removeObserver:self name:CacheManagerDidFailCachingEpisodeNotification object:nil];
     [nc removeObserver:self name:CacheManagerDidClearCacheNotification object:nil];
     [nc removeObserver:self name:PlaybackManagerDidStartNotification object:nil];
     [nc removeObserver:self name:PlaybackManagerDidChangeEpisodeNotification object:nil];
@@ -1441,15 +1487,40 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
 {
     NSArray* feeds = DMANAGER.feeds;
     NSMutableArray* items = [NSMutableArray arrayWithCapacity:feeds.count];
+    NSMutableDictionary<NSString*, CPListItem*>* itemsByFeedUID = [NSMutableDictionary dictionaryWithCapacity:feeds.count];
     for (CDFeed* feed in feeds) {
-        [items addObject:[self carPlayListItemForFeed:feed]];
+        CPListItem* item = [self carPlayListItemForFeed:feed];
+        [items addObject:item];
+        if (feed.uid.length > 0) {
+            itemsByFeedUID[feed.uid] = item;
+        }
     }
+    [self carPlayRefreshPodcastCountsForFeeds:feeds itemsByFeedUID:itemsByFeedUID];
     return @[[[CPListSection alloc] initWithItems:items]];
+}
+
+- (void)carPlayRefreshPodcastCountsForFeeds:(NSArray<CDFeed*>*)feeds
+                             itemsByFeedUID:(NSDictionary<NSString*, CPListItem*>*)itemsByFeedUID
+{
+    for (CDFeed* feed in feeds) {
+        CPListItem* item = itemsByFeedUID[feed.uid];
+        if (!item || feed.countsLoaded) {
+            continue;
+        }
+        [feed calculateCountsWithCompletion:^(__unused NSInteger unplayedCount, NSInteger episodesCount) {
+            NSString* detail = episodesCount < 0
+                ? @"Nicht verfügbar".ls
+                : [NSString stringWithFormat:@"%ld %@", (long)episodesCount, @"Episodes".ls];
+            [item setDetailText:detail];
+        }];
+    }
 }
 
 - (CPListItem*)carPlayListItemForFeed:(CDFeed*)feed
 {
-    NSString* detail = [NSString stringWithFormat:@"%ld %@", (long)feed.episodesCount, @"Episodes".ls];
+    NSString* detail = feed.countsLoaded
+        ? [NSString stringWithFormat:@"%ld %@", (long)feed.episodesCount, @"Episodes".ls]
+        : @"Loading…".ls;
     UIImage* cachedImage = nil;
     if (feed.imageURL) {
         cachedImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:feed.imageURL size:72 grayscale:NO];

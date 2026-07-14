@@ -338,10 +338,6 @@ private struct ICDiagnosticLogLine: Encodable {
         guard !didStart else { return }
         didStart = true
 
-        #if DEBUG
-        startCPUHeartbeat()
-        #endif
-
         if let previousState = loadPreviousSessionStateLocked() {
             let endedUnexpectedly = Self.didPreviousSessionEndUnexpectedly(previousState.lastState)
             let endedInBackground = Self.didPreviousSessionEndInBackground(previousState.lastState)
@@ -498,48 +494,6 @@ private struct ICDiagnosticLogLine: Encodable {
         ICInstallCrashBacktraceHandler(crashBacktraceURL().path)
     }
 
-    #if DEBUG
-    /// Total process CPU usage (%), summed across all non-idle threads. ~100% = one core pegged.
-    private func processCPUPercent() -> Double {
-        var threadList: thread_act_array_t?
-        var threadCount = mach_msg_type_number_t(0)
-        guard task_threads(mach_task_self_, &threadList, &threadCount) == KERN_SUCCESS,
-              let threads = threadList else { return 0 }
-        defer {
-            vm_deallocate(mach_task_self_,
-                          vm_address_t(UInt(bitPattern: threads)),
-                          vm_size_t(Int(threadCount) * MemoryLayout<thread_t>.stride))
-        }
-        var total: Double = 0
-        for i in 0..<Int(threadCount) {
-            var info = thread_basic_info()
-            var count = mach_msg_type_number_t(THREAD_BASIC_INFO_COUNT)
-            let kr = withUnsafeMutablePointer(to: &info) {
-                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                    thread_info(threads[i], thread_flavor_t(THREAD_BASIC_INFO), $0, &count)
-                }
-            }
-            if kr == KERN_SUCCESS, (info.flags & TH_FLAGS_IDLE) == 0 {
-                total += Double(info.cpu_usage) / Double(TH_USAGE_SCALE) * 100.0
-            }
-        }
-        return total
-    }
-
-    /// Prints process CPU% to the console every 5s (Debug only), so sustained high CPU (heat) is
-    /// visible without Instruments. ~100%+ continuously = a busy loop to hunt down.
-    private func startCPUHeartbeat() {
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self else { return }
-            let cpu = self.processCPUPercent()
-            print(String(format: "🔥 [cpu] %.0f%%", cpu))
-            // Also persist to Diagnostics.jsonl so it survives after the console detaches.
-            self.logEvent("cpu", message: "CPU-Heartbeat", metadata: ["percent": String(format: "%.0f", cpu)] as NSDictionary)
-            self.startCPUHeartbeat()
-        }
-    }
-    #endif
-
     private func appendLocked(category: String, message: String, metadata: [String: String]) {
         #if DEBUG
         // Mirror every diagnostic event to the device/Xcode console (NSLog = unbuffered, shows up
@@ -603,7 +557,10 @@ private struct ICDiagnosticLogLine: Encodable {
         for (rawKey, rawValue) in metadata {
             let key = String(describing: rawKey)
             let value = rawValue
-            if let url = value as? URL {
+            if key.range(of: "url", options: .caseInsensitive) != nil {
+                let URLString = (value as? URL)?.absoluteString ?? String(describing: value)
+                converted[key] = ICRedactedURLStringForLogging(URLString)
+            } else if let url = value as? URL {
                 converted[key] = url.path
             } else if let date = value as? Date {
                 converted[key] = Self.timestampString(from: date)

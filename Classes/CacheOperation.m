@@ -307,8 +307,6 @@ static NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos";
             if (![[NSFileManager defaultManager] moveItemAtPath:[self.tempURL path] toPath:[self.localURL path] error:&error]) {
                 ErrLog(@"error moving temporary file %@", [error description]);
                 self.failed = YES;
-            } else {
-                AddSkipBackupAttributeToFile([self.localURL path]);
             }
             // remove the temporary file
             [[NSFileManager defaultManager] removeItemAtPath:[self.tempURL path] error:nil];

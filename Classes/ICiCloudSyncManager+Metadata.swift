@@ -11,6 +11,23 @@ import CryptoKit
 import Foundation
 import UIKit
 
+struct ICCloudSyncItemMetadataContextBatch {
+    let accountRecordName: String
+    let context: NSManagedObjectContext
+    let loadedRecordNames: Set<String>
+    var entriesByRecordName: [String: NSManagedObject]
+}
+
+final class ICCloudLegacyKnownRecordSystemFieldsBatch: @unchecked Sendable {
+    let records: [CKRecord]
+    let sourcePaths: [String]
+
+    init(records: [CKRecord], sourcePaths: [String]) {
+        self.records = records
+        self.sourcePaths = sourcePaths
+    }
+}
+
 @available(iOS 17.0, *)
 extension ICiCloudSyncManager {
 
@@ -77,52 +94,191 @@ extension ICiCloudSyncManager {
         return (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any]
     }
 
-    func rememberServerRecord(_ record: CKRecord) {
-        let archiver = NSKeyedArchiver(requiringSecureCoding: true)
-        record.encodeSystemFields(with: archiver)
-        archiver.finishEncoding()
-        Self.writeKnownRecordSystemFields(archiver.encodedData, forRecordName: record.recordID.recordName)
+    nonisolated static var knownRecordSystemFieldsEntityName: String {
+        "ICCloudKnownRecordSystemFields"
     }
 
-    func forgetServerRecord(for recordID: CKRecord.ID) {
-        Self.removeKnownRecordSystemFields(forRecordName: recordID.recordName)
+    nonisolated static func knownRecordSystemFieldsStoreError(code: Int,
+                                                               description: String) -> NSError {
+        NSError(domain: "ICCloudKnownRecordSystemFields",
+                code: code,
+                userInfo: [NSLocalizedDescriptionKey: description])
     }
 
-    func pendingPayloads(forKey key: String) -> [String: [String: Any]] {
-        if let cached = pendingPayloadsCache[key] {
-            return cached
+    nonisolated static func persistKnownRecordSystemFields(
+        _ records: [CKRecord],
+        accountRecordName: String
+    ) async throws {
+        guard !accountRecordName.isEmpty else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale CloudKit-Systemfelder konnte nicht bestimmt werden."
+            )
         }
-        let payloads = Self.syncMetadataValue(forKey: key) as? [String: [String: Any]] ?? [:]
-        pendingPayloadsCache[key] = payloads
-        return payloads
-    }
-
-    // All writers of the two pending stores go through here: cache + ONE coalesced disk
-    // write (plus an explicit flush at the end of each fetch event) instead of a full
-    // plist write per stored record.
-    func setPendingPayloads(_ payloads: [String: [String: Any]], forKey key: String) {
-        pendingPayloadsCache[key] = payloads
-        dirtyPendingPayloadKeys.insert(key)
-        schedulePendingPayloadsWrite()
-    }
-
-    func schedulePendingPayloadsWrite() {
-        pendingPayloadsWriteWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                self?.flushPendingPayloads()
+        guard !records.isEmpty else { return }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
+            )
+        }
+        var index = records.startIndex
+        while index < records.endIndex {
+            let end = records.index(
+                index,
+                offsetBy: maximumRecordZoneChangesPerBatch,
+                limitedBy: records.endIndex
+            ) ?? records.endIndex
+            let box = ICCloudRecordBatchBox(Array(records[index..<end]))
+            let chunk: [(recordName: String, data: Data)] = try await Task.detached(priority: .utility) {
+                var latestDataByRecordName: [String: Data] = [:]
+                for record in box.records {
+                    let recordName = record.recordID.recordName
+                    guard !recordName.isEmpty else {
+                        throw knownRecordSystemFieldsStoreError(
+                            code: 2,
+                            description: "Ein CloudKit-Systemfeldeintrag hat keine Datensatz-ID."
+                        )
+                    }
+                    let archiver = NSKeyedArchiver(requiringSecureCoding: true)
+                    record.encodeSystemFields(with: archiver)
+                    archiver.finishEncoding()
+                    latestDataByRecordName[recordName] = archiver.encodedData
+                }
+                return latestDataByRecordName
+                    .map { (recordName: $0.key, data: $0.value) }
+                    .sorted { $0.recordName < $1.recordName }
+            }.value
+            try await context.perform {
+                let recordNames = chunk.map(\.recordName)
+                let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+                request.predicate = NSPredicate(
+                    format: "accountRecordName == %@ AND recordName IN %@",
+                    accountRecordName,
+                    recordNames
+                )
+                request.includesSubentities = false
+                request.fetchLimit = maximumRecordZoneChangesPerBatch
+                request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+                var entriesByRecordName: [String: NSManagedObject] = [:]
+                for entry in try context.fetch(request) {
+                    guard let recordName = entry.value(forKey: "recordName") as? String,
+                          entriesByRecordName[recordName] == nil else {
+                        throw knownRecordSystemFieldsStoreError(
+                            code: 2,
+                            description: "Ein lokaler CloudKit-Systemfeldeintrag ist beschädigt oder mehrfach vorhanden."
+                        )
+                    }
+                    entriesByRecordName[recordName] = entry
+                }
+                for write in chunk {
+                    let entry = entriesByRecordName[write.recordName]
+                        ?? NSEntityDescription.insertNewObject(
+                            forEntityName: knownRecordSystemFieldsEntityName,
+                            into: context
+                        )
+                    entry.setValue(accountRecordName, forKey: "accountRecordName")
+                    entry.setValue(write.recordName, forKey: "recordName")
+                    entry.setValue(write.data, forKey: "systemFieldsData")
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                context.reset()
+            }
+            index = end
+            if index < records.endIndex {
+                await Task.yield()
             }
         }
-        pendingPayloadsWriteWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
     }
 
-    func flushPendingPayloads() {
-        guard !dirtyPendingPayloadKeys.isEmpty else { return }
-        for key in dirtyPendingPayloadKeys {
-            setSyncMetadata(pendingPayloadsCache[key] ?? [:], forKey: key)
+    nonisolated static func removeKnownRecordSystemFields(
+        _ recordIDs: [CKRecord.ID],
+        accountRecordName: String
+    ) async throws {
+        guard !accountRecordName.isEmpty else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale CloudKit-Systemfelder konnte nicht bestimmt werden."
+            )
         }
-        dirtyPendingPayloadKeys.removeAll()
+        let recordNames = Set(recordIDs.map(\.recordName)).filter { !$0.isEmpty }.sorted()
+        guard !recordNames.isEmpty else { return }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
+            )
+        }
+        var index = recordNames.startIndex
+        while index < recordNames.endIndex {
+            let end = recordNames.index(
+                index,
+                offsetBy: maximumRecordZoneChangesPerBatch,
+                limitedBy: recordNames.endIndex
+            ) ?? recordNames.endIndex
+            let chunk = Array(recordNames[index..<end])
+            try await context.perform {
+                let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+                request.predicate = NSPredicate(
+                    format: "accountRecordName == %@ AND recordName IN %@",
+                    accountRecordName,
+                    chunk
+                )
+                request.includesSubentities = false
+                request.fetchLimit = maximumRecordZoneChangesPerBatch
+                request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+                for entry in try context.fetch(request) {
+                    context.delete(entry)
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                context.reset()
+            }
+            index = end
+            if index < recordNames.endIndex {
+                await Task.yield()
+            }
+        }
+    }
+
+    @discardableResult
+    nonisolated static func deleteKnownRecordSystemFields(
+        accountRecordName: String? = nil
+    ) async throws -> Int {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
+            )
+        }
+        var deletedCount = 0
+        while true {
+            let batchCount = try await context.perform {
+                let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+                if let accountRecordName {
+                    request.predicate = NSPredicate(format: "accountRecordName == %@", accountRecordName)
+                }
+                request.includesSubentities = false
+                request.fetchLimit = maximumRecordZoneChangesPerBatch
+                request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+                let entries = try context.fetch(request)
+                for entry in entries {
+                    context.delete(entry)
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                let count = entries.count
+                context.reset()
+                return count
+            }
+            deletedCount += batchCount
+            guard batchCount > 0 else { return deletedCount }
+            await Task.yield()
+        }
     }
 
     func deviceCache() -> [String: [String: Any]] {
@@ -163,148 +319,799 @@ extension ICiCloudSyncManager {
         || ((payload["settingsEnabled"] as? Bool) ?? false)
     }
 
-    func subscriptionRecordURLs() -> [String: String] {
-        Self.syncMetadataValue(forKey: Self.subscriptionRecordURLsKey) as? [String: String] ?? [:]
+    nonisolated static var syncItemMetadataEntityName: String {
+        "ICCloudSyncItemMetadata"
     }
 
-    func subscriptionRecordURL(for recordName: String) -> String? {
-        subscriptionRecordURLs()[recordName]
+    nonisolated static func syncItemMetadataStoreError(code: Int,
+                                                       description: String) -> NSError {
+        NSError(domain: "ICiCloudSyncItemMetadata",
+                code: code,
+                userInfo: [NSLocalizedDescriptionKey: description])
     }
 
-    func setSubscriptionRecordURL(_ feedURL: String, for recordName: String) {
-        var urls = subscriptionRecordURLs()
-        urls[recordName] = feedURL
-        setSyncMetadata(urls, forKey: Self.subscriptionRecordURLsKey)
-    }
-
-    func episodeLocalModifiedDates() -> [String: TimeInterval] {
-        if let episodeLocalModifiedDatesCache {
-            return episodeLocalModifiedDatesCache
+    nonisolated static func legacySyncItemMetadataError(underlyingError: Error? = nil) -> NSError {
+        var userInfo: [String: Any] = [
+            NSLocalizedDescriptionKey: NSLocalizedString(
+                "The local iCloud sync metadata on this device is damaged. Automatic synchronization has been stopped to protect your data. Export a backup and contact support.",
+                comment: ""
+            ),
+        ]
+        if let underlyingError {
+            userInfo[NSUnderlyingErrorKey] = underlyingError
         }
-        let dates = Self.syncMetadataValue(forKey: Self.episodeLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:]
-        episodeLocalModifiedDatesCache = dates
-        return dates
+        return NSError(domain: legacySyncItemMetadataErrorDomain,
+                       code: 1,
+                       userInfo: userInfo)
     }
 
-    func episodeLocalModifiedDate(for objectHash: String) -> Date? {
-        guard let time = episodeLocalModifiedDates()[objectHash], time > 0 else { return nil }
-        return Date(timeIntervalSince1970: time)
+    nonisolated static func isDeterministicLegacySyncItemMetadataError(_ error: Error) -> Bool {
+        (error as NSError).domain == legacySyncItemMetadataErrorDomain
     }
 
-    func setEpisodeLocalModifiedDate(_ date: Date, for objectHash: String) {
-        var dates = episodeLocalModifiedDates()
-        dates[objectHash] = date.timeIntervalSince1970
-        episodeLocalModifiedDatesCache = dates
-        scheduleEpisodeLocalModifiedDatesWrite()
+    nonisolated static func isDeterministicSyncItemMetadataMigrationError(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == "ICiCloudSyncItemMetadata"
+            && (error.code == 2 || error.code == 3)
     }
 
-    func setEpisodeLocalModifiedDates(_ updates: [String: Date]) {
-        guard !updates.isEmpty else { return }
-        var dates = episodeLocalModifiedDates()
-        for (objectHash, date) in updates {
-            dates[objectHash] = date.timeIntervalSince1970
+    nonisolated static func episodeSyncItemMetadataIdentityWrite(
+        recordName: String,
+        objectHash: String
+    ) throws -> ICCloudSyncItemMetadataWrite {
+        guard !objectHash.isEmpty,
+              recordName == RecordPrefix.episode + objectHash else {
+            throw syncItemMetadataStoreError(
+                code: 3,
+                description: "Ein empfangener iCloud-Episodenstatus hat eine widersprüchliche Identität."
+            )
         }
-        episodeLocalModifiedDatesCache = dates
-        scheduleEpisodeLocalModifiedDatesWrite()
+        return ICCloudSyncItemMetadataWrite(
+            category: localOutboxEpisodeCategory,
+            recordName: recordName,
+            itemIdentifier: objectHash,
+            localModifiedAt: nil,
+            localState: nil,
+            payloadHash: nil
+        )
     }
 
-    func scheduleEpisodeLocalModifiedDatesWrite() {
-        episodeLocalModifiedDatesWriteWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                self?.flushEpisodeLocalModifiedDates()
+    nonisolated static func syncItemMetadataSnapshot(
+        from entry: NSManagedObject
+    ) throws -> ICCloudSyncItemMetadataSnapshot {
+        guard let accountRecordName = entry.value(forKey: "accountRecordName") as? String,
+              let category = entry.value(forKey: "category") as? String,
+              let recordName = entry.value(forKey: "recordName") as? String,
+              let itemIdentifier = entry.value(forKey: "itemIdentifier") as? String else {
+            throw syncItemMetadataStoreError(
+                code: 2,
+                description: "Ein lokaler iCloud-Metadateneintrag ist beschädigt."
+            )
+        }
+        return ICCloudSyncItemMetadataSnapshot(
+            accountRecordName: accountRecordName,
+            category: category,
+            recordName: recordName,
+            itemIdentifier: itemIdentifier,
+            localModifiedAt: entry.value(forKey: "localModifiedAt") as? Date,
+            localState: (entry.value(forKey: "localState") as? NSNumber)?.boolValue,
+            payloadHash: entry.value(forKey: "payloadHash") as? String
+        )
+    }
+
+    // Main-context callers use this synchronous, indexed prefetch before mutating any
+    // episode/feed or outbox rows. The caller remains the transaction owner and performs
+    // the single save after both the user data and its conflict metadata have been updated.
+    nonisolated static func prepareSyncItemMetadataContextBatch(
+        accountRecordName: String,
+        recordNames: Set<String>,
+        context: NSManagedObjectContext
+    ) throws -> ICCloudSyncItemMetadataContextBatch {
+        guard !accountRecordName.isEmpty else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale Sync-Metadaten konnte nicht bestimmt werden."
+            )
+        }
+        let sortedRecordNames = recordNames.filter { !$0.isEmpty }.sorted()
+        var entriesByRecordName: [String: NSManagedObject] = [:]
+        var index = sortedRecordNames.startIndex
+        while index < sortedRecordNames.endIndex {
+            let end = sortedRecordNames.index(
+                index,
+                offsetBy: remoteApplyBatchSize,
+                limitedBy: sortedRecordNames.endIndex
+            ) ?? sortedRecordNames.endIndex
+            let chunk = Array(sortedRecordNames[index..<end])
+            let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+            request.predicate = NSPredicate(
+                format: "accountRecordName == %@ AND recordName IN %@",
+                accountRecordName,
+                chunk
+            )
+            request.fetchBatchSize = remoteApplyBatchSize
+            for entry in try context.fetch(request) {
+                let snapshot = try syncItemMetadataSnapshot(from: entry)
+                guard entriesByRecordName[snapshot.recordName] == nil else {
+                    throw syncItemMetadataStoreError(
+                        code: 3,
+                        description: "Ein lokaler iCloud-Metadateneintrag ist mehrfach vorhanden."
+                    )
+                }
+                entriesByRecordName[snapshot.recordName] = entry
+            }
+            index = end
+        }
+        return ICCloudSyncItemMetadataContextBatch(
+            accountRecordName: accountRecordName,
+            context: context,
+            loadedRecordNames: Set(sortedRecordNames),
+            entriesByRecordName: entriesByRecordName
+        )
+    }
+
+    nonisolated static func syncItemMetadataSnapshot(
+        forRecordName recordName: String,
+        metadataBatch: ICCloudSyncItemMetadataContextBatch
+    ) throws -> ICCloudSyncItemMetadataSnapshot? {
+        guard metadataBatch.loadedRecordNames.contains(recordName) else {
+            throw syncItemMetadataStoreError(
+                code: 2,
+                description: "Ein lokaler iCloud-Metadateneintrag wurde nicht vorbereitet."
+            )
+        }
+        guard let entry = metadataBatch.entriesByRecordName[recordName] else { return nil }
+        return try syncItemMetadataSnapshot(from: entry)
+    }
+
+    // This overload deliberately does not save. It is the atomic bridge used by local and
+    // remote apply transactions; optional fields can be updated independently so a hash-only
+    // re-baseline never clears the logical clock/state, while a tombstone can explicitly clear
+    // its payload hash.
+    @discardableResult
+    nonisolated static func upsertSyncItemMetadata(
+        _ writes: [ICCloudSyncItemMetadataWrite],
+        updating fields: ICCloudSyncItemMetadataUpdateFields = .all,
+        metadataBatch: inout ICCloudSyncItemMetadataContextBatch,
+        context: NSManagedObjectContext
+    ) throws -> [ICCloudSyncItemMetadataSnapshot] {
+        guard metadataBatch.context === context else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Lokale iCloud-Metadaten wurden im falschen Datenbankkontext vorbereitet."
+            )
+        }
+        var latestWriteByRecordName: [String: ICCloudSyncItemMetadataWrite] = [:]
+        for write in writes {
+            guard !write.category.isEmpty, !write.recordName.isEmpty,
+                  !write.itemIdentifier.isEmpty,
+                  metadataBatch.loadedRecordNames.contains(write.recordName) else {
+                throw syncItemMetadataStoreError(
+                    code: 2,
+                    description: "Ein lokaler iCloud-Metadateneintrag ist unvollständig oder nicht vorbereitet."
+                )
+            }
+            latestWriteByRecordName[write.recordName] = write
+        }
+        let uniqueWrites = latestWriteByRecordName.values.sorted { $0.recordName < $1.recordName }
+
+        // Validate every existing identity before changing the context. A corrupt/colliding
+        // row therefore cannot leave a half-mutated outbox transaction behind.
+        for write in uniqueWrites {
+            guard let existing = metadataBatch.entriesByRecordName[write.recordName] else { continue }
+            let snapshot = try syncItemMetadataSnapshot(from: existing)
+            guard snapshot.accountRecordName == metadataBatch.accountRecordName,
+                  snapshot.category == write.category,
+                  snapshot.itemIdentifier == write.itemIdentifier else {
+                throw syncItemMetadataStoreError(
+                    code: 3,
+                    description: "Ein lokaler iCloud-Metadateneintrag hat eine widersprüchliche Identität."
+                )
             }
         }
-        episodeLocalModifiedDatesWriteWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: workItem)
-    }
 
-    func flushEpisodeLocalModifiedDates() {
-        guard let dates = episodeLocalModifiedDatesCache else { return }
-        setSyncMetadata(dates, forKey: Self.episodeLocalModifiedDatesKey)
-    }
-
-    func subscriptionLocalModifiedDates() -> [String: TimeInterval] {
-        Self.syncMetadataValue(forKey: Self.subscriptionLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:]
-    }
-
-    func subscriptionLocalModifiedDate(for feedURL: String) -> Date? {
-        guard let time = subscriptionLocalModifiedDates()[feedURL], time > 0 else { return nil }
-        return Date(timeIntervalSince1970: time)
-    }
-
-    func setSubscriptionLocalModifiedDate(_ date: Date, for feedURL: String) {
-        var dates = subscriptionLocalModifiedDates()
-        dates[feedURL] = date.timeIntervalSince1970
-        setSyncMetadata(dates, forKey: Self.subscriptionLocalModifiedDatesKey)
-    }
-
-    // Batches the record-URL, modified-date and payload-hash bookkeeping for a set of
-    // locally changed subscriptions into one disk write each, instead of one per feed.
-    func applySubscriptionLocalChanges(feedURLs: [String], hashes: [String: String]) {
-        guard !feedURLs.isEmpty else { return }
-        let now = Date().timeIntervalSince1970
-        var urls = subscriptionRecordURLs()
-        var dates = subscriptionLocalModifiedDates()
-        for feedURL in feedURLs {
-            urls[Self.subscriptionRecordName(forFeedURL: feedURL)] = feedURL
-            dates[feedURL] = now
-        }
-        setSyncMetadata(urls, forKey: Self.subscriptionRecordURLsKey)
-        setSyncMetadata(dates, forKey: Self.subscriptionLocalModifiedDatesKey)
-        mergeSubscriptionPayloadHashes(hashes)
-    }
-
-    func subscriptionPayloadHashes() -> [String: String] {
-        if let subscriptionPayloadHashesCache {
-            return subscriptionPayloadHashesCache
-        }
-        let hashes = Self.syncMetadataValue(forKey: Self.subscriptionPayloadHashesKey) as? [String: String] ?? [:]
-        subscriptionPayloadHashesCache = hashes
-        return hashes
-    }
-
-    func mergeSubscriptionPayloadHashes(_ updates: [String: String]) {
-        guard !updates.isEmpty else { return }
-        var hashes = subscriptionPayloadHashes()
-        for (feedURL, hash) in updates {
-            hashes[feedURL] = hash
-        }
-        subscriptionPayloadHashesCache = hashes
-        setSyncMetadata(hashes, forKey: Self.subscriptionPayloadHashesKey)
-    }
-
-    // Drops every local sync-bookkeeping entry (record-URL mapping, modified date, payload
-    // hash) for the given unsubscribed feeds, with one write per mapping. Without this the
-    // mappings grew without bound for feeds that were long gone.
-    func removeSubscriptionLocalSyncState(forFeedURLs feedURLs: [String]) {
-        guard !feedURLs.isEmpty else { return }
-        var urls = subscriptionRecordURLs()
-        var dates = subscriptionLocalModifiedDates()
-        var hashes = subscriptionPayloadHashes()
-        var urlsChanged = false
-        var datesChanged = false
-        var hashesChanged = false
-        for feedURL in feedURLs {
-            if urls.removeValue(forKey: Self.subscriptionRecordName(forFeedURL: feedURL)) != nil {
-                urlsChanged = true
+        var snapshots: [ICCloudSyncItemMetadataSnapshot] = []
+        snapshots.reserveCapacity(uniqueWrites.count)
+        for write in uniqueWrites {
+            let entry: NSManagedObject
+            if let existing = metadataBatch.entriesByRecordName[write.recordName] {
+                entry = existing
+            } else {
+                entry = NSEntityDescription.insertNewObject(
+                    forEntityName: syncItemMetadataEntityName,
+                    into: context
+                )
+                entry.setValue(metadataBatch.accountRecordName, forKey: "accountRecordName")
+                entry.setValue(write.category, forKey: "category")
+                entry.setValue(write.recordName, forKey: "recordName")
+                entry.setValue(write.itemIdentifier, forKey: "itemIdentifier")
+                metadataBatch.entriesByRecordName[write.recordName] = entry
             }
-            if dates.removeValue(forKey: feedURL) != nil {
-                datesChanged = true
+            if fields.contains(.localModifiedAt) {
+                entry.setValue(write.localModifiedAt, forKey: "localModifiedAt")
             }
-            if hashes.removeValue(forKey: feedURL) != nil {
-                hashesChanged = true
+            if fields.contains(.localState) {
+                entry.setValue(write.localState.map { NSNumber(value: $0) }, forKey: "localState")
+            }
+            if fields.contains(.payloadHash) {
+                entry.setValue(write.payloadHash, forKey: "payloadHash")
+            }
+            snapshots.append(try syncItemMetadataSnapshot(from: entry))
+        }
+        return snapshots
+    }
+
+    nonisolated static func upsertSyncItemMetadata(
+        accountRecordName: String,
+        writes: [ICCloudSyncItemMetadataWrite],
+        replaceExisting: Bool = true
+    ) async throws -> [ICCloudSyncItemMetadataSnapshot] {
+        guard !accountRecordName.isEmpty else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale Sync-Metadaten konnte nicht bestimmt werden."
+            )
+        }
+        var latestWriteByRecordName: [String: ICCloudSyncItemMetadataWrite] = [:]
+        for write in writes {
+            guard !write.category.isEmpty, !write.recordName.isEmpty,
+                  !write.itemIdentifier.isEmpty else {
+                throw syncItemMetadataStoreError(
+                    code: 2,
+                    description: "Ein lokaler iCloud-Metadateneintrag ist unvollständig."
+                )
+            }
+            latestWriteByRecordName[write.recordName] = write
+        }
+        let uniqueWrites = latestWriteByRecordName.values.sorted {
+            $0.recordName < $1.recordName
+        }
+        guard !uniqueWrites.isEmpty else { return [] }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
+            )
+        }
+        if !replaceExisting {
+            // Backfill/migration is fill-only. A live user edit can commit after this
+            // context fetched but before it saves; the newer store values must win that
+            // conflict instead of being replaced by the older page snapshot.
+            context.mergePolicy = NSMergePolicy(
+                merge: .mergeByPropertyStoreTrumpMergePolicyType
+            )
+        }
+
+        var persisted: [ICCloudSyncItemMetadataSnapshot] = []
+        var index = uniqueWrites.startIndex
+        while index < uniqueWrites.endIndex {
+            let end = uniqueWrites.index(index,
+                                         offsetBy: remoteApplyBatchSize,
+                                         limitedBy: uniqueWrites.endIndex) ?? uniqueWrites.endIndex
+            let chunk = Array(uniqueWrites[index..<end])
+            let snapshots = try await context.perform {
+                let recordNames = chunk.map(\.recordName)
+                let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+                request.predicate = NSPredicate(
+                    format: "accountRecordName == %@ AND recordName IN %@",
+                    accountRecordName,
+                    recordNames
+                )
+                request.fetchBatchSize = remoteApplyBatchSize
+                var entriesByRecordName: [String: NSManagedObject] = [:]
+                for entry in try context.fetch(request) {
+                    guard let recordName = entry.value(forKey: "recordName") as? String else {
+                        throw syncItemMetadataStoreError(
+                            code: 2,
+                            description: "Ein lokaler iCloud-Metadateneintrag ist beschädigt."
+                        )
+                    }
+                    entriesByRecordName[recordName] = entry
+                }
+
+                var chunkSnapshots: [ICCloudSyncItemMetadataSnapshot] = []
+                chunkSnapshots.reserveCapacity(chunk.count)
+                for write in chunk {
+                    let entry: NSManagedObject
+                    if let existing = entriesByRecordName[write.recordName] {
+                        entry = existing
+                        let storedCategory = existing.value(forKey: "category") as? String
+                        let storedIdentifier = existing.value(forKey: "itemIdentifier") as? String
+                        guard storedCategory == write.category,
+                              storedIdentifier == write.itemIdentifier else {
+                            throw syncItemMetadataStoreError(
+                                code: 3,
+                                description: "Ein lokaler iCloud-Metadateneintrag hat eine widersprüchliche Identität."
+                            )
+                        }
+                    } else {
+                        entry = NSEntityDescription.insertNewObject(
+                            forEntityName: syncItemMetadataEntityName,
+                            into: context
+                        )
+                        entry.setValue(accountRecordName, forKey: "accountRecordName")
+                        entry.setValue(write.category, forKey: "category")
+                        entry.setValue(write.recordName, forKey: "recordName")
+                        entry.setValue(write.itemIdentifier, forKey: "itemIdentifier")
+                        entriesByRecordName[write.recordName] = entry
+                    }
+
+                    if replaceExisting {
+                        entry.setValue(write.localModifiedAt, forKey: "localModifiedAt")
+                    } else if entry.value(forKey: "localModifiedAt") == nil,
+                              let localModifiedAt = write.localModifiedAt {
+                        entry.setValue(localModifiedAt, forKey: "localModifiedAt")
+                    }
+                    if replaceExisting {
+                        entry.setValue(write.localState.map { NSNumber(value: $0) },
+                                       forKey: "localState")
+                        entry.setValue(write.payloadHash, forKey: "payloadHash")
+                    } else {
+                        if entry.value(forKey: "localState") == nil,
+                           let localState = write.localState {
+                            entry.setValue(NSNumber(value: localState), forKey: "localState")
+                        }
+                        if entry.value(forKey: "payloadHash") == nil,
+                           write.localState != false,
+                           let payloadHash = write.payloadHash {
+                            entry.setValue(payloadHash, forKey: "payloadHash")
+                        }
+                    }
+                    chunkSnapshots.append(try syncItemMetadataSnapshot(from: entry))
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                context.reset()
+                return chunkSnapshots
+            }
+            persisted.append(contentsOf: snapshots)
+            index = end
+            if index < uniqueWrites.endIndex {
+                await Task.yield()
             }
         }
-        if urlsChanged {
-            setSyncMetadata(urls, forKey: Self.subscriptionRecordURLsKey)
+        return persisted
+    }
+
+    nonisolated static func syncItemMetadataByRecordName(
+        _ recordNames: Set<String>,
+        accountRecordName: String
+    ) async throws -> [String: ICCloudSyncItemMetadataSnapshot] {
+        guard !accountRecordName.isEmpty else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale Sync-Metadaten konnte nicht bestimmt werden."
+            )
         }
-        if datesChanged {
-            setSyncMetadata(dates, forKey: Self.subscriptionLocalModifiedDatesKey)
+        let sortedRecordNames = recordNames.filter { !$0.isEmpty }.sorted()
+        guard !sortedRecordNames.isEmpty else { return [:] }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
+            )
         }
-        if hashesChanged {
-            subscriptionPayloadHashesCache = hashes
-            setSyncMetadata(hashes, forKey: Self.subscriptionPayloadHashesKey)
+
+        var result: [String: ICCloudSyncItemMetadataSnapshot] = [:]
+        var index = sortedRecordNames.startIndex
+        while index < sortedRecordNames.endIndex {
+            let end = sortedRecordNames.index(index,
+                                              offsetBy: remoteApplyBatchSize,
+                                              limitedBy: sortedRecordNames.endIndex) ?? sortedRecordNames.endIndex
+            let chunk = Array(sortedRecordNames[index..<end])
+            let snapshots = try await context.perform {
+                let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+                request.predicate = NSPredicate(
+                    format: "accountRecordName == %@ AND recordName IN %@",
+                    accountRecordName,
+                    chunk
+                )
+                request.fetchBatchSize = remoteApplyBatchSize
+                let values = try context.fetch(request).map {
+                    try syncItemMetadataSnapshot(from: $0)
+                }
+                context.reset()
+                return values
+            }
+            for snapshot in snapshots {
+                result[snapshot.recordName] = snapshot
+            }
+            index = end
+            if index < sortedRecordNames.endIndex {
+                await Task.yield()
+            }
+        }
+        return result
+    }
+
+    @discardableResult
+    nonisolated static func deleteSyncItemMetadata(
+        accountRecordName: String? = nil
+    ) async throws -> Int {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
+            )
+        }
+        var deletedCount = 0
+        while true {
+            let deleted = try await context.perform {
+                let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+                if let accountRecordName {
+                    request.predicate = NSPredicate(
+                        format: "accountRecordName == %@",
+                        accountRecordName
+                    )
+                }
+                request.fetchLimit = remoteApplyBatchSize
+                request.fetchBatchSize = remoteApplyBatchSize
+                let entries = try context.fetch(request)
+                for entry in entries {
+                    context.delete(entry)
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                let count = entries.count
+                context.reset()
+                return count
+            }
+            deletedCount += deleted
+            guard deleted > 0 else { return deletedCount }
+            await Task.yield()
+        }
+    }
+
+    @discardableResult
+    nonisolated static func bindSyncItemMetadata(
+        from sourceAccountRecordName: String,
+        to accountRecordName: String
+    ) async throws -> Int {
+        guard !sourceAccountRecordName.isEmpty, !accountRecordName.isEmpty else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale Sync-Metadaten konnte nicht bestimmt werden."
+            )
+        }
+        guard sourceAccountRecordName != accountRecordName else { return 0 }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
+            )
+        }
+        // Once the verified-account capture gate opens, new edits write directly to the
+        // target scope while older pending rows bind in this context. Preserve any target
+        // value committed after our fetch; a remaining source row is picked up next loop.
+        context.mergePolicy = NSMergePolicy(
+            merge: .mergeByPropertyStoreTrumpMergePolicyType
+        )
+
+        var boundCount = 0
+        while true {
+            let bound = try await context.perform {
+                let sourceRequest = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+                sourceRequest.predicate = NSPredicate(
+                    format: "accountRecordName == %@",
+                    sourceAccountRecordName
+                )
+                sourceRequest.sortDescriptors = [NSSortDescriptor(key: "recordName", ascending: true)]
+                sourceRequest.fetchLimit = remoteApplyBatchSize
+                sourceRequest.fetchBatchSize = remoteApplyBatchSize
+                let sourceEntries = try context.fetch(sourceRequest)
+                guard !sourceEntries.isEmpty else {
+                    context.reset()
+                    return 0
+                }
+
+                let recordNames = try sourceEntries.map { entry -> String in
+                    guard let recordName = entry.value(forKey: "recordName") as? String else {
+                        throw syncItemMetadataStoreError(
+                            code: 2,
+                            description: "Ein lokaler iCloud-Metadateneintrag ist beschädigt."
+                        )
+                    }
+                    return recordName
+                }
+                let targetRequest = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+                targetRequest.predicate = NSPredicate(
+                    format: "accountRecordName == %@ AND recordName IN %@",
+                    accountRecordName,
+                    recordNames
+                )
+                var targetByRecordName: [String: NSManagedObject] = [:]
+                for entry in try context.fetch(targetRequest) {
+                    guard let recordName = entry.value(forKey: "recordName") as? String else {
+                        throw syncItemMetadataStoreError(
+                            code: 2,
+                            description: "Ein lokaler iCloud-Metadateneintrag ist beschädigt."
+                        )
+                    }
+                    targetByRecordName[recordName] = entry
+                }
+
+                for source in sourceEntries {
+                    let sourceSnapshot = try syncItemMetadataSnapshot(from: source)
+                    if let target = targetByRecordName[sourceSnapshot.recordName] {
+                        let targetSnapshot = try syncItemMetadataSnapshot(from: target)
+                        guard targetSnapshot.category == sourceSnapshot.category,
+                              targetSnapshot.itemIdentifier == sourceSnapshot.itemIdentifier else {
+                            throw syncItemMetadataStoreError(
+                                code: 3,
+                                description: "Ein lokaler iCloud-Metadateneintrag hat eine widersprüchliche Identität."
+                            )
+                        }
+                        let sourceWins: Bool
+                        switch (sourceSnapshot.localModifiedAt, targetSnapshot.localModifiedAt) {
+                        case let (sourceDate?, targetDate?):
+                            sourceWins = sourceDate.compare(targetDate) != .orderedAscending
+                        case (_?, nil), (nil, nil):
+                            sourceWins = true
+                        case (nil, _?):
+                            sourceWins = false
+                        }
+                        if sourceWins {
+                            target.setValue(sourceSnapshot.localModifiedAt, forKey: "localModifiedAt")
+                            target.setValue(sourceSnapshot.localState.map { NSNumber(value: $0) },
+                                            forKey: "localState")
+                            target.setValue(sourceSnapshot.payloadHash, forKey: "payloadHash")
+                        }
+                        context.delete(source)
+                    } else {
+                        source.setValue(accountRecordName, forKey: "accountRecordName")
+                    }
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                let count = sourceEntries.count
+                context.reset()
+                return count
+            }
+            boundCount += bound
+            guard bound > 0 else { return boundCount }
+            await Task.yield()
+        }
+    }
+
+    nonisolated static var legacyEpisodeSyncItemMetadataKeys: [String] {
+        [episodeLocalModifiedDatesKey]
+    }
+
+    nonisolated static var legacySubscriptionSyncItemMetadataKeys: [String] {
+        [
+            subscriptionRecordURLsKey,
+            subscriptionLocalModifiedDatesKey,
+            subscriptionLocalStatesKey,
+            subscriptionPayloadHashesKey,
+        ]
+    }
+
+    nonisolated static var allLegacySyncItemMetadataKeys: [String] {
+        legacyEpisodeSyncItemMetadataKeys + legacySubscriptionSyncItemMetadataKeys
+    }
+
+    nonisolated static func hasLegacyEpisodeSyncItemMetadata() -> Bool {
+        legacySyncItemMetadataSourcesExist(keys: legacyEpisodeSyncItemMetadataKeys)
+    }
+
+    nonisolated static func hasLegacySubscriptionSyncItemMetadata() -> Bool {
+        legacySyncItemMetadataSourcesExist(keys: legacySubscriptionSyncItemMetadataKeys)
+    }
+
+    nonisolated static func legacySyncItemMetadataSourcesExist(keys: [String]) -> Bool {
+        let defaults = UserDefaults.standard
+        return keys.contains { key in
+            FileManager.default.fileExists(atPath: syncMetadataFileURL(forKey: key).path)
+                || defaults.object(forKey: key) != nil
+        }
+    }
+
+    nonisolated static func legacySyncItemMetadataWrites() async throws -> (
+        writes: [ICCloudSyncItemMetadataWrite],
+        sourceKeys: [String]
+    )? {
+        try await Task.detached(priority: .utility) {
+            var sourceKeys: [String] = []
+
+            func readDictionary<Value>(_ key: String, as type: Value.Type) throws -> Value? {
+                let fileURL = syncMetadataFileURL(forKey: key)
+                let rawValue: Any?
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    let data = try Data(contentsOf: fileURL)
+                    do {
+                        rawValue = try PropertyListSerialization.propertyList(
+                            from: data,
+                            options: [],
+                            format: nil
+                        )
+                    } catch {
+                        throw legacySyncItemMetadataError(underlyingError: error)
+                    }
+                } else {
+                    // The last App-Store build before file-backed metadata can still hold
+                    // these dictionaries in UserDefaults. They must be captured before the
+                    // generic defaults purge and migrated through the same durable row path.
+                    rawValue = UserDefaults.standard.object(forKey: key)
+                }
+                guard let rawValue else { return nil }
+                guard let value = rawValue as? Value else {
+                    throw legacySyncItemMetadataError()
+                }
+                sourceKeys.append(key)
+                return value
+            }
+
+            let episodeDates = try readDictionary(
+                episodeLocalModifiedDatesKey,
+                as: [String: TimeInterval].self
+            ) ?? [:]
+            let subscriptionRecordURLs = try readDictionary(
+                subscriptionRecordURLsKey,
+                as: [String: String].self
+            ) ?? [:]
+            let subscriptionDates = try readDictionary(
+                subscriptionLocalModifiedDatesKey,
+                as: [String: TimeInterval].self
+            ) ?? [:]
+            let subscriptionStates = try readDictionary(
+                subscriptionLocalStatesKey,
+                as: [String: Bool].self
+            ) ?? [:]
+            let subscriptionHashes = try readDictionary(
+                subscriptionPayloadHashesKey,
+                as: [String: String].self
+            ) ?? [:]
+            guard !sourceKeys.isEmpty else { return nil }
+
+            var writesByRecordName: [String: ICCloudSyncItemMetadataWrite] = [:]
+            for (objectHash, timestamp) in episodeDates {
+                guard !objectHash.isEmpty, timestamp.isFinite else {
+                    throw legacySyncItemMetadataError()
+                }
+                let recordName = RecordPrefix.episode + objectHash
+                writesByRecordName[recordName] = ICCloudSyncItemMetadataWrite(
+                    category: localOutboxEpisodeCategory,
+                    recordName: recordName,
+                    itemIdentifier: objectHash,
+                    localModifiedAt: timestamp > 0 ? Date(timeIntervalSince1970: timestamp) : nil,
+                    localState: nil,
+                    payloadHash: nil
+                )
+            }
+
+            for (recordName, feedURL) in subscriptionRecordURLs {
+                guard !recordName.isEmpty, !feedURL.isEmpty else {
+                    throw legacySyncItemMetadataError()
+                }
+                writesByRecordName[recordName] = ICCloudSyncItemMetadataWrite(
+                    category: localOutboxSubscriptionCategory,
+                    recordName: recordName,
+                    itemIdentifier: feedURL,
+                    localModifiedAt: nil,
+                    localState: nil,
+                    payloadHash: nil
+                )
+            }
+
+            var subscriptionFeedURLs = Set(subscriptionDates.keys)
+            subscriptionFeedURLs.formUnion(subscriptionStates.keys)
+            subscriptionFeedURLs.formUnion(subscriptionHashes.keys)
+            subscriptionFeedURLs.formUnion(subscriptionRecordURLs.values)
+            for feedURL in subscriptionFeedURLs {
+                guard !feedURL.isEmpty,
+                      subscriptionDates[feedURL]?.isFinite != false else {
+                    throw legacySyncItemMetadataError()
+                }
+                let recordName = subscriptionRecordName(forFeedURL: feedURL)
+                if let existing = writesByRecordName[recordName],
+                   existing.itemIdentifier != feedURL {
+                    throw legacySyncItemMetadataError()
+                }
+                let state = subscriptionStates[feedURL]
+                writesByRecordName[recordName] = ICCloudSyncItemMetadataWrite(
+                    category: localOutboxSubscriptionCategory,
+                    recordName: recordName,
+                    itemIdentifier: feedURL,
+                    localModifiedAt: subscriptionDates[feedURL].flatMap {
+                        $0 > 0 ? Date(timeIntervalSince1970: $0) : nil
+                    },
+                    localState: state,
+                    payloadHash: state == false ? nil : subscriptionHashes[feedURL]
+                )
+            }
+
+            return (
+                writes: writesByRecordName.values.sorted { $0.recordName < $1.recordName },
+                sourceKeys: sourceKeys
+            )
+        }.value
+    }
+
+    nonisolated static func removeLegacySyncItemMetadataSources(
+        _ sourceKeys: [String]
+    ) async throws {
+        try await Task.detached(priority: .utility) {
+            let defaults = UserDefaults.standard
+            for key in sourceKeys {
+                let fileURL = syncMetadataFileURL(forKey: key)
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+                defaults.removeObject(forKey: key)
+            }
+            for key in sourceKeys {
+                if FileManager.default.fileExists(atPath: syncMetadataFileURL(forKey: key).path)
+                    || defaults.object(forKey: key) != nil {
+                    throw syncItemMetadataStoreError(
+                        code: 4,
+                        description: "Die bisherigen lokalen iCloud-Sync-Metadaten konnten nicht vollständig migriert werden."
+                    )
+                }
+            }
+        }.value
+    }
+
+    nonisolated static func removeAllLegacySyncItemMetadataSources() async throws {
+        try await removeLegacySyncItemMetadataSources(allLegacySyncItemMetadataKeys)
+    }
+
+    func migrateLegacySyncItemMetadataIfNeeded(accountRecordName: String) async throws {
+        let generation = cloudAccountGeneration
+        guard let legacy = try await Self.legacySyncItemMetadataWrites() else { return }
+        do {
+            _ = try await Self.upsertSyncItemMetadata(
+                accountRecordName: accountRecordName,
+                writes: legacy.writes,
+                replaceExisting: false
+            )
+        } catch {
+            guard Self.isDeterministicSyncItemMetadataMigrationError(error) else {
+                throw error
+            }
+            throw Self.legacySyncItemMetadataError(underlyingError: error)
+        }
+        guard generation == cloudAccountGeneration,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+            throw CancellationError()
+        }
+        try await Self.removeLegacySyncItemMetadataSources(legacy.sourceKeys)
+        guard generation == cloudAccountGeneration,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+            throw CancellationError()
+        }
+    }
+
+    func migrateLegacyKnownRecordSystemFieldsIfNeeded(
+        accountRecordName: String
+    ) async throws {
+        let generation = cloudAccountGeneration
+        guard isICloudAccountIdentityVerified,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+            throw CancellationError()
+        }
+        guard let legacy = try await Self.legacyKnownRecordSystemFieldWrites() else { return }
+        guard generation == cloudAccountGeneration,
+              isICloudAccountIdentityVerified,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+            throw CancellationError()
+        }
+        try await Self.persistKnownRecordSystemFields(
+            legacy.records,
+            accountRecordName: accountRecordName
+        )
+        guard generation == cloudAccountGeneration,
+              isICloudAccountIdentityVerified,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+            throw CancellationError()
+        }
+        try await Self.removeLegacyKnownRecordSystemFieldFiles(legacy.sourcePaths)
+        guard generation == cloudAccountGeneration,
+              isICloudAccountIdentityVerified,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+            throw CancellationError()
         }
     }
 
@@ -362,6 +1169,10 @@ extension ICiCloudSyncManager {
         CKRecord.ID(recordName: Self.subscriptionRecordName(forFeedURL: feedURL), zoneID: zoneID)
     }
 
+    func subscriptionTombstoneRecordID(forFeedURL feedURL: String) -> CKRecord.ID {
+        CKRecord.ID(recordName: Self.subscriptionTombstoneRecordName(forFeedURL: feedURL), zoneID: zoneID)
+    }
+
     func appSettingsRecordID() -> CKRecord.ID {
         CKRecord.ID(recordName: RecordPrefix.appSettings, zoneID: zoneID)
     }
@@ -380,25 +1191,74 @@ extension ICiCloudSyncManager {
     }
 
     func refreshAccountStatus() async {
+        if let accountVerificationTask {
+            await accountVerificationTask.value
+            return
+        }
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performAccountStatusRefresh()
+            self.accountVerificationTask = nil
+        }
+        accountVerificationTask = task
+        await task.value
+    }
+
+    func performAccountStatusRefresh() async {
+        await cancelAndAwaitLowPrioritySync()
+        if let activeManualSyncTask = manualSyncTask {
+            await activeManualSyncTask.value
+        }
+        if let activeBackgroundSyncTask = backgroundSyncTask {
+            await activeBackgroundSyncTask.value
+        }
+        await awaitFinalDeviceRecordUpdate()
+        let transitionToken = await acquireICloudAccountTransition()
+        defer { releaseICloudAccountTransition() }
+        guard !Task.isCancelled else { return }
+        setICloudAccountIdentityVerified(false)
+        let generation = cloudAccountGeneration
         do {
             let status = try await container.accountStatus()
+            guard generation == cloudAccountGeneration else { return }
             switch status {
             case .available:
+                guard try await reconcileAvailableICloudAccount() else { return }
                 clearError()
-                setStatus(anySyncEnabled ? NSLocalizedString("Bereit", comment: "") : NSLocalizedString("Aus", comment: ""))
+                if hasInitialUploadBackfillWork {
+                    setStatus(backfillProgressStatusText())
+                } else if !syncInProgress, defaults.string(forKey: Self.lastErrorKey) == nil {
+                    setStatus(anySyncEnabled ? NSLocalizedString("Bereit", comment: "") : NSLocalizedString("Aus", comment: ""))
+                }
             case .noAccount:
-                setStatus(NSLocalizedString("Kein iCloud Account verfügbar.", comment: ""))
+                lastForegroundSyncDate = nil
+                if !isICloudAccountSignedOut {
+                    setICloudAccountSignedOut(true)
+                    resetForICloudAccountTransition(reinitializeEngine: false)
+                }
+                setBlockingStatus(NSLocalizedString("Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an.", comment: ""))
             case .restricted:
-                setStatus(NSLocalizedString("iCloud ist auf diesem Gerät eingeschränkt.", comment: ""))
+                lastForegroundSyncDate = nil
+                setBlockingStatus(NSLocalizedString("InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen.", comment: ""))
             case .couldNotDetermine:
-                setStatus(NSLocalizedString("iCloud Status unbekannt.", comment: ""))
+                lastForegroundSyncDate = nil
+                setBlockingStatus(NSLocalizedString("Der iCloud-Status konnte nicht ermittelt werden. Prüfe deine Verbindung und versuche es erneut.", comment: ""))
+                scheduleSyncRetryAfterFailure(code: .networkUnavailable, reason: "accountStatus")
             case .temporarilyUnavailable:
-                setStatus(NSLocalizedString("iCloud ist vorübergehend nicht verfügbar.", comment: ""))
+                lastForegroundSyncDate = nil
+                setBlockingStatus(NSLocalizedString("iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt.", comment: ""))
+                scheduleSyncRetryAfterFailure(code: .serviceUnavailable, reason: "accountStatus")
             @unknown default:
-                setStatus(NSLocalizedString("iCloud Status unbekannt.", comment: ""))
+                lastForegroundSyncDate = nil
+                setBlockingStatus(NSLocalizedString("Der iCloud-Status konnte nicht ermittelt werden. Prüfe deine Verbindung und versuche es erneut.", comment: ""))
+                scheduleSyncRetryAfterFailure(code: .networkUnavailable, reason: "accountStatus")
             }
         } catch {
+            guard transitionToken == iCloudAccountTransitionToken else { return }
+            lastForegroundSyncDate = nil
             setError(error)
+            scheduleSyncRetryAfterFailure(error: error, reason: "accountStatus")
         }
     }
 
@@ -411,7 +1271,6 @@ extension ICiCloudSyncManager {
             return
         }
         guard verifyNoExpectedUserDataWasSkippedBeforeCompleting() else { return }
-        let shouldRefreshCloudInventory = syncedUserDataInCurrentRun
         clearSyncActivity()
         if syncedUserDataInCurrentRun {
             let now = Date()
@@ -426,7 +1285,7 @@ extension ICiCloudSyncManager {
         deviceRecordShouldStampSyncDate = false
         setSyncMetadata(false, forKey: Self.deviceRecordShouldStampSyncDateKey)
         var completionMetadata = syncDiagnosticsMetadata()
-        completionMetadata["shouldRefreshCloudInventory"] = shouldRefreshCloudInventory
+        completionMetadata["requestedCloudInventoryRefresh"] = requestedCloudInventoryRefreshReason != nil
         logSyncEvent("iCloud Sync abgeschlossen", metadata: completionMetadata)
         if hasInitialUploadBackfillWork {
             // The backfill continues page by page — keep showing upload progress instead
@@ -437,89 +1296,60 @@ extension ICiCloudSyncManager {
         } else {
             setStatus(NSLocalizedString("Synchronisation vollständig", comment: ""))
             postStateChanged()
-            if shouldRefreshCloudInventory {
-                refreshCloudInventory(reason: "syncCompletedWithUserData")
-            }
+            runRequestedCloudInventoryRefresh()
             pruneEpisodeLocalModifiedDatesIfNeeded()
         }
         syncedUserDataInCurrentRun = false
     }
 
     func verifyNoExpectedUserDataWasSkippedBeforeCompleting() -> Bool {
-        if syncedUserDataInCurrentRun {
-            return true
-        }
-
-        if let batch = pendingInitialUploadBatch,
-           !batch.episodeRecordNames.isEmpty || !batch.subscriptionRecordNames.isEmpty {
-            blockCompletionAndRequeue(reason: "pendingInitialUploadBatchNotSaved", metadata: [
-                "pendingInitialEpisodeRecords": batch.episodeRecordNames.count,
-                "pendingInitialSubscriptionRecords": batch.subscriptionRecordNames.count,
+        let pendingEpisodes = pendingInitialUploadBatches.reduce(0) { $0 + $1.episodeRecordNames.count }
+        let pendingSubscriptions = pendingInitialUploadBatches.reduce(0) { $0 + $1.subscriptionRecordNames.count }
+        if pendingEpisodes > 0 || pendingSubscriptions > 0 {
+            blockCompletionAndRequeue(reason: "pendingInitialUploadBatchesNotSaved", metadata: [
+                "pendingInitialUploadPages": pendingInitialUploadBatches.count,
+                "pendingInitialEpisodeRecords": pendingEpisodes,
+                "pendingInitialSubscriptionRecords": pendingSubscriptions,
             ])
             return false
         }
-
-        guard cachedSyncTotalCounts != nil else {
-            refreshSyncTotalCountsInBackground()
-            blockCompletionAndRequeue(reason: "localSyncCountsUnavailable", metadata: [:])
-            return false
-        }
-
-        let counts = syncTotalCounts()
-        let expectsEpisodes = episodesSyncEnabled && counts.episodes > 0
-        let expectsSubscriptions = subscriptionsSyncEnabled && counts.subscriptions > 0
-        let expectsSettings = settingsSyncEnabled && counts.settings > 0
-        guard expectsEpisodes || expectsSubscriptions || expectsSettings else {
-            return true
-        }
-
-        let inventory = cloudInventory
-        let cloudHasExpectedData = (!expectsEpisodes || (inventory?.episodeStates ?? 0) > 0)
-            && (!expectsSubscriptions || (inventory?.subscriptions ?? 0) > 0)
-            && (!expectsSettings || (inventory?.settings ?? 0) > 0)
-        if cloudHasExpectedData {
-            return true
-        }
-
-        if expectsEpisodes {
-            resetInitialEpisodeBackfillCursor()
-        }
-        if expectsSubscriptions {
-            resetInitialSubscriptionBackfillCursor()
-        }
-        if expectsSettings {
-            defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
-        }
-        blockCompletionAndRequeue(reason: "localDataExpectedButCloudInventoryEmpty", metadata: [
-            "localEpisodeCount": counts.episodes,
-            "localSubscriptionCount": counts.subscriptions,
-            "localSettingsCount": counts.settings,
-            "cloudInventoryEpisodeStates": inventory?.episodeStates ?? -1,
-            "cloudInventorySubscriptions": inventory?.subscriptions ?? -1,
-            "cloudInventorySettings": inventory?.settings ?? -1,
-        ])
-        refreshCloudInventory(reason: "completionBlockedWithExpectedUserData")
-        return false
+        return true
     }
 
     func blockCompletionAndRequeue(reason: String, metadata: [String: Any]) {
-        hasUnresolvedSyncFailures = true
         clearSyncActivity()
         var details = metadata
         details["reason"] = reason
         details.merge(syncDiagnosticsMetadata()) { current, _ in current }
         logSyncEvent("iCloud Sync Abschluss blockiert", metadata: details)
-        setSyncMetadata(NSLocalizedString("iCloud Sync konnte nicht abgeschlossen werden.", comment: ""), forKey: Self.lastErrorKey)
+        setStatus(recoveryProgressStatusText())
         scheduleCurrentEnabledDataForUpload()
         postStateChanged()
     }
 
+    func recoveryProgressStatusText() -> String {
+        if hasInitialUploadBackfillWork {
+            return backfillProgressStatusText()
+        }
+        return NSLocalizedString("Prüft, ob alle Daten auf iCloud angekommen sind…", comment: "")
+    }
+
     func backfillProgressStatusText() -> String {
         let counts = syncCounts
-        let synced = counts.episodesSynced + counts.subscriptionsSynced
-        let total = counts.episodesTotal + counts.subscriptionsTotal
+        let uploadsEpisodes = episodesSyncEnabled && defaults.object(forKey: Self.initialEpisodeBackfillOffsetKey) != nil
+        let uploadsSubscriptions = subscriptionsSyncEnabled && defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) != nil
+        if uploadsEpisodes, !uploadsSubscriptions, counts.episodesTotal > 0 {
+            let format = NSLocalizedString("Lädt Episodenstatus hoch… %ld / %ld", comment: "")
+            return String(format: format, counts.episodesSynced, counts.episodesTotal)
+        }
+        if uploadsSubscriptions, !uploadsEpisodes, counts.subscriptionsTotal > 0 {
+            let format = NSLocalizedString("Lädt Abonnements hoch… %ld / %ld", comment: "")
+            return String(format: format, counts.subscriptionsSynced, counts.subscriptionsTotal)
+        }
+        let synced = (uploadsEpisodes ? counts.episodesSynced : 0) + (uploadsSubscriptions ? counts.subscriptionsSynced : 0)
+        let total = (uploadsEpisodes ? counts.episodesTotal : 0) + (uploadsSubscriptions ? counts.subscriptionsTotal : 0)
         if total > 0 {
-            let format = NSLocalizedString("Lädt hoch… %ld / %ld", comment: "")
+            let format = NSLocalizedString("Lädt Daten hoch… %ld / %ld", comment: "")
             return String(format: format, synced, total)
         }
         return NSLocalizedString("Synchronisation läuft, lädt hoch…", comment: "")
@@ -531,27 +1361,94 @@ extension ICiCloudSyncManager {
     // taken, its entry may be dropped once too early; that is benign, the next state
     // change simply re-records it.
     func pruneEpisodeLocalModifiedDatesIfNeeded() {
-        guard !didPruneEpisodeLocalModifiedDates, episodesSyncEnabled, !hasInitialUploadBackfillWork else { return }
+        guard !didPruneEpisodeLocalModifiedDates, episodesSyncEnabled,
+              !hasInitialUploadBackfillWork,
+              let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey) else { return }
         didPruneEpisodeLocalModifiedDates = true
-        Task.detached(priority: .utility) { [weak self] in
+        let generation = cloudAccountGeneration
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             let existingHashes = await Self.allLocalEpisodeObjectHashes()
             // An empty set means the lookup failed (or the library is empty) — better to
             // skip pruning than to wipe every sync timestamp.
             guard !existingHashes.isEmpty else { return }
-            await MainActor.run {
-                guard let self else { return }
-                var dates = self.episodeLocalModifiedDates()
-                let before = dates.count
-                dates = dates.filter { existingHashes.contains($0.key) }
-                guard dates.count != before else { return }
-                self.episodeLocalModifiedDatesCache = dates
-                self.scheduleEpisodeLocalModifiedDatesWrite()
+            do {
+                let result = try await Self.pruneEpisodeSyncItemMetadata(
+                    accountRecordName: accountRecordName,
+                    existingObjectHashes: existingHashes
+                )
+                guard generation == self.cloudAccountGeneration,
+                      self.defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName,
+                      result.removed > 0 else { return }
                 self.logSyncEvent("Episode-Sync-Metadaten bereinigt", metadata: [
-                    "removed": before - dates.count,
-                    "remaining": dates.count,
+                    "removed": result.removed,
+                    "remaining": result.remaining,
                 ])
+            } catch {
+                guard generation == self.cloudAccountGeneration else { return }
+                self.handleLocalPersistenceFailure(error)
             }
         }
+    }
+
+    nonisolated static func pruneEpisodeSyncItemMetadata(
+        accountRecordName: String,
+        existingObjectHashes: Set<String>
+    ) async throws -> (removed: Int, remaining: Int) {
+        guard !accountRecordName.isEmpty,
+              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw syncItemMetadataStoreError(
+                code: 1,
+                description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
+            )
+        }
+        var cursor: String?
+        var removed = 0
+        while true {
+            let currentCursor = cursor
+            let result = try await context.perform { () -> (lastRecordName: String?, removed: Int) in
+                let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+                var predicates: [NSPredicate] = [
+                    NSPredicate(format: "accountRecordName == %@", accountRecordName),
+                    NSPredicate(format: "category == %@", localOutboxEpisodeCategory),
+                ]
+                if let currentCursor {
+                    predicates.append(NSPredicate(format: "recordName > %@", currentCursor))
+                }
+                request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+                request.sortDescriptors = [NSSortDescriptor(key: "recordName", ascending: true)]
+                request.fetchLimit = remoteApplyBatchSize
+                request.fetchBatchSize = remoteApplyBatchSize
+                let entries = try context.fetch(request)
+                let lastRecordName = entries.last?.value(forKey: "recordName") as? String
+                var removedInChunk = 0
+                for entry in entries {
+                    let snapshot = try syncItemMetadataSnapshot(from: entry)
+                    if !existingObjectHashes.contains(snapshot.itemIdentifier) {
+                        context.delete(entry)
+                        removedInChunk += 1
+                    }
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                context.reset()
+                return (lastRecordName, removedInChunk)
+            }
+            removed += result.removed
+            guard let lastRecordName = result.lastRecordName else { break }
+            cursor = lastRecordName
+            await Task.yield()
+        }
+        let remaining = try await context.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "accountRecordName == %@", accountRecordName),
+                NSPredicate(format: "category == %@", localOutboxEpisodeCategory),
+            ])
+            return try context.count(for: request)
+        }
+        return (removed, remaining)
     }
 
     nonisolated static func allLocalEpisodeObjectHashes() async -> Set<String> {
@@ -569,7 +1466,13 @@ extension ICiCloudSyncManager {
 
     var hasPendingSyncChanges: Bool {
         guard let syncEngine else { return false }
-        return !syncEngine.state.pendingDatabaseChanges.isEmpty || !syncEngine.state.pendingRecordZoneChanges.isEmpty
+        if !syncEngine.state.pendingDatabaseChanges.isEmpty {
+            return true
+        }
+        let snapshot = Self.syncEngineCallbackSnapshot()
+        return syncEngine.state.pendingRecordZoneChanges.contains {
+            Self.pendingChangeIsEnabled($0, snapshot: snapshot)
+        }
     }
 
     func syncDiagnosticsMetadata() -> [String: Any] {
@@ -606,6 +1509,23 @@ extension ICiCloudSyncManager {
         }
     }
 
+    @discardableResult
+    func beginSyncCycle() -> Int {
+        let generation = cloudAccountGeneration
+        activeSyncCycleCounts[generation, default: 0] += 1
+        return generation
+    }
+
+    func endSyncCycle(_ generation: Int) {
+        let remaining = max(0, (activeSyncCycleCounts[generation] ?? 0) - 1)
+        if remaining == 0 {
+            activeSyncCycleCounts.removeValue(forKey: generation)
+        } else {
+            activeSyncCycleCounts[generation] = remaining
+        }
+        postStateChanged()
+    }
+
     func recordSyncActivity(_ count: Int) {
         guard count > 0 else { return }
         syncActivityRecordCount += count
@@ -623,7 +1543,7 @@ extension ICiCloudSyncManager {
         switch recordType {
         case RecordKind.episodeState:
             return NSLocalizedString("Episodes", comment: "")
-        case RecordKind.subscription:
+        case RecordKind.subscription, RecordKind.subscriptionTombstone:
             return NSLocalizedString("Subscriptions", comment: "")
         case RecordKind.appSettings, RecordKind.listScrollPositions:
             return NSLocalizedString("Settings", comment: "")
@@ -636,9 +1556,15 @@ extension ICiCloudSyncManager {
     // otherwise a throughput estimate ("12/s").
     func syncActivityStatusText() -> String? {
         guard let direction = syncActivityDirection else { return nil }
-        let base = direction == .up
-            ? NSLocalizedString("Synchronisation läuft, lädt hoch…", comment: "")
-            : NSLocalizedString("Synchronisation läuft, lädt herunter…", comment: "")
+        let base: String
+        switch direction {
+        case .up:
+            base = NSLocalizedString("Synchronisation läuft, lädt hoch…", comment: "")
+        case .down:
+            base = NSLocalizedString("Synchronisation läuft, lädt herunter…", comment: "")
+        case .verifying:
+            base = NSLocalizedString("Prüft hochgeladene Daten…", comment: "")
+        }
         if syncActivityExpectedCount > 0 {
             if let kind = syncActivityKindLabel {
                 return String(format: NSLocalizedString("%@ %ld/%ld %@", comment: ""), base, syncActivityRecordCount, syncActivityExpectedCount, kind)
@@ -658,8 +1584,21 @@ extension ICiCloudSyncManager {
         return nil
     }
 
-    func markSyncCompletedIfFinished() {
+    func markSyncCompletedIfFinished(allowActiveSyncCycle: Bool = false) {
+        let isOnlyActiveCycle = allowActiveSyncCycle
+            ? activeSyncCycleCount == 1
+            : activeSyncCycleCount == 0
+        guard isOnlyActiveCycle else {
+            postStateChanged()
+            return
+        }
         guard !hasUnresolvedSyncFailures else {
+            postStateChanged()
+            return
+        }
+        guard !hasPendingInitialSettingsChoice else {
+            clearSyncActivity()
+            setStatus(NSLocalizedString("Choose which iCloud settings should be used.", comment: ""))
             postStateChanged()
             return
         }
@@ -673,6 +1612,13 @@ extension ICiCloudSyncManager {
     func setStatus(_ status: String) {
         clearError()
         setSyncMetadata(status, forKey: Self.lastStatusKey)
+    }
+
+    func setBlockingStatus(_ status: String) {
+        hasUnresolvedSyncFailures = true
+        clearSyncActivity()
+        setSyncMetadata(status, forKey: Self.lastErrorKey)
+        postStateChanged()
     }
 
     func setError(_ error: Error) {
@@ -712,26 +1658,43 @@ extension ICiCloudSyncManager {
     }
 
     func displayStatus(for error: Error) -> String {
+        if Self.isDeterministicLegacySyncItemMetadataError(error) {
+            return (error as NSError).localizedDescription
+        }
+        if (error as NSError).domain == "ICiCloudSyncLocalPersistence" {
+            return NSLocalizedString("Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.", comment: "")
+        }
+        if (error as NSError).domain == "ICiCloudSyncLocalRead" {
+            return NSLocalizedString("Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht.", comment: "")
+        }
         if let ckError = error as? CKError {
+            if ckError.code == .partialFailure,
+               let nestedError = ckError.partialErrorsByItemID?.values.compactMap({ $0 as? CKError }).first {
+                return displayStatus(for: nestedError)
+            }
             switch ckError.code {
             case .networkFailure, .networkUnavailable, .zoneBusy, .serviceUnavailable, .requestRateLimited:
-                return NSLocalizedString("iCloud ist vorübergehend nicht verfügbar.", comment: "")
+                return NSLocalizedString("iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt.", comment: "")
             case .notAuthenticated:
-                return NSLocalizedString("Kein iCloud Account verfügbar.", comment: "")
+                return NSLocalizedString("Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an.", comment: "")
             case .permissionFailure:
-                return NSLocalizedString("iCloud ist auf diesem Gerät eingeschränkt.", comment: "")
+                return NSLocalizedString("InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen.", comment: "")
+            case .quotaExceeded:
+                return NSLocalizedString("Dein iCloud-Speicher ist voll. Gib Speicher frei und starte die Synchronisation erneut.", comment: "")
             case .limitExceeded:
-                return NSLocalizedString("iCloud Sync will continue in smaller batches.", comment: "")
+                return NSLocalizedString("iCloud hat zu viele Änderungen auf einmal abgelehnt. Die Synchronisation wird automatisch erneut versucht.", comment: "")
             default:
-                break
+                if Self.isTransientCloudKitError(ckError) {
+                    return NSLocalizedString("iCloud hat die Synchronisation unterbrochen. Sie wird automatisch fortgesetzt.", comment: "")
+                }
             }
         }
 
         let description = (error as NSError).localizedDescription.lowercased()
         if description.contains("request contains") && description.contains("maximum number") {
-            return NSLocalizedString("iCloud Sync will continue in smaller batches.", comment: "")
+            return NSLocalizedString("iCloud hat zu viele Änderungen auf einmal abgelehnt. Die Synchronisation wird automatisch erneut versucht.", comment: "")
         }
-        return NSLocalizedString("iCloud Sync konnte nicht abgeschlossen werden.", comment: "")
+        return NSLocalizedString("iCloud konnte die Synchronisation nicht abschließen. Tippe auf „Jetzt synchronisieren“, um es erneut zu versuchen.", comment: "")
     }
 
     func clearError() {
@@ -759,50 +1722,120 @@ extension ICiCloudSyncManager {
         syncMetadataDirectoryURL().appendingPathComponent(key).appendingPathExtension("plist")
     }
 
-    nonisolated static func knownRecordSystemFieldsDirectoryURL() -> URL {
-        let directoryURL = syncMetadataDirectoryURL().appendingPathComponent(knownRecordSystemFieldsDirectoryName, isDirectory: true)
-        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-
-        var excludedURL = directoryURL
-        var resourceValues = URLResourceValues()
-        resourceValues.isExcludedFromBackup = true
-        try? excludedURL.setResourceValues(resourceValues)
-        return directoryURL
+    nonisolated static func legacyKnownRecordSystemFieldsDirectoryURL() -> URL {
+        syncMetadataDirectoryURL().appendingPathComponent(
+            legacyKnownRecordSystemFieldsDirectoryName,
+            isDirectory: true
+        )
     }
 
-    nonisolated static func knownRecordSystemFieldsFileURL(forRecordName recordName: String) -> URL {
-        knownRecordSystemFieldsDirectoryURL().appendingPathComponent(sha256Hex(recordName)).appendingPathExtension("record")
+    nonisolated static func legacyKnownRecordSystemFieldWrites()
+        async throws -> ICCloudLegacyKnownRecordSystemFieldsBatch? {
+        try await Task.detached(priority: .utility) {
+            let directoryURL = legacyKnownRecordSystemFieldsDirectoryURL()
+            let fileManager = FileManager.default
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory) else {
+                return nil
+            }
+            guard isDirectory.boolValue else {
+                throw legacySyncItemMetadataError()
+            }
+            let directoryEntries = try fileManager.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+            for entryURL in directoryEntries {
+                let values = try entryURL.resourceValues(forKeys: [.isRegularFileKey])
+                guard values.isRegularFile == true, entryURL.pathExtension == "record" else {
+                    throw legacySyncItemMetadataError()
+                }
+            }
+            let sourceURLs = directoryEntries.sorted { $0.path < $1.path }
+            guard !sourceURLs.isEmpty else { return nil }
+
+            var records: [CKRecord] = []
+            var sourcePaths: [String] = []
+            var recordNames = Set<String>()
+            records.reserveCapacity(sourceURLs.count)
+            sourcePaths.reserveCapacity(sourceURLs.count)
+            for sourceURL in sourceURLs {
+                let data = try Data(contentsOf: sourceURL)
+                let record: CKRecord
+                do {
+                    let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
+                    unarchiver.requiresSecureCoding = true
+                    defer { unarchiver.finishDecoding() }
+                    guard let decodedRecord = CKRecord(coder: unarchiver) else {
+                        throw legacySyncItemMetadataError()
+                    }
+                    record = decodedRecord
+                } catch let error as NSError where error.domain == legacySyncItemMetadataErrorDomain {
+                    throw error
+                } catch {
+                    throw legacySyncItemMetadataError(underlyingError: error)
+                }
+                let recordName = record.recordID.recordName
+                guard !recordName.isEmpty,
+                      sourceURL.deletingPathExtension().lastPathComponent == sha256Hex(recordName),
+                      recordNames.insert(recordName).inserted else {
+                    throw legacySyncItemMetadataError()
+                }
+                records.append(record)
+                sourcePaths.append(sourceURL.path)
+            }
+            return ICCloudLegacyKnownRecordSystemFieldsBatch(
+                records: records,
+                sourcePaths: sourcePaths
+            )
+        }.value
     }
 
-    nonisolated static func knownRecordSystemFieldsData(forRecordName recordName: String) -> Data? {
-        try? Data(contentsOf: knownRecordSystemFieldsFileURL(forRecordName: recordName))
+    nonisolated static func removeLegacyKnownRecordSystemFieldFiles(
+        _ expectedSourcePaths: [String]
+    ) async throws {
+        try await Task.detached(priority: .utility) {
+            guard !expectedSourcePaths.isEmpty else { return }
+            let directoryURL = legacyKnownRecordSystemFieldsDirectoryURL()
+            let fileManager = FileManager.default
+            guard fileManager.fileExists(atPath: directoryURL.path) else { return }
+            let currentSourcePaths = try fileManager.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ).map(\.path).sorted()
+            guard currentSourcePaths == expectedSourcePaths.sorted() else {
+                throw knownRecordSystemFieldsStoreError(
+                    code: 3,
+                    description: "Die bisherigen lokalen CloudKit-Systemfelder haben sich während der Migration geändert."
+                )
+            }
+            try fileManager.removeItem(at: directoryURL)
+            if fileManager.fileExists(atPath: directoryURL.path) {
+                throw knownRecordSystemFieldsStoreError(
+                    code: 4,
+                    description: "Die bisherigen lokalen CloudKit-Systemfelder konnten nicht vollständig migriert werden."
+                )
+            }
+        }.value
     }
 
-    nonisolated static func writeKnownRecordSystemFields(_ data: Data, forRecordName recordName: String) {
-        try? data.write(to: knownRecordSystemFieldsFileURL(forRecordName: recordName), options: .atomic)
-    }
-
-    nonisolated static func removeKnownRecordSystemFields(forRecordName recordName: String) {
-        try? FileManager.default.removeItem(at: knownRecordSystemFieldsFileURL(forRecordName: recordName))
-    }
-
-    nonisolated static func removeAllKnownRecordSystemFields() {
-        let directoryURL = knownRecordSystemFieldsDirectoryURL()
-        guard let fileURLs = try? FileManager.default.contentsOfDirectory(at: directoryURL, includingPropertiesForKeys: nil) else { return }
-        for fileURL in fileURLs {
-            try? FileManager.default.removeItem(at: fileURL)
-        }
+    nonisolated static func removeAllLegacyKnownRecordSystemFieldFiles() async throws {
+        try await Task.detached(priority: .utility) {
+            let directoryURL = legacyKnownRecordSystemFieldsDirectoryURL()
+            let fileManager = FileManager.default
+            guard fileManager.fileExists(atPath: directoryURL.path) else { return }
+            try fileManager.removeItem(at: directoryURL)
+        }.value
     }
 
     @objc nonisolated static func purgeLegacyDefaultsBackedSyncMetadata() {
         let defaults = UserDefaults.standard
-        let keys = fileBackedSyncMetadataKeys
-            .union([
-                initialEpisodeBackfillOffsetKey,
-                initialSubscriptionBackfillOffsetKey,
-                initialSettingsBackfillPendingKey,
-            ])
-        for key in keys {
+        // These keys now live in files; removing only their obsolete defaults copies is
+        // safe on every launch. Initial backfill cursors and the settings fetch gate still
+        // live in UserDefaults and are active resumable state, so they must survive launch.
+        for key in fileBackedSyncMetadataKeys {
             defaults.removeObject(forKey: key)
         }
         removeSyncMetadataValue(forKey: knownRecordsKey)
@@ -870,14 +1903,21 @@ extension ICiCloudSyncManager {
             }
         }
 
-        let knownRecordDirectory = knownRecordSystemFieldsDirectoryURL()
-        let knownRecordFiles = (try? fileManager.contentsOfDirectory(at: knownRecordDirectory, includingPropertiesForKeys: [.fileSizeKey])) ?? []
-        let knownRecordBytes = knownRecordFiles.reduce(0) { total, url in
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            return total + size
+        if let context = DatabaseManager.shared()?.newBackgroundContext() {
+            let knownRecordCount = context.performAndWait {
+                let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+                request.includesSubentities = false
+                return (try? context.count(for: request)) ?? -1
+            }
+            metadata["knownRecords.rowCount"] = "\(knownRecordCount)"
         }
-        metadata["knownRecords.fileCount"] = "\(knownRecordFiles.count)"
-        metadata["knownRecords.totalBytes"] = "\(knownRecordBytes)"
+        let legacyDirectory = legacyKnownRecordSystemFieldsDirectoryURL()
+        let legacyFiles = (try? fileManager.contentsOfDirectory(
+            at: legacyDirectory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        metadata["knownRecords.legacyFileCount"] = "\(legacyFiles.count)"
 
         let defaults = UserDefaults.standard
         let domain = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]

@@ -18,4 +18,5 @@
 - (void) showEpisodeListOfEpisode:(CDEpisode*)episode animated:(BOOL)animated;
 - (void) showUpNext;
 - (void) showTranscriptionQueue;
+- (void)openBackupFileURL:(NSURL*)url;
 @end

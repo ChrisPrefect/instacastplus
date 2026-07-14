@@ -18,4 +18,5 @@
 @property (nonatomic, readonly, strong) UILabel* timeLabel;
 @property (nonatomic, strong, readonly) EpisodePlayComboButton* playAccessoryButton;
 @property (nonatomic, strong) UIView* rightContentAccessoryView;
+@property (nonatomic) BOOL showsErrorStatus;
 @end

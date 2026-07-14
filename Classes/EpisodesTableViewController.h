@@ -64,6 +64,12 @@ typedef enum {
 - (void) _pushShowNotesOfEpisode:(CDEpisode*)episode animated:(BOOL)animated inAppearanceTransition:(BOOL)appearanceTransition;
 
 - (void)enumerateEpisodesUsingBlock:(void (^)(CDEpisode* episode, NSUInteger idx, BOOL *stop))block;
+- (NSInteger)_numberOfDisplayEpisodes;
+- (NSInteger)_numberOfNotPlayedDisplayEpisodes;
+- (NSInteger)_numberOfPlayedDisplayEpisodes;
+- (NSInteger)_numberOfPlayedDownloadedEpisodes;
+- (NSString*)_selectionToggleTitleKeyForSelectedCount:(NSUInteger)selectedCount rowCount:(NSUInteger)rowCount;
+- (void)loadEpisodeObjectIDsForBulkActionWithCompletion:(void (^)(NSArray<NSManagedObjectID*>* episodeObjectIDs, NSError* error))completion;
 @end
 
 

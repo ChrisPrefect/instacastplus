@@ -7,6 +7,59 @@
 //
 
 #import "UIColor+VMFoundation.h"
+#import <math.h>
+
+static UIColor* ICColorFromStoredHex(NSString* hexString)
+{
+    if (![hexString isKindOfClass:[NSString class]]) {
+        return nil;
+    }
+
+    NSString* normalized = [[hexString stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] uppercaseString];
+    if ([normalized hasPrefix:@"#"]) {
+        normalized = [normalized substringFromIndex:1];
+    }
+    if (normalized.length != 6) {
+        return nil;
+    }
+
+    NSScanner* scanner = [NSScanner scannerWithString:normalized];
+    unsigned int rgbValue = 0;
+    if (![scanner scanHexInt:&rgbValue] || !scanner.isAtEnd) {
+        return nil;
+    }
+    return [UIColor colorWithRed:((rgbValue >> 16) & 0xFF) / 255.0
+                           green:((rgbValue >> 8) & 0xFF) / 255.0
+                            blue:(rgbValue & 0xFF) / 255.0
+                           alpha:1.0];
+}
+
+static NSString* ICStoredHexFromColor(UIColor* color)
+{
+    if (![color isKindOfClass:[UIColor class]]) {
+        return nil;
+    }
+
+    UIColor* resolvedColor = color;
+    CGFloat red = 0;
+    CGFloat green = 0;
+    CGFloat blue = 0;
+    CGFloat alpha = 0;
+    if (![resolvedColor getRed:&red green:&green blue:&blue alpha:&alpha]) {
+        CGFloat white = 0;
+        if (![resolvedColor getWhite:&white alpha:&alpha]) {
+            return nil;
+        }
+        red = white;
+        green = white;
+        blue = white;
+    }
+
+    return [NSString stringWithFormat:@"#%02X%02X%02X",
+            (int)lrint(MAX(0.0, MIN(1.0, red)) * 255.0),
+            (int)lrint(MAX(0.0, MIN(1.0, green)) * 255.0),
+            (int)lrint(MAX(0.0, MIN(1.0, blue)) * 255.0)];
+}
 
 @implementation UIColor (VMFoundation)
 
@@ -98,6 +151,91 @@
                            green:((float) g / 255.0f)
                             blue:((float) b / 255.0f)
                            alpha:1.0f];
+}
+
++ (UIColor*)ic_colorFromDefaults:(NSUserDefaults*)defaults
+                           hexKey:(NSString*)hexKey
+                 legacyArchiveKey:(NSString*)legacyArchiveKey
+{
+    id storedHex = [defaults objectForKey:hexKey];
+    UIColor* color = ICColorFromStoredHex(storedHex);
+    if (color) {
+        NSString* canonicalHex = ICStoredHexFromColor(color);
+        if (![canonicalHex isEqualToString:storedHex]) {
+            [defaults setObject:canonicalHex forKey:hexKey];
+        }
+        [defaults removeObjectForKey:legacyArchiveKey];
+        return color;
+    }
+    if (storedHex) {
+        [defaults removeObjectForKey:hexKey];
+    }
+
+    id legacyObject = [defaults objectForKey:legacyArchiveKey];
+    if (![legacyObject isKindOfClass:[NSData class]]) {
+        if (legacyObject) {
+            [defaults removeObjectForKey:legacyArchiveKey];
+        }
+        return nil;
+    }
+
+    @try {
+        NSError* error = nil;
+        color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class]
+                                                  fromData:(NSData*)legacyObject
+                                                     error:&error];
+        if (error) {
+            color = nil;
+        }
+    }
+    @catch (NSException* exception) {
+        (void)exception;
+        color = nil;
+    }
+
+    [defaults removeObjectForKey:legacyArchiveKey];
+    NSString* canonicalHex = ICStoredHexFromColor(color);
+    if (!canonicalHex) {
+        return nil;
+    }
+    [defaults setObject:canonicalHex forKey:hexKey];
+    return color;
+}
+
++ (NSString*)ic_colorHexFromDefaults:(NSUserDefaults*)defaults
+                                hexKey:(NSString*)hexKey
+                      legacyArchiveKey:(NSString*)legacyArchiveKey
+{
+    UIColor* color = [self ic_colorFromDefaults:defaults hexKey:hexKey legacyArchiveKey:legacyArchiveKey];
+    return ICStoredHexFromColor(color);
+}
+
++ (void)ic_setColor:(UIColor*)color
+          inDefaults:(NSUserDefaults*)defaults
+              hexKey:(NSString*)hexKey
+    legacyArchiveKey:(NSString*)legacyArchiveKey
+{
+    NSString* canonicalHex = ICStoredHexFromColor(color);
+    if (canonicalHex) {
+        [defaults setObject:canonicalHex forKey:hexKey];
+    }
+    else {
+        [defaults removeObjectForKey:hexKey];
+    }
+    [defaults removeObjectForKey:legacyArchiveKey];
+}
+
++ (BOOL)ic_setColorHexString:(NSString*)hexString
+                   inDefaults:(NSUserDefaults*)defaults
+                       hexKey:(NSString*)hexKey
+             legacyArchiveKey:(NSString*)legacyArchiveKey
+{
+    UIColor* color = ICColorFromStoredHex(hexString);
+    if (!color) {
+        return NO;
+    }
+    [self ic_setColor:color inDefaults:defaults hexKey:hexKey legacyArchiveKey:legacyArchiveKey];
+    return YES;
 }
 
 

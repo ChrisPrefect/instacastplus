@@ -15,6 +15,7 @@
 @property (nonatomic, readwrite, strong) UILabel* numberLabel;
 @property (nonatomic, readwrite, strong) UIImageView* newsModeIndicatorImageView;
 @property (nonatomic, assign) BOOL cachedNewsMode;
+@property (nonatomic) BOOL countLoadPending;
 @end
 
 
@@ -68,8 +69,7 @@
 {
     [super prepareForReuse];
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
-
-    _objectValue = nil;
+    self.objectValue = nil;
 }
 
 - (void) _updateUnplayedCount
@@ -88,6 +88,47 @@
     }
 }
 
+- (void)_refreshCounts
+{
+    CDFeed* feed = self.objectValue;
+    if (!feed) {
+        self.numberLabel.text = nil;
+        self.detailTextLabel2.text = nil;
+        return;
+    }
+    if (feed.countsLoaded) {
+        self.countLoadPending = NO;
+        [self _updateUnplayedCount];
+        [self _updateEpisodesNumber];
+        return;
+    }
+
+    self.numberLabel.text = nil;
+    self.detailTextLabel2.text = nil;
+    if (self.countLoadPending) {
+        return;
+    }
+
+    self.countLoadPending = YES;
+    __weak SubscriptionTableViewCell* weakSelf = self;
+    [feed calculateCountsWithCompletion:^(NSInteger unplayedCount, NSInteger episodesCount) {
+        SubscriptionTableViewCell* strongSelf = weakSelf;
+        if (!strongSelf || strongSelf.objectValue != feed) {
+            return;
+        }
+        strongSelf.countLoadPending = NO;
+        if (unplayedCount < 0 || episodesCount < 0 || !feed.countsLoaded) {
+            strongSelf.numberLabel.text = nil;
+            strongSelf.detailTextLabel2.text = @"—";
+        }
+        else {
+            [strongSelf _updateUnplayedCount];
+            [strongSelf _updateEpisodesNumber];
+        }
+        [strongSelf setNeedsLayout];
+    }];
+}
+
 - (void) setObjectValue:(CDFeed *)objectValue
 {
     if (_objectValue != objectValue)
@@ -96,8 +137,11 @@
         [_objectValue removeTaskObserver:self forKeyPath:@"episodesCount"];
         
         _objectValue = objectValue;
+        self.countLoadPending = NO;
         
         if (!objectValue) {
+            self.numberLabel.text = nil;
+            self.detailTextLabel2.text = nil;
             return;
         }
 
@@ -135,34 +179,17 @@
             }
         }
         
-        if (objectValue.countsLoaded) {
-            [self _updateUnplayedCount];
-            [self _updateEpisodesNumber];
-        } else {
-            self.numberLabel.text = nil;
-            self.detailTextLabel2.text = nil;
-            __weak SubscriptionTableViewCell* weakSelf = self;
-            [objectValue calculateCountsWithCompletion:^(__unused NSInteger unplayedCount, __unused NSInteger episodesCount) {
-                SubscriptionTableViewCell* strongSelf = weakSelf;
-                if (!strongSelf || strongSelf.objectValue != objectValue) {
-                    return;
-                }
-
-                [strongSelf _updateUnplayedCount];
-                [strongSelf _updateEpisodesNumber];
-                [strongSelf setNeedsLayout];
-            }];
-        }
+        [self _refreshCounts];
         
         
         __weak SubscriptionTableViewCell* weakSelf = self;
         [objectValue addTaskObserver:self forKeyPath:@"unplayedCount" task:^(id obj, NSDictionary *change) {
-            [weakSelf _updateUnplayedCount];
+            [weakSelf _refreshCounts];
             [weakSelf setNeedsLayout];
         }];
         
         [objectValue addTaskObserver:self forKeyPath:@"episodesCount" task:^(id obj, NSDictionary *change) {
-            [weakSelf _updateEpisodesNumber];
+            [weakSelf _refreshCounts];
             [weakSelf setNeedsLayout];
         }];
     }

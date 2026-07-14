@@ -8,6 +8,129 @@
 @preconcurrency import CloudKit
 import Foundation
 
+final class ICCloudRecordBatchBox: @unchecked Sendable {
+    let records: [CKRecord]
+
+    init(_ records: [CKRecord]) {
+        self.records = records
+    }
+}
+
+struct ICCloudSyncOutboxSnapshot: Sendable {
+    let accountRecordName: String
+    let recordName: String
+    let category: String
+    let operation: String
+    let acknowledged: Bool
+    let revision: String
+    let changedAt: Date
+    let payloadData: Data
+
+    func payloadDictionary() -> [String: Any]? {
+        (try? PropertyListSerialization.propertyList(from: payloadData, options: [], format: nil)) as? [String: Any]
+    }
+
+    func replacingAcknowledged(_ acknowledged: Bool) -> ICCloudSyncOutboxSnapshot {
+        ICCloudSyncOutboxSnapshot(accountRecordName: accountRecordName,
+                                  recordName: recordName,
+                                  category: category,
+                                  operation: operation,
+                                  acknowledged: acknowledged,
+                                  revision: revision,
+                                  changedAt: changedAt,
+                                  payloadData: payloadData)
+    }
+}
+
+struct ICCloudPendingEpisodeStateWrite: Sendable {
+    let recordName: String
+    let payloadData: Data
+}
+
+struct ICCloudPendingEpisodeStateSnapshot: Sendable {
+    let accountRecordName: String
+    let recordName: String
+    let payloadData: Data
+
+    func payloadDictionary() throws -> [String: Any] {
+        guard let payload = try PropertyListSerialization.propertyList(
+            from: payloadData,
+            options: [],
+            format: nil
+        ) as? [String: Any] else {
+            throw NSError(
+                domain: "ICiCloudSyncPendingEpisodeState",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Der wartende iCloud-Episodenstatus ist beschädigt."]
+            )
+        }
+        return payload
+    }
+}
+
+struct ICCloudPendingSubscriptionStateWrite: Sendable {
+    let recordName: String
+    let payloadData: Data
+}
+
+struct ICCloudPendingSubscriptionStateSnapshot: Sendable {
+    let accountRecordName: String
+    let recordName: String
+    let payloadData: Data
+
+    func payloadDictionary() throws -> [String: Any] {
+        guard let payload = try PropertyListSerialization.propertyList(
+            from: payloadData,
+            options: [],
+            format: nil
+        ) as? [String: Any] else {
+            throw NSError(
+                domain: "ICiCloudSyncPendingSubscriptionState",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Das wartende iCloud-Abonnement ist beschädigt."]
+            )
+        }
+        return payload
+    }
+}
+
+struct ICCloudPendingSubscriptionStatePage: Sendable {
+    let snapshots: [ICCloudPendingSubscriptionStateSnapshot]
+    let nextRecordName: String?
+}
+
+struct ICCloudSyncItemMetadataWrite: Sendable {
+    let category: String
+    let recordName: String
+    let itemIdentifier: String
+    let localModifiedAt: Date?
+    let localState: Bool?
+    let payloadHash: String?
+}
+
+struct ICCloudSyncItemMetadataSnapshot: Sendable {
+    let accountRecordName: String
+    let category: String
+    let recordName: String
+    let itemIdentifier: String
+    let localModifiedAt: Date?
+    let localState: Bool?
+    let payloadHash: String?
+}
+
+struct ICCloudSyncItemMetadataUpdateFields: OptionSet, Sendable {
+    let rawValue: Int
+
+    static let localModifiedAt = ICCloudSyncItemMetadataUpdateFields(rawValue: 1 << 0)
+    static let localState = ICCloudSyncItemMetadataUpdateFields(rawValue: 1 << 1)
+    static let payloadHash = ICCloudSyncItemMetadataUpdateFields(rawValue: 1 << 2)
+    static let all: ICCloudSyncItemMetadataUpdateFields = [
+        .localModifiedAt,
+        .localState,
+        .payloadHash,
+    ]
+}
+
 @objcMembers final class ICiCloudSyncDeviceInfo: NSObject {
     let deviceID: String
     let name: String
@@ -97,15 +220,59 @@ import Foundation
 final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private var recordNamesByType: [String: Set<String>] = [:]
     private var deviceRecordIDs: [CKRecord.ID] = []
+    private var transitionalSubscriptionRecordChangeTags: [String: String]
+    private var observedSubscriptionRecordNames = Set<String>()
+    private let inspectSubscriptionPayloads: Bool
     private let lock = NSLock()
+
+    init(transitionalSubscriptionRecordChangeTags: [String: String],
+         inspectSubscriptionPayloads: Bool) {
+        self.transitionalSubscriptionRecordChangeTags = transitionalSubscriptionRecordChangeTags
+        self.inspectSubscriptionPayloads = inspectSubscriptionPayloads
+    }
 
     func record(_ record: CKRecord) {
         lock.lock()
-        recordNamesByType[record.recordType, default: []].insert(record.recordID.recordName)
+        if record.recordType == "ICSubscription" {
+            let recordName = record.recordID.recordName
+            observedSubscriptionRecordNames.insert(recordName)
+            if inspectSubscriptionPayloads, Self.isTransitionalSubscriptionTombstone(record) {
+                if let changeTag = record.recordChangeTag {
+                    transitionalSubscriptionRecordChangeTags[recordName] = changeTag
+                }
+                recordNamesByType[record.recordType]?.remove(recordName)
+            } else if !inspectSubscriptionPayloads,
+                      transitionalSubscriptionRecordChangeTags[recordName] == record.recordChangeTag {
+                // This exact transitional tombstone was identified during the one-time
+                // payload scan. System fields are enough to keep excluding it; a changed
+                // tag means the same record name was resubscribed and must count again.
+                recordNamesByType[record.recordType]?.remove(recordName)
+            } else {
+                transitionalSubscriptionRecordChangeTags.removeValue(forKey: recordName)
+                recordNamesByType[record.recordType, default: []].insert(recordName)
+            }
+        } else {
+            recordNamesByType[record.recordType, default: []].insert(record.recordID.recordName)
+        }
         if record.recordType == "ICDevice", !deviceRecordIDs.contains(record.recordID) {
             deviceRecordIDs.append(record.recordID)
         }
         lock.unlock()
+    }
+
+    private static func isTransitionalSubscriptionTombstone(_ record: CKRecord) -> Bool {
+        guard let rawPayload = record.encryptedValues["payload"] else { return false }
+        let data: Data
+        if let value = rawPayload as? Data {
+            data = value
+        } else if let value = rawPayload as? NSData {
+            data = value as Data
+        } else {
+            return false
+        }
+        guard let payload = (try? PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil)) as? [String: Any] else { return false }
+        return (payload["deleted"] as? Bool) ?? false
     }
 
     func remove(recordName: String) {
@@ -113,6 +280,8 @@ final class ICCloudInventoryCountsBox: @unchecked Sendable {
         for type in recordNamesByType.keys {
             recordNamesByType[type]?.remove(recordName)
         }
+        transitionalSubscriptionRecordChangeTags.removeValue(forKey: recordName)
+        observedSubscriptionRecordNames.remove(recordName)
         deviceRecordIDs.removeAll { $0.recordName == recordName }
         lock.unlock()
     }
@@ -127,5 +296,13 @@ final class ICCloudInventoryCountsBox: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return deviceRecordIDs
+    }
+
+    func transitionalSubscriptionRecords() -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return transitionalSubscriptionRecordChangeTags.filter {
+            observedSubscriptionRecordNames.contains($0.key)
+        }
     }
 }

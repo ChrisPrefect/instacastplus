@@ -42,18 +42,30 @@ def source_between(source, start, end):
 MANAGER = "\n".join(read("Classes/" + _n) for _n in ["ICiCloudSyncManager.swift", "ICiCloudSyncTypes.swift", "ICiCloudSyncManager+EngineRecords.swift", "ICiCloudSyncManager+RemoteApply.swift", "ICiCloudSyncManager+LocalChanges.swift", "ICiCloudSyncManager+Metadata.swift"])
 APP_DELEGATE = read("Classes/InstacastAppDelegate.m")
 
+file_backed_keys = method_body(MANAGER, "nonisolated static var fileBackedSyncMetadataKeys")
 for key in [
     "engineStateKey",
     "knownRecordsKey",
     "deviceCacheKey",
-    "subscriptionRecordURLsKey",
     "pendingEpisodeStatesKey",
     "pendingSubscriptionPayloadsKey",
-    "episodeLocalModifiedDatesKey",
-    "subscriptionLocalModifiedDatesKey",
+    "pendingSubscriptionFetchCompleteKey",
+    "transitionalSubscriptionInventoryRecordsKey",
 ]:
     require(key in MANAGER, f"{key} must remain explicit iCloud sync metadata.")
-    require(key in method_body(MANAGER, "nonisolated static var fileBackedSyncMetadataKeys"), f"{key} must be file-backed, not stored in UserDefaults.")
+    require(key in file_backed_keys, f"{key} must be file-backed, not stored in UserDefaults.")
+
+legacy_row_keys = [
+    "subscriptionRecordURLsKey",
+    "subscriptionLocalModifiedDatesKey",
+    "subscriptionLocalStatesKey",
+    "subscriptionPayloadHashesKey",
+    "episodeLocalModifiedDatesKey",
+]
+for key in legacy_row_keys:
+    require(key in MANAGER, f"{key} must remain readable for migration from the last App Store version.")
+    require(key not in file_backed_keys,
+            f"{key} is migration input, not active whole-library metadata that launch cleanup may purge: {key}")
 
 set_sync_metadata = method_body(MANAGER, "func setSyncMetadata")
 require("Self.isFileBackedSyncMetadataKey(key)" in set_sync_metadata, "Large iCloud metadata writes must branch away from UserDefaults.")
@@ -68,30 +80,57 @@ require("write-failed" in set_sync_metadata, "Genuine iCloud metadata write fail
 require("nonisolated static func syncMetadataValue(forKey key: String) -> Any?" in MANAGER, "File-backed iCloud metadata needs a shared read path.")
 require("nonisolated static func writeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared write path.")
 require("nonisolated static func removeSyncMetadataValue" in MANAGER, "File-backed iCloud metadata needs a shared remove path.")
-require("knownRecordSystemFieldsDirectoryName" in MANAGER, "CKRecord system fields must be stored as per-record files, not one huge knownRecords blob.")
-require("knownRecordSystemFieldsData(forRecordName:" in MANAGER, "CKSyncEngine record materialization must read only the requested known record system fields.")
-require("writeKnownRecordSystemFields" in MANAGER, "Remembering a server record must write only that record's system fields.")
-require("removeKnownRecordSystemFields" in MANAGER, "Forgetting a server record must remove only that record's system fields.")
+require("knownRecordSystemFieldsEntityName" in MANAGER,
+        "CKRecord system fields must use the account-scoped indexed Core Data store.")
+require("knownRecordSystemFieldsForSyncEngineCallback" in MANAGER,
+        "CKSyncEngine materialization must load only its current bounded record page.")
+require("persistKnownRecordSystemFields" in MANAGER,
+        "Remembering server system fields must use a durable bounded transaction.")
+require("removeKnownRecordSystemFields" in MANAGER,
+        "Forgetting server system fields must use an account-scoped bounded transaction.")
+require("migrateLegacyKnownRecordSystemFieldsIfNeeded" in MANAGER,
+        "Existing per-record files must migrate after CloudKit verifies the account.")
 require("@objc nonisolated static func logSyncMetadataStorageSnapshot" in MANAGER, "iCloud metadata storage snapshots must be available for TestFlight crash-log diagnosis without touching the manager actor.")
-require("migrateLegacySyncMetadataOutOfUserDefaults" not in MANAGER, "iCloud sync is unreleased; do not ship legacy metadata migration.")
-require("logPendingLegacySyncMetadataMigrationSummary" not in MANAGER, "iCloud sync is unreleased; do not keep migration diagnostics.")
-require("legacyUserDefaultsPlistURL" not in MANAGER, "iCloud sync is unreleased; no direct legacy defaults migration path is needed.")
+require("migrateLegacySyncItemMetadataIfNeeded" in MANAGER,
+        "The indexed row store must migrate customers from the last App Store version.")
+legacy_reader = method_body(MANAGER, "nonisolated static func legacySyncItemMetadataWrites")
+require("UserDefaults.standard.object(forKey: key)" in legacy_reader,
+        "Migration must read legacy dictionaries that still live in UserDefaults.")
+require("syncMetadataFileURL(forKey: key)" in legacy_reader,
+        "Migration must also resume from the intermediate file-backed dictionaries.")
+
+purge = method_body(MANAGER, "@objc nonisolated static func purgeLegacyDefaultsBackedSyncMetadata")
+for active_key in [
+    "initialEpisodeBackfillOffsetKey",
+    "initialSubscriptionBackfillOffsetKey",
+    "initialEpisodeBackfillCursorKey",
+    "initialSubscriptionBackfillCursorKey",
+    "initialSettingsBackfillPendingKey",
+]:
+    require(
+        active_key not in purge,
+        f"Launch cleanup must preserve the active resumable sync state {active_key}.",
+    )
+for legacy_key in legacy_row_keys:
+    require(legacy_key not in file_backed_keys,
+            f"Launch cleanup must preserve {legacy_key} until its indexed-row migration commits.")
 
 sync_metadata_value = method_body(MANAGER, "nonisolated static func syncMetadataValue")
 require("if key == knownRecordsKey" in sync_metadata_value, "knownRecords must not be loaded as one dictionary blob.")
 file_backed_branch = source_between(sync_metadata_value, "if isFileBackedSyncMetadataKey(key) {", "\n        return UserDefaults.standard.object(forKey: key)")
 require("UserDefaults.standard.object(forKey: key)" not in file_backed_branch, "File-backed metadata reads must not fall back to legacy UserDefaults.")
-remember_server_record = method_body(MANAGER, "func rememberServerRecord")
-forget_server_record = method_body(MANAGER, "func forgetServerRecord")
-require("knownRecords()" not in remember_server_record and "setSyncMetadata(records, forKey: Self.knownRecordsKey)" not in remember_server_record, "rememberServerRecord must not rewrite a full knownRecords dictionary.")
-require("knownRecords()" not in forget_server_record and "setSyncMetadata(records, forKey: Self.knownRecordsKey)" not in forget_server_record, "forgetServerRecord must not rewrite a full knownRecords dictionary.")
+persist_system_fields = method_body(MANAGER, "nonisolated static func persistKnownRecordSystemFields")
+remove_system_fields = method_body(MANAGER, "nonisolated static func removeKnownRecordSystemFields")
+require("knownRecords()" not in persist_system_fields + remove_system_fields
+        and "setSyncMetadata(records, forKey: Self.knownRecordsKey)" not in persist_system_fields + remove_system_fields,
+        "System-field row transactions must not revive the obsolete full knownRecords dictionary.")
 
 launch = method_body(APP_DELEGATE, "- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions", "\n    [App initializeLoggers]")
 initialize = method_body(APP_DELEGATE, "+ (void) initialize", "\n\n#pragma mark -")
 initialize_before_defaults = source_between(initialize, "{", "NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];")
-require("migrateLegacySyncMetadataOutOfUserDefaults" not in initialize_before_defaults, "AppDelegate +initialize must not run iCloud legacy migration.")
+require("purgeLegacyDefaultsBackedSyncMetadata" in initialize_before_defaults,
+        "AppDelegate +initialize may purge obsolete defaults copies only for currently file-backed keys.")
 post_logger_start = method_body(APP_DELEGATE, "- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions", "\n    [[ICDiagnosticLogger shared] recordLifecycle")
-require("logPendingLegacySyncMetadataMigrationSummary" not in post_logger_start, "Launch must not log removed migration diagnostics.")
 require("logSyncMetadataStorageSnapshot" in APP_DELEGATE, "Launch must log a compact iCloud metadata storage snapshot for future crash-log mails.")
 
 for bad_read in [

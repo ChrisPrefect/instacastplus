@@ -28,6 +28,7 @@
 #import "ICFeed.h"
 #import "ICAppearanceManager.h"
 #import "Application.h"
+#import "UtilityFunctions.h"
 
 // App Intents (Siri / Shortcuts) support
 #import "CDList.h"

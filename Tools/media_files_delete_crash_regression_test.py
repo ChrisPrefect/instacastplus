@@ -25,6 +25,7 @@ rows_in_section = method_body(SOURCE, "- (NSInteger)tableView:(UITableView *)tab
 cell_for_row = method_body(SOURCE, "- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath")
 can_edit = method_body(SOURCE, "- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath")
 commit_delete = method_body(SOURCE, "- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath")
+reload_content = method_body(SOURCE, "- (void) _reloadContent")
 
 
 require(
@@ -67,7 +68,8 @@ require(
 )
 
 require(
-    "[self _reloadContent];" in commit_delete
-    and "[self.tableView reloadData];" in commit_delete,
-    "The delete path should still refresh from CacheManager after removing cached files.",
+    "completion:" in commit_delete
+    and "[weakSelf _reloadContent];" in commit_delete
+    and "[self.tableView reloadData];" in reload_content,
+    "The delete path must refresh from CacheManager after completion and let the async content snapshot reload the table.",
 )

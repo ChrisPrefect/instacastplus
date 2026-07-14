@@ -61,6 +61,9 @@
     BOOL _textSizeCacheValid;
 }
 
+@synthesize supplementalStatusText = _supplementalStatusText;
+@synthesize supplementalStatusTextColor = _supplementalStatusTextColor;
+
 - (id)initWithStyle:(UITableViewCellStyle)mystyle reuseIdentifier:(NSString *)reuseIdentifier {
     
     self = [super initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:reuseIdentifier];
@@ -262,6 +265,8 @@
 - (void) prepareForReuse {
     [super prepareForReuse];
     _textSizeCacheValid = NO;
+    _supplementalStatusText = nil;
+    _supplementalStatusTextColor = nil;
 
     self.usesNativeSwipeActions = NO;
     self.objectValue = nil;
@@ -315,6 +320,42 @@
 - (CDEpisode*) _episode
 {
     return (CDEpisode*)self.objectValue;
+}
+
+- (void)_applySupplementalStatusText
+{
+    if (self.supplementalStatusText.length > 0) {
+        self.summaryLabel.text = self.supplementalStatusText;
+    }
+    else {
+        CDEpisode* episode = [self _episode];
+        if (self.upNextStyle) {
+            self.summaryLabel.text = [episode cleanTitleUsingFeedTitle:episode.feed.title];
+        }
+        else if (self.embedded) {
+            self.summaryLabel.text = episode.feed.title;
+        }
+        else {
+            self.summaryLabel.text = [episode.subtitle tailTruncatedStringWithMaxLength:160];
+        }
+    }
+    _textSizeCacheValid = NO;
+    [self setNeedsLayout];
+}
+
+- (void)setSupplementalStatusText:(NSString*)supplementalStatusText
+{
+    if ((_supplementalStatusText == supplementalStatusText) || [_supplementalStatusText isEqualToString:supplementalStatusText]) {
+        return;
+    }
+    _supplementalStatusText = [supplementalStatusText copy];
+    [self _applySupplementalStatusText];
+}
+
+- (void)setSupplementalStatusTextColor:(UIColor*)supplementalStatusTextColor
+{
+    _supplementalStatusTextColor = supplementalStatusTextColor;
+    [self setNeedsLayout];
 }
 
 - (void) setObjectValue:(id)objectValue
@@ -377,6 +418,7 @@
         [self updateTranscriptIndicatorState];
         [self updatePlaylistIndicatorState];
         [self updateWatchIndicatorState];
+        [self _applySupplementalStatusText];
 
     }
 }
@@ -388,14 +430,20 @@
 
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle
 {
+    return [self proposedHeightWithObjectValue:objectValue tableSize:tableSize imageSize:imageSize embedded:embedded editing:editing upNextStyle:upNextStyle summaryOverride:nil];
+}
+
++ (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)imageSize embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride
+{
     CDEpisode* episode = (CDEpisode*)objectValue;
-    NSString* cacheKey = [NSString stringWithFormat:@"%@-%.0f-%.0f-%d-%d-%d",
+    NSString* cacheKey = [NSString stringWithFormat:@"%@-%.0f-%.0f-%d-%d-%d-%@",
                           episode.objectHash ?: episode.guid ?: episode.title ?: @"",
                           tableSize.width,
                           imageSize.width,
                           embedded,
                           editing,
-                          upNextStyle];
+                          upNextStyle,
+                          summaryOverride ?: @""];
     static NSCache* heightCache = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -454,6 +502,9 @@
         } else {
             bottomText = episode.feed.title;
         }
+    }
+    if (summaryOverride.length > 0) {
+        bottomText = summaryOverride;
     }
 
     NSAttributedString* attributedTitle = [[NSAttributedString alloc] initWithString:topText attributes:@{ NSFontAttributeName : textLabelFont }];
@@ -657,7 +708,7 @@
     }
 
     self.titleLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
-    self.summaryLabel.textColor = ICMutedTextColor;
+    self.summaryLabel.textColor = self.supplementalStatusTextColor ?: ICMutedTextColor;
     self.durationLabel.textColor = ICMutedTextColor;
     self.dateLabel.textColor = ICMutedTextColor;
     self.playAccessoryButton.tintColor = ICTintColor;

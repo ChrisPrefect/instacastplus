@@ -247,8 +247,8 @@ require(
     and "playbackOrder" in manager
     and "accentColorHex" in manager
     and "imageURL" in manager
-    and "subtitle" in manager,
-    "The iPhone manifest must mirror the manual list order and send theme/media metadata to the Watch.",
+    and '@"subtitle"' not in manager,
+    "The iPhone manifest must mirror the manual list order and avoid unused episode-description payloads.",
 )
 
 require(
@@ -271,7 +271,7 @@ require(
     and "configuration.sessionSendsLaunchEvents = true" in watch_download_manager
     and "configuration.waitsForConnectivity = true" in watch_download_manager
     and "URLSessionConfiguration.background" in watch_download_manager
-    and "request.allowsCellularAccess = true" in watch_download_manager
+    and "urlRequest.allowsCellularAccess = true" in watch_download_manager
     and "AVURLAsset(url: fileURL)" in watch_download_manager,
     "The Watch must download via background URLSession with cellular allowed and measure actual downloaded files.",
 )
@@ -295,9 +295,9 @@ require(
 require(
     "HTTPURLResponse" in watch_download_manager
     and "200..<300" in watch_download_manager
-    and "httpResponse.statusCode == 206" in watch_download_manager
+    and "statusCode == 206" in watch_download_manager
     and "countOfBytesExpectedToReceive" in watch_download_manager
-    and "size < expectedSize" in watch_download_manager
+    and "actualSize < expectedSize" in watch_download_manager
     and "downloadValidationError" in watch_download_manager
     and "isPlayable" in watch_download_manager,
     "The Watch download manager must reject HTTP errors, partial HTTP 206 responses, truncated files, empty files, and unplayable downloads before marking episodes downloaded.",
@@ -313,7 +313,8 @@ require(
 require(
     "stagedLocation" in watch_download_manager
     and "moveItem(at: location, to: stagedLocation)" in watch_download_manager
-    and "downloadValidationError(for: downloadTask, fileURL: stagedLocation, feedExpectedBytes: episode.expectedBytes)" in watch_download_manager,
+    and "await Self.prepareFinishedDownloadFile(" in watch_download_manager
+    and "feedExpectedBytes: episode.expectedBytes" in watch_download_manager,
     "The Watch download manager must move URLSession's temporary file before returning from didFinishDownloadingTo.",
 )
 
@@ -344,8 +345,8 @@ require(
     and "accentColorHex" in watch_connectivity
     and "playbackOrder" in read("InstacastWatch/WatchEpisode.swift")
     and "imageURL" in read("InstacastWatch/WatchEpisode.swift")
-    and "subtitle" in read("InstacastWatch/WatchEpisode.swift"),
-    "The Watch model must accept accent color, artwork, subtitle, and playback order from the iPhone manifest.",
+    and "subtitle" not in read("InstacastWatch/WatchEpisode.swift"),
+    "The Watch model must accept accent color, artwork, and playback order without retaining unused descriptions.",
 )
 
 require(
@@ -357,8 +358,8 @@ require(
 )
 
 require(
-    "if flag {\n                reportPosition(finished: true)\n            } else {\n                reportPosition(finished: false)\n            }" in watch_player
-    and "if flag, let finishedHash" in watch_player,
+    "else if flag {\n                reportPosition(finished: true)\n            } else {\n                reportPosition(finished: false)\n            }" in watch_player
+    and "if flag, !truncatedFile, let finishedHash" in watch_player,
     "The Watch player must not report an unsuccessfully finished playback callback as a completed episode.",
 )
 
@@ -385,8 +386,9 @@ require(
 
 require(
     "chapterArtworkDirectory" in read("InstacastWatch/WatchStorageManager.swift")
-    and "removeChapterArtwork(for:" in read("InstacastWatch/WatchStorageManager.swift"),
-    "The Watch storage manager must clean up locally extracted chapter artwork with the episode download.",
+    and "nonisolated static func removeLocalFiles(" in read("InstacastWatch/WatchStorageManager.swift")
+    and "artworkFilesByEpisodeHash" in read("InstacastWatch/WatchStorageManager.swift"),
+    "The Watch storage manager must batch-clean locally extracted chapter artwork with episode downloads.",
 )
 
 require(
@@ -548,21 +550,26 @@ require(
 
 require(
     "expectedFileSize" in watch_episode
-    and "canReuseDownloadedFile(from: existing, entry: entry)" in watch_episode
-    and "FileManager.default.fileExists(atPath: localFileURL.path)" not in watch_episode
+    and "existingLocalFileWasValidated" in watch_episode
+    and "localFileWasValidated" in watch_download_reuse
+    and "FileManager" not in watch_download_reuse
+    and "existing.localFileURL != nil" in watch_download_reuse
+    and "existing.mediaURL == entry.mediaURL" in watch_download_reuse
     and "existing.actualFileSize > 0" in watch_download_reuse
-    and "return true" in watch_download_reuse
-    and "let canReuseDownload = existing?.mediaURL == entry.mediaURL" not in watch_episode,
-    "The Watch manifest merge must not invalidate a downloaded episode through a stale absolute localFileURL path.",
+    and "return true" in watch_download_reuse,
+    "The Watch manifest merge must reuse only a normalized, existing file for the same media URL.",
 )
 
 require(
-    "func resolvedLocalFileURL(for episode: WatchEpisode) -> URL?" in watch_storage
+    "nonisolated static func inspectLocalFile(" in watch_storage
+    and "Task.detached(priority: .utility)" in watch_storage
     and "localFileURL?.lastPathComponent" in watch_storage
     and "downloadsDirectory.appendingPathComponent(fileName)" in watch_storage
-    and "WatchStorageManager.shared.resolvedLocalFileURL(for: episode)" in watch_download_manager
-    and "WatchStorageManager.shared.resolvedLocalFileURL(for: episode)" in watch_player,
-    "Watch local files must be resolved by re-rooting persisted filenames into the current watch container.",
+    and "resolveReconcileLocalFiles" in watch_download_manager
+    and "fileManager.fileExists(atPath:" in watch_download_manager
+    and "await WatchStorageManager.inspectLocalFile(for: episode)" in watch_player
+    and "episodeIdentity.matches(currentEpisode)" in watch_player,
+    "Watch local files must be resolved off-main by re-rooting persisted filenames into the current watch container.",
 )
 
 require(

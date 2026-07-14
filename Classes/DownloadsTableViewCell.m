@@ -21,6 +21,24 @@
 
 @implementation DownloadsTableViewCell
 
+- (void)setShowsErrorStatus:(BOOL)showsErrorStatus
+{
+    if (_showsErrorStatus == showsErrorStatus) {
+        return;
+    }
+    _showsErrorStatus = showsErrorStatus;
+    self.progressView.hidden = showsErrorStatus;
+    self.timeLabel.hidden = showsErrorStatus;
+    if (showsErrorStatus) {
+        self.sizeLabel.numberOfLines = 0;
+        self.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    } else {
+        self.sizeLabel.numberOfLines = 1;
+        self.sizeLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    }
+    [self setNeedsLayout];
+}
+
 - (void)setRightContentAccessoryView:(UIView *)rightContentAccessoryView {
     if (_rightContentAccessoryView == rightContentAccessoryView) {
         return;
@@ -76,7 +94,7 @@
     self.timeLabel.font = [UIFont systemFontOfSize:ICFontSize(11)];
 
     self.textLabel.textColor = ICTextColor;
-    self.sizeLabel.textColor = ICMutedTextColor;
+    self.sizeLabel.textColor = self.showsErrorStatus ? UIColor.systemOrangeColor : ICMutedTextColor;
     self.timeLabel.textColor = ICMutedTextColor;
 	
     CGRect bounds = self.contentView.bounds;
@@ -84,7 +102,9 @@
     CGRect imageViewRect = CGRectMake(10, 7, 56, 56);
     BOOL showsPlayButton = (self.playAccessoryButton.superview == self.contentView);
     BOOL showsRightContentAccessory = (self.rightContentAccessoryView.superview == self.contentView);
-    CGFloat rightContentAccessoryWidth = showsRightContentAccessory ? 44 : 0;
+    CGFloat rightContentAccessoryWidth = showsRightContentAccessory
+        ? MAX(44, ceilf(self.rightContentAccessoryView.intrinsicContentSize.width))
+        : 0;
     
 
     self.imageView.frame = imageViewRect;
@@ -100,7 +120,16 @@
 	
 
     BOOL multilineStatus = self.sizeLabel.numberOfLines > 1;
-	if (multilineStatus) {
+    if (self.showsErrorStatus) {
+        self.progressView.hidden = YES;
+        self.timeLabel.hidden = YES;
+        CGFloat statusTop = CGRectGetMaxY(textLabelRect) + 3;
+        self.sizeLabel.frame = CGRectMake(CGRectGetMinX(textLabelRect),
+                                          statusTop,
+                                          width,
+                                          MAX(0, CGRectGetHeight(bounds) - statusTop - 7));
+    }
+	else if (multilineStatus) {
         CGFloat timeWidth = ([self.timeLabel.text length] == 0) ? 0 : 54;
         CGFloat spacing = (timeWidth > 0) ? 6 : 0;
         CGFloat progressWidth = MAX(0, width - ((rightContentAccessoryWidth > 0) ? 0 : (timeWidth + spacing)));

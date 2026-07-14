@@ -385,12 +385,7 @@
                                                               STRONG_SELF
                                                               
                                                               [self perform:^(id sender) {
-                                                                  if ([[AudioSession sharedAudioSession].episode.feed isEqual:self.feed]) {
-                                                                      [[AudioSession sharedAudioSession] stop];
-                                                                  }
-                                                                  
-                                                                  [[CacheManager sharedCacheManager] removeCacheForFeed:self.feed automatic:NO];
-                                                                  [DMANAGER unsubscribeFeed:self.feed];
+                                                                  [[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:self.feed];
                                                                   
                                                                   [self.navigationController popToRootViewControllerAnimated:YES];
                                                               } afterDelay:0.3];

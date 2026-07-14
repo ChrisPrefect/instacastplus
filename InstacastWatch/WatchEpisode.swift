@@ -1,11 +1,11 @@
 import Foundation
 
-enum WatchSelectionSource: String, Codable {
+enum WatchSelectionSource: String, Codable, Sendable {
     case manual
     case latestRule
 }
 
-enum WatchEpisodeStatus: String, Codable {
+enum WatchEpisodeStatus: String, Codable, Sendable {
     case queued
     case downloading
     case downloaded
@@ -14,7 +14,7 @@ enum WatchEpisodeStatus: String, Codable {
     case removing
 }
 
-struct WatchChapter: Codable, Identifiable, Equatable {
+struct WatchChapter: Codable, Identifiable, Equatable, Sendable {
     var id: Int { startSeconds }
 
     let title: String
@@ -29,12 +29,12 @@ struct WatchChapter: Codable, Identifiable, Equatable {
     }
 }
 
-struct WatchManifestEntry {
+struct WatchManifestEntry: Sendable {
     let episodeHash: String
+    let selectionIdentifier: String
     let feedIdentifier: String
     let title: String
     let podcastTitle: String
-    let subtitle: String?
     let imageURL: URL?
     let pubDate: Date
     let durationHint: Int
@@ -51,14 +51,14 @@ struct WatchManifestEntry {
     let autoSkipSponsors: Bool
 }
 
-struct WatchEpisode: Codable, Identifiable, Equatable {
+struct WatchEpisode: Codable, Identifiable, Equatable, Sendable {
     var id: String { episodeHash }
 
     var episodeHash: String
+    var selectionIdentifier: String
     var feedIdentifier: String
     var title: String
     var podcastTitle: String
-    var subtitle: String?
     var imageURL: URL?
     var pubDate: Date
     var durationHint: Int
@@ -74,6 +74,7 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     var lastPlaybackDate: Date?
     var consumed: Bool
     var lastError: String?
+    var pendingRemovalRetryRequired: Bool
     var downloadedBytes: Int64
     var expectedBytes: Int64
     var skipForwardSeconds: Int
@@ -91,6 +92,16 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         actualDuration > 0 ? actualDuration : durationHint
     }
 
+    var hasPlaybackFileRemovalError: Bool {
+        guard status == .downloaded, localFileURL != nil else { return false }
+        return !(lastError?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    var hasPendingRemovalError: Bool {
+        guard status == .removing, pendingRemovalRetryRequired else { return false }
+        return !(lastError?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     var remainingSeconds: Int {
         max(0, displayDuration - lastPlaybackPosition)
     }
@@ -102,10 +113,10 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case episodeHash
+        case selectionIdentifier
         case feedIdentifier
         case title
         case podcastTitle
-        case subtitle
         case imageURL
         case pubDate
         case durationHint
@@ -121,6 +132,7 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         case lastPlaybackDate
         case consumed
         case lastError
+        case pendingRemovalRetryRequired
         case downloadedBytes
         case expectedBytes
         case skipForwardSeconds
@@ -134,10 +146,10 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         episodeHash = try container.decode(String.self, forKey: .episodeHash)
+        selectionIdentifier = try container.decodeIfPresent(String.self, forKey: .selectionIdentifier) ?? ""
         feedIdentifier = try container.decode(String.self, forKey: .feedIdentifier)
         title = try container.decode(String.self, forKey: .title)
         podcastTitle = try container.decode(String.self, forKey: .podcastTitle)
-        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
         imageURL = try container.decodeIfPresent(URL.self, forKey: .imageURL)
         pubDate = try container.decode(Date.self, forKey: .pubDate)
         durationHint = try container.decode(Int.self, forKey: .durationHint)
@@ -153,6 +165,10 @@ struct WatchEpisode: Codable, Identifiable, Equatable {
         lastPlaybackDate = try container.decodeIfPresent(Date.self, forKey: .lastPlaybackDate)
         consumed = try container.decode(Bool.self, forKey: .consumed)
         lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        pendingRemovalRetryRequired = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .pendingRemovalRetryRequired
+        ) ?? false
         downloadedBytes = try container.decode(Int64.self, forKey: .downloadedBytes)
         expectedBytes = try container.decode(Int64.self, forKey: .expectedBytes)
         skipForwardSeconds = max(1, try container.decodeIfPresent(Int.self, forKey: .skipForwardSeconds) ?? 30)
@@ -184,10 +200,10 @@ extension WatchManifestEntry {
         }
 
         self.episodeHash = episodeHash
+        self.selectionIdentifier = (dictionary["selectionIdentifier"] as? String) ?? ""
         self.feedIdentifier = feedIdentifier
         self.title = title
         self.podcastTitle = podcastTitle
-        self.subtitle = (dictionary["subtitle"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         if let imageURLString = dictionary["imageURL"] as? String, !imageURLString.isEmpty {
             self.imageURL = URL(string: imageURLString)
         } else {
@@ -210,15 +226,20 @@ extension WatchManifestEntry {
 }
 
 extension WatchEpisode {
-    init(entry: WatchManifestEntry, existing: WatchEpisode?) {
-        let canReuseManifestProgress = existing?.mediaURL == entry.mediaURL && existing?.status != .downloaded
-        let canReuseDownload = Self.canReuseDownloadedFile(from: existing, entry: entry)
+    init(entry: WatchManifestEntry, existing: WatchEpisode?, existingLocalFileWasValidated: Bool) {
+        let canReuseManifestProgress = existing?.mediaURL == entry.mediaURL &&
+            existing?.status != .downloaded && existing?.status != .removing
+        let canReuseDownload = Self.canReuseDownloadedFile(
+            from: existing,
+            entry: entry,
+            localFileWasValidated: existingLocalFileWasValidated
+        )
         let canReuseLocalMetadata = canReuseDownload
         self.episodeHash = entry.episodeHash
+        self.selectionIdentifier = entry.selectionIdentifier
         self.feedIdentifier = entry.feedIdentifier
         self.title = entry.title
         self.podcastTitle = entry.podcastTitle
-        self.subtitle = entry.subtitle
         self.imageURL = entry.imageURL
         self.pubDate = entry.pubDate
         self.durationHint = entry.durationHint
@@ -234,6 +255,7 @@ extension WatchEpisode {
         self.lastPlaybackDate = existing?.lastPlaybackDate
         self.consumed = existing?.consumed ?? entry.consumed
         self.lastError = canReuseDownload || canReuseManifestProgress ? existing?.lastError : nil
+        self.pendingRemovalRetryRequired = false
         self.downloadedBytes = canReuseDownload ? (existing?.actualFileSize ?? 0) : (canReuseManifestProgress ? (existing?.downloadedBytes ?? 0) : 0)
         self.expectedBytes = canReuseDownload ? (existing?.actualFileSize ?? 0) : max(entry.expectedFileSize, canReuseManifestProgress ? (existing?.expectedBytes ?? 0) : 0)
         self.skipForwardSeconds = entry.skipForwardSeconds
@@ -264,11 +286,17 @@ extension WatchEpisode {
         }
     }
 
-    private static func canReuseDownloadedFile(from existing: WatchEpisode?, entry: WatchManifestEntry) -> Bool {
+    private static func canReuseDownloadedFile(
+        from existing: WatchEpisode?,
+        entry: WatchManifestEntry,
+        localFileWasValidated: Bool
+    ) -> Bool {
         guard
+            localFileWasValidated,
             let existing,
-            existing.status == .downloaded,
+            (existing.status == .downloaded || existing.status == .removing),
             existing.localFileURL != nil,
+            existing.mediaURL == entry.mediaURL,
             existing.actualFileSize > 0
         else {
             return false

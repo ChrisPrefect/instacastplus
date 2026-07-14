@@ -28,12 +28,15 @@
 @property (nonatomic, strong, readonly) UIPanGestureRecognizer* panRecognizer;
 @property (nonatomic) BOOL usesNativeSwipeActions;
 @property (nonatomic) BOOL topSeparator;
+@property (nonatomic, copy) NSString* supplementalStatusText;
+@property (nonatomic, strong) UIColor* supplementalStatusTextColor;
 
 - (void) updatePlayComboButtonState;
 - (void) updatePlayedAndStarredState;
 - (void) updatePlaylistIndicatorState;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing;
 + (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle;
++ (CGFloat) proposedHeightWithObjectValue:(id)objectValue tableSize:(CGSize)tableSize imageSize:(CGSize)size embedded:(BOOL)embedded editing:(BOOL)editing upNextStyle:(BOOL)upNextStyle summaryOverride:(NSString*)summaryOverride;
 
 @property (nonatomic, copy) void (^panDidBegin)(NSIndexPath* cellIndexPath);
 @property (nonatomic, copy) void (^didPanRight)(NSIndexPath* cellIndexPath);

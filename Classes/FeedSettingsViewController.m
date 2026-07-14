@@ -18,6 +18,9 @@
 #import "ChapterSkipListViewController.h"
 #import "SkipTimeCell.h"
 #import "AppleWatchSyncManager.h"
+#import "VDModalInfo.h"
+
+static const NSUInteger ICRestoreArchivedEpisodeBatchSize = 100;
 
 enum {
     kEpisodesSection,
@@ -40,6 +43,12 @@ enum {
 @property (nonatomic) BOOL appleWatchSettingsSnapshotValid;
 @property (nonatomic) NSInteger appleWatchSendLatestCountSnapshot;
 @property (nonatomic) BOOL appleWatchOnlyUnplayedSnapshot;
+@property (nonatomic, strong) NSNumber* archivedEpisodeCount;
+@property (nonatomic, strong) NSError* archivedEpisodeCountError;
+@property (nonatomic) NSUInteger archivedEpisodeCountGeneration;
+@property (nonatomic) BOOL restoreDeletedEpisodesInProgress;
+
+- (BOOL)_saveAndSyncAppleWatchSettings;
 
 @end
 
@@ -103,6 +112,7 @@ enum {
     [super viewWillAppear:animated];
     [self updateAppearance];
     [self syncAppleWatchSettingsIfNeeded];
+    [self _reloadArchivedEpisodeCount];
     [self.navigationController setToolbarHidden:YES animated:YES];
 }
 
@@ -176,13 +186,7 @@ enum {
         case kPlaybackSection:
             return [self _nearChapterEndForwardSkipEnabled] ? 6 : 5;
         case kRestoreDeletedSection:
-        {
-            NSFetchRequest* countRequest = [[NSFetchRequest alloc] init];
-            countRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-            countRequest.predicate = [NSPredicate predicateWithFormat:@"feed = %@ && archived == %@", self.feed, @YES];
-            NSUInteger archivedCount = [DMANAGER.objectContext countForFetchRequest:countRequest error:nil];
-            return (archivedCount > 0) ? 1 : 0;
-        }
+            return (self.archivedEpisodeCount.unsignedIntegerValue > 0 || self.archivedEpisodeCountError) ? 1 : 0;
         case kSyncPauseSection:
             return 1;
         case kResetSection:
@@ -251,10 +255,19 @@ enum {
 
     else if (indexPath.section == kRestoreDeletedSection)
     {
-        cell = [self buttonCell];
-        cell.accessoryView = nil;
-        cell.accessoryType = UITableViewCellAccessoryNone;
-        cell.textLabel.text = @"Restore Deleted Episodes".ls;
+        if (self.archivedEpisodeCountError) {
+            cell = [self detailCell];
+            cell.accessoryView = nil;
+            cell.accessoryType = UITableViewCellAccessoryNone;
+            cell.textLabel.text = @"Restore Deleted Episodes".ls;
+            cell.detailTextLabel.text = @"Try Again".ls;
+        }
+        else {
+            cell = [self buttonCell];
+            cell.accessoryView = nil;
+            cell.accessoryType = UITableViewCellAccessoryNone;
+            cell.textLabel.text = @"Restore Deleted Episodes".ls;
+        }
     }
     
     else if (indexPath.section == kNewsModeSection)
@@ -742,6 +755,20 @@ enum {
     }
     else if (indexPath.section == kRestoreDeletedSection)
     {
+        if (self.restoreDeletedEpisodesInProgress) {
+            [tableView deselectRowAtIndexPath:indexPath animated:YES];
+            return;
+        }
+        if (self.archivedEpisodeCountError) {
+            [tableView deselectRowAtIndexPath:indexPath animated:YES];
+            [self _reloadArchivedEpisodeCount];
+            return;
+        }
+        if (self.archivedEpisodeCount.unsignedIntegerValue == 0) {
+            [tableView deselectRowAtIndexPath:indexPath animated:YES];
+            return;
+        }
+
         WEAK_SELF
         UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Are you sure you want to restore?".ls message:nil preferredStyle:UIAlertControllerStyleAlert];
 
@@ -960,20 +987,151 @@ enum {
 
 }
 
+- (void)_reloadArchivedEpisodeCount
+{
+    if (self.restoreDeletedEpisodesInProgress) {
+        return;
+    }
+
+    NSUInteger generation = ++self.archivedEpisodeCountGeneration;
+    self.archivedEpisodeCount = nil;
+    self.archivedEpisodeCountError = nil;
+    NSManagedObjectID* feedObjectID = self.feed.objectID;
+    NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+    if (!context) {
+        self.archivedEpisodeCountError = [NSError errorWithDomain:@"FeedSettingsRestore"
+                                                             code:1
+                                                         userInfo:nil];
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kRestoreDeletedSection]
+                      withRowAnimation:UITableViewRowAnimationNone];
+        return;
+    }
+
+    [context performBlock:^{
+        NSError* countError = nil;
+        CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&countError];
+        NSUInteger archivedCount = NSNotFound;
+        if (feed && !countError) {
+            NSFetchRequest* countRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+            countRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", feed, @YES];
+            archivedCount = [context countForFetchRequest:countRequest error:&countError];
+        }
+        if (archivedCount == NSNotFound && !countError) {
+            countError = [NSError errorWithDomain:@"FeedSettingsRestore" code:2 userInfo:nil];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.archivedEpisodeCountGeneration || self.restoreDeletedEpisodesInProgress) {
+                return;
+            }
+            self.archivedEpisodeCount = countError ? nil : @(archivedCount);
+            self.archivedEpisodeCountError = countError;
+            [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kRestoreDeletedSection]
+                          withRowAnimation:UITableViewRowAnimationNone];
+        });
+    }];
+}
+
+- (void)_presentRestoreDeletedEpisodesError
+{
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Restore Failed".ls
+                                                                   message:@"Some deleted episodes could not be restored. Please try again.".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 -(void)restoreDeletedEpisodes
 {
-    NSManagedObjectContext* context = DMANAGER.objectContext;
-    NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
-    fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed = %@ && archived == %@", self.feed, @YES];
-    NSArray * episodes = [context executeFetchRequest:fetchRequest error:nil];
-    
-    for (int index = 0; index < [episodes count]; index++)
-    {
-        CDEpisode* episode = episodes[index];
-        [DMANAGER setEpisode:episode archived:NO];
+    if (self.restoreDeletedEpisodesInProgress) {
+        return;
     }
-    [DMANAGER save];
+
+    NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+    if (!context) {
+        [self _presentRestoreDeletedEpisodesError];
+        return;
+    }
+
+    self.restoreDeletedEpisodesInProgress = YES;
+    self.archivedEpisodeCountGeneration++;
+    NSManagedObjectID* feedObjectID = self.feed.objectID;
+    VDModalInfo* restoreInfo = [VDModalInfo modalInfoWithProgressLabel:@"Restoring…".ls];
+    restoreInfo.progress = 0.0;
+    [restoreInfo show];
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        __block NSError* restoreError = nil;
+        __block NSArray<NSManagedObjectID*>* episodeObjectIDs = nil;
+        [context performBlockAndWait:^{
+            CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&restoreError];
+            if (!feed || restoreError) {
+                return;
+            }
+
+            NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+            fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", feed, @YES];
+            fetchRequest.resultType = NSManagedObjectIDResultType;
+            fetchRequest.includesPropertyValues = NO;
+            episodeObjectIDs = [context executeFetchRequest:fetchRequest error:&restoreError];
+            if (!episodeObjectIDs || restoreError) {
+                return;
+            }
+
+            NSUInteger totalCount = episodeObjectIDs.count;
+            for (NSUInteger offset = 0; offset < totalCount && !restoreError; offset += ICRestoreArchivedEpisodeBatchSize) {
+                @autoreleasepool {
+                    NSRange batchRange = NSMakeRange(offset, MIN(ICRestoreArchivedEpisodeBatchSize, totalCount - offset));
+                    NSArray<NSManagedObjectID*>* batchObjectIDs = [episodeObjectIDs subarrayWithRange:batchRange];
+                    for (NSManagedObjectID* episodeObjectID in batchObjectIDs) {
+                        CDEpisode* episode = (CDEpisode*)[context existingObjectWithID:episodeObjectID error:&restoreError];
+                        if (!episode || restoreError) {
+                            break;
+                        }
+                        episode.archived = NO;
+                    }
+                    if (restoreError) {
+                        [context rollback];
+                        break;
+                    }
+
+                    NSError* batchError = nil;
+                    if (![context save:&batchError]) {
+                        restoreError = batchError ?: [NSError errorWithDomain:@"FeedSettingsRestore" code:3 userInfo:nil];
+                        [context rollback];
+                        break;
+                    }
+
+                    double progress = totalCount == 0 ? 1.0 : (double)NSMaxRange(batchRange) / (double)totalCount;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [NSManagedObjectContext mergeChangesFromRemoteContextSave:@{ NSUpdatedObjectsKey: batchObjectIDs }
+                                                                      intoContexts:@[DMANAGER.objectContext]];
+                        [DMANAGER.objectContext processPendingChanges];
+                        restoreInfo.progress = progress;
+                    });
+                    [context reset];
+                    if (NSMaxRange(batchRange) < totalCount) {
+                        [NSThread sleepForTimeInterval:0.01];
+                    }
+                }
+            }
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [restoreInfo close];
+            self.restoreDeletedEpisodesInProgress = NO;
+            for (CDList* list in DMANAGER.lists) {
+                if ([list isKindOfClass:[CDEpisodeList class]]) {
+                    [(CDEpisodeList*)list invalidateCaches];
+                }
+            }
+            [self _reloadArchivedEpisodeCount];
+            if (restoreError) {
+                ErrLog(@"Error restoring archived episodes: %@", restoreError);
+                [self _presentRestoreDeletedEpisodesError];
+            }
+        });
+    });
 }
 
 
@@ -1073,8 +1231,9 @@ enum {
 {
     if (sender.tag == 1) {
         [self setBool:sender.on forKey:AppleWatchOnlyUnplayed];
-        [[AppleWatchSyncManager sharedManager] rebuildAutomaticSelectionsAndSync];
-        [self storeAppleWatchSettingsSnapshot];
+        if ([self _saveAndSyncAppleWatchSettings]) {
+            [self storeAppleWatchSettingsSnapshot];
+        }
     }
 
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kResetSection] withRowAnimation:UITableViewRowAnimationNone];
@@ -1100,8 +1259,22 @@ enum {
         return;
     }
 
-    [self storeAppleWatchSettingsSnapshot];
+    if ([self _saveAndSyncAppleWatchSettings]) {
+        [self storeAppleWatchSettingsSnapshot];
+    }
+}
+
+- (BOOL)_saveAndSyncAppleWatchSettings
+{
+    NSError* saveError = [DMANAGER saveReturningError];
+    if (saveError) {
+        [App showBackgroundErrorWithTitle:@"Unable to Save".ls
+                                  message:@"The changes could not be saved on this device. Check the available storage and try again.".ls
+                                 duration:8.0];
+        return NO;
+    }
     [[AppleWatchSyncManager sharedManager] rebuildAutomaticSelectionsAndSync];
+    return YES;
 }
 
 

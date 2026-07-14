@@ -4,12 +4,70 @@ import MediaPlayer
 import UIKit
 
 @MainActor
+final class WatchListPlaybackSummary: ObservableObject {
+    @Published private(set) var playingEpisodeHash: String?
+    @Published private(set) var isPlaying = false
+
+    func update(playingEpisodeHash: String?, isPlaying: Bool) {
+        if self.playingEpisodeHash != playingEpisodeHash {
+            self.playingEpisodeHash = playingEpisodeHash
+        }
+        if self.isPlaying != isPlaying {
+            self.isPlaying = isPlaying
+        }
+    }
+}
+
+@MainActor
+final class WatchListPlaybackPosition: ObservableObject {
+    @Published private(set) var episodeHash: String?
+    @Published private(set) var currentPosition: TimeInterval = 0
+
+    func update(episodeHash: String?, currentPosition: TimeInterval) {
+        if self.episodeHash != episodeHash {
+            self.episodeHash = episodeHash
+        }
+        if self.currentPosition != currentPosition {
+            self.currentPosition = currentPosition
+        }
+    }
+}
+
+@MainActor
 final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = WatchPlayerController()
 
-    @Published private(set) var playingEpisodeHash: String?
-    @Published private(set) var isPlaying = false
-    @Published private(set) var currentPosition: TimeInterval = 0
+    let listPlaybackSummary = WatchListPlaybackSummary()
+    let listPlaybackPosition = WatchListPlaybackPosition()
+
+    @Published private(set) var playingEpisodeHash: String? {
+        didSet {
+            listPlaybackSummary.update(
+                playingEpisodeHash: playingEpisodeHash,
+                isPlaying: isPlaying
+            )
+            listPlaybackPosition.update(
+                episodeHash: playingEpisodeHash,
+                currentPosition: currentPosition
+            )
+        }
+    }
+    @Published private(set) var isPlaying = false {
+        didSet {
+            listPlaybackSummary.update(
+                playingEpisodeHash: playingEpisodeHash,
+                isPlaying: isPlaying
+            )
+        }
+    }
+    @Published private(set) var currentPosition: TimeInterval = 0 {
+        didSet {
+            listPlaybackPosition.update(
+                episodeHash: playingEpisodeHash,
+                currentPosition: currentPosition
+            )
+        }
+    }
 
     private var player: AVAudioPlayer?
     private var timer: Timer?
@@ -48,8 +106,28 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
 
     @discardableResult
     func play(_ episode: WatchEpisode) async -> Bool {
-        guard let localFileURL = WatchStorageManager.shared.resolvedLocalFileURL(for: episode) else {
-            var metadata = WatchDiagnostics.metadata(for: episode)
+        guard WatchDownloadManager.shared.claimPlaybackBeforeStorageEviction(hash: episode.episodeHash) else {
+            return false
+        }
+        playbackGeneration += 1
+        let generation = playbackGeneration
+        let episodeIdentity = WatchStorageEpisodeIdentity(episode: episode)
+        let inspection = await WatchStorageManager.inspectLocalFile(for: episode)
+        guard generation == playbackGeneration,
+              WatchDownloadManager.shared.claimPlaybackBeforeStorageEviction(hash: episode.episodeHash),
+              let currentEpisode = WatchManifestStore.shared.episode(hash: episode.episodeHash),
+              episodeIdentity.matches(currentEpisode) else {
+            return false
+        }
+        if currentEpisode.status == .removing {
+            WatchDownloadManager.shared.finalizePendingRemoval(hash: currentEpisode.episodeHash)
+            return false
+        }
+        guard currentEpisode.status == .downloaded else {
+            return false
+        }
+        guard let localFileURL = inspection.resolvedURL else {
+            var metadata = WatchDiagnostics.metadata(for: currentEpisode)
             metadata["localFileMissing"] = "true"
             WatchDiagnostics.log("playback-start-failed", message: "Watch-Playback ohne lokale Datei", metadata: metadata)
             WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
@@ -58,7 +136,6 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                 item.actualFileSize = 0
                 item.actualDuration = 0
                 item.downloadedBytes = 0
-                item.expectedBytes = 0
                 item.chapters = []
                 item.chapterArtworkBaseURL = nil
             }
@@ -76,25 +153,28 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             WatchDiagnostics.log("playback-pathRerooted", message: "Watch-Playbackpfad auf aktuellen Container normalisiert", metadata: metadata)
         }
 
-        playbackGeneration += 1
-        let generation = playbackGeneration
-
         if playingEpisodeHash != episode.episodeHash {
+            let releasedHash = playingEpisodeHash
             reportPosition(finished: false)
             player?.stop()
+            player = nil
+            playingEpisodeHash = nil
+            if let releasedHash {
+                WatchDownloadManager.shared.finalizePendingRemoval(hash: releasedHash)
+            }
             do {
                 WatchDiagnostics.log("playback-start", message: "Watch-Playback startet", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: nil))
                 player = try AVAudioPlayer(contentsOf: localFileURL)
             } catch {
                 WatchDiagnostics.log("playback-start-failed", message: "Watch-Playback konnte Datei nicht oeffnen", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: error))
-                markEpisodePlaybackFailed(episode, error: error.localizedDescription)
+                await markEpisodePlaybackFailed(episode, error: error.localizedDescription)
                 return false
             }
             playingEpisodeHash = episode.episodeHash
         }
 
         guard let player else {
-            markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
+            await markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
             return false
         }
 
@@ -103,6 +183,11 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         do {
             try await activateLongFormAudioSession()
         } catch {
+            guard generation == playbackGeneration,
+                  self.player === player,
+                  playingEpisodeHash == episode.episodeHash else {
+                return false
+            }
             WatchDiagnostics.log("playback-audio-session-failed", message: "Watch-Audiositzung konnte nicht aktiviert werden", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: error))
             // A failed session activation (no Bluetooth headphones, dismissed route picker) says
             // nothing about the file. The old markEpisodePlaybackFailed path DELETED the healthy
@@ -110,6 +195,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             // system hint, then the episode dropped to "Fehler" and re-downloaded. Just abort the
             // start attempt and keep the download.
             playbackGeneration += 1
+            let releasedHash = playingEpisodeHash
             player.stop()
             self.player = nil
             playingEpisodeHash = nil
@@ -117,6 +203,9 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             currentPosition = 0
             clearPlaybackActiveMarker()
             clearNowPlayingInfo()
+            if let releasedHash {
+                WatchDownloadManager.shared.finalizePendingRemoval(hash: releasedHash)
+            }
             return false
         }
 
@@ -131,7 +220,7 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         }
         guard player.play() else {
             WatchDiagnostics.log("playback-start-failed", message: "AVAudioPlayer.play() fehlgeschlagen", metadata: playbackMetadata(for: episode, fileURL: localFileURL, error: nil))
-            markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
+            await markEpisodePlaybackFailed(episode, error: NSLocalizedString("Audiodatei konnte nicht abgespielt werden.", comment: ""))
             return false
         }
         isPlaying = true
@@ -193,9 +282,14 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let callbackPlayerIdentifier = ObjectIdentifier(player)
         let finishedTime = player.currentTime
         let finishedDuration = player.duration
         Task { @MainActor in
+            guard let currentPlayer = self.player,
+                  ObjectIdentifier(currentPlayer) == callbackPlayerIdentifier else {
+                return
+            }
             let finishedHash = playingEpisodeHash
             let currentEpisode = finishedHash.flatMap { WatchManifestStore.shared.episode(hash: $0) }
             var metadata: [String: String]
@@ -220,29 +314,49 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                 && (currentEpisode?.durationHint ?? 0) >= 600
                 && finishedDuration > 0
                 && finishedDuration < Double(currentEpisode?.durationHint ?? 0) / 2
+            let pendingRemoval = currentEpisode?.status == .removing
+            var removalCommitted = false
 
             if truncatedFile, let currentEpisode {
                 var truncatedMetadata = metadata
                 truncatedMetadata["durationHint"] = "\(currentEpisode.durationHint)"
                 WatchDiagnostics.log("playback-finished-truncated", message: "Watch-Datei ist trunkiert, wird neu geladen", metadata: truncatedMetadata)
                 reportPosition(finished: false)
-                WatchStorageManager.shared.removeLocalFile(for: currentEpisode)
-                WatchManifestStore.shared.updateEpisode(hash: currentEpisode.episodeHash) { item in
-                    item.status = .queued
-                    item.localFileURL = nil
-                    item.actualFileSize = 0
-                    item.actualDuration = 0
-                    item.downloadedBytes = 0
-                    // Keep expectedBytes: it is the size the re-download's truncation
-                    // validation falls back to when the transport declares none.
-                    item.chapters = []
-                    item.chapterArtworkBaseURL = nil
-                    item.lastError = NSLocalizedString("Geladene Datei ist unvollständig.", comment: "")
+                if !pendingRemoval {
+                    let removalGeneration = playbackGeneration
+                    removalCommitted = await WatchDownloadManager.shared.removePlaybackFile(
+                        for: currentEpisode,
+                        expectedStatus: currentEpisode.status,
+                        disposition: .queued,
+                        error: NSLocalizedString("Geladene Datei ist unvollständig.", comment: ""),
+                        stillCurrentPlayback: { [weak self] in
+                            guard let self,
+                                  self.playbackGeneration == removalGeneration,
+                                  let currentPlayer = self.player,
+                                  ObjectIdentifier(currentPlayer) == callbackPlayerIdentifier,
+                                  self.playingEpisodeHash == currentEpisode.episodeHash else {
+                                return false
+                            }
+                            return true
+                        }
+                    )
+                    guard playbackGeneration == removalGeneration,
+                          let currentPlayer = self.player,
+                          ObjectIdentifier(currentPlayer) == callbackPlayerIdentifier,
+                          playingEpisodeHash == currentEpisode.episodeHash else {
+                        return
+                    }
                 }
             } else if flag {
                 reportPosition(finished: true)
             } else {
                 reportPosition(finished: false)
+            }
+            let nextEpisode: WatchEpisode?
+            if flag, !truncatedFile, let finishedHash {
+                nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash)
+            } else {
+                nextEpisode = nil
             }
             self.player = nil
             playingEpisodeHash = nil
@@ -250,16 +364,24 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             clearPlaybackActiveMarker()
             clearNowPlayingInfo()
 
-            if truncatedFile {
+            if pendingRemoval, let finishedHash {
+                WatchDownloadManager.shared.finalizePendingRemoval(hash: finishedHash)
+            }
+            if truncatedFile && !pendingRemoval && removalCommitted {
                 WatchDownloadManager.shared.startQueuedDownloads()
-            } else if flag, let finishedHash, let nextEpisode = WatchManifestStore.shared.nextPlayableEpisode(after: finishedHash) {
+            } else if let nextEpisode {
                 _ = await play(nextEpisode)
             }
         }
     }
 
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        let callbackPlayerIdentifier = ObjectIdentifier(player)
         Task { @MainActor in
+            guard let currentPlayer = self.player,
+                  ObjectIdentifier(currentPlayer) == callbackPlayerIdentifier else {
+                return
+            }
             let hash = playingEpisodeHash
             let currentEpisode = hash.flatMap { WatchManifestStore.shared.episode(hash: $0) }
             var metadata: [String: String]
@@ -310,8 +432,10 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             "episodeHash": playingEpisodeHash ?? "",
             "wasPlaying": isPlaying ? "true" : "false",
             "currentTime": "\(player?.currentTime ?? 0)",
-            "freeBytes": "\(WatchStorageManager.shared.freeBytes())",
         ]
+        if let freeBytes = WatchStorageManager.shared.latestFreeBytes {
+            metadata["freeBytes"] = "\(freeBytes)"
+        }
         switch type {
         case .began:
             metadata["phase"] = "began"
@@ -337,22 +461,31 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
             metadata["secondsSincePlaybackStart"] = String(format: "%.0f", Date().timeIntervalSince(start))
             metadata["playbackStartDate"] = dateFormatter.string(from: start)
         }
-        if let episode = WatchManifestStore.shared.episode(hash: hash) {
+        let episode = WatchManifestStore.shared.episode(hash: hash)
+        if let episode {
             metadata["status"] = episode.status.rawValue
             metadata["lastPlaybackPosition"] = "\(episode.lastPlaybackPosition)"
-            if let fileURL = WatchStorageManager.shared.resolvedLocalFileURL(for: episode) {
-                metadata["fileExists"] = "true"
-                if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                   let size = attributes[.size] as? NSNumber {
-                    metadata["fileBytes"] = "\(size.int64Value)"
-                }
-            } else {
-                metadata["fileExists"] = "false"
-            }
         }
-        metadata["freeBytes"] = "\(WatchStorageManager.shared.freeBytes())"
-        WatchDiagnostics.log("playback-terminated-unexpectedly", message: "Watch-Playback wurde unerwartet beendet", metadata: metadata)
+        let baseMetadata = metadata
         clearPlaybackActiveMarker()
+        Task { @MainActor in
+            var enrichedMetadata = baseMetadata
+            if let episode {
+                let inspection = await WatchStorageManager.inspectLocalFile(for: episode)
+                enrichedMetadata["fileExists"] = inspection.fileExists ? "true" : "false"
+                if let fileSize = inspection.fileSize {
+                    enrichedMetadata["fileBytes"] = "\(fileSize)"
+                }
+            }
+            if let freeBytes = WatchStorageManager.shared.latestFreeBytes {
+                enrichedMetadata["freeBytes"] = "\(freeBytes)"
+            }
+            WatchDiagnostics.log(
+                "playback-terminated-unexpectedly",
+                message: "Watch-Playback wurde unerwartet beendet",
+                metadata: enrichedMetadata
+            )
+        }
     }
 
     private func setPlaybackActiveMarker(for episodeHash: String) {
@@ -587,12 +720,27 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
                 "episodeHash": hash,
                 "currentTime": "\(player.currentTime)",
                 "duration": "\(player.duration)",
-                "freeBytes": "\(WatchStorageManager.shared.freeBytes())",
             ]
-            if let fileURL = WatchManifestStore.shared.episode(hash: hash)?.localFileURL {
-                metadata["fileExists"] = FileManager.default.fileExists(atPath: fileURL.path) ? "true" : "false"
+            if let freeBytes = WatchStorageManager.shared.latestFreeBytes {
+                metadata["freeBytes"] = "\(freeBytes)"
             }
-            WatchDiagnostics.log("playback-stalled", message: "Watch-Playback unerwartet gestoppt", metadata: metadata)
+            let fileURL = WatchManifestStore.shared.episode(hash: hash)?.localFileURL
+            let baseMetadata = metadata
+            Task { @MainActor in
+                var enrichedMetadata = baseMetadata
+                if let fileURL {
+                    let inspection = await WatchStorageManager.inspectFile(at: fileURL)
+                    enrichedMetadata["fileExists"] = inspection.fileExists ? "true" : "false"
+                    if let fileSize = inspection.fileSize {
+                        enrichedMetadata["fileBytes"] = "\(fileSize)"
+                    }
+                }
+                WatchDiagnostics.log(
+                    "playback-stalled",
+                    message: "Watch-Playback unerwartet gestoppt",
+                    metadata: enrichedMetadata
+                )
+            }
         }
         currentPosition = player.currentTime
         updateNowPlayingInfo()
@@ -635,11 +783,6 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         var metadata = WatchDiagnostics.metadata(for: episode)
         metadata["fileName"] = fileURL.lastPathComponent
         metadata["filePathHash"] = WatchDiagnostics.stableHash(fileURL.path)
-        metadata["fileExists"] = FileManager.default.fileExists(atPath: fileURL.path) ? "true" : "false"
-        if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-           let size = attributes[.size] as? NSNumber {
-            metadata["fileBytes"] = "\(size.int64Value)"
-        }
         if let player {
             metadata["playerCurrentTime"] = "\(player.currentTime)"
             metadata["playerDuration"] = "\(player.duration)"
@@ -653,35 +796,65 @@ final class WatchPlayerController: NSObject, ObservableObject, AVAudioPlayerDele
         return metadata
     }
 
-    private func markEpisodePlaybackFailed(_ episode: WatchEpisode, error: String) {
+    private func markEpisodePlaybackFailed(_ episode: WatchEpisode, error: String) async {
+        let currentEpisode = WatchManifestStore.shared.episode(hash: episode.episodeHash) ?? episode
+        let pendingRemoval = currentEpisode.status == .removing
         playbackGeneration += 1
+        let removalGeneration = playbackGeneration
+        let failedPlayerIdentifier = player.map(ObjectIdentifier.init)
+        let failedPlayingHash = playingEpisodeHash
         stopTimer()
         player?.stop()
-        player = nil
-        playingEpisodeHash = nil
         isPlaying = false
         currentPosition = 0
         clearPlaybackActiveMarker()
-        clearNowPlayingInfo()
 
-        WatchStorageManager.shared.removeLocalFile(for: episode)
-        WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
-            item.status = .failed
-            item.localFileURL = nil
-            item.actualFileSize = 0
-            item.actualDuration = 0
-            item.downloadedBytes = 0
-            item.expectedBytes = 0
-            item.chapters = []
-            item.chapterArtworkBaseURL = nil
-            item.lastError = error
+        if pendingRemoval {
+            player = nil
+            playingEpisodeHash = nil
+            clearNowPlayingInfo()
+            WatchDownloadManager.shared.finalizePendingRemoval(hash: episode.episodeHash)
+            return
         }
 
-        WatchConnectivityController.shared.send(type: "watch.downloadFailed", payload: [
-            "episodeHash": episode.episodeHash,
-            "error": error,
-            "timestamp": dateFormatter.string(from: Date()),
-        ])
+        let removalCommitted = await WatchDownloadManager.shared.removePlaybackFile(
+            for: currentEpisode,
+            expectedStatus: currentEpisode.status,
+            disposition: .failed,
+            error: error,
+            stillCurrentPlayback: { [weak self] in
+                guard let self,
+                      self.playbackGeneration == removalGeneration,
+                      self.playingEpisodeHash == failedPlayingHash else {
+                    return false
+                }
+                if let failedPlayerIdentifier {
+                    guard let currentPlayer = self.player else { return false }
+                    return ObjectIdentifier(currentPlayer) == failedPlayerIdentifier
+                }
+                return self.player == nil
+            }
+        )
+
+        guard playbackGeneration == removalGeneration,
+              playingEpisodeHash == failedPlayingHash else {
+            return
+        }
+        if let failedPlayerIdentifier {
+            guard let currentPlayer = player,
+                  ObjectIdentifier(currentPlayer) == failedPlayerIdentifier else {
+                return
+            }
+        } else {
+            guard player == nil else { return }
+        }
+
+        player = nil
+        playingEpisodeHash = nil
+        clearNowPlayingInfo()
+        if removalCommitted {
+            WatchConnectivityController.shared.reportTerminalDownloadState(forEpisodeHash: episode.episodeHash)
+        }
     }
 }
 

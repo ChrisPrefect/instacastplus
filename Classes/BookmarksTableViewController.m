@@ -92,13 +92,6 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     }
 }
 
-- (NSArray*) _bookmarksWithEpisodeHash:(NSString*)episodeHash
-{
-    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"episodeHash == %@", episodeHash];
-    NSArray* bookmarks = [DMANAGER.bookmarks filteredArrayUsingPredicate:predicate];
-    return bookmarks;
-}
-
 - (void) _reloadBookmarks
 {
     self.multiple = NO;
@@ -186,11 +179,8 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
             [mySections addObject:section];
 
             
-            NSArray* bmarks = [self _bookmarksWithEpisodeHash:episodeHash];
-            if (bmarks) {
-                [myBookmarks setObject:bmarks forKey:episodeHash];
-            }
-            if ([bmarks count] > 1) {
+            [myBookmarks setObject:bookmarks forKey:episodeHash];
+            if ([bookmarks count] > 1) {
                 self.multiple = YES;
             }
         }

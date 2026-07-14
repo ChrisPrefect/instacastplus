@@ -19,6 +19,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 // counts on the store at the same time and crashed under load (use-after-free, iPad
 // SIGSEGV 10.06.2026). Only one count per list runs at a time — late callers attach here.
 @property (nonatomic, strong) NSMutableArray<void (^)(NSUInteger)>* pendingCountCompletions;
+- (NSPredicate*)_episodesPredicateConsideringExplicitRelationshipWithError:(NSError**)error;
 @end
 
 @implementation CDEpisodeList {
@@ -106,7 +107,72 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (NSInteger) playbackTime
 {
-    return 0;
+    NSExpressionDescription* totalDuration = [[NSExpressionDescription alloc] init];
+    totalDuration.name = @"totalDuration";
+    totalDuration.expression = [NSExpression expressionForFunction:@"sum:"
+                                                          arguments:@[[NSExpression expressionForKeyPath:@"duration"]]];
+    totalDuration.expressionResultType = NSInteger64AttributeType;
+
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    request.includesSubentities = NO;
+    NSError* predicateError = nil;
+    request.predicate = [self _episodesPredicateConsideringExplicitRelationshipWithError:&predicateError];
+    if (!request.predicate) {
+        ErrLog(@"error resolving episode-list membership: %@", predicateError);
+        return 0;
+    }
+    request.resultType = NSDictionaryResultType;
+    request.propertiesToFetch = @[totalDuration];
+
+    NSError* error = nil;
+    NSDictionary* result = [[self.managedObjectContext executeFetchRequest:request error:&error] firstObject];
+    if (error) {
+        ErrLog(@"error calculating episode-list duration: %@", error);
+        return 0;
+    }
+    return [result[@"totalDuration"] integerValue];
+}
+
+- (NSUInteger)numberOfPlayedEpisodes
+{
+    NSError* predicateError = nil;
+    NSPredicate* membershipPredicate = [self _episodesPredicateConsideringExplicitRelationshipWithError:&predicateError];
+    if (!membershipPredicate) {
+        ErrLog(@"error resolving episode-list membership: %@", predicateError);
+        return 0;
+    }
+    NSPredicate* predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+        membershipPredicate,
+        [NSPredicate predicateWithFormat:@"consumed == YES"],
+    ]];
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    request.includesSubentities = NO;
+    request.predicate = predicate;
+    NSUInteger count = [self.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
+}
+
+- (NSUInteger)numberOfPlayedDownloadedEpisodes
+{
+    NSError* predicateError = nil;
+    NSPredicate* membershipPredicate = [self _episodesPredicateConsideringExplicitRelationshipWithError:&predicateError];
+    if (!membershipPredicate) {
+        ErrLog(@"error resolving episode-list membership: %@", predicateError);
+        return 0;
+    }
+    NSPredicate* predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+        membershipPredicate,
+        [NSPredicate predicateWithFormat:@"consumed == YES"],
+        [NSPredicate predicateWithFormat:@"objectHash IN %@", [CacheManager sharedCacheManager].cachedEpisodeObjectHashes],
+    ]];
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    request.includesSubentities = NO;
+    request.predicate = predicate;
+    NSUInteger count = [self.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
 }
 
 - (IC_IMAGE*) image
@@ -125,16 +191,12 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (NSArray*) sortedEpisodes
 {
-    return [self _sortedEpisodesWithFetchLimit:0];
+    return [self sortedEpisodesWithOffset:0 limit:0];
 }
 
 - (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit
 {
-    NSArray* result = [self _sortedEpisodesWithFetchLimit:limit];
-    if (limit > 0 && result.count > limit) {
-        return [result subarrayWithRange:NSMakeRange(0, limit)];
-    }
-    return result;
+    return [self sortedEpisodesWithOffset:0 limit:limit];
 }
 
 - (BOOL) evaluatesEpisodeNow:(CDEpisode*)episode
@@ -190,22 +252,17 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         // predicate on it matches nothing, which left the "Downloaded" list empty
         // although the files were all there. Filter against the cache manager's
         // object hashes instead.
-        NSArray* cachedHashes = [[[CacheManager sharedCacheManager] cachedEpisodes] valueForKey:@"objectHash"];
+        NSSet<NSString*>* cachedHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
         if (!self.downloaded) {
-            [subPredicates addObject:[NSPredicate predicateWithFormat:@"NOT (objectHash IN %@)", cachedHashes ?: @[]]];
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"NOT (objectHash IN %@)", cachedHashes]];
         } else {
-            [subPredicates addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", cachedHashes ?: @[]]];
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", cachedHashes]];
         }
     }
 
     if ([self.includedFeeds count] > 0)
     {
-        NSMutableArray* includedFeedsSubPredicates = [[NSMutableArray alloc] init];
-        for(CDFeed* feed in self.includedFeeds) {
-            [includedFeedsSubPredicates addObject:[NSPredicate predicateWithFormat:@"feed == %@", feed]];
-        }
-
-        [subPredicates addObject:[NSCompoundPredicate orPredicateWithSubpredicates:includedFeedsSubPredicates]];
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed IN %@", self.includedFeeds]];
     }
 
     if ([self.query length] > 0) {
@@ -214,6 +271,27 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     }
 
     return [NSCompoundPredicate andPredicateWithSubpredicates:subPredicates];
+}
+
+- (NSPredicate*)_episodesPredicateConsideringExplicitRelationshipWithError:(NSError**)error
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    request.includesSubentities = NO;
+    request.predicate = [NSPredicate predicateWithFormat:@"episodeLists CONTAINS %@", self];
+
+    NSError* countError = nil;
+    NSUInteger explicitCount = [self.managedObjectContext countForFetchRequest:request error:&countError];
+    if (explicitCount == NSNotFound) {
+        if (error) {
+            *error = countError;
+        }
+        return nil;
+    }
+    if (explicitCount > 0) {
+        return [NSPredicate predicateWithFormat:@"episodeLists CONTAINS %@", self];
+    }
+    return [self _episodesMainPredicate];
 }
 
 // Counts via SQL instead of materializing the episodes. The background-context guard
@@ -245,17 +323,18 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     return (count == NSNotFound) ? 0 : count;
 }
 
-- (NSArray*) _sortedEpisodesWithFetchLimit:(NSUInteger)fetchLimit
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset limit:(NSUInteger)limit error:(NSError**)error
 {
-    NSArray* explicitEpisodes = [self explicitEpisodeRelationshipObjectsWithFetchLimit:fetchLimit];
-    if ([explicitEpisodes count] > 0) {
-        return explicitEpisodes;
-    }
-
-
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
-    fetchRequest.predicate = [self _episodesMainPredicate];
+    NSError* predicateError = nil;
+    fetchRequest.predicate = [self _episodesPredicateConsideringExplicitRelationshipWithError:&predicateError];
+    if (!fetchRequest.predicate) {
+        if (error) {
+            *error = predicateError;
+        }
+        return nil;
+    }
     fetchRequest.includesSubentities = NO;
     fetchRequest.resultType = NSDictionaryResultType;
     
@@ -263,13 +342,14 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     if ([self.orderBy isEqualToString:@"timeLeft"]) {
         [fetchedProperties addObject:@"duration"];
         [fetchedProperties addObject:@"position"];
-    } else if (self.orderBy) {
+    } else if (self.orderBy && ![fetchedProperties containsObject:self.orderBy]) {
         [fetchedProperties addObject:self.orderBy];
     }
     
     
-    if (self.groupByPodcast) {
+    if (self.groupByPodcast && ![fetchedProperties containsObject:@"feed.rank"]) {
         [fetchedProperties addObject:@"feed.rank"];
+        [fetchedProperties addObject:@"feed.uid"];
     }
     fetchRequest.propertiesToFetch = fetchedProperties;
     
@@ -278,68 +358,117 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     NSMutableArray* sortDescriptors = [[NSMutableArray alloc] init];
     if (self.groupByPodcast) {
         [sortDescriptors addObject:[[NSSortDescriptor alloc] initWithKey:@"feed.rank" ascending:YES]];
+        [sortDescriptors addObject:[[NSSortDescriptor alloc] initWithKey:@"feed.uid" ascending:YES]];
     }
     if (self.orderBy && ![self.orderBy isEqualToString:@"timeLeft"]) {
         [sortDescriptors addObject:[[NSSortDescriptor alloc] initWithKey:self.orderBy ascending:!self.descending]];
+    }
+    // Stable paging requires a unique final key. Without this, equal publication dates
+    // can move between OFFSET pages and appear twice or not at all.
+    if (![self.orderBy isEqualToString:@"objectHash"]) {
+        [sortDescriptors addObject:[[NSSortDescriptor alloc] initWithKey:@"objectHash" ascending:YES]];
     }
     if ([sortDescriptors count] > 0) {
         fetchRequest.sortDescriptors = sortDescriptors;
     }
 
-    if (fetchLimit > 0) {
-        fetchRequest.fetchLimit = fetchLimit;
+    BOOL sortsByTimeLeft = [self.orderBy isEqualToString:@"timeLeft"];
+    if (!sortsByTimeLeft) {
+        fetchRequest.fetchOffset = offset;
+        if (limit > 0) {
+            fetchRequest.fetchLimit = limit;
+        }
     }
 
-    NSError* error;
-    NSArray* objects = [self.managedObjectContext executeFetchRequest:fetchRequest error:&error];
-    
-    // sort manually
-    if ([self.orderBy isEqualToString:@"timeLeft"]) {
+    NSError* fetchError = nil;
+    NSArray* objects = [self.managedObjectContext executeFetchRequest:fetchRequest error:&fetchError];
+    if (fetchError) {
+        ErrLog(@"error fetching episode-list page: %@", fetchError);
+        if (error) {
+            *error = fetchError;
+        }
+        return nil;
+    }
+
+    // timeLeft is computed from two columns and cannot be sorted by SQLite/Core Data.
+    // Fetch lightweight dictionaries, sort globally, and only materialize this page.
+    if (sortsByTimeLeft) {
         objects = [objects sortedArrayUsingComparator:^NSComparisonResult(NSDictionary* obj1, NSDictionary* obj2) {
+            if (self.groupByPodcast) {
+                NSComparisonResult feedOrder = [obj1[@"feed.rank"] compare:obj2[@"feed.rank"]];
+                if (feedOrder != NSOrderedSame) {
+                    return feedOrder;
+                }
+                feedOrder = [obj1[@"feed.uid"] compare:obj2[@"feed.uid"]];
+                if (feedOrder != NSOrderedSame) {
+                    return feedOrder;
+                }
+            }
+
             NSInteger timeLeft1 = [obj1[@"duration"] integerValue] - [obj1[@"position"] integerValue];
             NSInteger timeLeft2 = [obj2[@"duration"] integerValue] - [obj2[@"position"] integerValue];
-            
-            if (timeLeft1 == timeLeft2) {
-                return NSOrderedSame;
+            if (timeLeft1 != timeLeft2) {
+                if (self.descending) {
+                    return (timeLeft1 > timeLeft2) ? NSOrderedAscending : NSOrderedDescending;
+                }
+                return (timeLeft1 < timeLeft2) ? NSOrderedAscending : NSOrderedDescending;
             }
-            
-            if (self.descending) {
-                return (timeLeft1 > timeLeft2) ? NSOrderedAscending : NSOrderedDescending;
-            }
-            return (timeLeft1 < timeLeft2) ? NSOrderedAscending : NSOrderedDescending;
-        }];
-    }
-    
 
-    NSArray* objectHashes = [objects valueForKey:@"objectHash"];
-    NSFetchRequest* fetchRequest2 = [[NSFetchRequest alloc] init];
-    fetchRequest2.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
-    fetchRequest2.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", objectHashes];
-    fetchRequest2.includesSubentities = NO;
-    fetchRequest2.sortDescriptors = sortDescriptors;
-
-    
-    NSError* error2;
-    NSArray* stage3Objects = [self.managedObjectContext executeFetchRequest:fetchRequest2 error:&error2];
-    
-    if ([self.orderBy isEqualToString:@"timeLeft"]) {
-        stage3Objects = [stage3Objects sortedArrayUsingComparator:^NSComparisonResult(CDEpisode* obj1, CDEpisode* obj2) {
-            NSInteger timeLeft1 = obj1.duration - obj1.position;
-            NSInteger timeLeft2 = obj2.duration - obj2.position;
-            
-            if (timeLeft1 == timeLeft2) {
-                return NSOrderedSame;
-            }
-            
-            if (self.descending) {
-                return (timeLeft1 > timeLeft2) ? NSOrderedAscending : NSOrderedDescending;
-            }
-            return (timeLeft1 < timeLeft2) ? NSOrderedAscending : NSOrderedDescending;
+            return [obj1[@"objectHash"] compare:obj2[@"objectHash"]];
         }];
+
+        if (offset >= objects.count) {
+            return @[];
+        }
+        NSUInteger pageCount = objects.count - offset;
+        if (limit > 0) {
+            pageCount = MIN(pageCount, limit);
+        }
+        objects = [objects subarrayWithRange:NSMakeRange(offset, pageCount)];
     }
-    
-    self.cachedEpisodesCount = @(stage3Objects.count);
-    return stage3Objects;
+
+    NSArray<NSString*>* objectHashes = [objects valueForKey:@"objectHash"];
+    if (objectHashes.count == 0) {
+        if (offset == 0 && limit == 0) {
+            self.cachedEpisodesCount = @0;
+        }
+        return @[];
+    }
+
+    NSFetchRequest* objectRequest = [[NSFetchRequest alloc] init];
+    objectRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    objectRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", objectHashes];
+    objectRequest.includesSubentities = NO;
+
+    NSError* objectError = nil;
+    NSArray<CDEpisode*>* fetchedEpisodes = [self.managedObjectContext executeFetchRequest:objectRequest error:&objectError];
+    if (objectError) {
+        ErrLog(@"error materializing episode-list page: %@", objectError);
+        if (error) {
+            *error = objectError;
+        }
+        return nil;
+    }
+
+    NSMutableDictionary<NSString*, CDEpisode*>* episodesByHash = [[NSMutableDictionary alloc] initWithCapacity:fetchedEpisodes.count];
+    for (CDEpisode* episode in fetchedEpisodes) {
+        if (episode.objectHash.length > 0) {
+            episodesByHash[episode.objectHash] = episode;
+        }
+    }
+
+    NSMutableArray<CDEpisode*>* orderedEpisodes = [[NSMutableArray alloc] initWithCapacity:objectHashes.count];
+    for (NSString* objectHash in objectHashes) {
+        CDEpisode* episode = episodesByHash[objectHash];
+        if (episode) {
+            [orderedEpisodes addObject:episode];
+        }
+    }
+
+    if (offset == 0 && limit == 0) {
+        self.cachedEpisodesCount = @(orderedEpisodes.count);
+    }
+    return orderedEpisodes;
 }
 
 - (NSArray*)explicitEpisodeRelationshipObjectsWithFetchLimit:(NSUInteger)fetchLimit
@@ -494,12 +623,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         
         if ([contextSelf.includedFeeds count] > 0)
         {
-            NSMutableArray* includedFeedsSubPredicates = [[NSMutableArray alloc] init];
-            for(CDFeed* feed in contextSelf.includedFeeds) {
-                [includedFeedsSubPredicates addObject:[NSPredicate predicateWithFormat:@"feed == %@", feed]];
-            }
-            
-            [subPredicates addObject:[NSCompoundPredicate orPredicateWithSubpredicates:includedFeedsSubPredicates]];
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"feed IN %@", contextSelf.includedFeeds]];
         }
         
         if ([contextSelf.query length] > 0) {
@@ -530,28 +654,17 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         // additionally filter for transient properties
         if (!contextSelf.downloaded || !contextSelf.notDownloaded)
         {
-            NSArray* cachedEpisodes = [[CacheManager sharedCacheManager] cachedEpisodes];
+            NSSet<NSString*>* cachedHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
             
             // filter all out that are downloaded
             if (!contextSelf.downloaded) {
-                for(CDEpisode* episode in cachedEpisodes) {
-                    [filteredObjectHashes removeObject:episode.objectHash];
-                }
+                [filteredObjectHashes minusSet:cachedHashes];
             }
             
             //filter all out that are not downloaded
             else if (!contextSelf.notDownloaded)
             {
-                NSMutableSet* cachedHashes = [[NSMutableSet alloc] init];
-                for(CDEpisode* episode in cachedEpisodes) {
-                    [cachedHashes addObject:episode.objectHash];
-                }
-                
-                for(NSString* objectHash in objectHashes) {
-                    if (![cachedHashes containsObject:objectHash]) {
-                        [filteredObjectHashes removeObject:objectHash];
-                    }
-                }
+                [filteredObjectHashes intersectSet:cachedHashes];
             }
         }
         
@@ -605,7 +718,9 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 
 - (void) setCachedEpisodesCount:(NSNumber *)cachedEpisodesCount
 {
-    if ([_cachedEpisodesCount integerValue] != [cachedEpisodesCount integerValue]) {
+    BOOL nilnessChanged = (_cachedEpisodesCount == nil) != (cachedEpisodesCount == nil);
+    BOOL valueChanged = _cachedEpisodesCount && cachedEpisodesCount && ![_cachedEpisodesCount isEqualToNumber:cachedEpisodesCount];
+    if (nilnessChanged || valueChanged) {
         [self willChangeValueForKey:@"numberOfEpisodes"];
         _cachedEpisodesCount = cachedEpisodesCount;
         [self didChangeValueForKey:@"numberOfEpisodes"];

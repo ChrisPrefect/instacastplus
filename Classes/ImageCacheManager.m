@@ -54,6 +54,8 @@ static ImageCacheManager* gSharedCacheManager = nil;
 @property (nonatomic, readwrite, strong) NSOperationQueue* operationQueue;
 @property (nonatomic, strong) NSMutableDictionary* contentHashIndex;
 @property (nonatomic) BOOL contentHashIndexDirty;
+@property (atomic) BOOL clearingImageCache;
+- (BOOL)_deleteCachedImageFilesNow;
 @end
 
 
@@ -226,6 +228,17 @@ static ImageCacheManager* gSharedCacheManager = nil;
     if (!operation) {
         return;
     }
+    if (self.clearingImageCache) {
+        [operation cancel];
+        void (^completion)(IC_IMAGE*, NSError*) = operation.didEndBlock;
+        if (completion) {
+            NSError* error = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(nil, error);
+            });
+        }
+        return;
+    }
     operation.sender = sender;
     operation.qualityOfService = NSQualityOfServiceUtility;
     [self.operationQueue addOperation:operation];
@@ -247,6 +260,9 @@ static ImageCacheManager* gSharedCacheManager = nil;
 
 - (void) cacheImage:(IC_IMAGE*)image forURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale
 {
+    if (!image || !url || self.clearingImageCache) {
+        return;
+    }
     NSString* cacheKey = [ImageCacheManager cacheKeyWithURL:url size:size grayscale:grayscale];
     [self.imageCache setObject:image forKey:cacheKey];
 }
@@ -261,6 +277,10 @@ static ImageCacheManager* gSharedCacheManager = nil;
 - (void) imageForURL:(NSURL*)url size:(NSInteger)size grayscale:(BOOL)grayscale sender:(id)sender completion:(void (^)(IC_IMAGE* image))completionHandler
 {
     if (!url || !completionHandler) {
+        return;
+    }
+    if (self.clearingImageCache) {
+        completionHandler(nil);
         return;
     }
 
@@ -279,26 +299,36 @@ static ImageCacheManager* gSharedCacheManager = nil;
         if (!strongSelf) {
             return;
         }
+        if (strongSelf.clearingImageCache) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completionHandler(nil);
+            });
+            return;
+        }
 
         NSURL* fileURL = [ImageCacheManager fileURLToCachedImageForImageURL:url size:size grayscale:grayscale];
         NSString* filePath = [fileURL path];
         IC_IMAGE* diskImage = [[IC_IMAGE alloc] initWithContentsOfFile:filePath];
         if (diskImage) {
+            if (strongSelf.clearingImageCache) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    completionHandler(nil);
+                });
+                return;
+            }
             [[NSFileManager defaultManager] setAttributes:@{ NSFileModificationDate : [NSDate date] }
                                              ofItemAtPath:filePath
                                                     error:nil];
             [strongSelf.imageCache setObject:diskImage forKey:cacheKey];
             dispatch_async(dispatch_get_main_queue(), ^{
-                completionHandler(diskImage);
+                completionHandler(strongSelf.clearingImageCache ? nil : diskImage);
             });
             return;
         }
 
         ICImageCacheOperation* operation = [[ICImageCacheOperation alloc] initWithURL:url size:size grayscale:grayscale];
         operation.didEndBlock = ^(IC_IMAGE* image, NSError* error) {
-            if (image) {
-                completionHandler(image);
-            }
+            completionHandler(strongSelf.clearingImageCache ? nil : image);
         };
         [strongSelf addImageCacheOperation:operation sender:sender];
     });
@@ -336,25 +366,82 @@ static ImageCacheManager* gSharedCacheManager = nil;
 - (BOOL) clearTheFuckingCache
 {
     [self.imageCache removeAllObjects];
-    
+    return [self _deleteCachedImageFilesNow];
+}
+
+- (BOOL)_deleteCachedImageFilesNow
+{
     NSFileManager* fman = [NSFileManager defaultManager];
-    
     NSString* pathToImages = [DMANAGER.imageCacheURL path];
-	NSDirectoryEnumerator* e = [fman enumeratorAtPath:pathToImages];
-	for(NSString* filename in e)
-	{
+    if (pathToImages.length == 0) {
+        return NO;
+    }
+
+    NSError* directoryError = nil;
+    NSArray<NSString*>* filenames = [fman contentsOfDirectoryAtPath:pathToImages error:&directoryError];
+    if (!filenames) {
+        ErrLog(@"image cache clear failed: %@", directoryError);
+        return NO;
+    }
+
+    BOOL clearedAllFiles = YES;
+    for (NSString* filename in filenames) {
         NSString* path = [pathToImages stringByAppendingPathComponent:filename];
-        [fman removeItemAtPath:path error:nil];
-	}
+        NSError* removalError = nil;
+        if (![fman removeItemAtPath:path error:&removalError]) {
+            clearedAllFiles = NO;
+            ErrLog(@"image cache file could not be deleted: %@", removalError);
+        }
+    }
 
     @synchronized (self) {
         [self.contentHashIndex removeAllObjects];
         self.contentHashIndex = nil;
         self.contentHashIndexDirty = NO;
     }
-    
-    
-    return YES;
+
+    return clearedAllFiles;
+}
+
+- (BOOL)cancelImageDownloadsAndClearCache
+{
+    self.clearingImageCache = YES;
+    [self.operationQueue cancelAllOperations];
+    [self.imageCache removeAllObjects];
+    dispatch_barrier_sync(_queue, ^{});
+    [self.operationQueue waitUntilAllOperationsAreFinished];
+    [self.imageCache removeAllObjects];
+    BOOL success = [self _deleteCachedImageFilesNow];
+    [self.imageCache removeAllObjects];
+    self.clearingImageCache = NO;
+    return success;
+}
+
+- (void)cancelImageDownloadsAndClearCacheWithCompletion:(void (^)(BOOL success))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self cancelImageDownloadsAndClearCacheWithCompletion:completion];
+        });
+        return;
+    }
+    if (self.clearingImageCache) {
+        if (completion) completion(NO);
+        return;
+    }
+    self.clearingImageCache = YES;
+    [self.operationQueue cancelAllOperations];
+    [self.imageCache removeAllObjects];
+    dispatch_barrier_async(self->_queue, ^{
+        [self.operationQueue waitUntilAllOperationsAreFinished];
+        [self.imageCache removeAllObjects];
+        BOOL success = [self _deleteCachedImageFilesNow];
+        [self.imageCache removeAllObjects];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.clearingImageCache = NO;
+            if (completion) completion(success);
+        });
+    });
 }
 
 @end

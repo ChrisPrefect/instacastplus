@@ -25,12 +25,26 @@
 #import "DirectorySearchViewController.h"
 #import "AppleWatchEpisodesViewController.h"
 #import "AppleWatchSyncManager.h"
+#import "InstacastBackupParser.h"
+#import "InstacastBackupData.h"
+#import "InstacastBackupImportViewController.h"
+#import "SubscriptionManager.h"
 
 #import "VDModalInfo.h"
 #import "OnboardScreenVC.h"
 #import "UpNextTableViewController.h"
 #import "TranscriptionQueueViewController.h"
 #import "InstacastPlus-Swift.h"
+
+static BOOL ICDataLooksLikeOPML(NSData* data)
+{
+    if (data.length == 0) return NO;
+    NSUInteger checkLength = MIN(data.length, 1024);
+    NSString* head = [[NSString alloc] initWithData:[data subdataWithRange:NSMakeRange(0, checkLength)]
+                                           encoding:NSUTF8StringEncoding];
+    if (!head) return NO;
+    return [head rangeOfString:@"<opml" options:NSCaseInsensitiveSearch].location != NSNotFound;
+}
 
 typedef NS_ENUM(NSInteger, MainSidebarItemTags) {
     kMainSidebarItemSubscriptions   = 2,
@@ -54,6 +68,11 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 @property (nonatomic, strong, readwrite) UINavigationController* rootNavigationController;
 @property (nonatomic, strong, readwrite) MainSidebarController* sidebarController;
 @property (nonatomic, strong, readwrite) MainActivityViewController* activityViewController;
+@property (nonatomic, strong) VDModalInfo* backupImportInfo;
+@property (nonatomic) BOOL backupImportInProgress;
+
+- (void)_importExternalOPMLData:(NSData*)data;
+- (void)_presentBackupPreviewWithData:(InstacastBackupData*)backupData;
 
 @property (nonatomic, readonly) CDEpisodeList* unplayedPlaylist;
 @property (nonatomic, readonly) CDEpisodeList* favoritesPlaylist;
@@ -71,6 +90,122 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 + (instancetype) mainViewController
 {
     return [[self alloc] initWithNibName:nil bundle:nil];
+}
+
+- (void)openBackupFileURL:(NSURL*)url
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self openBackupFileURL:url];
+        });
+        return;
+    }
+    if (!url || self.backupImportInProgress) {
+        return;
+    }
+
+    self.backupImportInProgress = YES;
+    self.backupImportInfo = [VDModalInfo modalInfoWithProgressLabel:@"Analyzing backup…".ls];
+    [self.backupImportInfo showInWindow:self.view.window];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSError* readError = nil;
+        NSData* data = [ICXMLImportLimits readDataFromURL:url error:&readError];
+
+        if (!data || readError) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf _finishBackupFileOpenWithMessage:readError.localizedDescription ?: @"The backup file could not be read. Check that it is still available and try again.".ls];
+            });
+            return;
+        }
+        if (![InstacastBackupParser isInstacastBackupData:data]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (ICDataLooksLikeOPML(data)) {
+                    [weakSelf _importExternalOPMLData:data];
+                }
+                else {
+                    [weakSelf _finishBackupFileOpenWithMessage:@"This XML file is not an InstacastPlus backup.".ls];
+                }
+            });
+            return;
+        }
+
+        [InstacastBackupParser parseData:data completion:^(InstacastBackupData* backupData, NSError* parseError) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) {
+                return;
+            }
+            if (parseError || !backupData) {
+                [strongSelf _finishBackupFileOpenWithMessage:parseError.localizedDescription ?: @"Could not parse backup file.".ls];
+                return;
+            }
+
+            [strongSelf.backupImportInfo close];
+            strongSelf.backupImportInfo = nil;
+            strongSelf.backupImportInProgress = NO;
+            [strongSelf _presentBackupPreviewWithData:backupData];
+        }];
+    });
+}
+
+- (void)_importExternalOPMLData:(NSData*)data
+{
+    self.backupImportInfo.textLabel.text = @"Importing…".ls;
+    [[SubscriptionManager sharedSubscriptionManager] importOPMLData:data completion:^(NSError* error) {
+        [self.backupImportInfo close];
+        self.backupImportInfo = nil;
+        self.backupImportInProgress = NO;
+        if (error) {
+            [self _showBackupFileOpenError:error.localizedDescription];
+        }
+    } progress:^(float progress) {
+        if (progress > 0.03) {
+            self.backupImportInfo.progress = progress;
+        }
+    }];
+}
+
+- (void)_presentBackupPreviewWithData:(InstacastBackupData*)backupData
+{
+    dispatch_block_t presentPreview = ^{
+        UINavigationController* navigationController = [self.contentViewController.childViewControllers firstObject];
+        if (![navigationController isKindOfClass:[UINavigationController class]]) {
+            [self _showBackupFileOpenError:@"The backup preview could not be opened.".ls];
+            return;
+        }
+        InstacastBackupImportViewController* importController =
+            [InstacastBackupImportViewController viewControllerWithBackupData:backupData];
+        [navigationController pushViewController:importController animated:YES];
+    };
+
+    if (self.presentedViewController) {
+        [self dismissViewControllerAnimated:YES completion:presentPreview];
+    }
+    else {
+        presentPreview();
+    }
+}
+
+- (void)_finishBackupFileOpenWithMessage:(NSString*)message
+{
+    [self.backupImportInfo close];
+    self.backupImportInfo = nil;
+    self.backupImportInProgress = NO;
+    [self _showBackupFileOpenError:message];
+}
+
+- (void)_showBackupFileOpenError:(NSString*)message
+{
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    UIViewController* presenter = self;
+    while (presenter.presentedViewController) {
+        presenter = presenter.presentedViewController;
+    }
+    [presenter presentViewController:alert animated:YES completion:nil];
 }
 
 - (void) dealloc
@@ -336,8 +471,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
 - (void) playerCloseButtonAction:(id)sender
 {
-    DownloadsViewController* downloadsController = [DownloadsViewController downloadsViewController];
-    [downloadsController.presentingViewController dismissViewControllerAnimated:YES completion:NULL];
+    [self.presentedViewController dismissViewControllerAnimated:YES completion:NULL];
 }
 
 

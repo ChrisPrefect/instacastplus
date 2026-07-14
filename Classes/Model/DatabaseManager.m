@@ -20,6 +20,7 @@
 #import "ICCategory.h"
 #import "EpisodeLoadingManager.h"
 #import "InstacastPlus-Swift.h"
+#import "UtilityFunctions.h"
 
 #import "UIManager.h"
 #import "ICFTSController.h"
@@ -28,6 +29,7 @@
 // legacy migration
 #import "CDSmartPlaylist.h"
 #import "CDPlaylist.h"
+#import "CDFeedProperty.h"
 #import "FSCrossbucketConnection.h"
 
 
@@ -42,6 +44,13 @@ NSString* DatabaseManagerDidAddBookmarkNotification = @"DatabaseManagerDidAddBoo
 static NSString* kDefaultEpisodePositionMigrationDone = @"EpisodePositionMigrationDone";
 static NSString* kDefaultFTSMigrationDone = @"FTSMigrationDone";
 static NSString* kDefaultSpotlightMigrationDone = @"SpotlightMigrationDone";
+static const NSUInteger kEpisodeDeletionBatchSize = 50;
+
+static BOOL ICFeedPropertyAffectsEpisodeCount(NSString* key)
+{
+    return [key isEqualToString:kFeedPropertyEpisodeLoadingComplete] ||
+           [key isEqualToString:kFeedPropertyTotalExpectedEpisodes];
+}
 
 
 #if TARGET_OS_IPHONE
@@ -60,9 +69,20 @@ static NSString* kBookmarksProperty = @"bookmarks";
 @property (nonatomic, strong, readwrite) NSPersistentContainer* persistentContainer;
 @property (nonatomic, strong, readwrite) NSPersistentStoreCoordinator* storeCoordinator;
 @property (nonatomic, strong, readwrite) NSManagedObjectModel* objectModel;
+@property (nonatomic, strong, readwrite) NSError* initializationError;
 @property (nonatomic, strong, readwrite) ICFTSController* ftsController;
 @property (nonatomic, strong, readwrite) ICSpotlightIndexer* spotlightIndexer;
 @property (nonatomic, readwrite) BOOL ftsIndexing;
+
+- (NSError*)_databaseInitializationErrorWithUnderlyingError:(NSError*)underlyingError;
+- (NSError*)_removeIncompleteCopiedStoreAtURL:(NSURL*)storeURL;
+- (void)_deleteEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
+                     startingAt:(NSUInteger)startIndex
+     successfullyDeletedEpisodes:(NSMutableArray<CDEpisode*>*)successfullyDeletedEpisodes
+                     completion:(void (^)(NSError* error))completion;
+- (void)_finishDeletingEpisodes:(NSArray<CDEpisode*>*)successfullyDeletedEpisodes
+                           error:(NSError*)error
+                      completion:(void (^)(NSError* error))completion;
 
 
 @end
@@ -81,6 +101,7 @@ static NSString* kBookmarksProperty = @"bookmarks";
 #endif
     NSInteger                   _savingInterruption;
     NSPersistentStoreCoordinator* _exportStoreCoordinator;
+    NSMutableSet<CDFeed*>*      _feedsAwaitingCountSave;
 }
 
 + (NSString*) pathToDocuments
@@ -230,6 +251,10 @@ NS_INLINE NSString* _DataStoreFile(void) {
     // check current file (in Data/ subfolder)
     NSURL* storeURL = [NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:_DataStoreFile()]];
     NSFileManager* fman = [[NSFileManager alloc] init];
+    NSURL* migrationMarkerURL = [NSURL fileURLWithPath:[storeURL.path stringByAppendingString:@".migration-in-progress"]];
+    if ([fman fileExistsAtPath:migrationMarkerURL.path]) {
+        return YES;
+    }
     if ([fman fileExistsAtPath:[storeURL path]]) {
         return [self dataStoreNeedsMigrationForFileAtURL:storeURL];
     }
@@ -249,54 +274,126 @@ NS_INLINE NSString* _DataStoreFile(void) {
 	{
         // Ensure Data subfolder exists
         NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
+        if (dataPath.length == 0) {
+            self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:nil];
+            return self;
+        }
 
         _databaseURL = [NSURL fileURLWithPath:[dataPath stringByAppendingPathComponent:_DataStoreFile()]];
 
-        _imageCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Images" parent:[DatabaseManager pathToDocuments]]];
-        _fileCacheURL = [NSURL fileURLWithPath:[DatabaseManager pathToSubfolder:@"Episodes" parent:[DatabaseManager pathToDocuments]]];
+        NSString* imageCachePath = [DatabaseManager pathToSubfolder:@"Images" parent:[DatabaseManager pathToDocuments]];
+        NSString* fileCachePath = [DatabaseManager pathToSubfolder:@"Episodes" parent:[DatabaseManager pathToDocuments]];
+        _imageCacheURL = imageCachePath.length > 0 ? [NSURL fileURLWithPath:imageCachePath] : nil;
+        _fileCacheURL = fileCachePath.length > 0 ? [NSURL fileURLWithPath:fileCachePath] : nil;
+        AddSkipBackupAttributeToFile(fileCachePath);
 
         // Migrate: move database files from old Documents root to Data subfolder
         [DatabaseManager _migrateRootFilesToDataFolder];
 
+        NSFileManager* fileManager = [NSFileManager defaultManager];
+        NSURL* migrationMarkerURL = [NSURL fileURLWithPath:[_databaseURL.path stringByAppendingString:@".migration-in-progress"]];
+        NSURL* urlOfLastDataStoreFile = [DatabaseManager _urlOfLastDataStoreFile];
+        BOOL legacyStoreExists = [fileManager fileExistsAtPath:urlOfLastDataStoreFile.path];
+
+        // The current SQLite file alone does not prove that its WAL/SHM companions were copied.
+        // If the previous launch died mid-copy, rebuild the entire destination triplet while the
+        // previous-version source is still intact.
+        if ([fileManager fileExistsAtPath:migrationMarkerURL.path]) {
+            if (!legacyStoreExists) {
+                NSError* missingSourceError = [NSError errorWithDomain:@"DatabaseManager"
+                                                                   code:41
+                                                               userInfo:@{NSLocalizedDescriptionKey: @"The previous database version needed to finish the interrupted upgrade is missing."}];
+                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:missingSourceError];
+                return self;
+            }
+            NSError* cleanupError = [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
+            if (cleanupError) {
+                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:cleanupError];
+                return self;
+            }
+        }
+
         // find old database file and make a copy for new database
-        if (![[NSFileManager defaultManager] fileExistsAtPath:[_databaseURL path]])
+        if (![fileManager fileExistsAtPath:[_databaseURL path]])
         {
-            NSURL* urlOfLastDataStoreFile = [DatabaseManager _urlOfLastDataStoreFile];
-            if ([[NSFileManager defaultManager] fileExistsAtPath:[urlOfLastDataStoreFile path]])
+            if (legacyStoreExists)
             {
                 NSError* error;
-                if (![[NSFileManager defaultManager] copyItemAtURL:urlOfLastDataStoreFile toURL:_databaseURL error:&error]) {
-                    ErrLog(@"error copying old database file to new location");
+                if (![fileManager fileExistsAtPath:migrationMarkerURL.path]) {
+                    NSData* markerData = [urlOfLastDataStoreFile.path dataUsingEncoding:NSUTF8StringEncoding];
+                    if (![markerData writeToURL:migrationMarkerURL options:NSDataWritingAtomic error:&error]) {
+                        ErrLog(@"error creating database migration marker: %@", error);
+                        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
+                        return self;
+                    }
+                }
+
+                if (![fileManager copyItemAtURL:urlOfLastDataStoreFile toURL:_databaseURL error:&error]) {
+                    ErrLog(@"error copying old database file to new location: %@", error);
+                    [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
+                    self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
+                    return self;
                 }
 
                 NSURL* shmURL = [[urlOfLastDataStoreFile URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"];
                 NSURL* toShmURL = [[_databaseURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"];
-                if ([[NSFileManager defaultManager] fileExistsAtPath:[shmURL path]]) {
+                if ([fileManager fileExistsAtPath:[shmURL path]]) {
                     NSError* error;
-                    if (![[NSFileManager defaultManager] copyItemAtURL:shmURL toURL:toShmURL error:&error]) {
-                        ErrLog(@"error copying old database shm file to new location");
+                    if (![fileManager copyItemAtURL:shmURL toURL:toShmURL error:&error]) {
+                        ErrLog(@"error copying old database shm file to new location: %@", error);
+                        [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
+                        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
+                        return self;
                     }
                 }
 
                 NSURL* walURL = [[urlOfLastDataStoreFile URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"];
                 NSURL* toWalURL = [[_databaseURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"];
-                if ([[NSFileManager defaultManager] fileExistsAtPath:[walURL path]]) {
+                if ([fileManager fileExistsAtPath:[walURL path]]) {
                     NSError* error;
-                    if (![[NSFileManager defaultManager] copyItemAtURL:walURL toURL:toWalURL error:&error]) {
-                        ErrLog(@"error copying old database wal file to new location");
+                    if (![fileManager copyItemAtURL:walURL toURL:toWalURL error:&error]) {
+                        ErrLog(@"error copying old database wal file to new location: %@", error);
+                        [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
+                        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
+                        return self;
                     }
                 }
             }
         }
 
+        BOOL migrationInProgress = [fileManager fileExistsAtPath:migrationMarkerURL.path];
+
+        BOOL shouldCreateInitialData = ![fileManager fileExistsAtPath:[_databaseURL path]];
+        NSManagedObjectContext* startupContext = self.objectContext;
+        if (!startupContext) {
+            if (!self.initializationError) {
+                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:nil];
+            }
+            return self;
+        }
 
         // create initial data when started first
-        if (![[NSFileManager defaultManager] fileExistsAtPath:[_databaseURL path]]) {
+        if (shouldCreateInitialData) {
             [self _createDatabase];
         }
         else {
             [self _migrateDatabase];
             [self _deleteUnsubscribedFeeds];
+
+            NSError* migrationCompletionError = [self saveReturningError];
+            if (migrationCompletionError) {
+                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:migrationCompletionError];
+                return self;
+            }
+
+            if (migrationInProgress) {
+                NSError* markerRemovalError = nil;
+                if (![fileManager removeItemAtURL:migrationMarkerURL error:&markerRemovalError]) {
+                    self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:markerRemovalError];
+                    return self;
+                }
+            }
+            [self _deleteObsoleteDataStores];
         }
 
 #if TARGET_OS_IPHONE
@@ -384,6 +481,45 @@ NS_INLINE NSString* _DataStoreFile(void) {
 	return self;
 }
 
+- (NSError*)_databaseInitializationErrorWithUnderlyingError:(NSError*)underlyingError
+{
+    NSMutableDictionary* userInfo = [@{
+        NSLocalizedDescriptionKey: @"InstacastPlus could not open the local podcast database. Your data was left unchanged. Check the available storage, restart the device, and open InstacastPlus again.".ls,
+    } mutableCopy];
+    if (underlyingError) {
+        userInfo[NSUnderlyingErrorKey] = underlyingError;
+    }
+    return [NSError errorWithDomain:@"DatabaseManager" code:40 userInfo:userInfo];
+}
+
+- (NSError*)_removeIncompleteCopiedStoreAtURL:(NSURL*)storeURL
+{
+    if (!storeURL) {
+        return nil;
+    }
+    NSURL* baseURL = [storeURL URLByDeletingPathExtension];
+    NSArray<NSURL*>* copiedURLs = @[
+        storeURL,
+        [baseURL URLByAppendingPathExtension:@"sqlite-shm"],
+        [baseURL URLByAppendingPathExtension:@"sqlite-wal"],
+    ];
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSError* firstCleanupError = nil;
+    for (NSURL* copiedURL in copiedURLs) {
+        if (![fileManager fileExistsAtPath:copiedURL.path]) {
+            continue;
+        }
+        NSError* cleanupError = nil;
+        if (![fileManager removeItemAtURL:copiedURL error:&cleanupError]) {
+            ErrLog(@"incomplete copied database file could not be removed at %@: %@", copiedURL.path, cleanupError);
+            if (!firstCleanupError) {
+                firstCleanupError = cleanupError;
+            }
+        }
+    }
+    return firstCleanupError;
+}
+
 
 - (void) _createDatabase
 {
@@ -454,16 +590,16 @@ NS_INLINE NSString* _DataStoreFile(void) {
     
     NSError* error;
     NSArray *fetchedResults = [self.objectContext executeFetchRequest:listsRequest error:&error];
-    NSMutableSet *uniqueRecords = [NSMutableSet set];
+    NSMutableDictionary<NSString*, CDList*>* uniqueRecords = [NSMutableDictionary dictionary];
 
 
     for (CDList *object in fetchedResults) {
-        if (![uniqueRecords containsObject:object.uid]) {
-            [uniqueRecords addObject:object.uid];
+        if (object.uid.length > 0 && !uniqueRecords[object.uid]) {
+            uniqueRecords[object.uid] = object;
         }
     }
 
-    NSArray *lists = [uniqueRecords allObjects];
+    NSArray<CDList*>* lists = uniqueRecords.allValues;
     
     for(CDList* list in lists)
     {
@@ -565,19 +701,15 @@ NS_INLINE NSString* _DataStoreFile(void) {
                 [self save];
             }
         }
-        else if ([list isKindOfClass:[CDPlaylist class]])
-        {
-            // custom list migration doesn't work and has been removed
-            // no support anymore
-            [self.objectContext deleteObject:list];
-            [self save];
-        }
     }
 }
 
-- (NSString *)normalizedURLString:(NSURL *)url {
-    if (!url) return nil;
-    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
++ (NSString *)normalizedFeedURLStringForURLString:(NSString *)URLString {
+    if (URLString.length == 0) return nil;
+    NSURL *URL = [NSURL URLWithString:URLString];
+    if (!URL) return nil;
+    NSURLComponents *components = [NSURLComponents componentsWithURL:URL resolvingAgainstBaseURL:NO];
+    if (!components) return nil;
     components.scheme = components.scheme.lowercaseString;
     components.host = components.host.lowercaseString;
     if (components.path.length == 0) components.path = @"/";
@@ -585,6 +717,18 @@ NS_INLINE NSString* _DataStoreFile(void) {
         components.path = [components.path substringToIndex:components.path.length - 1];
     }
     return components.URL.absoluteString;
+}
+
++ (NSArray<NSString *> *)equivalentFeedURLStringsForURLString:(NSString *)URLString {
+    NSString *normalizedURL = [self normalizedFeedURLStringForURLString:URLString];
+    if (!normalizedURL) return @[];
+    if ([normalizedURL hasPrefix:@"http://"]) {
+        return @[normalizedURL, [@"https://" stringByAppendingString:[normalizedURL substringFromIndex:7]]];
+    }
+    if ([normalizedURL hasPrefix:@"https://"]) {
+        return @[normalizedURL, [@"http://" stringByAppendingString:[normalizedURL substringFromIndex:8]]];
+    }
+    return @[normalizedURL];
 }
 
 - (void) _migrateFTS
@@ -667,7 +811,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
     IC_MIGRATE_STEP(_ensureWidgetOnlyDefaultLists);
     IC_MIGRATE_STEP(_migrateDefaultListOrderOnce);
     IC_MIGRATE_STEP(_migrateRemoveObsoletePauseFeedProperty);
-    IC_MIGRATE_STEP(_deleteObsoleteDataStores);
     DebugLog(@"[Migrate] TOTAL %.1f ms", (CFAbsoluteTimeGetCurrent() - migrateStart) * 1000.0);
 
 #undef IC_MIGRATE_STEP
@@ -872,9 +1015,9 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
 
 - (void) _migrateRemoveDuplicateFeeds
 {
-    // Remove ghost duplicate feeds: same sourceURL, keep the one with more episodes.
-    // Duplicates can arise from subscribeFeedMetadataOnly creating parked placeholders
-    // that never got properly merged with the real subscription.
+    // Consolidate ghost duplicate feeds created by metadata-only placeholders. Feed owns
+    // episodes, properties and categories with Cascade, so every relationship must move
+    // to the keeper before the redundant row is deleted.
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
@@ -882,8 +1025,8 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
 
     NSMutableDictionary<NSString*, NSMutableArray<CDFeed*>*>* feedsByURL = [NSMutableDictionary dictionary];
     for (CDFeed* feed in allFeeds) {
-        NSString* urlStr = feed.sourceURL.absoluteString;
-        if (!urlStr) continue;
+        NSString* urlStr = [DatabaseManager normalizedFeedURLStringForURLString:feed.sourceURL.absoluteString];
+        if (urlStr.length == 0) continue;
         if (!feedsByURL[urlStr]) {
             feedsByURL[urlStr] = [NSMutableArray array];
         }
@@ -900,12 +1043,54 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
             if (a.parked != b.parked) {
                 return a.parked ? NSOrderedDescending : NSOrderedAscending;
             }
-            return [@(b.episodes.count) compare:@(a.episodes.count)];
+            NSComparisonResult countOrder = [@(b.episodes.count) compare:@(a.episodes.count)];
+            if (countOrder != NSOrderedSame) {
+                return countOrder;
+            }
+            NSString* aID = a.objectID.URIRepresentation.absoluteString ?: @"";
+            NSString* bID = b.objectID.URIRepresentation.absoluteString ?: @"";
+            return [aID compare:bID];
         }];
 
-        // Keep first (non-parked, most episodes), delete rest
+        CDFeed* keeper = feeds.firstObject;
+        NSMutableSet<NSString*>* keeperPropertyKeys = [NSMutableSet set];
+        for (CDFeedProperty* property in keeper.properties) {
+            if (property.key.length > 0) {
+                [keeperPropertyKeys addObject:property.key];
+            }
+        }
+
+        // Keep first (non-parked, most episodes), merge every owned relationship, then
+        // delete only the empty feed row. Duplicate episode identities deliberately stay:
+        // startup has no CacheManager lifecycle yet, so hard-deleting them could orphan or
+        // remove a downloaded file. The normal feed refresh owns state-aware deduplication.
         for (NSUInteger i = 1; i < feeds.count; i++) {
             CDFeed* duplicate = feeds[i];
+            for (CDEpisode* episode in [duplicate.episodes copy]) {
+                episode.feed = keeper;
+            }
+            for (CDFeedProperty* property in [duplicate.properties copy]) {
+                if (property.key.length == 0 || ![keeperPropertyKeys containsObject:property.key]) {
+                    property.feed = keeper;
+                    if (property.key.length > 0) {
+                        [keeperPropertyKeys addObject:property.key];
+                    }
+                }
+            }
+            for (CDCategory* category in [duplicate.categories copy]) {
+                category.feed = keeper;
+            }
+            for (CDEpisodeList* episodeList in [duplicate.episodeLists copy]) {
+                [[episodeList mutableSetValueForKey:@"includedFeeds"] addObject:keeper];
+            }
+
+            if (keeper.username.length == 0 && duplicate.username.length > 0) {
+                NSString* duplicatePassword = duplicate.password;
+                keeper.username = duplicate.username;
+                if (duplicatePassword.length > 0) {
+                    keeper.password = duplicatePassword;
+                }
+            }
             [self.objectContext deleteObject:duplicate];
             changed = YES;
         }
@@ -979,38 +1164,116 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     
 }
 
-- (void) save
+- (NSError*) saveReturningError
 {
-    if (_savingInterruption == 0)
+    if (_savingInterruption != 0) {
+        return [NSError errorWithDomain:@"DatabaseManager"
+                                   code:1
+                               userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Die lokale Datenbank wird gerade exklusiv aktualisiert.", nil)}];
+    }
+
+    NSMutableSet* set = [[NSMutableSet alloc] init];
+    [set unionSet:[self.objectContext insertedObjects]];
+    [set unionSet:[self.objectContext updatedObjects]];
+    [set unionSet:[self.objectContext deletedObjects]];
+
+    for(CDBase* object in set)
     {
-        NSMutableSet* set = [[NSMutableSet alloc] init];
-        [set unionSet:[self.objectContext insertedObjects]];
-        [set unionSet:[self.objectContext updatedObjects]];
-        [set unionSet:[self.objectContext deletedObjects]];
-
-
-        for(CDBase* object in set)
-        {
-            if ([object isKindOfClass:[CDEpisode class]] && [object hasChanges]) {
-                [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
-            }
-            else if ([object isKindOfClass:[CDFeed class]] && [object hasChanges]) {
-                [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
-            }
+        if ([object isKindOfClass:[CDEpisode class]] && [object hasChanges]) {
+            [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
         }
-
-        NSError* error;
-        if (![self.objectContext save:&error] ) {
-            ErrLog(@"Error saving context: %@", error.localizedDescription);
-        }
-        else {
-            [self.persistentContainer.viewContext processPendingChanges];
-        }
-
-        if (error) {
-            ErrLog(@"error saving database context: %@", error);
+        else if ([object isKindOfClass:[CDFeed class]] && [object hasChanges]) {
+            [self coalescedPerformSelector:@selector(_invalidateListCaches) afterDelay:0.1];
         }
     }
+
+    NSError* error = nil;
+    if (![self.objectContext save:&error]) {
+        ErrLog(@"Error saving context: %@", error.localizedDescription);
+        for (CDFeed* feed in _feedsAwaitingCountSave) {
+            [feed feedCountChangesDidFailSave];
+        }
+        return error ?: [NSError errorWithDomain:@"DatabaseManager"
+                                             code:2
+                                         userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Die lokale Datenbank konnte nicht gespeichert werden.", nil)}];
+    }
+    NSArray<CDFeed*>* feedsWithSavedCountChanges = [_feedsAwaitingCountSave.allObjects copy];
+    [_feedsAwaitingCountSave removeAllObjects];
+    for (CDFeed* feed in feedsWithSavedCountChanges) {
+        if (!feed.isDeleted) {
+            [feed feedCountChangesDidSave];
+        }
+    }
+    [self.persistentContainer.viewContext processPendingChanges];
+    return nil;
+}
+
+- (void) save
+{
+    NSError* error = [self saveReturningError];
+    if (error) {
+        ErrLog(@"error saving database context: %@", error);
+    }
+}
+
+- (void)resetAllUserDataWithCompletion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self resetAllUserDataWithCompletion:completion];
+        });
+        return;
+    }
+    NSManagedObjectContext* context = [self newBackgroundContext];
+    if (!context) {
+        if (completion) {
+            completion([NSError errorWithDomain:@"DatabaseManager"
+                                            code:30
+                                        userInfo:@{NSLocalizedDescriptionKey: @"The local app data could not be opened for reset.".ls}]);
+        }
+        return;
+    }
+
+    [context performBlock:^{
+        NSArray<NSString*>* entityNames = @[
+            @"PlaylistEpisode", @"EpisodeList", @"Playlist", @"SmartPlaylist",
+            @"Bookmark", @"AppleWatchEpisodeState", @"Chapter", @"Medium",
+            @"Episode", @"FeedProperty", @"Category", @"Feed", @"ICCloudSyncOutboxEntry",
+            @"ICCloudPendingEpisodeState", @"ICCloudPendingSubscriptionState", @"ICCloudSyncItemMetadata",
+            @"ICCloudKnownRecordSystemFields",
+        ];
+        NSMutableArray<NSManagedObjectID*>* deletedObjectIDs = [NSMutableArray array];
+        NSError* resetError = nil;
+        for (NSString* entityName in entityNames) {
+            NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:entityName];
+            fetchRequest.includesSubentities = NO;
+            NSBatchDeleteRequest* deleteRequest = [[NSBatchDeleteRequest alloc] initWithFetchRequest:fetchRequest];
+            deleteRequest.resultType = NSBatchDeleteResultTypeObjectIDs;
+            NSBatchDeleteResult* result = (NSBatchDeleteResult*)[context executeRequest:deleteRequest error:&resetError];
+            if (!result) break;
+            if ([result.result isKindOfClass:[NSArray class]]) {
+                [deletedObjectIDs addObjectsFromArray:result.result];
+            }
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (deletedObjectIDs.count > 0) {
+                NSDictionary* changes = @{NSDeletedObjectsKey: deletedObjectIDs};
+                [NSManagedObjectContext mergeChangesFromRemoteContextSave:changes intoContexts:@[self.objectContext]];
+                [self.objectContext processPendingChanges];
+            }
+            NSError* publicError = nil;
+            if (resetError) {
+                publicError = [NSError errorWithDomain:@"DatabaseManager"
+                                                   code:31
+                                               userInfo:@{
+                                                   NSLocalizedDescriptionKey: @"The local app data could not be completely deleted. Please try the reset again.".ls,
+                                                   NSUnderlyingErrorKey: resetError,
+                                               }];
+            }
+            if (completion) completion(publicError);
+        });
+    }];
 }
 
 
@@ -1054,6 +1317,13 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     NSSet* insertedObjects = userInfo[NSInsertedObjectsKey];
     NSSet* updatedObjects = userInfo[NSUpdatedObjectsKey];
     NSSet* deletedObjects = userInfo[NSDeletedObjectsKey];
+    NSMutableSet<CDFeed*>* feedsWithChangedEpisodeCounts = [NSMutableSet set];
+    NSMutableSet<CDFeed*>* feedsAwaitingSuccessfulSave = [NSMutableSet set];
+    BOOL (^objectRequiresSave)(NSManagedObject*) = ^BOOL(NSManagedObject* object) {
+        return [self.objectContext.insertedObjects containsObject:object] ||
+               [self.objectContext.updatedObjects containsObject:object] ||
+               [self.objectContext.deletedObjects containsObject:object];
+    };
     
     //    NSMutableSet* set = [[NSMutableSet alloc] init];
     //    [set unionSet:insertedObjects];
@@ -1064,18 +1334,35 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     for(NSManagedObject* insertedObject in insertedObjects)
     {
         if ([insertedObject isKindOfClass:[CDEpisode class]]) {
-            [self.ftsController addEpisode:(CDEpisode*)insertedObject];
-            [self.spotlightIndexer addEpisode:(CDEpisode*)insertedObject];
+            CDEpisode* episode = (CDEpisode*)insertedObject;
+            [self.ftsController addEpisode:episode];
+            [self.spotlightIndexer addEpisode:episode];
+            if (episode.feed) {
+                [feedsWithChangedEpisodeCounts addObject:episode.feed];
+                if (objectRequiresSave(episode)) {
+                    [feedsAwaitingSuccessfulSave addObject:episode.feed];
+                }
+            }
         }
         else if ([insertedObject isKindOfClass:[CDFeed class]]) {
             [self.ftsController addFeed:(CDFeed*)insertedObject];
             [self.spotlightIndexer addFeed:(CDFeed*)insertedObject];
+        }
+        else if ([insertedObject isKindOfClass:[CDFeedProperty class]]) {
+            CDFeedProperty* property = (CDFeedProperty*)insertedObject;
+            if (ICFeedPropertyAffectsEpisodeCount(property.key) && property.feed) {
+                [feedsWithChangedEpisodeCounts addObject:property.feed];
+                if (objectRequiresSave(property)) {
+                    [feedsAwaitingSuccessfulSave addObject:property.feed];
+                }
+            }
         }
     }
     
     for(NSManagedObject* updatedObject in updatedObjects)
     {
         NSDictionary* cv = [updatedObject changedValues];
+        NSDictionary* currentEventChanges = [updatedObject changedValuesForCurrentEvent];
         
         if ([updatedObject isKindOfClass:[CDEpisode class]] && (cv[@"title"] || cv[@"summary"] || cv[@"fulltext"])) {
             [self.ftsController updateEpisode:(CDEpisode*)updatedObject];
@@ -1098,17 +1385,85 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
             // nothing changed — that re-indexed the whole subscription list on each pull-to-refresh.
             [self.spotlightIndexer updateFeed:(CDFeed*)updatedObject];
         }
+
+        if ([updatedObject isKindOfClass:[CDEpisode class]] &&
+            (currentEventChanges[@"archived"] || currentEventChanges[@"consumed"] || currentEventChanges[@"feed"])) {
+            CDEpisode* episode = (CDEpisode*)updatedObject;
+            if (episode.feed) {
+                [feedsWithChangedEpisodeCounts addObject:episode.feed];
+                if (objectRequiresSave(episode)) {
+                    [feedsAwaitingSuccessfulSave addObject:episode.feed];
+                }
+            }
+            CDFeed* previousFeed = [episode committedValuesForKeys:@[@"feed"]][@"feed"];
+            if ([previousFeed isKindOfClass:[CDFeed class]]) {
+                [feedsWithChangedEpisodeCounts addObject:previousFeed];
+                if (objectRequiresSave(episode)) {
+                    [feedsAwaitingSuccessfulSave addObject:previousFeed];
+                }
+            }
+        }
+        else if ([updatedObject isKindOfClass:[CDFeedProperty class]]) {
+            CDFeedProperty* property = (CDFeedProperty*)updatedObject;
+            NSString* previousKey = [property committedValuesForKeys:@[@"key"]][@"key"];
+            if (ICFeedPropertyAffectsEpisodeCount(property.key) || ICFeedPropertyAffectsEpisodeCount(previousKey)) {
+                if (property.feed) {
+                    [feedsWithChangedEpisodeCounts addObject:property.feed];
+                    if (objectRequiresSave(property)) {
+                        [feedsAwaitingSuccessfulSave addObject:property.feed];
+                    }
+                }
+                CDFeed* previousFeed = [property committedValuesForKeys:@[@"feed"]][@"feed"];
+                if ([previousFeed isKindOfClass:[CDFeed class]]) {
+                    [feedsWithChangedEpisodeCounts addObject:previousFeed];
+                    if (objectRequiresSave(property)) {
+                        [feedsAwaitingSuccessfulSave addObject:previousFeed];
+                    }
+                }
+            }
+        }
     }
     
     for(NSManagedObject* deletedObject in deletedObjects)
     {
         if ([deletedObject isKindOfClass:[CDEpisode class]]) {
-            [self.ftsController removeEpisode:(CDEpisode*)deletedObject];
-            [self.spotlightIndexer removeEpisode:(CDEpisode*)deletedObject];
+            CDEpisode* episode = (CDEpisode*)deletedObject;
+            [self.ftsController removeEpisode:episode];
+            [self.spotlightIndexer removeEpisode:episode];
+            CDFeed* feed = episode.feed ?: [episode committedValuesForKeys:@[@"feed"]][@"feed"];
+            if ([feed isKindOfClass:[CDFeed class]]) {
+                [feedsWithChangedEpisodeCounts addObject:feed];
+                if (objectRequiresSave(episode)) {
+                    [feedsAwaitingSuccessfulSave addObject:feed];
+                }
+            }
         }
         else if ([deletedObject isKindOfClass:[CDFeed class]]) {
             [self.ftsController removeFeed:(CDFeed*)deletedObject];
             [self.spotlightIndexer removeFeed:(CDFeed*)deletedObject];
+        }
+        else if ([deletedObject isKindOfClass:[CDFeedProperty class]]) {
+            CDFeedProperty* property = (CDFeedProperty*)deletedObject;
+            NSString* key = property.key ?: [property committedValuesForKeys:@[@"key"]][@"key"];
+            CDFeed* feed = property.feed ?: [property committedValuesForKeys:@[@"feed"]][@"feed"];
+            if (ICFeedPropertyAffectsEpisodeCount(key) && [feed isKindOfClass:[CDFeed class]]) {
+                [feedsWithChangedEpisodeCounts addObject:feed];
+                if (objectRequiresSave(property)) {
+                    [feedsAwaitingSuccessfulSave addObject:feed];
+                }
+            }
+        }
+    }
+
+    if (feedsAwaitingSuccessfulSave.count > 0) {
+        if (!_feedsAwaitingCountSave) {
+            _feedsAwaitingCountSave = [NSMutableSet set];
+        }
+        [_feedsAwaitingCountSave unionSet:feedsAwaitingSuccessfulSave];
+    }
+    for (CDFeed* feed in feedsWithChangedEpisodeCounts) {
+        if (!feed.isDeleted) {
+            [feed invalidateCountsAwaitingSave:[_feedsAwaitingCountSave containsObject:feed]];
         }
     }
 }
@@ -1539,21 +1894,28 @@ static const NSInteger kInitialEpisodeLimit = 50;
         [self _updateFeedOrderNums:feedsCopy];
     }
 
-    // Set up lazy loading state if there are more episodes to load
-    if (totalEpisodeCount > kInitialEpisodeLimit) {
+    BOOL hasPendingEpisodeLoad = (totalEpisodeCount > kInitialEpisodeLimit);
+    if (hasPendingEpisodeLoad) {
         [persistentFeed setBool:NO forKey:kFeedPropertyEpisodeLoadingComplete];
         [persistentFeed setInteger:totalEpisodeCount forKey:kFeedPropertyTotalExpectedEpisodes];
         [persistentFeed setInteger:initialLoadCount forKey:kFeedPropertyLoadedEpisodeCount];
-
-        // Queue remaining episodes for background loading
-        [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:persistentFeed
-                                                            parserEpisodes:sortedEpisodes
-                                                                startIndex:initialLoadCount];
     } else {
         [persistentFeed setBool:YES forKey:kFeedPropertyEpisodeLoadingComplete];
     }
 
-    [self save];
+    // The background context can only resolve a feed that is already durable. The old
+    // ordering queued first and occasionally raced the initial main-context save.
+    NSError* initialSaveError = [self saveReturningError];
+    if (initialSaveError) {
+        ErrLog(@"error saving newly subscribed feed before episode loading: %@", initialSaveError);
+        return persistentFeed;
+    }
+
+    if (hasPendingEpisodeLoad) {
+        [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:persistentFeed
+                                                            parserEpisodes:sortedEpisodes
+                                                                startIndex:initialLoadCount];
+    }
 
     return persistentFeed;
 }
@@ -1592,11 +1954,13 @@ static const NSInteger kInitialEpisodeLimit = 50;
         }
     }
     return nil;*/
-    NSString *target = [self normalizedURLString:sourceURL];
-    for (CDFeed* feed in self.feeds) {
-        NSString *existing = [self normalizedURLString:feed.sourceURL];
-        if ([existing isEqualToString:target]) {
-            return feed;
+    NSArray<NSString *> *targets = [DatabaseManager equivalentFeedURLStringsForURLString:sourceURL.absoluteString];
+    for (NSString *target in targets) {
+        for (CDFeed* feed in self.feeds) {
+            NSString *existing = [DatabaseManager normalizedFeedURLStringForURLString:feed.sourceURL.absoluteString];
+            if ([existing isEqualToString:target]) {
+                return feed;
+            }
         }
     }
     return nil;
@@ -1893,13 +2257,20 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
 }
 
 - (void) _removeEpisodeReferences:(CDEpisode*)episode
+                          automatic:(BOOL)automatic
+                         completion:(void (^)(NSError* error))completion
 {
-    [self beginInterruptSaving];
-    
     [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:@[episode]];
-    [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:YES];
-    
-    [self endInterruptSaving];
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    [cacheManager removeCacheForEpisode:episode automatic:automatic completion:^(NSError* error) {
+        if (error) {
+            if (completion) completion(error);
+            return;
+        }
+        [cacheManager clearDownloadErrorForEpisode:episode completion:^(NSError* error) {
+            if (completion) completion(error);
+        }];
+    }];
 }
 
 - (void) setEpisode:(CDEpisode *)episode archived:(BOOL)archived
@@ -1909,7 +2280,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     if (archived)
     {
         [self markEpisode:episode asConsumed:YES];
-        [self _removeEpisodeReferences:episode];
+        [self _removeEpisodeReferences:episode automatic:YES completion:nil];
     }
     
     [self save];
@@ -1917,10 +2288,120 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
 
 - (void) deleteEpisode:(CDEpisode*)episode
 {
-    [self _removeEpisodeReferences:episode];
-    [self.objectContext deleteObject:episode];
-    
-    [self save];
+    [self deleteEpisodes:episode ? @[episode] : @[] completion:nil];
+}
+
+- (void) deleteEpisodes:(NSArray<CDEpisode*>*)episodes
+              completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self deleteEpisodes:episodes completion:completion];
+        });
+        return;
+    }
+
+    NSMutableArray<CDEpisode*>* uniqueEpisodes = [NSMutableArray array];
+    NSMutableSet<NSManagedObjectID*>* seenObjectIDs = [NSMutableSet set];
+    for (CDEpisode* episode in episodes) {
+        if (![episode isKindOfClass:[CDEpisode class]] || episode.isDeleted || !episode.managedObjectContext) {
+            continue;
+        }
+        if (![seenObjectIDs containsObject:episode.objectID]) {
+            [seenObjectIDs addObject:episode.objectID];
+            [uniqueEpisodes addObject:episode];
+        }
+    }
+    if (uniqueEpisodes.count == 0) {
+        if (completion) completion(nil);
+        return;
+    }
+
+    NSArray<CDEpisode*>* temporaryEpisodes = [uniqueEpisodes filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(CDEpisode* episode, NSDictionary* bindings) {
+        return episode.objectID.isTemporaryID;
+    }]];
+    if (temporaryEpisodes.count > 0) {
+        NSError* permanentIDError = nil;
+        if (![self.objectContext obtainPermanentIDsForObjects:temporaryEpisodes error:&permanentIDError]) {
+            if (completion) completion(permanentIDError);
+            return;
+        }
+    }
+
+    NSArray<NSManagedObjectID*>* episodeObjectIDs = [uniqueEpisodes valueForKey:@"objectID"];
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    [cacheManager removeCacheForEpisodes:uniqueEpisodes automatic:NO completion:^(NSError* cacheError) {
+        if (cacheError) {
+            if (completion) completion(cacheError);
+            return;
+        }
+        [cacheManager clearDownloadErrorsForEpisodes:uniqueEpisodes completion:^(NSError* failureStateError) {
+            if (failureStateError) {
+                if (completion) completion(failureStateError);
+                return;
+            }
+            [[ICiCloudSyncManager sharedManager] beginLocalOutboxBatch];
+            [self _deleteEpisodeObjectIDs:episodeObjectIDs
+                               startingAt:0
+               successfullyDeletedEpisodes:[NSMutableArray array]
+                               completion:^(NSError* deleteError) {
+                [[ICiCloudSyncManager sharedManager] endLocalOutboxBatch];
+                if (completion) completion(deleteError);
+            }];
+        }];
+    }];
+}
+
+- (void)_finishDeletingEpisodes:(NSArray<CDEpisode*>*)successfullyDeletedEpisodes
+                           error:(NSError*)error
+                      completion:(void (^)(NSError* error))completion
+{
+    if (successfullyDeletedEpisodes.count > 0) {
+        [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:successfullyDeletedEpisodes];
+    }
+    if (completion) completion(error);
+}
+
+- (void)_deleteEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
+                     startingAt:(NSUInteger)startIndex
+     successfullyDeletedEpisodes:(NSMutableArray<CDEpisode*>*)successfullyDeletedEpisodes
+                     completion:(void (^)(NSError* error))completion
+{
+    NSUInteger endIndex = MIN(startIndex + kEpisodeDeletionBatchSize, episodeObjectIDs.count);
+    NSMutableArray<CDEpisode*>* deletedEpisodes = [NSMutableArray arrayWithCapacity:endIndex - startIndex];
+    for (NSUInteger index = startIndex; index < endIndex; index++) {
+        NSError* objectError = nil;
+        CDEpisode* episode = (CDEpisode*)[self.objectContext existingObjectWithID:episodeObjectIDs[index]
+                                                                                error:&objectError];
+        if (!objectError && [episode isKindOfClass:[CDEpisode class]] && !episode.isDeleted) {
+            [deletedEpisodes addObject:episode];
+            [self.objectContext deleteObject:episode];
+        }
+    }
+
+    NSError* saveError = deletedEpisodes.count > 0 ? [self saveReturningError] : nil;
+    if (saveError) {
+        for (CDEpisode* episode in deletedEpisodes) {
+            if (episode.managedObjectContext && episode.isDeleted) {
+                [self.objectContext refreshObject:episode mergeChanges:NO];
+            }
+        }
+        [self.objectContext processPendingChanges];
+        [self _finishDeletingEpisodes:successfullyDeletedEpisodes error:saveError completion:completion];
+        return;
+    }
+
+    [successfullyDeletedEpisodes addObjectsFromArray:deletedEpisodes];
+    if (endIndex < episodeObjectIDs.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _deleteEpisodeObjectIDs:episodeObjectIDs
+                               startingAt:endIndex
+               successfullyDeletedEpisodes:successfullyDeletedEpisodes
+                               completion:completion];
+        });
+    } else {
+        [self _finishDeletingEpisodes:successfullyDeletedEpisodes error:nil completion:completion];
+    }
 }
 
 - (NSArray*) episodesWithObjectHashes:(NSArray*)hashes
@@ -2079,6 +2560,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     NSURL *storeURL = self.databaseURL;
     if (!storeURL || storeURL.path.length == 0) {
         ErrLog(@"Failed to load persistent store: database URL is invalid.");
+        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:nil];
         _persistentContainer = nil;
         return nil;
     }
@@ -2086,6 +2568,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     NSString* storeDirectory = [storeURL.path stringByDeletingLastPathComponent];
     if (storeDirectory.length == 0) {
         ErrLog(@"Failed to load persistent store: database directory path is invalid (%@).", storeURL.path);
+        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:nil];
         _persistentContainer = nil;
         return nil;
     }
@@ -2095,6 +2578,7 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
         NSError* createDirectoryError = nil;
         if (![fman createDirectoryAtPath:storeDirectory withIntermediateDirectories:YES attributes:nil error:&createDirectoryError]) {
             ErrLog(@"Failed to create database directory %@: %@", storeDirectory, createDirectoryError);
+            self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:createDirectoryError];
             _persistentContainer = nil;
             return nil;
         }
@@ -2122,10 +2606,12 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
 
     if (storeLoadFailed) {
         ErrLog(@"Persistent store unavailable at %@ (%@). Keeping existing files untouched.", storeURL.path, storeLoadError.localizedDescription ?: @"unknown error");
+        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:storeLoadError];
         _persistentContainer = nil;
         return nil;
     }
 
+    self.initializationError = nil;
     _persistentContainer.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
     _persistentContainer.viewContext.automaticallyMergesChangesFromParent = YES;
 

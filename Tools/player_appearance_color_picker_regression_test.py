@@ -17,19 +17,25 @@ def require(condition: bool, message: str) -> None:
 def check_controller(path: str) -> None:
     source = read(path)
     require(
-        "_archivedColorForDefaultsKey:" in source
-        and "unarchivedObjectOfClass:[UIColor class]" in source,
-        f"{path} must read archived UIColor defaults through one source-aware helper.",
+        "_storedColorForHexKey:" in source
+        and "ic_colorFromDefaults:" in source
+        and "NSKeyedUnarchiver" not in source,
+        f"{path} must read canonical color defaults through the guarded migration API.",
     )
     require(
-        "self->selectedPlayerColor = [self _archivedColorForDefaultsKey:PlayerThemeColorCode];" in source
+        "self->selectedPlayerColor = [self _storedColorForHexKey:PlayerThemeColorHexCode legacyArchiveKey:PlayerThemeColorCode];" in source
         and "picker.selectedColor = self->selectedPlayerColor;" in source,
         f"{path} must open the player color picker with the stored player color selected.",
     )
     require(
-        "self->selectedThemeColor = [self _archivedColorForDefaultsKey:InterfaceThemeColorCode];" in source
+        "self->selectedThemeColor = [self _storedColorForHexKey:InterfaceThemeColorHexCode legacyArchiveKey:InterfaceThemeColorCode];" in source
         and "picker.selectedColor = self->selectedThemeColor;" in source,
         f"{path} must open the interface controls color picker with the stored controls color selected.",
+    )
+    require(
+        "self->selectedWidgetColor = [self _storedColorForHexKey:WidgetThemeColorHexCode legacyArchiveKey:WidgetThemeColorCode];" in source
+        and "picker.selectedColor = self->selectedWidgetColor;" in source,
+        f"{path} must open the widget color picker with the stored widget color selected.",
     )
 
 

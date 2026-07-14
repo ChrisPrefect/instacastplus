@@ -1,0 +1,39 @@
+{
+  "" : {
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/InstacastWidgets-primary.dia",
+    "emit-module-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/InstacastWidgets-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/InstacastWidgets-primary-emit-module.dia",
+    "pch" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/InstacastWidgets-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/InstacastWidgets-primary.swiftdeps"
+  },
+  "/Users/Chris/Developer/instacastplus/Shared/SharedConstants.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/SharedConstants~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/Shared/WidgetModels.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/WidgetModels~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-iphonesimulator/InstacastWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

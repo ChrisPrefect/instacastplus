@@ -30,6 +30,8 @@
 
 - (void) clearCachedImagesOfFeed:(CDFeed*)feed;
 - (BOOL) clearTheFuckingCache;
+- (BOOL)cancelImageDownloadsAndClearCache;
+- (void)cancelImageDownloadsAndClearCacheWithCompletion:(void (^)(BOOL success))completion;
 
 // Content hash index for O(1) image deduplication
 - (NSString*) existingPathForContentHash:(NSString*)contentHash;

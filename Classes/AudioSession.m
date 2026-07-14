@@ -23,6 +23,7 @@
 static NSString* kPlaybackStateEpisode = @"PlaybackEpisode";
 static NSString* kPlaybackStatePlaylist = @"PlaybackPlaylist";
 static NSString* kPlaybackStateSourceList = @"PlaybackSourceList";
+static NSString* kPlaybackIntentRevision = @"PlaybackIntentRevision";
 
 NSString* AudioSessionAudioRouteDidChangeNotification = @"AudioSessionAudioRouteDidChangeNotification";
 NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestorePlaybackNotification";
@@ -32,6 +33,12 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) _savePlaybackStateInUserDefaults;
 - (void) _restorePlaybackStateFromUserDefaults;
+- (void)_recordPlaybackIntent;
+- (void) _playEpisode:(CDEpisode*)anEpisode
+       queueUpCurrent:(BOOL)queueUpCurrent
+                   at:(NSTimeInterval)time
+            autostart:(BOOL)autostart
+recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
 
 @property (nonatomic, strong) NSTimer* playbackTimer;
 @property (nonatomic, strong) NSDate* stopDate;
@@ -61,6 +68,18 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 		gSharedAudioSession = [gSharedAudioSession init];
 	}
 	return gSharedAudioSession;
+}
+
++ (uint64_t)playbackIntentRevision
+{
+    id storedRevision = [USER_DEFAULTS objectForKey:kPlaybackIntentRevision];
+    return [storedRevision isKindOfClass:[NSNumber class]] ? [storedRevision unsignedLongLongValue] : 0;
+}
+
+- (void)_recordPlaybackIntent
+{
+    uint64_t nextRevision = [AudioSession playbackIntentRevision] + 1;
+    [USER_DEFAULTS setObject:@(nextRevision) forKey:kPlaybackIntentRevision];
 }
 
 - (id) init
@@ -185,13 +204,17 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 {
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(_handleEpisodeCacheCleared:)
-                                                 name:CacheManagerDidClearCacheNotification
+                                                 name:CacheManagerWillCommitCacheFileDeletionNotification
                                                object:nil];
 }
 
 - (void) _handleEpisodeCacheCleared:(NSNotification*)note
 {
-    if (!self.autoStopDisabled && [self.episode isEqual:note.userInfo[@"episode"]]) {
+    NSArray<NSString*>* episodeHashes = [note.userInfo[@"episodeHashes"] isKindOfClass:[NSArray class]] ? note.userInfo[@"episodeHashes"] : @[];
+    BOOL clearsAll = [note.userInfo[@"all"] boolValue];
+    BOOL clearsCurrentEpisode = [self.episode isEqual:note.userInfo[@"episode"]] ||
+        (self.episode.objectHash.length > 0 && [episodeHashes containsObject:self.episode.objectHash]);
+    if (!self.autoStopDisabled && (clearsAll || clearsCurrentEpisode)) {
         [self stop];
     }
 }
@@ -467,7 +490,43 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart
 {
+    [self _playEpisode:anEpisode
+        queueUpCurrent:queueUpCurrent
+                    at:time
+             autostart:autostart
+ recordsPlaybackIntent:YES];
+}
+
+- (void) restorePlaybackEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart
+{
+    [self _playEpisode:anEpisode
+        queueUpCurrent:queueUpCurrent
+                    at:time
+             autostart:autostart
+ recordsPlaybackIntent:NO];
+}
+
+- (void) _playEpisode:(CDEpisode*)anEpisode
+       queueUpCurrent:(BOOL)queueUpCurrent
+                   at:(NSTimeInterval)time
+            autostart:(BOOL)autostart
+recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
+{
     if (!anEpisode) {
+        return;
+    }
+
+    if (recordsPlaybackIntent) {
+        [self _recordPlaybackIntent];
+    }
+
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    BOOL episodeIsCached = [cacheManager episodeIsCached:anEpisode];
+    NSURL* playbackURL = episodeIsCached
+        ? [cacheManager URLForCachedEpisode:anEpisode]
+        : anEpisode.preferedMedium.fileURL;
+    if (playbackURL.absoluteString.length == 0 || (!playbackURL.isFileURL && playbackURL.scheme.length == 0)) {
+        [App showBackgroundErrorWithTitle:@"Media not loaded.".ls message:@"No media to play.".ls];
         return;
     }
 
@@ -493,6 +552,7 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 - (void) clear
 {
     if (self.episode) {
+        [self _recordPlaybackIntent];
         self.episode = nil;
         [self _savePlaybackStateInUserDefaults];
 
@@ -503,8 +563,12 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
 
 - (void) stop
 {
+    uint64_t revisionBeforeStop = [AudioSession playbackIntentRevision];
     [[PlaybackManager playbackManager] close];
     [self clear];
+    if ([AudioSession playbackIntentRevision] == revisionBeforeStop) {
+        [self _recordPlaybackIntent];
+    }
 }
 
 - (void) togglePlay

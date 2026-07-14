@@ -15,6 +15,37 @@
 #import "DatabaseManager.h"
 #import "EpisodeLoadingManager.h"
 
+static const NSUInteger ICFeedCountBatchSize = 400;
+static NSMutableOrderedSet<CDFeed*>* gFeedsPendingCountLoad;
+static BOOL gFeedCountBatchScheduled = NO;
+static BOOL gFeedCountBatchInProgress = NO;
+
+static NSArray<NSDictionary*>* ICGroupedFeedCountRows(NSManagedObjectContext* context,
+                                                       NSArray<NSString*>* feedUIDs,
+                                                       BOOL unplayedOnly,
+                                                       NSError** error)
+{
+    NSExpressionDescription* feedUIDExpression = [[NSExpressionDescription alloc] init];
+    feedUIDExpression.name = @"feedUID";
+    feedUIDExpression.expression = [NSExpression expressionForKeyPath:@"feed.uid"];
+    feedUIDExpression.expressionResultType = NSStringAttributeType;
+
+    NSExpressionDescription* countExpression = [[NSExpressionDescription alloc] init];
+    countExpression.name = @"episodeCount";
+    countExpression.expression = [NSExpression expressionForFunction:@"count:"
+                                                             arguments:@[[NSExpression expressionForEvaluatedObject]]];
+    countExpression.expressionResultType = NSInteger64AttributeType;
+
+    NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    request.predicate = unplayedOnly
+        ? [NSPredicate predicateWithFormat:@"archived == %@ AND consumed == %@ AND feed.uid IN %@", @NO, @NO, feedUIDs]
+        : [NSPredicate predicateWithFormat:@"archived == %@ AND feed.uid IN %@", @NO, feedUIDs];
+    request.resultType = NSDictionaryResultType;
+    request.propertiesToFetch = @[feedUIDExpression, countExpression];
+    request.propertiesToGroupBy = @[@"feed.uid"];
+    return [context executeFetchRequest:request error:error];
+}
+
 @interface CDFeed ()
 @property (nonatomic, strong) NSString * sourceURL_;
 @property (nonatomic, strong) NSString * imageURL_;
@@ -29,6 +60,10 @@
 
 @implementation CDFeed {
     BOOL        _observing;
+    NSUInteger  _countsGeneration;
+    BOOL        _countsLoadInProgress;
+    BOOL        _countsRequireSave;
+    NSMutableArray* _countCompletionBlocks;
 }
 
 - (NSString*) designatedUID
@@ -72,6 +107,7 @@
 @dynamic completed;
 @dynamic explicitContent;
 @dynamic categories;
+@dynamic episodeLists;
 @dynamic episodes;
 @dynamic properties;
 
@@ -144,7 +180,7 @@
 	NSString* password = [SFHFKeychainUtils getPasswordForUsername:self.username andServiceName:[self.sourceURL absoluteString] error:&error];
 	
 	if (error) {
-		ErrLog(@"error getting password from keychain for feed: %@ (error: %@)", [self.sourceURL absoluteString], [error description]);
+		ErrLog(@"error getting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
 	}
 	
 	return password;
@@ -160,12 +196,12 @@
 							   forServiceName:[self.sourceURL absoluteString]
 							   updateExisting:YES
 										error:&error]) {
-			ErrLog(@"error storing password in keychain for feed: %@ (error: %@)", [self.sourceURL absoluteString], [error description]);
+			ErrLog(@"error storing password in keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
 		}
 	}
 	else if (self.username) {
 		if (![SFHFKeychainUtils deleteItemForUsername:self.username andServiceName:[self.sourceURL absoluteString] error:&error]) {
-			ErrLog(@"error deleting password from keychain for feed: %@ (error: %@)", [self.sourceURL absoluteString], [error description]);
+			ErrLog(@"error deleting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
 		}
 	}
 }
@@ -177,24 +213,7 @@
 
 - (NSInteger) episodesCount
 {
-    if (episodesCount >= 0) {
-        return episodesCount;
-    }
-
-    NSManagedObjectContext* context = [self managedObjectContext];
-    if (context) {
-        NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
-        fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", self, @NO];
-        episodesCount = [context countForFetchRequest:fetchRequest error:nil];
-
-        NSInteger totalExpected = [self integerForKey:kFeedPropertyTotalExpectedEpisodes];
-        if (totalExpected > episodesCount) {
-            episodesCount = totalExpected;
-        }
-    }
-
-    return episodesCount;
+    return MAX(episodesCount, 0);
 }
 
 + (NSSet*) keyPathsForValuesAffectingUnplayedCount
@@ -204,19 +223,7 @@
 
 - (NSInteger) unplayedCount
 {
-    if (unplayedCount >= 0) {
-        return unplayedCount;
-    }
-
-    NSManagedObjectContext* context = [self managedObjectContext];
-    if (context) {
-        NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
-        fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:context];
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND consumed == %@ AND archived == %@", self, @NO, @NO];
-        unplayedCount = [context countForFetchRequest:fetchRequest error:nil];
-    }
-
-    return unplayedCount;
+    return MAX(unplayedCount, 0);
 }
 
 - (BOOL)countsLoaded
@@ -226,6 +233,12 @@
 
 - (void)calculateCountsWithCompletion:(void (^)(NSInteger unplayedCount, NSInteger episodesCount))completion
 {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self calculateCountsWithCompletion:completion];
+        });
+        return;
+    }
     if (self.countsLoaded) {
         if (completion) {
             completion(unplayedCount, episodesCount);
@@ -233,43 +246,140 @@
         return;
     }
 
-    NSManagedObjectID* feedID = self.objectID;
-    NSInteger totalExpected = [self integerForKey:kFeedPropertyTotalExpectedEpisodes];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        __block NSInteger loadedUnplayedCount = 0;
-        __block NSInteger loadedEpisodesCount = 0;
+    if (completion) {
+        if (!_countCompletionBlocks) {
+            _countCompletionBlocks = [[NSMutableArray alloc] init];
+        }
+        [_countCompletionBlocks addObject:[completion copy]];
+    }
+
+    if (_countsRequireSave) {
+        return;
+    }
+    if (_countsLoadInProgress) {
+        return;
+    }
+
+    if (!gFeedsPendingCountLoad) {
+        gFeedsPendingCountLoad = [[NSMutableOrderedSet alloc] init];
+    }
+    [gFeedsPendingCountLoad addObject:self];
+    [CDFeed _schedulePendingCountBatch];
+}
+
++ (void)_schedulePendingCountBatch
+{
+    if (gFeedCountBatchScheduled || gFeedCountBatchInProgress || gFeedsPendingCountLoad.count == 0) {
+        return;
+    }
+    gFeedCountBatchScheduled = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _loadPendingCountBatch];
+    });
+}
+
++ (void)_loadPendingCountBatch
+{
+    gFeedCountBatchScheduled = NO;
+    if (gFeedCountBatchInProgress || gFeedsPendingCountLoad.count == 0) {
+        return;
+    }
+
+    NSArray<CDFeed*>* candidates = gFeedsPendingCountLoad.array;
+    [gFeedsPendingCountLoad removeAllObjects];
+    NSMutableDictionary<NSString*, CDFeed*>* feedsByUID = [NSMutableDictionary dictionaryWithCapacity:candidates.count];
+    NSMutableDictionary<NSString*, NSNumber*>* generationsByUID = [NSMutableDictionary dictionaryWithCapacity:candidates.count];
+    NSMutableDictionary<NSString*, NSNumber*>* expectedCountsByUID = [NSMutableDictionary dictionary];
+    for (CDFeed* feed in candidates) {
+        if (feed.isDeleted || feed.countsLoaded || feed->_countsRequireSave || feed->_countsLoadInProgress) {
+            continue;
+        }
+        if (feed.uid.length == 0) {
+            NSArray* completionBlocks = [feed->_countCompletionBlocks copy];
+            [feed->_countCompletionBlocks removeAllObjects];
+            for (void (^completionBlock)(NSInteger, NSInteger) in completionBlocks) {
+                completionBlock(-1, -1);
+            }
+            continue;
+        }
+
+        feed->_countsLoadInProgress = YES;
+        feedsByUID[feed.uid] = feed;
+        generationsByUID[feed.uid] = @(feed->_countsGeneration);
+        BOOL episodeLoadingComplete = [feed boolForKey:kFeedPropertyEpisodeLoadingComplete];
+        NSInteger totalExpected = [feed integerForKey:kFeedPropertyTotalExpectedEpisodes];
+        if (!episodeLoadingComplete && totalExpected > 0) {
+            expectedCountsByUID[feed.uid] = @(totalExpected);
+        }
+    }
+    if (feedsByUID.count == 0) {
+        [self _schedulePendingCountBatch];
+        return;
+    }
+
+    gFeedCountBatchInProgress = YES;
+    NSArray<NSString*>* feedUIDs = feedsByUID.allKeys;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        __block NSError* countError = nil;
+        __block NSMutableDictionary<NSString*, NSNumber*>* episodeCountsByUID = [NSMutableDictionary dictionaryWithCapacity:feedUIDs.count];
+        __block NSMutableDictionary<NSString*, NSNumber*>* unplayedCountsByUID = [NSMutableDictionary dictionaryWithCapacity:feedUIDs.count];
         NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
-        [context performBlockAndWait:^{
-            NSError* error = nil;
-            CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedID error:&error];
-            if (!feed || error) {
-                return;
-            }
-
-            NSFetchRequest* episodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-            episodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND archived == %@", feed, @NO];
-            NSUInteger episodesResult = [context countForFetchRequest:episodesRequest error:nil];
-            loadedEpisodesCount = (episodesResult == NSNotFound) ? 0 : (NSInteger)episodesResult;
-            if (totalExpected > loadedEpisodesCount) {
-                loadedEpisodesCount = totalExpected;
-            }
-
-            NSFetchRequest* unplayedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-            unplayedRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND consumed == %@ AND archived == %@", feed, @NO, @NO];
-            NSUInteger unplayedResult = [context countForFetchRequest:unplayedRequest error:nil];
-            loadedUnplayedCount = (unplayedResult == NSNotFound) ? 0 : (NSInteger)unplayedResult;
-        }];
+        if (!context) {
+            countError = [NSError errorWithDomain:@"CDFeedCounts" code:1 userInfo:nil];
+        }
+        else {
+            [context performBlockAndWait:^{
+                for (NSUInteger offset = 0; offset < feedUIDs.count && !countError; offset += ICFeedCountBatchSize) {
+                    NSArray<NSString*>* UIDBatch = [feedUIDs subarrayWithRange:NSMakeRange(offset, MIN(ICFeedCountBatchSize, feedUIDs.count - offset))];
+                    NSArray<NSDictionary*>* episodeRows = ICGroupedFeedCountRows(context, UIDBatch, NO, &countError);
+                    if (!episodeRows || countError) break;
+                    NSArray<NSDictionary*>* unplayedRows = ICGroupedFeedCountRows(context, UIDBatch, YES, &countError);
+                    if (!unplayedRows || countError) break;
+                    for (NSDictionary* row in episodeRows) {
+                        NSString* feedUID = row[@"feedUID"];
+                        NSNumber* count = row[@"episodeCount"];
+                        if (feedUID.length > 0 && count) episodeCountsByUID[feedUID] = count;
+                    }
+                    for (NSDictionary* row in unplayedRows) {
+                        NSString* feedUID = row[@"feedUID"];
+                        NSNumber* count = row[@"episodeCount"];
+                        if (feedUID.length > 0 && count) unplayedCountsByUID[feedUID] = count;
+                    }
+                }
+            }];
+        }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (self.isDeleted) {
-                return;
-            }
+            gFeedCountBatchInProgress = NO;
+            for (NSString* feedUID in feedUIDs) {
+                CDFeed* feed = feedsByUID[feedUID];
+                feed->_countsLoadInProgress = NO;
+                NSArray* completionBlocks = [feed->_countCompletionBlocks copy];
+                [feed->_countCompletionBlocks removeAllObjects];
 
-            self.unplayedCount = loadedUnplayedCount;
-            self.episodesCount = loadedEpisodesCount;
-            if (completion) {
-                completion(loadedUnplayedCount, loadedEpisodesCount);
+                if (feed.isDeleted || countError) {
+                    for (void (^completionBlock)(NSInteger, NSInteger) in completionBlocks) {
+                        completionBlock(-1, -1);
+                    }
+                    continue;
+                }
+                if (feed->_countsGeneration != [generationsByUID[feedUID] unsignedIntegerValue]) {
+                    for (void (^completionBlock)(NSInteger, NSInteger) in completionBlocks) {
+                        [feed calculateCountsWithCompletion:completionBlock];
+                    }
+                    continue;
+                }
+
+                NSInteger episodesCount = [episodeCountsByUID[feedUID] integerValue];
+                episodesCount = MAX(episodesCount, [expectedCountsByUID[feedUID] integerValue]);
+                NSInteger unplayedCount = [unplayedCountsByUID[feedUID] integerValue];
+                feed.unplayedCount = unplayedCount;
+                feed.episodesCount = episodesCount;
+                for (void (^completionBlock)(NSInteger, NSInteger) in completionBlocks) {
+                    completionBlock(unplayedCount, episodesCount);
+                }
             }
+            [self _schedulePendingCountBatch];
         });
     });
 }
@@ -289,15 +399,43 @@
 
 - (void) invalidateCounts
 {
-    self.unplayedCount = -1;
-    self.episodesCount = -1;
-    
+    [self invalidateCountsAwaitingSave:NO];
+}
+
+- (void)invalidateCountsAwaitingSave:(BOOL)awaitingSave
+{
+    _countsRequireSave |= awaitingSave;
+    _countsGeneration++;
     [self willChangeValueForKey:@"unplayedCount"];
+    unplayedCount = -1;
     [self didChangeValueForKey:@"unplayedCount"];
-    
+
     [self willChangeValueForKey:@"episodesCount"];
+    episodesCount = -1;
     [self didChangeValueForKey:@"episodesCount"];
-    
+
+    [self invalidateDownloadedCount];
+}
+
+- (void)feedCountChangesDidSave
+{
+    _countsRequireSave = NO;
+    if (_countCompletionBlocks.count > 0) {
+        [self calculateCountsWithCompletion:nil];
+    }
+}
+
+- (void)feedCountChangesDidFailSave
+{
+    NSArray* completionBlocks = [_countCompletionBlocks copy];
+    [_countCompletionBlocks removeAllObjects];
+    for (void (^completionBlock)(NSInteger, NSInteger) in completionBlocks) {
+        completionBlock(-1, -1);
+    }
+}
+
+- (void) invalidateDownloadedCount
+{
     [self willChangeValueForKey:@"downloadedCount"];
     [self didChangeValueForKey:@"downloadedCount"];
 }
@@ -306,6 +444,13 @@
 {
     [super awakeFromFetch];
     [self invalidateCounts];
+}
+
+- (void)willTurnIntoFault
+{
+    _countsRequireSave = NO;
+    [_countCompletionBlocks removeAllObjects];
+    [super willTurnIntoFault];
 }
 
 - (NSDate*) lastPlayed

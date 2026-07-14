@@ -53,8 +53,9 @@ def function_body(source: str, signature: str) -> str:
 
 download = read("InstacastWatch/WatchDownloadManager.swift")
 player = read("InstacastWatch/WatchPlayerController.swift")
+manifest_store = read("InstacastWatch/WatchManifestStore.swift")
 
-validation = function_body(download, "private func downloadValidationError(")
+validation = function_body(download, "private nonisolated static func downloadValidationError(")
 
 # Layer 1: feed-size fallback when the transport declared no expected size.
 require(
@@ -65,12 +66,13 @@ require(
 require(
     "expectedSize <= 0" in validation
     and "feedExpectedBytes > 0" in validation
-    and "size < feedExpectedBytes / 2" in validation,
+    and "actualSize < feedExpectedBytes / 2" in validation,
     "Validation must reject files below half the feed-declared size when the "
     "transport declared no size (clean close without Content-Length = truncated body).",
 )
 require(
-    "feedExpectedBytes: episode.expectedBytes" in download,
+    "feedExpectedBytes: episode.expectedBytes" in download
+    and "await Self.prepareFinishedDownloadFile(" in download,
     "The didFinishDownloadingTo path must pass the episode's expectedBytes into validation.",
 )
 
@@ -110,6 +112,19 @@ require(
     "validation falls back to it.",
 )
 
+# expectedBytes originates in the remote enclosure metadata (or a positive HTTP
+# Content-Length). Reconciliation and local-file cleanup may reset local progress,
+# but must never erase that independent validation input.
+for source, label in [
+    (download, "WatchDownloadManager"),
+    (player, "WatchPlayerController"),
+    (manifest_store, "WatchManifestStore"),
+]:
+    require(
+        "expectedBytes = 0" not in source,
+        f"{label} must preserve feed/transport expectedBytes while resetting local file state.",
+    )
+
 # Layer 3: player finish guard (heals existing truncated files on customer watches).
 finish = function_body(player, "nonisolated func audioPlayerDidFinishPlaying(")
 require(
@@ -130,11 +145,13 @@ require(
     "consumed on watch, phone and iCloud).",
 )
 require(
-    "item.status = .queued" in finish
-    and "removeLocalFile(for: currentEpisode)" in finish
+    "await WatchDownloadManager.shared.removePlaybackFile(" in finish
+    and "disposition: .queued" in finish
+    and "removeLocalFile(for:" not in finish
+    and "removalCommitted" in finish
     and "startQueuedDownloads()" in finish,
-    "A truncated file must be deleted and re-queued for download instead of "
-    "being marked as played.",
+    "A truncated file must be asynchronously deleted, durably re-queued only after "
+    "successful removal, and never marked as played.",
 )
 
 print("watch truncated-download regression test passed")

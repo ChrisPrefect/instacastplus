@@ -105,13 +105,9 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-- (UIColor*) _archivedColorForDefaultsKey:(NSString*)defaultsKey
+- (UIColor*)_storedColorForHexKey:(NSString*)hexKey legacyArchiveKey:(NSString*)legacyArchiveKey
 {
-    NSData *colorData = [USER_DEFAULTS objectForKey:defaultsKey];
-    if (![colorData isKindOfClass:[NSData class]]) {
-        return nil;
-    }
-    return [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
+    return [UIColor ic_colorFromDefaults:USER_DEFAULTS hexKey:hexKey legacyArchiveKey:legacyArchiveKey];
 }
 
 
@@ -301,13 +297,11 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                 [cell.tfView setHidden:TRUE];
                 cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
                 [cell.colorView setHidden:YES];
-                if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
-                {
+                UIColor* themeColor = [self _storedColorForHexKey:PlayerThemeColorHexCode legacyArchiveKey:PlayerThemeColorCode];
+                if (themeColor) {
                     [cell.colorView setHidden:NO];
                     cell.colorView.clipsToBounds = true;
                     cell.colorView.layer.cornerRadius = 5;
-                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
-                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
                     cell.colorView.backgroundColor = themeColor;
                 }
                 return cell;
@@ -345,13 +339,11 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                 [cell.tfView setHidden:TRUE];
                 cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
                 [cell.colorView setHidden:YES];
-                if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
-                {
+                UIColor* themeColor = [self _storedColorForHexKey:InterfaceThemeColorHexCode legacyArchiveKey:InterfaceThemeColorCode];
+                if (themeColor) {
                     [cell.colorView setHidden:NO];
                     cell.colorView.clipsToBounds = true;
                     cell.colorView.layer.cornerRadius = 5;
-                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
                     cell.colorView.backgroundColor = themeColor;
                 }
 
@@ -390,13 +382,11 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
                 [cell.tfView setHidden:TRUE];
                 cell.disclosureView.tintColor = [UIColor colorWithRed:199/255.f green:199/255.f blue:204/255.f alpha:1.f];
                 [cell.colorView setHidden:YES];
-                if ([USER_DEFAULTS objectForKey:WidgetThemeColorCode])
-                {
+                UIColor* themeColor = [self _storedColorForHexKey:WidgetThemeColorHexCode legacyArchiveKey:WidgetThemeColorCode];
+                if (themeColor) {
                     [cell.colorView setHidden:NO];
                     cell.colorView.clipsToBounds = true;
                     cell.colorView.layer.cornerRadius = 5;
-                    NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:WidgetThemeColorCode];
-                    UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
                     cell.colorView.backgroundColor = themeColor;
                 }
                 return cell;
@@ -495,13 +485,13 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         [textField resignFirstResponder];
         if (textField.text.length == 6 || textField.text.length == 7)
         {
-            UIColor *customColor = [UIColor colorWithHexString:textField.text];
-            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:customColor requiringSecureCoding:NO error:nil];
-            [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
-            [USER_DEFAULTS setObject:textField.text forKey:PlayerThemeColorHexCode];
-            [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-
-            [self.tableView reloadData];
+            if ([UIColor ic_setColorHexString:textField.text
+                                    inDefaults:USER_DEFAULTS
+                                        hexKey:PlayerThemeColorHexCode
+                              legacyArchiveKey:PlayerThemeColorCode]) {
+                [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
+                [self.tableView reloadData];
+            }
         }
     }
     else if (textField.tag == 777)
@@ -509,17 +499,16 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         [textField resignFirstResponder];
         if (textField.text.length == 6 || textField.text.length == 7)
         {
-            UIColor *customColor = [UIColor colorWithHexString:textField.text];
-            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:customColor requiringSecureCoding:NO error:nil];
-            [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
-            [USER_DEFAULTS setObject:textField.text forKey:InterfaceThemeColorHexCode];
-            [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
-
-            [[ICAppearanceManager sharedManager] updateThemeTintColor];
-            [[ICAppearanceManager sharedManager] updateAppearance];
-            [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
-
-            [self.tableView reloadData];
+            if ([UIColor ic_setColorHexString:textField.text
+                                    inDefaults:USER_DEFAULTS
+                                        hexKey:InterfaceThemeColorHexCode
+                              legacyArchiveKey:InterfaceThemeColorCode]) {
+                [USER_DEFAULTS setBool:false forKey:InterfaceThemeDefaultActive];
+                [[ICAppearanceManager sharedManager] updateThemeTintColor];
+                [[ICAppearanceManager sharedManager] updateAppearance];
+                [self.navigationController.navigationBar setTintColor:[[ICAppearanceManager sharedManager] appearance].tintColor];
+                [self.tableView reloadData];
+            }
         }
     }
     else if (textField.tag == 888)
@@ -527,16 +516,15 @@ typedef NS_ENUM(NSInteger, AppearanceSettingsSections) {
         [textField resignFirstResponder];
         if (textField.text.length == 6 || textField.text.length == 7)
         {
-            UIColor *customColor = [UIColor colorWithHexString:textField.text];
-            NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:customColor requiringSecureCoding:NO error:nil];
-            [USER_DEFAULTS setObject:colorData forKey:WidgetThemeColorCode];
-            [USER_DEFAULTS setObject:textField.text forKey:WidgetThemeColorHexCode];
-            [USER_DEFAULTS setBool:false forKey:WidgetThemeDefaultActive];
-
-            [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
-            [WidgetKitHelper reloadAllTimelines];
-
-            [self.tableView reloadData];
+            if ([UIColor ic_setColorHexString:textField.text
+                                    inDefaults:USER_DEFAULTS
+                                        hexKey:WidgetThemeColorHexCode
+                              legacyArchiveKey:WidgetThemeColorCode]) {
+                [USER_DEFAULTS setBool:false forKey:WidgetThemeDefaultActive];
+                [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
+                [WidgetKitHelper reloadAllTimelines];
+                [self.tableView reloadData];
+            }
         }
     }
     return YES;
@@ -628,8 +616,10 @@ API_AVAILABLE(ios(14.0)){
         {
             if (self->selectedPlayerColor)
             {
-                NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedPlayerColor requiringSecureCoding:NO error:nil];
-                [USER_DEFAULTS setObject:colorData forKey:PlayerThemeColorCode];
+                [UIColor ic_setColor:self->selectedPlayerColor
+                          inDefaults:USER_DEFAULTS
+                              hexKey:PlayerThemeColorHexCode
+                    legacyArchiveKey:PlayerThemeColorCode];
                 [USER_DEFAULTS setBool:false forKey:PlayerColorPerPodcastActive];
                 [self.tableView reloadData];
             }
@@ -639,8 +629,10 @@ API_AVAILABLE(ios(14.0)){
         {
             if (self->selectedThemeColor)
             {
-                NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedThemeColor requiringSecureCoding:NO error:nil];
-                [USER_DEFAULTS setObject:colorData forKey:InterfaceThemeColorCode];
+                [UIColor ic_setColor:self->selectedThemeColor
+                          inDefaults:USER_DEFAULTS
+                              hexKey:InterfaceThemeColorHexCode
+                    legacyArchiveKey:InterfaceThemeColorCode];
                 [USER_DEFAULTS setBool:false forKey:InterfaceThemeDefaultActive];
 
                 [[ICAppearanceManager sharedManager] updateThemeTintColor];
@@ -654,8 +646,10 @@ API_AVAILABLE(ios(14.0)){
         {
             if (self->selectedWidgetColor)
             {
-                NSData *colorData = [NSKeyedArchiver archivedDataWithRootObject:self->selectedWidgetColor requiringSecureCoding:NO error:nil];
-                [USER_DEFAULTS setObject:colorData forKey:WidgetThemeColorCode];
+                [UIColor ic_setColor:self->selectedWidgetColor
+                          inDefaults:USER_DEFAULTS
+                              hexKey:WidgetThemeColorHexCode
+                    legacyArchiveKey:WidgetThemeColorCode];
                 [USER_DEFAULTS setBool:false forKey:WidgetThemeDefaultActive];
 
                 [[WidgetDataExporter sharedExporter] exportSettingsSnapshot];
@@ -738,7 +732,7 @@ API_AVAILABLE(ios(14.0)){
             self->colorPickerTarget = ColorPickerTargetPlayer;
             [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
             UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-            self->selectedPlayerColor = [self _archivedColorForDefaultsKey:PlayerThemeColorCode];
+            self->selectedPlayerColor = [self _storedColorForHexKey:PlayerThemeColorHexCode legacyArchiveKey:PlayerThemeColorCode];
             if (self->selectedPlayerColor) {
                 picker.selectedColor = self->selectedPlayerColor;
             }
@@ -752,7 +746,7 @@ API_AVAILABLE(ios(14.0)){
             self->colorPickerTarget = ColorPickerTargetInterface;
             [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
             UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
-            self->selectedThemeColor = [self _archivedColorForDefaultsKey:InterfaceThemeColorCode];
+            self->selectedThemeColor = [self _storedColorForHexKey:InterfaceThemeColorHexCode legacyArchiveKey:InterfaceThemeColorCode];
             if (self->selectedThemeColor) {
                 picker.selectedColor = self->selectedThemeColor;
             }
@@ -766,6 +760,10 @@ API_AVAILABLE(ios(14.0)){
             self->colorPickerTarget = ColorPickerTargetWidget;
             [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
             UIColorPickerViewController* picker = [[UIColorPickerViewController alloc] init];
+            self->selectedWidgetColor = [self _storedColorForHexKey:WidgetThemeColorHexCode legacyArchiveKey:WidgetThemeColorCode];
+            if (self->selectedWidgetColor) {
+                picker.selectedColor = self->selectedWidgetColor;
+            }
             picker.delegate = self;
             [self presentViewController:picker animated:YES completion:nil];
         }

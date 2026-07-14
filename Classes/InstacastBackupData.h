@@ -30,7 +30,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL parked;
 @property (nonatomic, strong, nullable) NSString *username;
 @property (nonatomic, strong, nullable) NSString *password;
-@property (nonatomic, strong, nullable) NSMutableDictionary *settings;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *settings;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *settingTypes;
 @property (nonatomic, strong) NSMutableArray<ICBackupEpisode *> *episodes;
 @end
 

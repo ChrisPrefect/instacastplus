@@ -70,7 +70,7 @@ for token in [
     "ICTranscriptionDidFinishNotification",
     "transcriptionDidFinishNotification:",
     "[self.spotlightIndexer updateEpisode:episode]",
-    "[self.spotlightIndexer addEpisode:(CDEpisode*)insertedObject]",
+    "[self.spotlightIndexer addEpisode:episode]",
     "[self.spotlightIndexer removeFeed:(CDFeed*)deletedObject]",
 ]:
     require(token in database_m, f"DatabaseManager missing Spotlight hook: {token}")

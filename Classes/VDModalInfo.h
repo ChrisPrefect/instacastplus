@@ -46,6 +46,7 @@ typedef NS_ENUM(NSInteger, VDModalInfoAlignment) {
 
 
 - (void) show;
+- (void) showInWindow:(UIWindow*)window;
 - (void) close;
 
 - (void) showWithCompletion:(void (^)(void))completion;

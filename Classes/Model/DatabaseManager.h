@@ -32,10 +32,13 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 + (NSString*) pathToSubfolder:(NSString*)subfolder parent:(NSString*)pathToParentFolder;
 + (BOOL) dataStoreNeedsMigration;
 + (NSString*) currentDataStoreFilename;
++ (NSString*)normalizedFeedURLStringForURLString:(NSString*)URLString;
++ (NSArray<NSString*>*)equivalentFeedURLStringsForURLString:(NSString*)URLString;
 
 @property (nonatomic, strong, readonly) NSManagedObjectContext* objectContext;
 @property (nonatomic, strong, readonly) NSPersistentStoreCoordinator* storeCoordinator;
 @property (nonatomic, strong, readonly) NSManagedObjectModel* objectModel;
+@property (nonatomic, strong, readonly) NSError* initializationError;
 
 #if !TARGET_OS_IPHONE
 @property (nonatomic, strong, readonly) NSArrayController* feedsController;
@@ -47,6 +50,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 @property (nonatomic, readonly) BOOL ftsIndexing;
 
 - (void) save;
+- (NSError*) saveReturningError;
 - (NSManagedObjectContext*)newBackgroundContext;
 
 // Background context on a SEPARATE persistent store coordinator over the same SQLite file.
@@ -54,6 +58,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 // (widget export) never contend for the main coordinator's store lock and can never block
 // the main-thread UI. Read-only: never call -save on this context.
 - (NSManagedObjectContext*)newExportBackgroundContext;
+- (void)resetAllUserDataWithCompletion:(void (^)(NSError* error))completion;
 
 - (void) beginInterruptSaving;
 - (void) endInterruptSaving;
@@ -110,6 +115,8 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 - (void) setEpisode:(CDEpisode *)episode archived:(BOOL)archived;
 - (void) markEpisode:(CDEpisode*)episode asDownloaded:(BOOL)flag;
 - (void) deleteEpisode:(CDEpisode*)episode;
+- (void) deleteEpisodes:(NSArray<CDEpisode*>*)episodes
+              completion:(void (^)(NSError* error))completion;
 
 #pragma mark -
 

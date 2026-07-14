@@ -172,6 +172,7 @@
 "%@ left" = "%@ übrig";
 "%@ of %@" = "%@ von %@";
 "Cancel All" = "Alle abbrechen";
+"Clear Errors" = "Fehler löschen";
 "Downloads" = "Downloads";
 "Downloads paused" = "Downloads angehalten";
 "Resume" = "Weiterladen";
@@ -359,6 +360,11 @@
 
 /* BookmarksTableViewController.m */
 "Bookmarks" = "Lesezeichen";
+"Bookmarks are being exported…" = "Lesezeichen werden exportiert…";
+"The bookmarks could not be exported. Check the available storage and try again." = "Die Lesezeichen konnten nicht exportiert werden. Prüfen Sie den verfügbaren Speicherplatz und versuchen Sie es erneut.";
+"The bookmark database could not be opened for export." = "Die Lesezeichendatenbank konnte für den Export nicht geöffnet werden.";
+"The bookmark document could not be created." = "Das Lesezeichendokument konnte nicht erstellt werden.";
+"The bookmark file could not be written." = "Die Lesezeichendatei konnte nicht geschrieben werden. Prüfen Sie den verfügbaren Speicherplatz und versuchen Sie es erneut.";
 "Loading" = "Laden";
 "No bookmarks yet." = "Noch keine Lesezeichen";
 "Rename" = "Umbenennen";
@@ -606,6 +612,10 @@
 "Open in Safari" = "In Safari öffnen";
 
 "Restore Deleted Episodes" = "Gelöschte Episoden wiederherstellen";
+"Try Again" = "Erneut versuchen";
+"Restoring…" = "Wiederherstellen…";
+"Restore Failed" = "Wiederherstellung fehlgeschlagen";
+"Some deleted episodes could not be restored. Please try again." = "Einige gelöschte Episoden konnten nicht wiederhergestellt werden. Bitte versuchen Sie es erneut.";
 "Choose Theme Color" = "Wählen Sie Designfarbe";
 "Interface Color As Per Podcast" = "Schnittstellenfarbe gemäß Podcast";
 
@@ -791,6 +801,7 @@
 "Total Episodes" = "Folgen gesamt";
 "Total Unplayed" = "Ungespielt";
 "Total Downloaded" = "Heruntergeladen";
+"Downloaded Episodes" = "Geladene Folgen";
 "Storage Used" = "Speicherplatz";
 "Episodes Played" = "Episoden gehört";
 "Time Listened" = "Zeit gehört";
@@ -806,7 +817,17 @@
 "Import / Export" = "Import / Export";
 "Export" = "Exportieren";
 "Subscriptions (OPML)" = "Abonnements (OPML)";
+"Subscriptions are being exported…" = "Abonnements werden exportiert…";
+"The subscriptions could not be exported. Check the available storage and try again." = "Die Abonnements konnten nicht exportiert werden. Prüfen Sie den verfügbaren Speicherplatz und versuchen Sie es erneut.";
+"The podcast database could not be opened for export." = "Die Podcast-Datenbank konnte für den Export nicht geöffnet werden.";
+"The OPML document could not be created." = "Das OPML-Dokument konnte nicht erstellt werden.";
+"The OPML file could not be written." = "Die OPML-Datei konnte nicht geschrieben werden. Prüfen Sie den verfügbaren Speicherplatz und versuchen Sie es erneut.";
 "All InstacastPlus Data" = "Alle InstacastPlus-Daten";
+"Backup wird exportiert…" = "Backup wird exportiert…";
+"Export Error" = "Exportfehler";
+"Share Unavailable" = "Teilen nicht verfügbar";
+"The exported file was created, but the share menu could not be opened. Try again from the export settings." = "Die Exportdatei wurde erstellt, aber das Teilen-Menü konnte nicht geöffnet werden. Versuchen Sie es erneut in den Exporteinstellungen.";
+"Das Backup konnte nicht exportiert werden. Prüfe den freien Speicherplatz und versuche es erneut." = "Das Backup konnte nicht exportiert werden. Prüfe den freien Speicherplatz und versuche es erneut.";
 "The OPML file can be read by other podcast apps but only contains the subscriptions without any additional data." = "Die OPML-Datei kann von anderen Podcast-Apps gelesen werden, enthält aber nur die Abonnements ohne weitere Daten.";
 "For exchanging data between InstacastPlus apps. Contains all data including subscriptions, bookmarks, playback status and settings." = "Zum Austausch zwischen InstacastPlus-Apps. Enthält alle Daten inklusive Abonnements, Lesezeichen, Wiedergabestatus und Einstellungen.";
 "Export all bookmarks as a file." = "Alle Lesezeichen als Datei exportieren.";
@@ -904,8 +925,36 @@
 "New Podcasts" = "Neue Podcasts";
 "Successfully imported %ld items." = "%ld Elemente erfolgreich importiert.";
 "Import Error" = "Import-Fehler";
+"The local podcast data could not be read. The import was stopped to prevent incomplete metadata. Please try again." = "Die lokalen Podcast-Daten konnten nicht gelesen werden. Der Import wurde gestoppt, damit keine unvollständigen Metadaten entstehen. Bitte versuchen Sie es erneut.";
+"The bookmark import was interrupted. Saved progress will continue automatically the next time InstacastPlus starts or when you retry the same backup." = "Der Lesezeichenimport wurde unterbrochen. Der gespeicherte Fortschritt wird beim nächsten Start von InstacastPlus oder beim erneuten Import desselben Backups automatisch fortgesetzt.";
+"The bookmark import recovery state could not be read or updated. Check the available storage and try again." = "Der Wiederherstellungsstand des Lesezeichenimports konnte nicht gelesen oder aktualisiert werden. Prüfe den verfügbaren Speicherplatz und versuche es erneut.";
+"An earlier bookmark import still needs to finish. Restart InstacastPlus or retry the same backup before importing another backup." = "Ein früherer Lesezeichenimport muss zuerst abgeschlossen werden. Starte InstacastPlus neu oder importiere dasselbe Backup erneut, bevor du ein anderes Backup importierst.";
+"Bookmark Import Could Not Continue" = "Lesezeichenimport konnte nicht fortgesetzt werden";
+"The saved bookmark recovery data is damaged or from an unsupported version. It was set aside. Import the original backup again." = "Die gespeicherten Wiederherstellungsdaten des Lesezeichenimports sind beschädigt oder stammen aus einer nicht unterstützten Version. Sie wurden beiseitegelegt. Importiere das ursprüngliche Backup erneut.";
 "Could not parse backup file." = "Backup-Datei konnte nicht gelesen werden.";
+"The backup file could not be read. Check that it is still available and try again." = "Die Backup-Datei konnte nicht gelesen werden. Prüfen Sie, ob sie noch verfügbar ist, und versuchen Sie es erneut.";
+"This XML file is not an InstacastPlus backup." = "Diese XML-Datei ist kein InstacastPlus-Backup.";
+"This file is an InstacastPlus backup. Choose All InstacastPlus Data to import it." = "Diese Datei ist ein InstacastPlus-Backup. Wählen Sie zum Importieren ‚Alle InstacastPlus-Daten‘.";
+"The selected file is empty." = "Die ausgewählte Datei ist leer.";
+"The selected XML file is too large to import. InstacastPlus supports files up to 16 MB." = "Die ausgewählte XML-Datei ist zu gross. InstacastPlus unterstützt Dateien bis 16 MB.";
+"The selected XML file is too complex to import safely." = "Die ausgewählte XML-Datei ist zu komplex und kann nicht sicher importiert werden.";
+"Another subscription import is already in progress." = "Ein weiterer Abonnementimport läuft bereits.";
+"The OPML file does not contain any valid podcast subscriptions." = "Die OPML-Datei enthält keine gültigen Podcast-Abonnements.";
+"The OPML file could not be read." = "Die OPML-Datei konnte nicht gelesen werden.";
+"The OPML file is empty or could not be read." = "Die OPML-Datei ist leer oder konnte nicht gelesen werden.";
+"Some podcast subscriptions could not be imported. Check your connection and try again." = "Einige Podcast-Abonnements konnten nicht importiert werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.";
+"The backup preview could not be opened." = "Die Backup-Vorschau konnte nicht geöffnet werden.";
+"Apple Watch Sync Failed" = "Apple-Watch-Synchronisation fehlgeschlagen";
+"Apple Watch selections could not be prepared. Check the available storage and try again." = "Die Auswahl für die Apple Watch konnte nicht vorbereitet werden. Prüfen Sie den verfügbaren Speicher und versuchen Sie es erneut.";
+"Apple Watch manifest could not be prepared. Check the available storage and try again." = "Die Daten für die Apple Watch konnten nicht vorbereitet werden. Prüfe den freien Speicherplatz und versuche es erneut.";
+"Apple Watch data could not be transferred. Keep the iPhone and Apple Watch nearby and try again." = "Die Daten konnten nicht auf die Apple Watch übertragen werden. Lege iPhone und Apple Watch nebeneinander und versuche es erneut.";
+"Update the Apple Watch app to sync this many episodes." = "Aktualisiere die Apple-Watch-App, um so viele Folgen zu synchronisieren.";
+"Update the Apple Watch app to remove episodes from the Watch." = "Aktualisiere die Apple-Watch-App, um Folgen von der Watch zu entfernen.";
+"Apple Watch changes could not be applied. Try syncing again." = "Die Änderungen von der Apple Watch konnten nicht übernommen werden. Synchronisiere erneut.";
+"Apple Watch could not save the synchronized episodes. Check free storage on the Apple Watch and try again." = "Die Apple Watch konnte die synchronisierten Folgen nicht speichern. Prüfe den freien Speicher auf der Apple Watch und versuche es erneut.";
+"Apple Watch sync data is too large. Reduce the Apple Watch selection and try again." = "Die Apple-Watch-Synchronisierung ist zu groß. Reduziere die Auswahl für die Apple Watch und versuche es erneut.";
 "Analyzing backup…" = "Backup wird analysiert…";
+"Backup could not be analyzed" = "Backup konnte nicht analysiert werden";
 "Subscribing new podcasts…" = "Neue Podcasts werden abonniert…";
 "Updating episode status…" = "Episoden-Status wird aktualisiert…";
 "Importing podcast settings…" = "Podcast-Einstellungen werden importiert…";
@@ -933,6 +982,11 @@
 "Cancel Entire Import" = "Gesamten Import abbrechen";
 "Back" = "Zurück";
 "Skipped" = "Übersprungen";
+"1 queued" = "1 vorgemerkt";
+"%ld queued" = "%ld vorgemerkt";
+"Downloads queued" = "Downloads vorgemerkt";
+"1 download queued for re-download. Track progress in Downloads." = "1 Download zum erneuten Herunterladen vorgemerkt. Den Fortschritt siehst du unter „Downloads“.";
+"%ld downloads queued for re-download. Track progress in Downloads." = "%ld Downloads zum erneuten Herunterladen vorgemerkt. Den Fortschritt siehst du unter „Downloads“.";
 "%ld items imported" = "%ld Elemente importiert";
 "Import was cancelled." = "Import wurde abgebrochen.";
 "Import cancelled. %ld items imported." = "Import abgebrochen. %ld Elemente importiert.";
@@ -944,6 +998,15 @@
 "Create an immediate local snapshot of database and settings." = "Erstellt sofort einen lokalen Schnappschuss von Datenbank und Einstellungen.";
 "InstacastPlus creates and keeps one local snapshot per day for 7 days. Snapshots include database and app settings." = "InstacastPlus erstellt und behält 7 Tage lang einen lokalen Snapshot pro Tag. Snapshots enthalten Datenbank und App-Einstellungen.";
 "Resetting…" = "Zurücksetzen…";
+"Reset Failed" = "Zurücksetzen fehlgeschlagen";
+"The app could not be reset. No success was reported." = "Die App konnte nicht zurückgesetzt werden. Es wurde kein Erfolg gemeldet.";
+"Downloaded files could not all be deleted. No other app data was reset. Please try again." = "Nicht alle heruntergeladenen Dateien konnten gelöscht werden. Es wurden keine weiteren App-Daten zurückgesetzt. Bitte versuchen Sie es erneut.";
+"Downloaded files are already being cleared." = "Heruntergeladene Dateien werden bereits gelöscht.";
+"The local app data could not be opened for reset." = "Die lokalen App-Daten konnten zum Zurücksetzen nicht geöffnet werden.";
+"Local Data Unavailable" = "Lokale Daten nicht verfügbar";
+"InstacastPlus could not open the local podcast database. Your data was left unchanged. Check the available storage, restart the device, and open InstacastPlus again." = "InstacastPlus konnte die lokale Podcast-Datenbank nicht öffnen. Ihre Daten wurden nicht verändert. Prüfen Sie den verfügbaren Speicher, starten Sie das Gerät neu und öffnen Sie InstacastPlus erneut.";
+"The local app data could not be completely deleted. Please try the reset again." = "Die lokalen App-Daten konnten nicht vollständig gelöscht werden. Bitte versuchen Sie das Zurücksetzen erneut.";
+"Cached images could not be deleted. No local database data was reset." = "Zwischengespeicherte Bilder konnten nicht gelöscht werden. Die lokale Datenbank wurde nicht zurückgesetzt.";
 "Reset Complete" = "Zurücksetzen abgeschlossen";
 "Please restart the app." = "Bitte starten Sie die App neu.";
 
@@ -1422,6 +1485,11 @@
 "Devices" = "Geräte";
 "Synced Devices" = "Synchronisierte Geräte";
 "On iCloud" = "Auf iCloud";
+"iCloud Data" = "iCloud-Daten";
+"Updating iCloud data…" = "iCloud-Daten werden aktualisiert…";
+"iCloud data counts could not be updated." = "Die iCloud-Datenzahlen konnten nicht aktualisiert werden.";
+"Last checked %@." = "Zuletzt geprüft: %@.";
+"iCloud data has not been checked yet." = "Die iCloud-Daten wurden noch nicht geprüft.";
 "Delete iCloud Data" = "iCloud-Daten löschen";
 "Removes all synced data from iCloud for all of your devices. Local data on this device is kept; if sync stays on, it is uploaded again." = "Entfernt alle synchronisierten Daten aus iCloud für alle deine Geräte. Lokale Daten auf diesem Gerät bleiben erhalten; wenn der Sync aktiv bleibt, werden sie erneut hochgeladen.";
 "This removes all synced data from iCloud for all of your devices. This cannot be undone." = "Entfernt alle synchronisierten Daten aus iCloud für alle deine Geräte. Das kann nicht rückgängig gemacht werden.";
@@ -1434,6 +1502,7 @@
 "On" = "Ein";
 "Off" = "Aus";
 "Episodes" = "Folgen";
+"Episode States" = "Episodenstatus";
 "Subscriptions" = "Abonnements";
 "Settings" = "Einstellungen";
 "Bereit" = "Bereit";
@@ -1448,8 +1517,13 @@
 "Keine Änderungen" = "Keine Änderungen";
 "Synchronisation läuft, lädt hoch…" = "Synchronisation läuft, lädt hoch…";
 "Lädt hoch… %ld / %ld" = "Lädt hoch… %ld / %ld";
+"Lädt Episodenstatus hoch… %ld / %ld" = "Lädt Episodenstatus hoch… %ld / %ld";
+"Lädt Abonnements hoch… %ld / %ld" = "Lädt Abonnements hoch… %ld / %ld";
+"Lädt Daten hoch… %ld / %ld" = "Lädt Daten hoch… %ld / %ld";
 "Lade Podcast-Folgen… %ld/%ld" = "Lade Podcast-Folgen… %ld/%ld";
 "Synchronisation läuft, lädt herunter…" = "Synchronisation läuft, lädt herunter…";
+"Prüft hochgeladene Daten…" = "Prüft hochgeladene Daten…";
+"Prüft, ob alle Daten auf iCloud angekommen sind…" = "Prüft, ob alle Daten auf iCloud angekommen sind…";
 "%@ %ld/s" = "%@ %ld/s";
 "%@ %ld/%ld" = "%@ %ld/%ld";
 "%@ %ld/%ld %@" = "%@ %ld/%ld %@";
@@ -1463,8 +1537,21 @@
 "iCloud ist vorübergehend nicht verfügbar." = "iCloud ist vorübergehend nicht verfügbar.";
 "iCloud Sync will continue in smaller batches." = "iCloud Sync verarbeitet die Änderungen in kleineren Schritten.";
 "iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync konnte nicht abgeschlossen werden.";
+"iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt." = "iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt.";
+"Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an." = "Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an.";
+"InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen." = "InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen.";
+"Dein iCloud-Speicher ist voll. Gib Speicher frei und starte die Synchronisation erneut." = "Dein iCloud-Speicher ist voll. Gib Speicher frei und starte die Synchronisation erneut.";
+"iCloud hat zu viele Änderungen auf einmal abgelehnt. Die Synchronisation wird automatisch erneut versucht." = "iCloud hat zu viele Änderungen auf einmal abgelehnt. Die Synchronisation wird automatisch erneut versucht.";
+"iCloud hat die Synchronisation unterbrochen. Sie wird automatisch fortgesetzt." = "iCloud hat die Synchronisation unterbrochen. Sie wird automatisch fortgesetzt.";
+"iCloud konnte die Synchronisation nicht abschließen. Tippe auf „Jetzt synchronisieren“, um es erneut zu versuchen." = "iCloud konnte die Synchronisation nicht abschließen. Tippe auf „Jetzt synchronisieren“, um es erneut zu versuchen.";
+"Der iCloud-Status konnte nicht ermittelt werden. Prüfe deine Verbindung und versuche es erneut." = "Der iCloud-Status konnte nicht ermittelt werden. Prüfe deine Verbindung und versuche es erneut.";
+"iCloud ist vorübergehend nicht erreichbar. Tippe auf „Jetzt synchronisieren“, um es erneut zu versuchen." = "iCloud ist vorübergehend nicht erreichbar. Tippe auf „Jetzt synchronisieren“, um es erneut zu versuchen.";
+"Der iCloud-Account für empfangene Episodenstatus konnte nicht bestimmt werden." = "Der iCloud-Account für empfangene Episodenstatus konnte nicht bestimmt werden.";
+"Der iCloud-Account für empfangene Sync-Daten konnte nicht bestimmt werden." = "Der iCloud-Account für empfangene Sync-Daten konnte nicht bestimmt werden.";
+"Der iCloud-Account für empfangene Abonnements konnte nicht bestimmt werden." = "Der iCloud-Account für empfangene Abonnements konnte nicht bestimmt werden.";
 "Unbekanntes Gerät" = "Unbekanntes Gerät";
 "Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync." = "Folgen synchronisieren hält Gespielt/Ungespielt, Abspielposition, Favoriten und Scroll-Positionen in Listen synchron. Abonnements synchronisieren hält abonnierte Podcasts, Podcast-Einstellungen, Löschungen und Sortierung synchron.";
+"Beim ersten Sync überträgt iCloud jeden Episodenstatus als eigenen Datensatz. Der Fortschritt wird oben angezeigt; danach werden nur Änderungen übertragen." = "Beim ersten Sync überträgt iCloud jeden Episodenstatus als eigenen Datensatz. Der Fortschritt wird oben angezeigt; danach werden nur Änderungen übertragen.";
 
 /* TestFlight diagnostics */
 "Crash Logs per Mail schicken" = "Crash Logs per Mail schicken";
@@ -1476,6 +1563,7 @@
 "Use iCloud Settings" = "Einstellungen aus iCloud übernehmen";
 "Use My Settings for All Devices" = "Meine Einstellungen für alle Geräte verwenden";
 "Decide Later" = "Später entscheiden";
+"Choose which iCloud settings should be used." = "Wähle, welche iCloud-Einstellungen verwendet werden sollen.";
 
 /* App Intents and Shortcuts */
 "Play or Pause" = "Abspielen oder pausieren";
@@ -1544,6 +1632,8 @@
 "Play episode \\(\\.$episode) in \\(.applicationName)" = "Folge \\(\\.$episode) in \\(.applicationName) abspielen";
 "Watch lädt Podcasts (%@/%@)" = "Watch lädt Podcasts (%@/%@)";
 "Watch lädt Podcasts (%@ von %@)" = "Watch lädt Podcasts (%@ von %@)";
+"Watch lädt Podcasts…" = "Watch lädt Podcasts…";
+"Wartet auf Apple Watch…" = "Wartet auf Apple Watch…";
 
 /* VoiceOver accessibility labels */
 "Add Podcast" = "Podcast hinzufügen";
@@ -1558,3 +1648,80 @@
 /* Widget-only default lists */
 "Recently Played" = "Zuletzt gespielt";
 "Most Recent" = "Neueste";
+"Unable to Save" = "Speichern nicht möglich";
+"Download fehlgeschlagen." = "Download fehlgeschlagen.";
+"Download Failed" = "Download fehlgeschlagen";
+"The episode download could not be completed." = "Der Download der Folge konnte nicht abgeschlossen werden.";
+"The failed download state could not be saved." = "Der Fehlerzustand des Downloads konnte nicht gespeichert werden.";
+"The failed download state changed while it was being removed. Try again." = "Der Fehlerzustand des Downloads hat sich während des Löschens geändert. Versuche es erneut.";
+"Download errors could not all be removed. Please try again." = "Nicht alle Downloadfehler konnten gelöscht werden. Bitte versuche es erneut.";
+"Download history could not be cleared. Please try again." = "Der Downloadverlauf konnte nicht gelöscht werden. Bitte versuche es erneut.";
+"The episode download finished without providing a file." = "Der Download der Folge wurde beendet, ohne eine Datei bereitzustellen.";
+"The episode download could not be started." = "Der Download der Folge konnte nicht gestartet werden.";
+"The download cannot be retried while downloaded files are being cleared. Wait for the operation to finish and try again." = "Der Download kann nicht erneut gestartet werden, während geladene Dateien gelöscht werden. Warte, bis der Vorgang abgeschlossen ist, und versuche es erneut.";
+"The download is still being removed. Wait for the operation to finish and try again." = "Der Download wird noch entfernt. Warte, bis der Vorgang abgeschlossen ist, und versuche es erneut.";
+"A file is currently being imported for this episode. Wait for the import to finish and try again." = "Für diese Folge wird gerade eine Datei importiert. Warte, bis der Import abgeschlossen ist, und versuche es erneut.";
+"The previous download attempt is still being cancelled. Wait a moment and try again." = "Der vorherige Download wird noch abgebrochen. Warte einen Moment und versuche es erneut.";
+"The saved download failure details are no longer available. Close Downloads and start the episode download again." = "Die gespeicherten Details zum fehlgeschlagenen Download sind nicht mehr verfügbar. Schließe „Downloads“ und starte den Download der Folge erneut.";
+"The episode cannot be downloaded because its local identifier is missing." = "Die Folge kann nicht geladen werden, weil ihre lokale Kennung fehlt.";
+"This episode does not provide a downloadable media file." = "Für diese Folge ist keine ladbare Mediendatei angegeben.";
+"The download file location could not be created on this device." = "Der Speicherort für die geladene Folge konnte auf diesem Gerät nicht erstellt werden.";
+"The podcast server did not return a valid HTTP response." = "Der Podcast-Server hat keine gültige HTTP-Antwort geliefert.";
+"The podcast server returned HTTP %ld. The episode file is not available at the address published by the podcast." = "Der Podcast-Server hat HTTP %ld gemeldet. Die Datei der Folge ist unter der vom Podcast angegebenen Adresse nicht verfügbar.";
+"The podcast server returned a web page instead of a playable episode file." = "Der Podcast-Server hat eine Webseite statt einer abspielbaren Datei der Folge geliefert.";
+"The downloaded episode file is empty." = "Die geladene Datei der Folge ist leer.";
+"The podcast server ended the transfer before the complete episode file was received." = "Der Podcast-Server hat die Übertragung beendet, bevor die Datei der Folge vollständig empfangen wurde.";
+"The downloaded episode file is not playable." = "Die geladene Datei der Folge ist nicht abspielbar.";
+"The downloaded episode file could not be saved on this device." = "Die geladene Datei der Folge konnte auf diesem Gerät nicht gespeichert werden.";
+"The downloaded episode state could not be saved. Restart the app and try again." = "Der Zustand der geladenen Folge konnte nicht gespeichert werden. Starte die App neu und versuche es erneut.";
+"The streaming cache was superseded before its file could be imported." = "Der Streaming-Cache wurde ersetzt, bevor seine Datei importiert werden konnte.";
+"The streaming cache was superseded by another file import." = "Der Streaming-Cache wurde durch einen anderen Dateiimport ersetzt.";
+"The downloaded episode file could not be read on this device." = "Die geladene Datei der Folge konnte auf diesem Gerät nicht gelesen werden.";
+"The downloaded episode file could not be staged for validation." = "Die geladene Datei der Folge konnte nicht zur Prüfung zwischengespeichert werden.";
+"Tap Retry to try the download again." = "Tippe auf „Erneut versuchen“, um den Download nochmals zu starten.";
+"1 download failed" = "1 Download fehlgeschlagen";
+"%lu downloads failed" = "%lu Downloads fehlgeschlagen";
+"Download erneut versuchen" = "Download erneut versuchen";
+"Nach rechts wischen, um erneut zu laden." = "Nach rechts wischen, um erneut zu laden.";
+"Wiederholen" = "Wiederholen";
+"The changes could not be saved on this device. Check the available storage and try again." = "Die Änderungen konnten auf diesem Gerät nicht gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.";
+"Unable to Load Episodes" = "Folgen konnten nicht geladen werden";
+"The episodes could not be loaded from this device. Try again." = "Die Folgen konnten auf diesem Gerät nicht geladen werden. Versuche es erneut.";
+"Episodes could not be loaded. Tap to try again." = "Folgen konnten nicht geladen werden. Tippe hier, um es erneut zu versuchen.";
+"Retry" = "Erneut versuchen";
+"All Loaded" = "Alle geladenen";
+"Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut." = "Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.";
+"Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht." = "Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht.";
+"Die lokale Datenbank wird gerade exklusiv aktualisiert." = "Die lokale Datenbank wird gerade exklusiv aktualisiert.";
+"Die lokale Datenbank konnte nicht gespeichert werden." = "Die lokale Datenbank konnte nicht gespeichert werden.";
+"Eine lokale iCloud-Änderung konnte nicht sicher gespeichert werden. Prüfe den freien Speicher und versuche es erneut." = "Eine lokale iCloud-Änderung konnte nicht sicher gespeichert werden. Prüfe den freien Speicher und versuche es erneut.";
+"The local iCloud sync metadata on this device is damaged. Automatic synchronization has been stopped to protect your data. Export a backup and contact support." = "Die lokalen iCloud-Sync-Metadaten auf diesem Gerät sind beschädigt. Die automatische Synchronisation wurde zum Schutz deiner Daten angehalten. Exportiere ein Backup und kontaktiere den Support.";
+"Download Could Not Be Removed" = "Download konnte nicht entfernt werden";
+"The downloaded file could not be removed because the episode is no longer available." = "Der Download konnte nicht entfernt werden, weil die Folge nicht mehr verfügbar ist.";
+"Favorite episodes are not removed automatically." = "Favorisierte Folgen werden nicht automatisch entfernt.";
+"The downloaded file could not be located. Restart the app and try again." = "Die geladene Datei wurde nicht gefunden. Starte die App neu und versuche es erneut.";
+"The downloaded file could not be removed because the episode has not been saved yet." = "Der Download konnte nicht entfernt werden, weil die Folge noch nicht gespeichert ist.";
+"The downloaded file could not be deleted. Restart the app and try again." = "Die geladene Datei konnte nicht gelöscht werden. Starte die App neu und versuche es erneut.";
+"The downloaded file is still present, but its local download state could not be restored. Restart InstacastPlus and try again." = "Die geladene Datei ist noch vorhanden, aber ihr lokaler Downloadstatus konnte nicht wiederhergestellt werden. Starte InstacastPlus neu und versuche es erneut.";
+"The individual download removal was replaced by clearing all downloaded files." = "Das einzelne Löschen wurde durch das Löschen aller Downloads ersetzt.";
+"Downloaded files could not be removed because pending transcription jobs could not be saved. Check available storage and try again." = "Downloads konnten nicht entfernt werden, weil ausstehende Transkriptionsaufträge nicht gespeichert werden konnten. Prüfe den freien Speicherplatz und versuche es erneut.";
+"The file could not be imported because the episode identifier is missing." = "Die Datei konnte nicht importiert werden, weil die Kennung der Folge fehlt.";
+"A file is already being imported for this episode." = "Für diese Folge wird bereits eine Datei importiert.";
+"The file import location could not be created on this device." = "Der Speicherort für den Dateiimport konnte auf diesem Gerät nicht erstellt werden.";
+"The file import was cancelled because the download was removed." = "Der Dateiimport wurde abgebrochen, weil der Download entfernt wurde.";
+"The file cannot be imported while downloaded files are being cleared." = "Die Datei kann nicht importiert werden, während Downloads gelöscht werden.";
+"The remaining downloaded files could not be verified. Restart the app and try again." = "Die verbleibenden Downloads konnten nicht überprüft werden. Starte die App neu und versuche es erneut.";
+"Unable to Clear Downloads" = "Downloads konnten nicht gelöscht werden";
+"Current downloads will be cancelled before all downloaded files are deleted." = "Laufende Downloads werden abgebrochen, bevor alle geladenen Dateien gelöscht werden.";
+"Some cached images could not be deleted. Restart the app and try again." = "Einige zwischengespeicherte Bilder konnten nicht gelöscht werden. Starte die App neu und versuche es erneut.";
+"Streaming stopped before the episode could be cached. Check your connection and try again." = "Das Streaming wurde beendet, bevor die Folge gespeichert werden konnte. Prüfe die Verbindung und versuche es erneut.";
+"The episode could not be streamed because the server returned HTTP %ld (%@). Try again later." = "Die Folge konnte nicht gestreamt werden, weil der Server HTTP %ld (%@) zurückgegeben hat. Versuche es später erneut.";
+"The streamed response was not a valid audio or video file. Try downloading the episode again." = "Die übertragene Antwort war keine gültige Audio- oder Videodatei. Versuche erneut, die Folge zu laden.";
+"The streamed episode could not be written to this device. Check available storage and try again." = "Die gestreamte Folge konnte nicht auf dieses Gerät geschrieben werden. Prüfe den freien Speicherplatz und versuche es erneut.";
+"The imported data could not be saved. The import was stopped and may have been applied only partially. Check the available storage and try again." = "Die importierten Daten konnten nicht gespeichert werden. Der Import wurde angehalten und möglicherweise nur teilweise übernommen. Prüfe den verfügbaren Speicherplatz und versuche es erneut.";
+"Backup Restore Could Not Continue" = "Backup-Wiederherstellung konnte nicht fortgesetzt werden";
+"Download Could Not Be Cancelled" = "Download konnte nicht abgebrochen werden";
+"The pending episode downloads from the backup could not be read or updated. Check the available storage and try again." = "Die ausstehenden Episodendownloads aus dem Backup konnten nicht gelesen oder aktualisiert werden. Prüfe den verfügbaren Speicherplatz und versuche es erneut.";
+"Apple Watch progress could not be saved." = "Der Apple-Watch-Fortschritt konnte nicht gespeichert werden.";
+"The backup could not be exported because the local podcast database could not be opened. Check the available storage, restart InstacastPlus, and try again." = "Das Backup konnte nicht exportiert werden, weil die lokale Podcast-Datenbank nicht geöffnet werden konnte. Prüfe den freien Speicherplatz, starte InstacastPlus neu und versuche es erneut.";
+"The backup could not be analyzed. No data was changed. Check the available storage and try again." = "Das Backup konnte nicht analysiert werden. Es wurden keine Daten geändert. Prüfe den freien Speicherplatz und versuche es erneut.";

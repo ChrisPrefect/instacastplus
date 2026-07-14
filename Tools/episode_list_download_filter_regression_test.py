@@ -29,6 +29,7 @@ require(
     "Episode lists must not fetch-filter on the transient Episode.downloaded field; the not-downloaded filter then returns no rows.",
 )
 require(
-    list_source.count("[[CacheManager sharedCacheManager] cachedEpisodes]") == 2,
-    "Episode list download/not-download filtering should be based on CacheManager.cachedEpisodes in both list and count paths.",
+    list_source.count("[CacheManager sharedCacheManager].cachedEpisodeObjectHashes") >= 2
+    and "[[CacheManager sharedCacheManager] cachedEpisodes]" not in list_source,
+    "Episode list and count paths must use the CacheManager hash index without materializing the cached episode set.",
 )

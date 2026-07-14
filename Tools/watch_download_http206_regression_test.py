@@ -32,19 +32,25 @@ def function_body(source: str, signature: str) -> str:
 
 
 download = read("InstacastWatch/WatchDownloadManager.swift")
-validation = function_body(download, "private func downloadValidationError(")
+validation = function_body(download, "private nonisolated static func downloadValidationError(")
+preparation = function_body(download, "private nonisolated static func prepareFinishedDownloadFile(")
 
 require(
     "isCompletePartialContentResponse" in download
-    and 'value(forHTTPHeaderField: "Content-Range")' in download,
+    and 'value(forHTTPHeaderField: "Content-Range")' in download
+    and "contentRange: transport.contentRange" in validation,
     "Watch download validation must inspect Content-Range before deciding whether HTTP 206 is incomplete.",
 )
 
 partial_error = validation.find("Download unvollständig: HTTP 206 Partial Content")
-size_lookup = validation.find("FileManager.default.attributesOfItem")
+size_lookup = preparation.find("attributesOfItem")
+validation_call = preparation.find("Self.downloadValidationError(")
 require(
-    partial_error != -1 and size_lookup != -1 and size_lookup < partial_error,
-    "Watch download validation must measure the staged file before rejecting HTTP 206 as incomplete.",
+    ".partialContent" in validation
+    and size_lookup != -1
+    and validation_call != -1
+    and size_lookup < validation_call,
+    "Watch download validation must measure the staged file off-main before deciding whether HTTP 206 is complete.",
 )
 
 require(
@@ -56,8 +62,9 @@ require(
 )
 
 require(
-    "httpResponse.statusCode == 206" in validation
-    and "isCompletePartialContentResponse(httpResponse, actualSize: size)" in validation,
+    "statusCode == 206" in validation
+    and "isCompletePartialContentResponse(" in validation
+    and "actualSize: actualSize" in validation,
     "HTTP 206 responses must be rejected only when their byte range does not cover the full downloaded file.",
 )
 

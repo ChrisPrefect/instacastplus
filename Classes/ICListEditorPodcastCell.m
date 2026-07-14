@@ -7,8 +7,17 @@
 //
 
 #import "ICListEditorPodcastCell.h"
+#import "ImageCacheManager.h"
 
 @implementation ICListEditorPodcastCell
+
+- (void)prepareForReuse
+{
+    [super prepareForReuse];
+    [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
+    self.representedFeedIdentifier = nil;
+    self.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
+}
 
 - (void) layoutSubviews
 {

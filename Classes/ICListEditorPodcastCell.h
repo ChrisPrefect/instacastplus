@@ -10,4 +10,6 @@
 
 @interface ICListEditorPodcastCell : UITableViewCell
 
+@property (nonatomic, copy) NSString* representedFeedIdentifier;
+
 @end

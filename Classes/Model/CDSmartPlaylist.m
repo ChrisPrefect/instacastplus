@@ -342,31 +342,193 @@ NSString* kSmartListPredicateSortKeyKey = @"sort_key";
 
 - (NSArray*) sortedEpisodes
 {
+    return [self sortedEpisodesWithOffset:0 limit:0];
+}
+
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset limit:(NSUInteger)limit error:(NSError**)error
+{
     NSDictionary* predicate = self.smartPredicate;
-    
-    if (predicate)
-    {
-        NSString* type = predicate[kSmartListPredicateTypeKey];
-        NSString* sort = predicate[kSmartListPredicateSortOrderKey];
-        
-        NSArray* episodes = nil;
-        
-        if ([type isEqualToString:kSmartListTypeDownload]) {
-            episodes = [[CacheManager sharedCacheManager] cachedEpisodes];
-            
-            NSSortDescriptor* dateDescriptor = [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:[sort isEqualToString:kSmartListSortOldestFirst]];
-            episodes = [episodes sortedArrayUsingDescriptors:[NSArray arrayWithObject:dateDescriptor]];
-        }
-        else {
-            episodes = [self.managedObjectContext executeFetchRequest:[self episodesFetchRequest] error:nil];
-        }
-    
-        if (episodes) {
-            return episodes;
+    if (!predicate) {
+        return @[];
+    }
+
+    NSString* type = predicate[kSmartListPredicateTypeKey];
+    NSFetchRequest* request = nil;
+    if ([type isEqualToString:kSmartListTypeDownload]) {
+        request = [[NSFetchRequest alloc] init];
+        request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+        request.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@",
+                             [CacheManager sharedCacheManager].cachedEpisodeObjectHashes];
+        BOOL oldestFirst = [predicate[kSmartListPredicateSortOrderKey] isEqualToString:kSmartListSortOldestFirst];
+        request.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:oldestFirst]];
+    }
+    else {
+        request = [[self episodesFetchRequest] copy];
+    }
+    if (!request) {
+        return @[];
+    }
+
+    NSUInteger intrinsicLimit = request.fetchLimit;
+    if (intrinsicLimit > 0 && offset >= intrinsicLimit) {
+        return @[];
+    }
+
+    NSUInteger effectiveLimit = limit;
+    if (intrinsicLimit > 0) {
+        NSUInteger remaining = intrinsicLimit - offset;
+        effectiveLimit = (limit > 0) ? MIN(limit, remaining) : remaining;
+    }
+
+    NSMutableArray<NSSortDescriptor*>* sortDescriptors = [request.sortDescriptors mutableCopy] ?: [[NSMutableArray alloc] init];
+    BOOL hasObjectHashTieBreaker = NO;
+    for (NSSortDescriptor* descriptor in sortDescriptors) {
+        if ([descriptor.key isEqualToString:@"objectHash"]) {
+            hasObjectHashTieBreaker = YES;
+            break;
         }
     }
-    
-    return [NSArray array];
+    if (!hasObjectHashTieBreaker) {
+        [sortDescriptors addObject:[[NSSortDescriptor alloc] initWithKey:@"objectHash" ascending:YES]];
+    }
+    request.sortDescriptors = sortDescriptors;
+    request.fetchOffset = offset;
+    request.fetchLimit = effectiveLimit;
+
+    NSError* fetchError = nil;
+    NSArray* episodes = [self.managedObjectContext executeFetchRequest:request error:&fetchError];
+    if (fetchError) {
+        ErrLog(@"error fetching smart-playlist page: %@", fetchError);
+        if (error) {
+            *error = fetchError;
+        }
+        return nil;
+    }
+    return episodes ?: @[];
+}
+
+- (NSFetchRequest*)_statisticsFetchRequest
+{
+    NSString* type = self.smartPredicate[kSmartListPredicateTypeKey];
+    if ([type isEqualToString:kSmartListTypeDownload]) {
+        NSFetchRequest* request = [[NSFetchRequest alloc] init];
+        request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+        request.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@",
+                             [CacheManager sharedCacheManager].cachedEpisodeObjectHashes];
+        return request;
+    }
+    return [[self episodesFetchRequest] copy];
+}
+
+- (NSInteger)playbackTime
+{
+    NSFetchRequest* request = [self _statisticsFetchRequest];
+    if (!request) {
+        return 0;
+    }
+
+    if (request.fetchLimit > 0) {
+        request.resultType = NSDictionaryResultType;
+        request.propertiesToFetch = @[@"duration"];
+        NSError* error = nil;
+        NSArray<NSDictionary*>* rows = [self.managedObjectContext executeFetchRequest:request error:&error];
+        if (error) {
+            ErrLog(@"error calculating limited smart-playlist duration: %@", error);
+            return 0;
+        }
+        NSInteger duration = 0;
+        for (NSDictionary* row in rows) {
+            duration += [row[@"duration"] integerValue];
+        }
+        return duration;
+    }
+
+    NSExpressionDescription* totalDuration = [[NSExpressionDescription alloc] init];
+    totalDuration.name = @"totalDuration";
+    totalDuration.expression = [NSExpression expressionForFunction:@"sum:"
+                                                          arguments:@[[NSExpression expressionForKeyPath:@"duration"]]];
+    totalDuration.expressionResultType = NSInteger64AttributeType;
+    request.resultType = NSDictionaryResultType;
+    request.sortDescriptors = nil;
+    request.propertiesToFetch = @[totalDuration];
+
+    NSError* error = nil;
+    NSDictionary* result = [[self.managedObjectContext executeFetchRequest:request error:&error] firstObject];
+    if (error) {
+        ErrLog(@"error calculating smart-playlist duration: %@", error);
+        return 0;
+    }
+    return [result[@"totalDuration"] integerValue];
+}
+
+- (NSUInteger)numberOfPlayedEpisodes
+{
+    NSFetchRequest* request = [self _statisticsFetchRequest];
+    if (!request) {
+        return 0;
+    }
+
+    if (request.fetchLimit > 0) {
+        request.resultType = NSDictionaryResultType;
+        request.propertiesToFetch = @[@"consumed"];
+        NSError* error = nil;
+        NSArray<NSDictionary*>* rows = [self.managedObjectContext executeFetchRequest:request error:&error];
+        if (error) {
+            ErrLog(@"error calculating limited smart-playlist played count: %@", error);
+            return 0;
+        }
+        NSUInteger count = 0;
+        for (NSDictionary* row in rows) {
+            if ([row[@"consumed"] boolValue]) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    request.predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+        request.predicate ?: [NSPredicate predicateWithValue:YES],
+        [NSPredicate predicateWithFormat:@"consumed == YES"],
+    ]];
+    request.sortDescriptors = nil;
+    NSUInteger count = [self.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
+}
+
+- (NSUInteger)numberOfPlayedDownloadedEpisodes
+{
+    NSFetchRequest* request = [self _statisticsFetchRequest];
+    if (!request) {
+        return 0;
+    }
+    NSSet<NSString*>* cachedHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
+
+    if (request.fetchLimit > 0) {
+        request.resultType = NSDictionaryResultType;
+        request.propertiesToFetch = @[@"consumed", @"objectHash"];
+        NSError* error = nil;
+        NSArray<NSDictionary*>* rows = [self.managedObjectContext executeFetchRequest:request error:&error];
+        if (error) {
+            ErrLog(@"error calculating limited smart-playlist downloaded count: %@", error);
+            return 0;
+        }
+        NSUInteger count = 0;
+        for (NSDictionary* row in rows) {
+            if ([row[@"consumed"] boolValue] && [cachedHashes containsObject:row[@"objectHash"]]) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    request.predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+        request.predicate ?: [NSPredicate predicateWithValue:YES],
+        [NSPredicate predicateWithFormat:@"consumed == YES"],
+        [NSPredicate predicateWithFormat:@"objectHash IN %@", cachedHashes],
+    ]];
+    request.sortDescriptors = nil;
+    NSUInteger count = [self.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
 }
 
 + (NSSet*) keyPathsForValuesAffectingNumberOfEpisodes
@@ -383,7 +545,7 @@ NSString* kSmartListPredicateSortKeyKey = @"sort_key";
         NSString* type = [predicate objectForKey:kSmartListPredicateTypeKey];
         
         if ([type isEqualToString:kSmartListTypeDownload]) {
-            return [[CacheManager sharedCacheManager] numberOfCachedEpisodes];
+            return [CacheManager sharedCacheManager].cachedEpisodeObjectHashes.count;
         }
         else
         {

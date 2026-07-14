@@ -4,20 +4,21 @@ import SwiftUI
 struct InstacastWatchApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store = WatchManifestStore.shared
-    @StateObject private var player = WatchPlayerController.shared
+    private let player = WatchPlayerController.shared
 
     init() {
-        WatchManifestStore.shared.load()
-        WatchConnectivityController.shared.start()
-        WatchPlayerController.shared.checkForUnexpectedTermination()
-        WatchDownloadManager.shared.startQueuedDownloads()
+        Task { @MainActor in
+            await WatchManifestStore.shared.load()
+            WatchConnectivityController.shared.start()
+            WatchPlayerController.shared.checkForUnexpectedTermination()
+            WatchDownloadManager.shared.startQueuedDownloads()
+        }
     }
 
     var body: some Scene {
         WindowGroup {
             WatchEpisodeListView()
                 .environmentObject(store)
-                .environmentObject(player)
                 .onChange(of: scenePhase) { phase in
                     if phase != .active {
                         player.flushPlaybackState()

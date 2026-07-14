@@ -25,6 +25,7 @@ NSString* const ICAppleWatchStatusRemoving = @"removing";
 @dynamic watchStatus;
 @dynamic watchAddedDate;
 @dynamic watchDownloadedDate;
+@dynamic watchLastEventRevision;
 @dynamic watchLastSeenDate;
 @dynamic watchLastError;
 @dynamic watchActualDuration;

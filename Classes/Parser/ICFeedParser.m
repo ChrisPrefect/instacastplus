@@ -1012,7 +1012,7 @@ static BOOL ICFeedParserTypeLooksLikeTranscript(NSString* type)
             _feed.pubDate = [gDateParser dateFromString:elementContent];
             
             if ([elementContent length] > 0 && !_feed.pubDate) {
-                ErrLog(@"error parsing channel pubdate: %@ at %@", elementContent, [self.url absoluteString]);
+                ErrLog(@"error parsing channel pubdate: %@ at %@", elementContent, ICRedactedURLStringForLogging(self.url.absoluteString));
             }
         }
         
@@ -1206,7 +1206,7 @@ static BOOL ICFeedParserTypeLooksLikeTranscript(NSString* type)
             _episode.pubDate = [gDateParser dateFromString:elementContent];
             
             if ([elementContent length] > 0 && !_episode.pubDate) {
-                ErrLog(@"error parsing item pubdate: %@ at %@", elementContent, [self.url absoluteString]);
+                ErrLog(@"error parsing item pubdate: %@ at %@", elementContent, ICRedactedURLStringForLogging(self.url.absoluteString));
             }
         }
         
@@ -1215,7 +1215,7 @@ static BOOL ICFeedParserTypeLooksLikeTranscript(NSString* type)
             _episode.pubDate = [gDateParser dateFromString:elementContent];
             
             if ([elementContent length] > 0 && !_episode.pubDate) {
-                ErrLog(@"error parsing item dc:date: %@ at %@", elementContent, [self.url absoluteString]);
+                ErrLog(@"error parsing item dc:date: %@ at %@", elementContent, ICRedactedURLStringForLogging(self.url.absoluteString));
             }
         }
         

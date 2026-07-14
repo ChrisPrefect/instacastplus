@@ -21,10 +21,16 @@ def source_between(source: str, start: str, end: str) -> str:
 
 
 def objc_method(source: str, signature: str) -> str:
-    start = source.find(signature)
-    require(start != -1, f"Missing method: {signature}")
-    brace = source.find("{", start)
-    require(brace != -1, f"Missing method body: {signature}")
+    search_start = 0
+    while True:
+        start = source.find(signature, search_start)
+        require(start != -1, f"Missing method: {signature}")
+        brace = source.find("{", start)
+        require(brace != -1, f"Missing method body: {signature}")
+        semicolon = source.find(";", start, brace)
+        if semicolon == -1:
+            break
+        search_start = semicolon + 1
 
     depth = 0
     for index in range(brace, len(source)):
@@ -48,50 +54,51 @@ queue_pending = objc_method(
     "- (void)queuePendingEpisodesForFeed:(CDFeed*)feed",
 )
 require(
-    "_pendingLoads[feedURL] = loadInfo;" in queue_pending
-    and "_saveLoadingState" in queue_pending
-    and queue_pending.index("_pendingLoads[feedURL] = loadInfo;") < queue_pending.index("_saveLoadingState")
-    and queue_pending.index("_saveLoadingState") < queue_pending.index("_startNextPendingFeed"),
-    "EpisodeLoadingManager must persist the newly queued remainder before starting crash-prone background loading.",
+    "_persistNewLoadInfo" in queue_pending
+    and "_startNextPendingFeed" in queue_pending
+    and queue_pending.index("_persistNewLoadInfo") < queue_pending.index("_startNextPendingFeed"),
+    "EpisodeLoadingManager must persist the new immutable payload/cursor before starting background loading.",
 )
 
 load_batch = objc_method(
     episode_loader,
     "- (void)_loadNextBatchForFeedURL:(NSString*)feedURL",
 )
-before_main = load_batch.split("dispatch_async(dispatch_get_main_queue(), ^{", 1)[0]
 require(
-    "_pendingLoads[feedURL] = updatedInfo;" not in before_main,
-    "EpisodeLoadingManager must not remove the active batch from persisted state before the main-context insert succeeds.",
+    "newBackgroundContext" in load_batch
+    and "save:&saveError" in load_batch
+    and "_persistCursorForLoadInfo" in load_batch
+    and load_batch.index("save:&saveError") < load_batch.index("_persistCursorForLoadInfo"),
+    "EpisodeLoadingManager must commit the background Core Data batch before advancing its tiny durable cursor.",
 )
-after_main = load_batch.split("dispatch_async(dispatch_get_main_queue(), ^{", 1)[1]
 require(
-    "_pendingLoads[feedURL] = updatedInfo;" in after_main
-    and after_main.index("_pendingLoads[feedURL] = updatedInfo;") > after_main.index("[DMANAGER save];"),
-    "EpisodeLoadingManager must shrink the in-memory queue only after committing each batch.",
+    load_batch.count("_isCurrentLoadInfo") >= 2,
+    "EpisodeLoadingManager must reject canceled/replaced generations before saving or advancing.",
 )
-save_state = objc_method(episode_loader, "- (void)_saveLoadingState")
 require(
-    "[USER_DEFAULTS synchronize]" in save_state,
-    "Episode loading crash recovery needs the queued state flushed durably, not left only in memory.",
+    "[USER_DEFAULTS setObject:allLoads" not in episode_loader
+    and ".payload.plist" in episode_loader
+    and ".cursor.plist" in episode_loader,
+    "Episode loading crash recovery must use per-job payload/cursor files, not rewrite the whole queue in defaults.",
 )
 
 
 replace_manifest = source_between(
     watch_download_manager,
-    "func replaceManifest(entries: [WatchManifestEntry]) {",
-    "    func upsertManifest(entries: [WatchManifestEntry]) {",
+    "func replaceManifest(",
+    "    func upsertManifest(",
 )
 require(
     "removeEpisode(hash: episode.episodeHash)" not in replace_manifest
-    and "deleteRemovedManifestEpisode(episode)" in replace_manifest,
-    "Watch manifest replacement must delete the removed episode object directly after the store has already replaced it.",
+    and "enqueuePendingRemovalHashes(removed.map" in replace_manifest,
+    "Watch manifest replacement must retain and queue removed metadata after the atomic store commit.",
 )
 require(
-    "private func deleteRemovedManifestEpisode(_ episode: WatchEpisode)" in watch_download_manager
-    and "WatchStorageManager.shared.removeLocalFile(for: episode)" in watch_download_manager
-    and 'send(type: "watch.deleted"' in watch_download_manager,
-    "Watch manifest replacement must remove local files and acknowledge removed entries to the phone.",
+    "private func processPendingRemovalBatch()" in watch_download_manager
+    and "await WatchStorageManager.removeLocalFiles(" in watch_download_manager
+    and "context: removalContext" in watch_download_manager
+    and "sendDeletionAcknowledgements(for: completedHashes)" in watch_download_manager,
+    "Watch manifest replacement must batch local cleanup and durably acknowledge removed entries to the phone.",
 )
 
 
@@ -130,17 +137,19 @@ require(
 
 cache_episode = objc_method(
     cache_manager,
-    "- (BOOL) _cacheEpisode:(CDEpisode*)episode autoCache:(BOOL)autoCache overwriteCellularLock:(BOOL)overwriteCellularLock",
+    "- (BOOL) _cacheEpisode:(CDEpisode*)episode\n             autoCache:(BOOL)autoCache\noverwriteCellularLock:(BOOL)overwriteCellularLock\nreportsFailureToUser:(BOOL)reportsFailureToUser\n             queueRank:(NSNumber*)queueRank",
 )
 require(
     "CDMedium* media = [episode preferedMedium];" in cache_episode
-    and "if (!media.fileURL || episode.objectHash.length == 0)" in cache_episode
-    and cache_episode.index("if (!media.fileURL || episode.objectHash.length == 0)") < cache_episode.index("initWithURL:media.fileURL"),
+    and "if (identifier.length == 0)" in cache_episode
+    and "if (!media.fileURL)" in cache_episode
+    and cache_episode.index("if (identifier.length == 0)") < cache_episode.index("initWithURL:media.fileURL")
+    and cache_episode.index("if (!media.fileURL)") < cache_episode.index("initWithURL:media.fileURL"),
     "CacheManager must reject episodes without a real media URL before creating a cache operation.",
 )
 require(
     "if (!cacheOperation)" in cache_episode
-    and cache_episode.index("if (!cacheOperation)") < cache_episode.index("[_downloadQueue addOperation:cacheOperation]"),
+    and cache_episode.index("if (!cacheOperation)") < cache_episode.index("_downloadOperationsByIdentifier[identifier] = cacheOperation"),
     "CacheManager must never enqueue a nil cache operation.",
 )
 

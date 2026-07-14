@@ -71,8 +71,9 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     [super viewWillAppear:animated];
     [self updateAppearance];
 
-    // Refresh the hard cloud inventory, the device list and the relative timestamps on
-    // appear and then every 30 seconds while the screen stays open.
+    // Refresh the hard cloud inventory once on appearance. The 30-second timer below is
+    // only for relative timestamps/UI; re-listing the whole zone there downloaded every
+    // record repeatedly while this screen was open.
     [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
     [self.relativeTimeRefreshTimer invalidate];
     self.relativeTimeRefreshTimer = [NSTimer scheduledTimerWithTimeInterval:30.0
@@ -194,12 +195,13 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 {
     if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {
         if (indexPath.row == 0) {
-            UITableViewCell *cell = [self detailCell];
+            UITableViewCell *cell = [self multilineInfoCellWithIdentifier:@"ICiCloudSyncStatusCell"];
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
             cell.accessoryType = UITableViewCellAccessoryNone;
             cell.textLabel.text = @"Status".ls;
             cell.detailTextLabel.text = [ICiCloudSyncManager sharedManager].statusText;
-            cell.detailTextLabel.numberOfLines = 1;
+            cell.detailTextLabel.numberOfLines = 0;
+            cell.detailTextLabel.lineBreakMode = NSLineBreakByWordWrapping;
             return cell;
         }
 
@@ -241,7 +243,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         cell.detailTextLabel.numberOfLines = 1;
         switch (indexPath.row) {
             case ICiCloudSyncStorageRowEpisodes:
-                cell.textLabel.text = @"Episodes".ls;
+                cell.textLabel.text = @"Episode States".ls;
                 cell.detailTextLabel.text = inventory ? [NSNumberFormatter localizedStringFromNumber:@(inventory.episodeStates) numberStyle:NSNumberFormatterDecimalStyle] : @"…";
                 break;
             case ICiCloudSyncStorageRowSubscriptions:
@@ -258,6 +260,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
     if (indexPath.section == ICiCloudSyncSettingsSectionDelete) {
         UITableViewCell *cell = [self buttonCell];
+        cell.accessoryView = nil;
         cell.textLabel.text = @"Delete iCloud Data".ls;
         cell.textLabel.textColor = [UIColor systemRedColor];
         cell.textLabel.enabled = YES;
@@ -342,7 +345,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         case ICiCloudSyncSettingsSectionOptions:
             return @"Sync Options".ls;
         case ICiCloudSyncSettingsSectionStorage:
-            return @"On iCloud".ls;
+            return @"iCloud Data".ls;
         case ICiCloudSyncSettingsSectionDevices:
             return @"Synced Devices".ls;
     }
@@ -354,10 +357,37 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     if (section == ICiCloudSyncSettingsSectionOptions) {
         return @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync.".ls;
     }
+    if (section == ICiCloudSyncSettingsSectionStatus) {
+        return @"Beim ersten Sync überträgt iCloud jeden Episodenstatus als eigenen Datensatz. Der Fortschritt wird oben angezeigt; danach werden nur Änderungen übertragen.".ls;
+    }
+    if (section == ICiCloudSyncSettingsSectionStorage) {
+        return [self cloudInventoryFooterText];
+    }
     if (section == ICiCloudSyncSettingsSectionDelete) {
         return @"Removes all synced data from iCloud for all of your devices. Local data on this device is kept; if sync stays on, it is uploaded again.".ls;
     }
     return nil;
+}
+
+- (NSString*)cloudInventoryFooterText
+{
+    ICiCloudSyncManager *manager = [ICiCloudSyncManager sharedManager];
+    if (manager.cloudInventoryRefreshInProgress) {
+        return @"Updating iCloud data…".ls;
+    }
+
+    ICiCloudSyncCloudInventory *inventory = manager.cloudInventory;
+    NSString *lastCheckedText = nil;
+    if (inventory) {
+        NSString *relativeDate = [self.relativeDateFormatter localizedStringForDate:inventory.fetchDate relativeToDate:[NSDate date]];
+        lastCheckedText = [NSString stringWithFormat:@"Last checked %@.".ls, relativeDate];
+    }
+    if (manager.cloudInventoryRefreshErrorText.length > 0) {
+        return lastCheckedText.length > 0
+            ? [NSString stringWithFormat:@"%@ %@", manager.cloudInventoryRefreshErrorText, lastCheckedText]
+            : manager.cloudInventoryRefreshErrorText;
+    }
+    return lastCheckedText ?: @"iCloud data has not been checked yet.".ls;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
@@ -402,14 +432,11 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
     if (indexPath.section == ICiCloudSyncSettingsSectionStatus && indexPath.row == 1) {
         if (![ICiCloudSyncManager sharedManager].anySyncEnabled) { return; }
+        if ([ICiCloudSyncManager sharedManager].syncInProgress) { return; }
 
-        UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
-        cell.userInteractionEnabled = NO;
-        cell.textLabel.text = @"Syncing…".ls;
-
+        [[ICiCloudSyncManager sharedManager] requestCloudInventoryRefreshAfterSync];
         [[ICiCloudSyncManager sharedManager] performManualSyncWithCompletion:^(NSError * _Nullable error) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                cell.userInteractionEnabled = YES;
                 if (error) {
                     [self presentAlertControllerWithTitle:@"iCloud Sync".ls
                                                   message:[ICiCloudSyncManager sharedManager].statusText
@@ -417,9 +444,6 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
                                                  animated:YES
                                                completion:nil];
                 }
-                // A manual sync changes what is on iCloud — refresh the hard
-                // inventory (and with it the device list) right away.
-                [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
                 [self reloadStatusAndDevicesSections];
             });
         }];
@@ -479,9 +503,9 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         @"row": @(sender.tag),
         @"requestedOn": @(sender.on),
     }];
-    // Every switch interaction kicks off sync work — refresh the iCloud inventory
-    // (and device list) immediately instead of waiting for the next 30s tick.
-    [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
+    // The upload/fetch is asynchronous. Request one hard inventory refresh after that
+    // work completes; scanning here would show the old counts and race the actual sync.
+    [[ICiCloudSyncManager sharedManager] requestCloudInventoryRefreshAfterSync];
     [self reloadStatusAndDevicesSections];
     [[ICDiagnosticLogger shared] logEvent:@"icloud-sync-ui"
                                   message:@"Sync-Schalter Status/Devices neu geladen"
@@ -494,11 +518,20 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 - (void)configureSyncNowCell:(UITableViewCell*)cell
 {
     BOOL syncEnabled = [ICiCloudSyncManager sharedManager].anySyncEnabled;
-    cell.textLabel.text = @"Sync Now".ls;
-    cell.userInteractionEnabled = syncEnabled;
+    BOOL syncInProgress = [ICiCloudSyncManager sharedManager].syncInProgress;
+    BOOL canStartSync = syncEnabled && !syncInProgress;
+    cell.textLabel.text = syncInProgress ? @"Syncing…".ls : @"Sync Now".ls;
+    cell.userInteractionEnabled = canStartSync;
     cell.textLabel.enabled = syncEnabled;
     cell.textLabel.textColor = syncEnabled ? [[ICAppearanceManager sharedManager] appearance].tintColor : ICMutedTextColor;
-    cell.selectionStyle = syncEnabled ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+    cell.selectionStyle = canStartSync ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+    cell.accessoryView = nil;
+    if (syncInProgress) {
+        UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        spinner.color = [[ICAppearanceManager sharedManager] appearance].tintColor;
+        [spinner startAnimating];
+        cell.accessoryView = spinner;
+    }
 }
 
 - (NSString*)displayNameForDevice:(ICiCloudSyncDeviceInfo*)device
@@ -536,7 +569,6 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 - (void)refreshCloudStateTick
 {
-    [[ICiCloudSyncManager sharedManager] refreshCloudInventory];
     [self reloadStatusAndDevicesSections];
 }
 

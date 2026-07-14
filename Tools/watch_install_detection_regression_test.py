@@ -11,10 +11,16 @@ def require(condition: bool, message: str) -> None:
 
 
 def method_body(source: str, signature: str) -> str:
-    start = source.find(signature)
-    require(start >= 0, f"Missing method {signature}.")
-    brace = source.find("{", start)
-    require(brace >= 0, f"Missing method body for {signature}.")
+    search_start = 0
+    while True:
+        start = source.find(signature, search_start)
+        require(start >= 0, f"Missing method {signature}.")
+        brace = source.find("{", start)
+        require(brace >= 0, f"Missing method body for {signature}.")
+        semicolon = source.find(";", start, brace)
+        if semicolon == -1:
+            break
+        search_start = semicolon + 1
     depth = 0
     for index in range(brace, len(source)):
         char = source[index]
@@ -45,8 +51,8 @@ require(
 )
 
 require(
-    "BOOL shouldSyncAfterHandling = NO;" in incoming_body
-    and "BOOL shouldSyncAfterHandling = (!hadWatchStatus && self.needsManifestSyncAfterActivation);" not in incoming_body,
+    "BOOL shouldSyncAfterHandling = (!hadWatchStatus && self.needsManifestSyncAfterActivation);" not in incoming_body
+    and "hadWatchStatus" not in incoming_body,
     "The first incoming Watch status must not retry a manifest that WCSession rejected as not installed.",
 )
 

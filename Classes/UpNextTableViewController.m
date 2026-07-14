@@ -78,6 +78,7 @@ static NSString* kUpNextCell = @"UpNextCell";
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFailCachingEpisodeNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidUpdateNotification:) name:PlaybackManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
 
@@ -90,6 +91,7 @@ static NSString* kUpNextCell = @"UpNextCell";
         [nc removeObserver:self name:CacheManagerDidUpdateNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidClearCacheNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc removeObserver:self name:CacheManagerDidFailCachingEpisodeNotification object:nil];
         [nc removeObserver:self name:PlaybackManagerDidUpdateNotification object:nil];
         [nc removeObserver:self name:PlaybackManagerDidChangeEpisodeNotification object:nil];
 

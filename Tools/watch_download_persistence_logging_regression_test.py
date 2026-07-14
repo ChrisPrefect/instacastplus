@@ -24,39 +24,47 @@ manager = read("Classes/AppleWatchSyncManager.m")
 
 
 require(
-    "func resolvedLocalFileURL(for episode: WatchEpisode) -> URL?" in storage
+    "nonisolated static func inspectLocalFile(" in storage
+    and "Task.detached(priority: .utility)" in storage
     and "localFileURL?.lastPathComponent" in storage
     and "downloadsDirectory.appendingPathComponent(fileName)" in storage
-    and "FileManager.default.fileExists(atPath: currentURL.path)" in storage,
-    "WatchStorageManager must re-root persisted localFileURL filenames into the current watch container before checking file existence.",
+    and "fileManager.fileExists(atPath: currentURL.path)" in storage,
+    "WatchStorageManager must re-root persisted localFileURL filenames into the current watch container and inspect them off MainActor.",
 )
 
 require(
-    "normalizeStoredLocalFileURLs(reason:" in store
-    and "normalizeStoredLocalFileURLs(reason: \"load\")" in store
-    and "normalizeStoredLocalFileURLs(reason: \"manifest.replace-before\")" in store
-    and "normalizeStoredLocalFileURLs(reason: \"manifest.upsert-before\")" in store,
+    "Self.normalizeStoredLocalFileURLs(" in store
+    and 'reason: "load"' in store
+    and 'reason: "manifest.replace-before"' in store
+    and 'reason: "manifest.upsert-before"' in store
+    and "Task.detached(priority: .utility)" in store,
     "WatchManifestStore must normalize stale persisted local file URLs on load and before manifest merge/upsert.",
 )
 
 require(
-    "FileManager.default.fileExists(atPath: localFileURL.path)" not in episode,
-    "WatchEpisode merge must not check the stale persisted absolute localFileURL path directly.",
+    "existingLocalFileWasValidated" in episode
+    and "localFileWasValidated" in episode
+    and "FileManager.default.fileExists(atPath: localFileURL.path)" not in episode
+    and "existing.mediaURL == entry.mediaURL" in episode,
+    "WatchEpisode merge may reuse only an off-main validated normalized file that matches the current media URL.",
 )
 
 require(
-    "WatchStorageManager.shared.resolvedLocalFileURL(for: episode)" in download
+    "resolveReconcileLocalFiles" in download
+    and "fileManager.fileExists(atPath:" in download
     and "pathRerooted" in download
     and "localFileMissing" in download,
-    "WatchDownloadManager reconcile must use resolved local file URLs and log reroot/missing-file decisions.",
+    "WatchDownloadManager reconcile must resolve local file URLs off-main and log reroot/missing-file decisions.",
 )
 
 require(
-    "WatchStorageManager.shared.resolvedLocalFileURL(for: episode)" in player
+    "await WatchStorageManager.inspectLocalFile(for: episode)" in player
+    and "episodeIdentity.matches(currentEpisode)" in player
+    and "FileManager" not in player
     and "playback-start" in player
     and "audioPlayerDidFinishPlaying" in player
     and "audioPlayerDecodeErrorDidOccur" in player,
-    "WatchPlayerController must resolve stale local file URLs and log playback start, finish, and decode errors.",
+    "WatchPlayerController must resolve stale local files off-main, revalidate ownership, and log playback start, finish, and decode errors.",
 )
 
 require(

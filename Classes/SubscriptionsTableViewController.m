@@ -1249,13 +1249,9 @@
 	{
         CGPoint location = [recognizer locationInView:self.tableView];
 		NSIndexPath *rowIndexPath = [self.tableView indexPathForRowAtPoint:location];
-        
-//        NSArray* subscriptions = self.feeds;
-//        
-//        // long pressing on an empty cell not allowed
-//        if (!rowIndexPath || rowIndexPath.row >= [subscriptions count]) {
-//            return;
-//        }
+        if (!rowIndexPath) {
+            return;
+        }
         
         CDFeed* feed = [self.fetchController objectAtIndexPath:rowIndexPath];
         

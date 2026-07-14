@@ -947,6 +947,7 @@
         [nc addObserver:self selector:@selector(cacheManagerDidStartCachingEpisodeNotification:) name:CacheManagerDidStartCachingEpisodeNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidUpdateNotification:) name:CacheManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerDidFinishCachingEpisodeNotification:) name:CacheManagerDidFailCachingEpisodeNotification object:nil];
         
         [App addTaskObserver:self forKeyPath:@"networkAccessTechnology" task:^(id obj, NSDictionary *change) {
             [self _updateTimeDisplay];
@@ -960,6 +961,7 @@
         [nc removeObserver:self name:CacheManagerDidStartCachingEpisodeNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidUpdateNotification object:nil];
         [nc removeObserver:self name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
+        [nc removeObserver:self name:CacheManagerDidFailCachingEpisodeNotification object:nil];
         [App removeTaskObserver:self forKeyPath:@"networkAccessTechnology"];
     }
     
@@ -1161,6 +1163,11 @@
 
 - (void) _downloadFile
 {
+    [self _downloadFileForEpisode:self.episode];
+}
+
+- (void) _downloadFileForEpisode:(CDEpisode*)episode
+{
     CacheManager* cman = [CacheManager sharedCacheManager];
     
     BOOL enabled3G = [USER_DEFAULTS boolForKey:EnableCachingOver3G];
@@ -1176,7 +1183,7 @@
                                                 handler:^(UIAlertAction * action) {
                                                     STRONG_SELF
                                                     [self perform:^(id sender) {
-                                                        [cman cacheEpisode:self.episode overwriteCellularLock:YES];
+                                                        [cman cacheEpisode:episode overwriteCellularLock:YES];
                                                     } afterDelay:0.3];
                                                     self.alertController = nil;
                                                 }]];
@@ -1205,7 +1212,7 @@
         [self presentAlertControllerAnimated:YES completion:NULL];
     }
     else {
-        [cman cacheEpisode:self.episode];
+        [cman cacheEpisode:episode];
     }
 }
 
@@ -1218,7 +1225,9 @@
     if (![cman episodeIsCached:self.episode]) {
         NSString* addTitle = @"Download".ls;
         if ([self.episode preferedMedium].byteSize > 0LL) {
-            unsigned long long bytes = [self.episode preferedMedium].byteSize - [cman numberOfDownloadedBytesForEpisode:self.episode];
+            unsigned long long totalBytes = [self.episode preferedMedium].byteSize;
+            unsigned long long downloadedBytes = [cman numberOfDownloadedBytesForEpisode:self.episode];
+            unsigned long long bytes = downloadedBytes >= totalBytes ? 0 : totalBytes - downloadedBytes;
             NSString* sizeString = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
             addTitle = [NSString stringWithFormat:@"%@ (%@)", @"Download".ls, sizeString];
         }
@@ -1235,20 +1244,23 @@
         }
         [actions addObject:[UIAction actionWithTitle:redownloadTitle image:[UIImage systemImageNamed:@"square.and.arrow.down"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
-            PlaybackManager* pm = [PlaybackManager playbackManager];
-            if ([pm.playingEpisode isEqual:self.episode]) {
-                [[AudioSession sharedAudioSession] stop];
-            }
-            [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
-            [self _updateTimeDisplay];
-            [self updatePlayComboButtonState];
-            [self _downloadFile];
+            CDEpisode* episode = self.episode;
+            NSString* episodeHash = [episode.objectHash copy];
+            [[CacheManager sharedCacheManager] removeCacheForEpisode:episode
+                                                           automatic:NO
+                                                          completion:^(NSError* error) {
+                if (error) return;
+                if ([self.episode.objectHash isEqualToString:episodeHash]) {
+                    [self _updateTimeDisplay];
+                    [self updatePlayComboButtonState];
+                }
+                [self _downloadFileForEpisode:episode];
+            }];
         }]];
 
         UIAction* deleteAction = [UIAction actionWithTitle:@"Delete Download".ls image:[[UIImage systemImageNamed:@"square.and.arrow.down"] imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             [[CacheManager sharedCacheManager] removeCacheForEpisode:self.episode automatic:NO];
-            [DMANAGER markEpisode:self.episode asDownloaded:NO];
             [self _updateTimeDisplay];
             [self updatePlayComboButtonState];
         }];

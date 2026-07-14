@@ -135,7 +135,8 @@
 @property (nonatomic) BOOL suppressReload; // prevent double-update during swipe delete
 @property (nonatomic) BOOL backgroundTaskActive;
 @property (nonatomic) BOOL swipeInteractionActive;
-@property (nonatomic, strong) NSMutableDictionary<NSString*, CDEpisode*>* episodeCache;
+@property (nonatomic, copy) NSDictionary<NSString*, CDEpisode*>* episodeCache;
+@property (nonatomic, copy) NSSet<NSString*>* episodeCacheHashes;
 @end
 
 @implementation TranscriptionQueueViewController {
@@ -158,7 +159,8 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     self.tableView.rowHeight = 80;
     self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
     self.tableView.backgroundColor = ICBackgroundColor;
-    self.episodeCache = [NSMutableDictionary dictionary];
+    self.episodeCache = @{};
+    self.episodeCacheHashes = [NSSet set];
 
     // Toolbar — same pattern as Downloads (Pause + Cancel)
     self.cancelItem = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Alle abbrechen", nil)
@@ -182,11 +184,14 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     // plenty for a download progress bar and avoids burning CPU on cell re-layout.
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_cacheProgressUpdated)
                                                  name:CacheManagerDidUpdateNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_contextObjectsDidChange:)
+                                                 name:NSManagedObjectContextObjectsDidChangeNotification object:DMANAGER.objectContext];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
 
+    [self _rebuildEpisodeCacheForCurrentItems];
     [self _syncBackgroundButtonState];
 
     // Restart elapsed timer if an item is currently loading or starting
@@ -212,6 +217,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 }
 
 - (void)_queueChanged {
+    [self _rebuildEpisodeCacheForCurrentItems];
     if (self.suppressReload) return;
     if (self.swipeInteractionActive) return;
     [self _syncBackgroundButtonState];
@@ -494,6 +500,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     cell.accessoryType = UITableViewCellAccessoryNone;
     cell.accessoryView = nil;
     cell.rightContentAccessoryView = nil;
+    cell.accessibilityIdentifier = nil;
     // Remove play button and reclaim its space.
     [cell.playAccessoryButton removeFromSuperview];
 
@@ -504,6 +511,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 
     ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
     cell.tag = indexPath.row;
+    cell.accessibilityIdentifier = item.episodeHash;
     // (i) accessory opens the detailed log (durations, sizes, char/chapter counts).
     UIButton* logButton = [UIButton buttonWithType:UIButtonTypeSystem];
     UIButtonConfiguration* logButtonConfiguration = [UIButtonConfiguration plainButtonConfiguration];
@@ -529,10 +537,13 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     if (episode) {
         NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
-        [iman imageForURL:imageURL size:56 grayscale:NO sender:self completion:^(UIImage *image) {
-            if (image) {
-                cell.imageView.image = image;
-                cell.imageView.tag = 1;
+        NSString* requestedEpisodeHash = item.episodeHash;
+        __weak DownloadsTableViewCell* weakCell = cell;
+        [iman imageForURL:imageURL size:56 grayscale:NO sender:cell completion:^(UIImage *image) {
+            DownloadsTableViewCell* strongCell = weakCell;
+            if (image && [strongCell.accessibilityIdentifier isEqualToString:requestedEpisodeHash]) {
+                strongCell.imageView.image = image;
+                strongCell.imageView.tag = 1;
             }
         }];
     }
@@ -708,20 +719,77 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 
-- (CDEpisode*)_episodeForHash:(NSString*)hash {
-    if (hash.length == 0) return nil;
-    CDEpisode* cachedEpisode = self.episodeCache[hash];
-    if (cachedEpisode) return cachedEpisode;
+- (void)_rebuildEpisodeCacheForCurrentItems {
+    NSMutableSet<NSString*>* hashes = [NSMutableSet set];
+    for (ICTranscriptionQueueItem* item in [TranscriptionQueue shared].items) {
+        if (item.episodeHash.length > 0) {
+            [hashes addObject:item.episodeHash];
+        }
+    }
+    if ([self.episodeCacheHashes isEqualToSet:hashes]) {
+        return;
+    }
 
-    for (CDFeed* feed in DMANAGER.feeds) {
-        for (CDEpisode* episode in feed.episodes) {
-            if ([episode.objectHash isEqualToString:hash]) {
-                self.episodeCache[hash] = episode;
-                return episode;
+    NSArray<CDEpisode*>* episodes = hashes.count > 0 ? [DMANAGER episodesWithObjectHashes:hashes.allObjects] : @[];
+    NSMutableDictionary<NSString*, CDEpisode*>* episodesByHash = [NSMutableDictionary dictionaryWithCapacity:episodes.count];
+    for (CDEpisode* episode in episodes) {
+        if (episode.objectHash.length > 0 && !episode.deleted) {
+            episodesByHash[episode.objectHash] = episode;
+        }
+    }
+    self.episodeCache = episodesByHash;
+    self.episodeCacheHashes = hashes;
+}
+
+- (void)_contextObjectsDidChange:(NSNotification*)notification {
+    NSMutableSet* removedObjects = [NSMutableSet setWithSet:notification.userInfo[NSDeletedObjectsKey] ?: [NSSet set]];
+    [removedObjects unionSet:notification.userInfo[NSInvalidatedObjectsKey] ?: [NSSet set]];
+    BOOL episodeCacheChanged = [notification.userInfo[NSInvalidatedAllObjectsKey] boolValue];
+    if (!episodeCacheChanged) {
+        for (NSManagedObject* object in removedObjects) {
+            if ([object isKindOfClass:[CDEpisode class]]) {
+                episodeCacheChanged = YES;
+                break;
             }
         }
     }
-    return nil;
+
+    if (!episodeCacheChanged) {
+        NSMutableSet* changedObjects = [NSMutableSet setWithSet:notification.userInfo[NSInsertedObjectsKey] ?: [NSSet set]];
+        [changedObjects unionSet:notification.userInfo[NSUpdatedObjectsKey] ?: [NSSet set]];
+        for (NSManagedObject* object in changedObjects) {
+            if (![object isKindOfClass:[CDEpisode class]]) continue;
+            CDEpisode* episode = (CDEpisode*)object;
+            NSString* previousHash = episode.changedValuesForCurrentEvent[@"objectHash"];
+            if ([self.episodeCacheHashes containsObject:episode.objectHash ?: @""] ||
+                [self.episodeCacheHashes containsObject:previousHash ?: @""]) {
+                episodeCacheChanged = YES;
+                break;
+            }
+        }
+    }
+    if (!episodeCacheChanged) {
+        return;
+    }
+
+    self.episodeCacheHashes = nil;
+    [self _rebuildEpisodeCacheForCurrentItems];
+    if (self.viewIfLoaded.window) {
+        [self.tableView reloadData];
+    }
+}
+
+- (CDEpisode*)_episodeForHash:(NSString*)hash {
+    if (hash.length == 0) return nil;
+    CDEpisode* cachedEpisode = self.episodeCache[hash];
+    if (!cachedEpisode) return nil;
+    if (!cachedEpisode.deleted && cachedEpisode.managedObjectContext) {
+        return cachedEpisode;
+    }
+
+    self.episodeCacheHashes = nil;
+    [self _rebuildEpisodeCacheForCurrentItems];
+    return self.episodeCache[hash];
 }
 
 - (void)_showLogFromAccessoryButton:(UIButton*)button {

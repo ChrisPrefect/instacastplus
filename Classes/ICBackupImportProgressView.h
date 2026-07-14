@@ -16,7 +16,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithFeedTitles:(NSArray<NSString *> *)feedTitles
                         categories:(ICBackupImportCategory)categories;
 
-- (void)show;
+- (void)showInWindow:(UIWindow*)window;
 - (void)close;
 - (void)closeWithCompletion:(void (^ _Nullable)(void))completion;
 
@@ -53,10 +53,13 @@ NS_ASSUME_NONNULL_BEGIN
 /// Mark a metadata category as completed with detail
 - (void)setMetadataCategoryCompleted:(ICBackupImportCategory)category detail:(NSString *)detail;
 
+/// Mark deferred work as durably queued but not completed
+- (void)setMetadataCategoryQueued:(ICBackupImportCategory)category count:(NSInteger)count;
+
 #pragma mark - Completion
 
 /// Show completion state with summary text
-- (void)showCompletionWithSummary:(NSString *)summary;
+- (void)showCompletionWithSummary:(NSString *)summary downloadsQueued:(BOOL)downloadsQueued;
 
 #pragma mark - Cancel
 

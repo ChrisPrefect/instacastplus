@@ -15,17 +15,35 @@
 #import "CDEpisode+ShowNotes.h"
 #import "EpisodePlayComboButton.h"
 
+static void ICConfigureDownloadRetryButton(UIButton* button)
+{
+    [button setTitle:@"Retry".ls forState:UIControlStateNormal];
+    [button setImage:[UIImage systemImageNamed:@"arrow.clockwise"] forState:UIControlStateNormal];
+    [button sizeToFit];
+}
+
+static CGFloat ICDownloadRetryButtonWidth(void)
+{
+    UIButton* button = [UIButton buttonWithType:UIButtonTypeSystem];
+    ICConfigureDownloadRetryButton(button);
+    return MAX(44, ceilf(button.intrinsicContentSize.width));
+}
+
 @interface DownloadsViewController ()
 @property (nonatomic, strong) UIView* functionOverlayView;
 @property (nonatomic, strong) UILabel* captionLabel;
 @property (nonatomic, strong) UIBarButtonItem* pauseItem;
 @property (nonatomic, strong) UIBarButtonItem* cancelItem;
+@property (nonatomic, copy) NSArray<CDEpisode*>* displayEpisodes;
+@property (nonatomic) NSUInteger activeDownloadCount;
 @end
 
 @implementation DownloadsViewController {
     BOOL _observing;
     BOOL _userAction;
     BOOL _didRestoreScrollPosition;
+    BOOL _clearingDownloadErrors;
+    BOOL _downloadErrorClearNeedsRetry;
 }
 
 + (DownloadsViewController*) downloadsViewController
@@ -51,18 +69,19 @@
         NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self name:CacheManagerDidUpdateNotification object:nil handler:^(NSNotification *notification) {
             NSArray* indexPaths = [weakSelf.tableView indexPathsForVisibleRows];
-            NSArray* cachingEpisodes = [[CacheManager sharedCacheManager] cachingEpisodes];
+            NSArray* displayEpisodes = weakSelf.displayEpisodes;
+            NSUInteger activeDownloadCount = weakSelf.activeDownloadCount;
             
             for(NSIndexPath* indexPath in indexPaths)
             {
-                if (indexPath.row >= [cachingEpisodes count]) {
+                if (indexPath.row >= activeDownloadCount || indexPath.row >= displayEpisodes.count) {
                     continue;
                 }
                 
                 DownloadsTableViewCell* cell = (DownloadsTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
                 if ([cell isKindOfClass:[DownloadsTableViewCell class]])
                 {
-                    CDEpisode* episode = [cachingEpisodes objectAtIndex:indexPath.row];
+                    CDEpisode* episode = [displayEpisodes objectAtIndex:indexPath.row];
                     [weakSelf _updateCellProgress:cell withEpisode:episode];
                 }
             }
@@ -73,14 +92,29 @@
         
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
             DownloadsViewController* strongSelf = weakSelf;
+            [strongSelf _rebuildDisplayEpisodes];
             if (strongSelf && !strongSelf->_userAction) {
                 [strongSelf.tableView reloadData];
             }
         }];
+        [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"failedDownloadEpisodes" task:^(id obj, NSDictionary *change) {
+            DownloadsViewController* strongSelf = weakSelf;
+            [strongSelf _rebuildDisplayEpisodes];
+            if (strongSelf && !strongSelf->_userAction) {
+                [strongSelf.tableView reloadData];
+                [strongSelf _updateCaption];
+                [strongSelf _updateToolbar];
+            }
+        }];
         
         [nc addObserver:self name:CacheManagerDidEndCachingNotification object:nil handler:^(NSNotification *notification) {
+            [weakSelf _rebuildDisplayEpisodes];
             [weakSelf _updateCaption];
-            [weakSelf dismissViewControllerAnimated:YES completion:NULL];
+            if (weakSelf.displayEpisodes.count == 0) {
+                [weakSelf dismissViewControllerAnimated:YES completion:NULL];
+            } else {
+                [weakSelf.tableView reloadData];
+            }
         }];
         
     }
@@ -91,6 +125,7 @@
         [nc removeHandlerForObserver:self name:CacheManagerDidEndCachingNotification object:nil];
 
         [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachingEpisodes"];
+        [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"failedDownloadEpisodes"];
     }
     
     _observing = observing;
@@ -130,6 +165,7 @@
     // Toolbar items werden in viewDidAppear gesetzt wenn Toolbar bereit ist
     self.pauseItem = pauseItem;
     self.cancelItem = cancelItem;
+    self.displayEpisodes = @[];
 }
 
 - (void) updateAppearance
@@ -149,6 +185,7 @@
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorInset = UIEdgeInsetsMake(0, 0, 0, 0);
     self.tableView.separatorColor = ICTableSeparatorColor;
+    [self _rebuildDisplayEpisodes];
     [self.tableView reloadData];
 
     // Caption Label direkt zur Toolbar hinzufügen (schwebendes Label, keine Bubble)
@@ -173,6 +210,8 @@
         UIBarButtonItem* flexSpace = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
         [self setToolbarItems:@[self.pauseItem, flexSpace, self.cancelItem]];
     }
+    [self _updateToolbar];
+    [self _updateCaption];
 }
 
 - (void) viewWillDisappear:(BOOL)animated
@@ -195,6 +234,10 @@
 - (void) _updateCellProgress:(DownloadsTableViewCell*)cell withEpisode:(CDEpisode*)episode
 {
 	CacheManager* cman = [CacheManager sharedCacheManager];
+	cell.showsErrorStatus = NO;
+	cell.rightContentAccessoryView = nil;
+	cell.progressView.hidden = NO;
+	cell.sizeLabel.numberOfLines = 1;
 	
 	double progress = [cman cacheProgressForEpisode:episode];
 	cell.progressView.progress = progress;
@@ -250,9 +293,57 @@
 	}
 }
 
+- (void) _rebuildDisplayEpisodes
+{
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    NSArray<CDEpisode*>* activeEpisodes = cacheManager.cachingEpisodes;
+    NSArray<CDEpisode*>* failedEpisodes = cacheManager.failedDownloadEpisodes;
+    NSMutableArray<CDEpisode*>* episodes = [NSMutableArray arrayWithCapacity:activeEpisodes.count + failedEpisodes.count];
+    NSMutableSet<NSString*>* seenEpisodeIdentities = [NSMutableSet setWithCapacity:activeEpisodes.count + failedEpisodes.count];
+    for (CDEpisode* episode in activeEpisodes) {
+        NSString* identity = episode.objectHash.length > 0
+            ? episode.objectHash
+            : episode.objectID.URIRepresentation.absoluteString;
+        if ([seenEpisodeIdentities containsObject:identity]) {
+            continue;
+        }
+        [seenEpisodeIdentities addObject:identity];
+        [episodes addObject:episode];
+    }
+    self.activeDownloadCount = episodes.count;
+    for (CDEpisode* episode in failedEpisodes) {
+        NSString* identity = episode.objectHash.length > 0
+            ? episode.objectHash
+            : episode.objectID.URIRepresentation.absoluteString;
+        if ([seenEpisodeIdentities containsObject:identity]) {
+            continue;
+        }
+        [seenEpisodeIdentities addObject:identity];
+        [episodes addObject:episode];
+    }
+    self.displayEpisodes = episodes;
+}
+
+- (NSString*) _failureTextForEpisode:(CDEpisode*)episode
+{
+    NSError* error = [[CacheManager sharedCacheManager] downloadErrorForEpisode:episode];
+    if (!error) {
+        return nil;
+    }
+    return [NSString stringWithFormat:@"%@\n%@", error.localizedDescription, @"Tap Retry to try the download again.".ls];
+}
+
 - (void) _updateToolbar
 {
+    if (self.toolbarItems.count == 0) {
+        return;
+    }
     UIBarButtonItem* pauseItem = self.toolbarItems[0];
+    BOOL hasActiveDownloads = self.activeDownloadCount > 0;
+    pauseItem.enabled = hasActiveDownloads;
+    self.cancelItem.title = hasActiveDownloads ? @"Cancel All".ls : @"Clear Errors".ls;
+    self.cancelItem.enabled = !_clearingDownloadErrors &&
+        (self.displayEpisodes.count > 0 || _downloadErrorClearNeedsRetry);
 
     if ([[CacheManager sharedCacheManager] isCachingSuspended]) {
         pauseItem.title = @"Resume".ls;
@@ -296,16 +387,23 @@
         {
             double rate = cman.rate;
 
-            if (rate > 1024) {
+            if (rate > 0) {
                 NSString* rateString = [NSByteCountFormatter stringFromByteCount:(long long)rate countStyle:NSByteCountFormatterCountStyleMemory];
                 self.captionLabel.text = [NSString stringWithFormat:@"%@/s", rateString];
             }
-            else if (rate == 0) {
+            else {
                 self.captionLabel.text = nil;
             }
         }
         else {
-            self.captionLabel.text = nil;
+            NSUInteger failedCount = cman.failedDownloadEpisodes.count;
+            if (failedCount == 1) {
+                self.captionLabel.text = @"1 download failed".ls;
+            } else if (failedCount > 1) {
+                self.captionLabel.text = [NSString stringWithFormat:@"%lu downloads failed".ls, (unsigned long)failedCount];
+            } else {
+                self.captionLabel.text = nil;
+            }
         }
     }
 }
@@ -319,10 +417,8 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    CacheManager* cman = [CacheManager sharedCacheManager];
-    
     if (section == 0) {
-        return [[cman cachingEpisodes] count];
+        return self.displayEpisodes.count;
     }
     
     return 0;
@@ -342,17 +438,14 @@
             cell = [[DownloadsTableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
         }
         [cell.playAccessoryButton removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
-        [cell.playAccessoryButton addTarget:self action:@selector(cancelCachingEpisode:) forControlEvents:UIControlEventTouchUpInside];
-        if (cell.playAccessoryButton.superview != cell.contentView) {
-            [cell.contentView addSubview:cell.playAccessoryButton];
-        }
         cell.backgroundColor = tableView.backgroundColor;
         
-        NSArray* episodes = [cman cachingEpisodes];
+        NSArray* episodes = self.displayEpisodes;
         CDEpisode* episode = [episodes objectAtIndex:indexPath.row];
         CDFeed* feed = episode.feed;
         
         cell.tag = indexPath.row;
+        cell.accessibilityIdentifier = episode.objectHash;
         
         // make sure the feed title is not repeated in episode title
         NSString* title = [episode cleanTitleUsingFeedTitle:feed.title];
@@ -361,6 +454,7 @@
         cell.accessoryView = nil;
         cell.accessoryType = UITableViewCellAccessoryNone;
         cell.playAccessoryButton.tag = indexPath.row;
+        cell.playAccessoryButton.accessibilityIdentifier = episode.objectHash;
         
         cell.imageView.tag = 0;
         cell.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
@@ -368,14 +462,37 @@
         
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
         [iman imageForURL:imageURL size:56 grayscale:NO sender:self completion:^(UIImage *image) {
-            if (image) {
+            if (image && [cell.accessibilityIdentifier isEqualToString:episode.objectHash]) {
                 cell.imageView.image = image;
                 cell.imageView.tag = 1;
             }
         }];
 
         
-        [self _updateCellProgress:cell withEpisode:episode];
+        BOOL isActiveDownload = indexPath.row < self.activeDownloadCount;
+        NSError* downloadError = isActiveDownload ? nil : [cman downloadErrorForEpisode:episode];
+        if (downloadError) {
+            [cell.playAccessoryButton removeFromSuperview];
+            UIButton* retryButton = [UIButton buttonWithType:UIButtonTypeSystem];
+            ICConfigureDownloadRetryButton(retryButton);
+            retryButton.accessibilityLabel = @"Retry".ls;
+            retryButton.tag = indexPath.row;
+            retryButton.accessibilityIdentifier = episode.objectHash;
+            [retryButton addTarget:self action:@selector(retryFailedDownload:) forControlEvents:UIControlEventTouchUpInside];
+            cell.rightContentAccessoryView = retryButton;
+            cell.showsErrorStatus = YES;
+            cell.progressView.progress = 0;
+            cell.sizeLabel.text = [self _failureTextForEpisode:episode];
+            cell.timeLabel.text = nil;
+        } else {
+            cell.rightContentAccessoryView = nil;
+            cell.showsErrorStatus = NO;
+            if (cell.playAccessoryButton.superview != cell.contentView) {
+                [cell.contentView addSubview:cell.playAccessoryButton];
+            }
+            [cell.playAccessoryButton addTarget:self action:@selector(cancelCachingEpisode:) forControlEvents:UIControlEventTouchUpInside];
+            [self _updateCellProgress:cell withEpisode:episode];
+        }
         
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
     
@@ -385,6 +502,26 @@
     
     
     return nil;
+}
+
+- (CGFloat)tableView:(UITableView*)tableView heightForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    NSArray<CDEpisode*>* episodes = self.displayEpisodes;
+    if (indexPath.row >= episodes.count) {
+        return 70;
+    }
+    BOOL isActiveDownload = indexPath.row < self.activeDownloadCount;
+    NSString* failureText = isActiveDownload ? nil : [self _failureTextForEpisode:episodes[indexPath.row]];
+    if (failureText.length == 0) {
+        return 70;
+    }
+    CGFloat retryButtonWidth = ICDownloadRetryButtonWidth();
+    CGFloat availableWidth = MAX(1, CGRectGetWidth(tableView.bounds) - 76 - retryButtonWidth - 5);
+    CGRect textBounds = [failureText boundingRectWithSize:CGSizeMake(availableWidth, CGFLOAT_MAX)
+                                                 options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+                                              attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(11)]}
+                                                 context:nil];
+    return MAX(82, 43 + ceilf(CGRectGetHeight(textBounds)) + 9);
 }
 
 
@@ -399,14 +536,27 @@
 // Override to support conditional rearranging of the table view.
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    return (indexPath.section == 0);
+    return indexPath.section == 0 && indexPath.row < self.activeDownloadCount;
 }
 
 - (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)fromIndexPath toIndexPath:(NSIndexPath *)toIndexPath
 {
+    NSUInteger activeCount = self.activeDownloadCount;
+    if (fromIndexPath.row >= activeCount || toIndexPath.row >= activeCount) {
+        return;
+    }
     _userAction = YES;
     [[CacheManager sharedCacheManager] reorderCachingEpisodeFromIndex:fromIndexPath.row toIndex:toIndexPath.row];
     _userAction = NO;
+}
+
+- (NSIndexPath*)tableView:(UITableView*)tableView targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath*)sourceIndexPath toProposedIndexPath:(NSIndexPath*)proposedDestinationIndexPath
+{
+    NSUInteger activeCount = self.activeDownloadCount;
+    if (activeCount == 0) {
+        return sourceIndexPath;
+    }
+    return [NSIndexPath indexPathForRow:MIN(proposedDestinationIndexPath.row, activeCount - 1) inSection:0];
 }
 
 - (NSIndexPath *)tableView:(UITableView *)tableView willSelectRowAtIndexPath:(NSIndexPath *)indexPath
@@ -431,13 +581,36 @@
 - (void) cancelCachingEpisode:(UIButton*)button
 {
     CacheManager* cman = [CacheManager sharedCacheManager];
-    
-	NSInteger index = button.tag;
-    NSArray* episodes = [cman cachingEpisodes];
-    
-    if ([episodes count] > index) {
-        CDEpisode* episode = [episodes objectAtIndex:index];
+    NSString* episodeHash = button.accessibilityIdentifier;
+    if (episodeHash.length == 0) {
+        return;
+    }
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
+    if (episode && [cman isCachingEpisode:episode]) {
         [cman cancelCachingEpisode:episode disableAutoDownload:YES];
+    }
+}
+
+- (void) retryFailedDownload:(UIButton*)button
+{
+    NSString* episodeHash = button.accessibilityIdentifier;
+    if (episodeHash.length == 0) {
+        return;
+    }
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    if (episode && [cacheManager downloadErrorForEpisode:episode]) {
+        NSError* retryError = nil;
+        if (![cacheManager retryFailedDownloadForEpisode:episode error:&retryError] && retryError) {
+            NSUInteger row = [self.displayEpisodes indexOfObjectPassingTest:^BOOL(CDEpisode* candidate, NSUInteger index, BOOL* stop) {
+                return [candidate.objectHash isEqualToString:episodeHash];
+            }];
+            if (row != NSNotFound) {
+                NSIndexPath* indexPath = [NSIndexPath indexPathForRow:row inSection:0];
+                [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+            }
+            [self presentError:retryError];
+        }
     }
 }
 
@@ -448,6 +621,25 @@
     for(CDEpisode* episode in [cachingEpisode copy]) {
         [cman cancelCachingEpisode:episode disableAutoDownload:YES];
     }
+    _clearingDownloadErrors = YES;
+    _downloadErrorClearNeedsRetry = NO;
+    [self _updateToolbar];
+    __weak typeof(self) weakSelf = self;
+    [cman clearAllDownloadErrorsWithCompletion:^(NSError* error) {
+        DownloadsViewController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf->_clearingDownloadErrors = NO;
+        strongSelf->_downloadErrorClearNeedsRetry = (error != nil);
+        [strongSelf _rebuildDisplayEpisodes];
+        [strongSelf.tableView reloadData];
+        [strongSelf _updateCaption];
+        [strongSelf _updateToolbar];
+        if (error) {
+            [strongSelf presentError:error];
+        } else if (strongSelf.displayEpisodes.count == 0) {
+            [strongSelf dismissViewControllerAnimated:YES completion:nil];
+        }
+    }];
 }
 
 - (void) toggleEditing:(id)sender
@@ -497,7 +689,8 @@
 - (void) _loadImagesForOnscreenRows
 {
     [[ImageCacheManager sharedImageCacheManager] cancelImageCacheOperationsWithSender:self];
-    
+
+	NSArray* episodes = self.displayEpisodes;
 	NSArray *visiblePaths = [self.tableView indexPathsForVisibleRows];
 	for (NSIndexPath *indexPath in visiblePaths)
 	{
@@ -505,16 +698,16 @@
         
         if (cell.imageView.tag == 0)
         {
-            CacheManager* cman = [CacheManager sharedCacheManager];
-            
-            NSArray* episodes = [cman cachingEpisodes];
+            if (indexPath.row >= episodes.count) {
+                continue;
+            }
             CDEpisode* episode = [episodes objectAtIndex:indexPath.row];
             
             NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
             
             ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
             [iman imageForURL:imageURL size:56 grayscale:NO sender:self completion:^(UIImage *image) {
-                if (image) {
+                if (image && [cell.accessibilityIdentifier isEqualToString:episode.objectHash]) {
                     cell.imageView.image = image;
                     cell.imageView.tag = 1;
                 }

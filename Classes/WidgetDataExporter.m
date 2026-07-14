@@ -88,8 +88,13 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 @property (nonatomic, strong) NSDictionary *lastPlayedEpisodeDict;
 @property (nonatomic, strong) NSDictionary *lastPlayedExtraFields;
 
-// Track the structural now-playing state that warrants a timeline reload.
-@property (nonatomic, copy) NSString *lastNowPlayingReloadSignature;
+// Navigation availability is structural state. Playback position ticks reuse it until an
+// episode/queue/list/cache transition explicitly advances this generation.
+@property (nonatomic) NSUInteger nowPlayingNavigationGeneration;
+@property (nonatomic) NSUInteger cachedNowPlayingNavigationGeneration;
+@property (nonatomic) BOOL hasCachedNowPlayingNavigationState;
+@property (nonatomic) BOOL cachedHasNextEpisode;
+@property (nonatomic, copy) NSString *cachedNowPlayingEpisodeHash;
 
 - (void)_persistLastPlayedCache;
 - (void)_restoreLastPlayedCache;
@@ -106,7 +111,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_consumePendingWidgetActionIfNeeded;
 - (void)_clearPendingWidgetActionFile;
 - (void)_handleWidgetAction:(NSString *)action chapterIndex:(NSNumber *)chapterIndex;
-- (NSString *)_currentNowPlayingReloadSignature;
+- (void)_invalidateNowPlayingNavigationCache;
 - (NSInteger)_resolvedLiveChapterIndexForChapters:(NSArray<ICMetadataChapter *> *)liveChapters fallbackIndex:(NSInteger)fallbackIndex currentPosition:(NSInteger)currentPosition;
 - (BOOL)_hasNextEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as;
 - (BOOL)_hasPreviousEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as;
@@ -178,6 +183,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // Cache events
     [nc addObserver:self selector:@selector(_cacheDidFinish:) name:CacheManagerDidFinishCachingEpisodeNotification object:nil];
     [nc addObserver:self selector:@selector(_cacheDidClear:) name:CacheManagerDidClearCacheNotification object:nil];
+    [nc addObserver:self selector:@selector(_cacheDidClear:) name:CacheManagerDidRestoreCacheNotification object:nil];
     [[CacheManager sharedCacheManager] addObserver:self forKeyPath:@"numberOfDownloadedBytes" options:0 context:NULL];
 
     // Playlist events
@@ -185,6 +191,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     AudioSession *audioSession = [AudioSession sharedAudioSession];
     [audioSession addTaskObserver:self forKeyPath:@"playlist" task:^(__unused id obj, __unused NSDictionary *change) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            [self _invalidateNowPlayingNavigationCache];
             [self exportNowPlayingSnapshot];
             [WidgetKitHelper reloadNowPlayingTimeline];
         });
@@ -252,6 +259,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidStart:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
         [WidgetKitHelper reloadNowPlayingTimeline];
@@ -260,6 +268,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidEnd:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         [self _appendListeningDeltaSinceLastTimestampAtDate:[NSDate date]];
         self.lastListeningTimestamp = nil;
         self.lastPlaybackStatsRefreshDate = nil;
@@ -272,6 +281,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playbackDidChangeEpisode:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         NSString *previousHash = self.lastPlayedEpisodeDict[@"id"];
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
@@ -291,6 +301,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_episodeDidFinish:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         NSString *previousHash = self.lastPlayedEpisodeDict[@"id"];
         [self exportNowPlayingSnapshot];
         [self _persistLastPlayedCache];
@@ -317,6 +328,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_feedsDidRefresh:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         [self exportListsSnapshot];
         [WidgetKitHelper reloadListsTimeline];
     });
@@ -324,6 +336,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_episodesAdded:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         NSArray<CDEpisode *> *episodes = note.userInfo[@"episodes"];
         [self _updateStatsCacheForAddedEpisodes:episodes];
         // This notification fires once PER FEED during a refresh. Exporting stats + lists and
@@ -344,6 +357,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_cacheDidFinish:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         [self _debouncedListsExport];
         [self exportStatsSnapshot];
         [WidgetKitHelper reloadListsTimeline];
@@ -353,6 +367,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_cacheDidClear:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         [self _debouncedListsExport];
         [self exportStatsSnapshot];
         [WidgetKitHelper reloadListsTimeline];
@@ -362,6 +377,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 - (void)_playlistDidChange:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self _invalidateNowPlayingNavigationCache];
         [self exportListsSnapshot];
         [WidgetKitHelper reloadListsTimeline];
     });
@@ -381,6 +397,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // block below changedValuesForCurrentEvent is already empty. (Same approach as
     // ICiCloudSyncManager's change filter.)
     if (![self _coreDataChangeAffectsLists:note]) return;
+    [self _invalidateNowPlayingNavigationCache];
 
     // A handful of updated episodes (consumed/starred toggles) only needs the incremental
     // per-episode export; structural changes (inserts/deletes, feed/list updates, bulk
@@ -675,7 +692,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // up the updated JSON. Critical state changes (play/pause, episode change) are
     // handled by direct reloadNowPlayingTimeline calls in their notification handlers.
     [self exportNowPlayingSnapshot];
-    self.lastNowPlayingReloadSignature = [self _currentNowPlayingReloadSignature];
 }
 
 - (void)_debouncedListsExport {
@@ -727,7 +743,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     snapshot[@"timestamp"] = [self _iso8601String:[NSDate date]];
 
     if (episode) {
-        NSMutableDictionary *episodeDict = [[self _episodeDictForEpisode:episode withImageSize:kImageSizeMedium] mutableCopy];
+        NSSet<NSString *> *cachedEpisodeHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
+        NSMutableDictionary *episodeDict = [[self _episodeDictForEpisode:episode
+                                                            withImageSize:kImageSizeMedium
+                                                     cachedEpisodeHashes:cachedEpisodeHashes] mutableCopy];
         NSInteger currentPosition = MAX(0, (NSInteger)lrint(pm.time));
         NSInteger currentDuration = (pm.duration > 0) ? (NSInteger)lrint(pm.duration) : episode.duration;
         episodeDict[@"position"] = @(currentPosition);
@@ -825,8 +844,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
         }
 
         // Next/prev episode availability
-        snapshot[@"hasPreviousEpisode"] = @([self _hasPreviousEpisodeForPlaybackManager:pm audioSession:as]);
-        snapshot[@"hasNextEpisode"] = @([self _hasNextEpisodeForPlaybackManager:pm audioSession:as]);
+        BOOL hasPreviousEpisode = [self _hasPreviousEpisodeForPlaybackManager:pm audioSession:as];
+        BOOL hasNextEpisode = [self _hasNextEpisodeForPlaybackManager:pm audioSession:as];
+        snapshot[@"hasPreviousEpisode"] = @(hasPreviousEpisode);
+        snapshot[@"hasNextEpisode"] = @(hasNextEpisode);
 
         // Cache for fallback when playback ends.
         self.lastPlayedEpisodeDict = [episodeDict copy];
@@ -861,7 +882,6 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     }
 
     [self _writeJSON:snapshot toFile:kNowPlayingFile];
-    self.lastNowPlayingReloadSignature = [self _currentNowPlayingReloadSignature];
 }
 
 - (void)_scheduleDebouncedNowPlayingExport {
@@ -944,56 +964,30 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     return 0;
 }
 
-- (NSString *)_currentNowPlayingReloadSignature {
-    PlaybackManager *pm = [PlaybackManager playbackManager];
-    AudioSession *as = [AudioSession sharedAudioSession];
-    CDEpisode *episode = pm.playingEpisode;
-    NSString *episodeHash = episode.objectHash ?: @"";
-    BOOL isPaused = (!episode || pm.isPaused);
-    NSInteger chapterIndex = NSNotFound;
-    NSString *chapterTitle = @"";
-    if (episode && pm.chapters.count > 0) {
-        NSInteger currentPosition = MAX(0, (NSInteger)lrint(pm.time));
-        NSInteger resolvedIndex = [self _resolvedLiveChapterIndexForChapters:pm.chapters
-                                                                fallbackIndex:pm.currentChapter
-                                                               currentPosition:currentPosition];
-        if (resolvedIndex >= 0 && resolvedIndex < (NSInteger)pm.chapters.count) {
-            chapterIndex = resolvedIndex;
-            ICMetadataChapter *chapter = pm.chapters[resolvedIndex];
-            chapterTitle = chapter.title ?: @"";
-        }
-    }
-
-    NSString *playbackSpeed = [self _playbackSpeedString:pm.speedControl] ?: @"";
-    NSString *chapterArtSource = @"";
-    if (episode && pm.currentArtwork >= 0 && pm.currentArtwork < (NSInteger)pm.artworks.count) {
-        chapterArtSource = [NSString stringWithFormat:@"%@:%ld", episodeHash, (long)pm.currentArtwork];
-    }
-
-    NSTimeInterval sleepTimerState = as.stopDate ? as.stopDate.timeIntervalSince1970 : 0;
-    BOOL hasPreviousEpisode = [self _hasPreviousEpisodeForPlaybackManager:pm audioSession:as];
-    BOOL hasNextEpisode = [self _hasNextEpisodeForPlaybackManager:pm audioSession:as];
-    NSInteger skipForwardSeconds = episode ? [episode.feed integerForKey:PlayerSkipForwardPeriod] : 0;
-    NSInteger skipBackwardSeconds = episode ? [episode.feed integerForKey:PlayerSkipBackPeriod] : 0;
-    return [NSString stringWithFormat:@"%@|%d|%ld|%@|%@|%@|%d|%d|%ld|%ld|%.0f",
-            episodeHash,
-            isPaused,
-            (long)chapterIndex,
-            chapterTitle,
-            chapterArtSource,
-            playbackSpeed,
-            hasPreviousEpisode,
-            hasNextEpisode,
-            (long)skipForwardSeconds,
-            (long)skipBackwardSeconds,
-            sleepTimerState];
+- (void)_invalidateNowPlayingNavigationCache {
+    self.nowPlayingNavigationGeneration += 1;
+    self.hasCachedNowPlayingNavigationState = NO;
+    self.cachedNowPlayingEpisodeHash = nil;
 }
 
 - (BOOL)_hasNextEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as {
-    if (!pm.playingEpisode) {
+    CDEpisode *episode = pm.playingEpisode;
+    if (!episode) {
         return NO;
     }
-    return ([as nextPlayableEpisode] != nil);
+    NSString *episodeHash = episode.objectHash ?: episode.guid ?: @"";
+    if (self.hasCachedNowPlayingNavigationState &&
+        self.cachedNowPlayingNavigationGeneration == self.nowPlayingNavigationGeneration &&
+        [self.cachedNowPlayingEpisodeHash isEqualToString:episodeHash]) {
+        return self.cachedHasNextEpisode;
+    }
+
+    BOOL hasNextEpisode = ([as nextPlayableEpisode] != nil);
+    self.cachedNowPlayingEpisodeHash = episodeHash;
+    self.cachedNowPlayingNavigationGeneration = self.nowPlayingNavigationGeneration;
+    self.cachedHasNextEpisode = hasNextEpisode;
+    self.hasCachedNowPlayingNavigationState = YES;
+    return hasNextEpisode;
 }
 
 - (CDEpisode *)_previousEpisodeForPlaybackManager:(PlaybackManager *)pm audioSession:(AudioSession *)as {
@@ -1026,6 +1020,8 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 - (void)_exportListsAffectedByEpisodeHashes:(NSArray<NSString *> *)episodeHashes {
     if (!self.containerURL || episodeHashes.count == 0) return;
     if (![WidgetKitHelper isSmartListWidgetInstalled]) return;
+    NSSet<NSString *> *cachedEpisodeHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
+    NSSet<NSString *> *requestedEpisodeHashes = [NSSet setWithArray:episodeHashes];
 
     dispatch_async(self.listsExportQueue, ^{
         CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
@@ -1035,17 +1031,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
         NSManagedObjectContext *backgroundContext = [DMANAGER newExportBackgroundContext];
         [backgroundContext performBlockAndWait:^{
-            NSMutableArray<CDEpisode *> *episodes = [NSMutableArray array];
-            for (NSString *episodeHash in episodeHashes) {
-                NSFetchRequest *episodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-                episodeRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash == %@", episodeHash];
-                episodeRequest.fetchLimit = 1;
-                CDEpisode *episode = [[backgroundContext executeFetchRequest:episodeRequest error:nil] firstObject];
-                if (episode) {
-                    [episodes addObject:episode];
-                }
-            }
-            if (episodes.count == 0) return;
+            NSFetchRequest *episodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+            episodeRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", requestedEpisodeHashes.allObjects];
+            NSArray<CDEpisode *> *episodes = [backgroundContext executeFetchRequest:episodeRequest error:nil] ?: @[];
 
             NSFetchRequest *request = [[NSFetchRequest alloc] initWithEntityName:@"List"];
             request.includesSubentities = YES;
@@ -1061,12 +1049,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 [seenUIDs addObject:uid];
 
                 NSSet *hashesInFile = [self _episodeHashesInSnapshotFileForListUID:uid];
-                BOOL affects = NO;
+                BOOL affects = [hashesInFile intersectsSet:requestedEpisodeHashes];
                 for (CDEpisode *episode in episodes) {
-                    if ([hashesInFile containsObject:episode.objectHash ?: @""]) {
-                        affects = YES;  // update or removal of a currently shown episode
-                        break;
-                    }
+                    if (affects) break;
                     if ([list isKindOfClass:[CDSmartPlaylist class]]) {
                         continue;  // additions arrive via the reconciliation pass
                     }
@@ -1083,7 +1068,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 if (!affects) continue;
 
                 affectedLists++;
-                [self _buildSnapshotForList:list intoWrites:writes indexPatches:indexPatches];
+                [self _buildSnapshotForList:list
+                                  intoWrites:writes
+                                indexPatches:indexPatches
+                     cachedEpisodeHashes:cachedEpisodeHashes];
             }
         }];
 
@@ -1105,7 +1093,10 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 // One list's index entry + episodes snapshot. Keep in sync with the full pass in
 // exportListsSnapshot. Must run inside the background context's queue.
-- (void)_buildSnapshotForList:(CDList *)list intoWrites:(NSMutableArray *)writes indexPatches:(NSMutableDictionary *)indexPatches {
+- (void)_buildSnapshotForList:(CDList *)list
+                   intoWrites:(NSMutableArray *)writes
+                 indexPatches:(NSMutableDictionary *)indexPatches
+      cachedEpisodeHashes:(NSSet<NSString *> *)cachedEpisodeHashes {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"id"] = list.uid ?: @"";
     d[@"name"] = list.name ?: @"";
@@ -1122,7 +1113,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     NSMutableArray *episodeDicts = [NSMutableArray array];
     for (CDEpisode *episode in [list sortedEpisodesWithLimit:kMaxEpisodesPerList]) {
         if ((NSInteger)episodeDicts.count >= kMaxEpisodesPerList) break;
-        [episodeDicts addObject:[self _episodeDictForEpisode:episode withImageSize:kImageSizeMedium]];
+        [episodeDicts addObject:[self _episodeDictForEpisode:episode
+                                               withImageSize:kImageSizeMedium
+                                        cachedEpisodeHashes:cachedEpisodeHashes]];
     }
 
     d[@"episodeCount"] = @(episodeDicts.count);
@@ -1225,6 +1218,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     self.listsExportRunning = YES;
 
     BOOL foreground = ([UIApplication sharedApplication].applicationState == UIApplicationStateActive);
+    NSSet<NSString *> *cachedEpisodeHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
     dispatch_async(self.listsExportQueue, ^{
         CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
         __block CFAbsoluteTime querySeconds = 0, countSeconds = 0, fetchSeconds = 0, imageSeconds = 0;
@@ -1292,7 +1286,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 CFAbsoluteTime iT = CFAbsoluteTimeGetCurrent();
                 for (CDEpisode *ep in episodes) {
                     if (count >= kMaxEpisodesPerList) break;
-                    [episodeDicts addObject:[self _episodeDictForEpisode:ep withImageSize:kImageSizeMedium]];
+                    [episodeDicts addObject:[self _episodeDictForEpisode:ep
+                                                           withImageSize:kImageSizeMedium
+                                                    cachedEpisodeHashes:cachedEpisodeHashes]];
                     count++;
                 }
                 imageSeconds += CFAbsoluteTimeGetCurrent() - iT;
@@ -1391,6 +1387,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     // type directly). Export episode data ONLY for those combos.
     NSUserDefaults *shared = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.iteconomy.instacastplus"];
     NSArray<NSDictionary<NSString *, NSString *> *> *combos = [shared arrayForKey:[WidgetKitHelper requestedPodcastKeysDefaultsKey]];
+    NSSet<NSString *> *cachedEpisodeHashes = [[CacheManager sharedCacheManager] cachedEpisodeObjectHashes] ?: [NSSet set];
     {
         if (combos.count == 0) return;
         dispatch_async(self.listsExportQueue, ^{
@@ -1409,14 +1406,18 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                     if (!feed) continue;
 
                     NSFetchRequest *epReq = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-                    epReq.predicate = [self _predicateForPodcastFilter:filter feedUID:uid];
+                    epReq.predicate = [self _predicateForPodcastFilter:filter
+                                                               feedUID:uid
+                                                   cachedEpisodeHashes:cachedEpisodeHashes];
                     epReq.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO] ];
                     epReq.fetchLimit = kMaxEpisodesPerList;
                     NSArray *episodes = [ctx executeFetchRequest:epReq error:nil];
 
                     NSMutableArray *episodeDicts = [NSMutableArray array];
                     for (CDEpisode *ep in episodes) {
-                        [episodeDicts addObject:[self _episodeDictForEpisode:ep withImageSize:kImageSizeMedium]];
+                        [episodeDicts addObject:[self _episodeDictForEpisode:ep
+                                                               withImageSize:kImageSizeMedium
+                                                        cachedEpisodeHashes:cachedEpisodeHashes]];
                     }
 
                     NSString *key = [NSString stringWithFormat:@"feed.%@.%@", uid, filter];
@@ -1444,7 +1445,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 }
 
 // Store predicate for a podcast source + filter — mirrors CDEpisodeList's filter semantics.
-- (NSPredicate *)_predicateForPodcastFilter:(NSString *)filter feedUID:(NSString *)uid {
+- (NSPredicate *)_predicateForPodcastFilter:(NSString *)filter
+                                    feedUID:(NSString *)uid
+                        cachedEpisodeHashes:(NSSet<NSString *> *)cachedEpisodeHashes {
     NSMutableArray *subs = [NSMutableArray array];
     [subs addObject:[NSPredicate predicateWithFormat:@"feed.uid == %@ AND feed.subscribed == YES AND archived == NO", uid]];
     if ([filter isEqualToString:@"unplayed"]) {
@@ -1454,8 +1457,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     } else if ([filter isEqualToString:@"favorites"]) {
         [subs addObject:[NSPredicate predicateWithFormat:@"starred == YES"]];
     } else if ([filter isEqualToString:@"downloaded"]) {
-        NSArray *cachedHashes = [[[CacheManager sharedCacheManager] cachedEpisodes] valueForKey:@"objectHash"];
-        [subs addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", cachedHashes ?: @[]]];
+        [subs addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", cachedEpisodeHashes.allObjects ?: @[]]];
     }
     // "all": latest episodes, no extra filter.
     return [NSCompoundPredicate andPredicateWithSubpredicates:subs];
@@ -1650,18 +1652,16 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
     // 1. Widget-specific color (if set)
     if (![USER_DEFAULTS boolForKey:WidgetThemeDefaultActive]) {
-        NSData *colorData = [USER_DEFAULTS objectForKey:WidgetThemeColorCode];
-        if (colorData) {
-            color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-        }
+        color = [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                       hexKey:WidgetThemeColorHexCode
+                             legacyArchiveKey:WidgetThemeColorCode];
     }
 
     // 2. Fallback: Interface color
     if (!color && ![USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive]) {
-        NSData *colorData = [USER_DEFAULTS objectForKey:InterfaceThemeColorCode];
-        if (colorData) {
-            color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-        }
+        color = [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                       hexKey:InterfaceThemeColorHexCode
+                             legacyArchiveKey:InterfaceThemeColorCode];
     }
 
     // 3. Fallback: Default Instacast orange #FF5300
@@ -1699,7 +1699,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
 
 #pragma mark - Episode Dictionary Builder
 
-- (NSDictionary *)_episodeDictForEpisode:(CDEpisode *)episode withImageSize:(NSInteger)size {
+- (NSDictionary *)_episodeDictForEpisode:(CDEpisode *)episode
+                            withImageSize:(NSInteger)size
+                     cachedEpisodeHashes:(NSSet<NSString *> *)cachedEpisodeHashes {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"id"] = episode.objectHash ?: @"";
     d[@"title"] = episode.title ?: @"";
@@ -1708,7 +1710,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     d[@"position"] = @(episode.position);
     d[@"consumed"] = @(episode.consumed);
     d[@"starred"] = @(episode.starred);
-    d[@"downloaded"] = @(episode.downloaded);
+    d[@"downloaded"] = @([cachedEpisodeHashes containsObject:episode.objectHash]);
 
     if (episode.pubDate) {
         d[@"pubDate"] = [self _iso8601String:episode.pubDate];
@@ -1838,12 +1840,15 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     NSString *dayKey = [self.cachedStatsDayKey copy];
     NSDate *now = [NSDate date];
     NSDate *startOfToday = [[NSCalendar currentCalendar] startOfDayForDate:now];
+    CacheManager *cacheManager = [CacheManager sharedCacheManager];
+    NSUInteger downloadedCountSnapshot = cacheManager.cachedEpisodeObjectHashes.count;
+    unsigned long long downloadedSizeSnapshot = cacheManager.numberOfDownloadedBytes;
 
     dispatch_async(self.statsRefreshQueue, ^{
         __block NSUInteger newEpisodesCount = 0;
         __block NSUInteger subscribedCount = 0;
         __block NSUInteger unplayedCount = 0;
-        __block NSUInteger downloadedCount = 0;
+        __block NSUInteger downloadedCount = downloadedCountSnapshot;
 
         NSDictionary *listeningLog = [self _readListeningLog];
         NSString *todayKey = [self _dateKeyForDate:now];
@@ -1877,14 +1882,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
                 NSUInteger unplayedResult = [backgroundContext countForFetchRequest:unplayedRequest error:nil];
                 unplayedCount = (unplayedResult == NSNotFound) ? 0 : unplayedResult;
 
-                NSFetchRequest *downloadedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-                downloadedRequest.predicate = [NSPredicate predicateWithFormat:@"downloaded == YES"];
-                downloadedRequest.resultType = NSCountResultType;
-                NSUInteger downloadedResult = [backgroundContext countForFetchRequest:downloadedRequest error:nil];
-                downloadedCount = (downloadedResult == NSNotFound) ? 0 : downloadedResult;
             }];
         }
-        unsigned long long downloadedSizeBytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytes];
+        unsigned long long downloadedSizeBytes = downloadedSizeSnapshot;
 
         dispatch_async(dispatch_get_main_queue(), ^{
             self.statsRefreshInProgress = NO;

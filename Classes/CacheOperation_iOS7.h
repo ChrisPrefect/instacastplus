@@ -16,7 +16,11 @@ extern NSString* kUserDefaultsResumeInfoKey;
 
 - (id) initWithURL:(NSURL*)remoteURL localURL:(NSURL*)localURL identifier:(NSString*)identifier expectedContentLength:(long long)expectedContentLength;
 + (void) removeCacheForRemoteURL:(NSURL*)remoteURL atLocalURL:(NSURL*)url;
++ (void) prepareResumeInfoStore;
 + (void) deleteResumeInfoForIdentifier:(NSString*)identifier;
++ (void) deleteAllResumeInfo;
+- (void)claimFinalizedDownload;
+- (int64_t)drainLoadedBytesSinceLastUpdate;
 
 @property (readonly, copy) NSURL* remoteURL;
 @property (readonly, copy) NSURL* localURL;
@@ -27,7 +31,10 @@ extern NSString* kUserDefaultsResumeInfoKey;
 @property (readonly) double progress;
 @property (readonly) NSTimeInterval estimatedTimeLeft;
 @property (readonly) long long expectedContentLength;
+@property (readonly) unsigned long long finalFileSize;
 @property (readonly, strong) NSDate* startDate;
+@property (readonly, strong) NSError* terminalError;
+@property long long expectedDuration;
 
 @property (assign) BOOL failed;
 @property (strong) NSString* username;
@@ -37,6 +44,7 @@ extern NSString* kUserDefaultsResumeInfoKey;
 
 // mark the caching operation as being invoked by the app and not by the user
 @property (assign) BOOL automatic;
+@property BOOL reportsFailureToUser;
 @end
 
 

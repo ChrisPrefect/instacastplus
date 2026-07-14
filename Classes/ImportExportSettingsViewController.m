@@ -16,8 +16,80 @@
 #import "CacheManager.h"
 #import "AppleWatchSyncManager.h"
 #import "AppleWatchEpisodeState.h"
+#import "CDFeedProperty.h"
 #import "InstacastPlus-Swift.h"
+#import <QuartzCore/QuartzCore.h>
 #import <math.h>
+#import <objc/runtime.h>
+#import <string.h>
+
+static NSString *ICBackupKnownFeedPropertyType(NSString *key) {
+    if ([key isEqualToString:kUserDefinedFeedName] ||
+        [key isEqualToString:kFeedPropertyAutoTranscribe] ||
+        [key isEqualToString:kFeedPropertyAutoChapters] ||
+        [key isEqualToString:kFeedPropertyAutoSkipSponsors] ||
+        [key isEqualToString:@"preferredTranscriptLanguage"] ||
+        [key isEqualToString:@"preferredTranscriptURL"] ||
+        [key isEqualToString:@"cachedPlayerTintColor"] ||
+        [key hasSuffix:@"_auto_skip_chapter_name"]) {
+        return @"string";
+    }
+    if ([key hasSuffix:@"_auto_skip_start_period"] ||
+        [key hasSuffix:@"_auto_skip_end_period"] ||
+        [key rangeOfString:@"_auto_skip_start_chapter_"].location != NSNotFound ||
+        [key rangeOfString:@"_auto_skip_end_chapter_"].location != NSNotFound) {
+        return @"double";
+    }
+    if ([key hasSuffix:@"_old_episode_delete_days"] ||
+        [key isEqualToString:PlayerNearChapterEndForwardSkipMode] ||
+        [key isEqualToString:PlayerNearChapterEndForwardSkipWindow]) {
+        return @"integer";
+    }
+    return nil;
+}
+
+static NSString *ICBackupFeedPropertyType(CDFeedProperty *property) {
+    NSString *knownType = ICBackupKnownFeedPropertyType(property.key);
+    if (knownType) return knownType;
+
+    id defaultValue = [USER_DEFAULTS objectForKey:property.key];
+    if ([defaultValue isKindOfClass:[NSString class]]) return @"string";
+    if ([defaultValue isKindOfClass:[NSNumber class]]) {
+        NSNumber *number = defaultValue;
+        if (CFGetTypeID((__bridge CFTypeRef)number) == CFBooleanGetTypeID()) return @"bool";
+        const char *objCType = number.objCType;
+        if (strcmp(objCType, @encode(double)) == 0 || strcmp(objCType, @encode(float)) == 0) return @"double";
+        return @"integer";
+    }
+
+    if (property.stringValue != nil) return @"string";
+    if (property.doubleValue != 0.0) return @"double";
+    if (property.int32Value != 0) return @"integer";
+    return @"bool";
+}
+
+static NSString* ICSafeExportFilenameComponent(NSString* value)
+{
+    NSMutableCharacterSet* forbidden = [NSMutableCharacterSet controlCharacterSet];
+    [forbidden addCharactersInString:@"/\\:?%*|\"<>"];
+    NSArray<NSString*>* parts = [value componentsSeparatedByCharactersInSet:forbidden];
+    NSString* sanitized = [parts componentsJoinedByString:@"_"];
+    sanitized = [sanitized stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    while ([sanitized hasPrefix:@"."] || [sanitized hasSuffix:@"."]) {
+        sanitized = [sanitized stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"."]];
+    }
+    if (sanitized.length == 0) {
+        sanitized = @"InstacastPlus";
+    }
+    if (sanitized.length > 80) {
+        NSRange range = [sanitized rangeOfComposedCharacterSequencesForRange:NSMakeRange(0, 80)];
+        sanitized = [sanitized substringWithRange:range];
+    }
+    return sanitized;
+}
+
+static const NSUInteger ICBackupFetchBatchSize = 400;
+
 typedef NS_ENUM(NSInteger, ImportExportSections) {
     kExportSection = 0,
     kImportSection,
@@ -25,14 +97,78 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     kNumberOfSections,
 };
 
+@interface ICImportExportSceneState : NSObject
+@property (nonatomic) BOOL fullExportInProgress;
+@property (nonatomic, strong) NSURL* pendingFullExportURL;
+@property (nonatomic, strong) NSError* pendingFullExportError;
+@property (nonatomic) BOOL subscriptionsExportInProgress;
+@property (nonatomic, strong) NSURL* pendingSubscriptionsExportURL;
+@property (nonatomic, strong) NSError* pendingSubscriptionsExportError;
+@property (nonatomic) BOOL bookmarksExportInProgress;
+@property (nonatomic, strong) NSURL* pendingBookmarksExportURL;
+@property (nonatomic, strong) NSError* pendingBookmarksExportError;
+@end
+
+@implementation ICImportExportSceneState
+@end
+
+static const void* ICImportExportSceneStateAssociationKey = &ICImportExportSceneStateAssociationKey;
+
 @interface ImportExportSettingsViewController () <UIDocumentInteractionControllerDelegate, UIDocumentPickerDelegate>
 @property (nonatomic, strong) UIDocumentInteractionController* interactionController;
 @property (nonatomic, strong) VDModalInfo* mInfo;
 @property (nonatomic) NSInteger selectedImportRow;
 @property (nonatomic) BOOL importInProgress;
+@property (nonatomic) BOOL fullExportInProgress;
+@property (nonatomic, strong) NSURL *pendingFullExportURL;
+@property (nonatomic, strong) NSError *pendingFullExportError;
+@property (nonatomic) BOOL subscriptionsExportInProgress;
+@property (nonatomic, strong) NSURL *pendingSubscriptionsExportURL;
+@property (nonatomic, strong) NSError *pendingSubscriptionsExportError;
+@property (nonatomic) BOOL bookmarksExportInProgress;
+@property (nonatomic, strong) NSURL *pendingBookmarksExportURL;
+@property (nonatomic, strong) NSError *pendingBookmarksExportError;
+@property (nonatomic, strong) ICImportExportSceneState* retainedSceneExportState;
+@property (nonatomic, readonly) ICImportExportSceneState* sceneExportState;
 @end
 
 @implementation ImportExportSettingsViewController
+
+- (ICImportExportSceneState*)sceneExportState
+{
+    if (self.retainedSceneExportState) return self.retainedSceneExportState;
+
+    UIWindow* window = self.viewIfLoaded.window ?: self.navigationController.viewIfLoaded.window;
+    UIWindowScene* windowScene = window.windowScene;
+    if (!windowScene) return nil;
+
+    ICImportExportSceneState* state = objc_getAssociatedObject(windowScene, ICImportExportSceneStateAssociationKey);
+    if (!state) {
+        state = [[ICImportExportSceneState alloc] init];
+        objc_setAssociatedObject(windowScene, ICImportExportSceneStateAssociationKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    self.retainedSceneExportState = state;
+    return state;
+}
+
+- (BOOL)fullExportInProgress { return self.sceneExportState.fullExportInProgress; }
+- (void)setFullExportInProgress:(BOOL)inProgress { self.sceneExportState.fullExportInProgress = inProgress; }
+- (NSURL*)pendingFullExportURL { return self.sceneExportState.pendingFullExportURL; }
+- (void)setPendingFullExportURL:(NSURL*)url { self.sceneExportState.pendingFullExportURL = url; }
+- (NSError*)pendingFullExportError { return self.sceneExportState.pendingFullExportError; }
+- (void)setPendingFullExportError:(NSError*)error { self.sceneExportState.pendingFullExportError = error; }
+- (BOOL)subscriptionsExportInProgress { return self.sceneExportState.subscriptionsExportInProgress; }
+- (void)setSubscriptionsExportInProgress:(BOOL)inProgress { self.sceneExportState.subscriptionsExportInProgress = inProgress; }
+- (NSURL*)pendingSubscriptionsExportURL { return self.sceneExportState.pendingSubscriptionsExportURL; }
+- (void)setPendingSubscriptionsExportURL:(NSURL*)url { self.sceneExportState.pendingSubscriptionsExportURL = url; }
+- (NSError*)pendingSubscriptionsExportError { return self.sceneExportState.pendingSubscriptionsExportError; }
+- (void)setPendingSubscriptionsExportError:(NSError*)error { self.sceneExportState.pendingSubscriptionsExportError = error; }
+- (BOOL)bookmarksExportInProgress { return self.sceneExportState.bookmarksExportInProgress; }
+- (void)setBookmarksExportInProgress:(BOOL)inProgress { self.sceneExportState.bookmarksExportInProgress = inProgress; }
+- (NSURL*)pendingBookmarksExportURL { return self.sceneExportState.pendingBookmarksExportURL; }
+- (void)setPendingBookmarksExportURL:(NSURL*)url { self.sceneExportState.pendingBookmarksExportURL = url; }
+- (NSError*)pendingBookmarksExportError { return self.sceneExportState.pendingBookmarksExportError; }
+- (void)setPendingBookmarksExportError:(NSError*)error { self.sceneExportState.pendingBookmarksExportError = error; }
 
 + (ImportExportSettingsViewController*) viewController
 {
@@ -74,6 +210,9 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 {
     [super viewDidAppear:animated];
     [self.tableView reloadData];
+    [self presentPendingFullExportResultIfNeeded];
+    [self presentPendingSubscriptionsExportResultIfNeeded];
+    [self presentPendingBookmarksExportResultIfNeeded];
 }
 
 - (void) updateAppearance {
@@ -139,16 +278,43 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
         case kExportSection:
             if (indexPath.row == 0) {
                 cell.textLabel.text = @"All InstacastPlus Data".ls;
-                cell.detailTextLabel.text = @"For exchanging data between InstacastPlus apps. Contains all data including subscriptions, bookmarks, playback status and settings.".ls;
+                cell.detailTextLabel.text = self.fullExportInProgress
+                    ? @"Backup wird exportiert…".ls
+                    : @"For exchanging data between InstacastPlus apps. Contains all data including subscriptions, bookmarks, playback status and settings.".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"archivebox"];
+                if (self.fullExportInProgress) {
+                    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+                    spinner.color = [[ICAppearanceManager sharedManager] appearance].tintColor;
+                    [spinner startAnimating];
+                    cell.accessoryView = spinner;
+                    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                }
             } else if (indexPath.row == 1) {
                 cell.textLabel.text = @"Subscriptions (OPML)".ls;
-                cell.detailTextLabel.text = @"The OPML file can be read by other podcast apps but only contains the subscriptions without any additional data.".ls;
+                cell.detailTextLabel.text = self.subscriptionsExportInProgress
+                    ? @"Subscriptions are being exported…".ls
+                    : @"The OPML file can be read by other podcast apps but only contains the subscriptions without any additional data.".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"antenna.radiowaves.left.and.right"];
+                if (self.subscriptionsExportInProgress) {
+                    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+                    spinner.color = [[ICAppearanceManager sharedManager] appearance].tintColor;
+                    [spinner startAnimating];
+                    cell.accessoryView = spinner;
+                    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                }
             } else {
                 cell.textLabel.text = @"Bookmarks".ls;
-                cell.detailTextLabel.text = @"Export all bookmarks as a file.".ls;
+                cell.detailTextLabel.text = self.bookmarksExportInProgress
+                    ? @"Bookmarks are being exported…".ls
+                    : @"Export all bookmarks as a file.".ls;
                 cell.imageView.image = [UIImage systemImageNamed:@"bookmark"];
+                if (self.bookmarksExportInProgress) {
+                    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+                    spinner.color = [[ICAppearanceManager sharedManager] appearance].tintColor;
+                    [spinner startAnimating];
+                    cell.accessoryView = spinner;
+                    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                }
             }
             break;
         case kImportSection:
@@ -219,10 +385,12 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    BOOL anyExportInProgress = [self anyExportInProgress];
 
     switch (indexPath.section) {
         case kExportSection:
             if (indexPath.row == 0) {
+                if (self.fullExportInProgress) return;
                 [self exportEverything];
             } else if (indexPath.row == 1) {
                 [self exportSubscriptions];
@@ -231,10 +399,12 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             }
             break;
         case kImportSection:
+            if (anyExportInProgress || self.importInProgress) return;
             self.selectedImportRow = indexPath.row;
             [self showImportDocumentPicker];
             break;
         case kResetAppSection:
+            if (anyExportInProgress || self.importInProgress) return;
             [self resetApp];
             break;
     }
@@ -242,75 +412,441 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
 #pragma mark - Export
 
+- (BOOL)anyExportInProgress
+{
+    return self.fullExportInProgress || self.subscriptionsExportInProgress || self.bookmarksExportInProgress;
+}
+
+- (void)_commitExportBusyAppearance
+{
+    if (!self.isViewLoaded) return;
+    [self.tableView layoutIfNeeded];
+    [self.tableView.window layoutIfNeeded];
+    [CATransaction flush];
+}
+
 - (void) exportSubscriptions
 {
-    NSData* data = [[SubscriptionManager sharedSubscriptionManager] opmlData];
+    if (self.importInProgress || [self anyExportInProgress]) {
+        return;
+    }
+    [self setSubscriptionsExportBusy:YES];
+    [self _commitExportBusyAppearance];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _beginSubscriptionsExportAfterBusyState];
+    });
+}
 
-    NSString* fileName = [NSString stringWithFormat:@"%@-%@.opml", @"Subscriptions".ls, [UIDevice currentDevice].name];
+- (void)_beginSubscriptionsExportAfterBusyState
+{
+    if (!self.subscriptionsExportInProgress) return;
+    NSError* saveError = [DMANAGER saveReturningError];
+    if (saveError) {
+        [self finishSubscriptionsExportWithURL:nil error:saveError];
+        return;
+    }
+    NSString* fileName = [NSString stringWithFormat:@"%@.opml", ICSafeExportFilenameComponent([NSString stringWithFormat:@"%@-%@", @"Subscriptions".ls, [UIDevice currentDevice].name])];
     NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
     NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
 
-    [data writeToURL:url atomically:YES];
+    [[SubscriptionManager sharedSubscriptionManager] opmlDataWithCompletion:^(NSData* data, NSError* exportError) {
+        if (!data || exportError) {
+            NSError* resultError = exportError ?: [NSError errorWithDomain:@"OPMLExport"
+                                                                      code:3
+                                                                  userInfo:@{NSLocalizedDescriptionKey: @"The OPML document could not be created.".ls}];
+            [self finishSubscriptionsExportWithURL:nil error:resultError];
+            return;
+        }
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSError* writeError = nil;
+            BOOL didWrite = [data writeToURL:url options:NSDataWritingAtomic error:&writeError];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSError* resultError = didWrite ? nil : (writeError ?: [NSError errorWithDomain:@"OPMLExport"
+                                                                                           code:4
+                                                                                       userInfo:@{NSLocalizedDescriptionKey: @"The OPML file could not be written.".ls}]);
+                [self finishSubscriptionsExportWithURL:didWrite ? url : nil error:resultError];
+            });
+        });
+    }];
+}
+
+- (void)setSubscriptionsExportBusy:(BOOL)busy
+{
+    self.subscriptionsExportInProgress = busy;
+    if (self.isViewLoaded) {
+        NSIndexPath* indexPath = [NSIndexPath indexPathForRow:1 inSection:kExportSection];
+        [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
+
+- (void)presentPendingSubscriptionsExportResultIfNeeded
+{
+    if (!self.pendingSubscriptionsExportURL && !self.pendingSubscriptionsExportError) return;
+    if (!self.viewIfLoaded.window || self.navigationController.topViewController != self) return;
+    if (self.presentedViewController) return;
+
+    NSURL* url = self.pendingSubscriptionsExportURL;
+    NSError* error = self.pendingSubscriptionsExportError;
+    self.pendingSubscriptionsExportURL = nil;
+    self.pendingSubscriptionsExportError = nil;
+
+    if (!url || error) {
+        NSString* message = error.localizedDescription.length > 0
+            ? error.localizedDescription
+            : @"The subscriptions could not be exported. Check the available storage and try again.".ls;
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Export Error".ls
+                                                                       message:message
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
 
     self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
     self.interactionController.delegate = self;
-    self.interactionController.name = fileName;
+    self.interactionController.name = url.lastPathComponent;
     self.interactionController.UTI = @"instacast.opml";
     if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
         self.interactionController = nil;
+        [self _presentShareUnavailableError];
     }
+}
+
+- (void)finishSubscriptionsExportWithURL:(NSURL*)url error:(NSError*)error
+{
+    NSAssert([NSThread isMainThread], @"Export UI completion must run on the main thread");
+    [self setSubscriptionsExportBusy:NO];
+    if (error) {
+        ErrLog(@"OPML export failed: %@", error.localizedDescription);
+    }
+    self.pendingSubscriptionsExportURL = url;
+    self.pendingSubscriptionsExportError = error;
+    [self presentPendingSubscriptionsExportResultIfNeeded];
 }
 
 - (void) exportBookmarks
 {
-    NSData* data = XPFFDataWithBookmarks(DMANAGER.bookmarks);
+    if (self.importInProgress || [self anyExportInProgress]) {
+        return;
+    }
+    [self setBookmarksExportBusy:YES];
+    [self _commitExportBusyAppearance];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _beginBookmarksExportAfterBusyState];
+    });
+}
 
-    NSString* fileName = [NSString stringWithFormat:@"%@-%@.xpff", @"Bookmarks".ls, [UIDevice currentDevice].name];
+- (void)_beginBookmarksExportAfterBusyState
+{
+    if (!self.bookmarksExportInProgress) return;
+    NSError* saveError = [DMANAGER saveReturningError];
+    if (saveError) {
+        [self finishBookmarksExportWithURL:nil error:saveError];
+        return;
+    }
+    NSString* fileName = [NSString stringWithFormat:@"%@.xpff", ICSafeExportFilenameComponent([NSString stringWithFormat:@"%@-%@", @"Bookmarks".ls, [UIDevice currentDevice].name])];
     NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
     NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
 
-    [data writeToURL:url atomically:YES];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        __block NSError* exportError = nil;
+        __block NSData* data = nil;
+        NSManagedObjectContext* context = [DMANAGER newExportBackgroundContext];
+        if (!context) {
+            exportError = [NSError errorWithDomain:@"BookmarksExport"
+                                              code:1
+                                          userInfo:@{NSLocalizedDescriptionKey: @"The bookmark database could not be opened for export.".ls}];
+        }
+        else {
+            [context performBlockAndWait:^{
+                NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Bookmark"];
+                request.sortDescriptors = @[
+                    [[NSSortDescriptor alloc] initWithKey:@"episodeHash" ascending:YES],
+                    [[NSSortDescriptor alloc] initWithKey:@"position" ascending:YES],
+                ];
+                NSArray<CDBookmark*>* bookmarks = [context executeFetchRequest:request error:&exportError];
+                if (!bookmarks || exportError) {
+                    return;
+                }
+                data = XPFFDataWithBookmarks(bookmarks);
+                if (data.length == 0) {
+                    exportError = [NSError errorWithDomain:@"BookmarksExport"
+                                                      code:2
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"The bookmark document could not be created.".ls}];
+                }
+            }];
+        }
+
+        BOOL didWrite = NO;
+        if (data && !exportError) {
+            didWrite = [data writeToURL:url options:NSDataWritingAtomic error:&exportError];
+            if (!didWrite && !exportError) {
+                exportError = [NSError errorWithDomain:@"BookmarksExport"
+                                                  code:3
+                                              userInfo:@{NSLocalizedDescriptionKey: @"The bookmark file could not be written.".ls}];
+            }
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self finishBookmarksExportWithURL:didWrite ? url : nil error:exportError];
+        });
+    });
+}
+
+- (void)setBookmarksExportBusy:(BOOL)busy
+{
+    self.bookmarksExportInProgress = busy;
+    if (self.isViewLoaded) {
+        NSIndexPath* indexPath = [NSIndexPath indexPathForRow:2 inSection:kExportSection];
+        [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
+
+- (void)presentPendingBookmarksExportResultIfNeeded
+{
+    if (!self.pendingBookmarksExportURL && !self.pendingBookmarksExportError) return;
+    if (!self.viewIfLoaded.window || self.navigationController.topViewController != self) return;
+    if (self.presentedViewController) return;
+
+    NSURL* url = self.pendingBookmarksExportURL;
+    NSError* error = self.pendingBookmarksExportError;
+    self.pendingBookmarksExportURL = nil;
+    self.pendingBookmarksExportError = nil;
+
+    if (!url || error) {
+        NSString* message = error.localizedDescription.length > 0
+            ? error.localizedDescription
+            : @"The bookmarks could not be exported. Check the available storage and try again.".ls;
+        UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Export Error".ls
+                                                                       message:message
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
 
     self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
     self.interactionController.delegate = self;
-    self.interactionController.name = fileName;
+    self.interactionController.name = url.lastPathComponent;
     self.interactionController.UTI = @"com.vemedio.xpff";
     if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
         self.interactionController = nil;
+        [self _presentShareUnavailableError];
     }
+}
+
+- (void)finishBookmarksExportWithURL:(NSURL*)url error:(NSError*)error
+{
+    NSAssert([NSThread isMainThread], @"Export UI completion must run on the main thread");
+    [self setBookmarksExportBusy:NO];
+    if (error) {
+        ErrLog(@"Bookmark export failed: %@", error.localizedDescription);
+    }
+    self.pendingBookmarksExportURL = url;
+    self.pendingBookmarksExportError = error;
+    [self presentPendingBookmarksExportResultIfNeeded];
 }
 
 - (NSString*) xmlEscape:(NSString*)string
 {
-    if (!string) return @"";
-    string = [string stringByReplacingOccurrencesOfString:@"&" withString:@"&amp;"];
-    string = [string stringByReplacingOccurrencesOfString:@"<" withString:@"&lt;"];
-    string = [string stringByReplacingOccurrencesOfString:@">" withString:@"&gt;"];
-    string = [string stringByReplacingOccurrencesOfString:@"\"" withString:@"&quot;"];
-    return string;
+    return [string stringByEncodingStandardHTMLEntities] ?: @"";
 }
 
 - (NSString *)_hexColorForDefaults:(NSUserDefaults *)defaults hexKey:(NSString *)hexKey colorDataKey:(NSString *)colorDataKey
 {
-    NSString *storedHex = [defaults stringForKey:hexKey];
-    if (storedHex.length > 0) return storedHex;
+    return [UIColor ic_colorHexFromDefaults:defaults hexKey:hexKey legacyArchiveKey:colorDataKey];
+}
 
-    id colorObject = [defaults objectForKey:colorDataKey];
-    if (![colorObject isKindOfClass:[NSData class]]) return nil;
+- (NSDictionary<NSString *, id> *)exportSnapshotForEpisode:(CDEpisode *)episode
+{
+    if (!episode) return nil;
+    return @{
+        @"media": [episode.preferedMedium.fileURL absoluteString] ?: @"",
+        @"guid": episode.guid ?: @"",
+        @"feedUrl": [episode.feed.sourceURL absoluteString] ?: @"",
+        @"position": @(episode.position),
+    };
+}
 
-    UIColor *color = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:(NSData *)colorObject error:nil];
-    if (!color) return nil;
+- (void)setFullExportBusy:(BOOL)busy
+{
+    self.fullExportInProgress = busy;
+    if (self.isViewLoaded) {
+        NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:kExportSection];
+        [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
 
-    CGFloat r = 0, g = 0, b = 0, a = 0;
-    if (![color getRed:&r green:&g blue:&b alpha:&a]) return nil;
+- (void)presentPendingFullExportResultIfNeeded
+{
+    if (!self.pendingFullExportURL && !self.pendingFullExportError) return;
+    if (!self.viewIfLoaded.window || self.navigationController.topViewController != self) return;
+    if (self.presentedViewController) return;
 
-    return [NSString stringWithFormat:@"#%02X%02X%02X", (int)round(r * 255), (int)round(g * 255), (int)round(b * 255)];
+    NSURL *url = self.pendingFullExportURL;
+    NSError *error = self.pendingFullExportError;
+    self.pendingFullExportURL = nil;
+    self.pendingFullExportError = nil;
+
+    if (!url || error) {
+        NSString* message = error.localizedDescription.length > 0
+            ? error.localizedDescription
+            : @"Das Backup konnte nicht exportiert werden. Prüfe den freien Speicherplatz und versuche es erneut.".ls;
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Export Error".ls
+                                                                       message:message
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
+    self.interactionController.delegate = self;
+    self.interactionController.name = url.lastPathComponent;
+    self.interactionController.UTI = @"public.xml";
+    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
+        self.interactionController = nil;
+        [self _presentShareUnavailableError];
+    }
+}
+
+- (void)_presentShareUnavailableError
+{
+    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Share Unavailable".ls
+                                                                   message:@"The exported file was created, but the share menu could not be opened. Try again from the export settings.".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)finishFullExportWithURL:(NSURL *)url error:(NSError *)error
+{
+    NSAssert([NSThread isMainThread], @"Export UI completion must run on the main thread");
+    [self setFullExportBusy:NO];
+    if (error) {
+        ErrLog(@"Full backup export failed: %@", error.localizedDescription);
+    }
+    self.pendingFullExportURL = url;
+    self.pendingFullExportError = error;
+    [self presentPendingFullExportResultIfNeeded];
+}
+
+- (NSSet<NSString *> *)cachedEpisodeHashesAtStoragePath:(NSString *)storagePath
+                                                  error:(NSError **)error
+{
+    NSArray<NSString *> *filenames = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:storagePath error:error];
+    if (!filenames) return nil;
+
+    NSMutableSet<NSString *> *hashes = [NSMutableSet set];
+    for (NSString *filename in filenames) {
+        NSString *nameWithoutExtension = [filename stringByDeletingPathExtension];
+        NSRange lastSeparator = [nameWithoutExtension rangeOfString:@" - " options:NSBackwardsSearch];
+        NSString *episodeHash = lastSeparator.location == NSNotFound
+            ? nameWithoutExtension
+            : [nameWithoutExtension substringFromIndex:NSMaxRange(lastSeparator)];
+        if (episodeHash.length > 0) {
+            [hashes addObject:episodeHash];
+        }
+    }
+    return [hashes copy];
 }
 
 - (void) exportEverything
 {
+    if (self.importInProgress || [self anyExportInProgress]) return;
+    [self setFullExportBusy:YES];
+    [self _commitExportBusyAppearance];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _beginFullExportAfterBusyState];
+    });
+}
+
+- (void)_beginFullExportAfterBusyState
+{
+    if (!self.fullExportInProgress) return;
+
+    // Persist current UI-context edits before the independent read-only coordinator
+    // takes its snapshot. Only immutable values cross to the export queue.
+    NSError* saveError = [DMANAGER saveReturningError];
+    if (saveError) {
+        [self finishFullExportWithURL:nil error:saveError];
+        return;
+    }
+
+    AudioSession *session = [AudioSession sharedAudioSession];
+    NSMutableArray<NSDictionary<NSString *, id> *> *upNextSnapshots = [NSMutableArray array];
+    for (CDEpisode *episode in session.playlist) {
+        NSDictionary *snapshot = [self exportSnapshotForEpisode:episode];
+        if (snapshot) [upNextSnapshots addObject:snapshot];
+    }
+    NSDictionary<NSString *, id> *nowPlayingSnapshot = [self exportSnapshotForEpisode:session.episode];
+    NSDictionary<NSString *, NSString *> *credentialValues = [[ICRemoteChapterCredentialStore backupCredentialValues] copy];
+    NSString *alternateIconName = [[[UIApplication sharedApplication] alternateIconName] copy];
+    NSString *deviceName = ICSafeExportFilenameComponent([UIDevice currentDevice].name);
+    NSArray<NSDictionary<NSString *, id> *> *upNextSnapshot = [upNextSnapshots copy];
+    NSString *downloadStoragePath = [DMANAGER.fileCacheURL.path copy];
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSError *cacheSnapshotError = nil;
+        NSSet<NSString *> *verifiedCachedHashes = [self cachedEpisodeHashesAtStoragePath:downloadStoragePath
+                                                                                  error:&cacheSnapshotError];
+        if (!verifiedCachedHashes) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self finishFullExportWithURL:nil error:cacheSnapshotError];
+            });
+            return;
+        }
+
+        NSManagedObjectContext *context = [DMANAGER newExportBackgroundContext];
+        if (!context) {
+            NSError *error = [NSError errorWithDomain:@"InstacastBackupExport"
+                                                 code:1
+                                             userInfo:@{NSLocalizedDescriptionKey: @"The backup could not be exported because the local podcast database could not be opened. Check the available storage, restart InstacastPlus, and try again.".ls}];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self finishFullExportWithURL:nil error:error];
+            });
+            return;
+        }
+
+        [context performBlock:^{
+            @autoreleasepool {
+                NSError* generationError = nil;
+                if (![context setQueryGenerationFromToken:[NSQueryGenerationToken currentQueryGenerationToken]
+                                                    error:&generationError]) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self finishFullExportWithURL:nil error:generationError];
+                    });
+                    return;
+                }
+                NSError *error = nil;
+                NSURL *url = [self createEverythingBackupWithContext:context
+                                                 cachedEpisodeHashes:verifiedCachedHashes
+                                                     upNextSnapshots:upNextSnapshot
+                                                  nowPlayingSnapshot:nowPlayingSnapshot
+                                                    credentialValues:credentialValues
+                                                   alternateIconName:alternateIconName
+                                                           deviceName:deviceName
+                                                                error:&error];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self finishFullExportWithURL:url error:error];
+                });
+            }
+        }];
+    });
+}
+
+- (NSURL *)createEverythingBackupWithContext:(NSManagedObjectContext *)context
+                         cachedEpisodeHashes:(NSSet<NSString *> *)cachedEpisodeHashes
+                             upNextSnapshots:(NSArray<NSDictionary<NSString *, id> *> *)upNextSnapshots
+                          nowPlayingSnapshot:(NSDictionary<NSString *, id> *)nowPlayingSnapshot
+                            credentialValues:(NSDictionary<NSString *, NSString *> *)credentialValues
+                           alternateIconName:(NSString *)alternateIconName
+                                  deviceName:(NSString *)deviceName
+                                       error:(NSError **)error
+{
     NSMutableString* xml = [NSMutableString string];
     NSDateFormatter* dateFormatter = [[NSDateFormatter alloc] init];
+    dateFormatter.locale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+    dateFormatter.calendar = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
     [dateFormatter setDateFormat:@"yyyy-MM-dd'T'HH:mm:ssZ"];
 
     // XML Header
@@ -321,7 +857,48 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
-    NSArray* feeds = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:nil];
+    fetchRequest.fetchBatchSize = ICBackupFetchBatchSize;
+    NSArray* feeds = [context executeFetchRequest:fetchRequest error:error];
+    if (!feeds) return nil;
+
+    NSMutableDictionary<NSManagedObjectID*, NSMutableArray<CDEpisode*>*>* stateEpisodesByFeedObjectID = [NSMutableDictionary dictionary];
+    NSMutableSet<NSManagedObjectID*>* indexedEpisodeObjectIDs = [NSMutableSet set];
+    void (^indexEpisode)(CDEpisode*) = ^(CDEpisode* episode) {
+        if (!episode.feed || [indexedEpisodeObjectIDs containsObject:episode.objectID]) return;
+        [indexedEpisodeObjectIDs addObject:episode.objectID];
+        NSMutableArray<CDEpisode*>* feedEpisodes = stateEpisodesByFeedObjectID[episode.feed.objectID];
+        if (!feedEpisodes) {
+            feedEpisodes = [NSMutableArray array];
+            stateEpisodesByFeedObjectID[episode.feed.objectID] = feedEpisodes;
+        }
+        [feedEpisodes addObject:episode];
+    };
+
+    NSFetchRequest* stateEpisodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    stateEpisodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES AND (consumed == YES OR starred == YES OR archived == YES OR position > 0)"];
+    stateEpisodesRequest.relationshipKeyPathsForPrefetching = @[@"feed", @"media"];
+    stateEpisodesRequest.fetchBatchSize = ICBackupFetchBatchSize;
+    NSArray<CDEpisode*>* stateEpisodes = [context executeFetchRequest:stateEpisodesRequest error:error];
+    if (!stateEpisodes) return nil;
+    for (CDEpisode* episode in stateEpisodes) {
+        indexEpisode(episode);
+    }
+
+    NSArray<NSString*>* cachedHashes = cachedEpisodeHashes.allObjects;
+    for (NSUInteger offset = 0; offset < cachedHashes.count; offset += ICBackupFetchBatchSize) {
+        @autoreleasepool {
+            NSArray<NSString*>* hashBatch = [cachedHashes subarrayWithRange:NSMakeRange(offset, MIN(ICBackupFetchBatchSize, cachedHashes.count - offset))];
+            NSFetchRequest* cachedEpisodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+            cachedEpisodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES AND objectHash IN %@", hashBatch];
+            cachedEpisodesRequest.relationshipKeyPathsForPrefetching = @[@"feed", @"media"];
+            cachedEpisodesRequest.fetchBatchSize = ICBackupFetchBatchSize;
+            NSArray<CDEpisode*>* cachedEpisodes = [context executeFetchRequest:cachedEpisodesRequest error:error];
+            if (!cachedEpisodes) return nil;
+            for (CDEpisode* episode in cachedEpisodes) {
+                indexEpisode(episode);
+            }
+        }
+    }
 
     [xml appendString:@"  <podcasts>\n"];
     for (CDFeed* feed in feeds) {
@@ -347,37 +924,30 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
             for (NSString* key in propertyKeys) {
                 if ([internalKeys containsObject:key]) continue;
                 NSString* escapedKey = [self xmlEscape:key];
-
-                // Check all CDFeedProperty value types (each stored in separate field)
-                NSString* stringVal = [feed stringForKey:key];
-                if (stringVal.length > 0) {
-                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", escapedKey, [self xmlEscape:stringVal]];
-                    continue;
+                CDFeedProperty *property = [feed propertyForKey:key insertOnDemand:NO];
+                if (!property) continue;
+                NSString *type = ICBackupFeedPropertyType(property);
+                if ([type isEqualToString:@"string"]) {
+                    [xml appendFormat:@"        <setting key=\"%@\" type=\"string\" value=\"%@\"/>\n",
+                        escapedKey, [self xmlEscape:property.stringValue ?: @""]];
+                } else if ([type isEqualToString:@"double"]) {
+                    [xml appendFormat:@"        <setting key=\"%@\" type=\"double\" value=\"%@\"/>\n",
+                        escapedKey, [NSString stringWithFormat:@"%.17g", property.doubleValue]];
+                } else if ([type isEqualToString:@"integer"]) {
+                    [xml appendFormat:@"        <setting key=\"%@\" type=\"integer\" value=\"%ld\"/>\n",
+                        escapedKey, (long)property.int32Value];
+                } else {
+                    [xml appendFormat:@"        <setting key=\"%@\" type=\"bool\" value=\"%@\"/>\n", escapedKey,
+                        property.boolValue ? @"true" : @"false"];
                 }
-                double dblVal = [feed doubleForKey:key];
-                if (dblVal != 0.0) {
-                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", escapedKey, [NSString stringWithFormat:@"%.1f", dblVal]];
-                    continue;
-                }
-                NSInteger intVal = [feed integerForKey:key];
-                if (intVal != 0) {
-                    [xml appendFormat:@"        <setting key=\"%@\" value=\"%ld\"/>\n", escapedKey, (long)intVal];
-                    continue;
-                }
-                // Bool: CDFeedProperty exists (in propertyKeys), export even if false
-                [xml appendFormat:@"        <setting key=\"%@\" value=\"%@\"/>\n", escapedKey,
-                    [feed boolForKey:key] ? @"true" : @"false"];
             }
             [xml appendString:@"      </settings>\n"];
         }
 
         // Episodes with state
         BOOL hasEpisodes = NO;
-        NSInteger downloadedCount = 0;
-        CacheManager *cacheManager = [CacheManager sharedCacheManager];
-        for (CDEpisode* episode in feed.episodes) {
-            BOOL isCached = [cacheManager episodeIsCached:episode];
-            if (isCached) downloadedCount++;
+        for (CDEpisode* episode in stateEpisodesByFeedObjectID[feed.objectID] ?: @[]) {
+            BOOL isCached = [cachedEpisodeHashes containsObject:episode.objectHash ?: @""];
             if (episode.consumed || episode.starred || episode.archived || episode.position > 0 || isCached) {
                 if (!hasEpisodes) {
                     [xml appendString:@"      <episodes>\n"];
@@ -402,7 +972,9 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     [xml appendString:@"  </podcasts>\n"];
 
     // Bookmarks
-    NSArray* bookmarks = DMANAGER.bookmarks;
+    NSFetchRequest *bookmarksRequest = [[NSFetchRequest alloc] initWithEntityName:@"Bookmark"];
+    NSArray* bookmarks = [context executeFetchRequest:bookmarksRequest error:error];
+    if (!bookmarks) return nil;
     if (bookmarks.count > 0) {
         [xml appendString:@"  <bookmarks>\n"];
         for (CDBookmark* bookmark in bookmarks) {
@@ -416,38 +988,58 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     }
 
     // Up Next
-    AudioSession* session = [AudioSession sharedAudioSession];
-    NSArray* upNextPlaylist = session.playlist;
-    if (upNextPlaylist.count > 0) {
+    if (upNextSnapshots.count > 0) {
         [xml appendString:@"  <upnext>\n"];
-        for (CDEpisode* episode in upNextPlaylist) {
-            CDMedium* medium = [episode preferedMedium];
+        for (NSDictionary<NSString *, id> *episode in upNextSnapshots) {
             [xml appendFormat:@"    <episode media=\"%@\" guid=\"%@\" feedUrl=\"%@\"/>\n",
-                [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
-                [self xmlEscape:episode.guid ?: @""],
-                [self xmlEscape:[episode.feed.sourceURL absoluteString] ?: @""]];
+                [self xmlEscape:episode[@"media"]],
+                [self xmlEscape:episode[@"guid"]],
+                [self xmlEscape:episode[@"feedUrl"]]];
         }
         [xml appendString:@"  </upnext>\n"];
     }
 
     // Now Playing
-    CDEpisode* currentEpisode = session.episode;
-    if (currentEpisode) {
-        CDMedium* medium = [currentEpisode preferedMedium];
+    if (nowPlayingSnapshot) {
         [xml appendFormat:@"  <nowplaying media=\"%@\" guid=\"%@\" feedUrl=\"%@\" position=\"%d\"/>\n",
-            [self xmlEscape:[medium.fileURL absoluteString] ?: @""],
-            [self xmlEscape:currentEpisode.guid ?: @""],
-            [self xmlEscape:[currentEpisode.feed.sourceURL absoluteString] ?: @""],
-            currentEpisode.position];
+            [self xmlEscape:nowPlayingSnapshot[@"media"]],
+            [self xmlEscape:nowPlayingSnapshot[@"guid"]],
+            [self xmlEscape:nowPlayingSnapshot[@"feedUrl"]],
+            [nowPlayingSnapshot[@"position"] intValue]];
     }
 
     // Apple Watch episode selection
-    AppleWatchSyncManager *watchManager = [AppleWatchSyncManager sharedManager];
-    NSArray<AppleWatchEpisodeState *> *watchStates = [watchManager visibleEpisodeStates];
+    NSFetchRequest *watchRequest = [[NSFetchRequest alloc] initWithEntityName:@"AppleWatchEpisodeState"];
+    watchRequest.predicate = [NSPredicate predicateWithFormat:@"watchStatus == nil OR watchStatus != %@", ICAppleWatchStatusRemoving];
+    watchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"watchAddedDate" ascending:NO]];
+    watchRequest.fetchBatchSize = ICBackupFetchBatchSize;
+    NSArray<AppleWatchEpisodeState *> *watchStates = [context executeFetchRequest:watchRequest error:error];
+    if (!watchStates) return nil;
+    NSMutableDictionary<NSString*, CDEpisode*>* watchEpisodesByHash = [NSMutableDictionary dictionary];
+    NSMutableOrderedSet<NSString*>* watchEpisodeHashes = [NSMutableOrderedSet orderedSet];
+    for (AppleWatchEpisodeState* state in watchStates) {
+        if (state.episodeHash.length > 0) [watchEpisodeHashes addObject:state.episodeHash];
+    }
+    NSArray<NSString*>* allWatchEpisodeHashes = watchEpisodeHashes.array;
+    for (NSUInteger offset = 0; offset < allWatchEpisodeHashes.count; offset += ICBackupFetchBatchSize) {
+        NSArray<NSString*>* hashBatch = [allWatchEpisodeHashes subarrayWithRange:NSMakeRange(offset, MIN(ICBackupFetchBatchSize, allWatchEpisodeHashes.count - offset))];
+        NSFetchRequest* episodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+        episodeRequest.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", hashBatch];
+        episodeRequest.relationshipKeyPathsForPrefetching = @[@"feed", @"media"];
+        episodeRequest.fetchBatchSize = ICBackupFetchBatchSize;
+        NSArray<CDEpisode*>* watchEpisodes = [context executeFetchRequest:episodeRequest error:error];
+        if (!watchEpisodes) return nil;
+        for (CDEpisode* episode in watchEpisodes) {
+            if (episode.objectHash.length > 0) watchEpisodesByHash[episode.objectHash] = episode;
+        }
+    }
     BOOL hasAppleWatchEpisodes = NO;
     for (AppleWatchEpisodeState *state in watchStates) {
-        CDEpisode *episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
-        if (![watchManager canSendEpisodeToWatch:episode]) continue;
+        if (state.episodeHash.length == 0) continue;
+        CDEpisode *episode = watchEpisodesByHash[state.episodeHash];
+        if (!episode || episode.video || episode.archived || [episode.preferedMedium.fileURL absoluteString].length == 0) {
+            continue;
+        }
 
         if (!hasAppleWatchEpisodes) {
             [xml appendString:@"  <appleWatchEpisodes>\n"];
@@ -476,7 +1068,18 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if (hasAppleWatchEpisodes) [xml appendString:@"  </appleWatchEpisodes>\n"];
 
     // Playlists
-    NSArray* lists = DMANAGER.lists;
+    NSFetchRequest *listsRequest = [[NSFetchRequest alloc] initWithEntityName:@"List"];
+    listsRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+    listsRequest.fetchBatchSize = ICBackupFetchBatchSize;
+    NSArray *fetchedLists = [context executeFetchRequest:listsRequest error:error];
+    if (!fetchedLists) return nil;
+    NSMutableArray *lists = [NSMutableArray array];
+    NSMutableSet<NSString *> *seenListUIDs = [NSMutableSet set];
+    for (CDList *list in fetchedLists) {
+        if (list.uid.length == 0 || [seenListUIDs containsObject:list.uid]) continue;
+        [seenListUIDs addObject:list.uid];
+        [lists addObject:list];
+    }
     BOOL hasPlaylists = NO;
     for (CDList* list in lists) {
         if ([list isKindOfClass:[CDPlaylist class]]) {
@@ -580,6 +1183,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     // Notifications
     if ([defaults objectForKey:EnableNewEpisodeNotification]) [xml appendFormat:@"    <notifyNewEpisode>%@</notifyNewEpisode>\n", [defaults boolForKey:EnableNewEpisodeNotification] ? @"true" : @"false"];
     if ([defaults objectForKey:EnableManualRefreshFinishedNotification]) [xml appendFormat:@"    <notifyRefreshFinished>%@</notifyRefreshFinished>\n", [defaults boolForKey:EnableManualRefreshFinishedNotification] ? @"true" : @"false"];
+    if ([defaults objectForKey:EnableRefreshFailureNotification]) [xml appendFormat:@"    <notifyRefreshFailure>%@</notifyRefreshFailure>\n", [defaults boolForKey:EnableRefreshFailureNotification] ? @"true" : @"false"];
     if ([defaults objectForKey:EnableManualDownloadFinishedNotification]) [xml appendFormat:@"    <notifyDownloadFinished>%@</notifyDownloadFinished>\n", [defaults boolForKey:EnableManualDownloadFinishedNotification] ? @"true" : @"false"];
     // Appearance
     if ([defaults objectForKey:kDefaultAppearanceMode]) [xml appendFormat:@"    <appearanceMode>%ld</appearanceMode>\n", (long)[defaults integerForKey:kDefaultAppearanceMode]];
@@ -604,7 +1208,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:ScreenTouchIntelligentSleep]) [xml appendFormat:@"    <screenTouchIntelligentSleep>%@</screenTouchIntelligentSleep>\n", [defaults boolForKey:ScreenTouchIntelligentSleep] ? @"true" : @"false"];
     if ([defaults objectForKey:VolumeChangeIntelligentSleep]) [xml appendFormat:@"    <volumeChangeIntelligentSleep>%@</volumeChangeIntelligentSleep>\n", [defaults boolForKey:VolumeChangeIntelligentSleep] ? @"true" : @"false"];
     // App Icon
-    NSString *alternateIconName = [[UIApplication sharedApplication] alternateIconName];
     if (alternateIconName) {
         [xml appendFormat:@"    <appIcon>%@</appIcon>\n", [self xmlEscape:alternateIconName]];
     }
@@ -653,7 +1256,6 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     if ([defaults objectForKey:kTranscriptionEverActivated]) [xml appendFormat:@"    <transcriptionEverActivated>%@</transcriptionEverActivated>\n", [defaults boolForKey:kTranscriptionEverActivated] ? @"true" : @"false"];
     if ([defaults objectForKey:kTranscriptionFirstRunShown]) [xml appendFormat:@"    <transcriptionFirstRunShown>%@</transcriptionFirstRunShown>\n", [defaults boolForKey:kTranscriptionFirstRunShown] ? @"true" : @"false"];
     if ([defaults objectForKey:@"TranscriptVisiblePreference"]) [xml appendFormat:@"    <transcriptVisiblePreference>%@</transcriptVisiblePreference>\n", [defaults boolForKey:@"TranscriptVisiblePreference"] ? @"true" : @"false"];
-    NSDictionary *credentialValues = [ICRemoteChapterCredentialStore backupCredentialValues];
     NSArray *credentialKeys = @[@"openAIAPIKey", @"anthropicAPIKey", @"kimiAPIKey", @"openAIOAuthAccessToken", @"openAIOAuthRefreshToken", @"openAIOAuthIDToken", @"openAIOAuthAccountID", @"openAIOAuthAccountEmail", @"openAIOAuthFedRAMP"];
     for (NSString *key in credentialKeys) {
         NSString *value = credentialValues[key];
@@ -684,19 +1286,12 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
     // Write file
     NSData* data = [xml dataUsingEncoding:NSUTF8StringEncoding];
-    NSString* fileName = [NSString stringWithFormat:@"Instacast-Backup-%@.xml", [UIDevice currentDevice].name];
+    NSString* fileName = [NSString stringWithFormat:@"Instacast-Backup-%@.xml", deviceName];
     NSString* documentsDir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) lastObject];
     NSURL* url = [NSURL fileURLWithPath:[documentsDir stringByAppendingPathComponent:fileName]];
 
-    [data writeToURL:url atomically:YES];
-
-    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-    self.interactionController.delegate = self;
-    self.interactionController.name = fileName;
-    self.interactionController.UTI = @"public.xml";
-    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-        self.interactionController = nil;
-    }
+    if (![data writeToURL:url options:NSDataWritingAtomic error:error]) return nil;
+    return url;
 }
 
 #pragma mark - Import
@@ -735,26 +1330,44 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     self.importInProgress = YES;
 
     self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Analyzing backup…".ls];
-    [self.mInfo show];
+    [self.mInfo showInWindow:self.view.window];
+    NSInteger selectedImportRow = self.selectedImportRow;
 
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        BOOL needsSecurity = [url startAccessingSecurityScopedResource];
-        NSData *data = [NSData dataWithContentsOfURL:url];
-        if (needsSecurity) {
-            [url stopAccessingSecurityScopedResource];
-        }
+        NSError* readError = nil;
+        NSData *data = [ICXMLImportLimits readDataFromURL:url error:&readError];
 
         if (!data || data.length == 0) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self.mInfo close];
-                self.mInfo = nil;
-                self.importInProgress = NO;
+                NSError* importError = readError ?: [NSError errorWithDomain:@"Import"
+                                                                          code:1
+                                                                      userInfo:@{NSLocalizedDescriptionKey: @"The selected file is empty.".ls}];
+                [self _finishImportWithError:importError];
             });
             return;
         }
 
-        // Detect format: Instacast backup XML vs OPML
-        if ([InstacastBackupParser isInstacastBackupData:data]) {
+        BOOL isInstacastBackup = [InstacastBackupParser isInstacastBackupData:data];
+        if (selectedImportRow == 0 && !isInstacastBackup) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSError* formatError = [NSError errorWithDomain:@"Import"
+                                                            code:2
+                                                        userInfo:@{NSLocalizedDescriptionKey: @"This XML file is not an InstacastPlus backup.".ls}];
+                [self _finishImportWithError:formatError];
+            });
+            return;
+        }
+        if (selectedImportRow == 1 && isInstacastBackup) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSError* formatError = [NSError errorWithDomain:@"Import"
+                                                            code:3
+                                                        userInfo:@{NSLocalizedDescriptionKey: @"This file is an InstacastPlus backup. Choose All InstacastPlus Data to import it.".ls}];
+                [self _finishImportWithError:formatError];
+            });
+            return;
+        }
+
+        if (isInstacastBackup) {
             [self importInstacastBackupFromData:data];
         } else {
             [self importOPMLFromData:data];
@@ -762,25 +1375,34 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     });
 }
 
+- (void)_finishImportWithError:(NSError*)error
+{
+    NSAssert([NSThread isMainThread], @"Import UI completion must run on the main thread");
+    [self.mInfo close];
+    self.mInfo = nil;
+    self.importInProgress = NO;
+    if (!error) {
+        return;
+    }
+
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
+                                                                   message:error.localizedDescription ?: @"Could not parse backup file.".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)importInstacastBackupFromData:(NSData *)data
 {
     [InstacastBackupParser parseData:data completion:^(InstacastBackupData *backupData, NSError *error) {
-        [self.mInfo close];
-        self.mInfo = nil;
-
         if (error || !backupData) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
-                                                                          message:error.localizedDescription ?: @"Could not parse backup file.".ls
-                                                                   preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-            [self presentViewController:alert animated:YES completion:nil];
-            self.importInProgress = NO;
+            [self _finishImportWithError:error ?: [NSError errorWithDomain:@"Import" code:4 userInfo:nil]];
             return;
         }
 
+        [self _finishImportWithError:nil];
         InstacastBackupImportViewController *importVC = [InstacastBackupImportViewController viewControllerWithBackupData:backupData];
         [self.navigationController pushViewController:importVC animated:YES];
-        self.importInProgress = NO;
     }];
 }
 
@@ -789,12 +1411,10 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.mInfo close];
         self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing\u2026".ls];
-        [self.mInfo show];
+        [self.mInfo showInWindow:self.view.window];
 
-        [[SubscriptionManager sharedSubscriptionManager] importOPMLData:data completion:^{
-            [self.mInfo close];
-            self.mInfo = nil;
-            self.importInProgress = NO;
+        [[SubscriptionManager sharedSubscriptionManager] importOPMLData:data completion:^(NSError* error) {
+            [self _finishImportWithError:error];
         } progress:^(float progress) {
             if (progress > 0.03) {
                 [self.mInfo setProgress:progress];
@@ -808,6 +1428,9 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 - (void) documentInteractionControllerDidDismissOpenInMenu:(UIDocumentInteractionController *)controller
 {
     self.interactionController = nil;
+    [self presentPendingFullExportResultIfNeeded];
+    [self presentPendingSubscriptionsExportResultIfNeeded];
+    [self presentPendingBookmarksExportResultIfNeeded];
 }
 
 
@@ -835,40 +1458,74 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 - (void) performAppReset
 {
     self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Resetting…".ls];
-    [self.mInfo show];
+    [self.mInfo showInWindow:self.view.window];
 
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // Clear all UserDefaults
-        NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
-        [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+    [[CacheManager sharedCacheManager] cancelDownloadsAndClearCacheWithCompletion:^(NSError *cacheError) {
+        if (cacheError) {
+            [self _showResetError:cacheError];
+            return;
+        }
 
-        // Clear all downloaded files
-        [[CacheManager sharedCacheManager] clearTheFuckingCache];
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            // Unsubscribe all feeds (Core Data must be on main thread)
-            NSArray* allFeeds = [DMANAGER.feeds copy];
-            for (CDFeed* feed in allFeeds) {
-                [DMANAGER unsubscribeFeed:feed];
+        [[ICiCloudSyncManager sharedManager] prepareForLocalAppResetWithCompletion:^(NSError *syncError) {
+            if (syncError) {
+                [self _showResetError:syncError];
+                return;
             }
-            [DMANAGER save];
 
-            [self.mInfo close];
-            self.mInfo = nil;
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                BOOL clearedImages = [[ImageCacheManager sharedImageCacheManager] cancelImageDownloadsAndClearCache];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!clearedImages) {
+                        NSError *imageError = [NSError errorWithDomain:@"AppReset"
+                                                                  code:1
+                                                              userInfo:@{NSLocalizedDescriptionKey: @"Cached images could not be deleted. No local database data was reset.".ls}];
+                        [self _showResetError:imageError];
+                        return;
+                    }
 
-            // Reset app icon if needed, then show confirmation
-            if ([UIApplication sharedApplication].alternateIconName != nil) {
-                [[UIApplication sharedApplication] setAlternateIconName:nil completionHandler:^(NSError * _Nullable error) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [self _showResetCompleteAlert];
-                    });
-                }];
-            } else {
-                [self _showResetCompleteAlert];
-            }
-        });
-    });
+                    [DMANAGER resetAllUserDataWithCompletion:^(NSError *databaseError) {
+                        if (databaseError) {
+                            [self _showResetError:databaseError];
+                            return;
+                        }
+
+                        NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
+                        [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
+                        [[NSUserDefaults standardUserDefaults] synchronize];
+
+                        [self.mInfo close];
+                        self.mInfo = nil;
+
+                        // Reset app icon if needed, then show confirmation
+                        if ([UIApplication sharedApplication].alternateIconName != nil) {
+                            [[UIApplication sharedApplication] setAlternateIconName:nil completionHandler:^(NSError * _Nullable error) {
+                                dispatch_async(dispatch_get_main_queue(), ^{
+                                    if (error) {
+                                        [self _showResetError:error];
+                                    } else {
+                                        [self _showResetCompleteAlert];
+                                    }
+                                });
+                            }];
+                        } else {
+                            [self _showResetCompleteAlert];
+                        }
+                    }];
+                });
+            });
+        }];
+    }];
+}
+
+- (void)_showResetError:(NSError *)error
+{
+    [self.mInfo close];
+    self.mInfo = nil;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Reset Failed".ls
+                                                                   message:error.localizedDescription ?: @"The app could not be reset. No success was reported.".ls
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)_showResetCompleteAlert
@@ -878,9 +1535,7 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls
                                               style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction * action) {
-        exit(0);
-    }]];
+                                            handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 

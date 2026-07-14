@@ -10,7 +10,7 @@
 #import <CoreData/CoreData.h>
 #import "CDBase.h"
 
-@class CDCategory, CDEpisode, CDFeedProperty;
+@class CDCategory, CDEpisode, CDEpisodeList, CDFeedProperty;
 
 @interface CDFeed : CDBase
 
@@ -41,6 +41,7 @@
 @property (nonatomic) BOOL explicitContent;
 @property (nonatomic, strong) NSString* contentHash;
 @property (nonatomic, strong) NSSet *categories;
+@property (nonatomic, strong) NSSet *episodeLists;
 @property (nonatomic, strong) NSSet *episodes;
 @property (nonatomic, strong) NSSet *properties;
 
@@ -56,6 +57,10 @@
 @property (nonatomic, strong) NSString * displayTitle;
 
 - (void) invalidateCounts;
+- (void)invalidateCountsAwaitingSave:(BOOL)awaitingSave;
+- (void)feedCountChangesDidSave;
+- (void)feedCountChangesDidFailSave;
+- (void) invalidateDownloadedCount;
 - (void)calculateCountsWithCompletion:(void (^)(NSInteger unplayedCount, NSInteger episodesCount))completion;
 
 @end
@@ -65,6 +70,11 @@
 - (void)removeCategoriesObject:(CDCategory *)value;
 - (void)addCategories:(NSSet *)values;
 - (void)removeCategories:(NSSet *)values;
+
+- (void)addEpisodeListsObject:(CDEpisodeList *)value;
+- (void)removeEpisodeListsObject:(CDEpisodeList *)value;
+- (void)addEpisodeLists:(NSSet *)values;
+- (void)removeEpisodeLists:(NSSet *)values;
 
 - (void)addEpisodesObject:(CDEpisode *)value;
 - (void)removeEpisodesObject:(CDEpisode *)value;

@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/InstacastWatchWidgets-primary.dia",
+    "emit-module-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/InstacastWatchWidgets-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/InstacastWatchWidgets-primary-emit-module.dia",
+    "pch" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/InstacastWatchWidgets-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/InstacastWatchWidgets-primary.swiftdeps"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatchWidgets/WatchComplicationWidget.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/WatchComplicationWidget~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchos/InstacastWatchWidgets.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

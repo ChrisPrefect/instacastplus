@@ -50,9 +50,11 @@ require(
     and "self.sourceEpisodeListUID = nil" in resolve,
     "playEpisode must validate both the armed and the surviving source via list membership.",
 )
+audio_implementation = audio_session.split("@implementation AudioSession", 1)[1]
+play_core = audio_implementation.split("- (void) _playEpisode:(CDEpisode*)anEpisode", 1)[1].split("\n- (", 1)[0]
 require(
-    "_resolvePlaybackSourceListForEpisode:anEpisode" in audio_session.split("- (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:", 1)[1].split("\n- (", 1)[0],
-    "playEpisode must resolve the playback source list on every start.",
+    "_resolvePlaybackSourceListForEpisode:anEpisode" in play_core,
+    "The shared play core must resolve the playback source list on every start.",
 )
 
 next_playable = audio_session.split("- (CDEpisode*) nextPlayableEpisode", 1)[1].split("\n- (", 1)[0]

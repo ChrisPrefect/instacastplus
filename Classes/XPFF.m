@@ -184,6 +184,11 @@ NSData* XPFFDataWithBookmarks(NSArray* bookmarks)
     return XPFFDataWithBookmarksFilterHashes(bookmarks, nil);
 }
 
+static NSString* XPFFEscapedString(NSString* value)
+{
+    return [value stringByEncodingStandardHTMLEntities] ?: @"";
+}
+
 NSData* XPFFDataWithBookmarksFilterHashes(NSArray* bookmarks, NSSet* filterHashes)
 {
     NSMutableString* xpff = [NSMutableString string];
@@ -193,40 +198,45 @@ NSData* XPFFDataWithBookmarksFilterHashes(NSArray* bookmarks, NSSet* filterHashe
 
     NSMutableDictionary* bookmarkIndex = [[NSMutableDictionary alloc] init];
     
-    for(CDBookmark* bookmark in DMANAGER.bookmarks)
+    for(CDBookmark* bookmark in bookmarks)
     {
-        NSMutableArray* groupedBookmarks = bookmarkIndex[bookmark.episodeHash];
+        NSString* episodeHash = bookmark.episodeHash;
+        if (episodeHash.length == 0) {
+            continue;
+        }
+        NSMutableArray* groupedBookmarks = bookmarkIndex[episodeHash];
         if (!groupedBookmarks) {
             groupedBookmarks = [[NSMutableArray alloc] init];
-            bookmarkIndex[bookmark.episodeHash] = groupedBookmarks;
+            bookmarkIndex[episodeHash] = groupedBookmarks;
         }
         
         [groupedBookmarks addObject:bookmark];
     }
     
-    for(NSString* episodeHash in bookmarkIndex)
+    NSArray<NSString*>* sortedEpisodeHashes = [bookmarkIndex.allKeys sortedArrayUsingSelector:@selector(compare:)];
+    for(NSString* episodeHash in sortedEpisodeHashes)
     {
         if (filterHashes && ![filterHashes containsObject:episodeHash]) {
             continue;
         }
 
-        NSArray* bookmarks = bookmarkIndex[episodeHash];
+        NSArray* episodeBookmarks = bookmarkIndex[episodeHash];
         
-        CDBookmark* bookmark = [bookmarks lastObject];
-        [xpff appendFormat:@"\t<episode title=\"%@\" guid=\"%@\">\n", [bookmark.episodeTitle stringByEncodingStandardHTMLEntities], [bookmark.episodeGuid stringByEncodingStandardHTMLEntities]];
+        CDBookmark* bookmark = [episodeBookmarks lastObject];
+        [xpff appendFormat:@"\t<episode title=\"%@\" guid=\"%@\">\n", XPFFEscapedString(bookmark.episodeTitle), XPFFEscapedString(bookmark.episodeGuid)];
         
         NSURL* imageURL = bookmark.imageURL;
         if (imageURL) {
-            [xpff appendFormat:@"\t\t<source title=\"%@\" url=\"%@\" image=\"%@\" />\n", [bookmark.feedTitle stringByEncodingStandardHTMLEntities], [[bookmark.feedURL absoluteString] stringByEncodingStandardHTMLEntities], imageURL];
+            [xpff appendFormat:@"\t\t<source title=\"%@\" url=\"%@\" image=\"%@\" />\n", XPFFEscapedString(bookmark.feedTitle), XPFFEscapedString(bookmark.feedURL.absoluteString), XPFFEscapedString(imageURL.absoluteString)];
         } else {
-            [xpff appendFormat:@"\t\t<source title=\"%@\" url=\"%@\" />\n", [bookmark.feedTitle stringByEncodingStandardHTMLEntities], [[bookmark.feedURL absoluteString] stringByEncodingStandardHTMLEntities]];
+            [xpff appendFormat:@"\t\t<source title=\"%@\" url=\"%@\" />\n", XPFFEscapedString(bookmark.feedTitle), XPFFEscapedString(bookmark.feedURL.absoluteString)];
         }
         
-        for(CDBookmark* bookmark in bookmarks)
+        for(CDBookmark* bookmark in episodeBookmarks)
         {
             NSInteger t = bookmark.position;
             NSString* time = [NSString stringWithFormat:@"%02ld:%02ld:%02ld", (long)t/3600, (long)(t/60)%60, (long)t%60];
-            [xpff appendFormat:@"\t\t<mark title=\"%@\" time=\"%@\" />\n", [bookmark.title stringByEncodingStandardHTMLEntities], time];
+            [xpff appendFormat:@"\t\t<mark title=\"%@\" time=\"%@\" />\n", XPFFEscapedString(bookmark.title), time];
         }
         
         [xpff appendString:@"\t</episode>\n"];

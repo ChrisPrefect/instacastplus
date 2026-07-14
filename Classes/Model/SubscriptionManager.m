@@ -1211,18 +1211,28 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             // Takes the feed out of the stub hydration queue.
             localFeed.lastUpdate = [NSDate date];
 
-            if (totalEpisodeCount > initialLoadCount) {
+            BOOL hasPendingEpisodeLoad = (totalEpisodeCount > initialLoadCount);
+            if (hasPendingEpisodeLoad) {
                 [localFeed setBool:NO forKey:kFeedPropertyEpisodeLoadingComplete];
                 [localFeed setInteger:totalEpisodeCount forKey:kFeedPropertyTotalExpectedEpisodes];
                 [localFeed setInteger:initialLoadCount forKey:kFeedPropertyLoadedEpisodeCount];
-                [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:localFeed
-                                                                    parserEpisodes:sortedEpisodes
-                                                                        startIndex:initialLoadCount];
             } else {
                 [localFeed setBool:YES forKey:kFeedPropertyEpisodeLoadingComplete];
             }
 
-            [DMANAGER save];
+            NSError* hydrationSaveError = [DMANAGER saveReturningError];
+            if (hydrationSaveError) {
+                if (completion) {
+                    completion(NO, nil, hydrationSaveError);
+                }
+                return;
+            }
+
+            if (hasPendingEpisodeLoad) {
+                [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:localFeed
+                                                                    parserEpisodes:sortedEpisodes
+                                                                        startIndex:initialLoadCount];
+            }
 
             if (completion) {
                 completion(YES, @[], nil);
@@ -1482,6 +1492,38 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
     return persistentEpisode;
 }
 
+- (BOOL)_episodeHasLocalStateWorthPreserving:(CDEpisode*)episode
+{
+    if (!episode) return NO;
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+    BOOL isPlaying = episode.objectHash.length > 0 &&
+        [playbackManager.playingEpisode.objectHash isEqualToString:episode.objectHash];
+    return isPlaying ||
+        [cacheManager episodeIsCached:episode] ||
+        [cacheManager isCachingEpisode:episode] ||
+        [cacheManager downloadErrorForEpisode:episode] != nil ||
+        episode.starred ||
+        episode.position > 0;
+}
+
+- (BOOL)_shouldPreferEpisode:(CDEpisode*)candidate overEpisode:(CDEpisode*)current
+{
+    if (!current) return YES;
+    BOOL candidateHasLocalState = [self _episodeHasLocalStateWorthPreserving:candidate];
+    BOOL currentHasLocalState = [self _episodeHasLocalStateWorthPreserving:current];
+    if (candidateHasLocalState != currentHasLocalState) {
+        return candidateHasLocalState;
+    }
+    if (candidate.pubDate && !current.pubDate) return YES;
+    if (!candidate.pubDate && current.pubDate) return NO;
+    NSComparisonResult dateComparison = [candidate.pubDate compare:current.pubDate];
+    if (dateComparison != NSOrderedSame) {
+        return dateComparison == NSOrderedDescending;
+    }
+    return [candidate.objectHash ?: @"" compare:current.objectHash ?: @""] == NSOrderedAscending;
+}
+
 - (void) updateLocalFeedInfo:(CDFeed*)localFeed withRemoteFeed:(ICFeed*)remoteFeed force:(BOOL)force
 {
     if (!force)
@@ -1512,7 +1554,10 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
         NSMutableDictionary* localEpisodeIndex = [NSMutableDictionary dictionary];
         for(CDEpisode* episode in localFeed.episodes) {
             if (episode.guid) {
-                localEpisodeIndex[episode.guid] = episode;
+                CDEpisode* canonicalEpisode = localEpisodeIndex[episode.guid];
+                if ([self _shouldPreferEpisode:episode overEpisode:canonicalEpisode]) {
+                    localEpisodeIndex[episode.guid] = episode;
+                }
             }
         }
 
@@ -1612,20 +1657,15 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             }];
         }
         
-        // remove duplicate episodes
-        NSArray* episodes = [localFeed.episodes sortedArrayUsingDescriptors:@[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO] ]];
-        
-        NSMutableSet* guids = [NSMutableSet setWithCapacity:[episodes count]];
-        for(CDEpisode* episode in episodes) {
-            if (!episode.guid) {
-                continue;
+        NSMutableArray<CDEpisode*>* duplicateEpisodes = [NSMutableArray array];
+        for (CDEpisode* episode in [localFeed.episodes copy]) {
+            CDEpisode* canonicalEpisode = episode.guid ? localEpisodeIndex[episode.guid] : nil;
+            if (canonicalEpisode && ![canonicalEpisode isEqual:episode]) {
+                [duplicateEpisodes addObject:episode];
             }
-            if (![guids containsObject:episode.guid]) {
-                [guids addObject:episode.guid];
-            }
-            else {
-                [context deleteObject:episode];
-            }
+        }
+        if (duplicateEpisodes.count > 0) {
+            [DMANAGER deleteEpisodes:duplicateEpisodes completion:nil];
         }
     }
 }
@@ -1634,21 +1674,24 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 {
     NSManagedObjectContext* context = localFeed.managedObjectContext;
     NSSet* localEpisodes = localFeed.episodes;
-    NSMutableSet* episodeGuids = [[NSMutableSet alloc] initWithCapacity:[localEpisodes count]];
-    NSMutableSet* episodeObjectHashes = [[NSMutableSet alloc] initWithCapacity:[localEpisodes count]];
+    NSMutableDictionary<NSString*, CDEpisode*>* localEpisodesByGUID = [NSMutableDictionary dictionaryWithCapacity:localEpisodes.count];
+    NSMutableDictionary<NSString*, CDEpisode*>* localEpisodesByObjectHash = [NSMutableDictionary dictionaryWithCapacity:localEpisodes.count];
+    NSDate* newestLocalEpisodeDate = nil;
 
     for(CDEpisode* episode in localEpisodes) {
-        if (episode.guid) {
-            [episodeGuids addObject:episode.guid];
+        if (episode.guid && !localEpisodesByGUID[episode.guid]) {
+            localEpisodesByGUID[episode.guid] = episode;
         }
-        if (episode.objectHash) {
-            [episodeObjectHashes addObject:episode.objectHash];
+        if (episode.objectHash && !localEpisodesByObjectHash[episode.objectHash]) {
+            localEpisodesByObjectHash[episode.objectHash] = episode;
+        }
+        if (episode.pubDate && (!newestLocalEpisodeDate || [episode.pubDate compare:newestLocalEpisodeDate] == NSOrderedDescending)) {
+            newestLocalEpisodeDate = episode.pubDate;
         }
     }
     
 	// merge new entries
 	NSArray* remoteEpisodes = [remoteFeed.episodes sortedArrayUsingDescriptors:@[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:YES] ]];
-    CDEpisode* newestLocalEpisode = [[localFeed sortedEpisodes] firstObject];
 	
     NSMutableArray* newEpisodes = [[NSMutableArray alloc] init];
 	for (ICEpisode* remoteEpisode in remoteEpisodes)
@@ -1657,31 +1700,27 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             continue;
         }
 
-        BOOL guidAlreadyExists = [episodeGuids containsObject:remoteEpisode.guid];
-        BOOL hashAlreadyExists = (remoteEpisode.objectHash && [episodeObjectHashes containsObject:remoteEpisode.objectHash]);
+        CDEpisode* localEpisode = localEpisodesByGUID[remoteEpisode.guid];
+        if (!localEpisode && remoteEpisode.objectHash) {
+            localEpisode = localEpisodesByObjectHash[remoteEpisode.objectHash];
+        }
 
         // Episode exists locally — check if it's a stub from backup import (no title)
-        if (guidAlreadyExists || hashAlreadyExists) {
-            for (CDEpisode *localEp in localEpisodes) {
-                if ((localEp.guid && [localEp.guid isEqualToString:remoteEpisode.guid]) ||
-                    (localEp.objectHash && [localEp.objectHash isEqualToString:remoteEpisode.objectHash])) {
-                    if (!localEp.title || localEp.title.length == 0) {
-                        // Stub episode from backup import — fill in metadata, preserve status
-                        [self _copyEpisodeValuesFrom:remoteEpisode toPersistentEpisode:localEp];
-                        // Create media objects
-                        NSMutableSet *media = [[NSMutableSet alloc] init];
-                        for (ICMedia *parserMedia in remoteEpisode.media) {
-                            if (parserMedia.fileURL) {
-                                CDMedium *medium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
-                                                                                inManagedObjectContext:context];
-                                [self _copyMediumValuesFrom:parserMedia toPersistentMedium:medium];
-                                [media addObject:medium];
-                            }
-                        }
-                        localEp.media = media;
+        if (localEpisode) {
+            if (!localEpisode.title || localEpisode.title.length == 0) {
+                // Stub episode from backup import — fill in metadata, preserve status
+                [self _copyEpisodeValuesFrom:remoteEpisode toPersistentEpisode:localEpisode];
+                // Create media objects
+                NSMutableSet *media = [[NSMutableSet alloc] init];
+                for (ICMedia *parserMedia in remoteEpisode.media) {
+                    if (parserMedia.fileURL) {
+                        CDMedium *medium = [NSEntityDescription insertNewObjectForEntityForName:@"Medium"
+                                                                        inManagedObjectContext:context];
+                        [self _copyMediumValuesFrom:parserMedia toPersistentMedium:medium];
+                        [media addObject:medium];
                     }
-                    break;
                 }
+                localEpisode.media = media;
             }
             continue;
         }
@@ -1698,14 +1737,14 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 continue;
             }
 
-            [episodeGuids addObject:remoteEpisode.guid];
+            localEpisodesByGUID[remoteEpisode.guid] = newPersistentEpisode;
             if (newPersistentEpisode.objectHash) {
-                [episodeObjectHashes addObject:newPersistentEpisode.objectHash];
+                localEpisodesByObjectHash[newPersistentEpisode.objectHash] = newPersistentEpisode;
             }
             
             // only mark those episodes as unplayed that are newer than the latest episodes we already got
             NSTimeInterval newEpisodeTimeInterval = [newPersistentEpisode.pubDate timeIntervalSince1970];
-            NSTimeInterval formerEpisodeTimeInterval = [newestLocalEpisode.pubDate timeIntervalSince1970];
+            NSTimeInterval formerEpisodeTimeInterval = [newestLocalEpisodeDate timeIntervalSince1970];
             if (wasNew && newEpisodeTimeInterval > formerEpisodeTimeInterval) {
                 newPersistentEpisode.consumed = NO;
             }
@@ -1736,11 +1775,14 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
         }
     }
     
-    for(CDEpisode* episode in [localFeed.episodes copy])
-    {
+    NSMutableArray<CDEpisode*>* unavailableEpisodes = [NSMutableArray array];
+    for(CDEpisode* episode in [localFeed.episodes copy]) {
         if (![episodeGuids containsObject:episode.guid]) {
-            [DMANAGER deleteEpisode:episode];
+            [unavailableEpisodes addObject:episode];
         }
+    }
+    if (unavailableEpisodes.count > 0) {
+        [DMANAGER deleteEpisodes:unavailableEpisodes completion:nil];
     }
 }
 
@@ -1905,17 +1947,30 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
+            NSError* currentFeedError = nil;
+            CDFeed* currentFeed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:&currentFeedError];
+            if (![currentFeed isKindOfClass:[CDFeed class]] || currentFeedError || currentFeed.isDeleted ||
+                currentFeed.parked || !currentFeed.subscribed) {
+                return;
+            }
+
             NSMutableArray* thisSortedEpisodes = [[NSMutableArray alloc] initWithCapacity:episodeObjectIDs.count];
             for (NSManagedObjectID* objectID in episodeObjectIDs) {
                 NSError* error = nil;
                 CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:objectID error:&error];
-                if ([episode isKindOfClass:[CDEpisode class]] && !error && !episode.isDeleted) {
+                if ([episode isKindOfClass:[CDEpisode class]] && !error && !episode.isDeleted &&
+                    [episode.feed isEqual:currentFeed]) {
                     [thisSortedEpisodes addObject:episode];
                 }
             }
             [self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes];
         });
     });
+}
+
+- (void) autoDownloadEpisodesInFeedAsynchronously:(CDFeed*)feed
+{
+    [self _autoDownloadEpisodesInFeedAsynchronously:feed];
 }
 
 - (BOOL) autoDownloadEpisodesInFeed:(CDFeed*)feed
@@ -2184,7 +2239,7 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 
                     BOOL shouldSkip = error || !data || statusCode < 200 || statusCode >= 300;
                     if (shouldSkip) {
-                        ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
+                        ErrLog(@"Skipping %@ due to error: %@", ICRedactedURLStringForLogging(url.absoluteString), error.localizedDescription);
                         dispatch_async(dispatch_get_main_queue(), ^{
                             completedCount++;
                             if (progress) progress((float)completedCount / (float)totalCount);
@@ -2237,15 +2292,28 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 }
 
 
-- (void)importOPMLData:(NSData *)data completion:(void (^)(void))completion progress:(void (^)(float))progress {
+- (void)importOPMLData:(NSData *)data completion:(void (^)(NSError* error))completion progress:(void (^)(float))progress {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self importOPMLData:data completion:completion progress:progress];
+        });
+        return;
+    }
+    if (self.importing) {
+        if (completion) {
+            completion([NSError errorWithDomain:@"OPMLImport"
+                                           code:1
+                                       userInfo:@{NSLocalizedDescriptionKey: @"Another subscription import is already in progress.".ls}]);
+        }
+        return;
+    }
+
+    self.importing = YES;
+    [App retainNetworkActivity];
     OPMLParser *opmlParser = [OPMLParser opmlParserWithData:data];
-    
+
     [opmlParser parseWithCompletionHandler:^(NSArray<NSDictionary *> *feeds) {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
-            self.importing = YES;
-            [App retainNetworkActivity];
-
-            // Collect existing feed URLs on main thread (Core Data is not thread-safe)
             __block NSMutableSet<NSString *> *existingFeedURLs;
             dispatch_sync(dispatch_get_main_queue(), ^{
                 existingFeedURLs = [NSMutableSet set];
@@ -2256,39 +2324,61 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                     }
                 }
             });
-            
+
             NSMutableArray<NSURL *> *urlsToImport = [NSMutableArray arrayWithCapacity:feeds.count];
+            NSUInteger invalidURLCount = 0;
             for (NSDictionary *feedDict in feeds) {
                 NSString *xmlURL = feedDict[OPMLFeedXmlUrl];
-                if (!xmlURL) continue;
-                
-                NSURL *feedURL = [NSURL URLWithString:xmlURL];
-                NSString *normalized = [self normalizedURLString:feedURL];
-                
-                if (!feedURL || !normalized || [existingFeedURLs containsObject:normalized]) {
-                    ErrLog(@"skipped duplicate or invalid feed: %@", xmlURL);
+                if (xmlURL.length == 0) {
+                    invalidURLCount++;
                     continue;
                 }
 
+                NSURL *feedURL = [NSURL URLWithString:xmlURL];
+                NSString *normalized = [self normalizedURLString:feedURL];
+                if (!feedURL || !normalized) {
+                    invalidURLCount++;
+                    ErrLog(@"skipped invalid feed: %@", xmlURL);
+                    continue;
+                }
+                if ([existingFeedURLs containsObject:normalized]) {
+                    continue;
+                }
                 [urlsToImport addObject:feedURL];
             }
-            
+
             if (urlsToImport.count == 0) {
-                [self finalizeImportWithCompletion:completion progress:progress];
+                NSError* importError = nil;
+                if (feeds.count == 0 || invalidURLCount > 0) {
+                    importError = [NSError errorWithDomain:@"OPMLImport"
+                                                      code:2
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"The OPML file does not contain any valid podcast subscriptions.".ls}];
+                }
+                [self finalizeImportWithCompletion:completion
+                                          progress:progress
+                                             error:importError
+                            savingWasInterrupted:NO];
                 return;
             }
-            
+
             [self importURLs:urlsToImport completion:completion progress:progress];
         });
     } errorHandler:^(NSError *error) {
         ErrLog(@"OPML parsing error: %@", error.localizedDescription);
-        [self finalizeImportWithCompletion:completion progress:progress];
+        NSError* importError = error ?: [NSError errorWithDomain:@"OPMLImport"
+                                                             code:3
+                                                         userInfo:@{NSLocalizedDescriptionKey: @"The OPML file could not be read.".ls}];
+        [self finalizeImportWithCompletion:completion
+                                  progress:progress
+                                     error:importError
+                    savingWasInterrupted:NO];
     }];
 }
 
 
-- (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(void))completion progress:(void (^)(float))progress {
+- (void)importURLs:(NSArray<NSURL *> *)urls completion:(void (^)(NSError* error))completion progress:(void (^)(float))progress {
     dispatch_group_t group = dispatch_group_create();
+    NSMutableArray<NSError*>* importErrors = [NSMutableArray array];
 
     [DMANAGER beginInterruptSaving];
 
@@ -2300,14 +2390,29 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 
         [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
             if (error) {
-                ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
+                ErrLog(@"Skipping %@ due to error: %@", ICRedactedURLStringForLogging(url.absoluteString), error.localizedDescription);
+                @synchronized(importErrors) {
+                    [importErrors addObject:error];
+                }
             }
             [self updateProgress:&completedCount total:totalCount progress:progress group:group];
         }];
     }
 
     dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-        [self finalizeImportWithCompletion:completion progress:progress];
+        NSError* importError = nil;
+        if (importErrors.count > 0) {
+            importError = [NSError errorWithDomain:@"OPMLImport"
+                                              code:4
+                                          userInfo:@{
+                                              NSLocalizedDescriptionKey: @"Some podcast subscriptions could not be imported. Check your connection and try again.".ls,
+                                              NSUnderlyingErrorKey: importErrors.firstObject,
+                                          }];
+        }
+        [self finalizeImportWithCompletion:completion
+                                  progress:progress
+                                     error:importError
+                    savingWasInterrupted:YES];
     });
 }
 
@@ -2319,39 +2424,89 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
     });
 }
 
-- (void)finalizeImportWithCompletion:(void (^)(void))completion progress:(void (^)(float))progress {
+- (void)finalizeImportWithCompletion:(void (^)(NSError* error))completion
+                            progress:(void (^)(float))progress
+                               error:(NSError*)error
+              savingWasInterrupted:(BOOL)savingWasInterrupted {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (savingWasInterrupted) {
+            [DMANAGER endInterruptSaving];
+        }
+        NSError* saveError = [DMANAGER saveReturningError];
+        NSError* finalError = saveError ?: error;
         [App releaseNetworkActivity];
         self.importing = NO;
-        [DMANAGER endInterruptSaving];
-        [DMANAGER save];
         if (progress) progress(1.0);
         [[NSNotificationCenter defaultCenter] postNotificationName:@"OPMLImportDidFinishNotification" object:nil];
-        if (completion) completion();
+        if (completion) completion(finalError);
     });
 }
 
 #pragma mark -
 
-- (NSData*) opmlData
+- (void)opmlDataWithCompletion:(void (^)(NSData* data, NSError* error))completion
 {
-	NSArray* feeds = DMANAGER.feeds;
-	NSMutableArray* feedDicts = [NSMutableArray array];
-	
-	for(CDFeed* feed in feeds)
-	{
-		if (!feed.sourceURL) continue;
-		NSMutableDictionary* dict = [NSMutableDictionary dictionary];
-		if (feed.title) dict[OPMLFeedTitle] = feed.title;
-		dict[OPMLFeedType] = @"rss";
-		dict[OPMLFeedXmlUrl] = [feed.sourceURL absoluteString];
-		if (feed.linkURL) dict[OPMLFeedHtmlUrl] = [feed.linkURL absoluteString];
-		[feedDicts addObject:dict];
-	}
-	
-	NSString* title = [NSString stringWithFormat:@"Instacast Subscriptions from %@".ls, [NSBundle deviceName]];
-	OPMLWriter* opmlWriter = [OPMLWriter opmlWriterWithFeeds:feedDicts];
-	return [opmlWriter dataWithTitle:title];
+    if (!completion) {
+        return;
+    }
+
+    NSString* title = [NSString stringWithFormat:@"Instacast Subscriptions from %@".ls, [NSBundle deviceName]];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        @autoreleasepool {
+            NSManagedObjectContext* context = [DMANAGER newExportBackgroundContext];
+            if (!context) {
+                NSError* error = [NSError errorWithDomain:@"OPMLExport"
+                                                      code:1
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"The podcast database could not be opened for export.".ls}];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    completion(nil, error);
+                });
+                return;
+            }
+
+            __block NSData* data = nil;
+            __block NSError* exportError = nil;
+            [context performBlockAndWait:^{
+                NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+                request.predicate = [NSPredicate predicateWithFormat:@"subscribed == %@ AND sourceURL_ != nil", @YES];
+                request.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+                request.resultType = NSDictionaryResultType;
+                request.propertiesToFetch = @[@"title", @"sourceURL_", @"linkURL_"];
+                NSArray<NSDictionary*>* feedRows = [context executeFetchRequest:request error:&exportError];
+                if (!feedRows || exportError) {
+                    return;
+                }
+
+                NSMutableArray* feedDicts = [NSMutableArray arrayWithCapacity:feedRows.count];
+                for (NSDictionary* row in feedRows) {
+                    NSString* sourceURL = [row[@"sourceURL_"] isKindOfClass:[NSString class]] ? row[@"sourceURL_"] : nil;
+                    if (sourceURL.length == 0) {
+                        continue;
+                    }
+                    NSMutableDictionary* dict = [NSMutableDictionary dictionary];
+                    NSString* feedTitle = [row[@"title"] isKindOfClass:[NSString class]] ? row[@"title"] : nil;
+                    NSString* linkURL = [row[@"linkURL_"] isKindOfClass:[NSString class]] ? row[@"linkURL_"] : nil;
+                    if (feedTitle.length > 0) dict[OPMLFeedTitle] = feedTitle;
+                    dict[OPMLFeedType] = @"rss";
+                    dict[OPMLFeedXmlUrl] = sourceURL;
+                    if (linkURL.length > 0) dict[OPMLFeedHtmlUrl] = linkURL;
+                    [feedDicts addObject:dict];
+                }
+
+                OPMLWriter* opmlWriter = [OPMLWriter opmlWriterWithFeeds:feedDicts];
+                data = [opmlWriter dataWithTitle:title];
+                if (data.length == 0) {
+                    exportError = [NSError errorWithDomain:@"OPMLExport"
+                                                       code:2
+                                                   userInfo:@{NSLocalizedDescriptionKey: @"The OPML document could not be created.".ls}];
+                }
+            }];
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion(data, exportError);
+            });
+        }
+    });
 }
 
 - (NSString *)normalizedURLString:(NSURL *)url {

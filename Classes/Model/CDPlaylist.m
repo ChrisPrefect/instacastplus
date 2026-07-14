@@ -9,6 +9,7 @@
 #import "CDPlaylist.h"
 #import "CDPlaylistEpisode.h"
 #import "CDEpisode.h"
+#import "CacheManager.h"
 
 NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisodesNotification";
 
@@ -98,7 +99,7 @@ NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisode
     
     NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
     feedsRequest.entity = [NSEntityDescription entityForName:@"PlaylistEpisode" inManagedObjectContext:self.managedObjectContext];
-    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"list == %@", self];
+    feedsRequest.predicate = [NSPredicate predicateWithFormat:@"list == %@ AND episode != nil", self];
     NSUInteger count = [self.managedObjectContext countForFetchRequest:feedsRequest error:nil];
     return count;
 }
@@ -125,6 +126,82 @@ NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisode
 - (NSArray*) sortedEpisodes
 {
     return [self _cachedEpisodes];
+}
+
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset limit:(NSUInteger)limit error:(NSError**)error
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"PlaylistEpisode" inManagedObjectContext:self.managedObjectContext];
+    request.predicate = [NSPredicate predicateWithFormat:@"list == %@ AND episode != nil", self];
+    request.sortDescriptors = @[
+        [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES],
+        [[NSSortDescriptor alloc] initWithKey:@"episode.objectHash" ascending:YES],
+    ];
+    request.fetchOffset = offset;
+    if (limit > 0) {
+        request.fetchLimit = limit;
+    }
+
+    NSError* fetchError = nil;
+    NSArray<CDPlaylistEpisode*>* rows = [self.managedObjectContext executeFetchRequest:request error:&fetchError];
+    if (fetchError) {
+        ErrLog(@"error fetching playlist page: %@", fetchError);
+        if (error) {
+            *error = fetchError;
+        }
+        return nil;
+    }
+
+    NSMutableArray<CDEpisode*>* episodes = [[NSMutableArray alloc] initWithCapacity:rows.count];
+    for (CDPlaylistEpisode* row in rows) {
+        if (row.episode) {
+            [episodes addObject:row.episode];
+        }
+    }
+    return episodes;
+}
+
+- (NSInteger)playbackTime
+{
+    NSExpressionDescription* totalDuration = [[NSExpressionDescription alloc] init];
+    totalDuration.name = @"totalDuration";
+    totalDuration.expression = [NSExpression expressionForFunction:@"sum:"
+                                                          arguments:@[[NSExpression expressionForKeyPath:@"duration"]]];
+    totalDuration.expressionResultType = NSInteger64AttributeType;
+
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:self.managedObjectContext];
+    request.predicate = [NSPredicate predicateWithFormat:@"ANY playlistEpisodes.list == %@", self];
+    request.resultType = NSDictionaryResultType;
+    request.propertiesToFetch = @[totalDuration];
+
+    NSError* error = nil;
+    NSDictionary* result = [[self.managedObjectContext executeFetchRequest:request error:&error] firstObject];
+    if (error) {
+        ErrLog(@"error calculating playlist duration: %@", error);
+        return 0;
+    }
+    return [result[@"totalDuration"] integerValue];
+}
+
+- (NSUInteger)numberOfPlayedEpisodes
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"PlaylistEpisode" inManagedObjectContext:self.managedObjectContext];
+    request.predicate = [NSPredicate predicateWithFormat:@"list == %@ AND episode.consumed == YES", self];
+    NSUInteger count = [self.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
+}
+
+- (NSUInteger)numberOfPlayedDownloadedEpisodes
+{
+    NSFetchRequest* request = [[NSFetchRequest alloc] init];
+    request.entity = [NSEntityDescription entityForName:@"PlaylistEpisode" inManagedObjectContext:self.managedObjectContext];
+    request.predicate = [NSPredicate predicateWithFormat:@"list == %@ AND episode.consumed == YES AND episode.objectHash IN %@",
+                         self,
+                         [CacheManager sharedCacheManager].cachedEpisodeObjectHashes];
+    NSUInteger count = [self.managedObjectContext countForFetchRequest:request error:NULL];
+    return (count == NSNotFound) ? 0 : count;
 }
 
 #pragma mark -

@@ -563,16 +563,22 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
             {
                 CDFeed* feed = self.selectedPodcasts[indexPath.row-1];
                 
-                UITableViewCell* cell = [self standardCellWithClass:[ICListEditorPodcastCell class]];
+                ICListEditorPodcastCell* cell = (ICListEditorPodcastCell*)[self standardCellWithClass:[ICListEditorPodcastCell class]];
                 cell.textLabel.text = feed.title;
+                NSString* representedFeedIdentifier = feed.objectID.URIRepresentation.absoluteString;
+                cell.representedFeedIdentifier = representedFeedIdentifier;
                 
                 UIImage* localImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:feed.imageURL size:44 grayscale:NO];
                 cell.imageView.image = localImage;
                 if (!localImage)
                 {
                     cell.imageView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
-                    [[ImageCacheManager sharedImageCacheManager] imageForURL:feed.imageURL size:44 grayscale:NO sender:self completion:^(UIImage *image) {
-                        cell.imageView.image = image;
+                    __weak ICListEditorPodcastCell* weakCell = cell;
+                    [[ImageCacheManager sharedImageCacheManager] imageForURL:feed.imageURL size:44 grayscale:NO sender:cell completion:^(UIImage *image) {
+                        ICListEditorPodcastCell* strongCell = weakCell;
+                        if (image && [strongCell.representedFeedIdentifier isEqualToString:representedFeedIdentifier]) {
+                            strongCell.imageView.image = image;
+                        }
                     }];
                 }
                 

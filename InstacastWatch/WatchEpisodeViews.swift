@@ -5,51 +5,17 @@ import CryptoKit
 
 struct WatchEpisodeListView: View {
     @EnvironmentObject private var store: WatchManifestStore
-    @EnvironmentObject private var player: WatchPlayerController
     @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var episodeCollection = WatchManifestStore.shared.episodeCollection
+    @ObservedObject private var playbackSummary = WatchPlayerController.shared.listPlaybackSummary
     @State private var playerPath: [String] = []
 
     private var accentColor: Color {
         Color(hex: store.accentColorHex)
     }
 
-    private var downloadedEpisodes: [WatchEpisode] {
-        store.episodes.filter { $0.status == .downloaded }
-    }
-
-    private var evictedEpisodes: [WatchEpisode] {
-        store.episodes.filter { $0.status == .evicted }
-    }
-
-    @ViewBuilder private var storageSummaryView: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Label {
-                Text(String(format: NSLocalizedString("%@ frei · %d geladen", comment: ""),
-                            byteText(WatchStorageManager.shared.freeBytes()),
-                            downloadedEpisodes.count))
-            } icon: {
-                Image(systemName: "internaldrive")
-            }
-            .foregroundStyle(.secondary)
-
-            // Only the genuinely-stuck case is loud: storage is full and nothing could be loaded at
-            // all. Normal over-subscription stays silent — the per-row state shows what isn't loaded,
-            // and the newest episodes that fit are kept automatically.
-            if downloadedEpisodes.isEmpty, !evictedEpisodes.isEmpty {
-                Label {
-                    Text(NSLocalizedString("Speicher voll – Platz freigeben", comment: ""))
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                }
-                .foregroundStyle(.orange)
-            }
-        }
-        .font(.system(size: 13))
-        .lineLimit(1)
-        .minimumScaleFactor(0.8)
-    }
-
     var body: some View {
+        let sortedEpisodeRows = store.sortedEpisodeRows
         NavigationStack(path: $playerPath) {
             List {
                 Text("InstacastPlus")
@@ -60,31 +26,41 @@ struct WatchEpisodeListView: View {
                     .allowsTightening(true)
                     .listRowBackground(Color.clear)
 
-                storageSummaryView
-                    .listRowBackground(Color.clear)
-
-                if store.sortedEpisodes.isEmpty {
-                    UnavailableWatchView(title: "Keine Episoden", systemImage: "tray")
+                switch store.loadState {
+                case .loading:
+                    ProgressView("Episoden werden geladen…")
+                        .frame(maxWidth: .infinity, minHeight: 120)
                         .listRowBackground(Color.clear)
-                } else {
-                    ForEach(store.sortedEpisodes) { episode in
-                        Button {
-                            handleTap(episode)
-                        } label: {
-                            WatchEpisodeRow(
-                                episode: episode,
+                case .failed:
+                    Button {
+                        Task { await store.load() }
+                    } label: {
+                        UnavailableWatchView(
+                            title: "Episoden konnten nicht geladen werden. Tippen zum Wiederholen.",
+                            systemImage: "arrow.clockwise"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                case .loaded:
+                    WatchStorageSummaryView(
+                        downloadedEpisodeCount: store.downloadedEpisodeCount,
+                        hasEvictedEpisodes: store.hasEvictedEpisodes
+                    )
+                        .listRowBackground(Color.clear)
+
+                    if sortedEpisodeRows.isEmpty {
+                        UnavailableWatchView(title: "Keine Episoden", systemImage: "tray")
+                            .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(sortedEpisodeRows) { state in
+                            WatchEpisodeListItemView(
+                                state: state,
                                 accentColor: accentColor,
-                                playbackPosition: playbackPosition(for: episode),
-                                isCurrent: player.playingEpisodeHash == episode.episodeHash
+                                isCurrent: playbackSummary.playingEpisodeHash == state.id,
+                                playbackPosition: WatchPlayerController.shared.listPlaybackPosition,
+                                onTap: handleTap
                             )
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions {
-                            Button(role: .destructive) {
-                                WatchDownloadManager.shared.removeEpisode(hash: episode.episodeHash)
-                            } label: {
-                                Label("Von Watch entfernen", systemImage: "trash")
-                            }
                         }
                     }
                 }
@@ -100,7 +76,7 @@ struct WatchEpisodeListView: View {
                         }
                 }
             }
-            .onChange(of: store.sortedEpisodes.map(\.episodeHash)) { _ in
+            .onChange(of: store.episodeMembershipGeneration) { _ in
                 popUnavailablePlayerIfNeeded()
             }
             .onAppear {
@@ -119,8 +95,8 @@ struct WatchEpisodeListView: View {
 
     private func showPlayerForActivePlaybackIfNeeded() {
         guard
-            player.isPlaying,
-            let hash = player.playingEpisodeHash,
+            playbackSummary.isPlaying,
+            let hash = playbackSummary.playingEpisodeHash,
             store.episode(hash: hash) != nil,
             playerPath.last != hash
         else {
@@ -130,9 +106,17 @@ struct WatchEpisodeListView: View {
     }
 
     private func handleTap(_ episode: WatchEpisode) {
+        if episode.hasPendingRemovalError {
+            WatchDownloadManager.shared.retryPendingRemoval(hash: episode.episodeHash)
+            return
+        } else if episode.hasPlaybackFileRemovalError {
+            WatchDownloadManager.shared.retryPlaybackFileRemoval(hash: episode.episodeHash)
+            return
+        }
+        guard episode.status != .removing else { return }
         if episode.status == .downloaded, episode.localFileURL != nil {
             Task { @MainActor in
-                if await player.play(episode) {
+                if await WatchPlayerController.shared.play(episode) {
                     playerPath = [episode.episodeHash]
                 }
             }
@@ -141,16 +125,130 @@ struct WatchEpisodeListView: View {
         }
     }
 
-    private func playbackPosition(for episode: WatchEpisode) -> Int {
-        if player.playingEpisodeHash == episode.episodeHash {
-            return max(0, Int(player.currentPosition.rounded()))
-        }
-        return episode.lastPlaybackPosition
-    }
-
     private func popUnavailablePlayerIfNeeded() {
         guard let visibleHash = playerPath.last, store.episode(hash: visibleHash) == nil else { return }
         playerPath.removeAll()
+    }
+}
+
+private struct WatchStorageSummaryView: View {
+    @ObservedObject private var storageManager = WatchStorageManager.shared
+    let downloadedEpisodeCount: Int
+    let hasEvictedEpisodes: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label {
+                if let freeBytes = storageManager.latestFreeBytes {
+                    Text(String(format: NSLocalizedString("%@ frei · %d geladen", comment: ""),
+                                byteText(freeBytes),
+                                downloadedEpisodeCount))
+                } else {
+                    Text(NSLocalizedString("Speicher wird ermittelt…", comment: ""))
+                }
+            } icon: {
+                Image(systemName: "internaldrive")
+            }
+            .foregroundStyle(.secondary)
+
+            // Only the genuinely-stuck case is loud: storage is full and nothing could be loaded at
+            // all. Normal over-subscription stays silent — the per-row state shows what isn't loaded,
+            // and the newest episodes that fit are kept automatically.
+            if downloadedEpisodeCount == 0, hasEvictedEpisodes {
+                Label {
+                    Text(NSLocalizedString("Speicher voll – Platz freigeben", comment: ""))
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(.orange)
+            }
+        }
+        .font(.system(size: 13))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+}
+
+private struct WatchEpisodeListItemView: View {
+    @ObservedObject var state: WatchEpisodeRowState
+    let accentColor: Color
+    let isCurrent: Bool
+    let playbackPosition: WatchListPlaybackPosition
+    let onTap: (WatchEpisode) -> Void
+
+    private var episode: WatchEpisode {
+        state.episode
+    }
+
+    var body: some View {
+        Button {
+            onTap(episode)
+        } label: {
+            if isCurrent {
+                WatchActiveEpisodeRow(
+                    episode: episode,
+                    accentColor: accentColor,
+                    playbackPosition: playbackPosition
+                )
+            } else {
+                WatchEpisodeRow(
+                    episode: episode,
+                    accentColor: accentColor,
+                    playbackPosition: episode.lastPlaybackPosition,
+                    isCurrent: false
+                )
+            }
+        }
+        .buttonStyle(.plain)
+        .swipeActions {
+            Button(role: .destructive) {
+                WatchDownloadManager.shared.removeEpisode(hash: episode.episodeHash)
+            } label: {
+                Label("Von Watch entfernen", systemImage: "trash")
+            }
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if episode.hasPendingRemovalError || episode.hasPlaybackFileRemovalError || episode.status == .failed || episode.status == .evicted {
+                Button {
+                    if episode.hasPendingRemovalError {
+                        WatchDownloadManager.shared.retryPendingRemoval(hash: episode.episodeHash)
+                    } else if episode.hasPlaybackFileRemovalError {
+                        WatchDownloadManager.shared.retryPlaybackFileRemoval(hash: episode.episodeHash)
+                    } else {
+                        WatchDownloadManager.shared.prioritizeEpisode(hash: episode.episodeHash)
+                    }
+                } label: {
+                    if episode.hasPendingRemovalError {
+                        Label("Entfernen erneut versuchen", systemImage: "arrow.clockwise")
+                    } else {
+                        Label("Download erneut versuchen", systemImage: "arrow.clockwise")
+                    }
+                }
+                .tint(accentColor)
+            }
+        }
+    }
+}
+
+private struct WatchActiveEpisodeRow: View {
+    let episode: WatchEpisode
+    let accentColor: Color
+    @ObservedObject var playbackPosition: WatchListPlaybackPosition
+
+    var body: some View {
+        WatchEpisodeRow(
+            episode: episode,
+            accentColor: accentColor,
+            playbackPosition: livePosition,
+            isCurrent: true
+        )
+    }
+
+    private var livePosition: Int {
+        guard playbackPosition.episodeHash == episode.episodeHash else {
+            return episode.lastPlaybackPosition
+        }
+        return max(0, Int(playbackPosition.currentPosition.rounded()))
     }
 }
 
@@ -214,9 +312,16 @@ private struct WatchEpisodeRow: View {
     private var statusLine: some View {
         switch episode.status {
         case .downloaded:
-            Text(playbackText)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if episode.hasPlaybackFileRemovalError {
+                Label(statusText, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(playbackText)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         case .downloading:
             Label(statusText, systemImage: "arrow.down.circle")
                 .foregroundStyle(.blue)
@@ -224,15 +329,23 @@ private struct WatchEpisodeRow: View {
         case .failed:
             Label(statusText, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-                .lineLimit(1)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
         case .evicted:
             Label(statusText, systemImage: "arrow.down.circle")
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         case .removing:
-            Label(statusText, systemImage: "trash")
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if episode.hasPendingRemovalError {
+                Label(statusText, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Label(statusText, systemImage: "trash")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         case .queued:
             Label(statusText, systemImage: "clock")
                 .foregroundStyle(.secondary)
@@ -243,6 +356,9 @@ private struct WatchEpisodeRow: View {
     private var statusText: String {
         switch episode.status {
         case .downloaded:
+            if episode.hasPlaybackFileRemovalError {
+                return episode.lastError ?? NSLocalizedString("Fehler", comment: "")
+            }
             return playbackText
         case .downloading:
             if let fraction = episode.progressFraction {
@@ -250,10 +366,20 @@ private struct WatchEpisodeRow: View {
             }
             return byteText(episode.downloadedBytes)
         case .failed:
-            return NSLocalizedString("Fehler", comment: "")
+            let retry = NSLocalizedString("Tippen zum Wiederholen", comment: "")
+            if let reason = episode.lastError?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
+                return "\(reason) · \(retry)"
+            }
+            return "\(NSLocalizedString("Fehler", comment: "")) · \(retry)"
         case .evicted:
             return NSLocalizedString("Speicher voll", comment: "")
         case .removing:
+            if episode.hasPendingRemovalError {
+                if let reason = episode.lastError?.trimmingCharacters(in: .whitespacesAndNewlines), !reason.isEmpty {
+                    return reason
+                }
+                return NSLocalizedString("Fehler", comment: "")
+            }
             return NSLocalizedString("Wird entfernt", comment: "")
         case .queued:
             return NSLocalizedString("Wartet", comment: "")
@@ -301,7 +427,7 @@ private struct WatchArtworkView: View {
 }
 
 private struct WatchPlayerView: View {
-    @EnvironmentObject private var player: WatchPlayerController
+    @ObservedObject private var player = WatchPlayerController.shared
 
     let episode: WatchEpisode
     let accentColor: Color

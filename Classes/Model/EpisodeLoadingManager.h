@@ -6,7 +6,7 @@
 //
 //  Manages lazy loading of episodes for feeds with many episodes.
 //  Only the newest episodes are loaded initially, the rest loads in background.
-//  Persists state to NSUserDefaults for crash recovery.
+//  Persists immutable payloads and small cursors for crash recovery.
 //
 
 #import <Foundation/Foundation.h>
@@ -17,6 +17,8 @@
 extern NSString* const EpisodeLoadingManagerDidStartLoadingNotification;
 extern NSString* const EpisodeLoadingManagerDidLoadBatchNotification;
 extern NSString* const EpisodeLoadingManagerDidFinishLoadingNotification;
+extern NSString* const EpisodeLoadingManagerDidFailLoadingNotification;
+extern NSString* const EpisodeLoadingManagerDidCancelLoadingNotification;
 
 // FeedProperty keys for tracking loading state
 extern NSString* const kFeedPropertyEpisodeLoadingComplete;
@@ -38,6 +40,10 @@ extern NSString* const kFeedPropertyLoadedEpisodeCount;
 
 // Cancel ALL pending loading operations
 - (void)cancelAllLoading;
+
+// Retry a durable job that stopped because its payload/cursor or Core Data save failed.
+- (void)retryLoadingForFeed:(CDFeed*)feed;
+- (NSError*)loadingErrorForFeed:(CDFeed*)feed;
 
 // Check if a feed is currently loading
 - (BOOL)isLoadingFeed:(CDFeed*)feed;

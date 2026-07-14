@@ -23,41 +23,77 @@
 
 @implementation CDEpisode
 
-static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
+static NSObject* ICTranscriptCleanupLock;
+static NSMutableSet<NSString*>* ICPendingTranscriptCleanupHashes;
+static dispatch_queue_t ICTranscriptCleanupQueue;
+static BOOL ICTranscriptCleanupScheduled;
+
+static void ICProcessPendingTranscriptCacheRemovals(void)
 {
-    if (episodeHash.length == 0) {
-        return;
-    }
+    while (YES) {
+        NSSet<NSString*>* episodeHashes;
+        @synchronized (ICTranscriptCleanupLock) {
+            episodeHashes = [ICPendingTranscriptCleanupHashes copy];
+            [ICPendingTranscriptCleanupHashes removeAllObjects];
+            if (episodeHashes.count == 0) {
+                ICTranscriptCleanupScheduled = NO;
+                return;
+            }
+        }
 
-    NSString* transcriptCachePath = [[ICTranscriptionPaths transcriptCacheDirectory] path];
-    if (transcriptCachePath.length == 0) {
-        return;
-    }
-
-    NSFileManager* fileManager = [NSFileManager defaultManager];
-    NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:nil];
-    NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
-    NSInteger removedFileCount = 0;
-    for (NSString* fileName in fileNames) {
-        if ([fileName hasPrefix:prefix] && [[fileName pathExtension] isEqualToString:@"trcache"]) {
+        NSString* transcriptCachePath = [[ICTranscriptionPaths transcriptCacheDirectory] path];
+        if (transcriptCachePath.length == 0) {
+            continue;
+        }
+        NSFileManager* fileManager = [NSFileManager defaultManager];
+        NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:nil];
+        NSInteger removedFileCount = 0;
+        for (NSString* fileName in fileNames) {
+            if (![[fileName pathExtension] isEqualToString:@"trcache"]) {
+                continue;
+            }
+            NSString* episodeHash = [[fileName componentsSeparatedByString:@"_"] firstObject];
+            if (![episodeHashes containsObject:episodeHash]) {
+                continue;
+            }
             NSString* filePath = [transcriptCachePath stringByAppendingPathComponent:fileName];
             if ([fileManager removeItemAtPath:filePath error:nil]) {
                 removedFileCount += 1;
             }
         }
+        if (removedFileCount > 0) {
+            [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
+                                                   message:@"Episode-Transcript-Artefakte beim Modell-Update entfernt"
+                                                      path:transcriptCachePath
+                                                  metadata:@{
+                                                      @"episodeHashes": @(episodeHashes.count),
+                                                      @"removedFiles": @(removedFileCount),
+                                                  }];
+        }
     }
-    // Only log when something was actually removed: this runs for EVERY episode that
-    // flips to consumed — an iCloud play-state apply marks thousands in one pass, and
-    // a log event per no-op call (with its disk/memory snapshot) flooded the log and
-    // burned main-thread time (3114 events in two minutes).
-    if (removedFileCount > 0) {
-        [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
-                                               message:@"Episode-Transcript-Artefakte beim Modell-Update entfernt"
-                                                  path:transcriptCachePath
-                                              metadata:@{
-                                                  @"episodeHash": episodeHash,
-                                                  @"removedFiles": @(removedFileCount),
-                                              }];
+}
+
+static void ICScheduleTranscriptCacheRemovalForEpisodeHash(NSString* episodeHash)
+{
+    if (episodeHash.length == 0) {
+        return;
+    }
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        ICTranscriptCleanupLock = [[NSObject alloc] init];
+        ICPendingTranscriptCleanupHashes = [[NSMutableSet alloc] init];
+        ICTranscriptCleanupQueue = dispatch_queue_create("com.iteconomy.instacast.transcript-cleanup",
+                                                         DISPATCH_QUEUE_SERIAL);
+    });
+    @synchronized (ICTranscriptCleanupLock) {
+        [ICPendingTranscriptCleanupHashes addObject:[episodeHash copy]];
+        if (ICTranscriptCleanupScheduled) {
+            return;
+        }
+        ICTranscriptCleanupScheduled = YES;
+        dispatch_async(ICTranscriptCleanupQueue, ^{
+            ICProcessPendingTranscriptCacheRemovals();
+        });
     }
 }
 
@@ -248,34 +284,39 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
 
 - (void) setArchived:(BOOL)archived
 {
+    BOOL wasArchived = self.archived;
+    if (wasArchived == archived) {
+        return;
+    }
     [self willChangeValueForKey:@"archived"];
     [self setPrimitiveValue:@(archived) forKey:@"archived"];
     [self didChangeValueForKey:@"archived"];
-        
-    [self.feed invalidateCounts];
 }
 
 - (void) setConsumed:(BOOL)consumed
 {
     BOOL wasConsumed = self.consumed;
+    if (wasConsumed == consumed) {
+        return;
+    }
     [self willChangeValueForKey:@"consumed"];
     [self setPrimitiveValue:@(consumed) forKey:@"consumed"];
     [self didChangeValueForKey:@"consumed"];
-        
-    [self.feed invalidateCounts];
 
     if (consumed && !wasConsumed) {
-        ICRemoveTranscriptCacheForEpisodeHash(self.objectHash);
+        ICScheduleTranscriptCacheRemovalForEpisodeHash(self.objectHash);
     }
 }
 
 - (void) setStarred:(BOOL)starred
 {
+    BOOL wasStarred = self.starred;
+    if (wasStarred == starred) {
+        return;
+    }
     [self willChangeValueForKey:@"starred"];
     [self setPrimitiveValue:@(starred) forKey:@"starred"];
     [self didChangeValueForKey:@"starred"];
-    
-    [self.feed invalidateCounts];
 }
 
 - (void) setDownloaded:(BOOL)downloaded {
@@ -283,16 +324,18 @@ static void ICRemoveTranscriptCacheForEpisodeHash(NSString* episodeHash)
     [self willChangeValueForKey:@"downloaded"];
     [self setPrimitiveValue:@(downloaded) forKey:@"downloaded"];
     [self didChangeValueForKey:@"downloaded"];
-    [self.feed invalidateCounts];
+    [self.feed invalidateDownloadedCount];
 }
 
 - (void) setFeed:(CDFeed *)feed
 {
+    CDFeed* previousFeed = self.feed;
+    if (previousFeed == feed) {
+        return;
+    }
     [self willChangeValueForKey:@"feed"];
     [self setPrimitiveValue:feed forKey:@"feed"];
     [self didChangeValueForKey:@"feed"];
-        
-    [feed invalidateCounts];
 }
 
 #pragma mark -

@@ -17,6 +17,7 @@
 static NSString* const ICAppleWatchEpisodeCellIdentifier = @"AppleWatchEpisodeCell";
 static NSString* const ICAppleWatchMessageCellIdentifier = @"AppleWatchMessageCell";
 static NSString* const ICAppleWatchSetupCellIdentifier = @"AppleWatchSetupCell";
+static NSUInteger const ICAppleWatchEpisodeLookupBatchSize = 200;
 static CGFloat const ICAppleWatchHeaderHorizontalInset = 16.f;
 static CGFloat const ICAppleWatchHeaderTopInset = 10.f;
 static CGFloat const ICAppleWatchHeaderBottomInset = 10.f;
@@ -27,6 +28,8 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 @interface AppleWatchEpisodesViewController ()
 
 @property (nonatomic, strong) NSArray<AppleWatchEpisodeState*>* states;
+@property (nonatomic, copy) NSDictionary<NSString*, CDEpisode*>* episodesByHash;
+@property (nonatomic, copy) NSDictionary<NSString*, NSNumber*>* stateIndexByHash;
 @property (nonatomic, strong) UIView* headerContainerView;
 @property (nonatomic, strong) UILabel* summaryLabel;
 @property (nonatomic, strong) UILabel* syncLabel;
@@ -75,9 +78,17 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
                                                  name:ICAppleWatchEpisodeStatesDidChangeNotification
                                                object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_liveStatusDidChange:)
+                                                 name:ICAppleWatchLiveStatusDidChangeNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_contextObjectsDidChange:)
+                                                 name:NSManagedObjectContextObjectsDidChangeNotification
+                                               object:DMANAGER.objectContext];
 }
 
 - (void)dealloc
@@ -228,8 +239,42 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 
 - (void)_managerDidChange:(NSNotification*)notification
 {
-    (void)notification;
+    NSArray<NSString*>* changedHashes = notification.userInfo[ICAppleWatchChangedEpisodeHashesUserInfoKey];
+    if ([notification.name isEqualToString:ICAppleWatchEpisodeStatesDidChangeNotification] &&
+        [changedHashes isKindOfClass:[NSArray class]] && changedHashes.count > 0) {
+        [self _updateHeaderText];
+        [self _reloadVisibleRowsForEpisodeHashes:changedHashes];
+        [self.refreshControl endRefreshing];
+        return;
+    }
     [self _reloadDataFromManager];
+}
+
+- (void)_liveStatusDidChange:(NSNotification*)notification
+{
+    [self _updateHeaderText];
+    NSArray<NSString*>* changedHashes = notification.userInfo[ICAppleWatchChangedEpisodeHashesUserInfoKey];
+    if ([changedHashes isKindOfClass:[NSArray class]] && changedHashes.count > 0) {
+        [self _reloadVisibleRowsForEpisodeHashes:changedHashes];
+    }
+}
+
+- (void)_reloadVisibleRowsForEpisodeHashes:(NSArray<NSString*>*)episodeHashes
+{
+    if (!self.viewIfLoaded.window || episodeHashes.count == 0) {
+        return;
+    }
+    NSSet<NSString*>* changedHashes = [NSSet setWithArray:episodeHashes];
+    NSMutableArray<NSIndexPath*>* affectedIndexPaths = [NSMutableArray array];
+    for (NSIndexPath* indexPath in self.tableView.indexPathsForVisibleRows ?: @[]) {
+        if (indexPath.row < self.states.count &&
+            [changedHashes containsObject:self.states[indexPath.row].episodeHash ?: @""]) {
+            [affectedIndexPaths addObject:indexPath];
+        }
+    }
+    if (affectedIndexPaths.count > 0) {
+        [self.tableView reloadRowsAtIndexPaths:affectedIndexPaths withRowAnimation:UITableViewRowAnimationNone];
+    }
 }
 
 - (void)_reloadDataFromManager
@@ -244,6 +289,17 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
     BOOL firstLoad = (self.states == nil);
     BOOL episodeHashesChanged = firstLoad || ![[self _episodeHashesForStates:self.states] isEqualToArray:[self _episodeHashesForStates:newStates]];
+    if (episodeHashesChanged) {
+        self.episodesByHash = [self _episodesByHashForStates:newStates];
+        NSMutableDictionary<NSString*, NSNumber*>* stateIndexByHash = [NSMutableDictionary dictionaryWithCapacity:newStates.count];
+        [newStates enumerateObjectsUsingBlock:^(AppleWatchEpisodeState* state, NSUInteger index, BOOL* stop) {
+            (void)stop;
+            if (state.episodeHash.length > 0) {
+                stateIndexByHash[state.episodeHash] = @(index);
+            }
+        }];
+        self.stateIndexByHash = stateIndexByHash;
+    }
     self.states = newStates;
     [self _updateHeaderText];
     if (episodeHashesChanged) {
@@ -256,6 +312,96 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
         }
     }
     [self.refreshControl endRefreshing];
+}
+
+- (NSDictionary<NSString*, CDEpisode*>*)_episodesByHashForStates:(NSArray<AppleWatchEpisodeState*>*)states
+{
+    NSMutableOrderedSet<NSString*>* hashes = [NSMutableOrderedSet orderedSetWithCapacity:states.count];
+    for (AppleWatchEpisodeState* state in states) {
+        if (state.episodeHash.length > 0) {
+            [hashes addObject:state.episodeHash];
+        }
+    }
+
+    NSMutableDictionary<NSString*, CDEpisode*>* episodesByHash = [NSMutableDictionary dictionaryWithCapacity:hashes.count];
+    NSArray<NSString*>* allHashes = hashes.array;
+    for (NSUInteger offset = 0; offset < allHashes.count; offset += ICAppleWatchEpisodeLookupBatchSize) {
+        NSRange range = NSMakeRange(offset, MIN(ICAppleWatchEpisodeLookupBatchSize, allHashes.count - offset));
+        NSArray<NSString*>* batch = [allHashes subarrayWithRange:range];
+        for (CDEpisode* episode in [DMANAGER episodesWithObjectHashes:batch]) {
+            if (episode.objectHash.length > 0 && !episode.deleted) {
+                episodesByHash[episode.objectHash] = episode;
+            }
+        }
+    }
+    return episodesByHash;
+}
+
+- (CDEpisode*)_episodeForState:(AppleWatchEpisodeState*)state
+{
+    return state.episodeHash.length > 0 ? self.episodesByHash[state.episodeHash] : nil;
+}
+
+- (void)_contextObjectsDidChange:(NSNotification*)notification
+{
+    if ([notification.userInfo[NSInvalidatedAllObjectsKey] boolValue]) {
+        [self _reloadDataFromManager];
+        return;
+    }
+
+    NSMutableDictionary<NSString*, CDEpisode*>* updatedEpisodesByHash =
+        [self.episodesByHash mutableCopy] ?: [NSMutableDictionary dictionary];
+    NSMutableOrderedSet<NSString*>* changedEpisodeHashes = [NSMutableOrderedSet orderedSet];
+
+    NSMutableSet* removedObjects = [NSMutableSet setWithSet:notification.userInfo[NSDeletedObjectsKey] ?: [NSSet set]];
+    [removedObjects unionSet:notification.userInfo[NSInvalidatedObjectsKey] ?: [NSSet set]];
+    for (NSManagedObject* object in removedObjects) {
+        if (![object isKindOfClass:[CDEpisode class]]) {
+            continue;
+        }
+        CDEpisode* episode = (CDEpisode*)object;
+        NSArray<NSString*>* candidateHashes = @[
+            episode.objectHash ?: @"",
+            [episode.changedValuesForCurrentEvent[@"objectHash"] isKindOfClass:[NSString class]] ?
+                episode.changedValuesForCurrentEvent[@"objectHash"] : @"",
+        ];
+        for (NSString* episodeHash in candidateHashes) {
+            if (self.stateIndexByHash[episodeHash]) {
+                [updatedEpisodesByHash removeObjectForKey:episodeHash];
+                [changedEpisodeHashes addObject:episodeHash];
+            }
+        }
+    }
+
+    NSMutableSet* changedObjects = [NSMutableSet setWithSet:notification.userInfo[NSInsertedObjectsKey] ?: [NSSet set]];
+    [changedObjects unionSet:notification.userInfo[NSUpdatedObjectsKey] ?: [NSSet set]];
+    [changedObjects unionSet:notification.userInfo[NSRefreshedObjectsKey] ?: [NSSet set]];
+    for (NSManagedObject* object in changedObjects) {
+        if (![object isKindOfClass:[CDEpisode class]]) {
+            continue;
+        }
+        CDEpisode* episode = (CDEpisode*)object;
+        NSString* previousHash = [episode.changedValuesForCurrentEvent[@"objectHash"] isKindOfClass:[NSString class]] ?
+            episode.changedValuesForCurrentEvent[@"objectHash"] : nil;
+        if (previousHash.length > 0 && ![previousHash isEqualToString:episode.objectHash] && self.stateIndexByHash[previousHash]) {
+            [updatedEpisodesByHash removeObjectForKey:previousHash];
+            [changedEpisodeHashes addObject:previousHash];
+        }
+        if (episode.objectHash.length > 0 && self.stateIndexByHash[episode.objectHash]) {
+            if (episode.deleted) {
+                [updatedEpisodesByHash removeObjectForKey:episode.objectHash];
+            }
+            else {
+                updatedEpisodesByHash[episode.objectHash] = episode;
+            }
+            [changedEpisodeHashes addObject:episode.objectHash];
+        }
+    }
+
+    if (changedEpisodeHashes.count > 0) {
+        self.episodesByHash = updatedEpisodesByHash;
+        [self _reloadVisibleRowsForEpisodeHashes:changedEpisodeHashes.array];
+    }
 }
 
 - (NSArray<NSString*>*)_episodeHashesForStates:(NSArray<AppleWatchEpisodeState*>*)states
@@ -339,13 +485,40 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     // between episodes while several were loading (User-Feedback 05.07.).
     int64_t loadedBytes = 0;
     int64_t totalBytes = 0;
-    if ([manager watchDownloadProgressLoadedBytes:&loadedBytes totalBytes:&totalBytes]) {
-        NSString* downloaded = [self _byteStringForBytes:loadedBytes];
-        NSString* total = [self _byteStringForBytes:totalBytes];
-        return [NSString stringWithFormat:@"Watch lädt Podcasts (%@ von %@)".ls, downloaded, total];
+    BOOL totalBytesKnown = NO;
+    ICAppleWatchTransferPhase phase = [manager watchDownloadProgressLoadedBytes:&loadedBytes
+                                                                      totalBytes:&totalBytes
+                                                                 totalBytesKnown:&totalBytesKnown];
+    if (phase == ICAppleWatchTransferPhaseDownloading) {
+        if (totalBytesKnown && totalBytes > 0) {
+            NSString* downloaded = [self _byteStringForBytes:loadedBytes];
+            NSString* total = [self _byteStringForBytes:totalBytes];
+            return [NSString stringWithFormat:@"Watch lädt Podcasts (%@ von %@)".ls, downloaded, total];
+        }
+        return @"Watch lädt Podcasts…".ls;
+    }
+    if (phase == ICAppleWatchTransferPhaseWaiting) {
+        return @"Wartet auf Apple Watch…".ls;
     }
 
     return nil;
+}
+
+- (NSString*)_failureGuidanceForState:(AppleWatchEpisodeState*)state
+{
+    if ([[AppleWatchSyncManager sharedManager] hasLiveDownloadProgressForEpisodeHash:state.episodeHash
+                                                               selectionIdentifier:state.uid]) {
+        return nil;
+    }
+    if (![state.watchStatus isEqualToString:ICAppleWatchStatusFailed]) {
+        return nil;
+    }
+    NSString* retryGuidance = @"Nach rechts wischen, um erneut zu laden.".ls;
+    NSString* reason = [state.watchLastError stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (reason.length > 0) {
+        return [NSString stringWithFormat:@"%@ %@", reason, retryGuidance];
+    }
+    return [NSString stringWithFormat:@"%@ %@", @"Download fehlgeschlagen.".ls, retryGuidance];
 }
 
 - (void)_updateStorageProgressForManager:(AppleWatchSyncManager*)manager
@@ -416,7 +589,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    CDEpisode* episode = [self _episodeForState:state];
     if (!episode) {
         UITableViewCell* cell = [tableView dequeueReusableCellWithIdentifier:ICAppleWatchMessageCellIdentifier forIndexPath:indexPath];
         cell.textLabel.textColor = ICMutedTextColor;
@@ -444,6 +617,14 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     cell.playAccessoryButton.userInteractionEnabled = YES;
     cell.playAccessoryButton.userInfo = episode;
     cell.objectValue = episode;
+    NSString* failureGuidance = [self _failureGuidanceForState:state];
+    cell.supplementalStatusText = failureGuidance;
+    if (failureGuidance) {
+        cell.supplementalStatusTextColor = UIColor.systemOrangeColor;
+    }
+    else {
+        cell.supplementalStatusTextColor = nil;
+    }
     cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
 
     NSURL* imageURL = episode.imageURL ?: episode.feed.imageURL;
@@ -558,7 +739,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    CDEpisode* episode = [self _episodeForState:state];
     if (!episode) {
         return UITableViewAutomaticDimension;
     }
@@ -567,7 +748,9 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
                                                       tableSize:tableView.bounds.size
                                                       imageSize:CGSizeMake(56, 56)
                                                        embedded:NO
-                                                        editing:tableView.editing];
+                                                        editing:tableView.editing
+                                                     upNextStyle:NO
+                                                   summaryOverride:[self _failureGuidanceForState:state]];
 }
 
 - (BOOL)tableView:(UITableView*)tableView canEditRowAtIndexPath:(NSIndexPath*)indexPath
@@ -597,12 +780,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
-    if (!episode) {
-        return;
-    }
-
-    [[AppleWatchSyncManager sharedManager] removeEpisodeFromWatch:episode];
+    [[AppleWatchSyncManager sharedManager] removeEpisodeStateFromWatch:state];
 }
 
 - (BOOL)tableView:(UITableView*)tableView canMoveRowAtIndexPath:(NSIndexPath*)indexPath
@@ -634,15 +812,11 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
-    if (!episode) {
-        return nil;
-    }
 
     UIContextualAction* removeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
                                                                                title:@"Entfernen".ls
                                                                              handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
-                                                                                 [[AppleWatchSyncManager sharedManager] removeEpisodeFromWatch:episode];
+                                                                                 [[AppleWatchSyncManager sharedManager] removeEpisodeStateFromWatch:state];
                                                                                  completionHandler(YES);
                                                                              }];
     removeAction.image = [UIImage systemImageNamed:@"trash"];
@@ -658,18 +832,20 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
+    CDEpisode* episode = [self _episodeForState:state];
     if (!episode || state.downloadedOnWatch || state.removingFromWatch) {
         return nil;
     }
 
+    NSString* title = [state.watchStatus isEqualToString:ICAppleWatchStatusFailed] ? @"Wiederholen".ls : @"Laden".ls;
+    NSString* symbolName = [state.watchStatus isEqualToString:ICAppleWatchStatusFailed] ? @"arrow.clockwise" : @"arrow.down.circle";
     UIContextualAction* prioritizeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal
-                                                                                  title:@"Laden".ls
+                                                                                  title:title
                                                                                 handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
                                                                                     [[AppleWatchSyncManager sharedManager] prioritizeEpisodeOnWatch:episode];
                                                                                     completionHandler(YES);
                                                                                 }];
-    prioritizeAction.image = [UIImage systemImageNamed:@"arrow.down.circle"];
+    prioritizeAction.image = [UIImage systemImageNamed:symbolName];
     prioritizeAction.backgroundColor = ICTintColor;
 
     return [UISwipeActionsConfiguration configurationWithActions:@[prioritizeAction]];
@@ -696,18 +872,18 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:state.episodeHash];
-    if (!episode) {
-        return nil;
-    }
+    CDEpisode* episode = [self _episodeForState:state];
 
     return [UIContextMenuConfiguration configurationWithIdentifier:nil previewProvider:nil actionProvider:^UIMenu* (NSArray<UIMenuElement*>* suggestedActions) {
         (void)suggestedActions;
         NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
 
-        if (!state.downloadedOnWatch && !state.removingFromWatch) {
-            UIAction* prioritize = [UIAction actionWithTitle:@"Priorisiert auf Watch laden".ls
-                                                       image:[UIImage systemImageNamed:@"arrow.down.circle"]
+        if (episode && !state.downloadedOnWatch && !state.removingFromWatch) {
+            BOOL retriesFailure = [state.watchStatus isEqualToString:ICAppleWatchStatusFailed];
+            NSString* title = retriesFailure ? @"Download erneut versuchen".ls : @"Priorisiert auf Watch laden".ls;
+            NSString* symbolName = retriesFailure ? @"arrow.clockwise" : @"arrow.down.circle";
+            UIAction* prioritize = [UIAction actionWithTitle:title
+                                                       image:[UIImage systemImageNamed:symbolName]
                                                   identifier:nil
                                                      handler:^(__unused UIAction* action) {
                                                          [[AppleWatchSyncManager sharedManager] prioritizeEpisodeOnWatch:episode];
@@ -716,15 +892,15 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
         }
 
         UIAction* remove = [UIAction actionWithTitle:@"Von Apple Watch entfernen".ls
-                                               image:[UIImage systemImageNamed:@"trash"]
+                                             image:[UIImage systemImageNamed:@"trash"]
                                           identifier:nil
                                              handler:^(__unused UIAction* action) {
-                                                 [[AppleWatchSyncManager sharedManager] removeEpisodeFromWatch:episode];
+                                                 [[AppleWatchSyncManager sharedManager] removeEpisodeStateFromWatch:state];
                                              }];
         remove.attributes = UIMenuElementAttributesDestructive;
         [actions addObject:remove];
 
-        return [UIMenu menuWithTitle:episode.title ?: @"" children:actions];
+        return [UIMenu menuWithTitle:episode.title ?: @"Nicht verfügbar".ls children:actions];
     }];
 }
 

@@ -145,8 +145,14 @@ static const int64_t ICStreamingHighPriorityChunkSize = 512 * 1024;
 static const int64_t ICStreamingBackfillChunkSize = 512 * 1024;
 static const void* ICStreamingQueueSpecific = &ICStreamingQueueSpecific;
 
+static BOOL ICCacheStreamingImportWasSuperseded(NSError* error)
+{
+    return [error.domain isEqualToString:@"CacheManager"] && error.code == 42;
+}
+
 @interface CacheManager (PlaybackStreamCache)
 - (NSURL*)tempURLForCachedEpisode:(CDEpisode*)episode;
+- (NSURL*)streamingTempURLForCachedEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
 @end
 
 static NSMutableSet* ICStreamingDetachedLoaderSet(void)
@@ -163,18 +169,23 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, strong, readonly) NSURL* assetURL;
 @property (nonatomic, strong, readonly) dispatch_queue_t resourceLoaderQueue;
 @property (nonatomic, readonly, getter=isCacheComplete) BOOL cacheComplete;
+@property (nonatomic, readonly, getter=isCacheTerminal) BOOL cacheTerminal;
+@property (nonatomic, copy, readonly) NSString* leaseToken;
 @property (nonatomic, copy) void (^progressChangeHandler)(double progress, BOOL cacheComplete);
 - (instancetype)initWithEpisode:(CDEpisode*)episode
                       remoteURL:(NSURL*)remoteURL
                    expectedSize:(int64_t)expectedSize
                        mimeType:(NSString*)mimeType
                        username:(NSString*)username
-                       password:(NSString*)password;
+                       password:(NSString*)password
+                     leaseToken:(NSString*)leaseToken
+                          error:(NSError**)error;
 - (void)detachFromPlaybackAndContinueCaching;
 - (void)stop;
 - (void)cancelAndDiscardPartialCache;
-- (BOOL)matchesEpisodeHash:(NSString*)episodeHash;
-+ (BOOL)cancelDetachedLoaderForEpisodeHash:(NSString*)episodeHash;
+- (BOOL)matchesEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
++ (BOOL)cancelDetachedLoaderForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
++ (ICStreamingCacheLoader*)takeDetachedLoaderForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
 @end
 
 @interface ICStreamingCacheLoader ()
@@ -185,6 +196,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, strong) NSString* username;
 @property (nonatomic, strong) NSString* password;
 @property (nonatomic, strong) NSString* mimeType;
+@property (nonatomic, copy) NSString* leaseToken;
 @property (nonatomic, strong) NSString* contentType;
 @property (nonatomic) int64_t contentLength;
 @property (nonatomic) int64_t hintedContentLength;
@@ -192,9 +204,12 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic) BOOL supportsByteRange;
 @property (nonatomic) BOOL stopped;
 @property (nonatomic) BOOL cacheCoverageComplete;
+@property (nonatomic) BOOL cacheValidationStarted;
 @property (nonatomic) BOOL cacheImportStarted;
 @property (nonatomic) BOOL cacheImportFinished;
+@property (nonatomic) BOOL terminalStateReported;
 @property (nonatomic, strong) NSFileHandle* writeHandle;
+@property (nonatomic, strong) AVURLAsset* validationAsset;
 @property (nonatomic, strong) NSMutableArray<NSValue*>* downloadedRanges;
 @property (nonatomic, strong) NSMutableArray<NSValue*>* highPriorityRanges;
 @property (nonatomic, strong) NSMutableArray<AVAssetResourceLoadingRequest*>* pendingRequests;
@@ -213,9 +228,11 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 - (instancetype)initWithEpisode:(CDEpisode*)episode
                       remoteURL:(NSURL*)remoteURL
                    expectedSize:(int64_t)expectedSize
-                       mimeType:(NSString*)mimeType
-                       username:(NSString*)username
+                      mimeType:(NSString*)mimeType
+                      username:(NSString*)username
                        password:(NSString*)password
+                     leaseToken:(NSString*)leaseToken
+                          error:(NSError**)error
 {
     if ((self = [super init])) {
         _episode = episode;
@@ -224,6 +241,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         _hintedContentLength = expectedSize;
         _contentLengthConfirmed = NO;
         _mimeType = mimeType;
+        _leaseToken = [leaseToken copy];
         _username = username;
         _password = password;
         _downloadedRanges = [[NSMutableArray alloc] init];
@@ -236,10 +254,14 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         dispatch_queue_set_specific(_resourceLoaderQueue, ICStreamingQueueSpecific, (void*)ICStreamingQueueSpecific, NULL);
 
         CacheManager* cacheManager = [CacheManager sharedCacheManager];
-        _tempURL = [cacheManager tempURLForCachedEpisode:episode];
+        _tempURL = [cacheManager streamingTempURLForCachedEpisode:episode leaseToken:leaseToken];
         _readURL = _tempURL;
 
-        [self _prepareTempFile];
+        NSError* fileError = nil;
+        if (![self _prepareTempFileWithError:&fileError]) {
+            if (error) *error = fileError;
+            return nil;
+        }
 
         NSURLSessionConfiguration* config = [NSURLSessionConfiguration defaultSessionConfiguration];
         config.timeoutIntervalForRequest = 30.0;
@@ -260,14 +282,17 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     [self stop];
 }
 
-- (BOOL)matchesEpisodeHash:(NSString*)episodeHash
+- (BOOL)matchesEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken
 {
-    return (episodeHash.length > 0 && [self.episode.objectHash isEqualToString:episodeHash]);
+    return (episodeHash.length > 0 &&
+            leaseToken.length > 0 &&
+            [self.episode.objectHash isEqualToString:episodeHash] &&
+            [self.leaseToken isEqualToString:leaseToken]);
 }
 
-+ (BOOL)cancelDetachedLoaderForEpisodeHash:(NSString*)episodeHash
++ (BOOL)cancelDetachedLoaderForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken
 {
-    if (episodeHash.length == 0) {
+    if (episodeHash.length == 0 || leaseToken.length == 0) {
         return NO;
     }
 
@@ -275,7 +300,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
     @synchronized(detachedSet) {
         for (ICStreamingCacheLoader* loader in [detachedSet copy]) {
-            if ([loader matchesEpisodeHash:episodeHash]) {
+            if ([loader matchesEpisodeHash:episodeHash leaseToken:leaseToken]) {
                 matchingLoader = loader;
                 [detachedSet removeObject:loader];
                 break;
@@ -291,9 +316,37 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     return YES;
 }
 
++ (ICStreamingCacheLoader*)takeDetachedLoaderForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken
+{
+    if (episodeHash.length == 0 || leaseToken.length == 0) {
+        return nil;
+    }
+
+    ICStreamingCacheLoader* matchingLoader = nil;
+    NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
+    @synchronized(detachedSet) {
+        for (ICStreamingCacheLoader* loader in [detachedSet copy]) {
+            if ([loader matchesEpisodeHash:episodeHash leaseToken:leaseToken]) {
+                [detachedSet removeObject:loader];
+                if (loader.isCacheTerminal) {
+                    continue;
+                }
+                matchingLoader = loader;
+                break;
+            }
+        }
+    }
+    return matchingLoader;
+}
+
 - (BOOL)isCacheComplete
 {
     return self.cacheCoverageComplete;
+}
+
+- (BOOL)isCacheTerminal
+{
+    return self.cacheImportFinished || self.stopped;
 }
 
 - (void)_releaseDetachedRetentionIfPossible
@@ -310,14 +363,17 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 
 - (void)detachFromPlaybackAndContinueCaching
 {
-    dispatch_async(self.resourceLoaderQueue, ^{
-        if (self.stopped || self.cacheCoverageComplete) {
-            return;
-        }
+    NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
+    @synchronized(detachedSet) {
+        [detachedSet addObject:self];
+    }
 
-        NSMutableSet* detachedSet = ICStreamingDetachedLoaderSet();
-        @synchronized(detachedSet) {
-            [detachedSet addObject:self];
+    dispatch_async(self.resourceLoaderQueue, ^{
+        if (self.stopped || self.cacheImportFinished) {
+            @synchronized(detachedSet) {
+                [detachedSet removeObject:self];
+            }
+            return;
         }
 
         NSError* cancelError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
@@ -327,7 +383,9 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         [self.pendingRequests removeAllObjects];
 
         [self _notifyProgressIfNeededForce:NO];
-        [self _pumpDownloads];
+        if (!self.cacheCoverageComplete) {
+            [self _pumpDownloads];
+        }
     });
 }
 
@@ -348,13 +406,14 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 
         [self.activeTask cancel];
         self.activeTask = nil;
+        [self.validationAsset cancelLoading];
+        self.validationAsset = nil;
         [self.session invalidateAndCancel];
         self.session = nil;
 
         [self.writeHandle closeFile];
         self.writeHandle = nil;
         self.cacheImportFinished = YES;
-        self.cacheCoverageComplete = YES;
         [self _notifyProgressIfNeededForce:YES];
         [self _releaseDetachedRetentionIfPossible];
     };
@@ -366,25 +425,99 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     }
 }
 
+- (void)_failWithError:(NSError*)error
+{
+    if (!dispatch_get_specific(ICStreamingQueueSpecific)) {
+        dispatch_async(self.resourceLoaderQueue, ^{
+            [self _failWithError:error];
+        });
+        return;
+    }
+    if (self.terminalStateReported) {
+        return;
+    }
+    self.terminalStateReported = YES;
+    self.stopped = YES;
+    self.cacheImportFinished = YES;
+    self.cacheCoverageComplete = NO;
+
+    NSError* terminalError = error ?: [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                                           code:1
+                                                       userInfo:@{NSLocalizedDescriptionKey: @"Streaming stopped before the episode could be cached. Check your connection and try again.".ls}];
+    for (AVAssetResourceLoadingRequest* request in [self.pendingRequests copy]) {
+        [request finishLoadingWithError:terminalError];
+    }
+    [self.pendingRequests removeAllObjects];
+    [self.highPriorityRanges removeAllObjects];
+
+    [self.activeTask cancel];
+    self.activeTask = nil;
+    [self.validationAsset cancelLoading];
+    self.validationAsset = nil;
+    [self.session invalidateAndCancel];
+    self.session = nil;
+    [self.writeHandle closeFile];
+    self.writeHandle = nil;
+    if (!self.cacheImportStarted) {
+        [[NSFileManager defaultManager] removeItemAtURL:self.tempURL error:nil];
+        [[NSFileManager defaultManager] removeItemAtURL:self.tempURL.URLByDeletingLastPathComponent error:nil];
+    }
+    [self _notifyProgressIfNeededForce:YES];
+    [self _releaseDetachedRetentionIfPossible];
+
+    CDEpisode* episode = self.episode;
+    NSString* leaseToken = self.leaseToken;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[CacheManager sharedCacheManager] failStreamingCacheForEpisode:episode
+                                                                 error:terminalError
+                                                            leaseToken:leaseToken];
+    });
+}
+
 - (void)cancelAndDiscardPartialCache
 {
     NSURL* tempURL = self.tempURL;
     self.progressChangeHandler = nil;
     [self stop];
-    if (tempURL) {
+    if (!self.cacheImportStarted && tempURL) {
         [[NSFileManager defaultManager] removeItemAtURL:tempURL error:nil];
+        [[NSFileManager defaultManager] removeItemAtURL:tempURL.URLByDeletingLastPathComponent error:nil];
     }
 }
 
-- (void)_prepareTempFile
+- (BOOL)_prepareTempFileWithError:(NSError**)error
 {
     NSFileManager* fileManager = [NSFileManager defaultManager];
     NSString* tempPath = self.tempURL.path;
+    if (tempPath.length == 0) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                         code:5
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The streamed episode could not be written to this device. Check available storage and try again.".ls}];
+        }
+        return NO;
+    }
     NSString* tempDirectory = [tempPath stringByDeletingLastPathComponent];
-    [fileManager createDirectoryAtPath:tempDirectory withIntermediateDirectories:YES attributes:nil error:nil];
-    [fileManager removeItemAtPath:tempPath error:nil];
-    [fileManager createFileAtPath:tempPath contents:[NSData data] attributes:nil];
-    self.writeHandle = [NSFileHandle fileHandleForWritingAtPath:tempPath];
+    NSError* fileError = nil;
+    if (![fileManager createDirectoryAtPath:tempDirectory withIntermediateDirectories:YES attributes:nil error:&fileError]) {
+        if (error) *error = fileError;
+        return NO;
+    }
+    if ([fileManager fileExistsAtPath:tempPath] && ![fileManager removeItemAtPath:tempPath error:&fileError]) {
+        if (error) *error = fileError;
+        return NO;
+    }
+    NSURL* tempURL = [NSURL fileURLWithPath:tempPath];
+    if (![[NSData data] writeToURL:tempURL options:NSDataWritingAtomic error:&fileError]) {
+        if (error) *error = fileError;
+        return NO;
+    }
+    self.writeHandle = [NSFileHandle fileHandleForWritingToURL:tempURL error:&fileError];
+    if (!self.writeHandle) {
+        if (error) *error = fileError;
+        return NO;
+    }
+    return YES;
 }
 
 - (NSString*)_contentTypeForMIMEType:(NSString*)mimeType
@@ -693,50 +826,94 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     self.cacheCoverageComplete = YES;
     [self _notifyProgressIfNeededForce:YES];
 
-    if (self.cacheImportStarted) {
+    if (self.cacheValidationStarted) {
         return;
     }
-    self.cacheImportStarted = YES;
+    self.cacheValidationStarted = YES;
 
     [self.writeHandle closeFile];
     self.writeHandle = nil;
 
+    self.validationAsset = [AVURLAsset URLAssetWithURL:self.tempURL options:nil];
     __weak ICStreamingCacheLoader* weakSelf = self;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    [self.validationAsset loadValuesAsynchronouslyForKeys:@[@"tracks", @"playable"] completionHandler:^{
         __strong ICStreamingCacheLoader* strongSelf = weakSelf;
-        if (!strongSelf || strongSelf.stopped) {
-            return;
+        if (!strongSelf) return;
+
+        NSError* validationError = nil;
+        AVKeyValueStatus tracksStatus = [strongSelf.validationAsset statusOfValueForKey:@"tracks" error:&validationError];
+        AVKeyValueStatus playableStatus = [strongSelf.validationAsset statusOfValueForKey:@"playable" error:&validationError];
+        BOOL hasPlayableMediaTrack = NO;
+        if (tracksStatus == AVKeyValueStatusLoaded && playableStatus == AVKeyValueStatusLoaded && strongSelf.validationAsset.playable) {
+            for (AVAssetTrack* track in strongSelf.validationAsset.tracks) {
+                if ([track.mediaType isEqualToString:AVMediaTypeAudio] || [track.mediaType isEqualToString:AVMediaTypeVideo]) {
+                    hasPlayableMediaTrack = YES;
+                    break;
+                }
+            }
         }
 
-        [[CacheManager sharedCacheManager] importFileAtURL:strongSelf.tempURL forEpisode:strongSelf.episode completion:^(BOOL success, NSError* error) {
-            __strong ICStreamingCacheLoader* innerSelf = weakSelf;
-            if (!innerSelf) {
+        dispatch_async(strongSelf.resourceLoaderQueue, ^{
+            if (strongSelf.stopped) return;
+            if (!hasPlayableMediaTrack) {
+                NSError* error = [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                                     code:2
+                                                 userInfo:@{
+                                                     NSLocalizedDescriptionKey: @"The streamed response was not a valid audio or video file. Try downloading the episode again.".ls,
+                                                     NSUnderlyingErrorKey: validationError ?: [NSError errorWithDomain:AVFoundationErrorDomain code:AVErrorUnknown userInfo:nil],
+                                                 }];
+                [strongSelf _failWithError:error];
                 return;
             }
-            [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:innerSelf.episode];
+            strongSelf.validationAsset = nil;
 
-            dispatch_async(innerSelf.resourceLoaderQueue, ^{
-                if (!success) {
-                    ErrLog(@"stream cache import failed: %@", error);
-                    innerSelf.cacheImportFinished = YES;
-                    [innerSelf.session finishTasksAndInvalidate];
-                    innerSelf.session = nil;
-                    [innerSelf _notifyProgressIfNeededForce:YES];
-                    [innerSelf _releaseDetachedRetentionIfPossible];
-                    return;
-                }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong ICStreamingCacheLoader* mainSelf = weakSelf;
+                if (!mainSelf || mainSelf.stopped) return;
 
-                innerSelf.cacheImportFinished = YES;
-                [innerSelf.session finishTasksAndInvalidate];
-                innerSelf.session = nil;
-                innerSelf.readURL = [[CacheManager sharedCacheManager] URLForCachedEpisode:innerSelf.episode];
-                [[NSFileManager defaultManager] removeItemAtURL:innerSelf.tempURL error:nil];
-                [innerSelf _processPendingRequests];
-                [innerSelf _notifyProgressIfNeededForce:YES];
-                [innerSelf _releaseDetachedRetentionIfPossible];
+                mainSelf.cacheImportStarted = YES;
+                [[CacheManager sharedCacheManager] importStreamingFileAtURL:mainSelf.tempURL
+                                                                 forEpisode:mainSelf.episode
+                                                                 leaseToken:mainSelf.leaseToken
+                                                                 completion:^(BOOL success, NSError* error) {
+                    __strong ICStreamingCacheLoader* innerSelf = weakSelf;
+                    if (!innerSelf) return;
+                    if (!success) {
+                        BOOL importWasSuperseded = ICCacheStreamingImportWasSuperseded(error);
+                        if (importWasSuperseded) {
+                            [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:innerSelf.episode
+                                                                                   leaseToken:innerSelf.leaseToken];
+                        }
+                        dispatch_async(innerSelf.resourceLoaderQueue, ^{
+                            if (innerSelf.stopped || importWasSuperseded) {
+                                innerSelf.cacheImportFinished = YES;
+                                [innerSelf.session finishTasksAndInvalidate];
+                                innerSelf.session = nil;
+                                [innerSelf _releaseDetachedRetentionIfPossible];
+                            } else {
+                                [innerSelf _failWithError:error];
+                            }
+                        });
+                        return;
+                    }
+
+                    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+                    NSURL* cachedURL = [cacheManager URLForCachedEpisode:innerSelf.episode];
+                    [cacheManager finishStreamingCacheForEpisode:innerSelf.episode
+                                                       leaseToken:innerSelf.leaseToken];
+                    dispatch_async(innerSelf.resourceLoaderQueue, ^{
+                        innerSelf.cacheImportFinished = YES;
+                        [innerSelf.session finishTasksAndInvalidate];
+                        innerSelf.session = nil;
+                        innerSelf.readURL = cachedURL;
+                        [innerSelf _processPendingRequests];
+                        [innerSelf _notifyProgressIfNeededForce:YES];
+                        [innerSelf _releaseDetachedRetentionIfPossible];
+                    });
+                }];
             });
-        }];
-    });
+        });
+    }];
 }
 
 - (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest
@@ -801,6 +978,18 @@ didReceiveResponse:(NSURLResponse *)response
         if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
             NSHTTPURLResponse* httpResponse = (NSHTTPURLResponse*)response;
             statusCode = httpResponse.statusCode;
+            if (statusCode != 200 && statusCode != 206) {
+                NSString* statusText = [NSHTTPURLResponse localizedStringForStatusCode:statusCode] ?: @"";
+                NSError* error = [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                                     code:statusCode
+                                                 userInfo:@{NSLocalizedDescriptionKey:
+                                                     [NSString stringWithFormat:@"The episode could not be streamed because the server returned HTTP %ld (%@). Try again later.".ls,
+                                                      (long)statusCode,
+                                                      statusText]}];
+                completionHandler(NSURLSessionResponseCancel);
+                [self _failWithError:error];
+                return;
+            }
             NSDictionary* headers = httpResponse.allHeaderFields;
             NSString* contentRange = headers[@"Content-Range"] ?: headers[@"content-range"];
             if ([contentRange isKindOfClass:[NSString class]]) {
@@ -884,6 +1073,11 @@ didReceiveResponse:(NSURLResponse *)response
         }
         @catch (NSException* exception) {
             ErrLog(@"stream cache write exception: %@", exception);
+            NSError* error = [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                                 code:4
+                                             userInfo:@{NSLocalizedDescriptionKey: @"The streamed episode could not be written to this device. Check available storage and try again.".ls}];
+            [self _failWithError:error];
+            return;
         }
 
         [self _processPendingRequests];
@@ -905,13 +1099,13 @@ didReceiveResponse:(NSURLResponse *)response
 
         if (error && error.code != NSURLErrorCancelled && !self.stopped) {
             ErrLog(@"stream cache download failed: %@", error);
-            for (AVAssetResourceLoadingRequest* request in [self.pendingRequests copy]) {
-                [request finishLoadingWithError:error];
-            }
-            [self.pendingRequests removeAllObjects];
-            self.cacheImportFinished = YES;
-            [self _notifyProgressIfNeededForce:YES];
-            [self _releaseDetachedRetentionIfPossible];
+            NSError* streamingError = [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                                           code:3
+                                                       userInfo:@{
+                                                           NSLocalizedDescriptionKey: @"Streaming stopped before the episode could be cached. Check your connection and try again.".ls,
+                                                           NSUnderlyingErrorKey: error,
+                                                       }];
+            [self _failWithError:streamingError];
             return;
         }
 
@@ -983,6 +1177,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, readwrite) BOOL streamingCacheActive;
 @property (nonatomic, readwrite) double streamingCacheProgress;
 @property (nonatomic, readwrite) BOOL streamingCacheComplete;
+- (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
 @end
 
 
@@ -1036,7 +1231,8 @@ didReceiveResponse:(NSURLResponse *)response
 - (void)_cacheManagerDidCancelStreamingCacheEpisode:(NSNotification*)notification
 {
     CDEpisode* episode = notification.userInfo[@"episode"];
-    [self cancelStreamingCacheForEpisode:episode];
+    NSString* leaseToken = notification.userInfo[@"leaseToken"];
+    [self _cancelStreamingCacheForEpisode:episode leaseToken:leaseToken];
 }
 
 
@@ -1602,6 +1798,33 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) openWithEpisode:(CDEpisode*)anEpisode at:(NSTimeInterval)time autostart:(BOOL)autostart
 {
+	CacheManager* eman = [CacheManager sharedCacheManager];
+	CDMedium* media = [anEpisode preferedMedium];
+	BOOL isCached = [eman episodeIsCached:anEpisode];
+	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
+
+    // Work around feeds parsed by versions up to 3.0.2, which could double-escape URLs.
+    NSString* urlString = url.absoluteString;
+    if (urlString.length > 0 && [urlString rangeOfString:@"%25"].location != NSNotFound) {
+        urlString = [urlString stringByRemovingPercentEncoding];
+        url = [NSURL URLWithString:urlString];
+    }
+
+    if (url.absoluteString.length == 0 || (!url.isFileURL && url.scheme.length == 0)) {
+        if (self.player || self.playingEpisode) {
+            [self closeAndSaveCurrentPosition:YES];
+        } else {
+            [[AudioSession sharedAudioSession] clear];
+        }
+#if TARGET_OS_IPHONE
+        [App showBackgroundErrorWithTitle:@"Media not loaded.".ls message:@"No media to play.".ls];
+#else
+        self.failed = YES;
+        SEND_UPDATE
+#endif
+        return;
+    }
+
 	if (self.player) {
 		self.changingEpisode = YES;
 		[self closeAndSaveCurrentPosition:!self.inTransitionToNextTrack];
@@ -1626,12 +1849,6 @@ didReceiveResponse:(NSURLResponse *)response
     self.currentArtwork = -1;
     self.initialPlaybackTime = time;
 
-	CacheManager* eman = [CacheManager sharedCacheManager];
-	CDMedium* media = [anEpisode preferedMedium];
-
-	BOOL isCached = [eman episodeIsCached:anEpisode];
-	NSURL* url = isCached ? [eman URLForCachedEpisode:anEpisode] : media.fileURL;
-
     BOOL canCacheViaStream = (!isCached &&
                               [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] &&
                               ![eman automaticCachingDisabledForEpisode:anEpisode] &&
@@ -1641,17 +1858,6 @@ didReceiveResponse:(NSURLResponse *)response
         [eman cancelCachingEpisode:anEpisode disableAutoDownload:NO];
     }
     BOOL shouldCacheViaStream = canCacheViaStream;
-
-    // workaround for a bug in the feed parser up to version 3.0.2
-    NSString* urlString = [url absoluteString];
-    if ([urlString rangeOfString:@"%25"].location != NSNotFound) {
-        urlString = [urlString stringByRemovingPercentEncoding];
-        url = [NSURL URLWithString:urlString];
-    }
-
-    if (!url) {
-        shouldCacheViaStream = NO;
-    }
 
     self.playingEpisode = anEpisode;
     // Post start/change notification now that playingEpisode is set, so observers
@@ -1664,16 +1870,56 @@ didReceiveResponse:(NSURLResponse *)response
 
 #if TARGET_OS_IPHONE
     self.streamCacheLoader = nil;
+    BOOL acquiredNewStreamCacheLease = NO;
+    NSString* streamCacheLeaseToken = nil;
     if (shouldCacheViaStream) {
-        self.streamCacheLoader = [[ICStreamingCacheLoader alloc] initWithEpisode:anEpisode
-                                                                        remoteURL:url
-                                                                     expectedSize:media.byteSize
-                                                                         mimeType:media.mimeType
-                                                                         username:anEpisode.feed.username
-                                                                         password:anEpisode.feed.password];
+        streamCacheLeaseToken = [eman beginStreamingCacheForEpisode:anEpisode
+                                                   acquiredNewLease:&acquiredNewStreamCacheLease];
+        if (streamCacheLeaseToken.length == 0) {
+            shouldCacheViaStream = NO;
+        }
+    }
+    ICStreamingCacheLoader* reattachedLoader = shouldCacheViaStream
+        ? [ICStreamingCacheLoader takeDetachedLoaderForEpisodeHash:anEpisode.objectHash
+                                                        leaseToken:streamCacheLeaseToken]
+        : nil;
+    if (shouldCacheViaStream && !reattachedLoader && !acquiredNewStreamCacheLease) {
+        shouldCacheViaStream = NO;
+    }
+    if (shouldCacheViaStream && !reattachedLoader && [eman episodeIsCached:anEpisode]) {
+        shouldCacheViaStream = NO;
+        url = [eman URLForCachedEpisode:anEpisode];
+        [eman finishStreamingCacheForEpisode:anEpisode leaseToken:streamCacheLeaseToken];
+    }
+    NSError* streamCacheStartError = nil;
+    if (shouldCacheViaStream) {
+        self.streamCacheLoader = reattachedLoader ?: [[ICStreamingCacheLoader alloc] initWithEpisode:anEpisode
+                                                                                           remoteURL:url
+                                                                                        expectedSize:media.byteSize
+                                                                                            mimeType:media.mimeType
+                                                                                            username:anEpisode.feed.username
+                                                                                            password:anEpisode.feed.password
+                                                                                          leaseToken:streamCacheLeaseToken
+                                                                                               error:&streamCacheStartError];
+        if (!self.streamCacheLoader) {
+            shouldCacheViaStream = NO;
+            if (!streamCacheStartError) {
+                streamCacheStartError = [NSError errorWithDomain:@"ICStreamingCacheErrorDomain"
+                                                            code:5
+                                                        userInfo:@{NSLocalizedDescriptionKey: @"The streamed episode could not be written to this device. Check available storage and try again.".ls}];
+            }
+            [eman failStreamingCacheForEpisode:anEpisode
+                                         error:streamCacheStartError
+                                    leaseToken:streamCacheLeaseToken];
+        }
+    }
+    if (shouldCacheViaStream) {
         __weak PlaybackManager* weakSelf = self;
         NSString* episodeHash = anEpisode.objectHash;
         self.streamCacheLoader.progressChangeHandler = ^(double progress, BOOL cacheComplete) {
+            [[CacheManager sharedCacheManager] updateStreamingCacheForEpisode:anEpisode
+                                                                     progress:progress
+                                                                   leaseToken:streamCacheLeaseToken];
             PlaybackManager* strongSelf = weakSelf;
             if (!strongSelf) {
                 return;
@@ -1682,14 +1928,12 @@ didReceiveResponse:(NSURLResponse *)response
             if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
                 return;
             }
-            [[CacheManager sharedCacheManager] updateStreamingCacheForEpisode:playingEpisode progress:progress];
             strongSelf.streamingCacheActive = !cacheComplete;
             strongSelf.streamingCacheProgress = progress;
             strongSelf.streamingCacheComplete = cacheComplete;
             [strongSelf _sendUpdateNotification];
         };
         self.streamingCacheActive = YES;
-        [eman beginStreamingCacheForEpisode:anEpisode];
         self.mediaAsset = [AVURLAsset URLAssetWithURL:self.streamCacheLoader.assetURL options:nil];
         [self.mediaAsset.resourceLoader setDelegate:self.streamCacheLoader queue:self.streamCacheLoader.resourceLoaderQueue];
     } else {
@@ -2413,8 +2657,13 @@ didReceiveResponse:(NSURLResponse *)response
     self.streamingCacheProgress = 0.0;
     self.streamingCacheComplete = NO;
     if (streamLoader) {
-        if ([USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] && !streamLoader.cacheComplete) {
+        BOOL keepCaching = [USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] && !streamLoader.cacheTerminal;
+        if (keepCaching) {
             [streamLoader detachFromPlaybackAndContinueCaching];
+        } else if (![USER_DEFAULTS boolForKey:AutoDownloadWhileStreaming] && !streamLoader.cacheTerminal) {
+            [streamLoader cancelAndDiscardPartialCache];
+            [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:self.playingEpisode
+                                                                    leaseToken:streamLoader.leaseToken];
         } else {
             [streamLoader stop];
         }
@@ -2581,12 +2830,27 @@ didReceiveResponse:(NSURLResponse *)response
 {
 #if TARGET_OS_IPHONE
     NSString* episodeHash = episode.objectHash;
-    if (episodeHash.length == 0) {
+    NSString* leaseToken = ([self.streamCacheLoader matchesEpisodeHash:episodeHash
+                                                         leaseToken:self.streamCacheLoader.leaseToken])
+        ? self.streamCacheLoader.leaseToken
+        : nil;
+    return [self _cancelStreamingCacheForEpisode:episode leaseToken:leaseToken];
+#else
+    return NO;
+#endif
+}
+
+- (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken
+{
+#if TARGET_OS_IPHONE
+    NSString* episodeHash = episode.objectHash;
+    if (episodeHash.length == 0 || leaseToken.length == 0) {
         return NO;
     }
 
-    BOOL stoppedLoader = [ICStreamingCacheLoader cancelDetachedLoaderForEpisodeHash:episodeHash];
-    if (self.streamCacheLoader && [self.streamCacheLoader matchesEpisodeHash:episodeHash]) {
+    BOOL stoppedLoader = [ICStreamingCacheLoader cancelDetachedLoaderForEpisodeHash:episodeHash
+                                                                          leaseToken:leaseToken];
+    if (self.streamCacheLoader && [self.streamCacheLoader matchesEpisodeHash:episodeHash leaseToken:leaseToken]) {
         BOOL hasPlayer = (self.player != nil);
         NSTimeInterval resumeTime = hasPlayer ? [self time] : 0;
         if (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1 && self.duration > 0) {
@@ -2600,7 +2864,7 @@ didReceiveResponse:(NSURLResponse *)response
         self.streamingCacheProgress = 0.0;
         self.streamingCacheComplete = NO;
         [loader cancelAndDiscardPartialCache];
-        [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:episode];
+        [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:episode leaseToken:leaseToken];
         stoppedLoader = YES;
 
         if (hasPlayer) {

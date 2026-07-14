@@ -116,11 +116,12 @@ require(
 )
 
 require(
-    '<setting key=\\"%@\\" value=' in exporter
+    '<setting key=\\"%@\\" type=\\"integer\\" value=' in exporter
     and 'path isEqualToString:@"instacast/podcasts/podcast/settings/setting"' in parser
     and '_currentPodcast.settings[key] = value;' in parser
+    and '_currentPodcast.settingTypes[key] = type;' in parser
     and "for (NSString *originalKey in podcast.settings)" in importer
-    and "[feed setInteger:intVal forKey:key]" in importer,
+    and "property.int32Value = integerValue" in importer,
     "Podcast FeedProperty backup export/import must preserve integer settings like the near-chapter-end options.",
 )
 

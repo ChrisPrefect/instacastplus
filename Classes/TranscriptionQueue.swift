@@ -148,6 +148,7 @@ let ICTranscriptionInternalStatusDetailNotification = Notification.Name("ICTrans
 
 private struct PersistedQueue: Codable {
     var items: [PersistedItem]
+    var pendingCacheDeletionHashes: [String]?
 
     struct PersistedItem: Codable {
         let episodeHash: String
@@ -161,9 +162,57 @@ private struct PersistedQueue: Codable {
     }
 }
 
-private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
-    Task.detached(priority: .utility) {
-        try? data.write(to: url, options: .atomic)
+private let ICPersistedTranscriptionQueueWriteQueue = DispatchQueue(
+    label: "com.vemedio.instacast.transcription-queue-persistence",
+    qos: .utility
+)
+
+private func ICWritePersistedTranscriptionQueueData(
+    _ data: Data,
+    to url: URL,
+    completion: (@Sendable (NSError?) -> Void)? = nil
+) {
+    ICPersistedTranscriptionQueueWriteQueue.async {
+        do {
+            try data.write(to: url, options: .atomic)
+            completion?(nil)
+        } catch {
+            NSLog("[TranscriptionQueue] Queue persistence failed: %@", (error as NSError).localizedDescription)
+            completion?(error as NSError)
+        }
+    }
+}
+
+/// Lets synchronous pre-delete observers register asynchronous persistence work.
+/// CacheManager waits on its utility deletion queue, never on the main thread.
+@objc(ICCacheDeletionPreparation)
+final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
+    private let group = DispatchGroup()
+    private let lock = NSLock()
+    private var firstError: NSError?
+
+    @objc(beginPreparation)
+    func beginPreparation() {
+        group.enter()
+    }
+
+    @objc(finishPreparationWithError:)
+    func finishPreparation(withError error: NSError?) {
+        lock.lock()
+        if firstError == nil {
+            firstError = error
+        }
+        lock.unlock()
+        group.leave()
+    }
+
+    @objc(waitForPreparation)
+    func waitForPreparation() -> NSError? {
+        group.wait()
+        lock.lock()
+        let error = firstError
+        lock.unlock()
+        return error
     }
 }
 
@@ -197,6 +246,8 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
     private var speechModelPreparationTask: Task<Void, Never>?
     private var speechModelPreparationRunID: UUID?
     private var pendingDownloadHashes: Set<String> = [] // Tracks episodes being auto-downloaded
+    private var pendingCacheDeletionHashes: Set<String> = []
+    private var cacheClearInProgress = false
     private var backgroundContinuationTask: UIBackgroundTaskIdentifier = .invalid
     private var backgroundPausedEpisodeHashes: Set<String> = []
     private var completedPruneScheduled = false
@@ -243,17 +294,37 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
         loadPersistedQueue()
 
         // Cancel transcription when episode cache is removed
-        NotificationCenter.default.addObserver(forName: NSNotification.Name("CacheManagerDidRemoveCacheNotification"), object: nil, queue: .main) { [weak self] notification in
-            guard let self = self,
-                  let episode = notification.userInfo?["episode"] as? NSObject,
-                  let hash = episode.value(forKey: "objectHash") as? String else { return }
-            Task { @MainActor in self.handleEpisodeDeleted(episodeHash: hash) }
-        }
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(cacheFilesWillBeDeleted(_:)),
+                                               name: NSNotification.Name("CacheManagerWillDeleteCacheFilesNotification"),
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(cacheFilesWereDeleted(_:)),
+                                               name: NSNotification.Name("CacheManagerDidDeleteCacheFilesNotification"),
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(cacheDeletionWasRestored(_:)),
+                                               name: NSNotification.Name("CacheManagerDidRestoreCacheNotification"),
+                                               object: nil)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(cacheIndexDidFinishBuilding(_:)),
+                                               name: NSNotification.Name("CacheManagerDidFinishBuildingCacheIndexNotification"),
+                                               object: nil)
 
         // Single observer for download completion (registered ONCE, not per-download)
         NotificationCenter.default.addObserver(forName: NSNotification.Name("CacheManagerDidEndCachingNotification"), object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
             Task { @MainActor in self._handleDownloadCompletion() }
+        }
+        NotificationCenter.default.addObserver(forName: NSNotification.Name("CacheManagerDidFailCachingEpisodeNotification"), object: nil, queue: .main) { [weak self] notification in
+            guard let self,
+                  let episode = notification.userInfo?["episode"] as? NSObject,
+                  let episodeHash = episode.value(forKey: "objectHash") as? String else { return }
+            let message = (notification.userInfo?["error"] as? NSError)?.localizedDescription
+                ?? NSLocalizedString("The episode download could not be completed.", comment: "")
+            Task { @MainActor in
+                self._handleDownloadFailure(episodeHash: episodeHash, message: message)
+            }
         }
 
         // Release WhisperKit model on memory warning (frees ~200-600 MB)
@@ -298,6 +369,7 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
     /// Returns false if already queued or already transcribed.
     @objc func enqueue(episodeHash: String, episodeTitle: String, feedTitle: String,
                        audioURL: URL?, language: String?) -> Bool {
+        guard !cacheClearInProgress else { return false }
         // Don't add if already in queue
         guard !items.contains(where: { $0.episodeHash == episodeHash }) else { return false }
 
@@ -1226,6 +1298,7 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
 
     /// Resume processing (called on app launch or foreground).
     @objc func resumeIfNeeded() {
+        guard reconcilePendingCacheDeletionsIfReady() else { return }
         guard !items.isEmpty else { return }
 
         if isProcessing && currentTask == nil {
@@ -1746,6 +1819,7 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
     }
 
     private func processNext() {
+        guard !cacheClearInProgress else { return }
         guard !isProcessing else { return }
         guard currentProcessingRunID == nil else { return }
         guard chapterTask == nil else { return }
@@ -1757,7 +1831,9 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
 
         while true {
             // Find next queued item
-            guard let candidate = items.first(where: { $0.status == .queued }) else {
+            guard let candidate = items.first(where: {
+                $0.status == .queued && !pendingCacheDeletionHashes.contains($0.episodeHash)
+            }) else {
                 let didPrune = pruneExpiredCompletedItems()
                 persistQueue()
                 if didPrune {
@@ -1792,6 +1868,10 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
                 return
             }
 
+            guard let cman = CacheManager.shared() else { return }
+            cman.prepareCacheIndexIfNeeded()
+            guard cman.isCacheIndexReady else { return }
+
             // Resolve audio URL
             if let url = candidate.audioURL, FileManager.default.fileExists(atPath: url.path) {
                 resolvedAudioURL = url
@@ -1802,7 +1882,8 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
                 // Audio not available — try auto-downloading
                 NSLog("[TranscriptionQueue] Audio not cached for %@, attempting auto-download", candidate.episodeHash)
                 startSpeechModelPreparationIfNeeded(episodeHash: candidate.episodeHash, reason: "auto-download")
-                if autoDownloadEpisode(hash: candidate.episodeHash) {
+                let autoDownload = autoDownloadEpisode(hash: candidate.episodeHash)
+                if autoDownload.started {
                     if engine.engineType == .whisperKit && WhisperKitBackend.shared.isModelDownloadedSync() {
                         candidate.statusDetail = NSLocalizedString("Episode wird heruntergeladen. Spracherkennungsmodell wird vorbereitet.", comment: "")
                     } else {
@@ -1817,7 +1898,8 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
                 candidate.status = .failed
                 candidate.statusDetail = nil
                 candidate.statusStartedAt = nil
-                candidate.error = NSLocalizedString("Audiodatei nicht verfügbar.", comment: "")
+                candidate.error = autoDownload.error ?? NSLocalizedString("Audiodatei nicht verfügbar.", comment: "")
+                persistQueue()
                 postQueueChangeNotification()
                 continue // Try next item
             }
@@ -2425,16 +2507,28 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
         ] as NSDictionary
     }
 
-    private func autoDownloadEpisode(hash: String) -> Bool {
-        guard let episode = findEpisode(hash: hash) else { return false }
-        guard let cman = CacheManager.shared() else { return false }
+    private func autoDownloadEpisode(hash: String) -> (started: Bool, error: String?) {
+        guard let episode = findEpisode(hash: hash) else {
+            return (false, NSLocalizedString("Audiodatei nicht verfügbar.", comment: ""))
+        }
+        guard let cman = CacheManager.shared() else {
+            return (false, NSLocalizedString("Audiodatei nicht verfügbar.", comment: ""))
+        }
 
-        if cman.episodeIsCached(episode) { return false }
+        if cman.episodeIsCached(episode) {
+            return (false, NSLocalizedString("Audiodatei nicht verfügbar.", comment: ""))
+        }
 
         pendingDownloadHashes.insert(hash)
-        cman.cacheEpisode(episode, overwriteCellularLock: true)
+        let started = cman.cacheEpisode(episode, overwriteCellularLock: true, reportsFailureToUser: false)
+        if !started {
+            pendingDownloadHashes.remove(hash)
+            let error = cman.downloadError(for: episode)?.localizedDescription
+            cman.clearDownloadError(for: episode)
+            return (false, error)
+        }
         refreshBackgroundContinuation(reason: "auto-download-started")
-        return true
+        return (true, nil)
     }
 
     /// Called when ANY download completes — checks if it was a pending auto-download
@@ -2470,24 +2564,150 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
         for h in hashesToRemove { pendingDownloadHashes.remove(h) }
     }
 
+    private func _handleDownloadFailure(episodeHash: String, message: String) {
+        guard pendingDownloadHashes.remove(episodeHash) != nil else { return }
+        if let item = items.first(where: { $0.episodeHash == episodeHash && $0.status == .queued }) {
+            item.status = .failed
+            item.statusDetail = nil
+            item.statusStartedAt = nil
+            item.error = message
+            TranscriptionLogger.shared.append(episodeHash: episodeHash,
+                                              phase: "download",
+                                              message: "Automatischer Download fehlgeschlagen",
+                                              detailText: message)
+            persistQueue()
+            postQueueChangeNotification()
+        }
+        refreshBackgroundContinuation(reason: "auto-download-failed")
+        if !isProcessing {
+            processNext()
+        }
+    }
+
     // MARK: - Episode Deletion Handling
 
-    @objc func handleEpisodeDeleted(episodeHash: String) {
-        if let item = items.first(where: { $0.episodeHash == episodeHash }) {
-            if item.status == .transcribing || item.status == .analyzingMusic || item.status == .downloadingModel {
-                invalidateProcessingRun()
-                currentTask?.cancel()
-                currentTask = nil
-                engine.cancelTranscription()
-                analyzer.cancelAnalysis()
-                isProcessing = false
-            }
-            if item.status == .generatingChapters {
-                chapterTask?.cancel()
-                chapterTask = nil
-            }
-            dequeue(episodeHash: episodeHash)
-            NSLog("[TranscriptionQueue] Cancelled transcription for deleted episode %@", episodeHash)
+    @objc private func cacheIndexDidFinishBuilding(_ notification: Notification) {
+        resumeIfNeeded()
+    }
+
+    /// A pre-delete queue snapshot can survive an app termination without its terminal
+    /// notification. The completed launch-time disk index is the authoritative outcome:
+    /// files still present mean rollback/incomplete deletion, absent files mean success.
+    private func reconcilePendingCacheDeletionsIfReady() -> Bool {
+        guard !pendingCacheDeletionHashes.isEmpty else { return true }
+        guard let cman = CacheManager.shared() else { return false }
+        cman.prepareCacheIndexIfNeeded()
+        guard cman.isCacheIndexReady else { return false }
+
+        let cachedHashes = cman.cachedEpisodeObjectHashes ?? []
+        let deletedHashes = pendingCacheDeletionHashes.subtracting(cachedHashes)
+        pendingCacheDeletionHashes.removeAll()
+        pendingDownloadHashes.subtract(deletedHashes)
+        items.removeAll { deletedHashes.contains($0.episodeHash) }
+        persistQueue()
+        postQueueChangeNotification()
+        return true
+    }
+
+    private func cacheDeletionHashes(from notification: Notification, allUsesPending: Bool) -> Set<String> {
+        if (notification.userInfo?["all"] as? NSNumber)?.boolValue == true {
+            return allUsesPending ? pendingCacheDeletionHashes : Set(items.map(\.episodeHash))
+        }
+        var hashes = Set(notification.userInfo?["episodeHashes"] as? [String] ?? [])
+        if let episode = notification.userInfo?["episode"] as? NSObject,
+           let legacyHash = episode.value(forKey: "objectHash") as? String,
+           !legacyHash.isEmpty {
+            hashes.insert(legacyHash)
+        }
+        return hashes
+    }
+
+    private func suspendTranscriptionForCacheDeletion(
+        item: ICTranscriptionQueueItem,
+        episodeHash: String
+    ) {
+        let activeStatuses: Set<ICTranscriptionStatus> = [.transcribing, .analyzingMusic, .downloadingModel, .generatingChapters]
+        if activeStatuses.contains(item.status) {
+            invalidateProcessingRun()
+            currentTask?.cancel()
+            currentTask = nil
+            chapterTask?.cancel()
+            chapterTask = nil
+            engine.cancelTranscription()
+            analyzer.cancelAnalysis()
+            isProcessing = false
+            item.status = .queued
+            item.progress = 0
+            item.statusDetail = nil
+            item.statusStartedAt = nil
+            item.error = nil
+        }
+        pendingDownloadHashes.remove(episodeHash)
+    }
+
+    @objc private func cacheFilesWillBeDeleted(_ notification: Notification) {
+        if (notification.userInfo?["all"] as? NSNumber)?.boolValue == true {
+            cacheClearInProgress = true
+        }
+        let hashes = cacheDeletionHashes(from: notification, allUsesPending: false)
+        guard !hashes.isEmpty else { return }
+        pendingCacheDeletionHashes.formUnion(hashes)
+        var itemsByHash: [String: ICTranscriptionQueueItem] = [:]
+        for item in items {
+            itemsByHash[item.episodeHash] = item
+        }
+        for hash in hashes {
+            guard let item = itemsByHash[hash] else { continue }
+            suspendTranscriptionForCacheDeletion(item: item, episodeHash: hash)
+        }
+
+        let preparation = notification.userInfo?["cacheDeletionPreparation"] as? ICCacheDeletionPreparation
+        preparation?.beginPreparation()
+        persistQueue(cacheDeletionPreparation: preparation)
+        postQueueChangeNotification()
+        if !isProcessing {
+            processNext()
+        }
+    }
+
+    @objc private func cacheFilesWereDeleted(_ notification: Notification) {
+        let clearsAll = (notification.userInfo?["all"] as? NSNumber)?.boolValue == true
+        let hashes = clearsAll
+            ? pendingCacheDeletionHashes.union(items.map(\.episodeHash))
+            : cacheDeletionHashes(from: notification, allUsesPending: true)
+        if clearsAll {
+            cacheClearInProgress = false
+        }
+        guard !hashes.isEmpty else { return }
+        pendingCacheDeletionHashes.subtract(hashes)
+        pendingDownloadHashes.subtract(hashes)
+        if clearsAll {
+            items.removeAll()
+        } else {
+            items.removeAll { hashes.contains($0.episodeHash) }
+        }
+        persistQueue()
+        postQueueChangeNotification()
+        if !isProcessing {
+            processNext()
+        }
+    }
+
+    @objc private func cacheDeletionWasRestored(_ notification: Notification) {
+        let restoresAll = (notification.userInfo?["all"] as? NSNumber)?.boolValue == true
+        let hashes = cacheDeletionHashes(from: notification, allUsesPending: true)
+        if restoresAll {
+            cacheClearInProgress = false
+        }
+        guard !hashes.isEmpty else {
+            if !isProcessing { processNext() }
+            return
+        }
+        pendingCacheDeletionHashes.subtract(hashes)
+        persistQueue()
+        postQueueChangeNotification()
+        if !isProcessing {
+            processNext()
         }
     }
 
@@ -2498,7 +2718,7 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
         return appSupport.appendingPathComponent("TranscriptionQueue.json")
     }
 
-    private func persistQueue() {
+    private func persistQueue(cacheDeletionPreparation: ICCacheDeletionPreparation? = nil) {
         let now = Date()
         let persistable = PersistedQueue(
             items: items.compactMap { item -> PersistedQueue.PersistedItem? in
@@ -2533,10 +2753,17 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
                              completedAt: nil,
                              chapterOnly: shouldResumeAsChapterOnly,
                              error: item.error)
-            }
+            },
+            pendingCacheDeletionHashes: pendingCacheDeletionHashes.sorted()
         )
-        if let data = try? JSONEncoder().encode(persistable) {
-            ICWritePersistedTranscriptionQueueData(data, to: queueFileURL)
+        do {
+            let data = try JSONEncoder().encode(persistable)
+            ICWritePersistedTranscriptionQueueData(data, to: queueFileURL) { error in
+                cacheDeletionPreparation?.finishPreparation(withError: error)
+            }
+        } catch {
+            NSLog("[TranscriptionQueue] Queue encoding failed: %@", (error as NSError).localizedDescription)
+            cacheDeletionPreparation?.finishPreparation(withError: error as NSError)
         }
     }
 
@@ -2545,6 +2772,7 @@ private func ICWritePersistedTranscriptionQueueData(_ data: Data, to url: URL) {
               let persisted = try? JSONDecoder().decode(PersistedQueue.self, from: data) else {
             return
         }
+        pendingCacheDeletionHashes = Set(persisted.pendingCacheDeletionHashes ?? [])
 
         // Reconstruct items - audio URLs need to be resolved from CacheManager
         for pItem in persisted.items {

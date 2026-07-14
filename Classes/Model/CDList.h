@@ -18,8 +18,14 @@
 @property (nonatomic, readonly) NSUInteger numberOfEpisodes;
 @property (nonatomic, readonly) NSArray* sortedEpisodes;
 - (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit;
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset limit:(NSUInteger)limit;
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset
+                                 limit:(NSUInteger)limit
+                                 error:(NSError**)error;
 
 - (NSInteger) playbackTime;
+- (NSUInteger) numberOfPlayedEpisodes;
+- (NSUInteger) numberOfPlayedDownloadedEpisodes;
 
 @property (nonatomic, readonly) id image;
 

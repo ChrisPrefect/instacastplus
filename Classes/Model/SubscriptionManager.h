@@ -68,13 +68,14 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 /* Enforcing Download Settings */
 - (BOOL) autoDownloadEpisodesInFeed:(CDFeed*)feed;
 - (BOOL) autoDownloadEpisode:(CDEpisode*)episode;
+- (void) autoDownloadEpisodesInFeedAsynchronously:(CDFeed*)feed;
 - (void) autoDownloadAllFeedsAsynchronously;
 
 /* Importing */
 
 - (void) importURL:(NSURL*)url completion:(void (^)(void))completion;
-- (void) importOPMLData:(NSData*)data completion:(void (^)(void))completion progress:(void (^)(float progress))progress;
+- (void) importOPMLData:(NSData*)data completion:(void (^)(NSError* error))completion progress:(void (^)(float progress))progress;
 
-- (NSData*) opmlData;
+- (void)opmlDataWithCompletion:(void (^)(NSData* data, NSError* error))completion;
 
 @end

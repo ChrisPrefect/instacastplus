@@ -9,11 +9,188 @@
 #import "CacheOperation_iOS7.h"
 #import "HTTPAuthentication.h"
 #import "UtilityFunctions.h"
+#import <AVFoundation/AVFoundation.h>
 
 NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
+static NSString* const ICCacheOperationErrorDomain = @"ICCacheOperationErrorDomain";
+static NSString* const ICResumeDataDirectoryName = @"DownloadResumeData";
+static NSString* const ICResumeEnvelopeVersionKey = @"version";
+static NSString* const ICResumeEnvelopeIdentifierKey = @"identifier";
+static NSString* const ICResumeEnvelopeRemoteURLKey = @"remoteURL";
+static NSString* const ICResumeEnvelopeDataKey = @"resumeData";
+static const NSInteger ICResumeEnvelopeVersion = 1;
+static char ICDownloadResumeStoreQueueKey;
+static BOOL ICResumeStoreMigrationCompleted = NO;
+
+static dispatch_queue_t ICDownloadResumeStoreQueue(void)
+{
+    static dispatch_queue_t queue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        queue = dispatch_queue_create("com.vemedio.instacast.downloadResumeStore", DISPATCH_QUEUE_SERIAL);
+        dispatch_set_target_queue(queue, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+        dispatch_queue_set_specific(queue, &ICDownloadResumeStoreQueueKey, &ICDownloadResumeStoreQueueKey, NULL);
+    });
+    return queue;
+}
+
+static void ICDownloadResumeStoreSync(dispatch_block_t block)
+{
+    if (dispatch_get_specific(&ICDownloadResumeStoreQueueKey)) {
+        block();
+    } else {
+        dispatch_sync(ICDownloadResumeStoreQueue(), block);
+    }
+}
+
+static void ICDownloadResumeStoreAsync(dispatch_block_t block)
+{
+    dispatch_async(ICDownloadResumeStoreQueue(), block);
+}
+
+static NSString* ICResumeDataDirectoryPath(void)
+{
+    NSURL* applicationSupportURL = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
+                                                                          inDomains:NSUserDomainMask].firstObject;
+    return [[applicationSupportURL URLByAppendingPathComponent:ICResumeDataDirectoryName isDirectory:YES] path];
+}
+
+static BOOL ICEnsureResumeDataDirectory(void)
+{
+    NSString* directoryPath = ICResumeDataDirectoryPath();
+    if (directoryPath.length == 0) {
+        return NO;
+    }
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSError* error = nil;
+    if (![fileManager createDirectoryAtPath:directoryPath
+                withIntermediateDirectories:YES
+                                 attributes:@{NSFileProtectionKey: NSFileProtectionCompleteUntilFirstUserAuthentication}
+                                      error:&error]) {
+        ErrLog(@"could not create download resume-data directory: %@", error);
+        return NO;
+    }
+    AddSkipBackupAttributeToFile(directoryPath);
+    return YES;
+}
+
+static NSString* ICResumeDataPathForIdentifier(NSString* identifier)
+{
+    NSString* filenameHash = identifier.length > 0 ? [identifier MD5Hash] : nil;
+    NSString* directoryPath = ICResumeDataDirectoryPath();
+    if (filenameHash.length == 0 || directoryPath.length == 0) {
+        return nil;
+    }
+    return [directoryPath stringByAppendingPathComponent:[filenameHash stringByAppendingPathExtension:@"resume"]];
+}
+
+static void ICMigrateLegacyResumeDataIfNeeded(void)
+{
+    if (ICResumeStoreMigrationCompleted) {
+        return;
+    }
+
+    id legacyResumeData = [USER_DEFAULTS objectForKey:kUserDefaultsResumeInfoKey];
+    if (legacyResumeData) {
+        // Legacy entries contain only Apple's opaque token. They cannot be proven to
+        // belong to the episode's current enclosure URL, so importing them would be
+        // able to resume an obsolete media URL. Retire the unsafe format once.
+        [USER_DEFAULTS removeObjectForKey:kUserDefaultsResumeInfoKey];
+    }
+    ICResumeStoreMigrationCompleted = YES;
+}
+
+static BOOL ICWriteResumeData(NSString* identifier, NSURL* remoteURL, NSData* resumeData)
+{
+    ICMigrateLegacyResumeDataIfNeeded();
+    if (identifier.length == 0 || remoteURL.absoluteString.length == 0 || resumeData.length == 0 || !ICEnsureResumeDataDirectory()) {
+        return NO;
+    }
+
+    NSDictionary* envelope = @{
+        ICResumeEnvelopeVersionKey: @(ICResumeEnvelopeVersion),
+        ICResumeEnvelopeIdentifierKey: identifier,
+        ICResumeEnvelopeRemoteURLKey: remoteURL.absoluteString,
+        ICResumeEnvelopeDataKey: resumeData,
+    };
+    NSError* serializationError = nil;
+    NSData* serializedEnvelope = [NSPropertyListSerialization dataWithPropertyList:envelope
+                                                                            format:NSPropertyListBinaryFormat_v1_0
+                                                                           options:0
+                                                                             error:&serializationError];
+    NSString* path = ICResumeDataPathForIdentifier(identifier);
+    NSError* writeError = nil;
+    BOOL wrote = serializedEnvelope && path.length > 0 && [serializedEnvelope writeToFile:path
+                                                                                  options:NSDataWritingAtomic
+                                                                                    error:&writeError];
+    if (!wrote) {
+        ErrLog(@"could not persist resume data for %@: %@", identifier, serializationError ?: writeError);
+        return NO;
+    }
+    [[NSFileManager defaultManager] setAttributes:@{NSFileProtectionKey: NSFileProtectionCompleteUntilFirstUserAuthentication}
+                                     ofItemAtPath:path
+                                            error:nil];
+    AddSkipBackupAttributeToFile(path);
+    return YES;
+}
+
+static NSData* ICReadAndDeleteResumeData(NSString* identifier, NSURL* remoteURL)
+{
+    ICMigrateLegacyResumeDataIfNeeded();
+    NSString* path = ICResumeDataPathForIdentifier(identifier);
+    if (path.length == 0) {
+        return nil;
+    }
+
+    NSError* readError = nil;
+    NSData* serializedEnvelope = [NSData dataWithContentsOfFile:path options:0 error:&readError];
+    if (!serializedEnvelope) {
+        return nil;
+    }
+    NSError* deleteError = nil;
+    if (![[NSFileManager defaultManager] removeItemAtPath:path error:&deleteError]) {
+        ErrLog(@"could not consume resume data for %@: %@", identifier, deleteError);
+        return nil;
+    }
+
+    NSError* parseError = nil;
+    NSDictionary* envelope = [NSPropertyListSerialization propertyListWithData:serializedEnvelope
+                                                                        options:NSPropertyListImmutable
+                                                                         format:NULL
+                                                                          error:&parseError];
+    NSData* resumeData = [envelope isKindOfClass:[NSDictionary class]] ? envelope[ICResumeEnvelopeDataKey] : nil;
+    BOOL valid = [envelope[ICResumeEnvelopeVersionKey] integerValue] == ICResumeEnvelopeVersion &&
+                 [envelope[ICResumeEnvelopeIdentifierKey] isEqualToString:identifier] &&
+                 [envelope[ICResumeEnvelopeRemoteURLKey] isEqualToString:remoteURL.absoluteString] &&
+                 [resumeData isKindOfClass:[NSData class]] && resumeData.length > 0;
+    if (!valid && parseError) {
+        ErrLog(@"could not parse resume data for %@: %@", identifier, parseError);
+    }
+    return valid ? resumeData : nil;
+}
+
+static void ICDeleteResumeData(NSString* identifier)
+{
+    ICMigrateLegacyResumeDataIfNeeded();
+    NSString* path = ICResumeDataPathForIdentifier(identifier);
+    if (path.length > 0) {
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+    }
+}
+
+static void ICDeleteAllResumeData(void)
+{
+    ICMigrateLegacyResumeDataIfNeeded();
+    NSString* directoryPath = ICResumeDataDirectoryPath();
+    if (directoryPath.length > 0) {
+        [[NSFileManager defaultManager] removeItemAtPath:directoryPath error:nil];
+    }
+    [USER_DEFAULTS removeObjectForKey:kUserDefaultsResumeInfoKey];
+}
 
 
 @interface CacheOperation_iOS7 () <NSURLSessionDelegate, NSURLSessionDownloadDelegate>
+@property (readwrite, copy) NSURL* localURL;
 @property (strong) NSURLSession* session;
 @property (strong) NSURLSessionDownloadTask* downloadTask;
 @property (strong) NSOperationQueue* delegateQueue;
@@ -23,6 +200,21 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 @property (readwrite) long long loadedContentLength;
 @property (readwrite) long long restartedAtContentLength;
 @property (readwrite, strong) NSDate* startDate;
+@property (readwrite, strong) NSError* terminalError;
+@property (readwrite) long long feedExpectedContentLength;
+@property (readwrite) long long transportExpectedContentLength;
+@property (readwrite) unsigned long long finalFileSize;
+@property (readwrite, strong) NSURL* stagedDownloadURL;
+@property (strong) AVURLAsset* validationAsset;
+@property (strong) dispatch_semaphore_t mediaValidationSemaphore;
+@property (strong) NSLock* finalizationLock;
+@property (strong) NSLock* progressLock;
+@property int64_t unreportedLoadedBytes;
+@property BOOL finalizedDownload;
+@property BOOL taskInventoryResolved;
+@property BOOL receivedFinishedDownload;
+@property (strong) NSURLSessionDownloadTask* pendingCompletedTask;
+@property (strong) NSError* pendingCompletionError;
 @property (strong) HTTPAuthentication* authentication;
 @property (readwrite, strong) GTMLogger* logger;
 @end
@@ -69,13 +261,16 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 		_remoteURL = [aRemoteURL copy];
 		_localURL = [aLocalURL copy];
         _identifier = [identifier copy];
-        _expectedContentLength = expectedContentLength;
+        _feedExpectedContentLength = MAX(0LL, expectedContentLength);
+        _expectedContentLength = _feedExpectedContentLength;
         
         NSString* logsPath = [[NSBundle pathToLogsDirectory] stringByAppendingPathComponent:@"MediaFileImporter.log"];
         
         _logger = [GTMLogger standardLoggerWithPath:logsPath];
         [_logger setFilter:[[GTMLogLevelFilter alloc] init]];
         _stateChangeSemaphore = dispatch_semaphore_create(0);
+        _finalizationLock = [[NSLock alloc] init];
+        _progressLock = [[NSLock alloc] init];
         
         VMLoggerInfo(@"remote url: %@, local url: %@, identifier: %@", aRemoteURL, aLocalURL, identifier);
 	}
@@ -135,37 +330,49 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 - (void) cancel
 {
     [super cancel];
+    [self.validationAsset cancelLoading];
+    dispatch_semaphore_t mediaValidationSemaphore = self.mediaValidationSemaphore;
+    if (mediaValidationSemaphore) {
+        dispatch_semaphore_signal(mediaValidationSemaphore);
+    }
+    [self.finalizationLock lock];
+    if (self.finalizedDownload) {
+        [[NSFileManager defaultManager] removeItemAtURL:self.localURL error:nil];
+        self.finalizedDownload = NO;
+    }
+    [self.finalizationLock unlock];
     dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
+- (void)claimFinalizedDownload
+{
+    [self.finalizationLock lock];
+    self.finalizedDownload = NO;
+    [self.finalizationLock unlock];
+}
+
 - (BOOL) suspended {
-    return (self.downloadTask.state == NSURLSessionTaskStateSuspended);
+    NSURLSessionDownloadTask* downloadTask = self.downloadTask;
+    return downloadTask ? (downloadTask.state == NSURLSessionTaskStateSuspended) : _shouldBeSuspended;
 }
 
 - (void) setSuspended:(BOOL)suspended
 {
-    if (suspended != (self.downloadTask.state == NSURLSessionTaskStateSuspended))
-    {
-        _shouldBeSuspended = suspended;
-        
-        if (suspended)
-        {
-            if (self.downloadTask.state != NSURLSessionTaskStateSuspended) {
-                [self.downloadTask suspend];
-            }
-        }
-        else
-        {
-            if (self.downloadTask.state == NSURLSessionTaskStateSuspended) {
-                [self.downloadTask resume];
-            }
-            
-            self.restartedAtContentLength = self.loadedContentLength;
-            self.startDate = [NSDate date];
-        }
-
+    _shouldBeSuspended = suspended;
+    NSURLSessionDownloadTask* downloadTask = self.downloadTask;
+    if (!downloadTask || suspended == (downloadTask.state == NSURLSessionTaskStateSuspended)) {
         dispatch_semaphore_signal(_stateChangeSemaphore);
+        return;
     }
+
+    if (suspended) {
+        [downloadTask suspend];
+    } else {
+        [downloadTask resume];
+        self.restartedAtContentLength = self.loadedContentLength;
+        self.startDate = [NSDate date];
+    }
+    dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
 - (void)_notifyDidEndOnMainThread
@@ -183,19 +390,269 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
     });
 }
 
-- (void)_notifyDidLoadBytesOnMainThread:(int64_t)bytesWritten
+- (BOOL)_taskBelongsToOperation:(NSURLSessionTask*)task session:(NSURLSession*)session
 {
-    id<CacheOperationDelegate> delegate = self.delegate;
-    if (!delegate || ![delegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
+    if (!task || session != self.session) {
+        return NO;
+    }
+    NSURL* taskURL = task.originalRequest.URL ?: task.currentRequest.URL;
+    return taskURL && [taskURL isEqual:self.remoteURL];
+}
+
+- (void)_applyCompletionError:(NSError*)error forTask:(NSURLSessionTask*)task
+{
+    if (!error || self.suspended || [self isCancelled]) {
         return;
     }
+    [self _failWithError:error];
+    NSData* resumeData = error.userInfo[NSURLSessionDownloadTaskResumeData];
+    if (resumeData) {
+        [self _saveResumeData:resumeData];
+    }
+}
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        id<CacheOperationDelegate> strongDelegate = self.delegate;
-        if (strongDelegate && [strongDelegate respondsToSelector:@selector(cacheOperation:didLoadNumberOfBytes:)]) {
-            [strongDelegate cacheOperation:self didLoadNumberOfBytes:bytesWritten];
+- (NSError*)_downloadErrorWithCode:(NSInteger)code description:(NSString*)description underlyingError:(NSError*)underlyingError
+{
+    NSMutableDictionary* userInfo = [@{NSLocalizedDescriptionKey: description ?: @"Download Failed".ls} mutableCopy];
+    if (underlyingError) {
+        userInfo[NSUnderlyingErrorKey] = underlyingError;
+    }
+    return [NSError errorWithDomain:ICCacheOperationErrorDomain code:code userInfo:userInfo];
+}
+
+- (void)_failWithError:(NSError*)error
+{
+    if (!self.terminalError) {
+        self.terminalError = error ?: [self _downloadErrorWithCode:1
+                                                       description:@"The episode download could not be completed.".ls
+                                                   underlyingError:nil];
+    }
+    self.failed = YES;
+}
+
+- (void)_removeStagedDownload
+{
+    NSURL* stagedDownloadURL = self.stagedDownloadURL;
+    self.stagedDownloadURL = nil;
+    if (stagedDownloadURL) {
+        [[NSFileManager defaultManager] removeItemAtURL:stagedDownloadURL error:nil];
+    }
+}
+
+- (BOOL)_responseHasNonMediaMIMEType:(NSURLResponse*)response
+{
+    NSString* mimeType = response.MIMEType.lowercaseString;
+    if (mimeType.length == 0) {
+        return NO;
+    }
+    return [mimeType containsString:@"text/html"] ||
+           [mimeType containsString:@"application/json"] ||
+           [mimeType containsString:@"application/xml"] ||
+           [mimeType containsString:@"application/xhtml"];
+}
+
+- (NSString*)fileExtensionForMIMEType:(NSString*)mimeType
+{
+    NSString* normalized = [mimeType.lowercaseString componentsSeparatedByString:@";"].firstObject;
+    NSDictionary<NSString*, NSString*>* extensions = @{
+        @"audio/mpeg": @"mp3",
+        @"audio/mp3": @"mp3",
+        @"audio/mpeg3": @"mp3",
+        @"audio/mp4": @"m4a",
+        @"audio/x-m4a": @"m4a",
+        @"audio/m4a": @"m4a",
+        @"audio/mp4a-latm": @"m4a",
+        @"audio/aac": @"aac",
+        @"audio/x-aac": @"aac",
+        @"audio/ogg": @"ogg",
+        @"application/ogg": @"ogg",
+        @"audio/wav": @"wav",
+        @"audio/x-wav": @"wav",
+        @"audio/flac": @"flac",
+        @"video/mp4": @"mp4",
+        @"video/x-m4v": @"m4v",
+        @"video/quicktime": @"mov",
+    };
+    return extensions[[normalized stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
+}
+
+- (BOOL)isCompletePartialContentResponse:(NSHTTPURLResponse*)response actualSize:(long long)actualSize
+{
+    NSString* contentRange = [[response valueForHTTPHeaderField:@"Content-Range"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (actualSize <= 0 || contentRange.length == 0) {
+        return NO;
+    }
+    NSArray<NSString*>* components = [contentRange componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    NSMutableArray<NSString*>* nonEmptyComponents = [NSMutableArray array];
+    for (NSString* component in components) {
+        if (component.length > 0) {
+            [nonEmptyComponents addObject:component];
         }
-    });
+    }
+    if (nonEmptyComponents.count != 2 || ![nonEmptyComponents[0] caseInsensitiveEquals:@"bytes"]) {
+        return NO;
+    }
+    NSArray<NSString*>* rangeAndTotal = [nonEmptyComponents[1] componentsSeparatedByString:@"/"];
+    if (rangeAndTotal.count != 2) {
+        return NO;
+    }
+    long long totalSize = [rangeAndTotal[1] longLongValue];
+    // A resumed response describes only its final network segment. URLSession's
+    // staging file is already reassembled, so equality with the resource total is
+    // the proof of completeness; requiring a zero range start rejects valid resumes.
+    return totalSize > 0 && totalSize == actualSize;
+}
+
+- (NSError*)_transportValidationErrorForTask:(NSURLSessionDownloadTask*)downloadTask fileSize:(long long)fileSize
+{
+    NSHTTPURLResponse* response = [downloadTask.response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse*)downloadTask.response : nil;
+    if (!response) {
+        return [self _downloadErrorWithCode:2
+                                description:@"The podcast server did not return a valid HTTP response.".ls
+                            underlyingError:nil];
+    }
+
+    NSInteger statusCode = response.statusCode;
+    if (statusCode < 200 || statusCode >= 300) {
+        NSString* description = [NSString stringWithFormat:@"The podcast server returned HTTP %ld. The episode file is not available at the address published by the podcast.".ls,
+                                 (long)statusCode];
+        return [self _downloadErrorWithCode:statusCode description:description underlyingError:nil];
+    }
+    if ([self _responseHasNonMediaMIMEType:response]) {
+        return [self _downloadErrorWithCode:3
+                                description:@"The podcast server returned a web page instead of a playable episode file.".ls
+                            underlyingError:nil];
+    }
+    if (fileSize <= 0) {
+        return [self _downloadErrorWithCode:4
+                                description:@"The downloaded episode file is empty.".ls
+                            underlyingError:nil];
+    }
+    if (statusCode == 206 && ![self isCompletePartialContentResponse:response actualSize:fileSize]) {
+        return [self _downloadErrorWithCode:5
+                                description:@"The podcast server ended the transfer before the complete episode file was received.".ls
+                            underlyingError:nil];
+    }
+
+    long long taskExpectedContentLength = downloadTask.countOfBytesExpectedToReceive;
+    if (self.transportExpectedContentLength <= 0 && taskExpectedContentLength > 0) {
+        self.transportExpectedContentLength = taskExpectedContentLength;
+        self.expectedContentLength = taskExpectedContentLength;
+    }
+    if (self.transportExpectedContentLength > 0 && fileSize < self.transportExpectedContentLength) {
+        return [self _downloadErrorWithCode:5
+                                description:@"The podcast server ended the transfer before the complete episode file was received.".ls
+                            underlyingError:nil];
+    }
+    if (self.transportExpectedContentLength <= 0 &&
+        self.feedExpectedContentLength > 0 &&
+        fileSize < self.feedExpectedContentLength / 2) {
+        return [self _downloadErrorWithCode:5
+                                description:@"The podcast server ended the transfer before the complete episode file was received.".ls
+                            underlyingError:nil];
+    }
+    return nil;
+}
+
+- (NSURL*)_newStagedDownloadURLWithError:(NSError**)outError
+{
+    NSString* stagingPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"InstacastEpisodeDownloads"];
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    if (![fileManager createDirectoryAtPath:stagingPath withIntermediateDirectories:YES attributes:nil error:outError]) {
+        return nil;
+    }
+    NSString* extension = self.localURL.pathExtension;
+    NSString* filename = NSUUID.UUID.UUIDString;
+    if (extension.length > 0) {
+        filename = [filename stringByAppendingPathExtension:extension];
+    }
+    return [NSURL fileURLWithPath:[stagingPath stringByAppendingPathComponent:filename]];
+}
+
+- (NSError*)_mediaValidationErrorForStagedDownload
+{
+    NSURL* stagedDownloadURL = self.stagedDownloadURL;
+    if (!stagedDownloadURL) {
+        return [self _downloadErrorWithCode:6
+                                description:@"The downloaded episode file is not playable.".ls
+                            underlyingError:nil];
+    }
+
+    AVURLAsset* asset = [AVURLAsset URLAssetWithURL:stagedDownloadURL options:nil];
+    dispatch_semaphore_t validationSemaphore = dispatch_semaphore_create(0);
+    self.validationAsset = asset;
+    self.mediaValidationSemaphore = validationSemaphore;
+    __block BOOL playable = NO;
+    __block NSTimeInterval measuredDuration = 0;
+    __block NSError* loadError = nil;
+    [asset loadValuesAsynchronouslyForKeys:@[@"playable", @"duration"] completionHandler:^{
+        NSError* playableError = nil;
+        NSError* durationError = nil;
+        AVKeyValueStatus playableStatus = [asset statusOfValueForKey:@"playable" error:&playableError];
+        AVKeyValueStatus durationStatus = [asset statusOfValueForKey:@"duration" error:&durationError];
+        if (playableStatus == AVKeyValueStatusLoaded && durationStatus == AVKeyValueStatusLoaded) {
+            playable = asset.playable;
+            double seconds = CMTimeGetSeconds(asset.duration);
+            if (isfinite(seconds)) {
+                measuredDuration = MAX(0, seconds);
+            }
+        } else {
+            loadError = playableError ?: durationError;
+        }
+        dispatch_semaphore_signal(validationSemaphore);
+    }];
+    if ([self isCancelled]) {
+        [asset cancelLoading];
+        dispatch_semaphore_signal(validationSemaphore);
+    }
+    dispatch_semaphore_wait(validationSemaphore, DISPATCH_TIME_FOREVER);
+    if (self.validationAsset == asset) {
+        self.validationAsset = nil;
+        self.mediaValidationSemaphore = nil;
+    }
+
+    if (!playable || measuredDuration <= 0) {
+        return [self _downloadErrorWithCode:6
+                                description:@"The downloaded episode file is not playable.".ls
+                            underlyingError:loadError];
+    }
+    if (self.expectedDuration >= 600 && measuredDuration < self.expectedDuration / 2) {
+        return [self _downloadErrorWithCode:5
+                                description:@"The podcast server ended the transfer before the complete episode file was received.".ls
+                            underlyingError:nil];
+    }
+    return nil;
+}
+
+- (NSError*)_moveValidatedStagedDownloadToFinalURL
+{
+    if (!self.stagedDownloadURL || !self.localURL) {
+        return [self _downloadErrorWithCode:7
+                                description:@"The downloaded episode file could not be saved on this device.".ls
+                            underlyingError:nil];
+    }
+
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSError* moveError = nil;
+    if ([fileManager fileExistsAtPath:self.localURL.path]) {
+        BOOL replaced = [fileManager replaceItemAtURL:self.localURL
+                                       withItemAtURL:self.stagedDownloadURL
+                                      backupItemName:nil
+                                             options:0
+                                    resultingItemURL:nil
+                                               error:&moveError];
+        if (!replaced) {
+            return [self _downloadErrorWithCode:7
+                                    description:@"The downloaded episode file could not be saved on this device.".ls
+                                underlyingError:moveError];
+        }
+    } else if (![fileManager moveItemAtURL:self.stagedDownloadURL toURL:self.localURL error:&moveError]) {
+        return [self _downloadErrorWithCode:7
+                                description:@"The downloaded episode file could not be saved on this device.".ls
+                            underlyingError:moveError];
+    }
+    self.stagedDownloadURL = nil;
+    return nil;
 }
 
 - (void) main
@@ -222,14 +679,65 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
         self.session = activeSession;
 
         [activeSession getTasksWithCompletionHandler:^(NSArray *dataTasks, NSArray *uploadTasks, NSArray *downloadTasks) {
-            if ([downloadTasks count] > 0) {
-                self.downloadTask = [downloadTasks firstObject];
+            [self.delegateQueue addOperationWithBlock:^{
+            self.taskInventoryResolved = YES;
+            if ([self isCancelled]) {
+                setupFinished = YES;
+                dispatch_semaphore_signal(self->_stateChangeSemaphore);
+                return;
+            }
+
+            if (self.receivedFinishedDownload) {
+                for (NSURLSessionDownloadTask* candidate in downloadTasks) {
+                    if (candidate != self.downloadTask) {
+                        [candidate cancel];
+                    }
+                }
+                self.pendingCompletedTask = nil;
+                self.pendingCompletionError = nil;
+                setupFinished = YES;
+                dispatch_semaphore_signal(self->_stateChangeSemaphore);
+                return;
+            }
+
+            NSURLSessionDownloadTask* matchingTask = nil;
+            for (NSURLSessionDownloadTask* candidate in downloadTasks) {
+                BOOL active = candidate.state != NSURLSessionTaskStateCompleted;
+                BOOL matchesRemoteURL = [self _taskBelongsToOperation:candidate session:activeSession];
+                if (active && matchesRemoteURL && (!matchingTask || candidate.taskIdentifier > matchingTask.taskIdentifier)) {
+                    [matchingTask cancel];
+                    matchingTask = candidate;
+                } else {
+                    [candidate cancel];
+                }
+            }
+            if (matchingTask) {
+                self.downloadTask = matchingTask;
+                self.pendingCompletedTask = nil;
+                self.pendingCompletionError = nil;
                 if (self->_shouldBeSuspended) {
                     [self.downloadTask suspend];
                 } else if (self.downloadTask.state == NSURLSessionTaskStateSuspended) {
                     [self.downloadTask resume];
                 }
                 self.startDate = [NSDate date];
+                setupFinished = YES;
+                dispatch_semaphore_signal(self->_stateChangeSemaphore);
+                return;
+            }
+
+            if (self.pendingCompletedTask) {
+                self.downloadTask = self.pendingCompletedTask;
+                NSError* pendingError = self.pendingCompletionError;
+                self.pendingCompletedTask = nil;
+                self.pendingCompletionError = nil;
+                if (pendingError) {
+                    [self _applyCompletionError:pendingError forTask:self.downloadTask];
+                } else {
+                    [self _failWithError:[self _downloadErrorWithCode:9
+                                                               description:@"The episode download finished without providing a file.".ls
+                                                           underlyingError:nil]];
+                }
                 setupFinished = YES;
                 dispatch_semaphore_signal(self->_stateChangeSemaphore);
                 return;
@@ -246,14 +754,6 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
                     ErrLog(@"downloadTaskWithResumeData exception: %@", [exception description]);
                     self.downloadTask = nil;
                 }
-
-                [self _deleteResumeInfo];
-
-                if (!self.downloadTask) {
-                    [activeSession invalidateAndCancel];
-                    activeSession = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:self.delegateQueue];
-                    self.session = activeSession;
-                }
             }
 
             if (!self.downloadTask)
@@ -265,8 +765,10 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
                 @catch (NSException *exception) {
                     ErrLog(@"downloadTaskWithRequest exception: %@", [exception description]);
                     self.downloadTask = nil;
-                    self.failed = YES;
-                    [self cancel];
+                    NSError* requestError = [NSError errorWithDomain:ICCacheOperationErrorDomain
+                                                                 code:8
+                                                             userInfo:@{NSLocalizedDescriptionKey: exception.reason ?: @"The episode download could not be started.".ls}];
+                    [self _failWithError:requestError];
                 }
             }
 
@@ -276,39 +778,31 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
             self.startDate = [NSDate date];
             setupFinished = YES;
             dispatch_semaphore_signal(self->_stateChangeSemaphore);
+            }];
         }];
 
         while (!setupFinished && ![self isCancelled]) {
-            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+            dispatch_semaphore_wait(_stateChangeSemaphore, DISPATCH_TIME_FOREVER);
         }
 
-        NSInteger idleCounter = 0;
-        while ((!self.downloadTask || self.downloadTask.state != NSURLSessionTaskStateCompleted) && ![self isCancelled]) {
-            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
-
-            if (self.loadedContentLength == 0 && self.downloadTask && self.downloadTask.state == NSURLSessionTaskStateRunning) {
-                idleCounter++;
-                if (idleCounter >= 20) {
-                    self.failed = YES;
-                    // Cancel only the task (not the session) to avoid double-invalidation:
-                    // The session cleanup happens below via finishTasksAndInvalidate,
-                    // which fires didBecomeInvalidWithError: exactly once.
-                    [self.downloadTask cancel];
-                    break;
-                }
-            } else if (self.loadedContentLength > 0) {
-                idleCounter = 0;
-            }
+        while ((!self.downloadTask || self.downloadTask.state != NSURLSessionTaskStateCompleted) &&
+               ![self isCancelled] && !self.failed) {
+            dispatch_semaphore_wait(_stateChangeSemaphore, DISPATCH_TIME_FOREVER);
         }
 
         if ([self isCancelled])
         {
-            [self.downloadTask cancelByProducingResumeData:^(NSData *resumeData) {
-                if (resumeData) {
-                    [self _saveResumeData:resumeData];
-                }
-                dispatch_semaphore_signal(self->_stateChangeSemaphore);
-            }];
+            NSURLSessionDownloadTask* downloadTask = self.downloadTask;
+            if (downloadTask && downloadTask.state != NSURLSessionTaskStateCompleted) {
+                dispatch_semaphore_t cancellationSemaphore = dispatch_semaphore_create(0);
+                [downloadTask cancelByProducingResumeData:^(NSData *resumeData) {
+                    if (resumeData) {
+                        [self _saveResumeData:resumeData];
+                    }
+                    dispatch_semaphore_signal(cancellationSemaphore);
+                }];
+                dispatch_semaphore_wait(cancellationSemaphore, DISPATCH_TIME_FOREVER);
+            }
 
             [self.session invalidateAndCancel];
         }
@@ -317,8 +811,24 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
             [self.session finishTasksAndInvalidate];
         }
 
-        while (self.session && ![self isCancelled]) {
-            dispatch_semaphore_wait(_stateChangeSemaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)));
+        while (self.session) {
+            dispatch_semaphore_wait(_stateChangeSemaphore, DISPATCH_TIME_FOREVER);
+        }
+
+        if (![self isCancelled] && !self.failed) {
+            NSError* validationError = [self _mediaValidationErrorForStagedDownload];
+            [self.finalizationLock lock];
+            if (!validationError && ![self isCancelled]) {
+                validationError = [self _moveValidatedStagedDownloadToFinalURL];
+                self.finalizedDownload = (validationError == nil);
+            }
+            [self.finalizationLock unlock];
+            if (validationError && ![self isCancelled]) {
+                [self _failWithError:validationError];
+            }
+        }
+        if ([self isCancelled] || self.failed) {
+            [self _removeStagedDownload];
         }
 
         [self _notifyDidEndOnMainThread];
@@ -329,8 +839,12 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session didBecomeInvalidWithError:(NSError *)error
 {
-    if (!error) {}
-    self.session = nil;
+    if (self.session == session) {
+        if (error && ![self isCancelled]) {
+            [self _failWithError:error];
+        }
+        self.session = nil;
+    }
     dispatch_semaphore_signal(_stateChangeSemaphore);
 }
 
@@ -401,12 +915,14 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-    if (error) {
-        self.failed = (!self.suspended);
-        
-        NSData* resumeData = [error userInfo][NSURLSessionDownloadTaskResumeData];
-        if (resumeData) {
-            [self _saveResumeData:resumeData];
+    if ([self _taskBelongsToOperation:task session:session]) {
+        if (task == self.downloadTask) {
+            [self _applyCompletionError:error forTask:task];
+        } else if (!self.taskInventoryResolved && [task isKindOfClass:[NSURLSessionDownloadTask class]]) {
+            if (!self.pendingCompletedTask || task.taskIdentifier > self.pendingCompletedTask.taskIdentifier) {
+                self.pendingCompletedTask = (NSURLSessionDownloadTask*)task;
+                self.pendingCompletionError = error;
+            }
         }
     }
 
@@ -415,34 +931,55 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location
 {
-    NSFileManager* fman = [[NSFileManager alloc] init];
-    [fman removeItemAtURL:self.localURL error:nil];
-    
+    if (![self _taskBelongsToOperation:downloadTask session:session]) {
+        return;
+    }
+    if (self.receivedFinishedDownload) {
+        return;
+    }
+    NSURLSessionDownloadTask* previousTask = self.downloadTask;
+    if (previousTask && previousTask != downloadTask && previousTask.state != NSURLSessionTaskStateCompleted) {
+        [previousTask cancel];
+    }
+    self.downloadTask = downloadTask;
+    self.receivedFinishedDownload = YES;
+    self.pendingCompletedTask = nil;
+    self.pendingCompletionError = nil;
+    NSFileManager* fileManager = [[NSFileManager alloc] init];
     NSError* error = nil;
-    NSDictionary* info = [fman attributesOfItemAtPath:location.path error:&error];
+    NSDictionary* info = [fileManager attributesOfItemAtPath:location.path error:&error];
     if (error) {
         ErrLog(@"could not get file attributes for downloaded file: %@", location);
-        self.failed = YES;
+        [self _failWithError:[self _downloadErrorWithCode:10
+                                               description:@"The downloaded episode file could not be read on this device.".ls
+                                           underlyingError:error]];
         dispatch_semaphore_signal(_stateChangeSemaphore);
         return;
     }
-    
-    unsigned long long fileSize = [info[NSFileSize] unsignedLongLongValue];
-    if (fileSize < 100*1024) {
-        ErrLog(@"file is too small, maybe DNS error");
-        self.failed = YES;
+
+    long long fileSize = [info[NSFileSize] longLongValue];
+    NSError* validationError = [self _transportValidationErrorForTask:downloadTask fileSize:fileSize];
+    if (validationError) {
+        [self _failWithError:validationError];
         dispatch_semaphore_signal(_stateChangeSemaphore);
         return;
     }
-    
-    error = nil;
-    if (![fman moveItemAtURL:location toURL:self.localURL error:&error]) {
-        self.failed = YES;
-        ErrLog(@"could not move file: %@", error);
+    self.finalFileSize = (unsigned long long)fileSize;
+
+    NSString* transportExtension = [self fileExtensionForMIMEType:downloadTask.response.MIMEType];
+    if (transportExtension.length > 0 && ![self.localURL.pathExtension caseInsensitiveEquals:transportExtension]) {
+        self.localURL = [[self.localURL URLByDeletingPathExtension] URLByAppendingPathExtension:transportExtension];
     }
-    else {
-        AddSkipBackupAttributeToFile([self.localURL path]);
+
+    NSURL* stagedDownloadURL = [self _newStagedDownloadURLWithError:&error];
+    if (!stagedDownloadURL || ![fileManager moveItemAtURL:location toURL:stagedDownloadURL error:&error]) {
+        [self _failWithError:[self _downloadErrorWithCode:11
+                                               description:@"The downloaded episode file could not be staged for validation.".ls
+                                           underlyingError:error]];
+        dispatch_semaphore_signal(_stateChangeSemaphore);
+        return;
     }
+    self.stagedDownloadURL = stagedDownloadURL;
 
     dispatch_semaphore_signal(_stateChangeSemaphore);
 }
@@ -452,20 +989,41 @@ NSString* kUserDefaultsResumeInfoKey = @"DownloadResumeInfos_NSURLSession";
  totalBytesWritten:(int64_t)totalBytesWritten
 totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite
 {
+    if (downloadTask != self.downloadTask) {
+        return;
+    }
     self.loadedContentLength = totalBytesWritten;
-    if (self.expectedContentLength == 0) {
+    if (totalBytesExpectedToWrite > 0) {
+        self.transportExpectedContentLength = totalBytesExpectedToWrite;
         self.expectedContentLength = totalBytesExpectedToWrite;
     }
-    
-    [self _notifyDidLoadBytesOnMainThread:bytesWritten];
+
+    [self.progressLock lock];
+    self.unreportedLoadedBytes += bytesWritten;
+    [self.progressLock unlock];
     dispatch_semaphore_signal(_stateChangeSemaphore);
+}
+
+- (int64_t)drainLoadedBytesSinceLastUpdate
+{
+    [self.progressLock lock];
+    int64_t loadedBytes = self.unreportedLoadedBytes;
+    self.unreportedLoadedBytes = 0;
+    [self.progressLock unlock];
+    return loadedBytes;
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask
  didResumeAtOffset:(int64_t)fileOffset
 expectedTotalBytes:(int64_t)expectedTotalBytes
 {
-    self.expectedContentLength = expectedTotalBytes;
+    if (downloadTask != self.downloadTask) {
+        return;
+    }
+    if (expectedTotalBytes > 0) {
+        self.transportExpectedContentLength = expectedTotalBytes;
+        self.expectedContentLength = expectedTotalBytes;
+    }
     self.restartedAtContentLength = fileOffset;
     dispatch_semaphore_signal(_stateChangeSemaphore);
 }
@@ -475,56 +1033,44 @@ expectedTotalBytes:(int64_t)expectedTotalBytes
 
 - (void) _saveResumeData:(NSData*)resumeData
 {
-    NSMutableDictionary* resumeInfos = [[USER_DEFAULTS objectForKey:kUserDefaultsResumeInfoKey] mutableCopy];
-    if (!resumeInfos) {
-        resumeInfos = [[NSMutableDictionary alloc] init];
-    }
-    
-    if (resumeData) {
-        [resumeInfos setObject:resumeData forKey:self.identifier];
-        [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
-    }
+    NSString* identifier = [self.identifier copy];
+    NSURL* remoteURL = [self.remoteURL copy];
+    ICDownloadResumeStoreSync(^{
+        ICWriteResumeData(identifier, remoteURL, resumeData);
+    });
+}
+
++ (void) prepareResumeInfoStore
+{
+    ICDownloadResumeStoreAsync(^{
+        ICMigrateLegacyResumeDataIfNeeded();
+    });
 }
 
 + (void) deleteResumeInfoForIdentifier:(NSString*)identifier
 {
-    NSMutableDictionary* resumeInfos = [[USER_DEFAULTS objectForKey:kUserDefaultsResumeInfoKey] mutableCopy];
-    
-    if (resumeInfos[identifier]) {
-        [resumeInfos removeObjectForKey:identifier];
-        [USER_DEFAULTS setObject:resumeInfos forKey:kUserDefaultsResumeInfoKey];
-    }
+    NSString* copiedIdentifier = [identifier copy];
+    ICDownloadResumeStoreAsync(^{
+        ICDeleteResumeData(copiedIdentifier);
+    });
 }
 
-- (void) _deleteResumeInfo
++ (void) deleteAllResumeInfo
 {
-    [[self class] deleteResumeInfoForIdentifier:self.identifier];
+    ICDownloadResumeStoreAsync(^{
+        ICDeleteAllResumeData();
+    });
 }
 
 - (NSData*) _resumeData
 {
-    NSDictionary* resumeInfos = [USER_DEFAULTS objectForKey:kUserDefaultsResumeInfoKey];
-    NSData* resumeData = resumeInfos[self.identifier];
-    
-    if (!resumeData || [resumeData length] < 1) {
-        return nil;
-    }
-        
-    NSError *error;
-    NSDictionary *resumeDictionary = [NSPropertyListSerialization propertyListWithData:resumeData
-                                                                               options:NSPropertyListImmutable
-                                                                                format:NULL
-                                                                                 error:&error];
-    if (!resumeDictionary || error) {
-        return nil;
-    }
-    
-    NSString *localFilePath = [resumeDictionary objectForKey:@"NSURLSessionResumeInfoLocalPath"];
-    if ([localFilePath length] < 1) {
-        return nil;
-    }
-        
-    return ([[NSFileManager defaultManager] fileExistsAtPath:localFilePath]) ? resumeData : nil;
+    NSString* identifier = [self.identifier copy];
+    NSURL* remoteURL = [self.remoteURL copy];
+    __block NSData* resumeData = nil;
+    ICDownloadResumeStoreSync(^{
+        resumeData = ICReadAndDeleteResumeData(identifier, remoteURL);
+    });
+    return resumeData;
 }
 
 @end

@@ -8,6 +8,7 @@
 
 #import "EpisodeListPodcastSelectionTableViewController.h"
 #import "UITableViewController+Settings.h"
+#import "ICListEditorPodcastCell.h"
 
 
 @interface EpisodeListPodcastSelectionTableViewController ()
@@ -73,13 +74,25 @@
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    UITableViewCell *cell = [self standardCell];
+    ICListEditorPodcastCell* cell = (ICListEditorPodcastCell*)[self standardCellWithClass:[ICListEditorPodcastCell class]];
     
     CDFeed* feed = [DMANAGER.visibleFeeds objectAtIndex:indexPath.row];
     cell.textLabel.text = feed.title;
-    
-    UIImage* localImage = [[ImageCacheManager sharedImageCacheManager] localImageForImageURL:feed.imageURL size:56 grayscale:NO];
-    cell.imageView.image = localImage;
+    NSString* representedFeedIdentifier = feed.objectID.URIRepresentation.absoluteString;
+    cell.representedFeedIdentifier = representedFeedIdentifier;
+
+    ImageCacheManager* imageManager = [ImageCacheManager sharedImageCacheManager];
+    UIImage* localImage = [imageManager localImageForImageURL:feed.imageURL size:44 grayscale:NO];
+    cell.imageView.image = localImage ?: [UIImage imageNamed:@"Podcast Placeholder 56"];
+    if (!localImage && feed.imageURL) {
+        __weak ICListEditorPodcastCell* weakCell = cell;
+        [imageManager imageForURL:feed.imageURL size:44 grayscale:NO sender:cell completion:^(UIImage* image) {
+            ICListEditorPodcastCell* strongCell = weakCell;
+            if (image && [strongCell.representedFeedIdentifier isEqualToString:representedFeedIdentifier]) {
+                strongCell.imageView.image = image;
+            }
+        }];
+    }
     
     cell.accessoryType = ([self.selectedPodcasts containsObject:feed]) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
     

@@ -10,6 +10,138 @@ import Darwin
 import Foundation
 import UIKit
 
+final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var engineIdentifier: ObjectIdentifier?
+    private var generation = 0
+    private var isSignedOut = false
+    private var isAccountIdentityVerified = false
+    private var localCaptureAccountRecordName: String?
+    private var deleteAttemptRevisionsByRecordName: [String: [String]] = [:]
+    private var resolvedInitialUploadRecordNames: Set<String> = []
+    private var localUploadReadFailed = false
+
+    func update(syncEngine: CKSyncEngine?, generation: Int, isSignedOut: Bool,
+                isAccountIdentityVerified: Bool, accountRecordName: String?) {
+        lock.lock()
+        let engineChanged = engineIdentifier != syncEngine.map(ObjectIdentifier.init)
+            || self.generation != generation
+        engineIdentifier = syncEngine.map(ObjectIdentifier.init)
+        self.generation = generation
+        self.isSignedOut = isSignedOut
+        self.isAccountIdentityVerified = isAccountIdentityVerified
+        if !isSignedOut && isAccountIdentityVerified {
+            localCaptureAccountRecordName = accountRecordName
+        } else {
+            localCaptureAccountRecordName = nil
+        }
+        if engineChanged || isSignedOut || !isAccountIdentityVerified {
+            deleteAttemptRevisionsByRecordName = [:]
+            resolvedInitialUploadRecordNames = []
+            localUploadReadFailed = false
+        }
+        lock.unlock()
+    }
+
+    func verifiedAccountRecordNameForLocalCapture() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSignedOut else { return nil }
+        return localCaptureAccountRecordName
+    }
+
+    func beginVerifiedAccountCapture(_ accountRecordName: String, generation: Int) {
+        guard !accountRecordName.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard self.generation == generation, !isSignedOut else { return }
+        localCaptureAccountRecordName = accountRecordName
+    }
+
+    func currentGeneration(for syncEngine: CKSyncEngine) -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSignedOut, isAccountIdentityVerified,
+              engineIdentifier == ObjectIdentifier(syncEngine) else { return nil }
+        return generation
+    }
+
+    func recordDeleteAttempts(_ revisionsByRecordName: [String: String],
+                              generation: Int,
+                              for syncEngine: CKSyncEngine) {
+        guard !revisionsByRecordName.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSignedOut, isAccountIdentityVerified,
+              self.generation == generation,
+              engineIdentifier == ObjectIdentifier(syncEngine) else { return }
+        for (recordName, revision) in revisionsByRecordName {
+            var revisions = deleteAttemptRevisionsByRecordName[recordName] ?? []
+            if revisions.last != revision {
+                revisions.append(revision)
+            }
+            deleteAttemptRevisionsByRecordName[recordName] = revisions
+        }
+    }
+
+    func pendingDeleteAttempt(for recordName: String, syncEngine: CKSyncEngine) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard engineIdentifier == ObjectIdentifier(syncEngine),
+              let revisions = deleteAttemptRevisionsByRecordName[recordName],
+              !revisions.isEmpty else { return nil }
+        return revisions[0]
+    }
+
+    func acknowledgeDeleteAttempts(_ revisionsByRecordName: [String: String],
+                                   generation: Int,
+                                   for syncEngine: CKSyncEngine) {
+        guard !revisionsByRecordName.isEmpty else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSignedOut, isAccountIdentityVerified,
+              self.generation == generation,
+              engineIdentifier == ObjectIdentifier(syncEngine) else { return }
+        for (recordName, acknowledgedRevision) in revisionsByRecordName {
+            guard var revisions = deleteAttemptRevisionsByRecordName[recordName],
+                  revisions.first == acknowledgedRevision else { continue }
+            revisions.removeFirst()
+            if revisions.isEmpty {
+                deleteAttemptRevisionsByRecordName.removeValue(forKey: recordName)
+            } else {
+                deleteAttemptRevisionsByRecordName[recordName] = revisions
+            }
+        }
+    }
+
+    func recordInitialUploadOutcome(resolvedRecordNames: [String],
+                                    localReadFailed: Bool,
+                                    generation: Int,
+                                    for syncEngine: CKSyncEngine) {
+        guard !resolvedRecordNames.isEmpty || localReadFailed else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSignedOut, isAccountIdentityVerified,
+              self.generation == generation,
+              engineIdentifier == ObjectIdentifier(syncEngine) else { return }
+        resolvedInitialUploadRecordNames.formUnion(resolvedRecordNames)
+        self.localUploadReadFailed = self.localUploadReadFailed || localReadFailed
+    }
+
+    func takeInitialUploadOutcome(generation: Int,
+                                  for syncEngine: CKSyncEngine) -> (resolvedRecordNames: Set<String>, localReadFailed: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSignedOut, isAccountIdentityVerified,
+              self.generation == generation,
+              engineIdentifier == ObjectIdentifier(syncEngine) else { return ([], false) }
+        let outcome = (resolvedInitialUploadRecordNames, localUploadReadFailed)
+        resolvedInitialUploadRecordNames = []
+        localUploadReadFailed = false
+        return outcome
+    }
+}
+
 @available(iOS 17.0, *)
 @MainActor
 @objcMembers final class ICiCloudSyncManager: NSObject, CKSyncEngineDelegate {
@@ -33,11 +165,15 @@ import UIKit
     nonisolated static let subscriptionRecordURLsKey = "ICiCloudSyncSubscriptionRecordURLs"
     nonisolated static let pendingEpisodeStatesKey = "ICiCloudSyncPendingEpisodeStates"
     nonisolated static let pendingSubscriptionPayloadsKey = "ICiCloudSyncPendingSubscriptionPayloads"
+    nonisolated static let pendingSubscriptionFetchCompleteKey = "ICiCloudSyncPendingSubscriptionFetchComplete"
     nonisolated static let episodeLocalModifiedDatesKey = "ICiCloudSyncEpisodeLocalModifiedDates"
     nonisolated static let subscriptionLocalModifiedDatesKey = "ICiCloudSyncSubscriptionLocalModifiedDates"
+    nonisolated static let subscriptionLocalStatesKey = "ICiCloudSyncSubscriptionLocalStates"
     nonisolated static let subscriptionPayloadHashesKey = "ICiCloudSyncSubscriptionPayloadHashes"
     nonisolated static let initialEpisodeBackfillOffsetKey = "ICiCloudSyncInitialEpisodeBackfillOffset"
     nonisolated static let initialSubscriptionBackfillOffsetKey = "ICiCloudSyncInitialSubscriptionBackfillOffset"
+    nonisolated static let initialEpisodeBackfillCursorKey = "ICiCloudSyncInitialEpisodeBackfillCursor"
+    nonisolated static let initialSubscriptionBackfillCursorKey = "ICiCloudSyncInitialSubscriptionBackfillCursor"
     nonisolated static let initialSettingsBackfillPendingKey = "ICiCloudSyncInitialSettingsBackfillPending"
     nonisolated static let pendingInitialSettingsPayloadKey = "ICiCloudSyncPendingInitialSettingsPayload"
     @objc static let initialSettingsChoiceNeededNotification = "ICiCloudSyncInitialSettingsChoiceNeeded"
@@ -45,6 +181,8 @@ import UIKit
     nonisolated static let settingsSyncedHashKey = "ICiCloudSyncSettingsSyncedHash"
     nonisolated static let suppressSubscriptionDeletionsKey = "ICiCloudSyncSuppressSubscriptionDeletions"
     nonisolated static let cloudInventoryKey = "ICiCloudSyncCloudInventory"
+    nonisolated static let cloudInventoryPayloadScanCompletedKey = "ICiCloudSyncCloudInventoryPayloadScanCompleted"
+    nonisolated static let transitionalSubscriptionInventoryRecordsKey = "ICiCloudSyncTransitionalSubscriptionInventoryRecords"
     nonisolated static let subscriptionListSettingsLocalModifiedDateKey = "ICiCloudSyncSubscriptionListSettingsLocalModifiedDate"
     nonisolated static let subscriptionListSettingsBaselineKey = "ICiCloudSyncSubscriptionListSettingsBaseline"
     // Mirrors the file-private kManualFeedOrderKey in DatabaseManager.m.
@@ -54,25 +192,45 @@ import UIKit
     nonisolated static let lastStatusKey = "ICiCloudSyncLastStatus"
     nonisolated static let lastErrorKey = "ICiCloudSyncLastError"
     nonisolated static let deviceRecordShouldStampSyncDateKey = "ICiCloudSyncDeviceRecordShouldStampSyncDate"
-    // CloudKit allows up to 400 record operations per batch. Keeping it well above the backfill
-    // page size (200) means a page of episodes + the device record ship in ONE batch instead of
-    // a 200-record batch plus a 2-record leftover round-trip.
-    nonisolated static let maximumRecordZoneChangesPerBatch = 400
-    nonisolated static let pendingChangeQueueChunkSize = 200
+    nonisolated static let finalDeviceRecordUpdatePendingKey = "ICiCloudSyncFinalDeviceRecordUpdatePending"
+    nonisolated static let accountSignedOutKey = "ICiCloudSyncAccountSignedOut"
+    nonisolated static let accountUserRecordNameKey = "ICiCloudSyncAccountUserRecordName"
+    nonisolated static let accountResetRequiredKey = "ICiCloudSyncAccountResetRequired"
+    nonisolated static let localOutboxHasVerifiedAccountKey = "ICiCloudSyncLocalOutboxHasVerifiedAccount"
+    nonisolated static let localOutboxUnboundAccountRecordName = "__unbound__"
+    nonisolated static let localOutboxPendingAccountRecordName = "__pending_account__"
+    nonisolated static let localOutboxPendingScopeKey = "ICiCloudSyncLocalOutboxPendingScope"
+    nonisolated static let localOutboxAwaitingAccountSwitchKey = "ICiCloudSyncLocalOutboxAwaitingAccountSwitch"
+    nonisolated static let episodesSyncHasParticipatedKey = "ICiCloudSyncEpisodesHasParticipated"
+    nonisolated static let subscriptionsSyncHasParticipatedKey = "ICiCloudSyncSubscriptionsHasParticipated"
+    nonisolated static let localOutboxEntityName = "ICCloudSyncOutboxEntry"
+    nonisolated static let pendingEpisodeStateEntityName = "ICCloudPendingEpisodeState"
+    nonisolated static let pendingSubscriptionStateEntityName = "ICCloudPendingSubscriptionState"
+    nonisolated static let localOutboxEpisodeCategory = "episode"
+    nonisolated static let localOutboxSubscriptionCategory = "subscription"
+    nonisolated static let localOutboxSaveOperation = "save"
+    nonisolated static let localOutboxDeleteOperation = "delete"
+    nonisolated static let localMutationRevisionPayloadKey = "_icLocalMutationRevision"
+    // CloudKit accepts at most 250 saves + deletes per request. CKSyncEngine can request
+    // several of these bounded batches during one sendChanges() call.
+    nonisolated static let maximumRecordZoneChangesPerBatch = 250
+    nonisolated static let pendingChangeQueueChunkSize = 250
+    nonisolated static let remoteApplyBatchSize = 100
     nonisolated static let syncMetadataDirectoryName = "iCloudSyncMetadata"
-    nonisolated static let knownRecordSystemFieldsDirectoryName = "KnownRecords"
+    nonisolated static let legacyKnownRecordSystemFieldsDirectoryName = "KnownRecords"
+    nonisolated static let legacySyncItemMetadataErrorDomain = "ICiCloudSyncLegacyMetadata"
 
     nonisolated static var fileBackedSyncMetadataKeys: Set<String> {
         [
             Self.engineStateKey,
             Self.knownRecordsKey,
+            Self.accountResetRequiredKey,
+            Self.finalDeviceRecordUpdatePendingKey,
             Self.deviceCacheKey,
-            Self.subscriptionRecordURLsKey,
             Self.pendingEpisodeStatesKey,
             Self.pendingSubscriptionPayloadsKey,
-            Self.episodeLocalModifiedDatesKey,
-            Self.subscriptionLocalModifiedDatesKey,
-            Self.subscriptionPayloadHashesKey,
+            Self.pendingSubscriptionFetchCompleteKey,
+            Self.transitionalSubscriptionInventoryRecordsKey,
         ]
     }
 
@@ -80,6 +238,7 @@ import UIKit
         static let device = "ICDevice"
         static let episodeState = "ICEpisodeState"
         static let subscription = "ICSubscription"
+        static let subscriptionTombstone = "ICSubscriptionTombstone"
         static let appSettings = "ICAppSettings"
         static let listScrollPositions = "ICListScrollPositions"
         static let subscriptionListSettings = "ICSubscriptionListSettings"
@@ -89,6 +248,7 @@ import UIKit
         static let device = "device_"
         static let episode = "episode_"
         static let subscription = "subscription_"
+        static let subscriptionTombstone = "subscriptionTombstone_"
         static let appSettings = "settings_app"
         static let listScrollPositions = "settings_listScrollPositions"
         static let subscriptionListSettings = "settings_subscriptionList"
@@ -97,17 +257,17 @@ import UIKit
     let defaults = UserDefaults.standard
     let container = CKContainer(identifier: ICiCloudSyncManager.containerIdentifier)
     let zoneID = CKRecordZone.ID(zoneName: ICiCloudSyncManager.zoneName)
+    nonisolated let syncEngineCallbackGate = ICiCloudSyncEngineCallbackGate()
     var syncEngine: CKSyncEngine?
     var isStarted = false
+    var isDeletingAllICloudData = false
     var isApplyingRemoteChange = false
     var isWritingSyncMetadata = false
     var hasUnresolvedSyncFailures = false
+    var requiresSyncEngineStateRollbackAfterPersistenceFailure = false
     var settingsDebounceWorkItem: DispatchWorkItem?
     var scrollDebounceWorkItem: DispatchWorkItem?
     var applyPendingDebounceWorkItem: DispatchWorkItem?
-    var episodeLocalModifiedDatesCache: [String: TimeInterval]?
-    var episodeLocalModifiedDatesWriteWorkItem: DispatchWorkItem?
-    var subscriptionPayloadHashesCache: [String: String]?
     var cachedSyncTotalCounts: (episodes: Int, subscriptions: Int, settings: Int, timestamp: Date)?
     var isRefreshingSyncTotalCounts = false
     // Object IDs that were just mutated by applying remote records. The objects-did-change
@@ -121,30 +281,54 @@ import UIKit
     var remoteAppliedObjectIDs: Set<NSManagedObjectID> = []
     var lastForegroundSyncDate: Date?
     var didPruneEpisodeLocalModifiedDates = false
-    // In-memory cache for the two pending-payload stores. A single fetch can store
-    // thousands of payloads (episode states arriving while episode sync is off) —
-    // re-reading and re-writing the whole plist per record was quadratic disk I/O on
-    // the main thread and froze the device for the duration of the download.
-    var pendingPayloadsCache: [String: [String: [String: Any]]] = [:]
-    var dirtyPendingPayloadKeys: Set<String> = []
-    var pendingPayloadsWriteWorkItem: DispatchWorkItem?
+    var isApplyingPendingSubscriptions = false
     var syncActivityExpectedCount = 0
     var syncActivityKindLabel: String?
     var isFetchingCloudInventory = false
+    private(set) var cloudInventoryRefreshErrorText: String?
+    var cloudInventoryRefreshInProgress: Bool { isFetchingCloudInventory }
     var pendingCloudInventoryRefreshReason: String?
+    var requestedCloudInventoryRefreshReason: String?
+    var cloudAccountGeneration = 0
+    var isICloudAccountSignedOut = UserDefaults.standard.bool(forKey: ICiCloudSyncManager.accountSignedOutKey)
+    var isICloudAccountIdentityVerified = false
     var isHydratingStubFeeds = false
     var hydrationCompletedCount = 0
     var hydrationTotalCount = 0
     var hydrationFailedFeedIDs: Set<NSManagedObjectID> = []
     var isWaitingForEpisodeLoader = false
-    var episodeLoaderWaitGeneration = 0
+    var episodeLoaderWaitingFeedID: NSManagedObjectID?
     var needsSubscriptionListSortApply = false
-    var pendingInitialUploadBatch: InitialUploadBatch?
+    var pendingInitialUploadBatches: [InitialUploadBatch] = []
+    var isPreparingInitialUploadPage = false
     var initialQueueTask: Task<Void, Never>?
+    var initialQueueTaskGeneration = 0
     var lowPrioritySyncTask: Task<Void, Never>?
+    var accountVerificationTask: Task<Void, Never>?
+    var manualSyncTask: Task<Void, Never>?
+    var backgroundSyncTask: Task<Void, Never>?
+    var finalDeviceRecordUpdateTask: Task<Void, Never>?
+    var requiresImmediateFinalDeviceRecordResend = false
+    var isICloudAccountTransitionRunning = false
+    var iCloudAccountTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+    var iCloudAccountTransitionToken = 0
+    var localOutboxDrainTask: Task<Void, Never>?
+    var localOutboxDrainRequested = false
+    var localOutboxBatchDepth = 0
+    var localOutboxDrainDeferred = false
+    var localOutboxSnapshotCache: [String: ICCloudSyncOutboxSnapshot] = [:]
+    var localOutboxRevisionsToDelete: [String: String] = [:]
+    var localOutboxRevisionsToAcknowledge: [String: String] = [:]
+    var localOutboxRevisionsToRearm: [String: String] = [:]
+    var finalDeviceRecordUpdateGeneration = 0
+    var activeSyncCycleCounts: [Int: Int] = [:]
+    var activeSyncCycleCount: Int { activeSyncCycleCounts[cloudAccountGeneration] ?? 0 }
+    var isPerformingManualSync = false
     var syncRetryAttempt = 0
     var syncRetryWorkItem: DispatchWorkItem?
-    enum SyncActivityDirection { case up, down }
+    var syncRetryRequiresAccountVerification = false
+    var syncRetryGeneration = 0
+    enum SyncActivityDirection { case up, down, verifying }
     var syncActivityDirection: SyncActivityDirection?
     var syncActivityStartDate: Date?
     var syncActivityRecordCount = 0
@@ -173,6 +357,25 @@ import UIKit
 
     @objc var anySyncEnabled: Bool {
         episodesSyncEnabled || subscriptionsSyncEnabled || settingsSyncEnabled
+    }
+
+    var hasPendingFinalDeviceRecordUpdate: Bool {
+        (Self.syncMetadataValue(forKey: Self.finalDeviceRecordUpdatePendingKey) as? NSNumber)?.boolValue == true
+    }
+
+    @objc var syncInProgress: Bool {
+        guard anySyncEnabled || hasPendingFinalDeviceRecordUpdate else { return false }
+        let hasVisibleError = defaults.string(forKey: Self.lastErrorKey)?.isEmpty == false
+        return activeSyncCycleCount > 0
+            || accountVerificationTask != nil
+            || manualSyncTask != nil
+            || backgroundSyncTask != nil
+            || isPerformingManualSync
+            || lowPrioritySyncTask != nil
+            || isApplyingRemoteChange
+            || syncActivityDirection != nil
+            || (!isICloudAccountIdentityVerified && !hasVisibleError)
+            || (hasInitialUploadBackfillWork && !hasVisibleError)
     }
 
     @objc var lastSyncDate: Date? {
@@ -265,7 +468,15 @@ import UIKit
     }
 
     @objc var statusText: String {
-        guard anySyncEnabled else { return NSLocalizedString("Aus", comment: "") }
+        if !anySyncEnabled {
+            guard hasPendingFinalDeviceRecordUpdate else {
+                return NSLocalizedString("Aus", comment: "")
+            }
+            if let error = defaults.string(forKey: Self.lastErrorKey), !error.isEmpty {
+                return error
+            }
+            return NSLocalizedString("iCloud prüfen…", comment: "")
+        }
         if let error = defaults.string(forKey: Self.lastErrorKey), !error.isEmpty {
             return error
         }
@@ -330,29 +541,59 @@ import UIKit
         guard !isStarted else { return }
         isStarted = true
 
+        discardStaleICloudAccountEngineStateIfNeeded()
+
+        let hasLegacyEpisodeSyncState = Self.hasLegacyEpisodeSyncItemMetadata()
+        let hasLegacySubscriptionSyncState = Self.hasLegacySubscriptionSyncItemMetadata()
+        if episodesSyncEnabled || hasLegacyEpisodeSyncState {
+            defaults.set(true, forKey: Self.episodesSyncHasParticipatedKey)
+        }
+        if subscriptionsSyncEnabled || hasLegacySubscriptionSyncState {
+            defaults.set(true, forKey: Self.subscriptionsSyncHasParticipatedKey)
+        }
+        // The account ID persisted from a previous process is not session verification.
+        // Arm a transition-specific scope before observing edits so a cold start with all
+        // sync categories off cannot journal resets/tombstones under a stale Apple ID.
+        if defaults.bool(forKey: Self.localOutboxHasVerifiedAccountKey)
+            || defaults.bool(forKey: Self.localOutboxAwaitingAccountSwitchKey) {
+            ensurePendingLocalOutboxScope()
+        }
+
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(defaultsDidChange(_:)), name: UserDefaults.didChangeNotification, object: nil)
         center.addObserver(self, selector: #selector(coreDataDidChange(_:)), name: .NSManagedObjectContextObjectsDidChange, object: databaseManager.objectContext)
+        center.addObserver(self, selector: #selector(coreDataDidSave(_:)), name: .NSManagedObjectContextDidSave, object: databaseManager.objectContext)
         center.addObserver(self, selector: #selector(listScrollPositionsDidChange(_:)), name: NSNotification.Name.ICListScrollPositionsDidChange, object: nil)
         center.addObserver(self, selector: #selector(episodesWereAdded(_:)), name: NSNotification.Name.SubscriptionManagerDidAddEpisodes, object: nil)
         center.addObserver(self, selector: #selector(episodeLoadingDidFinish(_:)), name: NSNotification.Name.EpisodeLoadingManagerDidFinishLoading, object: nil)
+        center.addObserver(self, selector: #selector(episodeLoadingDidFail(_:)), name: NSNotification.Name.EpisodeLoadingManagerDidFailLoading, object: nil)
+        center.addObserver(self, selector: #selector(episodeLoadingDidCancel(_:)), name: NSNotification.Name.EpisodeLoadingManagerDidCancelLoading, object: nil)
 
-        if anySyncEnabled {
+        if anySyncEnabled || hasPendingFinalDeviceRecordUpdate {
             initializeSyncEngineIfNeeded()
-            queueDeviceRecordForPendingUserDataIfNeeded()
-            if hasInitialUploadBackfillWork {
-                scheduleCurrentEnabledDataForUpload()
+            if anySyncEnabled {
+                queueDeviceRecordForPendingUserDataIfNeeded()
+                if hasInitialUploadBackfillWork, !isICloudAccountSignedOut, isICloudAccountIdentityVerified {
+                    scheduleCurrentEnabledDataForUpload()
+                }
+                // Retry payloads that arrived before their episode/feed existed locally and
+                // whose normal trigger (new episodes added) didn't fire again before the app
+                // was quit — without this they could sit in the pending store indefinitely.
+                scheduleApplyPendingPayloads()
+                // Publishes the sort mode/settings if their fingerprint baseline is missing
+                // (devices that enabled subscription sync before this record type existed).
+                scheduleSettingsChangeCheck()
+                hydrateStubFeedsIfNeeded()
             }
-            // Retry payloads that arrived before their episode/feed existed locally and
-            // whose normal trigger (new episodes added) didn't fire again before the app
-            // was quit — without this they could sit in the pending store indefinitely.
-            scheduleApplyPendingPayloads()
-            // Publishes the sort mode/settings if their fingerprint baseline is missing
-            // (devices that enabled subscription sync before this record type existed).
-            scheduleSettingsChangeCheck()
-            hydrateStubFeedsIfNeeded()
             Task { @MainActor in
                 await refreshAccountStatus()
+                guard isICloudAccountIdentityVerified else { return }
+                resumePendingFinalDeviceRecordUpdateIfNeeded()
+                if anySyncEnabled {
+                    if await drainLocalOutbox() {
+                        scheduleLowPrioritySync()
+                    }
+                }
             }
         }
     }
@@ -370,29 +611,50 @@ import UIKit
         }
         lastForegroundSyncDate = now
         logSyncEvent("Foreground-Sync angestoßen")
-        scheduleLowPrioritySync()
-        // Resume any interrupted episode loading for stub feeds; feeds that failed in
-        // the previous session/run get one fresh attempt per foreground entry.
-        hydrationFailedFeedIDs.removeAll()
-        hydrateStubFeedsIfNeeded()
+        setStatus(NSLocalizedString("iCloud prüfen…", comment: ""))
+        Task { @MainActor in
+            await refreshAccountStatus()
+            guard isICloudAccountIdentityVerified else { return }
+            scheduleLowPrioritySync()
+            // Resume any interrupted episode loading for stub feeds; feeds that failed in
+            // the previous session/run get one fresh attempt per foreground entry.
+            hydrationFailedFeedIDs.removeAll()
+            hydrateStubFeedsIfNeeded()
+        }
     }
 
     @objc func setEpisodesSyncEnabled(_ enabled: Bool) {
-        guard episodesSyncEnabled != enabled else { return }
-        defaults.set(enabled, forKey: ICiCloudSyncEpisodesEnabled)
-        if enabled {
-            resetInitialEpisodeBackfillCursor()
-        } else {
-            clearInitialEpisodeBackfillCursor()
-        }
+        guard applyEpisodesSyncEnabled(enabled) else { return }
         logSyncEvent("Episode Sync-Schalter geändert", metadata: ["enabled": enabled])
         syncOptionsChanged()
     }
 
+    @discardableResult
+    private func applyEpisodesSyncEnabled(_ enabled: Bool) -> Bool {
+        guard episodesSyncEnabled != enabled else { return false }
+        defaults.set(enabled, forKey: ICiCloudSyncEpisodesEnabled)
+        if enabled {
+            defaults.set(true, forKey: Self.episodesSyncHasParticipatedKey)
+            resetInitialEpisodeBackfillCursor()
+        } else {
+            discardInitialUploadCheckpoints(episodes: true, subscriptions: false)
+            clearInitialEpisodeBackfillCursor()
+        }
+        return true
+    }
+
     @objc func setSubscriptionsSyncEnabled(_ enabled: Bool) {
-        guard subscriptionsSyncEnabled != enabled else { return }
+        guard applySubscriptionsSyncEnabled(enabled) else { return }
+        logSyncEvent("Abo Sync-Schalter geändert", metadata: ["enabled": enabled])
+        syncOptionsChanged()
+    }
+
+    @discardableResult
+    private func applySubscriptionsSyncEnabled(_ enabled: Bool) -> Bool {
+        guard subscriptionsSyncEnabled != enabled else { return false }
         defaults.set(enabled, forKey: ICiCloudSyncSubscriptionsEnabled)
         if enabled {
+            defaults.set(true, forKey: Self.subscriptionsSyncHasParticipatedKey)
             resetInitialSubscriptionBackfillCursor()
             // Enabling must NEVER delete local subscriptions: deletions that piled up in
             // the cloud while sync was off arrive in the catch-up fetch and are suppressed
@@ -400,15 +662,22 @@ import UIKit
             // re-uploaded by the backfill). Only live deletions after that are applied.
             defaults.set(true, forKey: Self.suppressSubscriptionDeletionsKey)
         } else {
+            discardInitialUploadCheckpoints(episodes: false, subscriptions: true)
             clearInitialSubscriptionBackfillCursor()
             defaults.removeObject(forKey: Self.suppressSubscriptionDeletionsKey)
         }
-        logSyncEvent("Abo Sync-Schalter geändert", metadata: ["enabled": enabled])
-        syncOptionsChanged()
+        return true
     }
 
     @objc func setSettingsSyncEnabled(_ enabled: Bool) {
-        guard settingsSyncEnabled != enabled else { return }
+        guard applySettingsSyncEnabled(enabled) else { return }
+        logSyncEvent("Einstellungs-Sync-Schalter geändert", metadata: ["enabled": enabled])
+        syncOptionsChanged()
+    }
+
+    @discardableResult
+    private func applySettingsSyncEnabled(_ enabled: Bool) -> Bool {
+        guard settingsSyncEnabled != enabled else { return false }
         defaults.set(enabled, forKey: ICiCloudSyncSettingsEnabled)
         if enabled {
             defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
@@ -417,59 +686,225 @@ import UIKit
             setSyncMetadata(nil, forKey: Self.pendingInitialSettingsPayloadKey)
             setStoredSyncedSettingsHash(nil)
         }
-        logSyncEvent("Einstellungs-Sync-Schalter geändert", metadata: ["enabled": enabled])
+        return true
+    }
+
+    @objc(restoreSyncOptionsWithEpisodes:subscriptions:settings:)
+    func restoreSyncOptions(episodes: NSNumber?, subscriptions: NSNumber?, settings: NSNumber?) {
+        var changed = false
+        if let episodes {
+            changed = applyEpisodesSyncEnabled(episodes.boolValue) || changed
+        }
+        if let subscriptions {
+            changed = applySubscriptionsSyncEnabled(subscriptions.boolValue) || changed
+        }
+        if let settings {
+            changed = applySettingsSyncEnabled(settings.boolValue) || changed
+        }
+        guard changed else { return }
+        logSyncEvent("iCloud Sync-Schalter aus Backup wiederhergestellt", metadata: [
+            "episodesPresent": episodes != nil,
+            "subscriptionsPresent": subscriptions != nil,
+            "settingsPresent": settings != nil,
+        ])
         syncOptionsChanged()
     }
 
     @objc func syncOptionsChanged() {
+        if !anySyncEnabled, !persistFinalDeviceRecordUpdateIntent() {
+            postStateChanged()
+            return
+        }
         guard isStarted else { return }
 
         logSyncEvent("Sync-Optionen geändert")
         if anySyncEnabled {
-            // The device record (option flags for the other devices' lists) is queued by
-            // the plan task — never synchronously in the switch tap (engine-state access
-            // is queue-sensitive; that was part of the toggle freeze).
-            scheduleCurrentEnabledDataForUpload()
-            // Apply payloads that were stored while the category was off (debounced,
-            // enabled-gated — no engine access in the switch tap).
-            scheduleApplyPendingPayloads()
+            clearError()
             setStatus(NSLocalizedString("iCloud prüfen…", comment: ""))
             Task { @MainActor in
                 await refreshAccountStatus()
+                guard isICloudAccountIdentityVerified else { return }
+                if await drainLocalOutbox() {
+                    scheduleLowPrioritySync()
+                }
             }
-        } else if syncEngine != nil {
-            logSyncEvent("iCloud Sync deaktiviert")
-            clearError()
-            cancelInitialQueueTask()
-            cancelLowPrioritySyncTask()
-            clearInitialUploadCursors()
-            queueDeviceRecord()
-            // One final send: scheduleLowPrioritySync refuses to run with every category
-            // off, so the device record (now flagged all-off) would stay pending forever
-            // and other devices would keep showing this device as actively syncing.
-            sendFinalDeviceRecordUpdate()
-            setStatus(NSLocalizedString("Aus", comment: ""))
+            postStateChanged()
+            return
         }
 
+        logSyncEvent("iCloud Sync deaktiviert")
+        clearError()
+        cancelInitialQueueTask()
+        clearInitialUploadCursors()
+        if isICloudAccountSignedOut {
+            setStatus(NSLocalizedString("Aus", comment: ""))
+            postStateChanged()
+            return
+        }
+        setStatus(NSLocalizedString("iCloud prüfen…", comment: ""))
+        Task { @MainActor in
+            await refreshAccountStatus()
+            guard isICloudAccountIdentityVerified else { return }
+            resumePendingFinalDeviceRecordUpdateIfNeeded()
+            postStateChanged()
+        }
         postStateChanged()
     }
 
-    func sendFinalDeviceRecordUpdate() {
-        guard let syncEngine else { return }
-        Task(priority: .background) {
-            try? await syncEngine.sendChanges()
+    @discardableResult
+    func persistFinalDeviceRecordUpdateIntent() -> Bool {
+        do {
+            _ = try Self.writeSyncMetadataValue(true, forKey: Self.finalDeviceRecordUpdatePendingKey)
+            defaults.removeObject(forKey: Self.finalDeviceRecordUpdatePendingKey)
+            return true
+        } catch {
+            handleLocalPersistenceFailure(error)
+            return false
         }
     }
 
-    @objc func performManualSyncWithCompletion(_ completion: @escaping (NSError?) -> Void) {
-        Task { @MainActor in
+    func clearPendingFinalDeviceRecordUpdateIntent() {
+        Self.removeSyncMetadataValue(forKey: Self.finalDeviceRecordUpdatePendingKey)
+        defaults.removeObject(forKey: Self.finalDeviceRecordUpdatePendingKey)
+    }
+
+    func resumePendingFinalDeviceRecordUpdateIfNeeded() {
+        guard hasPendingFinalDeviceRecordUpdate,
+              !isDeletingAllICloudData,
+              !isICloudAccountSignedOut,
+              isICloudAccountIdentityVerified else { return }
+        queueDeviceRecord()
+        if anySyncEnabled {
+            scheduleLowPrioritySync()
+        } else {
+            sendFinalDeviceRecordUpdate()
+        }
+    }
+
+    func sendFinalDeviceRecordUpdate() {
+        guard hasPendingFinalDeviceRecordUpdate,
+              !isDeletingAllICloudData, isICloudAccountIdentityVerified,
+              finalDeviceRecordUpdateTask == nil,
+              let syncEngine else { return }
+        finalDeviceRecordUpdateGeneration &+= 1
+        let generation = finalDeviceRecordUpdateGeneration
+        finalDeviceRecordUpdateTask = Task { @MainActor [weak self, syncEngine] in
+            guard let self else { return }
+            let cloudGeneration = self.cloudAccountGeneration
             do {
-                try await performManualSync()
-                completion(nil)
+                try await self.sendChangesAndApplyCallbackOutcomes(syncEngine, generation: cloudGeneration)
             } catch {
-                setError(error)
-                completion(error as NSError)
+                guard generation == self.finalDeviceRecordUpdateGeneration else { return }
+                self.finalDeviceRecordUpdateTask = nil
+                self.setError(error)
+                self.scheduleSyncRetryAfterFailure(error: error, reason: "finalDeviceRecord")
+                return
             }
+            guard generation == self.finalDeviceRecordUpdateGeneration else { return }
+            self.finalDeviceRecordUpdateTask = nil
+            if self.hasPendingFinalDeviceRecordUpdate {
+                if !self.hasUnresolvedSyncFailures {
+                    let error = NSError(
+                        domain: "ICiCloudSyncFinalDeviceRecord",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("iCloud Sync konnte nicht abgeschlossen werden.", comment: "")]
+                    )
+                    self.setError(error)
+                    self.scheduleSyncRetryAfterFailure(error: error, reason: "finalDeviceRecord")
+                }
+                return
+            }
+            if !self.anySyncEnabled {
+                self.clearError()
+                self.setStatus(NSLocalizedString("Aus", comment: ""))
+                self.postStateChanged()
+            } else if self.hasPendingSyncChanges {
+                self.scheduleLowPrioritySync()
+            }
+            self.runRequestedCloudInventoryRefresh()
+        }
+    }
+
+    func awaitFinalDeviceRecordUpdate() async {
+        guard let task = finalDeviceRecordUpdateTask else { return }
+        let generation = finalDeviceRecordUpdateGeneration
+        task.cancel()
+        await task.value
+        if generation == finalDeviceRecordUpdateGeneration {
+            finalDeviceRecordUpdateTask = nil
+        }
+    }
+
+    func cancelFinalDeviceRecordUpdate() {
+        finalDeviceRecordUpdateGeneration &+= 1
+        finalDeviceRecordUpdateTask?.cancel()
+        finalDeviceRecordUpdateTask = nil
+    }
+
+    @objc func performManualSyncWithCompletion(_ completion: @escaping (NSError?) -> Void) {
+        guard !syncInProgress else {
+            completion(nil)
+            return
+        }
+        Task { @MainActor in
+            guard !isDeletingAllICloudData else {
+                completion(nil)
+                return
+            }
+            if isICloudAccountSignedOut || !isICloudAccountIdentityVerified {
+                await refreshAccountStatus()
+                guard !isICloudAccountSignedOut, isICloudAccountIdentityVerified else {
+                    completion(nil)
+                    return
+                }
+            }
+            guard !isDeletingAllICloudData,
+                  manualSyncTask == nil, backgroundSyncTask == nil,
+                  accountVerificationTask == nil else {
+                completion(nil)
+                return
+            }
+
+            let operation = Task { @MainActor [weak self] in
+                guard let self else {
+                    completion(nil)
+                    return
+                }
+                let generation = self.cloudAccountGeneration
+                self.isPerformingManualSync = true
+                self.postStateChanged()
+                defer {
+                    self.manualSyncTask = nil
+                    if generation == self.cloudAccountGeneration {
+                        self.isPerformingManualSync = false
+                        self.postStateChanged()
+                    }
+                    if self.isICloudAccountIdentityVerified,
+                       !self.hasUnresolvedSyncFailures,
+                       self.hasPendingSyncChanges {
+                        self.scheduleLowPrioritySync()
+                    }
+                }
+                do {
+                    try await self.performManualSync()
+                    guard generation == self.cloudAccountGeneration,
+                          self.isICloudAccountIdentityVerified else {
+                        completion(nil)
+                        return
+                    }
+                    completion(nil)
+                } catch {
+                    guard generation == self.cloudAccountGeneration,
+                          self.isICloudAccountIdentityVerified else {
+                        completion(nil)
+                        return
+                    }
+                    self.setError(error)
+                    self.scheduleSyncRetryAfterFailure(error: error, reason: "manualSync")
+                    completion(error as NSError)
+                }
+            }
+            manualSyncTask = operation
         }
     }
 
@@ -477,8 +912,31 @@ import UIKit
     // local sync bookkeeping. If any category is still enabled, a fresh full re-upload starts.
     @objc func deleteAllICloudDataWithCompletion(_ completion: @escaping (NSError?) -> Void) {
         Task { @MainActor in
+            guard !isDeletingAllICloudData else {
+                completion(nil)
+                return
+            }
+            isDeletingAllICloudData = true
+            defer { isDeletingAllICloudData = false }
+
+            await refreshAccountStatus()
+            guard !isICloudAccountSignedOut, isICloudAccountIdentityVerified else {
+                completion(nil)
+                return
+            }
+            let generation = cloudAccountGeneration
+            let activeInitialQueueTask = initialQueueTask
             cancelInitialQueueTask()
-            cancelLowPrioritySyncTask()
+            if let activeInitialQueueTask {
+                await activeInitialQueueTask.value
+            }
+            await cancelAndAwaitLowPrioritySync()
+            await awaitFinalDeviceRecordUpdate()
+            resetSyncRetryBackoff()
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified else {
+                completion(nil)
+                return
+            }
             setStatus(NSLocalizedString("Lösche iCloud-Daten…", comment: ""))
             postStateChanged()
 
@@ -487,13 +945,39 @@ import UIKit
             } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
                 // Already gone — treat as success.
             } catch {
+                guard generation == cloudAccountGeneration else {
+                    completion(nil)
+                    return
+                }
                 setError(error)
                 completion(error as NSError)
                 return
             }
+            guard generation == cloudAccountGeneration else {
+                completion(nil)
+                return
+            }
 
+            if let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey) {
+                deleteLocalOutboxEntries(for: accountRecordName)
+            }
+            do {
+                try await Self.deleteAllPendingEpisodeStates()
+                try await Self.deleteAllPendingSubscriptionStates()
+                _ = try await Self.deleteSyncItemMetadata()
+                _ = try await Self.deleteKnownRecordSystemFields()
+                try await Self.removeAllLegacySyncItemMetadataSources()
+                try await Self.removeAllLegacyKnownRecordSystemFieldFiles()
+            } catch {
+                handleLocalPersistenceFailure(error)
+                completion(error as NSError)
+                return
+            }
             syncEngine = nil
+            updateSyncEngineCallbackGate()
             resetAllLocalSyncMetadata()
+            clearPendingFinalDeviceRecordUpdateIntent()
+            isDeletingAllICloudData = false
             // The "On iCloud" rows kept showing the pre-delete counts (stale cache,
             // refreshed only every 30s) — reflect the now-empty zone immediately.
             storeCloudInventory([:], reason: "deleteAllICloudData")
@@ -501,9 +985,6 @@ import UIKit
             if anySyncEnabled {
                 initializeSyncEngineIfNeeded()
                 resetInitialBackfillCursorsForEnabledOptions()
-                if settingsSyncEnabled {
-                    defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
-                }
                 scheduleCurrentEnabledDataForUpload()
                 setStatus(NSLocalizedString("iCloud-Daten gelöscht.", comment: ""))
             } else {
@@ -515,27 +996,116 @@ import UIKit
         }
     }
 
+    // Factory reset is local-only: stop every producer before Core Data objects are deleted,
+    // otherwise those deletions can be captured as CloudKit tombstones and erase other devices.
+    @objc func prepareForLocalAppResetWithCompletion(_ completion: @escaping (NSError?) -> Void) {
+        Task { @MainActor in
+            isStarted = false
+            defaults.set(false, forKey: ICiCloudSyncEpisodesEnabled)
+            defaults.set(false, forKey: ICiCloudSyncSubscriptionsEnabled)
+            defaults.set(false, forKey: ICiCloudSyncSettingsEnabled)
+            cloudAccountGeneration &+= 1
+            updateSyncEngineCallbackGate()
+
+            let tasks = [initialQueueTask, lowPrioritySyncTask, accountVerificationTask,
+                         manualSyncTask, backgroundSyncTask, finalDeviceRecordUpdateTask,
+                         localOutboxDrainTask].compactMap { $0 }
+            for task in tasks { task.cancel() }
+            for task in tasks { await task.value }
+            initialQueueTask = nil
+            lowPrioritySyncTask = nil
+            accountVerificationTask = nil
+            manualSyncTask = nil
+            backgroundSyncTask = nil
+            finalDeviceRecordUpdateTask = nil
+            localOutboxDrainTask = nil
+            syncEngine = nil
+
+            do {
+                try await Self.deleteAllPendingEpisodeStates()
+                try await Self.deleteAllPendingSubscriptionStates()
+                _ = try await Self.deleteSyncItemMetadata()
+                _ = try await Self.deleteKnownRecordSystemFields()
+                try await Self.removeAllLegacySyncItemMetadataSources()
+                try await Self.removeAllLegacyKnownRecordSystemFieldFiles()
+            } catch {
+                handleLocalPersistenceFailure(error)
+                completion(error as NSError)
+                return
+            }
+
+            if let context = databaseManager.objectContext {
+                let request = NSFetchRequest<NSManagedObject>(entityName: Self.localOutboxEntityName)
+                do {
+                    for entry in try context.fetch(request) { context.delete(entry) }
+                } catch {
+                    completion(error as NSError)
+                    return
+                }
+                if let saveError = databaseManager.saveReturningError() {
+                    completion(saveError as NSError)
+                    return
+                }
+            }
+
+            resetAllLocalSyncMetadata()
+            clearPendingFinalDeviceRecordUpdateIntent()
+            setStatus(NSLocalizedString("Aus", comment: ""))
+            postStateChanged()
+            completion(nil)
+        }
+    }
+
     func resetAllLocalSyncMetadata() {
+        settingsDebounceWorkItem?.cancel()
+        settingsDebounceWorkItem = nil
+        scrollDebounceWorkItem?.cancel()
+        scrollDebounceWorkItem = nil
+        applyPendingDebounceWorkItem?.cancel()
+        applyPendingDebounceWorkItem = nil
+        localOutboxDrainTask?.cancel()
+        localOutboxDrainTask = nil
+        localOutboxDrainRequested = false
+        localOutboxBatchDepth = 0
+        localOutboxDrainDeferred = false
+        resetSyncRetryBackoff()
+        cancelFinalDeviceRecordUpdate()
+        requiresImmediateFinalDeviceRecordResend = false
+
+        cloudAccountGeneration &+= 1
+        updateSyncEngineCallbackGate()
+        isFetchingCloudInventory = false
+        cloudInventoryRefreshErrorText = nil
+        pendingCloudInventoryRefreshReason = nil
         setSyncMetadata(nil, forKey: Self.engineStateKey)
         Self.removeSyncMetadataValue(forKey: Self.knownRecordsKey)
-        Self.removeAllKnownRecordSystemFields()
-        for key in [Self.subscriptionRecordURLsKey, Self.subscriptionLocalModifiedDatesKey,
-                    Self.subscriptionPayloadHashesKey, Self.episodeLocalModifiedDatesKey,
-                    Self.deviceCacheKey, Self.pendingEpisodeStatesKey, Self.pendingSubscriptionPayloadsKey,
+        for key in [Self.deviceCacheKey, Self.pendingEpisodeStatesKey, Self.pendingSubscriptionPayloadsKey,
+                    Self.pendingSubscriptionFetchCompleteKey,
+                    Self.transitionalSubscriptionInventoryRecordsKey,
                     Self.pendingInitialSettingsPayloadKey] {
             setSyncMetadata(nil, forKey: key)
         }
         for key in [Self.settingsLocalModifiedDateKey, Self.settingsSyncedHashKey,
                     Self.scrollPositionsLocalModifiedDateKey, Self.suppressSubscriptionDeletionsKey,
                     Self.subscriptionListSettingsLocalModifiedDateKey, Self.subscriptionListSettingsBaselineKey,
-                    Self.lastSyncDateKey, Self.deviceRecordShouldStampSyncDateKey] {
+                    Self.lastSyncDateKey, Self.deviceRecordShouldStampSyncDateKey, Self.cloudInventoryKey,
+                    Self.cloudInventoryPayloadScanCompletedKey] {
             defaults.removeObject(forKey: key)
         }
-        episodeLocalModifiedDatesCache = nil
-        subscriptionPayloadHashesCache = nil
-        pendingPayloadsCache = [:]
-        dirtyPendingPayloadKeys = []
         cachedSyncTotalCounts = nil
+        pendingInitialUploadBatches.removeAll()
+        localOutboxSnapshotCache = [:]
+        localOutboxRevisionsToDelete = [:]
+        localOutboxRevisionsToAcknowledge = [:]
+        localOutboxRevisionsToRearm = [:]
+        remoteAppliedObjectIDs.removeAll()
+        needsSubscriptionListSortApply = false
+        didPruneEpisodeLocalModifiedDates = false
+        lastForegroundSyncDate = nil
+        hasUnresolvedSyncFailures = false
+        requiresSyncEngineStateRollbackAfterPersistenceFailure = false
+        isApplyingRemoteChange = false
+        isPerformingManualSync = false
         deviceRecordShouldStampSyncDate = false
         syncedUserDataInCurrentRun = false
         clearInitialUploadCursors()
@@ -550,29 +1120,73 @@ import UIKit
 
     @objc func performBackgroundSyncWithCompletion(_ completion: @escaping (UIBackgroundFetchResult) -> Void) {
         Task { @MainActor in
+            guard !isDeletingAllICloudData else {
+                completion(.noData)
+                return
+            }
             guard anySyncEnabled else {
                 completion(.noData)
                 return
             }
+            await refreshAccountStatus()
+            guard !isDeletingAllICloudData,
+                  !isICloudAccountSignedOut, isICloudAccountIdentityVerified else {
+                completion(.noData)
+                return
+            }
+            guard backgroundSyncTask == nil, manualSyncTask == nil,
+                  accountVerificationTask == nil else {
+                completion(.noData)
+                return
+            }
 
-            initializeSyncEngineIfNeeded()
-            hasUnresolvedSyncFailures = false
-
-            do {
-                if let syncEngine {
-                    try await syncEngine.fetchChanges()
+            let operation = Task { @MainActor [weak self] in
+                guard let self else {
+                    completion(.noData)
+                    return
                 }
-                if !hasUnresolvedSyncFailures {
-                    markSyncCompletedIfFinished()
-                    completion(.newData)
-                } else {
-                    postStateChanged()
+                let generation = self.cloudAccountGeneration
+                self.initializeSyncEngineIfNeeded()
+                self.hasUnresolvedSyncFailures = false
+                let syncCycleGeneration = self.beginSyncCycle()
+                defer {
+                    self.endSyncCycle(syncCycleGeneration)
+                    self.backgroundSyncTask = nil
+                    if self.isICloudAccountIdentityVerified,
+                       !self.hasUnresolvedSyncFailures,
+                       self.hasPendingSyncChanges {
+                        self.scheduleLowPrioritySync()
+                    }
+                }
+
+                do {
+                    if let syncEngine = self.syncEngine {
+                        try await syncEngine.fetchChanges()
+                    }
+                    guard generation == self.cloudAccountGeneration,
+                          self.isICloudAccountIdentityVerified else {
+                        completion(.noData)
+                        return
+                    }
+                    if !self.hasUnresolvedSyncFailures {
+                        self.markSyncCompletedIfFinished(allowActiveSyncCycle: true)
+                        completion(.newData)
+                    } else {
+                        self.postStateChanged()
+                        completion(.failed)
+                    }
+                } catch {
+                    guard generation == self.cloudAccountGeneration,
+                          self.isICloudAccountIdentityVerified else {
+                        completion(.noData)
+                        return
+                    }
+                    self.setError(error)
+                    self.scheduleSyncRetryAfterFailure(error: error, reason: "backgroundSync")
                     completion(.failed)
                 }
-            } catch {
-                setError(error)
-                completion(.failed)
             }
+            backgroundSyncTask = operation
         }
     }
 
@@ -595,22 +1209,56 @@ import UIKit
         refreshCloudInventory(reason: "settingsView")
     }
 
+    @objc func requestCloudInventoryRefreshAfterSync() {
+        requestedCloudInventoryRefreshReason = "settingsActionAfterSync"
+    }
+
+    func runRequestedCloudInventoryRefresh() {
+        guard requestedCloudInventoryRefreshReason != nil else { return }
+        requestedCloudInventoryRefreshReason = nil
+        refreshCloudInventory(reason: "settingsActionAfterSync")
+    }
+
+    func transitionalSubscriptionInventoryRecords() -> [String: String] {
+        Self.syncMetadataValue(forKey: Self.transitionalSubscriptionInventoryRecordsKey) as? [String: String] ?? [:]
+    }
+
     func refreshCloudInventory(reason: String) {
+        guard isICloudAccountIdentityVerified, !isICloudAccountSignedOut else {
+            pendingCloudInventoryRefreshReason = reason
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.refreshAccountStatus()
+                guard self.isICloudAccountIdentityVerified, !self.isICloudAccountSignedOut else { return }
+                self.runPendingCloudInventoryRefreshIfNeeded()
+            }
+            return
+        }
         guard !isFetchingCloudInventory else {
             // A refresh is already in flight; remember the reason so it re-runs afterwards.
             // No diagnostics line here — this "skipped" path fired 253× in one capture (pure noise).
             pendingCloudInventoryRefreshReason = reason
             return
         }
+        let generation = cloudAccountGeneration
         pendingCloudInventoryRefreshReason = nil
+        cloudInventoryRefreshErrorText = nil
         isFetchingCloudInventory = true
+        postStateChanged()
         var metadata: [String: Any] = ["reason": reason]
         metadata.merge(syncDiagnosticsMetadata()) { current, _ in current }
         logSyncEvent("Cloud-Inventar-Abfrage gestartet", metadata: metadata)
 
-        let box = ICCloudInventoryCountsBox()
+        let shouldInspectPayloads = !defaults.bool(forKey: Self.cloudInventoryPayloadScanCompletedKey)
+        let box = ICCloudInventoryCountsBox(
+            transitionalSubscriptionRecordChangeTags: transitionalSubscriptionInventoryRecords(),
+            inspectSubscriptionPayloads: shouldInspectPayloads
+        )
         let configuration = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
-        configuration.desiredKeys = []
+        // Payloads are required once to identify records written by the unreleased
+        // same-type tombstone protocol. Thereafter the record change tag is sufficient;
+        // normal count refreshes transfer only CloudKit system metadata.
+        configuration.desiredKeys = shouldInspectPayloads ? ["payload"] : []
         let operation = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID],
                                                           configurationsByRecordZoneID: [zoneID: configuration])
         operation.fetchAllChanges = true
@@ -626,19 +1274,30 @@ import UIKit
         operation.fetchRecordZoneChangesResultBlock = { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                guard generation == self.cloudAccountGeneration else { return }
                 self.isFetchingCloudInventory = false
                 switch result {
                 case .success:
+                    self.setSyncMetadata(box.transitionalSubscriptionRecords(),
+                                         forKey: Self.transitionalSubscriptionInventoryRecordsKey)
+                    if shouldInspectPayloads {
+                        self.setSyncMetadata(true, forKey: Self.cloudInventoryPayloadScanCompletedKey)
+                    }
                     self.storeCloudInventory(box.snapshot(), reason: reason)
-                    self.fetchDeviceRecordsForInventory(box.deviceIDs())
+                    self.fetchDeviceRecordsForInventory(box.deviceIDs(), generation: generation)
                 case .failure(let error):
                     if let ckError = error as? CKError, ckError.code == .zoneNotFound || ckError.code == .userDeletedZone {
+                        self.setSyncMetadata([String: String](),
+                                             forKey: Self.transitionalSubscriptionInventoryRecordsKey)
+                        self.setSyncMetadata(true, forKey: Self.cloudInventoryPayloadScanCompletedKey)
                         self.storeCloudInventory([:], reason: reason)
                     } else {
+                        self.cloudInventoryRefreshErrorText = NSLocalizedString("iCloud data counts could not be updated.", comment: "")
                         var metadata = self.cloudKitErrorMetadata(error)
                         metadata["reason"] = reason
                         metadata.merge(self.syncDiagnosticsMetadata()) { current, _ in current }
                         self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen", metadata: metadata)
+                        self.postStateChanged()
                     }
                 }
                 self.runPendingCloudInventoryRefreshIfNeeded()
@@ -649,16 +1308,17 @@ import UIKit
 
     // The device list used to stay empty ("Noch keine synchronisierten Geräte") until a
     // category was enabled, because the cache only fills via sync engine events. The
-    // inventory fetch above carries no payloads (desiredKeys = []), so fetch the handful
+    // The inventory fetch above carries only the shared payload key; fetch the handful
     // of ICDevice records separately and feed the cache — the list is then correct as
     // soon as the sync page opens, even before anything is enabled.
-    func fetchDeviceRecordsForInventory(_ recordIDs: [CKRecord.ID]) {
+    func fetchDeviceRecordsForInventory(_ recordIDs: [CKRecord.ID], generation: Int) {
         guard !recordIDs.isEmpty else { return }
         let operation = CKFetchRecordsOperation(recordIDs: recordIDs)
         operation.qualityOfService = .utility
         operation.fetchRecordsResultBlock = { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                guard generation == self.cloudAccountGeneration else { return }
                 self.postDevicesChanged()
             }
         }
@@ -666,6 +1326,7 @@ import UIKit
             guard case .success(let record) = result else { return }
             Task { @MainActor [weak self] in
                 guard let self, let payload = self.payloadDictionary(from: record) else { return }
+                guard generation == self.cloudAccountGeneration else { return }
                 self.updateDeviceCache(with: payload)
             }
         }
@@ -702,28 +1363,44 @@ import UIKit
     }
 
     func performManualSync() async throws {
+        guard !Task.isCancelled else { return }
         guard anySyncEnabled else {
             clearError()
             setStatus(NSLocalizedString("Keine Sync-Kategorie aktiviert.", comment: ""))
             return
         }
+        guard !isICloudAccountSignedOut, isICloudAccountIdentityVerified else { return }
+        let generation = cloudAccountGeneration
 
         cancelLowPrioritySyncTask()
+        resetSyncRetryBackoff()
         initializeSyncEngineIfNeeded()
         hasUnresolvedSyncFailures = false
+        let syncCycleGeneration = beginSyncCycle()
+        defer { endSyncCycle(syncCycleGeneration) }
         setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
         postStateChanged()
         await initialQueueTask?.value
+        guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified else { return }
+        await applyPendingEpisodeStates()
+        await applyPendingSubscriptions()
+        guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+              !hasUnresolvedSyncFailures else { return }
+        let outboxReadSucceeded = await drainLocalOutbox()
+        guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+              outboxReadSucceeded, !hasUnresolvedSyncFailures else { return }
         queueDeviceRecordForPendingUserDataIfNeeded()
         postStateChanged()
 
         if let syncEngine {
-            try await syncEngine.sendChanges()
+            try await sendChangesAndApplyCallbackOutcomes(syncEngine, generation: generation)
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified else { return }
             try await syncEngine.fetchChanges()
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified else { return }
         }
 
         if !hasUnresolvedSyncFailures {
-            markSyncCompletedIfFinished()
+            markSyncCompletedIfFinished(allowActiveSyncCycle: true)
         } else {
             postStateChanged()
         }
@@ -743,6 +1420,13 @@ import UIKit
     }
 
     func initializeSyncEngineIfNeeded() {
+        let isRollingBackState = requiresSyncEngineStateRollbackAfterPersistenceFailure
+        if isRollingBackState {
+            syncEngine = nil
+            updateSyncEngineCallbackGate()
+            pendingInitialUploadBatches.removeAll()
+            requiresSyncEngineStateRollbackAfterPersistenceFailure = false
+        }
         guard syncEngine == nil else { return }
 
         var configuration = CKSyncEngine.Configuration(database: database,
@@ -751,10 +1435,23 @@ import UIKit
         configuration.automaticallySync = false
         let engine = CKSyncEngine(configuration)
         syncEngine = engine
+        updateSyncEngineCallbackGate()
         engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
+        if isRollingBackState {
+            scheduleCurrentEnabledDataForUpload()
+        }
+    }
+
+    func updateSyncEngineCallbackGate() {
+        syncEngineCallbackGate.update(syncEngine: syncEngine,
+                                      generation: cloudAccountGeneration,
+                                      isSignedOut: isICloudAccountSignedOut,
+                                      isAccountIdentityVerified: isICloudAccountIdentityVerified,
+                                      accountRecordName: defaults.string(forKey: Self.accountUserRecordNameKey))
     }
 
     func loadStateSerialization() -> CKSyncEngine.State.Serialization? {
+        guard !isICloudAccountResetRequired else { return nil }
         guard let data = Self.syncMetadataValue(forKey: Self.engineStateKey) as? Data else {
             return nil
         }
@@ -783,7 +1480,13 @@ import UIKit
     }
 
     func scheduleCurrentEnabledDataForUpload() {
+        guard !isDeletingAllICloudData,
+              !isICloudAccountSignedOut, isICloudAccountIdentityVerified else { return }
         cancelInitialQueueTask()
+        initialQueueTaskGeneration &+= 1
+        let queueTaskGeneration = initialQueueTaskGeneration
+        let expectedCloudAccountGeneration = cloudAccountGeneration
+        let expectedAccountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey)
         let snapshot = initialUploadSnapshot()
         logSyncEvent("Initiale iCloud-Queue geplant", metadata: [
             "snapshotEpisodesSyncEnabled": snapshot.episodesSyncEnabled,
@@ -798,11 +1501,17 @@ import UIKit
             }
             let plan = await Self.buildInitialUploadPlan(from: snapshot)
             guard !Task.isCancelled else { return }
-            await self.applyInitialUploadPlan(plan)
+            await self.applyInitialUploadPlan(
+                plan,
+                expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                expectedAccountRecordName: expectedAccountRecordName,
+                queueTaskGeneration: queueTaskGeneration
+            )
         }
     }
 
     func cancelInitialQueueTask() {
+        initialQueueTaskGeneration &+= 1
         if initialQueueTask != nil {
             logSyncEvent("Initiale iCloud-Queue abgebrochen")
         }
@@ -811,7 +1520,10 @@ import UIKit
     }
 
     func scheduleLowPrioritySync() {
-        guard anySyncEnabled, lowPrioritySyncTask == nil else { return }
+        guard !isDeletingAllICloudData,
+              anySyncEnabled, !isICloudAccountSignedOut, isICloudAccountIdentityVerified,
+              accountVerificationTask == nil, manualSyncTask == nil, backgroundSyncTask == nil,
+              lowPrioritySyncTask == nil else { return }
         // No "scheduled" diagnostics line — it fired 171× in one capture and only brackets the
         // "started"/"completed" events that already mark real sync activity.
         // CKSyncEngine asserts when sendChanges recurses from one of its delegate tasks.
@@ -824,37 +1536,69 @@ import UIKit
     }
 
     func performLowPrioritySync() async {
-        guard anySyncEnabled, !Task.isCancelled else {
-            lowPrioritySyncTask = nil
+        let generation = cloudAccountGeneration
+        guard anySyncEnabled, !isICloudAccountSignedOut, isICloudAccountIdentityVerified,
+              !Task.isCancelled else {
             return
         }
 
         initializeSyncEngineIfNeeded()
+        if hasInitialUploadBackfillWork {
+            setStatus(backfillProgressStatusText())
+        } else {
+            setStatus(NSLocalizedString("Synchronisiere…", comment: ""))
+        }
+        postStateChanged()
         hasUnresolvedSyncFailures = false
+        await applyPendingEpisodeStates()
+        await applyPendingSubscriptions()
+        guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+              !Task.isCancelled, !hasUnresolvedSyncFailures else {
+            lowPrioritySyncTask = nil
+            postStateChanged()
+            return
+        }
+        let outboxReadSucceeded = await drainLocalOutbox()
+        guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+              !Task.isCancelled, outboxReadSucceeded, !hasUnresolvedSyncFailures else {
+            lowPrioritySyncTask = nil
+            postStateChanged()
+            return
+        }
+        let syncCycleGeneration = beginSyncCycle()
+        defer { endSyncCycle(syncCycleGeneration) }
         logSyncEvent("iCloud Sync mit niedriger Priorität gestartet", metadata: syncDiagnosticsMetadata())
         postStateChanged()
 
         do {
             if let syncEngine = syncEngine {
-                try await syncEngine.sendChanges()
+                try await sendChangesAndApplyCallbackOutcomes(syncEngine, generation: generation)
+                guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                      !Task.isCancelled else { return }
                 // While the initial backfill still has pages to upload, only send — defer the
                 // fetch until everything is up. The last page clears the cursor before it
                 // syncs, so that run still fetches. This stops the status flipping up/down
                 // every page and saves a network round-trip per page.
-                if !hasInitialUploadBackfillWork {
+                if !hasInitialUploadBackfillWork || hasIncompletePendingSubscriptionFetch {
                     try await syncEngine.fetchChanges()
+                    guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                          !Task.isCancelled else { return }
                 }
             }
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                  !Task.isCancelled else { return }
             lowPrioritySyncTask = nil
             if !hasUnresolvedSyncFailures {
-                markSyncCompletedIfFinished()
+                markSyncCompletedIfFinished(allowActiveSyncCycle: true)
             } else {
                 postStateChanged()
             }
-            if anySyncEnabled, hasPendingSyncChanges {
+            if anySyncEnabled, !hasUnresolvedSyncFailures, hasPendingSyncChanges {
                 scheduleLowPrioritySync()
             }
         } catch {
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                  !Task.isCancelled else { return }
             lowPrioritySyncTask = nil
             setError(error)
             scheduleSyncRetryAfterFailure(error: error, reason: "lowPrioritySync")
@@ -869,6 +1613,14 @@ import UIKit
         lowPrioritySyncTask = nil
     }
 
+    func cancelAndAwaitLowPrioritySync() async {
+        guard let activeLowPrioritySyncTask = lowPrioritySyncTask else { return }
+        logSyncEvent("iCloud Sync mit niedriger Priorität wird vor exklusiver Cloud-Arbeit beendet")
+        activeLowPrioritySyncTask.cancel()
+        await activeLowPrioritySyncTask.value
+        lowPrioritySyncTask = nil
+    }
+
     // CKSyncEngine runs with automaticallySync = false and never retries on its own.
     // Without this, a failed first sync (flaky network or zone setup right after
     // enabling a category) left "could not complete" standing indefinitely — nothing
@@ -876,6 +1628,14 @@ import UIKit
     // with exponential backoff (or the server-provided retry-after) while the app
     // is running; the backoff resets on the next completed sync.
     func scheduleSyncRetryAfterFailure(error: Error, reason: String) {
+        if Self.isDeterministicLegacySyncItemMetadataError(error) {
+            logSyncEvent("Deterministischer Legacy-Metadatenfehler wird nicht automatisch wiederholt", metadata: [
+                "reason": reason,
+                "domain": (error as NSError).domain,
+                "code": (error as NSError).code,
+            ])
+            return
+        }
         let ckError = error as? CKError
         scheduleSyncRetryAfterFailure(code: ckError?.code,
                                       retryAfter: ckError?.retryAfterSeconds,
@@ -884,14 +1644,24 @@ import UIKit
     }
 
     func scheduleSyncRetryAfterFailure(code: CKError.Code?, retryAfter: TimeInterval? = nil, reason: String, error: CKError? = nil) {
-        guard isStarted, anySyncEnabled else { return }
+        guard isStarted, anySyncEnabled || hasPendingFinalDeviceRecordUpdate else { return }
         if let error, !Self.isTransientCloudKitError(error) {
             return
         }
         if error == nil, let code, !Self.isTransientCloudKitErrorCode(code) {
             return
         }
-        guard syncRetryWorkItem == nil else { return }
+        let requiresAccountVerification = isICloudAccountSignedOut
+            || !isICloudAccountIdentityVerified
+            || reason == "accountStatus"
+            || reason == "accountIdentity"
+        if syncRetryWorkItem != nil {
+            guard requiresAccountVerification && !syncRetryRequiresAccountVerification else { return }
+            syncRetryWorkItem?.cancel()
+            syncRetryWorkItem = nil
+            syncRetryRequiresAccountVerification = false
+            syncRetryAttempt = 0
+        }
         syncRetryAttempt += 1
         let backoff = min(300.0, 15.0 * pow(2.0, Double(syncRetryAttempt - 1)))
         let delay = retryAfter ?? backoff
@@ -901,12 +1671,37 @@ import UIKit
             "reason": reason,
             "errorCode": code?.rawValue ?? -1,
         ])
+        syncRetryGeneration &+= 1
+        let generation = syncRetryGeneration
+        syncRetryRequiresAccountVerification = requiresAccountVerification
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, generation == self.syncRetryGeneration else { return }
+                let shouldVerifyAccount = self.syncRetryRequiresAccountVerification
                 self.syncRetryWorkItem = nil
-                guard self.isStarted, self.anySyncEnabled else { return }
-                self.scheduleLowPrioritySync()
+                self.syncRetryRequiresAccountVerification = false
+                guard self.isStarted,
+                      self.anySyncEnabled || self.hasPendingFinalDeviceRecordUpdate else { return }
+                if shouldVerifyAccount {
+                    await self.refreshAccountStatus()
+                    if self.isICloudAccountIdentityVerified {
+                        self.resumePendingFinalDeviceRecordUpdateIfNeeded()
+                        guard self.anySyncEnabled else { return }
+                        if self.hasInitialUploadBackfillWork, !self.hasPendingSyncChanges {
+                            self.scheduleCurrentEnabledDataForUpload()
+                        } else {
+                            self.scheduleLowPrioritySync()
+                        }
+                    }
+                } else {
+                    self.resumePendingFinalDeviceRecordUpdateIfNeeded()
+                    guard self.anySyncEnabled else { return }
+                    if self.hasInitialUploadBackfillWork, !self.hasPendingSyncChanges {
+                        self.scheduleCurrentEnabledDataForUpload()
+                    } else {
+                        self.scheduleLowPrioritySync()
+                    }
+                }
             }
         }
         syncRetryWorkItem = workItem
@@ -915,6 +1710,8 @@ import UIKit
 
     func resetSyncRetryBackoff() {
         syncRetryAttempt = 0
+        syncRetryGeneration &+= 1
+        syncRetryRequiresAccountVerification = false
         syncRetryWorkItem?.cancel()
         syncRetryWorkItem = nil
     }
@@ -946,19 +1743,30 @@ import UIKit
         let settingsSyncEnabled: Bool
         let episodeBackfillOffset: Int?
         let subscriptionBackfillOffset: Int?
+        let episodeBackfillCursor: String?
+        let subscriptionBackfillCursor: String?
         let settingsBackfillPending: Bool
     }
 
     struct InitialUploadPlan {
         let snapshot: InitialUploadSnapshot
         let createdAt: Date
+        let pages: [InitialUploadPlanPage]
         let episodeObjectHashes: [String]
-        let nextEpisodeBackfillOffset: Int?
         let subscribedFeedURLs: [String]
+        let syncItemMetadataWrites: [ICCloudSyncItemMetadataWrite]
+        let preparationSucceeded: Bool
+    }
+
+    struct InitialUploadPlanPage {
+        let episodeObjectHashes: [String]
+        let subscribedFeedURLs: [String]
+        let nextEpisodeBackfillOffset: Int?
         let nextSubscriptionBackfillOffset: Int?
-        let subscriptionRecordURLs: [String: String]
-        let subscriptionLocalModifiedDates: [String: TimeInterval]
-        let subscriptionPayloadHashes: [String: String]
+        let nextEpisodeBackfillCursor: String?
+        let nextSubscriptionBackfillCursor: String?
+        let hasEpisodeBackfill: Bool
+        let hasSubscriptionBackfill: Bool
     }
 
     struct InitialUploadBatch {
@@ -966,31 +1774,70 @@ import UIKit
         var subscriptionRecordNames: Set<String>
         let nextEpisodeBackfillOffset: Int?
         let nextSubscriptionBackfillOffset: Int?
-        let hasEpisodeBackfill: Bool
-        let hasSubscriptionBackfill: Bool
+        let nextEpisodeBackfillCursor: String?
+        let nextSubscriptionBackfillCursor: String?
+        var hasEpisodeBackfill: Bool
+        var hasSubscriptionBackfill: Bool
     }
 
     struct InitialUploadPage {
         let values: [String]
-        let nextOffset: Int?
+        let nextCursor: String?
+        let succeeded: Bool
     }
 
     struct InitialSubscriptionPage {
         let values: [String]
         let payloadHashes: [String: String]
-        let nextOffset: Int?
+        let nextCursor: String?
+        let succeeded: Bool
     }
 
     func initialUploadSnapshot() -> InitialUploadSnapshot {
-        let episodeOffset = episodesSyncEnabled ? (defaults.object(forKey: Self.initialEpisodeBackfillOffsetKey) as? NSNumber)?.intValue : nil
-        let subscriptionOffset = subscriptionsSyncEnabled ? (defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) as? NSNumber)?.intValue : nil
+        let episodeState = initialBackfillState(
+            enabled: episodesSyncEnabled,
+            offsetKey: Self.initialEpisodeBackfillOffsetKey,
+            cursorKey: Self.initialEpisodeBackfillCursorKey
+        )
+        let subscriptionState = initialBackfillState(
+            enabled: subscriptionsSyncEnabled,
+            offsetKey: Self.initialSubscriptionBackfillOffsetKey,
+            cursorKey: Self.initialSubscriptionBackfillCursorKey
+        )
         let settingsPending = settingsSyncEnabled && defaults.bool(forKey: Self.initialSettingsBackfillPendingKey)
         return InitialUploadSnapshot(episodesSyncEnabled: episodesSyncEnabled,
                                      subscriptionsSyncEnabled: subscriptionsSyncEnabled,
                                      settingsSyncEnabled: settingsSyncEnabled,
-                                     episodeBackfillOffset: episodeOffset,
-                                     subscriptionBackfillOffset: subscriptionOffset,
+                                     episodeBackfillOffset: episodeState.offset,
+                                     subscriptionBackfillOffset: subscriptionState.offset,
+                                     episodeBackfillCursor: episodeState.cursor,
+                                     subscriptionBackfillCursor: subscriptionState.cursor,
                                      settingsBackfillPending: settingsPending)
+    }
+
+    func initialBackfillState(
+        enabled: Bool,
+        offsetKey: String,
+        cursorKey: String
+    ) -> (offset: Int?, cursor: String?) {
+        guard enabled, let storedOffset = (defaults.object(forKey: offsetKey) as? NSNumber)?.intValue else {
+            return (nil, nil)
+        }
+        let offset = max(0, storedOffset)
+        let cursor = defaults.string(forKey: cursorKey)
+        if offset > 0, cursor == nil {
+            // Legacy versions persisted only a mutable row offset. It cannot be mapped to
+            // a stable identifier after offline inserts/deletes, so restart the idempotent
+            // backfill instead of silently skipping records.
+            defaults.set(0, forKey: offsetKey)
+            defaults.removeObject(forKey: cursorKey)
+            return (0, nil)
+        }
+        if offset == 0, cursor != nil {
+            defaults.removeObject(forKey: cursorKey)
+            return (0, nil)
+        }
+        return (offset, cursor)
     }
 
     nonisolated static func buildInitialUploadPlan(from snapshot: InitialUploadSnapshot) async -> InitialUploadPlan {
@@ -1001,77 +1848,164 @@ import UIKit
             "snapshotSettingsSyncEnabled": snapshot.settingsSyncEnabled,
             "episodeBackfillOffset": snapshot.episodeBackfillOffset ?? -1,
             "subscriptionBackfillOffset": snapshot.subscriptionBackfillOffset ?? -1,
+            "hasEpisodeBackfillCursor": snapshot.episodeBackfillCursor != nil,
+            "hasSubscriptionBackfillCursor": snapshot.subscriptionBackfillCursor != nil,
             "settingsBackfillPending": snapshot.settingsBackfillPending,
         ])
-        async let episodePage = episodeObjectHashesForInitialUploadPlan(offset: snapshot.episodeBackfillOffset)
-        async let subscriptionPage = subscribedFeedURLsForInitialUploadPlan(offset: snapshot.subscriptionBackfillOffset)
+        let hasEpisodeBackfill = snapshot.episodeBackfillOffset != nil
+        let hasSubscriptionBackfill = snapshot.subscriptionBackfillOffset != nil
+        guard hasEpisodeBackfill || hasSubscriptionBackfill else {
+            return InitialUploadPlan(snapshot: snapshot,
+                                     createdAt: createdAt,
+                                     pages: [],
+                                     episodeObjectHashes: [],
+                                     subscribedFeedURLs: [],
+                                     syncItemMetadataWrites: [],
+                                     preparationSucceeded: true)
+        }
+
+        async let episodePage = hasEpisodeBackfill
+            ? episodeObjectHashesForInitialUploadPlan(cursor: snapshot.episodeBackfillCursor)
+            : InitialUploadPage(values: [], nextCursor: nil, succeeded: true)
+        async let subscriptionPage = hasSubscriptionBackfill
+            ? subscribedFeedURLsForInitialUploadPlan(cursor: snapshot.subscriptionBackfillCursor)
+            : InitialSubscriptionPage(values: [], payloadHashes: [:], nextCursor: nil, succeeded: true)
 
         let episodes = await episodePage
         let subscriptions = await subscriptionPage
-        let objectHashes = episodes.values
-        let feedURLs = subscriptions.values
-        var recordURLs = Self.syncMetadataValue(forKey: Self.subscriptionRecordURLsKey) as? [String: String] ?? [:]
-        var modifiedDates = Self.syncMetadataValue(forKey: Self.subscriptionLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:]
-        if snapshot.subscriptionBackfillOffset != nil {
-            for feedURL in feedURLs {
-                recordURLs[subscriptionRecordName(forFeedURL: feedURL)] = feedURL
-                modifiedDates[feedURL] = createdAt.timeIntervalSince1970
-            }
+        guard episodes.succeeded, subscriptions.succeeded else {
+            return InitialUploadPlan(snapshot: snapshot,
+                                     createdAt: createdAt,
+                                     pages: [],
+                                     episodeObjectHashes: [],
+                                     subscribedFeedURLs: [],
+                                     syncItemMetadataWrites: [],
+                                     preparationSucceeded: false)
+        }
+
+        let nextEpisodeOffset = episodes.nextCursor == nil
+            ? nil
+            : (snapshot.episodeBackfillOffset ?? 0) + episodes.values.count
+        let nextSubscriptionOffset = subscriptions.nextCursor == nil
+            ? nil
+            : (snapshot.subscriptionBackfillOffset ?? 0) + subscriptions.values.count
+        let page = InitialUploadPlanPage(
+            episodeObjectHashes: episodes.values,
+            subscribedFeedURLs: subscriptions.values,
+            nextEpisodeBackfillOffset: nextEpisodeOffset,
+            nextSubscriptionBackfillOffset: nextSubscriptionOffset,
+            nextEpisodeBackfillCursor: episodes.nextCursor,
+            nextSubscriptionBackfillCursor: subscriptions.nextCursor,
+            hasEpisodeBackfill: hasEpisodeBackfill,
+            hasSubscriptionBackfill: hasSubscriptionBackfill
+        )
+
+        var syncItemMetadataWrites: [ICCloudSyncItemMetadataWrite] = []
+        syncItemMetadataWrites.reserveCapacity(episodes.values.count + subscriptions.values.count)
+        for objectHash in episodes.values {
+            syncItemMetadataWrites.append(ICCloudSyncItemMetadataWrite(
+                category: localOutboxEpisodeCategory,
+                recordName: RecordPrefix.episode + objectHash,
+                itemIdentifier: objectHash,
+                localModifiedAt: nil,
+                localState: nil,
+                payloadHash: nil
+            ))
+        }
+        for feedURL in subscriptions.values {
+            syncItemMetadataWrites.append(ICCloudSyncItemMetadataWrite(
+                category: localOutboxSubscriptionCategory,
+                recordName: subscriptionRecordName(forFeedURL: feedURL),
+                itemIdentifier: feedURL,
+                localModifiedAt: createdAt,
+                localState: true,
+                payloadHash: subscriptions.payloadHashes[feedURL]
+            ))
         }
 
         Self.logSyncEvent("Initialer iCloud Upload-Plan fertig", metadata: [
-            "episodeObjectHashCount": objectHashes.count,
-            "subscribedFeedURLCount": feedURLs.count,
-            "subscriptionRecordURLCount": recordURLs.count,
-            "nextEpisodeBackfillOffset": episodes.nextOffset ?? -1,
-            "nextSubscriptionBackfillOffset": subscriptions.nextOffset ?? -1,
+            "pageCount": 1,
+            "episodeObjectHashCount": episodes.values.count,
+            "subscribedFeedURLCount": subscriptions.values.count,
+            "syncItemMetadataWriteCount": syncItemMetadataWrites.count,
+            "preparationSucceeded": true,
         ])
         return InitialUploadPlan(snapshot: snapshot,
                                  createdAt: createdAt,
-                                 episodeObjectHashes: objectHashes,
-                                 nextEpisodeBackfillOffset: episodes.nextOffset,
-                                 subscribedFeedURLs: feedURLs,
-                                 nextSubscriptionBackfillOffset: subscriptions.nextOffset,
-                                 subscriptionRecordURLs: recordURLs,
-                                 subscriptionLocalModifiedDates: modifiedDates,
-                                 subscriptionPayloadHashes: subscriptions.payloadHashes)
+                                 pages: [page],
+                                 episodeObjectHashes: episodes.values,
+                                 subscribedFeedURLs: subscriptions.values,
+                                 syncItemMetadataWrites: syncItemMetadataWrites,
+                                 preparationSucceeded: true)
     }
 
-    nonisolated static func episodeObjectHashesForInitialUploadPlan(offset: Int?) async -> InitialUploadPage {
-        guard let offset else { return InitialUploadPage(values: [], nextOffset: nil) }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return InitialUploadPage(values: [], nextOffset: nil) }
+    nonisolated static func episodeObjectHashesForInitialUploadPlan(cursor: String?) async -> InitialUploadPage {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return InitialUploadPage(values: [], nextCursor: nil, succeeded: false)
+        }
         return await context.perform {
             let request = NSFetchRequest<NSDictionary>(entityName: "Episode")
             request.resultType = .dictionaryResultType
             request.includesSubentities = false
             request.fetchLimit = Self.pendingChangeQueueChunkSize + 1
-            request.fetchOffset = offset
             request.propertiesToFetch = ["objectHash"]
-            request.predicate = NSPredicate(format: "feed.subscribed == YES AND archived == NO AND objectHash != nil AND (consumed == YES OR starred == YES OR position > 0)")
-            let rows = (try? context.fetch(request)) ?? []
+            request.sortDescriptors = [NSSortDescriptor(key: "objectHash", ascending: true)]
+            let basePredicate = NSPredicate(format: "feed.subscribed == YES AND archived == NO AND objectHash != nil AND (consumed == YES OR starred == YES OR position > 0)")
+            request.predicate = cursor.map {
+                NSCompoundPredicate(andPredicateWithSubpredicates: [
+                    basePredicate,
+                    NSPredicate(format: "objectHash > %@", $0),
+                ])
+            } ?? basePredicate
+            let rows: [NSDictionary]
+            do {
+                rows = try context.fetch(request)
+            } catch {
+                Self.logSyncEvent("Initialer iCloud Episode-Plan konnte lokale Daten nicht lesen", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                return InitialUploadPage(values: [], nextCursor: nil, succeeded: false)
+            }
             let objectHashes = rows.prefix(Self.pendingChangeQueueChunkSize).compactMap { $0["objectHash"] as? String }
-            let nextOffset = rows.count > Self.pendingChangeQueueChunkSize ? offset + objectHashes.count : nil
+            let nextCursor = rows.count > Self.pendingChangeQueueChunkSize ? objectHashes.last : nil
             Self.logSyncEvent("Initialer iCloud Episode-Plan Fetch-Seite", metadata: [
-                "offset": offset,
+                "cursorPresent": cursor != nil,
                 "rowCount": rows.count,
                 "objectHashCount": objectHashes.count,
-                "nextOffset": nextOffset ?? -1,
+                "hasNextCursor": nextCursor != nil,
             ])
-            return InitialUploadPage(values: objectHashes, nextOffset: nextOffset)
+            return InitialUploadPage(values: objectHashes, nextCursor: nextCursor, succeeded: true)
         }
     }
 
-    nonisolated static func subscribedFeedURLsForInitialUploadPlan(offset: Int?) async -> InitialSubscriptionPage {
-        guard let offset else { return InitialSubscriptionPage(values: [], payloadHashes: [:], nextOffset: nil) }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return InitialSubscriptionPage(values: [], payloadHashes: [:], nextOffset: nil) }
+    nonisolated static func subscribedFeedURLsForInitialUploadPlan(cursor: String?) async -> InitialSubscriptionPage {
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return InitialSubscriptionPage(values: [], payloadHashes: [:], nextCursor: nil, succeeded: false)
+        }
         return await context.perform {
             let request = NSFetchRequest<CDFeed>(entityName: "Feed")
             request.includesSubentities = false
             request.fetchLimit = Self.pendingChangeQueueChunkSize + 1
-            request.fetchOffset = offset
             request.relationshipKeyPathsForPrefetching = ["properties"]
-            request.predicate = NSPredicate(format: "subscribed == YES AND sourceURL_ != nil")
-            let rows = (try? context.fetch(request)) ?? []
+            request.sortDescriptors = [NSSortDescriptor(key: "sourceURL_", ascending: true)]
+            let basePredicate = NSPredicate(format: "subscribed == YES AND sourceURL_ != nil")
+            request.predicate = cursor.map {
+                NSCompoundPredicate(andPredicateWithSubpredicates: [
+                    basePredicate,
+                    NSPredicate(format: "sourceURL_ > %@", $0),
+                ])
+            } ?? basePredicate
+            let rows: [CDFeed]
+            do {
+                rows = try context.fetch(request)
+            } catch {
+                Self.logSyncEvent("Initialer iCloud Abo-Plan konnte lokale Daten nicht lesen", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                return InitialSubscriptionPage(values: [], payloadHashes: [:], nextCursor: nil, succeeded: false)
+            }
             var feedURLs: [String] = []
             var payloadHashes: [String: String] = [:]
             for feed in rows.prefix(Self.pendingChangeQueueChunkSize) {
@@ -1082,14 +2016,14 @@ import UIKit
                 // as "changed" and re-uploaded the whole list once more.
                 payloadHashes[feedURL] = subscriptionPayloadHash(for: feed)
             }
-            let nextOffset = rows.count > Self.pendingChangeQueueChunkSize ? offset + feedURLs.count : nil
+            let nextCursor = rows.count > Self.pendingChangeQueueChunkSize ? feedURLs.last : nil
             Self.logSyncEvent("Initialer iCloud Abo-Plan Fetch-Seite", metadata: [
-                "offset": offset,
+                "cursorPresent": cursor != nil,
                 "rowCount": rows.count,
                 "feedURLCount": feedURLs.count,
-                "nextOffset": nextOffset ?? -1,
+                "hasNextCursor": nextCursor != nil,
             ])
-            return InitialSubscriptionPage(values: feedURLs, payloadHashes: payloadHashes, nextOffset: nextOffset)
+            return InitialSubscriptionPage(values: feedURLs, payloadHashes: payloadHashes, nextCursor: nextCursor, succeeded: true)
         }
     }
 
@@ -1113,9 +2047,73 @@ import UIKit
         RecordPrefix.subscription + sha256Hex(feedURL)
     }
 
-    func applyInitialUploadPlan(_ plan: InitialUploadPlan) async {
-        guard anySyncEnabled, !Task.isCancelled else { return }
+    nonisolated static func subscriptionTombstoneRecordName(forFeedURL feedURL: String) -> String {
+        RecordPrefix.subscriptionTombstone + sha256Hex(feedURL)
+    }
+
+    nonisolated static func subscriptionOutboxRecordNames(forCloudRecordName recordName: String) -> Set<String> {
+        if recordName.hasPrefix(RecordPrefix.subscription) {
+            let hash = String(recordName.dropFirst(RecordPrefix.subscription.count))
+            return [RecordPrefix.subscription + hash, RecordPrefix.subscriptionTombstone + hash]
+        }
+        if recordName.hasPrefix(RecordPrefix.subscriptionTombstone) {
+            let hash = String(recordName.dropFirst(RecordPrefix.subscriptionTombstone.count))
+            return [RecordPrefix.subscription + hash, RecordPrefix.subscriptionTombstone + hash]
+        }
+        return [recordName]
+    }
+
+    func initialUploadPlanIsCurrent(
+        _ snapshot: InitialUploadSnapshot,
+        expectedCloudAccountGeneration: Int,
+        expectedAccountRecordName: String?,
+        queueTaskGeneration: Int?
+    ) -> Bool {
+        guard expectedCloudAccountGeneration == cloudAccountGeneration,
+              !isICloudAccountSignedOut,
+              isICloudAccountIdentityVerified,
+              let expectedAccountRecordName,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == expectedAccountRecordName else {
+            return false
+        }
+        if let queueTaskGeneration,
+           queueTaskGeneration != initialQueueTaskGeneration {
+            return false
+        }
+        let currentSnapshot = initialUploadSnapshot()
+        return currentSnapshot.episodesSyncEnabled == snapshot.episodesSyncEnabled
+            && currentSnapshot.subscriptionsSyncEnabled == snapshot.subscriptionsSyncEnabled
+            && currentSnapshot.settingsSyncEnabled == snapshot.settingsSyncEnabled
+            && currentSnapshot.episodeBackfillOffset == snapshot.episodeBackfillOffset
+            && currentSnapshot.subscriptionBackfillOffset == snapshot.subscriptionBackfillOffset
+            && currentSnapshot.episodeBackfillCursor == snapshot.episodeBackfillCursor
+            && currentSnapshot.subscriptionBackfillCursor == snapshot.subscriptionBackfillCursor
+            && currentSnapshot.settingsBackfillPending == snapshot.settingsBackfillPending
+    }
+
+    func applyInitialUploadPlan(
+        _ plan: InitialUploadPlan,
+        scheduleSyncAfterQueue: Bool = true,
+        expectedCloudAccountGeneration: Int,
+        expectedAccountRecordName: String?,
+        queueTaskGeneration: Int? = nil
+    ) async {
+        defer {
+            if scheduleSyncAfterQueue,
+               let queueTaskGeneration,
+               queueTaskGeneration == initialQueueTaskGeneration {
+                initialQueueTask = nil
+            }
+        }
+        guard anySyncEnabled, !Task.isCancelled,
+              initialUploadPlanIsCurrent(
+                plan.snapshot,
+                expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                expectedAccountRecordName: expectedAccountRecordName,
+                queueTaskGeneration: queueTaskGeneration
+              ) else { return }
         logSyncEvent("iCloud Upload-Queue baut Daten auf", metadata: [
+            "pageCount": plan.pages.count,
             "episodeObjectHashCount": plan.episodeObjectHashes.count,
             "subscribedFeedURLCount": plan.subscribedFeedURLs.count,
             "snapshotEpisodesSyncEnabled": plan.snapshot.episodesSyncEnabled,
@@ -1125,32 +2123,82 @@ import UIKit
         let hasInitialWork = plan.snapshot.episodeBackfillOffset != nil
         || plan.snapshot.subscriptionBackfillOffset != nil
         guard hasInitialWork else {
-            // Still publish the device record: turning a category OFF queues no backfill
-            // work, but the other devices' lists must see the new option flags. This runs
-            // inside the asynchronous plan task, not in the switch tap.
-            queueDeviceRecord()
+            if scheduleSyncAfterQueue {
+                // Still publish the device record: turning a category OFF queues no backfill
+                // work, but the other devices' lists must see the new option flags. This runs
+                // inside the asynchronous plan task, not in the switch tap.
+                queueDeviceRecord()
+            }
             logSyncEvent("Initiale iCloud-Queue ohne Arbeit beendet")
+            if scheduleSyncAfterQueue {
+                scheduleLowPrioritySync()
+            }
             return
         }
+        guard plan.preparationSucceeded else {
+            handleLocalUploadReadFailure(reason: "initialUploadPlan")
+            return
+        }
+
+        guard let expectedAccountRecordName else {
+            handleLocalUploadReadFailure(reason: "initialUploadMetadataAccount")
+            return
+        }
+        do {
+            _ = try await Self.upsertSyncItemMetadata(
+                accountRecordName: expectedAccountRecordName,
+                writes: plan.syncItemMetadataWrites,
+                replaceExisting: false
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            logSyncEvent("Initiale iCloud-Metadaten konnten nicht gespeichert werden", metadata: [
+                "errorDomain": (error as NSError).domain,
+                "errorCode": (error as NSError).code,
+            ])
+            handleLocalUploadReadFailure(reason: "initialUploadMetadata")
+            return
+        }
+        guard !Task.isCancelled,
+              initialUploadPlanIsCurrent(
+                plan.snapshot,
+                expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                expectedAccountRecordName: expectedAccountRecordName,
+                queueTaskGeneration: queueTaskGeneration
+              ) else { return }
+
         initializeSyncEngineIfNeeded()
         var pendingKeys = pendingRecordZoneChangeKeys()
-        addPendingSaves([deviceRecordID(for: deviceID)], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
+        if scheduleSyncAfterQueue {
+            addPendingSaves([deviceRecordID(for: deviceID)], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
+        }
         var queuedUserData = false
 
         if plan.snapshot.episodeBackfillOffset != nil, episodesSyncEnabled {
             queuedUserData = await applyInitialEpisodeQueue(plan.episodeObjectHashes, pendingKeys: &pendingKeys) || queuedUserData
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  initialUploadPlanIsCurrent(
+                    plan.snapshot,
+                    expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                    expectedAccountRecordName: expectedAccountRecordName,
+                    queueTaskGeneration: queueTaskGeneration
+                  ) else { return }
             if plan.snapshot.episodeBackfillOffset == 0 {
                 addPendingSaves([listScrollPositionsRecordID()], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
                 queuedUserData = true
             }
             await Task.yield()
+            guard !Task.isCancelled,
+                  initialUploadPlanIsCurrent(
+                    plan.snapshot,
+                    expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                    expectedAccountRecordName: expectedAccountRecordName,
+                    queueTaskGeneration: queueTaskGeneration
+                  ) else { return }
         }
 
         if plan.snapshot.subscriptionBackfillOffset != nil, subscriptionsSyncEnabled {
-            setSyncMetadata(plan.subscriptionRecordURLs, forKey: Self.subscriptionRecordURLsKey)
-            setSyncMetadata(plan.subscriptionLocalModifiedDates, forKey: Self.subscriptionLocalModifiedDatesKey)
-            mergeSubscriptionPayloadHashes(plan.subscriptionPayloadHashes)
             if plan.snapshot.subscriptionBackfillOffset == 0, Self.hasLocalSubscriptionListSettingsForInitialBackfill() {
                 // The list sort mode, saved manual order, episode-list filters and sidebar
                 // visibility travel with the subscriptions. Still do not publish a
@@ -1163,8 +2211,21 @@ import UIKit
                 queuedUserData = true
             }
             queuedUserData = await applyInitialSubscriptionQueue(plan.subscribedFeedURLs, pendingKeys: &pendingKeys) || queuedUserData
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled,
+                  initialUploadPlanIsCurrent(
+                    plan.snapshot,
+                    expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                    expectedAccountRecordName: expectedAccountRecordName,
+                    queueTaskGeneration: queueTaskGeneration
+                  ) else { return }
             await Task.yield()
+            guard !Task.isCancelled,
+                  initialUploadPlanIsCurrent(
+                    plan.snapshot,
+                    expectedCloudAccountGeneration: expectedCloudAccountGeneration,
+                    expectedAccountRecordName: expectedAccountRecordName,
+                    queueTaskGeneration: queueTaskGeneration
+                  ) else { return }
         }
 
         // Settings deliberately NOT queued here. The old eager publish stamped a fresh
@@ -1173,31 +2234,64 @@ import UIKit
         // (the "iPad never received the iPhone settings" bug). The initial settings
         // publish now happens in didFetchChanges, only if no remote settings arrived.
 
-        if queuedUserData {
+        if queuedUserData, scheduleSyncAfterQueue {
             queueDeviceRecord(stampLastSyncDate: true)
         }
         if !Task.isCancelled {
-            recordInitialUploadBatchQueued(plan)
+            recordInitialUploadBatchesQueued(plan.pages)
             logSyncEvent("Initiale iCloud-Queue abgeschlossen", metadata: [
                 "queuedUserData": queuedUserData,
                 "knownPendingKeyCount": pendingKeys.count,
-                "nextEpisodeBackfillOffset": plan.nextEpisodeBackfillOffset ?? -1,
-                "nextSubscriptionBackfillOffset": plan.nextSubscriptionBackfillOffset ?? -1,
+                "pageCount": plan.pages.count,
             ])
             logSyncEvent("iCloud Upload-Queue fertig")
-            if queuedUserData {
-                scheduleLowPrioritySync()
-            } else if hasInitialUploadBackfillWork {
-                scheduleCurrentEnabledDataForUpload()
-            } else {
-                // Nothing to upload (e.g. a fresh device with no local data enabling a
-                // category) — sync anyway: the FETCH is what brings the other devices'
-                // data in. Without this a fresh device sat on "Bereit" with nothing
-                // until the user tapped manual sync.
+            // Even an empty local library must fetch the other devices' data. A continuation
+            // page is added from the active CKSyncEngine event and must not start another task.
+            if scheduleSyncAfterQueue {
                 scheduleLowPrioritySync()
             }
             postStateChanged()
         }
+    }
+
+    @discardableResult
+    func queueNextInitialUploadPageDuringActiveSend() async -> Bool {
+        guard pendingInitialUploadBatches.isEmpty,
+              initialQueueTask == nil,
+              !isPreparingInitialUploadPage,
+              hasInitialUploadBackfillWork,
+              anySyncEnabled,
+              !isICloudAccountSignedOut,
+              isICloudAccountIdentityVerified,
+              !hasUnresolvedSyncFailures,
+              !Task.isCancelled else {
+            return false
+        }
+
+        isPreparingInitialUploadPage = true
+        defer { isPreparingInitialUploadPage = false }
+        let generation = cloudAccountGeneration
+        let snapshot = initialUploadSnapshot()
+        let plan = await Self.buildInitialUploadPlan(from: snapshot)
+        let currentSnapshot = initialUploadSnapshot()
+        guard generation == cloudAccountGeneration,
+              pendingInitialUploadBatches.isEmpty,
+              currentSnapshot.episodesSyncEnabled == snapshot.episodesSyncEnabled,
+              currentSnapshot.subscriptionsSyncEnabled == snapshot.subscriptionsSyncEnabled,
+              currentSnapshot.episodeBackfillOffset == snapshot.episodeBackfillOffset,
+              currentSnapshot.subscriptionBackfillOffset == snapshot.subscriptionBackfillOffset,
+              currentSnapshot.episodeBackfillCursor == snapshot.episodeBackfillCursor,
+              currentSnapshot.subscriptionBackfillCursor == snapshot.subscriptionBackfillCursor,
+              !Task.isCancelled else {
+            return false
+        }
+        await applyInitialUploadPlan(
+            plan,
+            scheduleSyncAfterQueue: false,
+            expectedCloudAccountGeneration: generation,
+            expectedAccountRecordName: defaults.string(forKey: Self.accountUserRecordNameKey)
+        )
+        return !pendingInitialUploadBatches.isEmpty
     }
 
     // The settings marker is NOT upload-backfill work anymore: the initial settings
@@ -1208,74 +2302,218 @@ import UIKit
         || (subscriptionsSyncEnabled && defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) != nil)
     }
 
-    func recordInitialUploadBatchQueued(_ plan: InitialUploadPlan) {
-        let hasEpisodeBackfill = plan.snapshot.episodeBackfillOffset != nil && episodesSyncEnabled
-        let hasSubscriptionBackfill = plan.snapshot.subscriptionBackfillOffset != nil && subscriptionsSyncEnabled
-        let episodeRecordNames = hasEpisodeBackfill
-            ? Set(plan.episodeObjectHashes.map { RecordPrefix.episode + $0 })
-            : []
-        let subscriptionRecordNames = hasSubscriptionBackfill
-            ? Set(plan.subscribedFeedURLs.map { Self.subscriptionRecordName(forFeedURL: $0) })
-            : []
-
-        if hasEpisodeBackfill, episodeRecordNames.isEmpty {
-            updateInitialEpisodeBackfillCursor(nextOffset: plan.nextEpisodeBackfillOffset)
+    func recordInitialUploadBatchesQueued(_ pages: [InitialUploadPlanPage]) {
+        pendingInitialUploadBatches = pages.map { page in
+            let hasEpisodeBackfill = page.hasEpisodeBackfill && episodesSyncEnabled
+            let hasSubscriptionBackfill = page.hasSubscriptionBackfill && subscriptionsSyncEnabled
+            return InitialUploadBatch(
+                episodeRecordNames: hasEpisodeBackfill
+                    ? Set(page.episodeObjectHashes.map { RecordPrefix.episode + $0 })
+                    : [],
+                subscriptionRecordNames: hasSubscriptionBackfill
+                    ? Set(page.subscribedFeedURLs.flatMap { feedURL in
+                        [
+                            Self.subscriptionRecordName(forFeedURL: feedURL),
+                            Self.subscriptionTombstoneRecordName(forFeedURL: feedURL),
+                        ]
+                    })
+                    : [],
+                nextEpisodeBackfillOffset: page.nextEpisodeBackfillOffset,
+                nextSubscriptionBackfillOffset: page.nextSubscriptionBackfillOffset,
+                nextEpisodeBackfillCursor: page.nextEpisodeBackfillCursor,
+                nextSubscriptionBackfillCursor: page.nextSubscriptionBackfillCursor,
+                hasEpisodeBackfill: hasEpisodeBackfill,
+                hasSubscriptionBackfill: hasSubscriptionBackfill
+            )
         }
-        if hasSubscriptionBackfill, subscriptionRecordNames.isEmpty {
-            updateInitialSubscriptionBackfillCursor(nextOffset: plan.nextSubscriptionBackfillOffset)
-        }
-
-        guard !episodeRecordNames.isEmpty || !subscriptionRecordNames.isEmpty else {
-            pendingInitialUploadBatch = nil
-            return
-        }
-
-        pendingInitialUploadBatch = InitialUploadBatch(episodeRecordNames: episodeRecordNames,
-                                                       subscriptionRecordNames: subscriptionRecordNames,
-                                                       nextEpisodeBackfillOffset: plan.nextEpisodeBackfillOffset,
-                                                       nextSubscriptionBackfillOffset: plan.nextSubscriptionBackfillOffset,
-                                                       hasEpisodeBackfill: hasEpisodeBackfill,
-                                                       hasSubscriptionBackfill: hasSubscriptionBackfill)
+        advanceConfirmedInitialUploadBatches()
         logSyncEvent("Initiale iCloud-Queue wartet auf CloudKit-Bestätigung", metadata: [
-            "episodeRecordCount": episodeRecordNames.count,
-            "subscriptionRecordCount": subscriptionRecordNames.count,
-            "nextEpisodeBackfillOffset": plan.nextEpisodeBackfillOffset ?? -1,
-            "nextSubscriptionBackfillOffset": plan.nextSubscriptionBackfillOffset ?? -1,
+            "pageCount": pendingInitialUploadBatches.count,
+            "episodeRecordCount": pendingInitialUploadBatches.reduce(0) { $0 + $1.episodeRecordNames.count },
+            "subscriptionRecordCount": pendingInitialUploadBatches.reduce(0) { $0 + $1.subscriptionRecordNames.count },
         ])
     }
 
     func recordInitialUploadRecordsSaved(_ recordIDs: [CKRecord.ID]) {
-        guard var batch = pendingInitialUploadBatch else { return }
-        let savedNames = Set(recordIDs.map { $0.recordName })
-        batch.episodeRecordNames.subtract(savedNames)
-        batch.subscriptionRecordNames.subtract(savedNames)
-        pendingInitialUploadBatch = batch
+        recordInitialUploadRecordsResolved(recordIDs)
+    }
 
-        guard batch.episodeRecordNames.isEmpty, batch.subscriptionRecordNames.isEmpty else { return }
-        if batch.hasEpisodeBackfill {
-            updateInitialEpisodeBackfillCursor(nextOffset: batch.nextEpisodeBackfillOffset)
+    func initialEpisodeRecordsAwaitingAcknowledgedClock(in records: [CKRecord]) -> [CKRecord] {
+        let pendingRecordNames = pendingInitialUploadBatches.reduce(into: Set<String>()) {
+            $0.formUnion($1.episodeRecordNames)
         }
-        if batch.hasSubscriptionBackfill {
-            updateInitialSubscriptionBackfillCursor(nextOffset: batch.nextSubscriptionBackfillOffset)
+        guard !pendingRecordNames.isEmpty else { return [] }
+        return records.filter {
+            $0.recordType == RecordKind.episodeState
+                && pendingRecordNames.contains($0.recordID.recordName)
         }
-        pendingInitialUploadBatch = nil
-        logSyncEvent("Initiale iCloud-Queue von CloudKit bestätigt", metadata: [
-            "nextEpisodeBackfillOffset": batch.nextEpisodeBackfillOffset ?? -1,
-            "nextSubscriptionBackfillOffset": batch.nextSubscriptionBackfillOffset ?? -1,
+    }
+
+    func persistAcknowledgedInitialEpisodeClocks(_ records: [CKRecord]) async throws {
+        guard !records.isEmpty else { return }
+        guard let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey) else {
+            throw Self.syncItemMetadataStoreError(
+                code: 1,
+                description: "Der iCloud-Account für bestätigte Episodenmetadaten konnte nicht bestimmt werden."
+            )
+        }
+        var writes: [ICCloudSyncItemMetadataWrite] = []
+        writes.reserveCapacity(records.count)
+        for record in records {
+            let recordName = record.recordID.recordName
+            guard record.recordType == RecordKind.episodeState,
+                  recordName.hasPrefix(RecordPrefix.episode),
+                  let updatedAt = record["updatedAt"] as? Date else {
+                throw Self.syncItemMetadataStoreError(
+                    code: 2,
+                    description: "Ein bestätigter iCloud-Episodenstatus enthält keine gültige Sync-Uhr."
+                )
+            }
+            let objectHash = String(recordName.dropFirst(RecordPrefix.episode.count))
+            guard !objectHash.isEmpty else {
+                throw Self.syncItemMetadataStoreError(
+                    code: 2,
+                    description: "Ein bestätigter iCloud-Episodenstatus enthält keine gültige Identität."
+                )
+            }
+            writes.append(ICCloudSyncItemMetadataWrite(
+                category: Self.localOutboxEpisodeCategory,
+                recordName: recordName,
+                itemIdentifier: objectHash,
+                localModifiedAt: updatedAt,
+                localState: nil,
+                payloadHash: nil
+            ))
+        }
+        _ = try await Self.upsertSyncItemMetadata(
+            accountRecordName: accountRecordName,
+            writes: writes,
+            replaceExisting: false
+        )
+    }
+
+    func recordInitialUploadRecordsResolved(_ recordIDs: [CKRecord.ID]) {
+        recordInitialUploadRecordNamesResolved(Set(recordIDs.map(\.recordName)))
+    }
+
+    func recordInitialUploadRecordNamesResolved(_ resolvedNames: Set<String>) {
+        guard !pendingInitialUploadBatches.isEmpty, !resolvedNames.isEmpty else { return }
+        for index in pendingInitialUploadBatches.indices {
+            pendingInitialUploadBatches[index].episodeRecordNames.subtract(resolvedNames)
+            pendingInitialUploadBatches[index].subscriptionRecordNames.subtract(resolvedNames)
+        }
+        advanceConfirmedInitialUploadBatches()
+    }
+
+    func advanceConfirmedInitialUploadBatches() {
+        var confirmedPageCount = 0
+        while let batch = pendingInitialUploadBatches.first,
+              batch.episodeRecordNames.isEmpty,
+              batch.subscriptionRecordNames.isEmpty {
+            if batch.hasEpisodeBackfill {
+                updateInitialEpisodeBackfillCursor(
+                    nextOffset: batch.nextEpisodeBackfillOffset,
+                    nextCursor: batch.nextEpisodeBackfillCursor
+                )
+            }
+            if batch.hasSubscriptionBackfill {
+                updateInitialSubscriptionBackfillCursor(
+                    nextOffset: batch.nextSubscriptionBackfillOffset,
+                    nextCursor: batch.nextSubscriptionBackfillCursor
+                )
+            }
+            pendingInitialUploadBatches.removeFirst()
+            confirmedPageCount += 1
+        }
+        guard confirmedPageCount > 0 else { return }
+        logSyncEvent("Initiale iCloud-Seiten von CloudKit bestätigt", metadata: [
+            "confirmedPageCount": confirmedPageCount,
+            "remainingPageCount": pendingInitialUploadBatches.count,
+            "episodeBackfillOffset": (defaults.object(forKey: Self.initialEpisodeBackfillOffsetKey) as? NSNumber)?.intValue ?? -1,
+            "subscriptionBackfillOffset": (defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) as? NSNumber)?.intValue ?? -1,
         ])
     }
 
-    func updateInitialEpisodeBackfillCursor(nextOffset: Int?) {
-        if let nextOffset {
+    func discardInitialUploadCheckpoints(episodes: Bool, subscriptions: Bool) {
+        guard episodes || subscriptions else { return }
+        for index in pendingInitialUploadBatches.indices {
+            if episodes {
+                pendingInitialUploadBatches[index].episodeRecordNames.removeAll()
+                pendingInitialUploadBatches[index].hasEpisodeBackfill = false
+            }
+            if subscriptions {
+                pendingInitialUploadBatches[index].subscriptionRecordNames.removeAll()
+                pendingInitialUploadBatches[index].hasSubscriptionBackfill = false
+            }
+        }
+        advanceConfirmedInitialUploadBatches()
+    }
+
+    func handleLocalUploadReadFailure(reason: String) {
+        hasUnresolvedSyncFailures = true
+        let error = NSError(
+            domain: "ICiCloudSyncLocalRead",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Local data could not be read for iCloud upload."]
+        )
+        logSyncEvent("Lokale Daten für iCloud Upload nicht lesbar", metadata: ["reason": reason])
+        setError(error)
+        scheduleSyncRetryAfterFailure(error: error, reason: reason)
+    }
+
+    func applySyncEngineCallbackOutcome(for syncEngine: CKSyncEngine, generation: Int) {
+        let outcome = syncEngineCallbackGate.takeInitialUploadOutcome(
+            generation: generation,
+            for: syncEngine
+        )
+        recordInitialUploadRecordNamesResolved(outcome.resolvedRecordNames)
+        if outcome.localReadFailed {
+            handleLocalUploadReadFailure(reason: "recordMaterialization")
+        }
+    }
+
+    func sendChangesAndApplyCallbackOutcomes(_ syncEngine: CKSyncEngine,
+                                             generation: Int) async throws {
+        while true {
+            do {
+                try await syncEngine.sendChanges()
+            } catch {
+                applySyncEngineCallbackOutcome(for: syncEngine, generation: generation)
+                throw error
+            }
+            applySyncEngineCallbackOutcome(for: syncEngine, generation: generation)
+            guard generation == cloudAccountGeneration,
+                  !hasUnresolvedSyncFailures,
+                  !Task.isCancelled else {
+                return
+            }
+
+            if requiresImmediateFinalDeviceRecordResend {
+                requiresImmediateFinalDeviceRecordResend = false
+                guard hasPendingFinalDeviceRecordUpdate, hasPendingSyncChanges else { return }
+                continue
+            }
+
+            await queueNextInitialUploadPageDuringActiveSend()
+            guard hasInitialUploadBackfillWork, hasPendingSyncChanges else {
+                return
+            }
+        }
+    }
+
+    func updateInitialEpisodeBackfillCursor(nextOffset: Int?, nextCursor: String?) {
+        if let nextOffset, let nextCursor {
             defaults.set(nextOffset, forKey: Self.initialEpisodeBackfillOffsetKey)
+            defaults.set(nextCursor, forKey: Self.initialEpisodeBackfillCursorKey)
         } else {
             clearInitialEpisodeBackfillCursor()
         }
     }
 
-    func updateInitialSubscriptionBackfillCursor(nextOffset: Int?) {
-        if let nextOffset {
+    func updateInitialSubscriptionBackfillCursor(nextOffset: Int?, nextCursor: String?) {
+        if let nextOffset, let nextCursor {
             defaults.set(nextOffset, forKey: Self.initialSubscriptionBackfillOffsetKey)
+            defaults.set(nextCursor, forKey: Self.initialSubscriptionBackfillCursorKey)
         } else {
             clearInitialSubscriptionBackfillCursor()
         }
@@ -1283,18 +2521,22 @@ import UIKit
 
     func resetInitialEpisodeBackfillCursor() {
         defaults.set(0, forKey: Self.initialEpisodeBackfillOffsetKey)
+        defaults.removeObject(forKey: Self.initialEpisodeBackfillCursorKey)
     }
 
     func clearInitialEpisodeBackfillCursor() {
         defaults.removeObject(forKey: Self.initialEpisodeBackfillOffsetKey)
+        defaults.removeObject(forKey: Self.initialEpisodeBackfillCursorKey)
     }
 
     func resetInitialSubscriptionBackfillCursor() {
         defaults.set(0, forKey: Self.initialSubscriptionBackfillOffsetKey)
+        defaults.removeObject(forKey: Self.initialSubscriptionBackfillCursorKey)
     }
 
     func clearInitialSubscriptionBackfillCursor() {
         defaults.removeObject(forKey: Self.initialSubscriptionBackfillOffsetKey)
+        defaults.removeObject(forKey: Self.initialSubscriptionBackfillCursorKey)
     }
 
     func clearInitialUploadCursors() {
@@ -1309,6 +2551,10 @@ import UIKit
         }
         if subscriptionsSyncEnabled {
             resetInitialSubscriptionBackfillCursor()
+            defaults.set(true, forKey: Self.suppressSubscriptionDeletionsKey)
+        }
+        if settingsSyncEnabled {
+            defaults.set(true, forKey: Self.initialSettingsBackfillPendingKey)
         }
     }
 
@@ -1343,6 +2589,8 @@ import UIKit
             guard subscriptionsSyncEnabled, !Task.isCancelled else { return queuedRecords }
             let chunk = feedURLs[index..<end]
             addPendingSaves(chunk.map { subscriptionRecordID(forFeedURL: $0) }, pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
+            addPendingDeletes(chunk.map { subscriptionTombstoneRecordID(forFeedURL: $0) },
+                              pendingKeys: &pendingKeys)
             queuedRecords = true
             logSyncEvent("Initiale iCloud Abo-Queue Chunk angewendet", metadata: [
                 "chunkIndex": chunkIndex,
@@ -1356,12 +2604,16 @@ import UIKit
         return queuedRecords
     }
 
-    func queueDeviceRecord(stampLastSyncDate: Bool = false) {
+    func queueDeviceRecord(stampLastSyncDate: Bool = false, scheduleSync: Bool = true) {
         if stampLastSyncDate {
             deviceRecordShouldStampSyncDate = true
             setSyncMetadata(true, forKey: Self.deviceRecordShouldStampSyncDateKey)
         }
-        addPendingSave(deviceRecordID(for: deviceID))
+        var pendingKeys = pendingRecordZoneChangeKeys()
+        addPendingSaves([deviceRecordID(for: deviceID)],
+                        pendingKeys: &pendingKeys,
+                        stampDeviceRecordForUserData: false,
+                        scheduleSync: scheduleSync)
     }
 
     func addPendingSave(_ recordID: CKRecord.ID) {
@@ -1395,6 +2647,21 @@ import UIKit
         }
     }
 
+    func addPendingDeletes(_ recordIDs: [CKRecord.ID], pendingKeys: inout Set<String>) {
+        guard !recordIDs.isEmpty else { return }
+        initializeSyncEngineIfNeeded()
+        let changes = recordIDs.compactMap { recordID -> CKSyncEngine.PendingRecordZoneChange? in
+            let change = CKSyncEngine.PendingRecordZoneChange.deleteRecord(recordID)
+            let key = pendingChangeKey(change)
+            guard !pendingKeys.contains(key) else { return nil }
+            pendingKeys.insert(key)
+            return change
+        }
+        if !changes.isEmpty {
+            syncEngine?.state.add(pendingRecordZoneChanges: changes)
+        }
+    }
+
     func pendingRecordZoneChangeKeys() -> Set<String> {
         Set(syncEngine?.state.pendingRecordZoneChanges.map { pendingChangeKey($0) } ?? [])
     }
@@ -1421,6 +2688,7 @@ import UIKit
     nonisolated static func isUserDataRecordName(_ recordName: String) -> Bool {
         recordName.hasPrefix(RecordPrefix.episode)
         || recordName.hasPrefix(RecordPrefix.subscription)
+        || recordName.hasPrefix(RecordPrefix.subscriptionTombstone)
         || recordName == RecordPrefix.appSettings
         || recordName == RecordPrefix.listScrollPositions
         || recordName == RecordPrefix.subscriptionListSettings

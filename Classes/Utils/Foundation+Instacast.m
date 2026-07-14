@@ -17,6 +17,29 @@
 #import "RegexKitLite.h"
 #import "GTMNSString+HTML.h"
 
+static NSString* ICXML10SanitizedString(NSString* input)
+{
+    NSMutableString* sanitized = [NSMutableString stringWithCapacity:input.length];
+    for (NSUInteger index = 0; index < input.length; index++) {
+        unichar character = [input characterAtIndex:index];
+        if (CFStringIsSurrogateHighCharacter(character)) {
+            if (index + 1 < input.length && CFStringIsSurrogateLowCharacter([input characterAtIndex:index + 1])) {
+                [sanitized appendFormat:@"%C%C", character, [input characterAtIndex:++index]];
+            }
+            continue;
+        }
+        if (CFStringIsSurrogateLowCharacter(character)) {
+            continue;
+        }
+        if (character == 0x9 || character == 0xA || character == 0xD ||
+            (character >= 0x20 && character <= 0xD7FF) ||
+            (character >= 0xE000 && character <= 0xFFFD)) {
+            [sanitized appendFormat:@"%C", character];
+        }
+    }
+    return sanitized;
+}
+
 
 @implementation NSArray (Instacast)
 
@@ -102,11 +125,11 @@ static NSString* HexStringFromBytes(const UInt8* bytes, CFIndex len)
 
 - (NSString *) stringByEncodingStandardHTMLEntities
 {
-	NSMutableString* string = [self mutableCopy];
+	NSMutableString* string = [ICXML10SanitizedString(self) mutableCopy];
 	NSDictionary *entityMap = [NSDictionary dictionaryWithObjectsAndKeys: 
 							   @"&amp;", @"&",
 							   @"&lt;", @"<",
-							   @"&rt;", @">",
+							   @"&gt;", @">",
 							   @"&apos;", @"'",
 							   @"&apos;", @"’",
 							   @"&quot;", @"\"",

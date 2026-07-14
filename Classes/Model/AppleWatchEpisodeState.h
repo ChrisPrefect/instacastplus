@@ -29,6 +29,7 @@ FOUNDATION_EXPORT NSString* const ICAppleWatchStatusRemoving;
 @property (nonatomic, strong, nullable) NSString* watchStatus;
 @property (nonatomic, strong, nullable) NSDate* watchAddedDate;
 @property (nonatomic, strong, nullable) NSDate* watchDownloadedDate;
+@property (nonatomic) int64_t watchLastEventRevision;
 @property (nonatomic, strong, nullable) NSDate* watchLastSeenDate;
 @property (nonatomic, strong, nullable) NSString* watchLastError;
 @property (nonatomic) int32_t watchActualDuration;

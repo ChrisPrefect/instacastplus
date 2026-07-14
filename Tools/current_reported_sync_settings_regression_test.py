@@ -46,13 +46,22 @@ de_strings = read("Resources/de.lproj/Localizable.strings")
 en_strings = read("Resources/en.lproj/Localizable.strings")
 
 status_text = source_between(icloud_manager, "@objc var statusText: String {", "\n    @objc var devices")
-disabled_guard = 'guard anySyncEnabled else { return NSLocalizedString("Aus", comment: "") }'
-require(disabled_guard in status_text, "Disabled iCloud Sync must always display Aus instead of stale receiving/sending/status text.")
+disabled_branch = "if !anySyncEnabled {"
+final_update_guard = "guard hasPendingFinalDeviceRecordUpdate else {"
+require(disabled_branch in status_text and final_update_guard in status_text,
+        "Disabled iCloud Sync must distinguish a completed shutdown from its pending final device update.")
 require(
-    status_text.index(disabled_guard) < status_text.index("defaults.string(forKey: Self.lastErrorKey)")
-    and status_text.index(disabled_guard) < status_text.index("syncActivityStatusText()")
-    and status_text.index(disabled_guard) < status_text.index("defaults.string(forKey: Self.lastStatusKey)"),
-    "The disabled iCloud Sync status guard must run before stale error/progress/status metadata is read.",
+    status_text.index(disabled_branch) < status_text.index(final_update_guard)
+    < status_text.index('return NSLocalizedString("Aus", comment: "")'),
+    "The status may display Aus only after the final disabled-device record was acknowledged.",
+)
+require(
+    status_text.index('return NSLocalizedString("Aus", comment: "")')
+    < status_text.index("defaults.string(forKey: Self.lastErrorKey)")
+    < status_text.index('return NSLocalizedString("iCloud prüfen…", comment: "")')
+    < status_text.index("syncActivityStatusText()")
+    < status_text.index("defaults.string(forKey: Self.lastStatusKey)"),
+    "While the final device update is pending, a useful error or iCloud-check hint must win over stale activity/status text.",
 )
 
 require(

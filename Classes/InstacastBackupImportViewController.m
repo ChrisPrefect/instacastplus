@@ -8,6 +8,10 @@
 #import "InstacastBackupImporter.h"
 #import "ICBackupImportProgressView.h"
 #import "UITableViewController+Settings.h"
+#import "CDFeed.h"
+#import "CDEpisode.h"
+#import "CDBookmark.h"
+#import "DatabaseManager.h"
 
 typedef NS_ENUM(NSInteger, ICBackupImportSection) {
     kBackupInfoSection = 0,
@@ -31,8 +35,101 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
     kNumberOfCategoryRows,
 };
 
+static NSString * const ICBackupPreviewErrorDomain = @"com.vemedio.instacast.backup-preview";
+
+@interface ICBackupAnalysisResult : NSObject
+@property (nonatomic) NSInteger newPodcastCount;
+@property (nonatomic) NSInteger totalEpisodeCount;
+@property (nonatomic) NSInteger updatedEpisodeCount;
+@property (nonatomic) NSInteger feedsWithSettingsCount;
+@property (nonatomic) NSInteger totalBookmarkCount;
+@property (nonatomic) NSInteger newBookmarkCount;
+@property (nonatomic) NSInteger upNextCount;
+@property (nonatomic) NSInteger appleWatchEpisodeCount;
+@property (nonatomic) NSInteger playlistCount;
+@property (nonatomic) NSInteger episodeListCount;
+@property (nonatomic, strong) NSString *nowPlayingTitle;
+@property (nonatomic, strong) NSString *sortModeDescription;
+@property (nonatomic) NSInteger downloadedEpisodeCount;
+@end
+
+@implementation ICBackupAnalysisResult
+@end
+
+static NSString *ICBackupPreviewNormalizedURL(NSString *URLString) {
+    return [DatabaseManager normalizedFeedURLStringForURLString:URLString];
+}
+
+static void ICBackupIndexExistingFeedURL(NSMutableDictionary<NSString *, NSString *> *lookup, NSString *rawURL) {
+    NSArray<NSString *> *equivalentURLs = [DatabaseManager equivalentFeedURLStringsForURLString:rawURL];
+    NSString *normalizedURL = equivalentURLs.firstObject;
+    if (!normalizedURL) return;
+    lookup[normalizedURL] = normalizedURL;
+    for (NSUInteger index = 1; index < equivalentURLs.count; index++) {
+        NSString *alternateURL = equivalentURLs[index];
+        if (!lookup[alternateURL]) lookup[alternateURL] = normalizedURL;
+    }
+}
+
+static NSString *ICBackupResolvedPreviewFeedURL(NSDictionary<NSString *, NSString *> *lookup, NSString *rawURL) {
+    NSString *normalizedURL = ICBackupPreviewNormalizedURL(rawURL);
+    return normalizedURL ? lookup[normalizedURL] : nil;
+}
+
+static NSString *ICBackupPreviewStringValue(id value) {
+    return [value isKindOfClass:[NSString class]] ? value : nil;
+}
+
+static NSNumber *ICBackupPreviewNumberValue(id value) {
+    return [value isKindOfClass:[NSNumber class]] ? value : nil;
+}
+
+static NSString *ICBackupEpisodeLookupKey(NSString *feedURL, NSString *guid) {
+    if (feedURL.length == 0 || guid.length == 0) return nil;
+    return [NSString stringWithFormat:@"%lu:%@%@", (unsigned long)feedURL.length, feedURL, guid];
+}
+
+static void ICBackupIndexBookmark(NSMutableDictionary<NSString *, NSMutableDictionary<NSNumber *, NSMutableArray<NSNumber *> *> *> *bookmarkPositionsByEpisode,
+                                  NSString *feedURL,
+                                  NSString *guid,
+                                  double position) {
+    NSString *episodeKey = ICBackupEpisodeLookupKey(feedURL, guid);
+    if (!episodeKey) return;
+    NSMutableDictionary<NSNumber *, NSMutableArray<NSNumber *> *> *positionBuckets = bookmarkPositionsByEpisode[episodeKey];
+    if (!positionBuckets) {
+        positionBuckets = [NSMutableDictionary dictionary];
+        bookmarkPositionsByEpisode[episodeKey] = positionBuckets;
+    }
+    NSNumber *bucket = @((NSInteger)floor(position));
+    NSMutableArray<NSNumber *> *positions = positionBuckets[bucket];
+    if (!positions) {
+        positions = [NSMutableArray array];
+        positionBuckets[bucket] = positions;
+    }
+    [positions addObject:@(position)];
+}
+
+static BOOL ICBackupBookmarkExists(NSDictionary<NSString *, NSDictionary<NSNumber *, NSArray<NSNumber *> *> *> *bookmarkPositionsByEpisode,
+                                   NSString *feedURL,
+                                   NSString *guid,
+                                   double position) {
+    NSString *episodeKey = ICBackupEpisodeLookupKey(feedURL, guid);
+    NSDictionary<NSNumber *, NSArray<NSNumber *> *> *positionBuckets = episodeKey ? bookmarkPositionsByEpisode[episodeKey] : nil;
+    if (!positionBuckets) return NO;
+    NSInteger centerBucket = (NSInteger)floor(position);
+    for (NSInteger bucket = centerBucket - 1; bucket <= centerBucket + 1; bucket++) {
+        for (NSNumber *existingPosition in positionBuckets[@(bucket)]) {
+            if (fabs(existingPosition.doubleValue - position) <= 1.0) return YES;
+        }
+    }
+    return NO;
+}
+
 @interface InstacastBackupImportViewController ()
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *selectedCategories;
+@property (nonatomic) BOOL analysisInProgress;
+@property (nonatomic, strong) NSError *analysisError;
+@property (nonatomic) NSUInteger analysisGeneration;
 
 // Analysis results
 @property (nonatomic) NSInteger newPodcastCount;
@@ -69,8 +166,8 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
                                                object:nil];
 
+    self.selectedCategories = [NSMutableSet set];
     [self analyzeBackup];
-    [self initializeSelectedCategories];
     [self updateAppearance];
 }
 
@@ -88,147 +185,240 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 
 #pragma mark - Analysis
 
-- (void)analyzeBackup {
-    InstacastBackupData *backup = self.backupData;
++ (ICBackupAnalysisResult *)analysisResultForBackup:(InstacastBackupData *)backup
+                                            context:(NSManagedObjectContext *)context
+                                              error:(NSError **)error {
+    ICBackupAnalysisResult *result = [[ICBackupAnalysisResult alloc] init];
 
-    // New podcasts
-    self.newPodcastCount = 0;
-    for (ICBackupPodcast *podcast in backup.podcasts) {
-        if (!podcast.feedURL) continue;
-        NSURL *url = [NSURL URLWithString:podcast.feedURL];
-        if (url && ![DMANAGER feedWithSourceURL:url]) {
-            self.newPodcastCount++;
-        }
+    NSFetchRequest<NSDictionary *> *feedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+    feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES AND sourceURL_ != nil"];
+    feedRequest.resultType = NSDictionaryResultType;
+    feedRequest.propertiesToFetch = @[@"sourceURL_"];
+    NSError *fetchError = nil;
+    NSArray<NSDictionary *> *feedRows = [context executeFetchRequest:feedRequest error:&fetchError];
+    if (!feedRows) {
+        if (error) *error = fetchError;
+        return nil;
     }
 
-    // Episode status
-    self.totalEpisodeCount = 0;
-    self.updatedEpisodeCount = 0;
-    for (ICBackupPodcast *podcast in backup.podcasts) {
-        self.totalEpisodeCount += podcast.episodes.count;
-
-        if (!podcast.feedURL || podcast.episodes.count == 0) continue;
-        NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
-        if (!feedURL) continue;
-        CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
-
-        if (!feed) {
-            // New podcast: count all episodes with state as "will be updated"
-            // (they'll be available after subscribing in Phase 1)
-            for (ICBackupEpisode *backupEp in podcast.episodes) {
-                if (backupEp.played || backupEp.starred || backupEp.archived || backupEp.position > 0) {
-                    self.updatedEpisodeCount++;
-                }
-            }
-            continue;
-        }
-
-        for (ICBackupEpisode *backupEp in podcast.episodes) {
-            if (!backupEp.guid) continue;
-            CDEpisode *ep = nil;
-            for (CDEpisode *localEp in feed.episodes) {
-                if ([localEp.guid isEqualToString:backupEp.guid]) {
-                    ep = localEp;
-                    break;
-                }
-            }
-            if (!ep) continue;
-
-            BOOL wouldChange = NO;
-            if (backupEp.played && !ep.consumed) wouldChange = YES;
-            if (backupEp.starred && !ep.starred) wouldChange = YES;
-            if (backupEp.archived && !ep.archived) wouldChange = YES;
-            if (backupEp.position > ep.position) wouldChange = YES;
-            if (backupEp.duration > 0 && ep.duration == 0) wouldChange = YES;
-            if (wouldChange) self.updatedEpisodeCount++;
-        }
+    NSMutableDictionary<NSString *, NSString *> *existingFeedURLByLookupKey = [NSMutableDictionary dictionaryWithCapacity:feedRows.count * 2];
+    for (NSDictionary *row in feedRows) {
+        ICBackupIndexExistingFeedURL(existingFeedURLByLookupKey, ICBackupPreviewStringValue(row[@"sourceURL_"]));
     }
 
-    // Feed settings (exclude internal keys from count)
+    NSMutableSet<NSString *> *backupEpisodeGUIDs = [NSMutableSet set];
+    for (ICBackupPodcast *podcast in backup.podcasts) {
+        if (!ICBackupResolvedPreviewFeedURL(existingFeedURLByLookupKey, podcast.feedURL)) continue;
+        for (ICBackupEpisode *episode in podcast.episodes) {
+            if (episode.guid.length > 0) [backupEpisodeGUIDs addObject:episode.guid];
+        }
+    }
+    if (backup.nowPlaying.guid.length > 0) [backupEpisodeGUIDs addObject:backup.nowPlaying.guid];
+
+    NSMutableDictionary<NSString *, NSMutableDictionary<NSString *, NSDictionary *> *> *episodeStatesByFeedURL = [NSMutableDictionary dictionary];
+    NSArray<NSString *> *allGUIDs = backupEpisodeGUIDs.allObjects;
+    const NSUInteger episodeFetchBatchSize = 400;
+    for (NSUInteger offset = 0; offset < allGUIDs.count; offset += episodeFetchBatchSize) {
+        NSArray<NSString *> *GUIDBatch = [allGUIDs subarrayWithRange:NSMakeRange(offset, MIN(episodeFetchBatchSize, allGUIDs.count - offset))];
+        NSFetchRequest<CDEpisode *> *episodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+        episodeRequest.predicate = [NSPredicate predicateWithFormat:@"guid IN %@ AND feed.subscribed == YES", GUIDBatch];
+        episodeRequest.relationshipKeyPathsForPrefetching = @[@"feed"];
+        episodeRequest.includesSubentities = NO;
+        episodeRequest.fetchBatchSize = episodeFetchBatchSize;
+        NSArray<CDEpisode *> *episodes = [context executeFetchRequest:episodeRequest error:&fetchError];
+        if (!episodes) {
+            if (error) *error = fetchError;
+            return nil;
+        }
+        for (CDEpisode *episode in episodes) {
+            NSString *rawFeedURL = [episode.feed valueForKey:@"sourceURL_"];
+            NSString *resolvedFeedURL = ICBackupResolvedPreviewFeedURL(existingFeedURLByLookupKey, rawFeedURL) ?: ICBackupPreviewNormalizedURL(rawFeedURL);
+            if (resolvedFeedURL.length == 0 || episode.guid.length == 0) continue;
+            NSMutableDictionary<NSString *, NSDictionary *> *statesByGUID = episodeStatesByFeedURL[resolvedFeedURL];
+            if (!statesByGUID) {
+                statesByGUID = [NSMutableDictionary dictionary];
+                episodeStatesByFeedURL[resolvedFeedURL] = statesByGUID;
+            }
+            NSDictionary *existingState = statesByGUID[episode.guid];
+            if (existingState) {
+                NSString *existingTitle = ICBackupPreviewStringValue(existingState[@"title"]);
+                statesByGUID[episode.guid] = @{
+                    @"consumed": @([existingState[@"consumed"] boolValue] && episode.consumed),
+                    @"starred": @([existingState[@"starred"] boolValue] && episode.starred),
+                    @"archived": @([existingState[@"archived"] boolValue] && episode.archived),
+                    @"position": @(MIN([existingState[@"position"] integerValue], episode.position)),
+                    @"duration": @(MIN([existingState[@"duration"] integerValue], episode.duration)),
+                    @"title": existingTitle.length > 0 ? existingTitle : (episode.title ?: @""),
+                };
+            } else {
+                statesByGUID[episode.guid] = @{
+                    @"consumed": @(episode.consumed),
+                    @"starred": @(episode.starred),
+                    @"archived": @(episode.archived),
+                    @"position": @(episode.position),
+                    @"duration": @(episode.duration),
+                    @"title": episode.title ?: @"",
+                };
+            }
+        }
+        [context reset];
+    }
+
+    NSFetchRequest<NSDictionary *> *bookmarkRequest = [[NSFetchRequest alloc] initWithEntityName:@"Bookmark"];
+    bookmarkRequest.resultType = NSDictionaryResultType;
+    bookmarkRequest.propertiesToFetch = @[@"episodeGuid", @"feedURL_", @"position"];
+    NSArray<NSDictionary *> *bookmarkRows = [context executeFetchRequest:bookmarkRequest error:&fetchError];
+    if (!bookmarkRows) {
+        if (error) *error = fetchError;
+        return nil;
+    }
+    NSMutableDictionary<NSString *, NSMutableDictionary<NSNumber *, NSMutableArray<NSNumber *> *> *> *bookmarkPositionsByEpisode = [NSMutableDictionary dictionaryWithCapacity:bookmarkRows.count];
+    for (NSDictionary *row in bookmarkRows) {
+        NSString *rawFeedURL = ICBackupPreviewStringValue(row[@"feedURL_"]);
+        NSString *feedURL = ICBackupResolvedPreviewFeedURL(existingFeedURLByLookupKey, rawFeedURL) ?: ICBackupPreviewNormalizedURL(rawFeedURL);
+        NSNumber *position = ICBackupPreviewNumberValue(row[@"position"]);
+        ICBackupIndexBookmark(bookmarkPositionsByEpisode,
+                              feedURL,
+                              ICBackupPreviewStringValue(row[@"episodeGuid"]),
+                              position ? position.doubleValue : 0);
+    }
+
     NSSet *internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
-    self.feedsWithSettingsCount = 0;
+    NSMutableSet<NSString *> *downloadEpisodeKeys = [NSMutableSet set];
     for (ICBackupPodcast *podcast in backup.podcasts) {
-        if (!podcast.settings) continue;
+        NSString *normalizedBackupFeedURL = ICBackupPreviewNormalizedURL(podcast.feedURL);
+        NSString *resolvedFeedURL = normalizedBackupFeedURL ? existingFeedURLByLookupKey[normalizedBackupFeedURL] : nil;
+        if (normalizedBackupFeedURL && !resolvedFeedURL) result.newPodcastCount++;
+
+        result.totalEpisodeCount += podcast.episodes.count;
+        BOOL feedHasCustomSettings = NO;
         for (NSString *key in podcast.settings) {
             if (![internalKeys containsObject:key]) {
-                self.feedsWithSettingsCount++;
+                feedHasCustomSettings = YES;
                 break;
             }
         }
-    }
+        if (feedHasCustomSettings) result.feedsWithSettingsCount++;
 
-    // Bookmarks
-    self.totalBookmarkCount = backup.bookmarks.count;
-    self.newBookmarkCount = 0;
-    NSArray *existingBookmarks = DMANAGER.bookmarks;
-    for (ICBackupBookmark *bm in backup.bookmarks) {
-        if (!bm.episodeGuid || !bm.feedURL) continue;
-        BOOL isDuplicate = NO;
-        for (CDBookmark *existing in existingBookmarks) {
-            if ([existing.episodeGuid isEqualToString:bm.episodeGuid] &&
-                [[existing.feedURL absoluteString] isEqualToString:bm.feedURL] &&
-                fabs(existing.position - bm.position) <= 1.0) {
-                isDuplicate = YES;
-                break;
-            }
-        }
-        if (!isDuplicate) self.newBookmarkCount++;
-    }
-
-    // Up Next
-    self.upNextCount = backup.upNextEpisodes.count;
-
-    // Apple Watch episodes
-    self.appleWatchEpisodeCount = backup.appleWatchEpisodes.count;
-
-    // Now Playing
-    if (backup.nowPlaying && backup.nowPlaying.guid) {
-        // Try to find the episode title
-        for (ICBackupPodcast *podcast in backup.podcasts) {
-            if ([podcast.feedURL isEqualToString:backup.nowPlaying.feedURL]) {
-                NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
-                CDFeed *feed = feedURL ? [DMANAGER feedWithSourceURL:feedURL] : nil;
-                if (feed) {
-                    for (CDEpisode *ep in feed.episodes) {
-                        if ([ep.guid isEqualToString:backup.nowPlaying.guid]) {
-                            self.nowPlayingTitle = ep.title;
-                            break;
-                        }
-                    }
+        for (ICBackupEpisode *backupEpisode in podcast.episodes) {
+            if (podcast.feedURL && backupEpisode.downloaded && backupEpisode.guid.length > 0) {
+                NSString *downloadFeedURL = resolvedFeedURL ?: normalizedBackupFeedURL ?: podcast.feedURL;
+                NSString *downloadKey = ICBackupEpisodeLookupKey(downloadFeedURL, backupEpisode.guid);
+                if (downloadKey && ![downloadEpisodeKeys containsObject:downloadKey]) {
+                    [downloadEpisodeKeys addObject:downloadKey];
+                    result.downloadedEpisodeCount++;
                 }
-                break;
             }
-        }
-        if (!self.nowPlayingTitle) {
-            self.nowPlayingTitle = @"1 Episode".ls;
+            if (!resolvedFeedURL) {
+                if (backupEpisode.played || backupEpisode.starred || backupEpisode.archived ||
+                    backupEpisode.position > 0 || backupEpisode.duration > 0) {
+                    result.updatedEpisodeCount++;
+                }
+                continue;
+            }
+            NSDictionary *localState = episodeStatesByFeedURL[resolvedFeedURL][backupEpisode.guid];
+            if (!localState) continue;
+            BOOL wouldChange =
+                (backupEpisode.played && ![localState[@"consumed"] boolValue]) ||
+                (backupEpisode.starred && ![localState[@"starred"] boolValue]) ||
+                (backupEpisode.archived && ![localState[@"archived"] boolValue]) ||
+                (backupEpisode.position > [localState[@"position"] integerValue]) ||
+                (backupEpisode.duration > 0 && [localState[@"duration"] integerValue] == 0);
+            if (wouldChange) result.updatedEpisodeCount++;
         }
     }
 
-    // Playlists
-    self.playlistCount = backup.playlists.count;
+    result.totalBookmarkCount = backup.bookmarks.count;
+    for (ICBackupBookmark *bookmark in backup.bookmarks) {
+        NSString *normalizedFeedURL = ICBackupPreviewNormalizedURL(bookmark.feedURL);
+        NSString *resolvedFeedURL = normalizedFeedURL ? existingFeedURLByLookupKey[normalizedFeedURL] : nil;
+        NSString *feedURL = resolvedFeedURL ?: normalizedFeedURL;
+        if (bookmark.episodeGuid.length == 0 || feedURL.length == 0) continue;
+        if (!ICBackupBookmarkExists(bookmarkPositionsByEpisode, feedURL, bookmark.episodeGuid, bookmark.position)) {
+            result.newBookmarkCount++;
+        }
+    }
 
-    // Episode Lists
-    self.episodeListCount = backup.episodeLists.count;
-
-    // Sort order
+    result.upNextCount = backup.upNextEpisodes.count;
+    result.appleWatchEpisodeCount = backup.appleWatchEpisodes.count;
+    result.playlistCount = backup.playlists.count;
+    result.episodeListCount = backup.episodeLists.count;
+    if (backup.nowPlaying.guid.length > 0) {
+        NSString *resolvedFeedURL = ICBackupResolvedPreviewFeedURL(existingFeedURLByLookupKey, backup.nowPlaying.feedURL);
+        NSString *title = episodeStatesByFeedURL[resolvedFeedURL][backup.nowPlaying.guid][@"title"];
+        result.nowPlayingTitle = title.length > 0 ? title : @"1 Episode".ls;
+    }
     if (backup.settings.manualFeedOrder.count > 0) {
-        self.sortModeDescription = [NSString stringWithFormat:@"Manual order with %ld podcasts".ls,
-                                    (long)backup.settings.manualFeedOrder.count];
-    } else if (backup.settings.feedListSortMode) {
-        self.sortModeDescription = backup.settings.feedListSortMode;
+        result.sortModeDescription = [NSString stringWithFormat:@"Manual order with %ld podcasts".ls,
+                                      (long)backup.settings.manualFeedOrder.count];
+    } else if (backup.settings.feedListSortMode.length > 0) {
+        result.sortModeDescription = backup.settings.feedListSortMode;
     }
+    return result;
+}
 
-    // Downloaded episodes
-    self.downloadedEpisodeCount = 0;
-    for (ICBackupPodcast *podcast in backup.podcasts) {
-        NSInteger podcastDownloaded = 0;
-        for (ICBackupEpisode *ep in podcast.episodes) {
-            if (ep.downloaded) {
-                self.downloadedEpisodeCount++;
-                podcastDownloaded++;
-            }
+- (void)analyzeBackup {
+    self.analysisInProgress = YES;
+    self.analysisError = nil;
+    self.selectedCategories = [NSMutableSet set];
+    NSUInteger generation = ++self.analysisGeneration;
+    InstacastBackupData *backup = self.backupData;
+    [self.tableView reloadData];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSManagedObjectContext *context = [DMANAGER newExportBackgroundContext];
+        if (!context) {
+            NSError *error = [NSError errorWithDomain:ICBackupPreviewErrorDomain
+                                                 code:1
+                                             userInfo:@{NSLocalizedDescriptionKey: @"Backup database is unavailable"}];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf applyAnalysisResult:nil error:error generation:generation];
+            });
+            return;
         }
+        [context performBlock:^{
+            NSError *error = nil;
+            ICBackupAnalysisResult *result = [InstacastBackupImportViewController analysisResultForBackup:backup context:context error:&error];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf applyAnalysisResult:result error:error generation:generation];
+            });
+        }];
+    });
+}
+
+- (void)applyAnalysisResult:(ICBackupAnalysisResult *)result
+                      error:(NSError *)error
+                 generation:(NSUInteger)generation {
+    if (generation != self.analysisGeneration) return;
+    self.analysisInProgress = NO;
+    if (error || !result) {
+        NSError *resolvedError = error ?: [NSError errorWithDomain:ICBackupPreviewErrorDomain
+                                                               code:2
+                                                           userInfo:@{NSLocalizedDescriptionKey: @"Backup preview returned no result"}];
+        self.analysisError = resolvedError;
+        ErrLog(@"Backup preview analysis failed: %@", resolvedError);
+        self.selectedCategories = [NSMutableSet set];
+        [self.tableView reloadData];
+        return;
     }
+    self.analysisError = nil;
+
+    self.newPodcastCount = result.newPodcastCount;
+    self.totalEpisodeCount = result.totalEpisodeCount;
+    self.updatedEpisodeCount = result.updatedEpisodeCount;
+    self.feedsWithSettingsCount = result.feedsWithSettingsCount;
+    self.totalBookmarkCount = result.totalBookmarkCount;
+    self.newBookmarkCount = result.newBookmarkCount;
+    self.upNextCount = result.upNextCount;
+    self.appleWatchEpisodeCount = result.appleWatchEpisodeCount;
+    self.playlistCount = result.playlistCount;
+    self.episodeListCount = result.episodeListCount;
+    self.nowPlayingTitle = result.nowPlayingTitle;
+    self.sortModeDescription = result.sortModeDescription;
+    self.downloadedEpisodeCount = result.downloadedEpisodeCount;
+    [self initializeSelectedCategories];
+    [self.tableView reloadData];
 }
 
 - (void)initializeSelectedCategories {
@@ -249,6 +439,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 }
 
 - (BOOL)rowHasData:(NSInteger)row {
+    if (self.analysisInProgress || self.analysisError) return NO;
     switch (row) {
         case kRowNewPodcasts:   return self.newPodcastCount > 0;
         case kRowEpisodeStatus: return self.totalEpisodeCount > 0;
@@ -349,10 +540,25 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         }
 
         case kImportButtonSection: {
-            cell.textLabel.text = @"Import Selected Data".ls;
-            cell.textLabel.textColor = ICTintColor;
             cell.textLabel.textAlignment = NSTextAlignmentCenter;
-            cell.detailTextLabel.text = nil;
+            if (self.analysisInProgress) {
+                cell.textLabel.text = @"Analyzing backup…".ls;
+                cell.textLabel.textColor = [UIColor grayColor];
+                cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+                [spinner startAnimating];
+                cell.accessoryView = spinner;
+            } else if (self.analysisError) {
+                cell.textLabel.text = @"Try Again".ls;
+                cell.textLabel.textColor = ICTintColor;
+                cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+                cell.detailTextLabel.textAlignment = NSTextAlignmentCenter;
+                cell.detailTextLabel.text = @"The backup could not be analyzed. No data was changed. Check the available storage and try again.".ls;
+            } else {
+                cell.textLabel.text = @"Import Selected Data".ls;
+                cell.textLabel.textColor = ICTintColor;
+                cell.detailTextLabel.text = nil;
+            }
             break;
         }
     }
@@ -452,6 +658,12 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
             break;
     }
 
+    if (self.analysisInProgress) {
+        cell.detailTextLabel.text = @"Analyzing backup…".ls;
+    } else if (self.analysisError) {
+        cell.detailTextLabel.text = nil;
+    }
+
     if (!hasData) {
         cell.textLabel.textColor = [UIColor grayColor];
         cell.accessoryType = UITableViewCellAccessoryNone;
@@ -479,13 +691,18 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
     }
     else if (indexPath.section == kImportButtonSection) {
-        [self confirmImport];
+        if (self.analysisError) {
+            [self analyzeBackup];
+        } else {
+            [self confirmImport];
+        }
     }
 }
 
 #pragma mark - Import
 
 - (void)confirmImport {
+    if (self.analysisInProgress || self.analysisError) return;
     if (self.selectedCategories.count == 0) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"No Data Selected".ls
                                                                       message:@"Please select at least one category to import.".ls
@@ -522,6 +739,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
 }
 
 - (void)performImport {
+    if (self.analysisInProgress || self.analysisError) return;
     ICBackupImportCategory categories = 0;
     for (NSNumber *row in self.selectedCategories) {
         categories |= [self categoryForRow:row.integerValue];
@@ -550,7 +768,7 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         [InstacastBackupImporter cancelImport];
     };
 
-    [progressView show];
+    [progressView showInWindow:self.view.window];
 
     // Build callbacks that forward to progress view (all called on main thread)
     ICBackupImportCallbacks callbacks = {
@@ -581,21 +799,56 @@ typedef NS_ENUM(NSInteger, ICBackupImportRow) {
         .setMetadataCompleted = ^(ICBackupImportCategory cat, NSString *detail) {
             [progressView setMetadataCategoryCompleted:cat detail:detail];
         },
+        .setMetadataQueued = ^(ICBackupImportCategory cat, NSInteger itemCount) {
+            [progressView setMetadataCategoryQueued:cat count:itemCount];
+        },
     };
 
     [InstacastBackupImporter importBackup:self.backupData
                                categories:categories
                                 callbacks:callbacks
-                               completion:^(NSInteger importedCount, NSError *error) {
+                               completion:^(NSInteger importedCount, NSInteger queuedDownloadCount, NSError *error) {
 
         BOOL wasCancelled = error && [error.domain isEqualToString:@"InstacastBackupImporter"] && error.code == 1;
+        NSString *queuedDownloadsSummary = nil;
+        if (queuedDownloadCount == 1) {
+            queuedDownloadsSummary = @"1 download queued for re-download. Track progress in Downloads.".ls;
+        } else if (queuedDownloadCount > 1) {
+            queuedDownloadsSummary = [NSString stringWithFormat:@"%ld downloads queued for re-download. Track progress in Downloads.".ls,
+                                      (long)queuedDownloadCount];
+        }
 
         if (wasCancelled) {
             NSString *summary = [NSString stringWithFormat:@"Import cancelled. %ld items imported.".ls, (long)importedCount];
-            [progressView showCompletionWithSummary:summary];
+            if (queuedDownloadsSummary) {
+                summary = [NSString stringWithFormat:@"%@\n\n%@", summary, queuedDownloadsSummary];
+            }
+            [progressView showCompletionWithSummary:summary downloadsQueued:queuedDownloadCount > 0];
+        } else if (error) {
+            NSString *message = error.localizedDescription ?: @"Import Error".ls;
+            if (importedCount > 0) {
+                message = [NSString stringWithFormat:@"%@\n\n%@", message,
+                           [NSString stringWithFormat:@"%ld items imported".ls, (long)importedCount]];
+            }
+            if (queuedDownloadsSummary) {
+                message = [NSString stringWithFormat:@"%@\n\n%@", message, queuedDownloadsSummary];
+            }
+            [progressView closeWithCompletion:^{
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Import Error".ls
+                                                                               message:message
+                                                                        preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
+                [self presentViewController:alert animated:YES completion:nil];
+            }];
+            return;
         } else {
-            NSString *summary = [NSString stringWithFormat:@"%ld items imported".ls, (long)importedCount];
-            [progressView showCompletionWithSummary:summary];
+            NSString *summary = importedCount > 0 || !queuedDownloadsSummary
+                ? [NSString stringWithFormat:@"%ld items imported".ls, (long)importedCount]
+                : queuedDownloadsSummary;
+            if (importedCount > 0 && queuedDownloadsSummary) {
+                summary = [NSString stringWithFormat:@"%@\n\n%@", summary, queuedDownloadsSummary];
+            }
+            [progressView showCompletionWithSummary:summary downloadsQueued:queuedDownloadCount > 0];
         }
 
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

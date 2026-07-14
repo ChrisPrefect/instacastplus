@@ -20,15 +20,25 @@ extension ICiCloudSyncManager {
     }
 
     func handleEventOnMain(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
+        guard syncEngine === self.syncEngine else { return }
+        if isICloudAccountSignedOut || !isICloudAccountIdentityVerified {
+            switch event {
+            case .accountChange, .stateUpdate:
+                break
+            default:
+                return
+            }
+        }
         switch event {
         case .stateUpdate(let event):
+            guard !requiresSyncEngineStateRollbackAfterPersistenceFailure else { return }
             persistStateSerialization(event.stateSerialization)
 
         case .accountChange(let event):
-            handleAccountChange(event)
+            await handleAccountChange(event, syncEngine: syncEngine)
 
         case .fetchedDatabaseChanges(let event):
-            handleFetchedDatabaseChanges(event)
+            await handleFetchedDatabaseChanges(event)
 
         case .fetchedRecordZoneChanges(let event):
             await handleFetchedRecordZoneChanges(event)
@@ -40,6 +50,9 @@ extension ICiCloudSyncManager {
             await handleSentRecordZoneChanges(event, syncEngine: syncEngine)
 
         case .willFetchChanges, .willFetchRecordZoneChanges:
+            if subscriptionsSyncEnabled {
+                markPendingSubscriptionFetchIncomplete()
+            }
             beginSyncActivity(.down)
             postStateChanged()
 
@@ -49,6 +62,17 @@ extension ICiCloudSyncManager {
             postStateChanged()
 
         case .didFetchChanges:
+            // Active records, tombstones and their inverse physical deletions can arrive
+            // in different zone-change events. Only a complete fetch gives us the full
+            // logical set needed to apply one LWW subscription state without destructive
+            // unsubscribe/resubscribe flicker.
+            let generation = cloudAccountGeneration
+            await applyPendingEpisodeStates()
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                  !hasUnresolvedSyncFailures else { return }
+            markPendingSubscriptionFetchComplete()
+            await applyPendingSubscriptions()
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified else { return }
             // The first complete fetch after (re-)enabling subscription sync has been
             // processed (its catch-up deletions were suppressed) — deletions arriving
             // from now on are live propagation and are applied again. Must happen here,
@@ -92,10 +116,13 @@ extension ICiCloudSyncManager {
     }
 
     nonisolated func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
-        let scopedChanges = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
+        guard let generation = syncEngineCallbackGate.currentGeneration(for: syncEngine) else { return nil }
+        let snapshot = Self.syncEngineCallbackSnapshot()
+        let scopedChanges = syncEngine.state.pendingRecordZoneChanges.filter {
+            context.options.scope.contains($0) && Self.pendingChangeIsEnabled($0, snapshot: snapshot)
+        }
         guard !scopedChanges.isEmpty else { return nil }
 
-        let snapshot = Self.syncEngineCallbackSnapshot()
         var recordsToSave: [CKRecord] = []
         var recordIDsToDelete: [CKRecord.ID] = []
         var staleSaveChanges: [CKSyncEngine.PendingRecordZoneChange] = []
@@ -124,7 +151,43 @@ extension ICiCloudSyncManager {
         let materialized = Self.materializeRecordsForSyncEngineCallback(saveRecordIDs, snapshot: snapshot)
         recordsToSave = materialized.records
         staleSaveChanges = materialized.stale
+        var unresolvedRecordIDs = materialized.unresolved
 
+        guard syncEngineCallbackGate.currentGeneration(for: syncEngine) == generation else { return nil }
+
+        let deleteOutboxLookup = Self.localOutboxEntriesByRecordName(
+            Set(recordIDsToDelete.map(\.recordName)),
+            accountRecordName: snapshot.accountUserRecordName)
+        let deleteOutboxEntries = deleteOutboxLookup.values
+        var staleDeleteChanges: [CKSyncEngine.PendingRecordZoneChange] = []
+        if deleteOutboxLookup.succeeded {
+            recordIDsToDelete = recordIDsToDelete.filter { recordID in
+                guard let entry = deleteOutboxEntries[recordID.recordName] else { return true }
+                guard entry.operation == Self.localOutboxDeleteOperation,
+                      !entry.acknowledged else {
+                    staleDeleteChanges.append(.deleteRecord(recordID))
+                    return false
+                }
+                return true
+            }
+        } else {
+            unresolvedRecordIDs.append(contentsOf: recordIDsToDelete)
+            recordIDsToDelete.removeAll()
+        }
+        if !staleDeleteChanges.isEmpty {
+            syncEngine.state.remove(pendingRecordZoneChanges: staleDeleteChanges)
+        }
+        let deleteAttemptRevisions = Dictionary(uniqueKeysWithValues: recordIDsToDelete.compactMap { recordID -> (String, String)? in
+            guard let entry = deleteOutboxEntries[recordID.recordName],
+                  entry.operation == Self.localOutboxDeleteOperation,
+                  !entry.acknowledged else { return nil }
+            return (recordID.recordName, entry.revision)
+        })
+        syncEngineCallbackGate.recordDeleteAttempts(deleteAttemptRevisions,
+                                                    generation: generation,
+                                                    for: syncEngine)
+
+        var resolvedInitialUploadRecordNames: [String] = []
         if !staleSaveChanges.isEmpty {
             let staleUserDataSaveChanges = staleSaveChanges.filter { change in
                 if case .saveRecord(let recordID) = change {
@@ -136,7 +199,18 @@ extension ICiCloudSyncManager {
                 Self.logStaleUserDataSaveChanges(staleUserDataSaveChanges, snapshot: snapshot, pendingRecordZoneChanges: syncEngine.state.pendingRecordZoneChanges.count)
             }
             syncEngine.state.remove(pendingRecordZoneChanges: staleSaveChanges)
+            resolvedInitialUploadRecordNames = staleSaveChanges.compactMap { change -> String? in
+                if case .saveRecord(let recordID) = change { return recordID.recordName }
+                return nil
+            }
         }
+
+        syncEngineCallbackGate.recordInitialUploadOutcome(
+            resolvedRecordNames: resolvedInitialUploadRecordNames,
+            localReadFailed: !unresolvedRecordIDs.isEmpty,
+            generation: generation,
+            for: syncEngine
+        )
 
         guard !recordsToSave.isEmpty || !recordIDsToDelete.isEmpty else { return nil }
         Self.logSyncEvent("CKSyncEngine-Send-Batch materialisiert", snapshot: snapshot, pendingRecordZoneChanges: syncEngine.state.pendingRecordZoneChanges.count, metadata: [
@@ -150,28 +224,158 @@ extension ICiCloudSyncManager {
             "recordNames": recordsToSave.prefix(6).map { $0.recordID.recordName }.joined(separator: ","),
             "deleteNames": recordIDsToDelete.prefix(3).map { $0.recordName }.joined(separator: ","),
         ])
+        guard syncEngineCallbackGate.currentGeneration(for: syncEngine) == generation else { return nil }
         return CKSyncEngine.RecordZoneChangeBatch(recordsToSave: recordsToSave,
                                                   recordIDsToDelete: recordIDsToDelete,
                                                   atomicByZone: false)
     }
 
-    nonisolated static func materializeRecordsForSyncEngineCallback(_ recordIDs: [CKRecord.ID], snapshot: SyncEngineCallbackSnapshot) -> (records: [CKRecord], stale: [CKSyncEngine.PendingRecordZoneChange]) {
+    nonisolated static func pendingChangeIsEnabled(_ change: CKSyncEngine.PendingRecordZoneChange,
+                                                    snapshot: SyncEngineCallbackSnapshot) -> Bool {
+        let recordName: String
+        switch change {
+        case .saveRecord(let recordID), .deleteRecord(let recordID):
+            recordName = recordID.recordName
+        @unknown default:
+            return true
+        }
+        if recordName.hasPrefix(RecordPrefix.episode)
+            || recordName == RecordPrefix.listScrollPositions {
+            return snapshot.episodesSyncEnabled
+        }
+        if recordName.hasPrefix(RecordPrefix.subscription)
+            || recordName.hasPrefix(RecordPrefix.subscriptionTombstone)
+            || recordName == RecordPrefix.subscriptionListSettings {
+            return snapshot.subscriptionsSyncEnabled
+                && !snapshot.hasIncompletePendingSubscriptionFetch
+        }
+        if recordName == RecordPrefix.appSettings {
+            return snapshot.settingsSyncEnabled
+                && !snapshot.initialSettingsBackfillPending
+                && !snapshot.initialSettingsChoicePending
+        }
+        return true
+    }
+
+    struct SyncPayloadLookup {
+        let values: [String: [String: Any]]
+        let succeeded: Bool
+    }
+
+    struct SyncOutboxLookup {
+        let values: [String: ICCloudSyncOutboxSnapshot]
+        let succeeded: Bool
+    }
+
+    struct SyncItemMetadataLookup {
+        let values: [String: ICCloudSyncItemMetadataSnapshot]
+        let succeeded: Bool
+    }
+
+    struct KnownRecordSystemFieldsLookup {
+        let recordsByRecordName: [String: CKRecord]
+        let invalidRecordNames: Set<String>
+        let succeeded: Bool
+    }
+
+    nonisolated static func materializeRecordsForSyncEngineCallback(_ recordIDs: [CKRecord.ID], snapshot: SyncEngineCallbackSnapshot) -> (records: [CKRecord], stale: [CKSyncEngine.PendingRecordZoneChange], unresolved: [CKRecord.ID]) {
         var records: [CKRecord] = []
         var stale: [CKSyncEngine.PendingRecordZoneChange] = []
+        let knownRecordLookup = knownRecordSystemFieldsForSyncEngineCallback(
+            recordIDs,
+            accountRecordName: snapshot.accountUserRecordName
+        )
+        guard knownRecordLookup.succeeded else {
+            return (records, stale, recordIDs)
+        }
+        var unresolved = recordIDs.filter {
+            knownRecordLookup.invalidRecordNames.contains($0.recordName)
+        }
+        let materializableRecordIDs = recordIDs.filter {
+            !knownRecordLookup.invalidRecordNames.contains($0.recordName)
+        }
+        let localOutboxLookup = localOutboxEntriesByRecordName(
+            Set(materializableRecordIDs.map(\.recordName)),
+            accountRecordName: snapshot.accountUserRecordName)
+        guard localOutboxLookup.succeeded else {
+            unresolved.append(contentsOf: materializableRecordIDs)
+            return (records, stale, unresolved)
+        }
+        let localOutboxEntriesByRecordName = localOutboxLookup.values
+        let legacySyncItemRecordNames = Set(materializableRecordIDs.compactMap { recordID -> String? in
+            guard localOutboxEntriesByRecordName[recordID.recordName] == nil,
+                  recordID.recordName.hasPrefix(RecordPrefix.episode)
+                    || recordID.recordName.hasPrefix(RecordPrefix.subscription) else {
+                return nil
+            }
+            return recordID.recordName
+        })
+        let syncItemMetadataLookup = syncItemMetadataByRecordNameForSyncEngineCallback(
+            legacySyncItemRecordNames,
+            accountRecordName: snapshot.accountUserRecordName
+        )
 
-        let episodeRecordIDs = recordIDs.filter { $0.recordName.hasPrefix(RecordPrefix.episode) }
+        let episodeRecordIDs = materializableRecordIDs.filter { $0.recordName.hasPrefix(RecordPrefix.episode) }
         if !episodeRecordIDs.isEmpty {
             if snapshot.episodesSyncEnabled {
-                let statesByHash = episodeStatesByObjectHash(episodeRecordIDs.map { String($0.recordName.dropFirst(RecordPrefix.episode.count)) })
+                let legacyEpisodeRecordIDs = episodeRecordIDs.filter { localOutboxEntriesByRecordName[$0.recordName] == nil }
+                let statesLookup = episodeStatesByObjectHash(legacyEpisodeRecordIDs.map { String($0.recordName.dropFirst(RecordPrefix.episode.count)) })
                 for recordID in episodeRecordIDs {
+                    if let entry = localOutboxEntriesByRecordName[recordID.recordName] {
+                        guard entry.category == localOutboxEpisodeCategory,
+                              entry.operation == localOutboxSaveOperation,
+                              !entry.acknowledged,
+                              var payload = entry.payloadDictionary() else {
+                            stale.append(.saveRecord(recordID))
+                            continue
+                        }
+                        payload["updatedAt"] = entry.changedAt
+                        payload[localMutationRevisionPayloadKey] = entry.revision
+                        let record = mutableRecordForSyncEngineCallback(
+                            recordType: RecordKind.episodeState,
+                            recordID: recordID,
+                            knownRecordsByRecordName: knownRecordLookup.recordsByRecordName
+                        )
+                        populateForSyncEngineCallback(record, payload: payload, updatedAt: entry.changedAt, deviceID: snapshot.deviceID)
+                        records.append(record)
+                        continue
+                    }
                     let objectHash = String(recordID.recordName.dropFirst(RecordPrefix.episode.count))
-                    guard var payload = statesByHash[objectHash] else {
+                    guard syncItemMetadataLookup.succeeded else {
+                        unresolved.append(recordID)
+                        continue
+                    }
+                    guard let itemMetadata = syncItemMetadataLookup.values[recordID.recordName] else {
                         stale.append(.saveRecord(recordID))
                         continue
                     }
-                    let updatedAt = date(from: snapshot.episodeLocalModifiedDates[objectHash]) ?? Date()
+                    guard itemMetadata.category == localOutboxEpisodeCategory,
+                          itemMetadata.itemIdentifier == objectHash else {
+                        logSyncEvent("Lokale iCloud-Episodenmetadaten sind widersprüchlich", metadata: [
+                            "recordName": recordID.recordName,
+                        ])
+                        unresolved.append(recordID)
+                        continue
+                    }
+                    guard statesLookup.succeeded else {
+                        unresolved.append(recordID)
+                        continue
+                    }
+                    guard var payload = statesLookup.values[objectHash] else {
+                        if localOutboxEntriesByRecordName[recordID.recordName] != nil {
+                            logSyncEvent("Lokaler Episoden-Outbox-Payload ist nicht lesbar", metadata: ["recordName": recordID.recordName])
+                            continue
+                        }
+                        stale.append(.saveRecord(recordID))
+                        continue
+                    }
+                    let updatedAt = itemMetadata.localModifiedAt ?? Date()
                     payload["updatedAt"] = updatedAt
-                    let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.episodeState, recordID: recordID)
+                    let record = mutableRecordForSyncEngineCallback(
+                        recordType: RecordKind.episodeState,
+                        recordID: recordID,
+                        knownRecordsByRecordName: knownRecordLookup.recordsByRecordName
+                    )
                     populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
                     records.append(record)
                 }
@@ -184,20 +388,73 @@ extension ICiCloudSyncManager {
         // per-record path (fresh background context + feed fetch + a relationship fault per
         // feed property) was the same store-lock-contention pattern that froze the UI when
         // toggling episode sync — just triggered by the subscriptions switch instead.
-        let subscriptionRecordIDs = recordIDs.filter { $0.recordName.hasPrefix(RecordPrefix.subscription) }
+        let subscriptionRecordIDs = materializableRecordIDs.filter {
+            $0.recordName.hasPrefix(RecordPrefix.subscription)
+                && !$0.recordName.hasPrefix(RecordPrefix.subscriptionTombstone)
+        }
         if !subscriptionRecordIDs.isEmpty {
             if snapshot.subscriptionsSyncEnabled {
-                let feedURLs = subscriptionRecordIDs.compactMap { snapshot.subscriptionRecordURLs[$0.recordName] }
-                let payloadsByURL = subscriptionPayloadsByFeedURL(feedURLs, deviceID: snapshot.deviceID)
+                let legacySubscriptionRecordIDs = subscriptionRecordIDs.filter { localOutboxEntriesByRecordName[$0.recordName] == nil }
+                let feedURLs = legacySubscriptionRecordIDs.compactMap {
+                    syncItemMetadataLookup.values[$0.recordName]?.itemIdentifier
+                }
+                let payloadsLookup = subscriptionPayloadsByFeedURL(feedURLs, deviceID: snapshot.deviceID)
                 for recordID in subscriptionRecordIDs {
-                    guard let feedURL = snapshot.subscriptionRecordURLs[recordID.recordName],
-                          var payload = payloadsByURL[feedURL] else {
+                    if let entry = localOutboxEntriesByRecordName[recordID.recordName] {
+                        guard entry.category == localOutboxSubscriptionCategory,
+                              entry.operation == localOutboxSaveOperation,
+                              !entry.acknowledged,
+                              var payload = entry.payloadDictionary() else {
+                            stale.append(.saveRecord(recordID))
+                            continue
+                        }
+                        payload["updatedAt"] = entry.changedAt
+                        payload[localMutationRevisionPayloadKey] = entry.revision
+                        let record = mutableRecordForSyncEngineCallback(
+                            recordType: RecordKind.subscription,
+                            recordID: recordID,
+                            knownRecordsByRecordName: knownRecordLookup.recordsByRecordName
+                        )
+                        populateForSyncEngineCallback(record, payload: payload, updatedAt: entry.changedAt, deviceID: snapshot.deviceID)
+                        records.append(record)
+                        continue
+                    }
+                    guard syncItemMetadataLookup.succeeded else {
+                        unresolved.append(recordID)
+                        continue
+                    }
+                    guard let itemMetadata = syncItemMetadataLookup.values[recordID.recordName] else {
                         stale.append(.saveRecord(recordID))
                         continue
                     }
-                    let updatedAt = date(from: snapshot.subscriptionLocalModifiedDates[feedURL]) ?? Date()
+                    guard itemMetadata.category == localOutboxSubscriptionCategory,
+                          !itemMetadata.itemIdentifier.isEmpty else {
+                        logSyncEvent("Lokale iCloud-Abo-Metadaten sind widersprüchlich", metadata: [
+                            "recordName": recordID.recordName,
+                        ])
+                        unresolved.append(recordID)
+                        continue
+                    }
+                    guard payloadsLookup.succeeded else {
+                        unresolved.append(recordID)
+                        continue
+                    }
+                    let feedURL = itemMetadata.itemIdentifier
+                    guard var payload = payloadsLookup.values[feedURL] else {
+                        if localOutboxEntriesByRecordName[recordID.recordName] != nil {
+                            logSyncEvent("Lokaler Abo-Outbox-Payload ist nicht lesbar", metadata: ["recordName": recordID.recordName])
+                            continue
+                        }
+                        stale.append(.saveRecord(recordID))
+                        continue
+                    }
+                    let updatedAt = itemMetadata.localModifiedAt ?? Date()
                     payload["updatedAt"] = updatedAt
-                    let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.subscription, recordID: recordID)
+                    let record = mutableRecordForSyncEngineCallback(
+                        recordType: RecordKind.subscription,
+                        recordID: recordID,
+                        knownRecordsByRecordName: knownRecordLookup.recordsByRecordName
+                    )
                     populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
                     records.append(record)
                 }
@@ -206,16 +463,272 @@ extension ICiCloudSyncManager {
             }
         }
 
+
+        let subscriptionTombstoneRecordIDs = materializableRecordIDs.filter {
+            $0.recordName.hasPrefix(RecordPrefix.subscriptionTombstone)
+        }
+        if !subscriptionTombstoneRecordIDs.isEmpty {
+            if snapshot.subscriptionsSyncEnabled {
+                for recordID in subscriptionTombstoneRecordIDs {
+                    guard let entry = localOutboxEntriesByRecordName[recordID.recordName],
+                          entry.category == localOutboxSubscriptionCategory,
+                          entry.operation == localOutboxSaveOperation,
+                          !entry.acknowledged,
+                          var payload = entry.payloadDictionary() else {
+                        stale.append(.saveRecord(recordID))
+                        continue
+                    }
+                    payload["updatedAt"] = entry.changedAt
+                    payload[localMutationRevisionPayloadKey] = entry.revision
+                    let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.subscriptionTombstone,
+                                                                    recordID: recordID,
+                                                                    knownRecordsByRecordName: knownRecordLookup.recordsByRecordName)
+                    populateForSyncEngineCallback(record, payload: payload,
+                                                  updatedAt: entry.changedAt,
+                                                  deviceID: snapshot.deviceID)
+                    records.append(record)
+                }
+            } else {
+                stale.append(contentsOf: subscriptionTombstoneRecordIDs.map { .saveRecord($0) })
+            }
+        }
+
         // Device / settings / scroll records — only a handful per batch.
-        for recordID in recordIDs
-        where !recordID.recordName.hasPrefix(RecordPrefix.episode) && !recordID.recordName.hasPrefix(RecordPrefix.subscription) {
-            if let record = recordToSaveForSyncEngineCallback(for: recordID, snapshot: snapshot) {
+        for recordID in materializableRecordIDs
+        where !recordID.recordName.hasPrefix(RecordPrefix.episode)
+            && !recordID.recordName.hasPrefix(RecordPrefix.subscription)
+            && !recordID.recordName.hasPrefix(RecordPrefix.subscriptionTombstone) {
+            if let record = recordToSaveForSyncEngineCallback(
+                for: recordID,
+                snapshot: snapshot,
+                knownRecordsByRecordName: knownRecordLookup.recordsByRecordName
+            ) {
                 records.append(record)
             } else {
                 stale.append(.saveRecord(recordID))
             }
         }
-        return (records, stale)
+        return (records, stale, unresolved)
+    }
+
+    nonisolated static func knownRecordSystemFieldsForSyncEngineCallback(
+        _ recordIDs: [CKRecord.ID],
+        accountRecordName: String?
+    ) -> KnownRecordSystemFieldsLookup {
+        guard !recordIDs.isEmpty else {
+            return KnownRecordSystemFieldsLookup(
+                recordsByRecordName: [:],
+                invalidRecordNames: [],
+                succeeded: true
+            )
+        }
+        let recordIDsByRecordName = Dictionary(
+            recordIDs.map { ($0.recordName, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        guard recordIDsByRecordName.count <= maximumRecordZoneChangesPerBatch,
+              let accountRecordName, !accountRecordName.isEmpty,
+              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return KnownRecordSystemFieldsLookup(
+                recordsByRecordName: [:],
+                invalidRecordNames: [],
+                succeeded: false
+            )
+        }
+        return context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+            request.predicate = NSPredicate(
+                format: "accountRecordName == %@ AND recordName IN %@",
+                accountRecordName,
+                Array(recordIDsByRecordName.keys)
+            )
+            request.includesSubentities = false
+            request.fetchLimit = maximumRecordZoneChangesPerBatch
+            request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+            do {
+                var recordsByRecordName: [String: CKRecord] = [:]
+                var invalidRecordNames = Set<String>()
+                for entry in try context.fetch(request) {
+                    guard let storedAccountRecordName = entry.value(forKey: "accountRecordName") as? String,
+                          storedAccountRecordName == accountRecordName,
+                          let recordName = entry.value(forKey: "recordName") as? String,
+                          let expectedRecordID = recordIDsByRecordName[recordName] else {
+                        context.reset()
+                        return KnownRecordSystemFieldsLookup(
+                            recordsByRecordName: [:],
+                            invalidRecordNames: [],
+                            succeeded: false
+                        )
+                    }
+                    guard recordsByRecordName[recordName] == nil,
+                          !invalidRecordNames.contains(recordName) else {
+                        invalidRecordNames.insert(recordName)
+                        recordsByRecordName.removeValue(forKey: recordName)
+                        continue
+                    }
+                    let data: Data
+                    if let storedData = entry.value(forKey: "systemFieldsData") as? Data {
+                        data = storedData
+                    } else if let storedData = entry.value(forKey: "systemFieldsData") as? NSData {
+                        data = storedData as Data
+                    } else {
+                        invalidRecordNames.insert(recordName)
+                        continue
+                    }
+                    do {
+                        let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
+                        unarchiver.requiresSecureCoding = true
+                        defer { unarchiver.finishDecoding() }
+                        guard let record = CKRecord(coder: unarchiver),
+                              record.recordID == expectedRecordID,
+                              expectedRecordTypeForSyncEngineRecordName(recordName) == record.recordType else {
+                            invalidRecordNames.insert(recordName)
+                            continue
+                        }
+                        recordsByRecordName[recordName] = record
+                    } catch {
+                        invalidRecordNames.insert(recordName)
+                    }
+                }
+                context.reset()
+                if !invalidRecordNames.isEmpty {
+                    logSyncEvent("Lokale CloudKit-Systemfelder sind beschädigt", metadata: [
+                        "recordCount": invalidRecordNames.count,
+                    ])
+                }
+                return KnownRecordSystemFieldsLookup(
+                    recordsByRecordName: recordsByRecordName,
+                    invalidRecordNames: invalidRecordNames,
+                    succeeded: true
+                )
+            } catch {
+                logSyncEvent("Lokale CloudKit-Systemfelder konnten für Upload nicht gelesen werden", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                context.reset()
+                return KnownRecordSystemFieldsLookup(
+                    recordsByRecordName: [:],
+                    invalidRecordNames: [],
+                    succeeded: false
+                )
+            }
+        }
+    }
+
+    nonisolated static func expectedRecordTypeForSyncEngineRecordName(
+        _ recordName: String
+    ) -> CKRecord.RecordType? {
+        if recordName.hasPrefix(RecordPrefix.episode) { return RecordKind.episodeState }
+        if recordName.hasPrefix(RecordPrefix.subscriptionTombstone) {
+            return RecordKind.subscriptionTombstone
+        }
+        if recordName.hasPrefix(RecordPrefix.subscription) { return RecordKind.subscription }
+        if recordName.hasPrefix(RecordPrefix.device) { return RecordKind.device }
+        if recordName == RecordPrefix.appSettings { return RecordKind.appSettings }
+        if recordName == RecordPrefix.listScrollPositions { return RecordKind.listScrollPositions }
+        if recordName == RecordPrefix.subscriptionListSettings {
+            return RecordKind.subscriptionListSettings
+        }
+        return nil
+    }
+
+    nonisolated static func syncItemMetadataByRecordNameForSyncEngineCallback(
+        _ recordNames: Set<String>,
+        accountRecordName: String?
+    ) -> SyncItemMetadataLookup {
+        guard !recordNames.isEmpty else {
+            return SyncItemMetadataLookup(values: [:], succeeded: true)
+        }
+        guard recordNames.count <= maximumRecordZoneChangesPerBatch,
+              let accountRecordName, !accountRecordName.isEmpty,
+              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return SyncItemMetadataLookup(values: [:], succeeded: false)
+        }
+        return context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
+            request.predicate = NSPredicate(
+                format: "accountRecordName == %@ AND recordName IN %@",
+                accountRecordName,
+                Array(recordNames)
+            )
+            request.includesSubentities = false
+            request.fetchLimit = maximumRecordZoneChangesPerBatch
+            request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+            do {
+                var values: [String: ICCloudSyncItemMetadataSnapshot] = [:]
+                for entry in try context.fetch(request) {
+                    let snapshot = try syncItemMetadataSnapshot(from: entry)
+                    values[snapshot.recordName] = snapshot
+                }
+                context.reset()
+                return SyncItemMetadataLookup(values: values, succeeded: true)
+            } catch {
+                logSyncEvent("Lokale iCloud-Sync-Metadaten konnten für Upload nicht gelesen werden", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                context.reset()
+                return SyncItemMetadataLookup(values: [:], succeeded: false)
+            }
+        }
+    }
+
+    nonisolated static func localOutboxEntriesByRecordName(_ recordNames: Set<String>,
+                                                            accountRecordName: String?) -> SyncOutboxLookup {
+        guard !recordNames.isEmpty else { return SyncOutboxLookup(values: [:], succeeded: true) }
+        guard let accountRecordName, !accountRecordName.isEmpty,
+              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return SyncOutboxLookup(values: [:], succeeded: false)
+        }
+        return context.performAndWait {
+            let request = NSFetchRequest<NSManagedObject>(entityName: localOutboxEntityName)
+            request.predicate = NSPredicate(format: "accountRecordName == %@ AND recordName IN %@",
+                                            accountRecordName, Array(recordNames))
+            request.fetchBatchSize = pendingChangeQueueChunkSize
+            let entries: [NSManagedObject]
+            do {
+                entries = try context.fetch(request)
+            } catch {
+                logSyncEvent("Lokale iCloud-Outbox konnte für Upload nicht gelesen werden", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                return SyncOutboxLookup(values: [:], succeeded: false)
+            }
+            var result: [String: ICCloudSyncOutboxSnapshot] = [:]
+            var succeeded = true
+            for entry in entries {
+                guard let accountRecordName = entry.value(forKey: "accountRecordName") as? String,
+                      let recordName = entry.value(forKey: "recordName") as? String,
+                      let category = entry.value(forKey: "category") as? String,
+                      let operation = entry.value(forKey: "operation") as? String,
+                      let acknowledged = entry.value(forKey: "acknowledged") as? Bool,
+                      let revision = entry.value(forKey: "revision") as? String,
+                      let changedAt = entry.value(forKey: "changedAt") as? Date else {
+                    succeeded = false
+                    continue
+                }
+                let payloadData: Data
+                if let data = entry.value(forKey: "payloadData") as? Data {
+                    payloadData = data
+                } else if let data = entry.value(forKey: "payloadData") as? NSData {
+                    payloadData = data as Data
+                } else {
+                    succeeded = false
+                    continue
+                }
+                result[recordName] = ICCloudSyncOutboxSnapshot(accountRecordName: accountRecordName,
+                                                                recordName: recordName,
+                                                                category: category,
+                                                                operation: operation,
+                                                                acknowledged: acknowledged,
+                                                                revision: revision,
+                                                                changedAt: changedAt,
+                                                                payloadData: payloadData)
+            }
+            return SyncOutboxLookup(values: result, succeeded: succeeded)
+        }
     }
 
     nonisolated static func logStaleUserDataSaveChanges(_ changes: [CKSyncEngine.PendingRecordZoneChange], snapshot: SyncEngineCallbackSnapshot, pendingRecordZoneChanges: Int) {
@@ -233,20 +746,32 @@ extension ICiCloudSyncManager {
 
     // One fetch (with the properties relationship prefetched) for the whole batch instead of
     // a context + fetch + property faults per subscription record.
-    nonisolated static func subscriptionPayloadsByFeedURL(_ feedURLs: [String], deviceID: String) -> [String: [String: Any]] {
-        guard !feedURLs.isEmpty, let context = DatabaseManager.shared()?.newBackgroundContext() else { return [:] }
+    nonisolated static func subscriptionPayloadsByFeedURL(_ feedURLs: [String], deviceID: String) -> SyncPayloadLookup {
+        guard !feedURLs.isEmpty else { return SyncPayloadLookup(values: [:], succeeded: true) }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return SyncPayloadLookup(values: [:], succeeded: false)
+        }
         return context.performAndWait {
             let request = NSFetchRequest<CDFeed>(entityName: "Feed")
             request.predicate = NSPredicate(format: "sourceURL_ IN %@ AND subscribed == YES", feedURLs)
             request.includesSubentities = false
             request.relationshipKeyPathsForPrefetching = ["properties"]
-            let feeds = (try? context.fetch(request)) ?? []
+            let feeds: [CDFeed]
+            do {
+                feeds = try context.fetch(request)
+            } catch {
+                logSyncEvent("Lokale Abonnements konnten für iCloud Upload nicht gelesen werden", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                return SyncPayloadLookup(values: [:], succeeded: false)
+            }
             var result: [String: [String: Any]] = [:]
             for feed in feeds {
                 guard let feedURL = feed.value(forKey: "sourceURL_") as? String else { continue }
                 result[feedURL] = subscriptionPayload(for: feed, feedURL: feedURL, deviceID: deviceID)
             }
-            return result
+            return SyncPayloadLookup(values: result, succeeded: true)
         }
     }
 
@@ -281,13 +806,25 @@ extension ICiCloudSyncManager {
         ]
     }
 
-    nonisolated static func episodeStatesByObjectHash(_ objectHashes: [String]) -> [String: [String: Any]] {
-        guard !objectHashes.isEmpty, let context = DatabaseManager.shared()?.newBackgroundContext() else { return [:] }
+    nonisolated static func episodeStatesByObjectHash(_ objectHashes: [String]) -> SyncPayloadLookup {
+        guard !objectHashes.isEmpty else { return SyncPayloadLookup(values: [:], succeeded: true) }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            return SyncPayloadLookup(values: [:], succeeded: false)
+        }
         return context.performAndWait {
             let request = NSFetchRequest<CDEpisode>(entityName: "Episode")
             request.predicate = NSPredicate(format: "objectHash IN %@", objectHashes)
             request.includesSubentities = false
-            let episodes = (try? context.fetch(request)) ?? []
+            let episodes: [CDEpisode]
+            do {
+                episodes = try context.fetch(request)
+            } catch {
+                logSyncEvent("Lokale Episoden konnten für iCloud Upload nicht gelesen werden", metadata: [
+                    "errorDomain": (error as NSError).domain,
+                    "errorCode": (error as NSError).code,
+                ])
+                return SyncPayloadLookup(values: [:], succeeded: false)
+            }
             var result: [String: [String: Any]] = [:]
             for episode in episodes {
                 guard let objectHash = episode.objectHash else { continue }
@@ -298,7 +835,7 @@ extension ICiCloudSyncManager {
                     "starred": episode.starred,
                 ]
             }
-            return result
+            return SyncPayloadLookup(values: result, succeeded: true)
         }
     }
 
@@ -306,12 +843,13 @@ extension ICiCloudSyncManager {
         let episodesSyncEnabled: Bool
         let subscriptionsSyncEnabled: Bool
         let settingsSyncEnabled: Bool
+        let initialSettingsBackfillPending: Bool
+        let initialSettingsChoicePending: Bool
+        let hasIncompletePendingSubscriptionFetch: Bool
         let anySyncEnabled: Bool
         let deviceID: String
+        let accountUserRecordName: String?
         let deviceRecordShouldStampSyncDate: Bool
-        let subscriptionRecordURLs: [String: String]
-        let episodeLocalModifiedDates: [String: TimeInterval]
-        let subscriptionLocalModifiedDates: [String: TimeInterval]
         let settingsLocalModifiedDate: Date?
         let scrollPositionsLocalModifiedDate: Date?
         let lastSyncDate: Date?
@@ -322,16 +860,19 @@ extension ICiCloudSyncManager {
         let episodesEnabled = defaults.bool(forKey: ICiCloudSyncEpisodesEnabled)
         let subscriptionsEnabled = defaults.bool(forKey: ICiCloudSyncSubscriptionsEnabled)
         let settingsEnabled = defaults.bool(forKey: ICiCloudSyncSettingsEnabled)
+        let pendingSubscriptionFetchComplete = (syncMetadataValue(forKey: Self.pendingSubscriptionFetchCompleteKey) as? NSNumber)?.boolValue == true
         return SyncEngineCallbackSnapshot(
             episodesSyncEnabled: episodesEnabled,
             subscriptionsSyncEnabled: subscriptionsEnabled,
             settingsSyncEnabled: settingsEnabled,
+            initialSettingsBackfillPending: defaults.bool(forKey: Self.initialSettingsBackfillPendingKey),
+            initialSettingsChoicePending: syncMetadataValue(forKey: Self.pendingInitialSettingsPayloadKey) != nil,
+            hasIncompletePendingSubscriptionFetch: subscriptionsEnabled
+                && !pendingSubscriptionFetchComplete,
             anySyncEnabled: episodesEnabled || subscriptionsEnabled || settingsEnabled,
             deviceID: deviceIDForSyncEngineCallback(),
+            accountUserRecordName: defaults.string(forKey: Self.accountUserRecordNameKey),
             deviceRecordShouldStampSyncDate: defaults.bool(forKey: Self.deviceRecordShouldStampSyncDateKey),
-            subscriptionRecordURLs: syncMetadataValue(forKey: Self.subscriptionRecordURLsKey) as? [String: String] ?? [:],
-            episodeLocalModifiedDates: syncMetadataValue(forKey: Self.episodeLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:],
-            subscriptionLocalModifiedDates: syncMetadataValue(forKey: Self.subscriptionLocalModifiedDatesKey) as? [String: TimeInterval] ?? [:],
             settingsLocalModifiedDate: defaults.object(forKey: Self.settingsLocalModifiedDateKey) as? Date,
             scrollPositionsLocalModifiedDate: defaults.object(forKey: Self.scrollPositionsLocalModifiedDateKey) as? Date,
             lastSyncDate: defaults.object(forKey: Self.lastSyncDateKey) as? Date
@@ -340,21 +881,43 @@ extension ICiCloudSyncManager {
 
     // Episode and subscription records are materialized in batches with a single fetch —
     // see materializeRecordsForSyncEngineCallback. This handles only the singleton records.
-    nonisolated static func recordToSaveForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord? {
+    nonisolated static func recordToSaveForSyncEngineCallback(
+        for recordID: CKRecord.ID,
+        snapshot: SyncEngineCallbackSnapshot,
+        knownRecordsByRecordName: [String: CKRecord]
+    ) -> CKRecord? {
         if recordID.recordName.hasPrefix(RecordPrefix.device) {
-            return deviceRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
+            return deviceRecordForSyncEngineCallback(
+                for: recordID,
+                snapshot: snapshot,
+                knownRecordsByRecordName: knownRecordsByRecordName
+            )
         }
         if recordID.recordName == RecordPrefix.appSettings {
-            guard snapshot.settingsSyncEnabled else { return nil }
-            return appSettingsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
+            guard snapshot.settingsSyncEnabled,
+                  !snapshot.initialSettingsBackfillPending,
+                  !snapshot.initialSettingsChoicePending else { return nil }
+            return appSettingsRecordForSyncEngineCallback(
+                for: recordID,
+                snapshot: snapshot,
+                knownRecordsByRecordName: knownRecordsByRecordName
+            )
         }
         if recordID.recordName == RecordPrefix.listScrollPositions {
             guard snapshot.episodesSyncEnabled else { return nil }
-            return listScrollPositionsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
+            return listScrollPositionsRecordForSyncEngineCallback(
+                for: recordID,
+                snapshot: snapshot,
+                knownRecordsByRecordName: knownRecordsByRecordName
+            )
         }
         if recordID.recordName == RecordPrefix.subscriptionListSettings {
             guard snapshot.subscriptionsSyncEnabled else { return nil }
-            return subscriptionListSettingsRecordForSyncEngineCallback(for: recordID, snapshot: snapshot)
+            return subscriptionListSettingsRecordForSyncEngineCallback(
+                for: recordID,
+                snapshot: snapshot,
+                knownRecordsByRecordName: knownRecordsByRecordName
+            )
         }
         return nil
     }
@@ -363,7 +926,11 @@ extension ICiCloudSyncManager {
     // they sync with subscription sync (not settings sync), so a device that only has
     // subscriptions enabled shows the same list the same way. Without the saved manual
     // order, "Manual" was not even offered in the receiving device's sort menu.
-    nonisolated static func subscriptionListSettingsRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+    nonisolated static func subscriptionListSettingsRecordForSyncEngineCallback(
+        for recordID: CKRecord.ID,
+        snapshot: SyncEngineCallbackSnapshot,
+        knownRecordsByRecordName: [String: CKRecord]
+    ) -> CKRecord {
         let defaults = UserDefaults.standard
         let updatedAt = defaults.object(forKey: Self.subscriptionListSettingsLocalModifiedDateKey) as? Date ?? Date()
         var payload: [String: Any] = [
@@ -375,7 +942,11 @@ extension ICiCloudSyncManager {
         }
         payload["episodeLists"] = episodeListPayloadsForSyncEngineCallback()
         payload["mainMenuListUIDs"] = mainMenuListUIDsForSyncEngineCallback()
-        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.subscriptionListSettings, recordID: recordID)
+        let record = mutableRecordForSyncEngineCallback(
+            recordType: RecordKind.subscriptionListSettings,
+            recordID: recordID,
+            knownRecordsByRecordName: knownRecordsByRecordName
+        )
         populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
@@ -614,14 +1185,22 @@ extension ICiCloudSyncManager {
         return defaults[uid]
     }
 
-    nonisolated static func deviceRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+    nonisolated static func deviceRecordForSyncEngineCallback(
+        for recordID: CKRecord.ID,
+        snapshot: SyncEngineCallbackSnapshot,
+        knownRecordsByRecordName: [String: CKRecord]
+    ) -> CKRecord {
         let now = Date()
         var payload = localDevicePayloadForSyncEngineCallback(snapshot: snapshot)
         if snapshot.deviceRecordShouldStampSyncDate {
             payload["lastSyncDate"] = now
         }
         payload["updatedAt"] = now
-        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.device, recordID: recordID)
+        let record = mutableRecordForSyncEngineCallback(
+            recordType: RecordKind.device,
+            recordID: recordID,
+            knownRecordsByRecordName: knownRecordsByRecordName
+        )
         populateForSyncEngineCallback(record, payload: payload, updatedAt: now, deviceID: snapshot.deviceID)
         record["deviceID"] = snapshot.deviceID as CKRecordValue
         return record
@@ -648,14 +1227,26 @@ extension ICiCloudSyncManager {
         return feedUID + suffix
     }
 
-    nonisolated static func appSettingsRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+    nonisolated static func appSettingsRecordForSyncEngineCallback(
+        for recordID: CKRecord.ID,
+        snapshot: SyncEngineCallbackSnapshot,
+        knownRecordsByRecordName: [String: CKRecord]
+    ) -> CKRecord {
         let updatedAt = snapshot.settingsLocalModifiedDate ?? Date()
-        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.appSettings, recordID: recordID)
+        let record = mutableRecordForSyncEngineCallback(
+            recordType: RecordKind.appSettings,
+            recordID: recordID,
+            knownRecordsByRecordName: knownRecordsByRecordName
+        )
         populateForSyncEngineCallback(record, payload: appSettingsPayloadForSyncEngineCallback(updatedAt: updatedAt, deviceID: snapshot.deviceID), updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
-    nonisolated static func listScrollPositionsRecordForSyncEngineCallback(for recordID: CKRecord.ID, snapshot: SyncEngineCallbackSnapshot) -> CKRecord {
+    nonisolated static func listScrollPositionsRecordForSyncEngineCallback(
+        for recordID: CKRecord.ID,
+        snapshot: SyncEngineCallbackSnapshot,
+        knownRecordsByRecordName: [String: CKRecord]
+    ) -> CKRecord {
         let updatedAt = snapshot.scrollPositionsLocalModifiedDate ?? ICListScrollPositionsLastModifiedDate() ?? Date()
         let payload: [String: Any] = [
             "positions": ICListScrollPositionsSnapshot() ?? [:],
@@ -663,13 +1254,21 @@ extension ICiCloudSyncManager {
             "deviceID": snapshot.deviceID,
             "updatedAt": updatedAt,
         ]
-        let record = mutableRecordForSyncEngineCallback(recordType: RecordKind.listScrollPositions, recordID: recordID)
+        let record = mutableRecordForSyncEngineCallback(
+            recordType: RecordKind.listScrollPositions,
+            recordID: recordID,
+            knownRecordsByRecordName: knownRecordsByRecordName
+        )
         populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
-    nonisolated static func mutableRecordForSyncEngineCallback(recordType: CKRecord.RecordType, recordID: CKRecord.ID) -> CKRecord {
-        if let knownRecord = knownRecordForSyncEngineCallback(for: recordID), knownRecord.recordType == recordType {
+    nonisolated static func mutableRecordForSyncEngineCallback(
+        recordType: CKRecord.RecordType,
+        recordID: CKRecord.ID,
+        knownRecordsByRecordName: [String: CKRecord]
+    ) -> CKRecord {
+        if let knownRecord = knownRecordsByRecordName[recordID.recordName] {
             return knownRecord
         }
         return CKRecord(recordType: recordType, recordID: recordID)
@@ -750,11 +1349,8 @@ extension ICiCloudSyncManager {
             Self.engineStateKey,
             Self.knownRecordsKey,
             Self.deviceCacheKey,
-            Self.subscriptionRecordURLsKey,
             Self.pendingEpisodeStatesKey,
             Self.pendingSubscriptionPayloadsKey,
-            Self.episodeLocalModifiedDatesKey,
-            Self.subscriptionLocalModifiedDatesKey,
             Self.settingsLocalModifiedDateKey,
             Self.settingsSyncedHashKey,
             Self.scrollPositionsLocalModifiedDateKey,
@@ -827,18 +1423,6 @@ extension ICiCloudSyncManager {
             return true
         default:
             return false
-        }
-    }
-
-    nonisolated static func knownRecordForSyncEngineCallback(for recordID: CKRecord.ID) -> CKRecord? {
-        guard let data = knownRecordSystemFieldsData(forRecordName: recordID.recordName) else { return nil }
-        do {
-            let unarchiver = try NSKeyedUnarchiver(forReadingFrom: data)
-            unarchiver.requiresSecureCoding = true
-            defer { unarchiver.finishDecoding() }
-            return CKRecord(coder: unarchiver)
-        } catch {
-            return nil
         }
     }
 

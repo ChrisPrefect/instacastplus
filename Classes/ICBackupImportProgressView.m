@@ -228,6 +228,8 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         _titleLabel.text = title;
         _titleLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         _titleLabel.textColor = [UIColor tertiaryLabelColor];
+        _titleLabel.numberOfLines = 0;
+        _titleLabel.lineBreakMode = NSLineBreakByWordWrapping;
         _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [self addSubview:_titleLabel];
 
@@ -251,12 +253,14 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
             [_titleLabel.leadingAnchor constraintEqualToAnchor:_statusImageView.trailingAnchor constant:6],
             [_titleLabel.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [_titleLabel.topAnchor constraintGreaterThanOrEqualToAnchor:self.topAnchor constant:3],
+            [self.bottomAnchor constraintGreaterThanOrEqualToAnchor:_titleLabel.bottomAnchor constant:3],
 
             [_detailLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:_titleLabel.trailingAnchor constant:4],
             [_detailLabel.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
             [_detailLabel.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
 
-            [self.heightAnchor constraintEqualToConstant:24],
+            [self.heightAnchor constraintGreaterThanOrEqualToConstant:24],
         ]];
     }
     return self;
@@ -279,6 +283,17 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
     _detailLabel.textColor = [UIColor tertiaryLabelColor];
 }
 
+- (void)setQueuedWithDetail:(NSString *)detail {
+    [_spinner stopAnimating];
+    _statusImageView.hidden = NO;
+    _statusImageView.image = [UIImage systemImageNamed:@"arrow.down.circle.fill"
+                                      withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:12 weight:UIImageSymbolWeightRegular]];
+    _statusImageView.tintColor = [UIColor systemOrangeColor];
+    _titleLabel.textColor = [UIColor secondaryLabelColor];
+    _detailLabel.text = detail;
+    _detailLabel.textColor = [UIColor tertiaryLabelColor];
+}
+
 @end
 
 #pragma mark - Progress View
@@ -290,7 +305,8 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 @property (nonatomic, strong) UIProgressView *totalProgressBar;
 @property (nonatomic, strong) UILabel *totalProgressLabel;
 @property (nonatomic, strong) UILabel *statusLabel;
-@property (nonatomic, strong) UIScrollView *feedScrollView;
+@property (nonatomic, strong) UIScrollView *bodyScrollView;
+@property (nonatomic, strong) UIStackView *bodyStack;
 @property (nonatomic, strong) UIStackView *feedStack;
 @property (nonatomic, strong) UIStackView *metadataStack;
 @property (nonatomic, strong) UIButton *cancelButton;
@@ -315,9 +331,8 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 - (instancetype)initWithFeedTitles:(NSArray<NSString *> *)feedTitles
                         categories:(ICBackupImportCategory)categories
 {
-    self = [super initWithFrame:[UIScreen mainScreen].bounds];
+    self = [super initWithFrame:CGRectZero];
     if (self) {
-        self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];
         self.feedRows = [NSMutableArray array];
         self.metadataRows = [NSMutableDictionary dictionary];
@@ -377,22 +392,30 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         _statusLabel.font = [UIFont systemFontOfSize:ICFontSize(13)];
         _statusLabel.textColor = [UIColor secondaryLabelColor];
         _statusLabel.textAlignment = NSTextAlignmentCenter;
+        _statusLabel.numberOfLines = 0;
+        _statusLabel.lineBreakMode = NSLineBreakByWordWrapping;
         _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-        [_cardView addSubview:_statusLabel];
 
-        // Feed scroll view
-        _feedScrollView = [[UIScrollView alloc] init];
-        _feedScrollView.translatesAutoresizingMaskIntoConstraints = NO;
-        _feedScrollView.showsVerticalScrollIndicator = YES;
-        _feedScrollView.alwaysBounceVertical = NO;
-        [_cardView addSubview:_feedScrollView];
+        // One scrollable body keeps status, feeds, and metadata reachable in compact windows.
+        _bodyScrollView = [[UIScrollView alloc] init];
+        _bodyScrollView.translatesAutoresizingMaskIntoConstraints = NO;
+        _bodyScrollView.showsVerticalScrollIndicator = YES;
+        _bodyScrollView.alwaysBounceVertical = NO;
+        [_cardView addSubview:_bodyScrollView];
+
+        _bodyStack = [[UIStackView alloc] init];
+        _bodyStack.axis = UILayoutConstraintAxisVertical;
+        _bodyStack.spacing = 10;
+        _bodyStack.translatesAutoresizingMaskIntoConstraints = NO;
+        [_bodyScrollView addSubview:_bodyStack];
+        [_bodyStack addArrangedSubview:_statusLabel];
 
         // Feed stack
         _feedStack = [[UIStackView alloc] init];
         _feedStack.axis = UILayoutConstraintAxisVertical;
         _feedStack.spacing = 2;
         _feedStack.translatesAutoresizingMaskIntoConstraints = NO;
-        [_feedScrollView addSubview:_feedStack];
+        [_bodyStack addArrangedSubview:_feedStack];
 
         // Build feed rows
         for (NSString *title in feedTitles) {
@@ -405,14 +428,14 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         UIView *separator = [[UIView alloc] init];
         separator.backgroundColor = [UIColor separatorColor];
         separator.translatesAutoresizingMaskIntoConstraints = NO;
-        [_cardView addSubview:separator];
+        [_bodyStack addArrangedSubview:separator];
 
         // Metadata stack
         _metadataStack = [[UIStackView alloc] init];
         _metadataStack.axis = UILayoutConstraintAxisVertical;
         _metadataStack.spacing = 2;
         _metadataStack.translatesAutoresizingMaskIntoConstraints = NO;
-        [_cardView addSubview:_metadataStack];
+        [_bodyStack addArrangedSubview:_metadataStack];
 
         // Build metadata rows (excluding NewPodcasts which is handled by feed rows)
         for (NSInteger i = 0; i < kMetadataCategoriesCount; i++) {
@@ -433,15 +456,22 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
         [_cancelButton addTarget:self action:@selector(_cancelTapped) forControlEvents:UIControlEventTouchUpInside];
         [_cardView addSubview:_cancelButton];
 
-        // Calculate max feed list height (cap at 200pt to keep card manageable)
-        CGFloat maxFeedHeight = MIN(feedTitles.count * 32, 200);
-
         // Layout
+        UILayoutGuide* safeArea = self.safeAreaLayoutGuide;
+        NSLayoutConstraint* preferredCardWidth = [_cardView.widthAnchor constraintEqualToConstant:340];
+        preferredCardWidth.priority = UILayoutPriorityDefaultHigh;
+        NSLayoutConstraint* preferredBodyHeight = [_bodyScrollView.heightAnchor constraintEqualToAnchor:_bodyStack.heightAnchor];
+        preferredBodyHeight.priority = UILayoutPriorityDefaultHigh;
         [NSLayoutConstraint activateConstraints:@[
-            // Card — centered, wide
+            // Card — centered but always inside the current scene's safe area.
             [_cardView.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-            [_cardView.centerYAnchor constraintEqualToAnchor:self.centerYAnchor constant:-20],
-            [_cardView.widthAnchor constraintEqualToConstant:340],
+            [_cardView.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [_cardView.leadingAnchor constraintGreaterThanOrEqualToAnchor:safeArea.leadingAnchor constant:12],
+            [_cardView.trailingAnchor constraintLessThanOrEqualToAnchor:safeArea.trailingAnchor constant:-12],
+            [_cardView.topAnchor constraintGreaterThanOrEqualToAnchor:safeArea.topAnchor constant:12],
+            [_cardView.bottomAnchor constraintLessThanOrEqualToAnchor:safeArea.bottomAnchor constant:-12],
+            [_cardView.widthAnchor constraintLessThanOrEqualToConstant:340],
+            preferredCardWidth,
 
             // Title
             [_titleLabel.topAnchor constraintEqualToAnchor:_cardView.topAnchor constant:18],
@@ -462,52 +492,37 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
             [_totalProgressLabel.centerYAnchor constraintEqualToAnchor:_totalProgressBar.centerYAnchor],
             [_totalProgressLabel.widthAnchor constraintEqualToConstant:36],
 
-            // Status
-            [_statusLabel.topAnchor constraintEqualToAnchor:_totalProgressBar.bottomAnchor constant:8],
-            [_statusLabel.leadingAnchor constraintEqualToAnchor:_cardView.leadingAnchor constant:20],
-            [_statusLabel.trailingAnchor constraintEqualToAnchor:_cardView.trailingAnchor constant:-20],
+            // Shared scroll body
+            [_bodyScrollView.topAnchor constraintEqualToAnchor:_totalProgressBar.bottomAnchor constant:10],
+            [_bodyScrollView.leadingAnchor constraintEqualToAnchor:_cardView.leadingAnchor constant:20],
+            [_bodyScrollView.trailingAnchor constraintEqualToAnchor:_cardView.trailingAnchor constant:-20],
+            [_bodyScrollView.heightAnchor constraintGreaterThanOrEqualToConstant:44],
+            preferredBodyHeight,
 
-            // Feed scroll view
-            [_feedScrollView.topAnchor constraintEqualToAnchor:_statusLabel.bottomAnchor constant:10],
-            [_feedScrollView.leadingAnchor constraintEqualToAnchor:_cardView.leadingAnchor constant:20],
-            [_feedScrollView.trailingAnchor constraintEqualToAnchor:_cardView.trailingAnchor constant:-20],
-            [_feedScrollView.heightAnchor constraintLessThanOrEqualToConstant:maxFeedHeight],
+            [_bodyStack.topAnchor constraintEqualToAnchor:_bodyScrollView.contentLayoutGuide.topAnchor],
+            [_bodyStack.leadingAnchor constraintEqualToAnchor:_bodyScrollView.contentLayoutGuide.leadingAnchor],
+            [_bodyStack.trailingAnchor constraintEqualToAnchor:_bodyScrollView.contentLayoutGuide.trailingAnchor],
+            [_bodyStack.bottomAnchor constraintEqualToAnchor:_bodyScrollView.contentLayoutGuide.bottomAnchor],
+            [_bodyStack.widthAnchor constraintEqualToAnchor:_bodyScrollView.frameLayoutGuide.widthAnchor],
 
-            // Feed stack inside scroll view
-            [_feedStack.topAnchor constraintEqualToAnchor:_feedScrollView.topAnchor],
-            [_feedStack.leadingAnchor constraintEqualToAnchor:_feedScrollView.leadingAnchor],
-            [_feedStack.trailingAnchor constraintEqualToAnchor:_feedScrollView.trailingAnchor],
-            [_feedStack.bottomAnchor constraintEqualToAnchor:_feedScrollView.bottomAnchor],
-            [_feedStack.widthAnchor constraintEqualToAnchor:_feedScrollView.widthAnchor],
-
-            // Separator
-            [separator.topAnchor constraintEqualToAnchor:_feedScrollView.bottomAnchor constant:10],
-            [separator.leadingAnchor constraintEqualToAnchor:_cardView.leadingAnchor constant:20],
-            [separator.trailingAnchor constraintEqualToAnchor:_cardView.trailingAnchor constant:-20],
-            [separator.heightAnchor constraintEqualToConstant:1.0 / [UIScreen mainScreen].scale],
-
-            // Metadata stack
-            [_metadataStack.topAnchor constraintEqualToAnchor:separator.bottomAnchor constant:10],
-            [_metadataStack.leadingAnchor constraintEqualToAnchor:_cardView.leadingAnchor constant:20],
-            [_metadataStack.trailingAnchor constraintEqualToAnchor:_cardView.trailingAnchor constant:-20],
+            [separator.heightAnchor constraintEqualToConstant:1.0 / MAX(self.traitCollection.displayScale, 1.0)],
 
             // Cancel button
-            [_cancelButton.topAnchor constraintEqualToAnchor:_metadataStack.bottomAnchor constant:16],
+            [_cancelButton.topAnchor constraintEqualToAnchor:_bodyScrollView.bottomAnchor constant:12],
             [_cancelButton.centerXAnchor constraintEqualToAnchor:_cardView.centerXAnchor],
             [_cancelButton.bottomAnchor constraintEqualToAnchor:_cardView.bottomAnchor constant:-16],
         ]];
 
         // Hide feed list if no new feeds to subscribe
         if (feedTitles.count == 0) {
-            _feedScrollView.hidden = YES;
-            separator.hidden = YES;
+            _feedStack.hidden = YES;
         }
 
         // Hide metadata section if no categories selected (besides NewPodcasts)
         if (self.metadataRows.count == 0) {
-            separator.hidden = YES;
             _metadataStack.hidden = YES;
         }
+        separator.hidden = (feedTitles.count == 0 || self.metadataRows.count == 0);
     }
     return self;
 }
@@ -568,8 +583,8 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 - (void)_scrollToFeedAtIndex:(NSInteger)index {
     if (index < 0 || index >= (NSInteger)self.feedRows.count) return;
     _ICFeedRowView *row = self.feedRows[index];
-    CGRect rowFrame = [row convertRect:row.bounds toView:self.feedScrollView];
-    [self.feedScrollView scrollRectToVisible:rowFrame animated:YES];
+    CGRect rowFrame = [row convertRect:row.bounds toView:self.bodyScrollView];
+    [self.bodyScrollView scrollRectToVisible:rowFrame animated:YES];
 }
 
 #pragma mark - Total Progress
@@ -595,13 +610,19 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
     [row setCompletedWithDetail:detail];
 }
 
+- (void)setMetadataCategoryQueued:(ICBackupImportCategory)category count:(NSInteger)count {
+    _ICMetadataRowView *row = self.metadataRows[@(category)];
+    NSString *detail = count == 1 ? @"1 queued".ls : [NSString stringWithFormat:@"%ld queued".ls, (long)count];
+    [row setQueuedWithDetail:detail];
+}
+
 #pragma mark - Completion
 
-- (void)showCompletionWithSummary:(NSString *)summary {
+- (void)showCompletionWithSummary:(NSString *)summary downloadsQueued:(BOOL)downloadsQueued {
     [self.timerUpdate invalidate];
     self.timerUpdate = nil;
 
-    self.titleLabel.text = @"Import Complete".ls;
+    self.titleLabel.text = downloadsQueued ? @"Downloads queued".ls : @"Import Complete".ls;
     self.statusLabel.text = summary;
     [self setTotalProgress:1.0];
     self.cancelButton.hidden = YES;
@@ -675,7 +696,7 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 }
 
 - (UIViewController *)_topViewController {
-    UIViewController *vc = App.ic_keyWindow.rootViewController;
+    UIViewController *vc = self.parentWindow.rootViewController;
     while (vc.presentedViewController) {
         vc = vc.presentedViewController;
     }
@@ -684,17 +705,25 @@ typedef NS_ENUM(NSInteger, ICFeedRowState) {
 
 #pragma mark - Show / Close
 
-- (void)show {
-    self.parentWindow = App.ic_keyWindow;
-
-    // Use window bounds, not screen bounds (screen >> window on Mac)
-    self.frame = self.parentWindow.bounds;
+- (void)showInWindow:(UIWindow*)window {
+    NSParameterAssert(window);
+    if (!window) {
+        return;
+    }
+    self.parentWindow = window;
+    self.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.cardView.transform = CGAffineTransformMakeScale(0.85, 0.85);
     self.cardView.alpha = 0;
     self.backgroundColor = [UIColor clearColor];
 
-    [self.parentWindow addSubview:self];
+    [window addSubview:self];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.leadingAnchor constraintEqualToAnchor:window.leadingAnchor],
+        [self.trailingAnchor constraintEqualToAnchor:window.trailingAnchor],
+        [self.topAnchor constraintEqualToAnchor:window.topAnchor],
+        [self.bottomAnchor constraintEqualToAnchor:window.bottomAnchor],
+    ]];
 
     [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
         self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];

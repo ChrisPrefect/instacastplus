@@ -7,6 +7,7 @@
 //
 
 #import <Foundation/Foundation.h>
+#import <stdint.h>
 #import "PlaybackDefines.h"
 
 extern NSString* AudioSessionAudioRouteDidChangeNotification;
@@ -20,12 +21,14 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 }
 
 + (AudioSession*) sharedAudioSession;
++ (uint64_t)playbackIntentRevision;
 
 - (void) resetSession;
 
 - (void) playEpisode:(CDEpisode*)anEpisode;
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent;
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart;
+- (void) restorePlaybackEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart;
 - (void) clear;
 - (void) stop;
 - (void) togglePlay;

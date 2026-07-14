@@ -81,7 +81,7 @@
         return 1.0;
     }
     NSInteger loaded = [self integerForKey:kFeedPropertyLoadedEpisodeCount];
-    return (double)loaded / (double)total;
+    return MIN(1.0, MAX(0.0, (double)loaded / (double)total));
 }
 
 @end

@@ -27,6 +27,11 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     kUseCellularData,
 };
 
+@interface DataSettingsViewController ()
+@property (nonatomic, copy) NSDictionary<NSNumber*, id>* statisticsCounts;
+@property (nonatomic) NSUInteger statisticsGeneration;
+@end
+
 @implementation DataSettingsViewController
 
 + (DataSettingsViewController*) viewController
@@ -63,6 +68,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
 {
     [super viewWillAppear:animated];
 
+    [self _reloadStatistics];
     [self updateAppearance];
 }
 
@@ -94,6 +100,45 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
     } else {
         [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
     }
+}
+
+- (void)_reloadStatistics
+{
+    NSUInteger generation = ++self.statisticsGeneration;
+    self.statisticsCounts = nil;
+    NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+    if (!context) {
+        self.statisticsCounts = @{@0: NSNull.null, @1: NSNull.null, @2: NSNull.null};
+        return;
+    }
+
+    [context performBlock:^{
+        NSArray<NSDictionary*>* specifications = @[
+            @{@"entity": @"Feed", @"predicate": [NSPredicate predicateWithFormat:@"subscribed == YES"]},
+            @{@"entity": @"Episode", @"predicate": [NSPredicate predicateWithFormat:@"feed.subscribed == YES && archived == NO"]},
+            @{@"entity": @"Episode", @"predicate": [NSPredicate predicateWithFormat:@"feed.subscribed == YES && archived == NO && consumed == NO"]},
+        ];
+        NSMutableDictionary<NSNumber*, id>* counts = [NSMutableDictionary dictionaryWithCapacity:specifications.count];
+        [specifications enumerateObjectsUsingBlock:^(NSDictionary* specification, NSUInteger index, BOOL* stop) {
+            (void)stop;
+            NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:specification[@"entity"]];
+            request.predicate = specification[@"predicate"];
+            NSError* error = nil;
+            NSUInteger count = [context countForFetchRequest:request error:&error];
+            counts[@(index)] = (error || count == NSNotFound) ? NSNull.null : @(count);
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.statisticsGeneration) {
+                return;
+            }
+            self.statisticsCounts = counts;
+            if (self.isViewLoaded) {
+                [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:kStatisticsSection]
+                              withRowAnimation:UITableViewRowAnimationNone];
+            }
+        });
+    }];
 }
 
 
@@ -250,31 +295,21 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
         numberFormatter.locale = [NSLocale currentLocale];
 
         switch (indexPath.row) {
-            case 0: {
-                cell.textLabel.text = @"Subscriptions".ls;
-                NSFetchRequest* request = [[NSFetchRequest alloc] init];
-                request.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:DMANAGER.objectContext];
-                request.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
-                NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
-                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
-                break;
-            }
-            case 1: {
-                cell.textLabel.text = @"Total Episodes".ls;
-                NSFetchRequest* request = [[NSFetchRequest alloc] init];
-                request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && archived == NO"];
-                NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
-                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
-                break;
-            }
+            case 0:
+            case 1:
             case 2: {
-                cell.textLabel.text = @"Total Unplayed".ls;
-                NSFetchRequest* request = [[NSFetchRequest alloc] init];
-                request.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
-                request.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES && archived == NO && consumed == NO"];
-                NSUInteger count = [DMANAGER.objectContext countForFetchRequest:request error:nil];
-                cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
+                NSArray<NSString*>* labels = @[@"Subscriptions".ls, @"Total Episodes".ls, @"Total Unplayed".ls];
+                cell.textLabel.text = labels[indexPath.row];
+                id value = self.statisticsCounts[@(indexPath.row)];
+                if (!self.statisticsCounts) {
+                    cell.detailTextLabel.text = @"…";
+                }
+                else if (value == NSNull.null) {
+                    cell.detailTextLabel.text = @"Nicht verfügbar".ls;
+                }
+                else {
+                    cell.detailTextLabel.text = [numberFormatter stringFromNumber:value];
+                }
                 break;
             }
             case 3: {
@@ -296,7 +331,7 @@ typedef NS_ENUM(NSInteger, CellularDataUsage) {
                 break;
             }
             case 5: {
-                cell.textLabel.text = @"Total Downloaded".ls;
+                cell.textLabel.text = @"Downloaded Episodes".ls;
                 NSUInteger count = [[CacheManager sharedCacheManager].cachedEpisodes count];
                 cell.detailTextLabel.text = [numberFormatter stringFromNumber:@(count)];
                 break;

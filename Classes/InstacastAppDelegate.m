@@ -40,6 +40,8 @@
 #import "ICPubdateValueTransformer.h"
 #import "Application.h"
 #import "InstacastSceneDelegate.h"
+#import "InstacastBackupParser.h"
+#import "InstacastBackupImporter.h"
 #import <MediaPlayer/MPVolumeView.h>
 #import <AVFoundation/AVFoundation.h>
 
@@ -47,12 +49,14 @@ static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy
 static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued";
 static NSString* const ICTranscriptionContinuedGPUPath = @"continued-gpu";
 static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing";
+static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @"InstacastMainViewControllerDidBecomeReadyNotification";
 
 @interface InstacastAppDelegate () <UNUserNotificationCenterDelegate>
 @property BOOL resettingContext;
 @property (strong) VDModalInfo* mInfo;
 @property (strong) VDModalInfo* loadingInfo;
 @property (nonatomic, strong) DirectoryFeedViewController* feedView;
+@property (nonatomic, strong) NSURL* pendingBackupFileURL;
 
 @end
 
@@ -337,6 +341,10 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     }
         
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidTimeout:) name:kApplicationDidTimeoutNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_protectedDataDidBecomeAvailable:)
+                                                 name:UIApplicationProtectedDataDidBecomeAvailable
+                                               object:nil];
    
 //    if ([USER_DEFAULTS valueForKey:ScreenTimerAlwaysActive] == nil)
 //    {
@@ -398,8 +406,28 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 {
 }
 
+- (void)_protectedDataDidBecomeAvailable:(NSNotification *)notification
+{
+    if (self.mainViewController) {
+        [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
+        [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
+    }
+}
+
 - (void) _startUpApplicationWithLaunchOptions:(NSDictionary *)launchOptions
 {
+    DatabaseManager* databaseManager = [DatabaseManager sharedDatabaseManager];
+    if (databaseManager.initializationError) {
+        [[ICDiagnosticLogger shared] logEvent:@"database"
+                                      message:@"Lokale Datenbank konnte beim Start nicht geöffnet werden"
+                                     metadata:@{ @"error": databaseManager.initializationError.description ?: @"" }];
+        self.mainViewController = nil;
+        [UIManager sharedManager].mainViewController = nil;
+        self.window.rootViewController = [InstacastAppDelegate databaseUnavailableViewControllerForError:databaseManager.initializationError];
+        [self.window makeKeyAndVisible];
+        return;
+    }
+
     MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
     self.mainViewController = mainViewController;
     [UIManager sharedManager].mainViewController = mainViewController;
@@ -407,6 +435,14 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     self.window.rootViewController = self.mainViewController;
 
     [self.window makeKeyAndVisible];
+    [[NSNotificationCenter defaultCenter] postNotificationName:InstacastMainViewControllerDidBecomeReadyNotification
+                                                        object:self.mainViewController];
+    [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
+    [InstacastBackupImporter startDeferredRestoreRecovery];
+    if (self.pendingBackupFileURL) {
+        [self.mainViewController openBackupFileURL:self.pendingBackupFileURL];
+        self.pendingBackupFileURL = nil;
+    }
 
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -454,6 +490,47 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
     }
 }
 
++ (UIViewController*)databaseUnavailableViewControllerForError:(NSError*)error
+{
+    UIViewController* controller = [[UIViewController alloc] initWithNibName:nil bundle:nil];
+    controller.view.backgroundColor = [UIColor systemBackgroundColor];
+
+    UILabel* titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    titleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleTitle2];
+    titleLabel.adjustsFontForContentSizeCategory = YES;
+    titleLabel.numberOfLines = 0;
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    titleLabel.text = @"Local Data Unavailable".ls;
+
+    UILabel* messageLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    messageLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    messageLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    messageLabel.adjustsFontForContentSizeCategory = YES;
+    messageLabel.numberOfLines = 0;
+    messageLabel.textAlignment = NSTextAlignmentCenter;
+    messageLabel.text = error.localizedDescription ?: @"InstacastPlus could not open the local podcast database. Your data was left unchanged. Check the available storage, restart the device, and open InstacastPlus again.".ls;
+
+    UIStackView* stack = [[UIStackView alloc] initWithArrangedSubviews:@[titleLabel, messageLabel]];
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentFill;
+    stack.spacing = 16;
+    [controller.view addSubview:stack];
+
+    UILayoutGuide* safeArea = controller.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:safeArea.leadingAnchor constant:24],
+        [safeArea.trailingAnchor constraintGreaterThanOrEqualToAnchor:stack.trailingAnchor constant:24],
+        [stack.centerXAnchor constraintEqualToAnchor:safeArea.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:safeArea.centerYAnchor],
+        [stack.topAnchor constraintGreaterThanOrEqualToAnchor:safeArea.topAnchor constant:24],
+        [safeArea.bottomAnchor constraintGreaterThanOrEqualToAnchor:stack.bottomAnchor constant:24],
+        [stack.widthAnchor constraintLessThanOrEqualToConstant:520],
+    ]];
+    return controller;
+}
+
 
 
 #pragma mark -
@@ -469,45 +546,54 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
                                         }];
 
     NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
+    __block BOOL handled = NO;
     
     if ([ICTranscriptionDebugAutomation handle:url]) {
         return YES;
     }
     else if ([subscribeSchemes containsObject:[url scheme]]) {
         [self _handlePcastURL:url];
+        handled = YES;
+    }
+    else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
+    {
+        if (self.mainViewController) {
+            [self.mainViewController openBackupFileURL:url];
+        }
+        else {
+            self.pendingBackupFileURL = url;
+        }
+        handled = YES;
     }
     else if ([url isFileURL] && [[[url path] pathExtension] compare:@"opml" options:NSCaseInsensitiveSearch] == NSOrderedSame)
     {
         self.mInfo = [VDModalInfo modalInfoWithProgressLabel:@"Importing…".ls];
-        [self.mInfo show];
+        [self.mInfo showInWindow:self.window];
 
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            BOOL accessGranted = [url startAccessingSecurityScopedResource];
-            if (!accessGranted) {
-                ErrLog(@"Failed to access secure file");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.mInfo close];
-                    self.mInfo = nil;
-                });
-                return;
-            }
-
-            NSData *opmlData = [NSData dataWithContentsOfURL:url];
-            [url stopAccessingSecurityScopedResource];
+            NSError* readError = nil;
+            NSData *opmlData = [ICXMLImportLimits readDataFromURL:url error:&readError];
 
             if (!opmlData || opmlData.length == 0) {
-                ErrLog(@"Invalid OPML data");
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
                     self.mInfo = nil;
+                    [App showBackgroundErrorWithTitle:@"Import Error".ls
+                                              message:readError.localizedDescription ?: @"The OPML file is empty or could not be read.".ls
+                                             duration:8.0];
                 });
                 return;
             }
 
-            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^{
+            [[SubscriptionManager sharedSubscriptionManager] importOPMLData:opmlData completion:^(NSError* error) {
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self.mInfo close];
                     self.mInfo = nil;
+                    if (error) {
+                        [App showBackgroundErrorWithTitle:@"Import Error".ls
+                                                  message:error.localizedDescription
+                                                 duration:8.0];
+                    }
                 });
             } progress:^(float progress) {
                 dispatch_async(dispatch_get_main_queue(), ^{
@@ -518,6 +604,7 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
                 });
             }];
         });
+        handled = YES;
     }
     
     else if ([url isFileURL] && [[[url path] pathExtension] compare:@"xpff" options:NSCaseInsensitiveSearch] == NSOrderedSame)
@@ -590,8 +677,9 @@ static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing
 #pragma clang diagnostic pop
         UIViewController *rootVC = keyWindow.rootViewController;
         [rootVC presentViewController:alert animated:YES completion:nil];
+        handled = YES;
     }
-    return YES;
+    return handled;
 }
 
 - (UIViewController*)getRootViewControllerDev

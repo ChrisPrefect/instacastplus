@@ -11,6 +11,8 @@
 @implementation ICBackupPodcast
 - (instancetype)init {
     if ((self = [super init])) {
+        _settings = [NSMutableDictionary dictionary];
+        _settingTypes = [NSMutableDictionary dictionary];
         _episodes = [NSMutableArray array];
     }
     return self;

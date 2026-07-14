@@ -232,9 +232,7 @@
     
     fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
     
-    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_%@", self.feed.title];
-    [NSFetchedResultsController deleteCacheWithName:cacheName];
-    self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
+    self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     
@@ -1027,14 +1025,13 @@
 - (void) _filterFavoriteEpisode
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
-    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && starred == %d", self.feed, 1];
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && starred == %d && archived == %@", self.feed, 1, @NO];
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
     fetchRequest.predicate = predicate;
-    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_favorite_%@", self.feed.title];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
  
-    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
@@ -1047,14 +1044,13 @@
 - (void) _filterUnlistenedEpisode
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
-    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && consumed == %d && position <= %d", self.feed,0,0];
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && consumed == %d && position <= %d && archived == %@", self.feed, 0, 0, @NO];
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
     fetchRequest.predicate = predicate;
-    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_unlistened_%@", self.feed.title];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
  
-    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
@@ -1077,14 +1073,13 @@
 {
     //[NSPredicate predicateWithFormat:@"feed == %@ AND consumed == %@ AND archived == %@", self, @NO, @NO] --Unplayed
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
-    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && position > %d", self.feed,0];
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && position > %d && archived == %@", self.feed, 0, @NO];
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
     fetchRequest.predicate = predicate;
-    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_unfinished_%@", self.feed.title];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
 
-    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     [self updateEpisodes];
@@ -1097,14 +1092,13 @@
 - (void) _filterUnplayedAndStartedEpisode
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
-    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && consumed == %d", self.feed, 0];
+    NSPredicate* predicate = [NSPredicate predicateWithFormat:@"feed == %@ && consumed == %d && archived == %@", self.feed, 0, @NO];
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Episode" inManagedObjectContext:DMANAGER.objectContext];
     fetchRequest.predicate = predicate;
-    NSString* cacheName = [NSString stringWithFormat:@"_feed_episodes_unplayed_and_started_%@", self.feed.title];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder]];
 
-    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:cacheName];
+    self.fetchController =  [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
     self.fetchController.delegate = self;
     [self.fetchController performFetch:nil];
     [self updateEpisodes];

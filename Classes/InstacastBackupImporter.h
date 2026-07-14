@@ -36,6 +36,7 @@ typedef struct {
     void (^ _Nullable setStatusText)(NSString *text);
     void (^ _Nullable setMetadataActive)(ICBackupImportCategory cat);
     void (^ _Nullable setMetadataCompleted)(ICBackupImportCategory cat, NSString *detail);
+    void (^ _Nullable setMetadataQueued)(ICBackupImportCategory cat, NSInteger itemCount);
 } ICBackupImportCallbacks;
 
 @interface InstacastBackupImporter : NSObject
@@ -46,13 +47,35 @@ typedef struct {
 + (void)importBackup:(InstacastBackupData *)backup
           categories:(ICBackupImportCategory)categories
            callbacks:(ICBackupImportCallbacks)callbacks
-          completion:(void(^)(NSInteger importedCount, NSError * _Nullable error))completion;
+          completion:(void(^)(NSInteger importedCount, NSInteger queuedDownloadCount, NSError * _Nullable error))completion;
 
 /// Cancel the entire import. Safe to call from any thread. Takes effect immediately.
 + (void)cancelImport;
 
 /// Skip only the currently loading feed. Safe to call from any thread.
 + (void)skipCurrentFeed;
+
+/// Resume an interrupted batched bookmark import from its durable recovery stage.
+/// The work is serialized on the backup-import queue and never blocks app launch.
++ (void)resumePendingBookmarkImportIfNeeded;
+
+/// Register episode-hydration retry hooks and resume durable deferred backup work.
++ (void)startDeferredRestoreRecovery;
+
+/// Retry pending backup downloads and Now Playing after startup or foregrounding.
++ (void)retryPendingDeferredRestoreIfNeeded;
+
+/// Durably cancel every pending backup download before destructive cache clearing begins.
++ (void)prepareForDeferredDownloadClearAllWithCompletion:(void(^)(NSError * _Nullable error))completion;
+
+/// Commit a durable cancellation marker off-main before CacheManager removes its queue owner.
++ (void)prepareForDeferredDownloadCancellation:(NSString *)objectHash
+                                       feedURL:(NSString *)feedURL
+                                    episodeGUID:(NSString *)episodeGUID
+                                     completion:(void(^)(NSError * _Nullable error))completion;
+
+/// Fast in-memory ownership check so ordinary downloads keep their synchronous cancel path.
++ (BOOL)ownsDeferredDownloadWithObjectHash:(NSString *)objectHash;
 
 /// Restore now-playing from pending state (call after episodes are loaded)
 + (void)processPendingNowPlaying;

@@ -31,6 +31,9 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 @property (nonatomic) MediaFilesSortMode sortMode;
 @property (nonatomic, strong) UISegmentedControl *sortControl;
 @property (nonatomic, strong) NSArray<NSDictionary*> *podcastSections;
+@property (nonatomic, copy) NSDictionary<NSString*, NSNumber*> *downloadedBytesByEpisodeHash;
+@property (nonatomic, copy) NSArray<CDEpisode*> *pendingContentEpisodes;
+@property (nonatomic) NSUInteger contentReloadGeneration;
 @end
 
 @implementation MediaFilesViewController
@@ -91,15 +94,62 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (void) _reloadContent
 {
-    NSArray *allEpisodes = [[CacheManager sharedCacheManager] cachedEpisodes];
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    NSArray<CDEpisode*>* allEpisodes = cacheManager.cachedEpisodes;
+    NSMutableArray* fileURLs = [NSMutableArray arrayWithCapacity:allEpisodes.count];
+    NSMutableArray* episodeHashes = [NSMutableArray arrayWithCapacity:allEpisodes.count];
+    for (CDEpisode* episode in allEpisodes) {
+        NSURL* fileURL = [cacheManager URLForCachedEpisode:episode];
+        [fileURLs addObject:fileURL ?: NSNull.null];
+        [episodeHashes addObject:episode.objectHash ?: NSNull.null];
+    }
 
-    switch (self.sortMode) {
+    NSUInteger generation = ++self.contentReloadGeneration;
+    MediaFilesSortMode sortMode = self.sortMode;
+    self.pendingContentEpisodes = allEpisodes;
+    __weak MediaFilesViewController* weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSFileManager* fileManager = [[NSFileManager alloc] init];
+        NSMutableDictionary<NSString*, NSNumber*>* downloadedBytesByEpisodeHash = [NSMutableDictionary dictionaryWithCapacity:episodeHashes.count];
+        for (NSUInteger index = 0; index < episodeHashes.count; index++) {
+            NSString* episodeHash = episodeHashes[index];
+            NSURL* fileURL = fileURLs[index];
+            if (![episodeHash isKindOfClass:[NSString class]] || ![fileURL isKindOfClass:[NSURL class]]) {
+                continue;
+            }
+            NSDictionary* attributes = [fileManager attributesOfItemAtPath:fileURL.path error:nil];
+            downloadedBytesByEpisodeHash[episodeHash] = @([attributes fileSize]);
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MediaFilesViewController* self = weakSelf;
+            if (!self || generation != self.contentReloadGeneration) {
+                return;
+            }
+            NSArray<CDEpisode*>* episodes = self.pendingContentEpisodes ?: @[];
+            self.pendingContentEpisodes = nil;
+            self.downloadedBytesByEpisodeHash = downloadedBytesByEpisodeHash;
+            [self _applyContentEpisodes:episodes sortMode:sortMode];
+            [self.tableView reloadData];
+        });
+    });
+}
+
+- (unsigned long long)_downloadedBytesForEpisode:(CDEpisode*)episode
+{
+    return [self.downloadedBytesByEpisodeHash[episode.objectHash] unsignedLongLongValue];
+}
+
+- (void) _applyContentEpisodes:(NSArray<CDEpisode*>*)allEpisodes sortMode:(MediaFilesSortMode)sortMode
+{
+
+    switch (sortMode) {
         case kSortBySize:
         {
             self.podcastSections = nil;
             self.cachedEpisodes = [allEpisodes sortedArrayUsingComparator:^NSComparisonResult(CDEpisode *episode1, CDEpisode *episode2) {
-                unsigned long long fileSize1 = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode1];
-                unsigned long long fileSize2 = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode2];
+                unsigned long long fileSize1 = [self _downloadedBytesForEpisode:episode1];
+                unsigned long long fileSize2 = [self _downloadedBytesForEpisode:episode2];
 
                 if (fileSize1 < fileSize2) {
                     return NSOrderedDescending;
@@ -127,23 +177,33 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         case kSortByPodcast:
         {
             NSMutableDictionary<NSString*, NSMutableArray*> *grouped = [NSMutableDictionary dictionary];
-            NSMutableDictionary<NSString*, CDFeed*> *feedMap = [NSMutableDictionary dictionary];
+            NSMutableDictionary<NSString*, id> *feedMap = [NSMutableDictionary dictionary];
 
             for (CDEpisode *episode in allEpisodes) {
-                NSString *feedTitle = episode.feed.title ?: @"";
-                if (!grouped[feedTitle]) {
-                    grouped[feedTitle] = [NSMutableArray array];
-                    feedMap[feedTitle] = episode.feed;
+                NSString *feedIdentifier = episode.feed.objectID.URIRepresentation.absoluteString;
+                if (feedIdentifier.length == 0) {
+                    NSString* episodeIdentifier = episode.objectID.URIRepresentation.absoluteString ?: episode.objectHash ?: @"";
+                    feedIdentifier = [@"orphan:" stringByAppendingString:episodeIdentifier];
                 }
-                [grouped[feedTitle] addObject:episode];
+                if (!grouped[feedIdentifier]) {
+                    grouped[feedIdentifier] = [NSMutableArray array];
+                    feedMap[feedIdentifier] = episode.feed ?: NSNull.null;
+                }
+                [grouped[feedIdentifier] addObject:episode];
             }
 
-            NSArray *sortedTitles = [grouped.allKeys sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+            NSArray *sortedFeedIdentifiers = [grouped.allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString* firstIdentifier, NSString* secondIdentifier) {
+                id firstFeed = feedMap[firstIdentifier];
+                id secondFeed = feedMap[secondIdentifier];
+                NSString* firstTitle = [firstFeed isKindOfClass:[CDFeed class]] ? [firstFeed title] : @"";
+                NSString* secondTitle = [secondFeed isKindOfClass:[CDFeed class]] ? [secondFeed title] : @"";
+                NSComparisonResult titleOrder = [firstTitle localizedCaseInsensitiveCompare:secondTitle];
+                return titleOrder == NSOrderedSame ? [firstIdentifier compare:secondIdentifier] : titleOrder;
+            }];
 
-            CacheManager *cman = [CacheManager sharedCacheManager];
             NSMutableArray *sections = [NSMutableArray array];
-            for (NSString *title in sortedTitles) {
-                NSArray *sortedEpisodes = [grouped[title] sortedArrayUsingComparator:^NSComparisonResult(CDEpisode *ep1, CDEpisode *ep2) {
+            for (NSString *feedIdentifier in sortedFeedIdentifiers) {
+                NSArray *sortedEpisodes = [grouped[feedIdentifier] sortedArrayUsingComparator:^NSComparisonResult(CDEpisode *ep1, CDEpisode *ep2) {
                     NSDate *d1 = ep1.pubDate;
                     NSDate *d2 = ep2.pubDate;
                     if (!d1 && !d2) return NSOrderedSame;
@@ -154,11 +214,11 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
                 unsigned long long totalBytes = 0;
                 for (CDEpisode *ep in sortedEpisodes) {
-                    totalBytes += [cman numberOfDownloadedBytesForEpisode:ep];
+                    totalBytes += [self _downloadedBytesForEpisode:ep];
                 }
 
                 [sections addObject:@{
-                    @"feed": feedMap[title] ?: [NSNull null],
+                    @"feed": feedMap[feedIdentifier],
                     @"episodes": sortedEpisodes,
                     @"totalBytes": @(totalBytes)
                 }];
@@ -236,6 +296,22 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     [self _setupTableHeaderView];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
+    __weak MediaFilesViewController* weakSelf = self;
+    [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachedEpisodes" task:^(__unused id object, __unused NSDictionary* change) {
+        void (^reloadVisibleContent)(void) = ^{
+            MediaFilesViewController* strongSelf = weakSelf;
+            if (!strongSelf.viewIfLoaded.window) {
+                return;
+            }
+            [strongSelf _reloadContent];
+            [strongSelf.tableView reloadData];
+        };
+        if ([NSThread isMainThread]) {
+            reloadVisibleContent();
+        } else {
+            dispatch_async(dispatch_get_main_queue(), reloadVisibleContent);
+        }
+    }];
 }
 
 - (void) viewWillAppear:(BOOL)animated
@@ -255,6 +331,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
 - (void) dealloc
 {
+    [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachedEpisodes"];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -428,7 +505,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         cell.detailTextLabel.text = feed.title;
         cell.textLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
 
-        unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
+        unsigned long long bytes = [self _downloadedBytesForEpisode:episode];
         NSString *sizeText = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
         sizeLabel.text = sizeText;
         [sizeLabel sizeToFit];
@@ -492,7 +569,7 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
     cell.detailTextLabel.text = feed.title;
     cell.textLabel.textColor = (episode.consumed) ? ICMutedTextColor : ICTextColor;
 
-    unsigned long long bytes = [[CacheManager sharedCacheManager] numberOfDownloadedBytesForEpisode:episode];
+    unsigned long long bytes = [self _downloadedBytesForEpisode:episode];
     NSString *sizeText = [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleMemory];
     sizeLabel.text = sizeText;
     [sizeLabel sizeToFit];
@@ -570,7 +647,10 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         NSDictionary *sectionInfo = self.podcastSections[indexPath.section];
         CDFeed *feed = sectionInfo[@"feed"];
         if (![feed isKindOfClass:[NSNull class]]) {
-            [[CacheManager sharedCacheManager] removeCacheForFeed:feed automatic:NO];
+            __weak MediaFilesViewController* weakSelf = self;
+            [[CacheManager sharedCacheManager] removeCacheForFeed:feed automatic:NO completion:^(__unused NSError* error) {
+                [weakSelf _reloadContent];
+            }];
         }
     }
     else
@@ -578,11 +658,11 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         // Delete single episode
         CDEpisode* episode = [self _episodeAtIndexPath:indexPath];
         if (!episode) return;
-        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+        __weak MediaFilesViewController* weakSelf = self;
+        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO completion:^(__unused NSError* error) {
+            [weakSelf _reloadContent];
+        }];
     }
-
-    [self _reloadContent];
-    [self.tableView reloadData];
 }
 
 #pragma mark - Table view delegate
@@ -632,20 +712,13 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 - (void) clearCacheAction:(NSIndexPath*)cellIndexPath
 {
     CacheManager* cman = [CacheManager sharedCacheManager];
-
-    if ([cman isCaching])
-    {
-        [self presentAlertControllerWithTitle:@"Currently Downloading".ls
-                                      message:@"Clearing the cache is not possible while Instacast is downloading episodes. Please try again later.".ls
-                                       button:@"OK".ls
-                                     animated:YES
-                                   completion:NULL];
-        return;
-    }
+    NSString* clearMessage = [cman isCaching]
+        ? @"Current downloads will be cancelled before all downloaded files are deleted.".ls
+        : nil;
 
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:nil
-                                                                   message:nil
+                                                                   message:clearMessage
                                                             preferredStyle:UIAlertControllerStyleActionSheet];
 
     [alert addAction:[UIAlertAction actionWithTitle:@"Only Delete Played".ls
@@ -655,18 +728,17 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
                                                 VDModalInfo* modelInfo = [VDModalInfo modalInfoWithProgressLabel:@"Clearing…".ls];
                                                 [modelInfo show];
 
-                                                [self perform:^(id sender) {
-
-                                                    for(CDEpisode* episode in self.cachedEpisodes) {
-                                                        if (episode.consumed) {
-                                                            [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-                                                        }
-                                                    }
-
+                                                NSMutableArray<CDEpisode*>* playedEpisodes = [NSMutableArray array];
+                                                for (CDEpisode* episode in self.cachedEpisodes) {
+                                                    if (episode.consumed) [playedEpisodes addObject:episode];
+                                                }
+                                                [[CacheManager sharedCacheManager] removeCacheForEpisodes:playedEpisodes
+                                                                                                  automatic:NO
+                                                                                                 completion:^(NSError* error) {
+                                                    (void)error;
                                                     [self _reloadContent];
-                                                    [self.tableView reloadData];
                                                     [modelInfo close];
-                                                } afterDelay:0.3f];
+                                                }];
 
                                                 self.alertController = nil;
                                             }]];
@@ -678,13 +750,29 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
                                                 VDModalInfo* modelInfo = [VDModalInfo modalInfoWithProgressLabel:@"Clearing…".ls];
                                                 [modelInfo show];
 
-                                                [self perform:^(id sender) {
-                                                    [cman clearTheFuckingCache];
-                                                    [[ImageCacheManager sharedImageCacheManager] clearTheFuckingCache];
-                                                    [self _reloadContent];
-                                                    [self.tableView reloadData];
-                                                    [modelInfo close];
-                                                } afterDelay:0.3f];
+                                                [cman cancelDownloadsAndClearCacheWithCompletion:^(NSError* cacheError) {
+                                                    if (cacheError) {
+                                                        [modelInfo close];
+                                                        [self presentAlertControllerWithTitle:@"Unable to Clear Downloads".ls
+                                                                                      message:cacheError.localizedDescription
+                                                                                       button:@"OK".ls
+                                                                                     animated:YES
+                                                                                   completion:nil];
+                                                        return;
+                                                    }
+                                                    [[ImageCacheManager sharedImageCacheManager] cancelImageDownloadsAndClearCacheWithCompletion:^(BOOL imageSuccess) {
+                                                        [self _reloadContent];
+                                                        [self.tableView reloadData];
+                                                        [modelInfo close];
+                                                        if (!imageSuccess) {
+                                                            [self presentAlertControllerWithTitle:@"Unable to Clear Downloads".ls
+                                                                                          message:@"Some cached images could not be deleted. Restart the app and try again.".ls
+                                                                                           button:@"OK".ls
+                                                                                         animated:YES
+                                                                                       completion:nil];
+                                                        }
+                                                    }];
+                                                }];
 
                                                 self.alertController = nil;
                                             }]];

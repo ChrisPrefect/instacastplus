@@ -40,9 +40,19 @@ en_strings = read("InstacastWatch/en.lproj/Localizable.strings")
 
 free_bytes = function_body(storage, "func freeBytes(")
 total_bytes = function_body(storage, "func totalBytes(")
-int64_volume_resource_value = function_body(storage, "private func int64VolumeResourceValue(")
-cleanup = function_body(storage, "func cleanupIfNeeded(")
+int64_volume_resource_value = function_body(storage, "private nonisolated static func int64VolumeResourceValue(")
+cleanup_plan = function_body(storage, "nonisolated static func makeCleanupPlan(")
+cleanup_execution = function_body(storage, "nonisolated static func executeCleanup(")
+cleanup_removal = function_body(
+    storage,
+    "nonisolated static func removeLocalFiles(\n"
+    "        for episodes: [WatchEpisode],\n"
+    "        downloadsDirectory: URL,",
+)
 start_download = function_body(download, "func startDownload(")
+prepare_download = function_body(download, "private func preparePendingDownloadStart(")
+commit_evictions = function_body(download, "private func commitStorageEvictions(")
+persist_insufficient = function_body(download, "private func persistInsufficientStorageState(")
 queue_runner = function_body(download, "private func startQueuedDownloadsAfterReattach(")
 prioritize = function_body(download, "func prioritizeEpisode(")
 autofill = function_body(download, "private func autoFillEvictedEpisodes(")
@@ -73,26 +83,29 @@ require(
 )
 
 require(
-    "item.status = .evicted" in cleanup
-    and "item.status = .queued" not in cleanup,
+    "item.status = .evicted" in commit_evictions
+    and "item.status = .queued" not in commit_evictions,
     "Storage cleanup must not put evicted downloads back into the automatic queued state.",
 )
 
 require(
-    "projectedFreeBytes" in cleanup
-    and "guard projectedFreeBytes >= minimumFreeBytes else" in cleanup
-    and "return nil" in cleanup
-    and "let reclaimableBytes = localFileSize(for: episode)" in cleanup
-    and "max(expectedBytes, localFileSize(for: episode))" not in cleanup
-    and "for selectedCandidate in selectedCandidates" in cleanup
-    and "for episode in candidates where freeBytes() < minimumFreeBytes" not in cleanup,
+    "projectedFreeBytes" in cleanup_plan
+    and "hasSufficientCapacity: projectedFreeBytes >= minimumFreeBytes" in cleanup_plan
+    and "let reclaimableBytes = cleanupLocalFileSize" in cleanup_plan
+    and "max(expectedBytes, cleanupLocalFileSize" not in cleanup_plan
+    and "for episode in candidates where projectedFreeBytes < minimumFreeBytes" in cleanup_plan
+    and "WatchStorageManager.executeCleanup" in prepare_download
+    and "await removeLocalFiles(" in cleanup_execution
+    and "Task.detached(priority: .utility)" in cleanup_removal,
     "Storage cleanup must prove projected capacity from actual local file sizes before deleting existing downloads.",
 )
 
 require(
-    "guard let removed = WatchStorageManager.shared.cleanupIfNeeded" in start_download
-    and "download-storage-insufficient" in start_download
-    and "item.status = .evicted" in start_download,
+    "enqueuePendingDownloadStart" in start_download
+    and "WatchStorageManager.makeCleanupPlan" in prepare_download
+    and "persistInsufficientStorageState" in prepare_download
+    and "download-storage-insufficient" in persist_insufficient
+    and "item.status = .evicted" in persist_insufficient,
     "A new Watch download must not start, or evict existing files, when storage cannot be made sufficient.",
 )
 

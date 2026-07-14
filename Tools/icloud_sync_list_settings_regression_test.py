@@ -154,8 +154,11 @@ require('case "EpisodeList":' in insert_filter, "New local episode lists must qu
 require('case "EpisodeList":' in update_filter, "Edited local episode lists must queue subscription list settings.")
 require("syncRelevantEpisodeListKeys" in update_filter, "Episode-list queueing must be limited to payload fields.")
 
-process_objects = method_body(manager, "func processSyncObjects")
-require("listSettingsChanged" in process_objects, "Core Data list changes must be carried through processSyncObjects.")
+process_objects = method_body(manager, "func journalLocalOutboxObjects")
+require(
+    "(inserted + updated).contains" in process_objects,
+    "Core Data list changes must be carried through the local-change journal.",
+)
 require("subscriptionListSettingsRecordID()" in process_objects, "List changes must queue the ICSubscriptionListSettings singleton.")
 
 transient_keys = method_body(manager, "nonisolated static func transientSettingsKeysForSyncEngineCallback")

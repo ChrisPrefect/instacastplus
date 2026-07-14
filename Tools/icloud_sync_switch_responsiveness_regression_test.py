@@ -43,10 +43,15 @@ MANAGER = "\n".join(read("Classes/" + _n) for _n in ["ICiCloudSyncManager.swift"
 SETTINGS = read("Classes/ICiCloudSyncSettingsViewController.m")
 
 sync_options_changed = method_body(MANAGER, "@objc func syncOptionsChanged()")
-enable_branch = source_between(sync_options_changed, "if anySyncEnabled {", "} else if syncEngine != nil {")
+enable_branch = source_between(sync_options_changed, "if anySyncEnabled {", '\n        logSyncEvent("iCloud Sync deaktiviert")')
 require("initializeSyncEngineIfNeeded()" not in enable_branch, "The switch tap must not synchronously create CKSyncEngine.")
 require("queueDeviceRecord()" not in enable_branch, "The switch tap must not synchronously mutate CKSyncEngine pending changes.")
-require("scheduleCurrentEnabledDataForUpload()" in enable_branch, "The switch tap must schedule initial queueing asynchronously.")
+account_reconciliation = method_body(MANAGER, "func reconcileAvailableICloudAccount")
+require(
+    "refreshAccountStatus()" in enable_branch
+    and "scheduleCurrentEnabledDataForUpload()" in account_reconciliation,
+    "The switch tap must verify the account before scheduling initial queueing asynchronously.",
+)
 
 initial_queue_schedule = method_body(MANAGER, "func scheduleCurrentEnabledDataForUpload")
 require("Task.detached" in initial_queue_schedule, "Initial upload queueing must start from a detached background task.")
@@ -64,12 +69,12 @@ require("await self.performLowPrioritySync()" in low_priority_sync, "Automatic i
 require("MainActor.run" not in low_priority_sync, "Low-priority automatic sync must not hand CKSyncEngine across actors via MainActor.run.")
 
 perform_low_priority_sync = method_body(MANAGER, "func performLowPrioritySync")
-require("try await syncEngine.sendChanges()" in perform_low_priority_sync, "Low-priority automatic sync must still send queued changes.")
+require("sendChangesAndApplyCallbackOutcomes(syncEngine" in perform_low_priority_sync, "Low-priority automatic sync must still send queued changes through the callback-outcome wrapper.")
 require("try await syncEngine.fetchChanges()" in perform_low_priority_sync, "Low-priority automatic sync must still fetch remote changes.")
 
 plan_builder = method_body(MANAGER, "nonisolated static func buildInitialUploadPlan")
-require("episodeObjectHashesForInitialUploadPlan(offset:" in plan_builder, "Initial upload planning must page episode identifiers off the UI path.")
-require("subscribedFeedURLsForInitialUploadPlan(offset:" in plan_builder, "Initial upload planning must page feed identifiers off the UI path.")
+require("episodeObjectHashesForInitialUploadPlan(cursor:" in plan_builder, "Initial upload planning must page episode identifiers off the UI path.")
+require("subscribedFeedURLsForInitialUploadPlan(cursor:" in plan_builder, "Initial upload planning must page feed identifiers off the UI path.")
 require("MainActor.run" not in plan_builder and "await self." not in plan_builder, "Initial upload planning must not depend on the UI actor.")
 
 episode_fetch = method_body(MANAGER, "nonisolated static func episodeObjectHashesForInitialUploadPlan")
@@ -88,7 +93,7 @@ require("pendingKeys: &pendingKeys" in plan_apply, "Initial queue application mu
 require("await Task.yield()" in plan_apply, "Initial queue application must yield between CKSyncEngine state chunks.")
 require("queueDeviceRecord(stampLastSyncDate: true)" in plan_apply, "Initial user-data queueing must still publish a real Last Sync device record.")
 require("scheduleLowPrioritySync()" in plan_apply, "Initial queue application must schedule low-priority sync only after queued state is prepared.")
-require("recordInitialUploadBatchQueued(plan)" in plan_apply, "Initial queue application must register the bounded batch (cursor advances after confirmed upload) instead of queueing the whole library.")
+require("recordInitialUploadBatchesQueued(plan.pages)" in plan_apply, "Initial queue application must register every bounded page checkpoint before one consolidated send cycle.")
 
 add_pending_saves = method_body(MANAGER, "func addPendingSaves(_ recordIDs: [CKRecord.ID], pendingKeys: inout Set<String>")
 require("let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map" not in add_pending_saves, "Reusable pending-key additions must not rescan all pending CKSyncEngine changes.")

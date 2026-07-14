@@ -7,6 +7,8 @@
 "Wird entfernt" = "Wird entfernt";
 "Wartet" = "Wartet";
 "Download erneut versuchen" = "Download erneut versuchen";
+"Entfernen erneut versuchen" = "Entfernen erneut versuchen";
+"Tippen zum Wiederholen" = "Tippen zum Wiederholen";
 "Von Watch entfernen" = "Von Watch entfernen";
 "Episode" = "Episode";
 "Pause" = "Pause";
@@ -22,9 +24,15 @@
 "Audiodatei konnte nicht abgespielt werden." = "Audiodatei konnte nicht abgespielt werden.";
 "Nicht genügend Speicher auf der Watch." = "Nicht genügend Speicher auf der Watch.";
 "%@ frei · %d geladen" = "%@ frei · %d geladen";
+"Speicher wird ermittelt…" = "Speicher wird ermittelt…";
 "Speicher voll – Platz freigeben" = "Speicher voll – Platz freigeben";
 "Download unvollständig: HTTP 206 Partial Content." = "Download unvollständig: HTTP 206 Partial Content.";
 "Geladene Datei ist unvollständig." = "Geladene Datei ist unvollständig.";
+"Download-Datei konnte auf der Watch nicht gespeichert werden." = "Download-Datei konnte auf der Watch nicht gespeichert werden.";
 "Audiositzung konnte nicht aktiviert werden." = "Audiositzung konnte nicht aktiviert werden.";
 "Kapitel" = "Kapitel";
 "Wird übersprungen" = "Wird übersprungen";
+"Die defekte Audiodatei konnte nicht entfernt werden. Tippe, um es erneut zu versuchen." = "Die defekte Audiodatei konnte nicht entfernt werden. Tippe, um es erneut zu versuchen.";
+"Die Folge konnte nicht von der Watch entfernt werden. Tippe, um es erneut zu versuchen." = "Die Folge konnte nicht von der Watch entfernt werden. Tippe, um es erneut zu versuchen.";
+"Episoden werden geladen…" = "Episoden werden geladen…";
+"Episoden konnten nicht geladen werden. Tippen zum Wiederholen." = "Episoden konnten nicht geladen werden. Tippen zum Wiederholen.";

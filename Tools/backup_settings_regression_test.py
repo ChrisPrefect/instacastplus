@@ -40,6 +40,7 @@ missing_setting_tags = [
     "transcriptionFirstRunShown",
     "transcriptVisiblePreference",
     "podcastRefreshOnAppStart",
+    "notifyRefreshFailure",
 ]
 
 for tag in missing_setting_tags:
@@ -75,7 +76,11 @@ require(
     "ICBackupApplyColorHex(defaults, value, InterfaceThemeColorHexCode, InterfaceThemeColorCode)" in IMPORTER
     and "ICBackupApplyColorHex(defaults, value, PlayerThemeColorHexCode, PlayerThemeColorCode)" in IMPORTER
     and "ICBackupApplyColorHex(defaults, value, WidgetThemeColorHexCode, WidgetThemeColorCode)" in IMPORTER,
-    "Color hex imports must rebuild the archived UIColor defaults used by the app and widgets.",
+    "Color hex imports must update every app and widget color preference.",
+)
+require(
+    "ic_setColorHexString:hexString" in IMPORTER and "NSKeyedArchiver" not in IMPORTER,
+    "Color imports must persist canonical hex without recreating legacy UIKit archives.",
 )
 
 require("<appleWatchEpisodes>" in EXPORTER, "Backup export must include Apple Watch episode selections.")

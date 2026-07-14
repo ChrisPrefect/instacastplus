@@ -7,6 +7,7 @@
 //
 
 #import "CDList.h"
+#import "CacheManager.h"
 
 
 @implementation CDList
@@ -37,11 +38,27 @@
 
 - (NSArray*) sortedEpisodesWithLimit:(NSUInteger)limit
 {
+    return [self sortedEpisodesWithOffset:0 limit:limit];
+}
+
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset limit:(NSUInteger)limit
+{
+    return [self sortedEpisodesWithOffset:offset limit:limit error:NULL];
+}
+
+- (NSArray*) sortedEpisodesWithOffset:(NSUInteger)offset limit:(NSUInteger)limit error:(NSError**)error
+{
+    (void)error;
     NSArray* all = [self sortedEpisodes];
-    if (limit > 0 && all.count > limit) {
-        return [all subarrayWithRange:NSMakeRange(0, limit)];
+    if (offset >= all.count) {
+        return @[];
     }
-    return all;
+
+    NSUInteger count = all.count - offset;
+    if (limit > 0) {
+        count = MIN(count, limit);
+    }
+    return [all subarrayWithRange:NSMakeRange(offset, count)];
 }
 
 - (NSInteger) playbackTime
@@ -52,6 +69,29 @@
     }
     
     return playbackTime;
+}
+
+- (NSUInteger) numberOfPlayedEpisodes
+{
+    NSUInteger count = 0;
+    for (CDEpisode* episode in self.sortedEpisodes) {
+        if (episode.consumed) {
+            count++;
+        }
+    }
+    return count;
+}
+
+- (NSUInteger) numberOfPlayedDownloadedEpisodes
+{
+    NSSet<NSString*>* cachedHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
+    NSUInteger count = 0;
+    for (CDEpisode* episode in self.sortedEpisodes) {
+        if (episode.consumed && [cachedHashes containsObject:episode.objectHash]) {
+            count++;
+        }
+    }
+    return count;
 }
 
 - (IC_IMAGE*) image

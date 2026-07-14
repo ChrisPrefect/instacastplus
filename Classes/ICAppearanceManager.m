@@ -289,25 +289,15 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         rootViewController = ((MainViewController_4 *)rootViewController).presentedViewController;
     }
     
-    if ([USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive])
-    {
-        rootViewController.view.tintColor = [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-        rootWindow.tintColor = [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
+    UIColor* tintColor = nil;
+    if (![USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive]) {
+        tintColor = [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                           hexKey:InterfaceThemeColorHexCode
+                                 legacyArchiveKey:InterfaceThemeColorCode];
     }
-    else
-    {
-        if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
-        {
-            NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-            rootViewController.view.tintColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-            rootWindow.tintColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-        }
-        else
-        {
-            rootViewController.view.tintColor = [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-            rootWindow.tintColor = [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-        }
-    }
+    tintColor = tintColor ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
+    rootViewController.view.tintColor = tintColor;
+    rootWindow.tintColor = tintColor;
 }
 
 @end
@@ -322,15 +312,10 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     }
     else
     {
-        if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
-        {
-            NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-            return [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-        }
-        else
-        {
-            return [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-        }
+        return [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                      hexKey:InterfaceThemeColorHexCode
+                            legacyArchiveKey:InterfaceThemeColorCode]
+            ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
     }
 }
 
@@ -410,15 +395,10 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
     }
     else
     {
-        if ([USER_DEFAULTS objectForKey:InterfaceThemeColorCode])
-        {
-            NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:InterfaceThemeColorCode];
-            return [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-        }
-        else
-        {
-            return [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-        }
+        return [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                      hexKey:InterfaceThemeColorHexCode
+                            legacyArchiveKey:InterfaceThemeColorCode]
+            ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
     }
 }
 

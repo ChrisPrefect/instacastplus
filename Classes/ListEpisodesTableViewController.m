@@ -20,9 +20,17 @@
 #define EPISODE_PAGE_SIZE 25
 
 @interface ListEpisodesTableViewController ()
-@property (nonatomic) NSInteger loadPages;
-@property (nonatomic) NSArray* allEpisodes;
 @property (nonatomic) NSInteger episodesLoadGeneration;
+@property (nonatomic, strong) NSMutableArray<CDEpisode*>* loadedEpisodes;
+@property (nonatomic) NSUInteger nextPageOffset;
+@property (nonatomic) BOOL loadingPage;
+@property (nonatomic) BOOL reachedListEnd;
+@property (nonatomic, strong) NSError* pageError;
+@property (nonatomic) BOOL statisticsLoaded;
+@property (nonatomic) NSUInteger totalEpisodeCount;
+@property (nonatomic) NSInteger totalPlaybackTime;
+@property (nonatomic) NSUInteger playedEpisodeCount;
+@property (nonatomic) NSUInteger playedDownloadedEpisodeCount;
 @end
 
 @implementation ListEpisodesTableViewController {
@@ -284,45 +292,71 @@
 
 #pragma mark -
 
-- (NSArray*) _loadNextPage
+- (void)_updatePageFooter
 {
-    NSInteger numEpisodes = [self.allEpisodes count];
-    
-    NSInteger start = MIN(numEpisodes, self.loadPages * EPISODE_PAGE_SIZE);
-    NSInteger end = MIN(numEpisodes, start+EPISODE_PAGE_SIZE);
-    
-    if (end-start <= 0) {
-        return nil;
+    if (self.pageError) {
+        UIButton* retryButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        retryButton.frame = CGRectMake(0, 0, CGRectGetWidth(self.tableView.bounds), 72.0);
+        retryButton.titleLabel.numberOfLines = 0;
+        retryButton.titleLabel.textAlignment = NSTextAlignmentCenter;
+        retryButton.titleLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightSemibold];
+        [retryButton setTitle:@"Episodes could not be loaded. Tap to try again.".ls forState:UIControlStateNormal];
+        [retryButton addTarget:self action:@selector(_retryPageLoad:) forControlEvents:UIControlEventTouchUpInside];
+        retryButton.accessibilityHint = @"Retry".ls;
+        self.tableView.tableFooterView = retryButton;
+        return;
     }
-    
-    NSArray* newEpisodes = [self.allEpisodes subarrayWithRange:NSMakeRange(start, end-start)];
-    if (self.episodes) {
-        self.episodes = [self.episodes arrayByAddingObjectsFromArray:newEpisodes];
-    } else {
-        self.episodes = newEpisodes;
-    }
-    self.loadPages++;
 
-    return newEpisodes;
+    if (self.loadingPage) {
+        UIView* footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, CGRectGetWidth(self.tableView.bounds), 44.0)];
+        UIActivityIndicatorView* spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        spinner.center = CGPointMake(CGRectGetMidX(footer.bounds), CGRectGetMidY(footer.bounds));
+        spinner.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+        [spinner startAnimating];
+        [footer addSubview:spinner];
+        self.tableView.tableFooterView = footer;
+        return;
+    }
+
+    self.tableView.tableFooterView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 1)];
 }
 
-- (void) updateEpisodes
+- (void)_retryPageLoad:(id)sender
 {
-    NSInteger generation = ++self.episodesLoadGeneration;
+    (void)sender;
+    self.pageError = nil;
+    [self _loadNextPage];
+}
+
+- (void) _loadNextPage
+{
+    if (self.loadingPage || self.reachedListEnd || self.pageError) {
+        return;
+    }
+
+    self.loadingPage = YES;
+    [self _updatePageFooter];
+
+    NSInteger generation = self.episodesLoadGeneration;
+    NSUInteger offset = self.nextPageOffset;
     NSManagedObjectID* listID = self.list.objectID;
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        __block NSArray* episodeIDs = @[];
+        __block NSArray<NSManagedObjectID*>* episodeIDs = nil;
+        __block NSError* pageError = nil;
         NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
         [context performBlockAndWait:^{
-            NSError* error = nil;
-            CDList* list = (CDList*)[context existingObjectWithID:listID error:&error];
-            if (!list || error) {
+            CDList* list = (CDList*)[context existingObjectWithID:listID error:&pageError];
+            if (!list || pageError) {
                 return;
             }
 
-            NSArray* episodes = [list sortedEpisodes];
-            episodeIDs = [episodes valueForKey:@"objectID"];
+            NSArray<CDEpisode*>* page = [list sortedEpisodesWithOffset:offset
+                                                                  limit:EPISODE_PAGE_SIZE
+                                                                  error:&pageError];
+            if (page) {
+                episodeIDs = [page valueForKey:@"objectID"];
+            }
         }];
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -330,30 +364,153 @@
                 return;
             }
 
-            NSMutableArray* episodes = [[NSMutableArray alloc] initWithCapacity:episodeIDs.count];
+            self.loadingPage = NO;
+            if (pageError) {
+                self.pageError = pageError;
+                [self _updatePageFooter];
+                return;
+            }
+
+            NSUInteger oldCount = self.loadedEpisodes.count;
+            NSMutableArray<CDEpisode*>* pageEpisodes = [[NSMutableArray alloc] initWithCapacity:episodeIDs.count];
             for(NSManagedObjectID* episodeID in episodeIDs) {
                 NSError* error = nil;
                 CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeID error:&error];
                 if (episode && !error) {
-                    [episodes addObject:episode];
+                    [pageEpisodes addObject:episode];
                 }
             }
 
-            self.allEpisodes = episodes;
-            self.loadPages = 0;
-            self.episodes = nil;
-            [self _loadNextPage];
-            [self reloadDataAndPreserveSelection];
+            [self.loadedEpisodes addObjectsFromArray:pageEpisodes];
+            self.episodes = self.loadedEpisodes;
+            self.nextPageOffset = offset + episodeIDs.count;
+            self.reachedListEnd = episodeIDs.count < EPISODE_PAGE_SIZE;
+            if (self.statisticsLoaded && self.nextPageOffset >= self.totalEpisodeCount) {
+                self.reachedListEnd = YES;
+            }
+
+            if (oldCount == 0) {
+                [self reloadDataAndPreserveSelection];
+            }
+            else if (pageEpisodes.count > 0) {
+                NSMutableArray<NSIndexPath*>* indexPaths = [[NSMutableArray alloc] initWithCapacity:pageEpisodes.count];
+                for (NSUInteger index = oldCount; index < self.loadedEpisodes.count; index++) {
+                    [indexPaths addObject:[NSIndexPath indexPathForRow:index inSection:0]];
+                }
+                [self.tableView insertRowsAtIndexPaths:indexPaths withRowAnimation:UITableViewRowAnimationNone];
+            }
+
+            [self _updatePageFooter];
             [self _updateToolbarItemsAnimated:NO];
             [self _updateToolbarLabels];
             [self _restoreScrollPositionIfNeeded];
         });
+
+        if (offset != 0 || pageError) {
+            return;
+        }
+
+        __block NSUInteger totalEpisodeCount = 0;
+        __block NSInteger totalPlaybackTime = 0;
+        __block NSUInteger playedEpisodeCount = 0;
+        __block NSUInteger playedDownloadedEpisodeCount = 0;
+        [context performBlockAndWait:^{
+            NSError* listError = nil;
+            CDList* list = (CDList*)[context existingObjectWithID:listID error:&listError];
+            if (!list || listError) {
+                return;
+            }
+            totalEpisodeCount = list.numberOfEpisodes;
+            totalPlaybackTime = list.playbackTime;
+            playedEpisodeCount = list.numberOfPlayedEpisodes;
+            playedDownloadedEpisodeCount = list.numberOfPlayedDownloadedEpisodes;
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != self.episodesLoadGeneration) {
+                return;
+            }
+            self.totalEpisodeCount = totalEpisodeCount;
+            self.totalPlaybackTime = totalPlaybackTime;
+            self.playedEpisodeCount = playedEpisodeCount;
+            self.playedDownloadedEpisodeCount = playedDownloadedEpisodeCount;
+            self.statisticsLoaded = YES;
+            if (self.nextPageOffset >= totalEpisodeCount) {
+                self.reachedListEnd = YES;
+            }
+            [self _updatePageFooter];
+            [self _updateToolbarLabels];
+            [self _updateToolbarItemsAnimated:NO];
+        });
     });
 }
 
-- (void)enumerateEpisodesUsingBlock:(void (^)(CDEpisode* episode, NSUInteger idx, BOOL *stop))block
+- (void) updateEpisodes
 {
-    [self.allEpisodes enumerateObjectsUsingBlock:block];
+    self.episodesLoadGeneration++;
+    self.loadedEpisodes = [[NSMutableArray alloc] init];
+    self.episodes = self.loadedEpisodes;
+    self.nextPageOffset = 0;
+    self.loadingPage = NO;
+    self.reachedListEnd = NO;
+    self.pageError = nil;
+    self.statisticsLoaded = NO;
+    self.totalEpisodeCount = 0;
+    self.totalPlaybackTime = 0;
+    self.playedEpisodeCount = 0;
+    self.playedDownloadedEpisodeCount = 0;
+    [self.tableView reloadData];
+    [self _updateToolbarLabels];
+    [self _loadNextPage];
+}
+
+- (void) loadEpisodeObjectIDsForBulkActionWithCompletion:(void (^)(NSArray<NSManagedObjectID*>*, NSError*))completion
+{
+    if (!completion) {
+        return;
+    }
+
+    NSManagedObjectID* listID = self.list.objectID;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        __block NSMutableArray<NSManagedObjectID*>* episodeObjectIDs = [[NSMutableArray alloc] init];
+        __block NSError* loadError = nil;
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        [context performBlockAndWait:^{
+            CDList* list = (CDList*)[context existingObjectWithID:listID error:&loadError];
+            if (!list || loadError) {
+                return;
+            }
+
+            NSUInteger offset = 0;
+            NSUInteger pageSize = 500;
+            if ([list isKindOfClass:[CDEpisodeList class]] &&
+                [((CDEpisodeList*)list).orderBy isEqualToString:@"timeLeft"]) {
+                // timeLeft must be globally sorted in memory; request it once instead of
+                // repeating that full lightweight sort for every bulk-ID page.
+                pageSize = 0;
+            }
+
+            while (!loadError) {
+                @autoreleasepool {
+                    NSArray<CDEpisode*>* page = [list sortedEpisodesWithOffset:offset
+                                                                          limit:pageSize
+                                                                          error:&loadError];
+                    if (!page || loadError) {
+                        break;
+                    }
+                    [episodeObjectIDs addObjectsFromArray:[page valueForKey:@"objectID"]];
+                    if (pageSize == 0 || page.count < pageSize) {
+                        break;
+                    }
+                    offset += page.count;
+                }
+            }
+        }];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(loadError ? @[] : episodeObjectIDs, loadError);
+        });
+    });
 }
 
 - (BOOL)_episode:(CDEpisode*)episode matchesCurrentEpisodeList:(CDEpisodeList*)list
@@ -404,19 +561,36 @@
     return YES;
 }
 
-- (void)_removeEpisode:(CDEpisode*)episode fromArrayProperty:(NSString*)propertyName
+- (BOOL)_removeLoadedEpisode:(CDEpisode*)episode
 {
-    NSMutableArray* mutableEpisodes = [[self valueForKey:propertyName] mutableCopy];
-    NSUInteger index = [mutableEpisodes indexOfObject:episode];
+    NSUInteger index = [self.loadedEpisodes indexOfObject:episode];
     if (index == NSNotFound && episode.objectHash.length > 0) {
-        index = [mutableEpisodes indexOfObjectPassingTest:^BOOL(id candidate, NSUInteger idx, BOOL* stop) {
+        index = [self.loadedEpisodes indexOfObjectPassingTest:^BOOL(id candidate, NSUInteger idx, BOOL* stop) {
             return [[candidate objectHash] isEqualToString:episode.objectHash];
         }];
     }
-    if (index != NSNotFound) {
-        [mutableEpisodes removeObjectAtIndex:index];
-        [self setValue:[mutableEpisodes copy] forKey:propertyName];
+    if (index == NSNotFound) {
+        return NO;
     }
+
+    [self.loadedEpisodes removeObjectAtIndex:index];
+    self.episodes = self.loadedEpisodes;
+    // The backing query has lost this row too. Continue exactly after the remaining
+    // contiguous prefix or the next OFFSET page would skip one episode.
+    self.nextPageOffset = self.loadedEpisodes.count;
+    if (self.statisticsLoaded) {
+        self.totalEpisodeCount = (self.totalEpisodeCount > 0) ? self.totalEpisodeCount - 1 : 0;
+        self.totalPlaybackTime = MAX(0, self.totalPlaybackTime - episode.duration);
+        if (episode.consumed && self.playedEpisodeCount > 0) {
+            self.playedEpisodeCount--;
+        }
+        if (episode.consumed &&
+            [[CacheManager sharedCacheManager].cachedEpisodeObjectHashes containsObject:episode.objectHash] &&
+            self.playedDownloadedEpisodeCount > 0) {
+            self.playedDownloadedEpisodeCount--;
+        }
+    }
+    return YES;
 }
 
 - (BOOL) _removeEpisodeFromDisplayedListIfNeededAfterMutation:(CDEpisode*)episode atIndexPath:(NSIndexPath*)indexPath
@@ -434,8 +608,7 @@
     }
 
     self.suppressNextListReload = YES;
-    [self _removeEpisode:episode fromArrayProperty:@"episodes"];
-    [self _removeEpisode:episode fromArrayProperty:@"allEpisodes"];
+    [self _removeLoadedEpisode:episode];
     [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
     return YES;
 }
@@ -457,7 +630,6 @@
     if (_didRestoreScrollPosition) {
         return;
     }
-    _didRestoreScrollPosition = YES;
 
     NSString* key = [self _scrollPersistenceKey];
     NSNumber* storedOffset = ICListScrollPositionForKey(key);
@@ -466,18 +638,15 @@
         CGFloat requiredHeight = targetOffset + CGRectGetHeight(self.tableView.bounds);
         [self.tableView layoutIfNeeded];
 
-        // Ensure enough pages are loaded before restoring a deep scroll offset.
-        while (self.episodes.count < self.allEpisodes.count &&
-               self.tableView.contentSize.height < requiredHeight) {
-            NSArray* newEpisodes = [self _loadNextPage];
-            if ([newEpisodes count] == 0) {
-                break;
-            }
-            [self reloadDataAndPreserveSelection];
-            [self.tableView layoutIfNeeded];
+        // Continue after each asynchronous page. The old synchronous while-loop laid
+        // out every intermediate page on main before the user could interact.
+        if (self.tableView.contentSize.height < requiredHeight && !self.reachedListEnd) {
+            [self _loadNextPage];
+            return;
         }
     }
 
+    _didRestoreScrollPosition = YES;
     ICRestoreScrollPositionForScrollView(key, self.tableView);
 }
 
@@ -488,19 +657,47 @@
 
 #pragma mark -
 
-- (NSInteger) _playbackTime
+- (NSInteger)_numberOfDisplayEpisodes
 {
-    NSInteger playbackTime = 0;
-    for(CDEpisode* episode in self.allEpisodes) {
-        playbackTime += episode.duration;
+    return self.statisticsLoaded ? self.totalEpisodeCount : self.loadedEpisodes.count;
+}
+
+- (NSInteger)_numberOfNotPlayedDisplayEpisodes
+{
+    if (self.statisticsLoaded) {
+        return self.totalEpisodeCount - MIN(self.totalEpisodeCount, self.playedEpisodeCount);
     }
-    
-    return playbackTime;
+    return [super _numberOfNotPlayedDisplayEpisodes];
+}
+
+- (NSInteger)_numberOfPlayedDisplayEpisodes
+{
+    return self.statisticsLoaded ? self.playedEpisodeCount : [super _numberOfPlayedDisplayEpisodes];
+}
+
+- (NSInteger)_numberOfPlayedDownloadedEpisodes
+{
+    return self.statisticsLoaded ? self.playedDownloadedEpisodeCount : [super _numberOfPlayedDownloadedEpisodes];
+}
+
+- (NSString*)_selectionToggleTitleKeyForSelectedCount:(NSUInteger)selectedCount rowCount:(NSUInteger)rowCount
+{
+    if (!self.reachedListEnd && selectedCount < rowCount) {
+        return @"All Loaded";
+    }
+    return [super _selectionToggleTitleKeyForSelectedCount:selectedCount rowCount:rowCount];
 }
 
 - (void) _updateToolbarLabels
 {
-    NSInteger numEpisodes = [self.list numberOfEpisodes];
+    if (!self.statisticsLoaded) {
+        self.toolbarLabelsViewController.mainText = @"Loading…".ls;
+        self.toolbarLabelsViewController.auxiliaryText = @"";
+        [self.toolbarLabelsViewController layout];
+        return;
+    }
+
+    NSUInteger numEpisodes = self.totalEpisodeCount;
     
     if (numEpisodes == 0) {
         self.toolbarLabelsViewController.mainText = @"No Episodes".ls;
@@ -508,11 +705,10 @@
     }
     else
     {
-        self.toolbarLabelsViewController.mainText = (numEpisodes == 1) ? @"1 Episode".ls : [NSString stringWithFormat:@"%d Episodes".ls, numEpisodes];
+        self.toolbarLabelsViewController.mainText = (numEpisodes == 1) ? @"1 Episode".ls : [NSString stringWithFormat:@"%d Episodes".ls, (int)MIN(numEpisodes, INT_MAX)];
         
-        NSInteger duration = [self _playbackTime];
         NSValueTransformer* durationTransformer = [NSValueTransformer valueTransformerForName:kICDurationValueTransformer];
-        NSString* durString = [durationTransformer transformedValue:@(duration)];
+        NSString* durString = [durationTransformer transformedValue:@(self.totalPlaybackTime)];
         self.toolbarLabelsViewController.auxiliaryText = durString;
     }
     
@@ -527,15 +723,10 @@
         return;
     }
     
-    UIEdgeInsets insets = scrollView.contentInset;
-    CGPoint offset = scrollView.contentOffset;
-    CGPoint bottomScroll = CGPointMake(0, size.height - CGRectGetHeight(scrollView.frame) + insets.top);
-    
-    if (offset.y > bottomScroll.y) {
-        NSArray* newEpisodes = [self _loadNextPage];
-        if ([newEpisodes count] > 0) {
-            [self reloadDataAndPreserveSelection];
-        }
+    CGFloat visibleBottom = scrollView.contentOffset.y + CGRectGetHeight(scrollView.bounds);
+    CGFloat prefetchDistance = MAX(240.0, CGRectGetHeight(scrollView.bounds) * 0.5);
+    if (visibleBottom >= size.height - prefetchDistance) {
+        [self _loadNextPage];
     }
 }
 
@@ -579,15 +770,7 @@
         return;
     }
 
-    __block BOOL hasPlayedEpisodes = NO;
-    [self.allEpisodes enumerateObjectsUsingBlock:^(CDEpisode* episode, NSUInteger idx, BOOL *stop) {
-        if (episode.consumed) {
-            hasPlayedEpisodes = YES;
-            *stop = YES;
-        }
-    }];
-
-    if (!hasPlayedEpisodes) {
+    if ([self _numberOfPlayedDisplayEpisodes] == 0) {
         return;
     }
 
@@ -686,10 +869,9 @@
     // synchronously stops playback, whose notifications reload this table. With that
     // reload between the array mutation and deleteRows, UITableView asserted
     // ("Invalid number of rows" — TestFlight crash "Beim Löschen einer Folge,
-    // während sie lief"). Removing from allEpisodes by OBJECT, not by row: with an
-    // active search filter the row indexes of the two arrays differ.
-    [self _removeEpisode:episode fromArrayProperty:@"episodes"];
-    [self _removeEpisode:episode fromArrayProperty:@"allEpisodes"];
+    // während sie lief"). Remove by object because the visible index and backing
+    // page offset have to be updated together.
+    [self _removeLoadedEpisode:episode];
     [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
 
     if (playlist) {

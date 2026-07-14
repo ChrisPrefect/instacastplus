@@ -14,6 +14,39 @@ import UIKit
 @available(iOS 17.0, *)
 extension ICiCloudSyncManager {
 
+    nonisolated static func localOutboxCaptureAccountRecordName(
+        defaults: UserDefaults,
+        verifiedAccountRecordName: String?
+    ) -> String? {
+        if let verifiedAccountRecordName, !verifiedAccountRecordName.isEmpty {
+            return verifiedAccountRecordName
+        }
+        if defaults.bool(forKey: localOutboxHasVerifiedAccountKey)
+            || defaults.bool(forKey: localOutboxAwaitingAccountSwitchKey) {
+            return defaults.string(forKey: localOutboxPendingScopeKey)
+        }
+        return localOutboxUnboundAccountRecordName
+    }
+
+    func currentPendingLocalOutboxScope() -> String? {
+        defaults.string(forKey: Self.localOutboxPendingScopeKey)
+    }
+
+    @discardableResult
+    func ensurePendingLocalOutboxScope() -> String {
+        if let scope = currentPendingLocalOutboxScope(), !scope.isEmpty {
+            return scope
+        }
+        return rotatePendingLocalOutboxScope()
+    }
+
+    @discardableResult
+    func rotatePendingLocalOutboxScope() -> String {
+        let scope = "\(Self.localOutboxPendingAccountRecordName):\(UUID().uuidString)"
+        defaults.set(scope, forKey: Self.localOutboxPendingScopeKey)
+        return scope
+    }
+
     // `nonisolated` so the runtime doesn't assert the main-queue executor at entry if the
     // notification is ever delivered off the main thread (which would crash a MainActor
     // method). Off-main UserDefaults changes aren't user-driven settings edits, so we ignore
@@ -26,42 +59,85 @@ extension ICiCloudSyncManager {
         }
     }
 
-    // MUST stay `nonisolated`. NotificationCenter delivers this synchronously on whatever
-    // thread performed the Core Data change. A background feed-refresh merge (a child
-    // context saving into the main context) delivers it on that background thread. If this
-    // method were MainActor-isolated (the class default), the Swift runtime would assert
-    // the main-queue executor at method entry — `dispatch_assert_queue` → EXC_BREAKPOINT —
-    // and crash before any of our code runs. So we do only thread-safe work here (extract
-    // object IDs) and hop to the main actor for everything that touches our state.
+    // MUST stay `nonisolated`: background context merges deliver this notification on the
+    // saving queue. Main-context user edits are journaled synchronously so the outbox row and
+    // the edited episode/feed are committed (or rolled back) by the same Core Data save.
     @objc nonisolated func coreDataDidChange(_ notification: Notification) {
         let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: ICiCloudSyncEpisodesEnabled) || defaults.bool(forKey: ICiCloudSyncSubscriptionsEnabled) else { return }
+        let capturesEpisodes = defaults.bool(forKey: Self.episodesSyncHasParticipatedKey)
+        let capturesSubscriptions = defaults.bool(forKey: Self.subscriptionsSyncHasParticipatedKey)
+        guard capturesEpisodes || capturesSubscriptions else { return }
+        let verifiedAccountRecordName = syncEngineCallbackGate.verifiedAccountRecordNameForLocalCapture()
+        guard let accountRecordName = Self.localOutboxCaptureAccountRecordName(
+            defaults: defaults,
+            verifiedAccountRecordName: verifiedAccountRecordName
+        ) else { return }
 
-        // Filter down to sync-relevant changes HERE, synchronously to the notification, where
-        // `changedValuesForCurrentEvent` is still populated (it is empty again by the time the
-        // main-actor task below runs). A feed refresh rewrites lastUpdate/etag/contentHash on
-        // every merged feed and may touch episode metadata (duration/fulltext) — none of which
-        // are synced. Dropping those objects by entity and changed-key name avoids resolving
-        // them on the main thread later (fault firing that contends with the background
-        // merge's writes for the SQLite store lock — the pull-to-refresh stutter).
         let insertedIDs = Self.syncRelevantInsertedObjectIDs(in: notification)
         let updatedIDs = Self.syncRelevantUpdatedObjectIDs(in: notification)
         let deletedIDs = Self.syncRelevantDeletedObjectIDs(in: notification)
-        guard !insertedIDs.isEmpty || !updatedIDs.isEmpty || !deletedIDs.isEmpty else { return }
+        let deletedFeedURLs = Array(Set(Self.syncRelevantDeletedFeedURLs(in: notification)
+            + Self.syncRelevantRedirectedFeedURLs(in: notification)))
+        let deletedPropertyFeedURLs = Self.syncRelevantDeletedPropertyFeedURLs(in: notification)
+        guard !insertedIDs.isEmpty || !updatedIDs.isEmpty || !deletedIDs.isEmpty
+                || !deletedFeedURLs.isEmpty || !deletedPropertyFeedURLs.isEmpty else { return }
 
-        if !Thread.isMainThread {
-            Self.logSyncEvent("Core-Data-Änderung vom Hintergrund-Thread empfangen", metadata: [
-                "insertedCount": insertedIDs.count,
-                "updatedCount": updatedIDs.count,
-                "deletedCount": deletedIDs.count,
-            ])
+        if Thread.isMainThread {
+            let notificationBox = CoreDataNotificationBox(notification)
+            MainActor.assumeIsolated {
+                guard isStarted, !isApplyingRemoteChange else { return }
+                journalLocalOutboxChanges(notificationBox.notification,
+                                          accountRecordName: accountRecordName,
+                                          capturesEpisodes: capturesEpisodes,
+                                          capturesSubscriptions: capturesSubscriptions,
+                                          deletedFeedURLs: deletedFeedURLs,
+                                          deletedPropertyFeedURLs: deletedPropertyFeedURLs)
+            }
+            return
         }
 
-        // NSManagedObjectID is documented as thread-safe; box it so it can cross to the
-        // main actor under strict concurrency.
-        let changes = CoreDataChangeIDs(inserted: insertedIDs, updated: updatedIDs, deleted: deletedIDs)
+        Self.logSyncEvent("Core-Data-Änderung vom Hintergrund-Thread empfangen", metadata: [
+            "insertedCount": insertedIDs.count,
+            "updatedCount": updatedIDs.count,
+            "deletedCount": deletedIDs.count,
+            "deletedFeedURLCount": deletedFeedURLs.count,
+            "deletedPropertyFeedURLCount": deletedPropertyFeedURLs.count,
+        ])
+        let changes = CoreDataChangeIDs(inserted: insertedIDs,
+                                        updated: updatedIDs,
+                                        deleted: deletedIDs,
+                                        deletedFeedURLs: deletedFeedURLs,
+                                        deletedPropertyFeedURLs: deletedPropertyFeedURLs,
+                                        accountRecordName: accountRecordName,
+                                        capturesEpisodes: capturesEpisodes,
+                                        capturesSubscriptions: capturesSubscriptions)
         Task { @MainActor [weak self] in
-            self?.processSyncObjectIDs(inserted: changes.inserted, updated: changes.updated, deleted: changes.deleted)
+            self?.processSyncObjectIDs(inserted: changes.inserted,
+                                       updated: changes.updated,
+                                       deleted: changes.deleted,
+                                       deletedFeedURLs: changes.deletedFeedURLs,
+                                       deletedPropertyFeedURLs: changes.deletedPropertyFeedURLs,
+                                       accountRecordName: changes.accountRecordName,
+                                       capturesEpisodes: changes.capturesEpisodes,
+                                       capturesSubscriptions: changes.capturesSubscriptions)
+        }
+    }
+
+    // The engine is fed only after the main context has actually committed the durable row.
+    @objc nonisolated func coreDataDidSave(_ notification: Notification) {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Self.episodesSyncHasParticipatedKey)
+                || defaults.bool(forKey: Self.subscriptionsSyncHasParticipatedKey) else { return }
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                guard !isApplyingRemoteChange else { return }
+                scheduleLocalOutboxDrain()
+            }
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self, !self.isApplyingRemoteChange else { return }
+            self.scheduleLocalOutboxDrain()
         }
     }
 
@@ -69,6 +145,19 @@ extension ICiCloudSyncManager {
         let inserted: [NSManagedObjectID]
         let updated: [NSManagedObjectID]
         let deleted: [NSManagedObjectID]
+        let deletedFeedURLs: [String]
+        let deletedPropertyFeedURLs: [String]
+        let accountRecordName: String
+        let capturesEpisodes: Bool
+        let capturesSubscriptions: Bool
+    }
+
+    struct CoreDataNotificationBox: @unchecked Sendable {
+        let notification: Notification
+
+        init(_ notification: Notification) {
+            self.notification = notification
+        }
     }
 
     // Synced episode state is exactly played/favorite/position; synced feed fields are the ones
@@ -143,10 +232,43 @@ extension ICiCloudSyncManager {
         return ids
     }
 
-    // Only feed deletions matter to the sync (they queue the subscription-record delete).
+    // Feed and feed-property deletions matter. Their values must be copied synchronously:
+    // resolving a deleted object ID after the context save is too late.
     nonisolated static func syncRelevantDeletedObjectIDs(in notification: Notification) -> [NSManagedObjectID] {
         guard let objects = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> else { return [] }
-        return objects.compactMap { $0.objectID.entity.name == "Feed" ? $0.objectID : nil }
+        return objects.compactMap {
+            $0.objectID.entity.name == "Feed" || $0.objectID.entity.name == "FeedProperty" ? $0.objectID : nil
+        }
+    }
+
+    nonisolated static func syncRelevantDeletedFeedURLs(in notification: Notification) -> [String] {
+        guard let objects = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> else { return [] }
+        return objects.compactMap { object in
+            if let feed = object as? CDFeed {
+                return feed.sourceURL?.absoluteString ?? (feed.value(forKey: "sourceURL_") as? String)
+            }
+            return nil
+        }
+    }
+
+    nonisolated static func syncRelevantRedirectedFeedURLs(in notification: Notification) -> [String] {
+        guard let objects = notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject> else { return [] }
+        return objects.compactMap { object in
+            guard object.objectID.entity.name == "Feed",
+                  object.changedValuesForCurrentEvent().keys.contains("sourceURL_"),
+                  let oldURL = object.committedValues(forKeys: ["sourceURL_"])["sourceURL_"] as? String,
+                  oldURL != (object.value(forKey: "sourceURL_") as? String) else { return nil }
+            return oldURL
+        }
+    }
+
+    nonisolated static func syncRelevantDeletedPropertyFeedURLs(in notification: Notification) -> [String] {
+        guard let objects = notification.userInfo?[NSDeletedObjectsKey] as? Set<NSManagedObject> else { return [] }
+        return objects.compactMap { object in
+            guard let property = object as? CDFeedProperty,
+                  let key = property.key, !internalFeedPropertyKeys.contains(key) else { return nil }
+            return property.feed?.sourceURL?.absoluteString
+        }
     }
 
     nonisolated static func isInternalFeedProperty(_ object: NSManagedObject) -> Bool {
@@ -154,9 +276,15 @@ extension ICiCloudSyncManager {
         return internalFeedPropertyKeys.contains(key)
     }
 
-    func processSyncObjectIDs(inserted: [NSManagedObjectID], updated: [NSManagedObjectID], deleted: [NSManagedObjectID]) {
+    func processSyncObjectIDs(inserted: [NSManagedObjectID],
+                              updated: [NSManagedObjectID],
+                              deleted: [NSManagedObjectID],
+                              deletedFeedURLs: [String] = [],
+                              deletedPropertyFeedURLs: [String] = [],
+                              accountRecordName: String? = nil,
+                              capturesEpisodes: Bool? = nil,
+                              capturesSubscriptions: Bool? = nil) {
         guard isStarted else { return }
-        guard episodesSyncEnabled || subscriptionsSyncEnabled else { return }
         guard let context = databaseManager.objectContext else { return }
         let start = CFAbsoluteTimeGetCurrent()
         // Drop (and consume) IDs that were just mutated by a remote apply, so they are not
@@ -171,9 +299,21 @@ extension ICiCloudSyncManager {
         func resolve(_ ids: [NSManagedObjectID]) -> [NSManagedObject] {
             ids.compactMap { try? context.existingObject(with: $0) }
         }
-        processSyncObjects(inserted: resolve(inserted),
-                           updated: resolve(updated),
-                           deleted: resolve(deleted))
+        let currentCaptureScope = Self.localOutboxCaptureAccountRecordName(
+            defaults: defaults,
+            verifiedAccountRecordName: syncEngineCallbackGate.verifiedAccountRecordNameForLocalCapture()
+        )
+        let accountRecordName = accountRecordName ?? currentCaptureScope
+        guard let accountRecordName, !accountRecordName.isEmpty,
+              accountRecordName == currentCaptureScope else { return }
+        journalLocalOutboxObjects(inserted: resolve(inserted),
+                                  updated: resolve(updated),
+                                  deletedFeedURLs: deletedFeedURLs,
+                                  deletedPropertyFeedURLs: deletedPropertyFeedURLs,
+                                  accountRecordName: accountRecordName,
+                                  capturesEpisodes: capturesEpisodes ?? defaults.bool(forKey: Self.episodesSyncHasParticipatedKey),
+                                  capturesSubscriptions: capturesSubscriptions ?? defaults.bool(forKey: Self.subscriptionsSyncHasParticipatedKey),
+                                  changesAlreadyFiltered: true)
         // Watchdog: this runs on the main thread, so flag it if it ever gets expensive (e.g. a
         // refresh that updates many episodes) so a future hang can be localized from the log.
         let elapsedMs = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
@@ -198,122 +338,697 @@ extension ICiCloudSyncManager {
         return remaining
     }
 
-    func processSyncObjects(inserted: [NSManagedObject],
-                                    updated: [NSManagedObject],
-                                    deleted: [NSManagedObject]) {
-        guard isStarted else { return }
+    struct LocalOutboxMutation {
+        let recordName: String
+        let category: String
+        let operation: String
+        let revision: String
+        let changedAt: Date
+        let payload: [String: Any]
+    }
 
-        var episodeObjectHashes: [String] = []
-        var seenEpisodeHashes = Set<String>()
-        var feedURLsToQueue: [String] = []
-        var feedHashUpdates: [String: String] = [:]
-        var feedURLsToDelete: [String] = []
-        var seenFeedURLs = Set<String>()
-        var listSettingsChanged = false
+    func journalLocalOutboxChanges(_ notification: Notification,
+                                   accountRecordName: String,
+                                   capturesEpisodes: Bool,
+                                   capturesSubscriptions: Bool,
+                                   deletedFeedURLs: [String],
+                                   deletedPropertyFeedURLs: [String]) {
+        let inserted = (notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject>) ?? []
+        let updated = (notification.userInfo?[NSUpdatedObjectsKey] as? Set<NSManagedObject>) ?? []
+        let insertedIDs = Set(Self.syncRelevantInsertedObjectIDs(in: notification))
+        let updatedIDs = Set(Self.syncRelevantUpdatedObjectIDs(in: notification))
+        journalLocalOutboxObjects(inserted: inserted.filter { insertedIDs.contains($0.objectID) },
+                                  updated: updated.filter { updatedIDs.contains($0.objectID) },
+                                  deletedFeedURLs: deletedFeedURLs,
+                                  deletedPropertyFeedURLs: deletedPropertyFeedURLs,
+                                  accountRecordName: accountRecordName,
+                                  capturesEpisodes: capturesEpisodes,
+                                  capturesSubscriptions: capturesSubscriptions,
+                                  changesAlreadyFiltered: false)
+    }
 
-        if episodesSyncEnabled {
+    func journalLocalOutboxObjects(inserted: [NSManagedObject],
+                                   updated: [NSManagedObject],
+                                   deletedFeedURLs: [String],
+                                   deletedPropertyFeedURLs: [String],
+                                   accountRecordName: String,
+                                   capturesEpisodes: Bool,
+                                   capturesSubscriptions: Bool,
+                                   changesAlreadyFiltered: Bool) {
+        guard isStarted, !isApplyingRemoteChange,
+              let context = databaseManager.objectContext else { return }
+
+        // Main-context notifications are captured synchronously: the call-stack-scoped
+        // isApplyingRemoteChange flag already identifies their origin. The ID set is only
+        // for delayed/off-main merges; using stale IDs here could swallow a later user edit.
+        let inserted = changesAlreadyFiltered ? discardRemoteAppliedObjects(inserted) : inserted
+        let updated = changesAlreadyFiltered ? discardRemoteAppliedObjects(updated) : updated
+        let now = Date()
+        var mutations: [String: LocalOutboxMutation] = [:]
+        var metadataWritesByRecordName: [String: ICCloudSyncItemMetadataWrite] = [:]
+        var metadataIdentityWritesByRecordName: [String: ICCloudSyncItemMetadataWrite] = [:]
+        var subscriptionFeedURLs: [String] = []
+        var subscriptionHashes: [String: String] = [:]
+        var subscriptionStates: [String: Bool] = [:]
+
+        if capturesEpisodes {
             for object in inserted + updated {
-                guard let episode = object as? CDEpisode else { continue }
-                guard let objectHash = episode.objectHash, !objectHash.isEmpty, !seenEpisodeHashes.contains(objectHash) else { continue }
-                // Only episodes with real state (played / favorite / position) are synced.
-                // "Unheard" is the implicit default and is never uploaded — unless the
-                // episode was synced before, so that resetting it back to unheard still
-                // propagates to the other devices.
-                let hasState = episode.consumed || episode.starred || episode.position > 0
-                let previouslySynced = episodeLocalModifiedDate(for: objectHash) != nil
-                guard hasState || previouslySynced else { continue }
-                seenEpisodeHashes.insert(objectHash)
-                episodeObjectHashes.append(objectHash)
+                guard let episode = object as? CDEpisode,
+                      let objectHash = episode.objectHash, !objectHash.isEmpty else { continue }
+                if !changesAlreadyFiltered {
+                    let keys = Set(object.changedValuesForCurrentEvent().keys)
+                    guard !keys.isDisjoint(with: Self.syncRelevantEpisodeKeys) else { continue }
+                }
+                let payload: [String: Any] = [
+                    "objectHash": objectHash,
+                    "played": episode.consumed,
+                    "position": Int(episode.position),
+                    "starred": episode.starred,
+                    "deviceID": deviceID,
+                ]
+                let recordName = episodeRecordID(forObjectHash: objectHash).recordName
+                mutations[recordName] = LocalOutboxMutation(recordName: recordName,
+                                                            category: Self.localOutboxEpisodeCategory,
+                                                            operation: Self.localOutboxSaveOperation,
+                                                            revision: UUID().uuidString,
+                                                            changedAt: now,
+                                                            payload: payload)
+                metadataWritesByRecordName[recordName] = ICCloudSyncItemMetadataWrite(
+                    category: Self.localOutboxEpisodeCategory,
+                    recordName: recordName,
+                    itemIdentifier: objectHash,
+                    localModifiedAt: now,
+                    localState: nil,
+                    payloadHash: nil
+                )
             }
         }
 
-        if subscriptionsSyncEnabled {
-            let storedHashes = subscriptionPayloadHashes()
-            func consider(_ feed: CDFeed) {
-                guard feed.subscribed, let urlString = feed.sourceURL?.absoluteString, !seenFeedURLs.contains(urlString) else { return }
-                let hash = subscriptionPayloadHash(for: feed)
-                // Skip feeds whose synced payload is unchanged. A feed refresh only touches
-                // lastUpdate/etag/contentHash, which aren't part of the payload, so this
-                // makes refresh-all a no-op for subscription sync.
-                guard storedHashes[urlString] != hash else { return }
-                seenFeedURLs.insert(urlString)
-                feedURLsToQueue.append(urlString)
-                feedHashUpdates[urlString] = hash
+        if capturesSubscriptions {
+            func saveMutation(for feed: CDFeed) {
+                guard feed.subscribed,
+                      let feedURL = feed.sourceURL?.absoluteString, !feedURL.isEmpty else { return }
+                let recordName = Self.subscriptionRecordName(forFeedURL: feedURL)
+                let tombstoneRecordName = Self.subscriptionTombstoneRecordName(forFeedURL: feedURL)
+                let payload = Self.subscriptionPayload(for: feed, feedURL: feedURL, deviceID: deviceID)
+                let revision = UUID().uuidString
+                mutations[recordName] = LocalOutboxMutation(recordName: recordName,
+                                                            category: Self.localOutboxSubscriptionCategory,
+                                                            operation: Self.localOutboxSaveOperation,
+                                                            revision: revision,
+                                                            changedAt: now,
+                                                            payload: payload)
+                mutations[tombstoneRecordName] = LocalOutboxMutation(recordName: tombstoneRecordName,
+                                                                     category: Self.localOutboxSubscriptionCategory,
+                                                                     operation: Self.localOutboxDeleteOperation,
+                                                                     revision: revision,
+                                                                     changedAt: now,
+                                                                     payload: payload)
+                subscriptionFeedURLs.append(feedURL)
+                subscriptionHashes[feedURL] = subscriptionPayloadHash(for: feed)
+                subscriptionStates[feedURL] = true
             }
+
+            func tombstoneMutation(for feedURL: String) {
+                guard !feedURL.isEmpty else { return }
+                let recordName = Self.subscriptionTombstoneRecordName(forFeedURL: feedURL)
+                let activeRecordName = Self.subscriptionRecordName(forFeedURL: feedURL)
+                let payload: [String: Any] = [
+                    "feedURL": feedURL,
+                    "deleted": true,
+                    "deviceID": deviceID,
+                ]
+                let revision = UUID().uuidString
+                mutations[recordName] = LocalOutboxMutation(recordName: recordName,
+                                                            category: Self.localOutboxSubscriptionCategory,
+                                                            operation: Self.localOutboxSaveOperation,
+                                                            revision: revision,
+                                                            changedAt: now,
+                                                            payload: payload)
+                mutations[activeRecordName] = LocalOutboxMutation(recordName: activeRecordName,
+                                                                  category: Self.localOutboxSubscriptionCategory,
+                                                                  operation: Self.localOutboxDeleteOperation,
+                                                                  revision: revision,
+                                                                  changedAt: now,
+                                                                  payload: payload)
+                subscriptionFeedURLs.append(feedURL)
+                subscriptionStates[feedURL] = false
+            }
+
             for object in inserted + updated {
                 if let feed = object as? CDFeed {
+                    if !changesAlreadyFiltered {
+                        let keys = Set(object.changedValuesForCurrentEvent().keys)
+                        guard !keys.isDisjoint(with: Self.syncRelevantFeedKeys) else { continue }
+                        if let oldURL = object.committedValues(forKeys: ["sourceURL_"])["sourceURL_"] as? String,
+                           oldURL != feed.sourceURL?.absoluteString {
+                            tombstoneMutation(for: oldURL)
+                        }
+                    }
                     if feed.subscribed {
-                        consider(feed)
-                    } else if let urlString = feed.sourceURL?.absoluteString {
-                        feedURLsToDelete.append(urlString)
+                        saveMutation(for: feed)
+                    } else if let feedURL = feed.sourceURL?.absoluteString {
+                        tombstoneMutation(for: feedURL)
                     }
                 } else if let property = object as? CDFeedProperty,
                           let feed = property.feed,
-                          let key = property.key, !Self.internalFeedPropertyKeys.contains(key) {
-                    consider(feed)
+                          let key = property.key,
+                          !Self.internalFeedPropertyKeys.contains(key) {
+                    saveMutation(for: feed)
                 }
             }
-            for object in deleted {
-                if let feed = object as? CDFeed, let urlString = feed.sourceURL?.absoluteString {
-                    feedURLsToDelete.append(urlString)
-                }
+            for feedURL in deletedPropertyFeedURLs {
+                guard let url = URL(string: feedURL),
+                      let feed = databaseManager.feed(withSourceURL: url) else { continue }
+                saveMutation(for: feed)
+            }
+            for feedURL in deletedFeedURLs {
+                tombstoneMutation(for: feedURL)
             }
         }
 
-        if subscriptionsSyncEnabled {
-            listSettingsChanged = (inserted + updated).contains { $0 is CDEpisodeList }
+        for feedURL in Set(subscriptionFeedURLs) {
+            guard let subscribed = subscriptionStates[feedURL] else { continue }
+            let activeRecordName = Self.subscriptionRecordName(forFeedURL: feedURL)
+            let tombstoneRecordName = Self.subscriptionTombstoneRecordName(forFeedURL: feedURL)
+            metadataWritesByRecordName[activeRecordName] = ICCloudSyncItemMetadataWrite(
+                category: Self.localOutboxSubscriptionCategory,
+                recordName: activeRecordName,
+                itemIdentifier: feedURL,
+                localModifiedAt: now,
+                localState: subscribed,
+                payloadHash: subscribed ? subscriptionHashes[feedURL] : nil
+            )
+            metadataIdentityWritesByRecordName[tombstoneRecordName] = ICCloudSyncItemMetadataWrite(
+                category: Self.localOutboxSubscriptionCategory,
+                recordName: tombstoneRecordName,
+                itemIdentifier: feedURL,
+                localModifiedAt: nil,
+                localState: nil,
+                payloadHash: nil
+            )
         }
 
-        guard !episodeObjectHashes.isEmpty || !feedURLsToQueue.isEmpty || !feedURLsToDelete.isEmpty || listSettingsChanged else { return }
-
-        // Build the pending-change key set once and thread it through all batches so
-        // queueing N changes stays O(N) instead of O(N²).
-        var pendingKeys = pendingRecordZoneChangeKeys()
-        var queuedUserData = false
-
-        if !episodeObjectHashes.isEmpty {
-            let now = Date()
-            var updates: [String: Date] = [:]
-            for hash in episodeObjectHashes { updates[hash] = now }
-            setEpisodeLocalModifiedDates(updates)
-            addPendingSaves(episodeObjectHashes.map { episodeRecordID(forObjectHash: $0) }, pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
-            queuedUserData = true
-        }
-
-        if !feedURLsToQueue.isEmpty {
-            applySubscriptionLocalChanges(feedURLs: feedURLsToQueue, hashes: feedHashUpdates)
-            addPendingSaves(feedURLsToQueue.map { subscriptionRecordID(forFeedURL: $0) }, pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
-            queuedUserData = true
-        }
-
-        if !feedURLsToDelete.isEmpty {
-            initializeSyncEngineIfNeeded()
-            var deleteChanges: [CKSyncEngine.PendingRecordZoneChange] = []
-            for urlString in feedURLsToDelete {
-                let change = CKSyncEngine.PendingRecordZoneChange.deleteRecord(subscriptionRecordID(forFeedURL: urlString))
-                let key = pendingChangeKey(change)
-                guard !pendingKeys.contains(key) else { continue }
-                pendingKeys.insert(key)
-                deleteChanges.append(change)
-            }
-            if !deleteChanges.isEmpty {
-                syncEngine?.state.add(pendingRecordZoneChanges: deleteChanges)
-            }
-            removeSubscriptionLocalSyncState(forFeedURLs: feedURLsToDelete)
-            queuedUserData = true
-        }
-
-        if listSettingsChanged {
-            setSyncMetadata(Date(), forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
+        if subscriptionsSyncEnabled, (inserted + updated).contains(where: { $0 is CDEpisodeList }) {
+            setSyncMetadata(now, forKey: Self.subscriptionListSettingsLocalModifiedDateKey)
             setSyncMetadata(Self.subscriptionListSettingsFingerprint(), forKey: Self.subscriptionListSettingsBaselineKey)
-            addPendingSaves([subscriptionListSettingsRecordID()], pendingKeys: &pendingKeys, stampDeviceRecordForUserData: false)
-            queuedUserData = true
+            addPendingSave(subscriptionListSettingsRecordID())
         }
 
-        if queuedUserData {
-            queueDeviceRecord(stampLastSyncDate: true)
-            scheduleLowPrioritySync()
+        guard !mutations.isEmpty else { return }
+        guard persistLocalOutboxMutations(mutations,
+                                          accountRecordName: accountRecordName,
+                                          metadataWrites: Array(metadataWritesByRecordName.values),
+                                          metadataIdentityWrites: Array(metadataIdentityWritesByRecordName.values),
+                                          context: context) else { return }
+    }
+
+    @discardableResult
+    func persistLocalOutboxMutations(_ mutations: [String: LocalOutboxMutation],
+                                     accountRecordName: String,
+                                     metadataWrites: [ICCloudSyncItemMetadataWrite],
+                                     metadataIdentityWrites: [ICCloudSyncItemMetadataWrite],
+                                     context: NSManagedObjectContext) -> Bool {
+        do {
+            let recordNames = Set(metadataWrites.map(\.recordName)
+                + metadataIdentityWrites.map(\.recordName))
+            var metadataBatch = try Self.prepareSyncItemMetadataContextBatch(
+                accountRecordName: accountRecordName,
+                recordNames: recordNames,
+                context: context
+            )
+            return persistLocalOutboxMutations(
+                mutations,
+                accountRecordName: accountRecordName,
+                metadataWrites: metadataWrites,
+                metadataIdentityWrites: metadataIdentityWrites,
+                context: context,
+                metadataBatch: &metadataBatch
+            )
+        } catch {
+            setBlockingStatus(NSLocalizedString("Eine lokale iCloud-Änderung konnte nicht sicher gespeichert werden. Prüfe den freien Speicher und versuche es erneut.", comment: ""))
+            logSyncEvent("Lokale iCloud-Metadaten konnten nicht vorbereitet werden", metadata: [
+                "error": String(describing: error),
+            ])
+            return false
         }
+    }
+
+    @discardableResult
+    func persistLocalOutboxMutations(_ mutations: [String: LocalOutboxMutation],
+                                     accountRecordName: String,
+                                     metadataWrites: [ICCloudSyncItemMetadataWrite],
+                                     metadataIdentityWrites: [ICCloudSyncItemMetadataWrite],
+                                     context: NSManagedObjectContext,
+                                     metadataBatch: inout ICCloudSyncItemMetadataContextBatch) -> Bool {
+        let recordNames = Array(mutations.keys)
+        let request = NSFetchRequest<NSManagedObject>(entityName: Self.localOutboxEntityName)
+        request.predicate = NSPredicate(format: "accountRecordName == %@ AND recordName IN %@",
+                                        accountRecordName, recordNames)
+        let existingEntries: [NSManagedObject]
+        do {
+            existingEntries = try context.fetch(request)
+        } catch {
+            setBlockingStatus(NSLocalizedString("Eine lokale iCloud-Änderung konnte nicht sicher gespeichert werden. Prüfe den freien Speicher und versuche es erneut.", comment: ""))
+            logSyncEvent("Lokale iCloud-Outbox konnte nicht gelesen werden", metadata: ["error": String(describing: error)])
+            return false
+        }
+        var entriesByRecordName = Dictionary(uniqueKeysWithValues: existingEntries.compactMap { entry -> (String, NSManagedObject)? in
+            guard let recordName = entry.value(forKey: "recordName") as? String else { return nil }
+            return (recordName, entry)
+        })
+        var payloadDataByRecordName: [String: Data] = [:]
+        for mutation in mutations.values {
+            do {
+                payloadDataByRecordName[mutation.recordName] = try PropertyListSerialization.data(
+                    fromPropertyList: mutation.payload, format: .binary, options: 0)
+            } catch {
+                setBlockingStatus(NSLocalizedString("Eine lokale iCloud-Änderung konnte nicht sicher gespeichert werden. Prüfe den freien Speicher und versuche es erneut.", comment: ""))
+                logSyncEvent("Lokaler iCloud-Outbox-Payload ist ungültig", metadata: [
+                    "recordName": mutation.recordName,
+                    "error": String(describing: error),
+                ])
+                return false
+            }
+        }
+
+        do {
+            try Self.upsertSyncItemMetadata(
+                metadataWrites,
+                metadataBatch: &metadataBatch,
+                context: context
+            )
+            try Self.upsertSyncItemMetadata(
+                metadataIdentityWrites,
+                updating: [],
+                metadataBatch: &metadataBatch,
+                context: context
+            )
+        } catch {
+            setBlockingStatus(NSLocalizedString("Eine lokale iCloud-Änderung konnte nicht sicher gespeichert werden. Prüfe den freien Speicher und versuche es erneut.", comment: ""))
+            logSyncEvent("Lokale iCloud-Metadaten konnten nicht gespeichert werden", metadata: [
+                "error": String(describing: error),
+            ])
+            return false
+        }
+
+        for mutation in mutations.values {
+            guard let payloadData = payloadDataByRecordName[mutation.recordName] else { return false }
+            let entry = entriesByRecordName[mutation.recordName]
+                ?? NSEntityDescription.insertNewObject(forEntityName: Self.localOutboxEntityName, into: context)
+            let revision = mutation.revision
+            entry.setValue(accountRecordName, forKey: "accountRecordName")
+            entry.setValue(mutation.recordName, forKey: "recordName")
+            entry.setValue(mutation.category, forKey: "category")
+            entry.setValue(mutation.operation, forKey: "operation")
+            entry.setValue(false, forKey: "acknowledged")
+            entry.setValue(revision, forKey: "revision")
+            entry.setValue(mutation.changedAt, forKey: "changedAt")
+            entry.setValue(payloadData, forKey: "payloadData")
+            entriesByRecordName[mutation.recordName] = entry
+            localOutboxSnapshotCache[mutation.recordName] = ICCloudSyncOutboxSnapshot(
+                accountRecordName: accountRecordName,
+                recordName: mutation.recordName,
+                category: mutation.category,
+                operation: mutation.operation,
+                acknowledged: false,
+                revision: revision,
+                changedAt: mutation.changedAt,
+                payloadData: payloadData)
+        }
+        return true
+    }
+
+    @discardableResult
+    func restoreDurableSubscriptionOutboxIntent(feedURL: String,
+                                                 subscribed: Bool,
+                                                 changedAt: Date) -> Bool {
+        guard let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey),
+              let context = databaseManager.objectContext else { return false }
+        let activeRecordName = Self.subscriptionRecordName(forFeedURL: feedURL)
+        let tombstoneRecordName = Self.subscriptionTombstoneRecordName(forFeedURL: feedURL)
+        do {
+            var metadataBatch = try Self.prepareSyncItemMetadataContextBatch(
+                accountRecordName: accountRecordName,
+                recordNames: [activeRecordName, tombstoneRecordName],
+                context: context
+            )
+            return restoreDurableSubscriptionOutboxIntent(
+                feedURL: feedURL,
+                subscribed: subscribed,
+                changedAt: changedAt,
+                metadataBatch: &metadataBatch
+            )
+        } catch {
+            handleLocalPersistenceFailure(error)
+            return false
+        }
+    }
+
+    @discardableResult
+    func restoreDurableSubscriptionOutboxIntent(
+        feedURL: String,
+        subscribed: Bool,
+        changedAt: Date,
+        metadataBatch: inout ICCloudSyncItemMetadataContextBatch
+    ) -> Bool {
+        guard let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey),
+              accountRecordName == metadataBatch.accountRecordName,
+              let context = databaseManager.objectContext,
+              context === metadataBatch.context else { return false }
+        let payload: [String: Any]
+        let payloadHash: String?
+        if subscribed {
+            guard let url = URL(string: feedURL),
+                  let feed = databaseManager.feed(withSourceURL: url), feed.subscribed else { return false }
+            payload = Self.subscriptionPayload(for: feed, feedURL: feedURL, deviceID: deviceID)
+            payloadHash = subscriptionPayloadHash(for: feed)
+        } else {
+            payload = [
+                "feedURL": feedURL,
+                "deleted": true,
+                "deviceID": deviceID,
+            ]
+            payloadHash = nil
+        }
+        let revision = UUID().uuidString
+        let activeRecordName = Self.subscriptionRecordName(forFeedURL: feedURL)
+        let tombstoneRecordName = Self.subscriptionTombstoneRecordName(forFeedURL: feedURL)
+        let mutations: [String: LocalOutboxMutation]
+        if subscribed {
+            mutations = [
+                activeRecordName: LocalOutboxMutation(recordName: activeRecordName,
+                                                      category: Self.localOutboxSubscriptionCategory,
+                                                      operation: Self.localOutboxSaveOperation,
+                                                      revision: revision,
+                                                      changedAt: changedAt,
+                                                      payload: payload),
+                tombstoneRecordName: LocalOutboxMutation(recordName: tombstoneRecordName,
+                                                         category: Self.localOutboxSubscriptionCategory,
+                                                         operation: Self.localOutboxDeleteOperation,
+                                                         revision: revision,
+                                                         changedAt: changedAt,
+                                                         payload: payload),
+            ]
+        } else {
+            mutations = [
+                activeRecordName: LocalOutboxMutation(recordName: activeRecordName,
+                                                      category: Self.localOutboxSubscriptionCategory,
+                                                      operation: Self.localOutboxDeleteOperation,
+                                                      revision: revision,
+                                                      changedAt: changedAt,
+                                                      payload: payload),
+                tombstoneRecordName: LocalOutboxMutation(recordName: tombstoneRecordName,
+                                                         category: Self.localOutboxSubscriptionCategory,
+                                                         operation: Self.localOutboxSaveOperation,
+                                                         revision: revision,
+                                                         changedAt: changedAt,
+                                                         payload: payload),
+            ]
+        }
+        let metadataWrite = ICCloudSyncItemMetadataWrite(
+            category: Self.localOutboxSubscriptionCategory,
+            recordName: activeRecordName,
+            itemIdentifier: feedURL,
+            localModifiedAt: changedAt,
+            localState: subscribed,
+            payloadHash: payloadHash
+        )
+        let metadataIdentityWrite = ICCloudSyncItemMetadataWrite(
+            category: Self.localOutboxSubscriptionCategory,
+            recordName: tombstoneRecordName,
+            itemIdentifier: feedURL,
+            localModifiedAt: nil,
+            localState: nil,
+            payloadHash: nil
+        )
+        guard persistLocalOutboxMutations(mutations,
+                                          accountRecordName: accountRecordName,
+                                          metadataWrites: [metadataWrite],
+                                          metadataIdentityWrites: [metadataIdentityWrite],
+                                          context: context,
+                                          metadataBatch: &metadataBatch) else { return false }
+        return true
+    }
+
+    func discardRemoteAppliedObjects(_ objects: [NSManagedObject]) -> [NSManagedObject] {
+        let remainingIDs = Set(discardRemoteAppliedObjectIDs(objects.map(\.objectID)))
+        return objects.filter { remainingIDs.contains($0.objectID) }
+    }
+
+    func mergeLocalOutboxSnapshotsIntoCache(_ entries: [ICCloudSyncOutboxSnapshot]) {
+        for entry in entries {
+            if let existing = localOutboxSnapshotCache[entry.recordName],
+               existing.accountRecordName == entry.accountRecordName,
+               existing.changedAt.compare(entry.changedAt) != .orderedAscending {
+                continue
+            }
+            localOutboxSnapshotCache[entry.recordName] = entry
+        }
+    }
+
+    func scheduleLocalOutboxDrain() {
+        if localOutboxBatchDepth > 0 {
+            localOutboxDrainDeferred = true
+            return
+        }
+        guard isStarted, anySyncEnabled, !isICloudAccountSignedOut,
+              isICloudAccountIdentityVerified else { return }
+        if localOutboxDrainTask != nil {
+            localOutboxDrainRequested = true
+            return
+        }
+        localOutboxDrainRequested = false
+        let generation = cloudAccountGeneration
+        localOutboxDrainTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await self.drainLocalOutbox()
+            guard generation == self.cloudAccountGeneration else { return }
+            self.localOutboxDrainTask = nil
+            if self.localOutboxDrainRequested {
+                self.localOutboxDrainRequested = false
+                self.scheduleLocalOutboxDrain()
+            }
+        }
+    }
+
+    @objc func beginLocalOutboxBatch() {
+        localOutboxBatchDepth += 1
+    }
+
+    @objc func endLocalOutboxBatch() {
+        guard localOutboxBatchDepth > 0 else { return }
+        localOutboxBatchDepth -= 1
+        guard localOutboxBatchDepth == 0, localOutboxDrainDeferred else { return }
+        localOutboxDrainDeferred = false
+        scheduleLocalOutboxDrain()
+    }
+
+    func drainLocalOutbox() async -> Bool {
+        guard isStarted, !isICloudAccountSignedOut, isICloudAccountIdentityVerified,
+              let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey) else { return false }
+        let generation = cloudAccountGeneration
+        var enabledCategories = Set<String>()
+        if episodesSyncEnabled { enabledCategories.insert(Self.localOutboxEpisodeCategory) }
+        if subscriptionsSyncEnabled { enabledCategories.insert(Self.localOutboxSubscriptionCategory) }
+        guard !enabledCategories.isEmpty else { return true }
+
+        let entries: [ICCloudSyncOutboxSnapshot]
+        do {
+            entries = try await Self.localOutboxEntries(accountRecordName: accountRecordName,
+                                                        categories: enabledCategories)
+        } catch {
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                  defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName,
+                  !Task.isCancelled else { return false }
+            handleLocalPersistenceFailure(error)
+            return false
+        }
+        guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+              defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName,
+              !Task.isCancelled else { return false }
+        guard !entries.isEmpty else { return true }
+        mergeLocalOutboxSnapshotsIntoCache(entries)
+
+        initializeSyncEngineIfNeeded()
+        let recordNames = Set(entries.map(\.recordName))
+        removePendingRecordChanges(recordNames: recordNames)
+        var pendingKeys = pendingRecordZoneChangeKeys()
+        var index = entries.startIndex
+        while index < entries.endIndex {
+            let end = entries.index(index, offsetBy: Self.pendingChangeQueueChunkSize,
+                                    limitedBy: entries.endIndex) ?? entries.endIndex
+            let batch = entries[index..<end]
+            let saveRecordIDs = batch.filter {
+                !$0.acknowledged && $0.operation == Self.localOutboxSaveOperation
+            }.map {
+                CKRecord.ID(recordName: $0.recordName, zoneID: zoneID)
+            }
+            let deleteRecordIDs = batch.filter {
+                !$0.acknowledged && $0.operation == Self.localOutboxDeleteOperation
+            }.map {
+                CKRecord.ID(recordName: $0.recordName, zoneID: zoneID)
+            }
+            addPendingSaves(saveRecordIDs, pendingKeys: &pendingKeys,
+                            stampDeviceRecordForUserData: false)
+            addPendingDeletes(deleteRecordIDs, pendingKeys: &pendingKeys)
+            index = end
+            await Task.yield()
+            guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified,
+                  defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName,
+                  !Task.isCancelled else { return false }
+        }
+        queueDeviceRecord(stampLastSyncDate: true)
+        scheduleLowPrioritySync()
+        return true
+    }
+
+    nonisolated static func localOutboxStoreError(code: Int,
+                                                   description: String) -> NSError {
+        NSError(domain: "ICiCloudSyncLocalOutbox",
+                code: code,
+                userInfo: [NSLocalizedDescriptionKey: description])
+    }
+
+    nonisolated static func localOutboxEntries(accountRecordName: String,
+                                                categories: Set<String>? = nil,
+                                                recordNames: Set<String>? = nil) async throws -> [ICCloudSyncOutboxSnapshot] {
+        if let recordNames, recordNames.isEmpty { return [] }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw localOutboxStoreError(
+                code: 1,
+                description: "Die lokale iCloud-Outbox konnte nicht geöffnet werden."
+            )
+        }
+        return try await context.perform {
+            let request = NSFetchRequest<NSManagedObject>(entityName: localOutboxEntityName)
+            var predicates: [NSPredicate] = [NSPredicate(format: "accountRecordName == %@", accountRecordName)]
+            if let categories, !categories.isEmpty {
+                predicates.append(NSPredicate(format: "category IN %@", Array(categories)))
+            }
+            if let recordNames, !recordNames.isEmpty {
+                predicates.append(NSPredicate(format: "recordName IN %@", Array(recordNames)))
+            }
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+            request.fetchBatchSize = pendingChangeQueueChunkSize
+            let entries = try context.fetch(request)
+            return try entries.map { entry in
+                guard let accountRecordName = entry.value(forKey: "accountRecordName") as? String,
+                      let recordName = entry.value(forKey: "recordName") as? String,
+                      let category = entry.value(forKey: "category") as? String,
+                      let operation = entry.value(forKey: "operation") as? String,
+                      let acknowledged = entry.value(forKey: "acknowledged") as? Bool,
+                      let revision = entry.value(forKey: "revision") as? String,
+                      let changedAt = entry.value(forKey: "changedAt") as? Date,
+                      let payloadData = entry.value(forKey: "payloadData") as? Data else {
+                    throw localOutboxStoreError(
+                        code: 2,
+                        description: "Ein lokaler iCloud-Outbox-Eintrag ist unvollständig."
+                    )
+                }
+                return ICCloudSyncOutboxSnapshot(accountRecordName: accountRecordName,
+                                                 recordName: recordName,
+                                                 category: category,
+                                                 operation: operation,
+                                                 acknowledged: acknowledged,
+                                                 revision: revision,
+                                                 changedAt: changedAt,
+                                                 payloadData: payloadData)
+            }
+        }
+    }
+
+    func removePendingRecordChanges(recordNames: Set<String>) {
+        guard let syncEngine, !recordNames.isEmpty else { return }
+        let obsolete = syncEngine.state.pendingRecordZoneChanges.filter { change in
+            switch change {
+            case .saveRecord(let recordID), .deleteRecord(let recordID):
+                return recordNames.contains(recordID.recordName)
+            @unknown default:
+                return false
+            }
+        }
+        if !obsolete.isEmpty {
+            syncEngine.state.remove(pendingRecordZoneChanges: obsolete)
+        }
+    }
+
+    func deleteLocalOutboxEntries(for accountRecordName: String) {
+        guard let context = databaseManager.objectContext else { return }
+        let request = NSFetchRequest<NSManagedObject>(entityName: Self.localOutboxEntityName)
+        request.predicate = NSPredicate(format: "accountRecordName == %@", accountRecordName)
+        let entries = (try? context.fetch(request)) ?? []
+        guard !entries.isEmpty else { return }
+        for entry in entries { context.delete(entry) }
+        localOutboxSnapshotCache = localOutboxSnapshotCache.filter { $0.value.accountRecordName != accountRecordName }
+        if let error = databaseManager.saveReturningError() {
+            handleLocalPersistenceFailure(error)
+        }
+    }
+
+    func bindUnboundLocalOutboxEntries(to accountRecordName: String) async throws {
+        try await bindLocalOutboxEntries(from: Self.localOutboxUnboundAccountRecordName,
+                                         to: accountRecordName)
+    }
+
+    func bindPendingAccountLocalOutboxEntries(to accountRecordName: String,
+                                              pendingScope: String) async throws {
+        try await bindLocalOutboxEntries(from: pendingScope,
+                                         to: accountRecordName)
+    }
+
+    func bindLocalOutboxEntries(from sourceAccountRecordName: String,
+                                to accountRecordName: String) async throws {
+        guard !accountRecordName.isEmpty,
+              let context = databaseManager.newBackgroundContext() else {
+            throw NSError(domain: "ICiCloudSyncOutbox", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Die lokale iCloud-Outbox konnte nicht geöffnet werden."])
+        }
+        try await context.perform {
+            while true {
+                let request = NSFetchRequest<NSManagedObject>(entityName: Self.localOutboxEntityName)
+                request.predicate = NSPredicate(format: "accountRecordName == %@",
+                                                sourceAccountRecordName)
+                request.sortDescriptors = [NSSortDescriptor(key: "changedAt", ascending: true)]
+                request.fetchLimit = Self.pendingChangeQueueChunkSize
+                let chunk = try context.fetch(request)
+                guard !chunk.isEmpty else { break }
+                let recordNames = chunk.compactMap { $0.value(forKey: "recordName") as? String }
+                let existingRequest = NSFetchRequest<NSManagedObject>(entityName: Self.localOutboxEntityName)
+                existingRequest.predicate = NSPredicate(format: "accountRecordName == %@ AND recordName IN %@",
+                                                        accountRecordName, recordNames)
+                let existing = try context.fetch(existingRequest)
+                var existingByRecordName = Dictionary(uniqueKeysWithValues: existing.compactMap { entry -> (String, NSManagedObject)? in
+                    guard let recordName = entry.value(forKey: "recordName") as? String else { return nil }
+                    return (recordName, entry)
+                })
+                for entry in chunk {
+                    guard let recordName = entry.value(forKey: "recordName") as? String else {
+                        context.delete(entry)
+                        continue
+                    }
+                    if let current = existingByRecordName[recordName] {
+                        let currentDate = current.value(forKey: "changedAt") as? Date ?? .distantPast
+                        let unboundDate = entry.value(forKey: "changedAt") as? Date ?? .distantPast
+                        if currentDate.compare(unboundDate) == .orderedAscending {
+                            context.delete(current)
+                            entry.setValue(accountRecordName, forKey: "accountRecordName")
+                            existingByRecordName[recordName] = entry
+                        } else {
+                            context.delete(entry)
+                        }
+                    } else {
+                        entry.setValue(accountRecordName, forKey: "accountRecordName")
+                        existingByRecordName[recordName] = entry
+                    }
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                context.reset()
+            }
+        }
+        localOutboxSnapshotCache = [:]
     }
 
     // `nonisolated` (see defaultsDidChange) so an off-main delivery can't trip the MainActor
@@ -348,12 +1063,16 @@ extension ICiCloudSyncManager {
     }
 
     func scheduleApplyPendingPayloads() {
-        guard isStarted else { return }
+        guard isStarted, !isICloudAccountSignedOut, isICloudAccountIdentityVerified else { return }
+        let generation = cloudAccountGeneration
         applyPendingDebounceWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor in
-                guard let self, self.isStarted else { return }
-                self.applyPendingEpisodeStates()
+                guard let self, self.isStarted,
+                      !self.isICloudAccountSignedOut,
+                      self.isICloudAccountIdentityVerified,
+                      generation == self.cloudAccountGeneration else { return }
+                await self.applyPendingEpisodeStates()
                 await self.applyPendingSubscriptions()
             }
         }
@@ -383,7 +1102,9 @@ extension ICiCloudSyncManager {
     // ~10s freeze when toggling a sync switch while settings sync is on.
     func checkAndQueueSettingsChange() {
         guard isStarted, !isApplyingRemoteChange else { return }
-        if settingsSyncEnabled {
+        if settingsSyncEnabled,
+           !defaults.bool(forKey: Self.initialSettingsBackfillPendingKey),
+           !hasPendingInitialSettingsChoice {
             let hash = syncedSettingsHash()
             if hash != storedSyncedSettingsHash() {
                 setStoredSyncedSettingsHash(hash)
@@ -462,6 +1183,7 @@ extension ICiCloudSyncManager {
         guard pendingStubCount > 0 else { return }
         isHydratingStubFeeds = true
         isWaitingForEpisodeLoader = false
+        episodeLoaderWaitingFeedID = nil
         hydrationCompletedCount = 0
         hydrationTotalCount = pendingStubCount
         logSyncEvent("Podcast-Folgen-Nachladen gestartet", metadata: ["count": pendingStubCount])
@@ -506,13 +1228,20 @@ extension ICiCloudSyncManager {
                     self.hydrationFailedFeedIDs.insert(nextID)
                 }
                 self.postStateChanged()
-                if EpisodeLoadingManager.shared().isLoading {
+                let isLoadingHydratedFeed: Bool
+                if success,
+                   let context = self.databaseManager.objectContext,
+                   let hydratedFeed = (try? context.existingObject(with: nextID)) as? CDFeed {
+                    isLoadingHydratedFeed = EpisodeLoadingManager.shared().isLoading(hydratedFeed)
+                } else {
+                    isLoadingHydratedFeed = false
+                }
+                if isLoadingHydratedFeed {
                     // The background loader is still working through this feed's older
-                    // episodes. Wait for its finish notification: queueing the next stub
-                    // now would pile feeds into the loader, whose state persistence
-                    // rewrites ALL pending feeds' episode data on every feed finish —
-                    // the quadratic-plist trap that froze the iPad.
-                    self.waitForEpisodeLoader()
+                    // episodes. Wait for its explicit finish/failure notification before
+                    // fetching the next stub. Each job now owns an immutable payload and
+                    // tiny cursor, so no cross-feed queue rewrite happens here.
+                    self.waitForEpisodeLoader(feedID: nextID)
                 } else {
                     self.scheduleNextStubHydration()
                 }
@@ -532,28 +1261,54 @@ extension ICiCloudSyncManager {
         }
     }
 
-    func waitForEpisodeLoader() {
+    func waitForEpisodeLoader(feedID: NSManagedObjectID) {
         isWaitingForEpisodeLoader = true
-        episodeLoaderWaitGeneration += 1
-        let generation = episodeLoaderWaitGeneration
-        // Failsafe: a cancelled load (e.g. unsubscribe mid-hydration) posts no finish
-        // notification — don't let the hydration queue hang on it forever.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 120) { [weak self] in
-            Task { @MainActor in
-                guard let self, self.isWaitingForEpisodeLoader,
-                      self.episodeLoaderWaitGeneration == generation else { return }
-                self.isWaitingForEpisodeLoader = false
-                self.scheduleNextStubHydration()
-            }
-        }
+        episodeLoaderWaitingFeedID = feedID
     }
 
     // `nonisolated` (see defaultsDidChange) so an off-main delivery can't trip the
     // MainActor executor assertion at entry. Hops to the main actor for the actual work.
     @objc nonisolated func episodeLoadingDidFinish(_ notification: Notification) {
+        let feedObjectIDURI = notification.userInfo?["feedObjectIDURI"] as? String
         Task { @MainActor [weak self] in
             guard let self, self.isWaitingForEpisodeLoader else { return }
+            guard feedObjectIDURI == self.episodeLoaderWaitingFeedID?.uriRepresentation().absoluteString else { return }
             self.isWaitingForEpisodeLoader = false
+            self.episodeLoaderWaitingFeedID = nil
+            self.scheduleNextStubHydration()
+        }
+    }
+
+    @objc nonisolated func episodeLoadingDidFail(_ notification: Notification) {
+        let feedObjectIDURI = notification.userInfo?["feedObjectIDURI"] as? String
+        Task { @MainActor [weak self] in
+            guard let self, self.isWaitingForEpisodeLoader else { return }
+            guard let waitingFeedID = self.episodeLoaderWaitingFeedID,
+                  feedObjectIDURI == waitingFeedID.uriRepresentation().absoluteString else { return }
+            self.hydrationFailedFeedIDs.insert(waitingFeedID)
+            self.hydrationCompletedCount = max(0, self.hydrationCompletedCount - 1)
+            self.isWaitingForEpisodeLoader = false
+            self.episodeLoaderWaitingFeedID = nil
+            self.postStateChanged()
+            self.scheduleNextStubHydration()
+        }
+    }
+
+    @objc nonisolated func episodeLoadingDidCancel(_ notification: Notification) {
+        let feedObjectIDURI = notification.userInfo?["feedObjectIDURI"] as? String
+        let isGlobalCancellation = notification.userInfo == nil
+        Task { @MainActor [weak self] in
+            guard let self, self.isWaitingForEpisodeLoader else { return }
+            if let feedObjectIDURI {
+                guard feedObjectIDURI == self.episodeLoaderWaitingFeedID?.uriRepresentation().absoluteString else { return }
+            } else if !isGlobalCancellation {
+                // A feed-specific cancellation without a resolvable feed is not proof
+                // that the job this hydration run awaits has ended. A nil userInfo is
+                // the explicit global-cancel event and releases every wait.
+                return
+            }
+            self.isWaitingForEpisodeLoader = false
+            self.episodeLoaderWaitingFeedID = nil
             self.scheduleNextStubHydration()
         }
     }
@@ -562,6 +1317,7 @@ extension ICiCloudSyncManager {
         guard isHydratingStubFeeds else { return }
         isHydratingStubFeeds = false
         isWaitingForEpisodeLoader = false
+        episodeLoaderWaitingFeedID = nil
         let completedCount = hydrationCompletedCount
         logSyncEvent("Podcast-Folgen-Nachladen beendet", metadata: [
             "completed": completedCount,
@@ -576,7 +1332,9 @@ extension ICiCloudSyncManager {
         // The freshly hydrated episodes may have remote play states waiting in the
         // pending store — apply them in one batch now instead of on the next sync.
         if completedCount > 0 {
-            applyPendingEpisodeStates()
+            Task { @MainActor [weak self] in
+                await self?.applyPendingEpisodeStates()
+            }
         }
     }
 }

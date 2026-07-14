@@ -475,30 +475,19 @@ enum {
         self.controller.tintColor = calculatedColor;
         self.infoViewController.view.tintColor = calculatedColor;
     }
-    else if ([USER_DEFAULTS objectForKey:PlayerThemeColorCode])
+    else
     {
-        NSData *colorData = [[NSUserDefaults standardUserDefaults] objectForKey:PlayerThemeColorCode];
-        UIColor *themeColor = [NSKeyedUnarchiver unarchivedObjectOfClass:[UIColor class] fromData:colorData error:nil];
-        
+        UIColor* themeColor = [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                                     hexKey:PlayerThemeColorHexCode
+                                           legacyArchiveKey:PlayerThemeColorCode];
+        if (!themeColor) {
+            themeColor = [ICAppearanceManager sharedManager].nightSettingMode ? UIColor.lightGrayColor : UIColor.darkGrayColor;
+        }
         self.view.tintColor = themeColor;
         self.navigationController.navigationBar.tintColor = themeColor;
         self.navigationController.toolbar.tintColor = themeColor;
         self.controller.tintColor = themeColor;
         self.infoViewController.view.tintColor = themeColor;
-    }
-    else
-    {
-        UIColor* tempColor = [UIColor whiteColor];
-        if ([ICAppearanceManager sharedManager].nightSettingMode) {
-            tempColor = [UIColor lightGrayColor];
-        } else {
-            tempColor = [UIColor darkGrayColor];
-        }
-        self.view.tintColor = tempColor;
-        self.navigationController.navigationBar.tintColor = tempColor;
-        self.navigationController.toolbar.tintColor = tempColor;
-        self.controller.tintColor = tempColor;
-        self.infoViewController.view.tintColor = tempColor;
     }
 
 }

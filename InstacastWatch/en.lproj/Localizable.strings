@@ -7,6 +7,8 @@
 "Wird entfernt" = "Removing";
 "Wartet" = "Waiting";
 "Download erneut versuchen" = "Retry Download";
+"Entfernen erneut versuchen" = "Retry Removal";
+"Tippen zum Wiederholen" = "Tap to retry";
 "Von Watch entfernen" = "Remove from Watch";
 "Episode" = "Episode";
 "Pause" = "Pause";
@@ -22,9 +24,15 @@
 "Audiodatei konnte nicht abgespielt werden." = "Audio file could not be played.";
 "Nicht genügend Speicher auf der Watch." = "Not enough storage on the Watch.";
 "%@ frei · %d geladen" = "%@ free · %d downloaded";
+"Speicher wird ermittelt…" = "Checking storage…";
 "Speicher voll – Platz freigeben" = "Storage full – free up space";
 "Download unvollständig: HTTP 206 Partial Content." = "Download incomplete: HTTP 206 Partial Content.";
 "Geladene Datei ist unvollständig." = "Downloaded file is incomplete.";
+"Download-Datei konnte auf der Watch nicht gespeichert werden." = "The downloaded file could not be saved on Apple Watch.";
 "Audiositzung konnte nicht aktiviert werden." = "Audio session could not be activated.";
 "Kapitel" = "Chapters";
 "Wird übersprungen" = "Will be skipped";
+"Die defekte Audiodatei konnte nicht entfernt werden. Tippe, um es erneut zu versuchen." = "The damaged audio file could not be removed. Tap to retry.";
+"Die Folge konnte nicht von der Watch entfernt werden. Tippe, um es erneut zu versuchen." = "The episode could not be removed from Apple Watch. Tap to retry.";
+"Episoden werden geladen…" = "Loading Episodes…";
+"Episoden konnten nicht geladen werden. Tippen zum Wiederholen." = "Episodes could not be loaded. Tap to retry.";

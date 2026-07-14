@@ -524,6 +524,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     NSInteger _previousTranscriptCueIndex;
     CGSize _lastTranscriptBoundsSize;
     NSString* _transcriptSearchTerm;
+    NSString* _transcriptTaskEpisodeHash;
     NSInteger _transcriptSearchGeneration;
     UIVisualEffect* _transcriptSearchBarEffect; // saved glass effect for materialize/dematerialize
     BOOL _suppressChapterReload;
@@ -611,6 +612,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
         [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerWillDeleteCacheFilesNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(_playbackDidUpdateForTranscriptFollow:) name:PlaybackManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(_transcriptDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
@@ -680,11 +682,29 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)cacheManagerDidClearCacheNotification:(NSNotification*)notification
 {
-    CDEpisode* clearedEpisode = [notification.userInfo[@"episode"] isKindOfClass:[CDEpisode class]] ? notification.userInfo[@"episode"] : nil;
-    if (clearedEpisode) {
-        [self _removeTranscriptCacheForEpisode:clearedEpisode];
-    } else {
-        [self _clearAllTranscriptCache];
+    NSArray<NSString*>* episodeHashes = [notification.userInfo[@"episodeHashes"] isKindOfClass:[NSArray class]] ? notification.userInfo[@"episodeHashes"] : @[];
+    BOOL clearsAll = [notification.userInfo[@"all"] boolValue];
+    if (clearsAll || (_transcriptTaskEpisodeHash.length > 0 && [episodeHashes containsObject:_transcriptTaskEpisodeHash])) {
+        [self.transcriptTask cancel];
+        self.transcriptTask = nil;
+        _transcriptTaskEpisodeHash = nil;
+        _transcriptLoadingURL = nil;
+    }
+    for (NSString* taskKey in [self.transcriptPrefetchTasks.allKeys copy]) {
+        NSRange separator = [taskKey rangeOfString:@"|"];
+        NSString* episodeHash = separator.location == NSNotFound ? taskKey : [taskKey substringToIndex:separator.location];
+        if (clearsAll || [episodeHashes containsObject:episodeHash]) {
+            [self.transcriptPrefetchTasks[taskKey] cancel];
+            [self.transcriptPrefetchTasks removeObjectForKey:taskKey];
+        }
+    }
+    if (clearsAll || (s_transcriptCachedEpisodeHash.length > 0 && [episodeHashes containsObject:s_transcriptCachedEpisodeHash])) {
+        s_transcriptCachedEpisodeHash = nil;
+        s_transcriptCachedCues = nil;
+        s_transcriptCachedDescriptor = nil;
+        s_transcriptCachedSources = nil;
+        s_transcriptCachedAttrString = nil;
+        s_transcriptCachedRanges = nil;
     }
 }
 
@@ -1410,30 +1430,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 }
 
-- (void)_clearAllTranscriptCache
-{
-    // Clear static in-memory cache
-    s_transcriptCachedEpisodeHash = nil;
-    s_transcriptCachedCues = nil;
-    s_transcriptCachedDescriptor = nil;
-    s_transcriptCachedSources = nil;
-    s_transcriptCachedAttrString = nil;
-    s_transcriptCachedRanges = nil;
-
-    NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
-    if (!directoryURL) {
-        return;
-    }
-    NSError* error = nil;
-    BOOL removed = [[NSFileManager defaultManager] removeItemAtURL:directoryURL error:&error];
-    [[ICDiagnosticLogger shared] logDirectoryEvent:@"file-delete"
-                                           message:(removed ? @"Gesamter Transcript-Ordner entfernt" : @"Transcript-Ordner konnte nicht entfernt werden")
-                                              path:directoryURL.path
-                                          metadata:@{
-                                              @"error": error.localizedDescription ?: @"",
-                                          }];
-}
-
 - (void)_clearTranscriptCacheIfNeededForEpisode:(CDEpisode*)episode
 {
     if (episode.consumed) {
@@ -1508,7 +1504,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
 
     __weak typeof(self) weakSelf = self;
-    NSURLSessionDataTask* task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+    __block NSURLSessionDataTask* task = nil;
+    task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) {
             return;
@@ -1526,6 +1523,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (self.transcriptPrefetchTasks[taskKey] != task) return;
             [self.transcriptPrefetchTasks removeObjectForKey:taskKey];
 
             if (cues.count > 0) {
@@ -2388,6 +2386,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
     CDEpisode* episode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
     NSString* episodeHash = episode.objectHash;
+    _transcriptTaskEpisodeHash = episodeHash;
     [[ICDiagnosticLogger shared] logEvent:@"transcript-load"
                                   message:@"Transcript-Ladeversuch gestartet"
                                  metadata:@{
@@ -2622,6 +2621,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     // 3) Full reset + async load
     [self.transcriptTask cancel];
     [self _cancelTranscriptPrefetchTasks];
+    _transcriptTaskEpisodeHash = nil;
     _transcriptLoadingURL = nil;
     [self.transcriptFollowResumeTimer invalidate];
     self.transcriptFollowResumeTimer = nil;

@@ -11,7 +11,8 @@ def require(condition: bool, message: str) -> None:
 
 episodes_source = (ROOT / "Classes" / "EpisodesTableViewController.m").read_text()
 require(
-    'ICEpisodeSelectionToggleTitleKey(selectedCellsCount, rowCount).ls' in episodes_source,
+    '[self _selectionToggleTitleKeyForSelectedCount:selectedCellsCount rowCount:rowCount].ls' in episodes_source
+    and 'return ICEpisodeSelectionToggleTitleKey(selectedCount, rowCount);' in episodes_source,
     "Episodes selection toggle is not wired to the shared All/None config.",
 )
 require(

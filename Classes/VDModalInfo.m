@@ -22,7 +22,9 @@ static NSMutableSet* gModelInfos = nil;
 @property (strong) UIButton* closeButton;
 @property (strong) CircleProgressView* progressIndicator;
 @property (strong) UIWindow* parentWindow;
+@property (weak) UIWindow* presentationWindow;
 @property (strong) NSTimer* closeTimer;
+- (void)_showInWindow:(UIWindow*)window completion:(void (^)(void))completion;
 @end
 
 @implementation VDModalInfo {
@@ -135,8 +137,8 @@ static NSMutableSet* gModelInfos = nil;
 - (void)flipViewAccordingToStatusBarOrientation:(NSNotification *)notification
 {
     CGRect messageViewRectTemp = self.messageView.bounds;
-    CGFloat screenHeight = [[UIScreen mainScreen] bounds].size.height;
-    CGFloat screenWidth = [[UIScreen mainScreen] bounds].size.width;
+    CGFloat screenHeight = CGRectGetHeight(self.bounds);
+    CGFloat screenWidth = CGRectGetWidth(self.bounds);
     
     messageViewRectTemp.origin.x = (screenWidth - self.messageView.bounds.size.width)/2;
     messageViewRectTemp.origin.y = (screenHeight - self.messageView.bounds.size.height)/2;
@@ -164,7 +166,7 @@ static NSMutableSet* gModelInfos = nil;
 
 -(UIInterfaceOrientation)getDeviceOrientation
 {
-    UIWindowScene *windowScene = (UIWindowScene *)[[[UIApplication sharedApplication] connectedScenes] anyObject];
+    UIWindowScene *windowScene = self.window.windowScene ?: self.presentationWindow.windowScene ?: self.contextView.window.windowScene;
     if ([windowScene isKindOfClass:[UIWindowScene class]]) {
         return  windowScene.interfaceOrientation;
     }
@@ -301,36 +303,55 @@ static NSMutableSet* gModelInfos = nil;
 
 - (void) show
 {
-    [self showWithCompletion:nil];
+    [self showInWindow:self.contextView.window ?: App.ic_keyWindow];
+}
+
+- (void) showInWindow:(UIWindow*)window
+{
+    [self _showInWindow:window completion:nil];
 }
 
 - (void) showWithCompletion:(void (^)(void))completion
 {
+    [self _showInWindow:self.contextView.window ?: App.ic_keyWindow completion:completion];
+}
+
+- (void)_showInWindow:(UIWindow*)window completion:(void (^)(void))completion
+{
+    UIWindow* targetWindow = window ?: self.contextView.window ?: App.ic_keyWindow;
+    if (!targetWindow) {
+        if (completion) completion();
+        return;
+    }
+
+    self.presentationWindow = targetWindow;
+    self.frame = targetWindow.bounds;
+    [self setSize:self.size];
     [gModelInfos addObject:self];
     
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationDidChange) name:UIDeviceOrientationDidChangeNotification object:nil];
 
     
-	BOOL navAndToolbar = (self.navigationAndToolbarEnabled && [[UIDevice currentDevice] userInterfaceIdiom] != UIUserInterfaceIdiomPad);
-	
-	if (!navAndToolbar && !self.tapThrough) {
-		self.parentWindow = App.ic_keyWindow;
-		self.parentWindow.userInteractionEnabled = NO;
-	}
+    BOOL navAndToolbar = (self.navigationAndToolbarEnabled && [[UIDevice currentDevice] userInterfaceIdiom] != UIUserInterfaceIdiomPad);
+
+    if (!navAndToolbar && !self.tapThrough) {
+        self.parentWindow = targetWindow;
+        self.parentWindow.userInteractionEnabled = NO;
+    }
     
     self.userInteractionEnabled = !self.tapThrough;
 
-	if (navAndToolbar) {
-		CGRect appFrame = [UIScreen mainScreen].bounds;
+    if (navAndToolbar) {
+        CGRect appFrame = targetWindow.bounds;
         UIInterfaceOrientation orientation = [self getDeviceOrientation];//[[UIApplication sharedApplication] statusBarOrientation];
-		if (UIInterfaceOrientationIsPortrait(orientation)) {
-			self.frame = CGRectMake(0, 20+44, CGRectGetWidth(appFrame), CGRectGetHeight(appFrame)-44-50);
-		} else {
-			self.frame = CGRectMake(20+44, 0, CGRectGetHeight(appFrame)-44-50, CGRectGetWidth(appFrame));
-		}
-		[self setSize:self.size];
-	}
+        if (UIInterfaceOrientationIsPortrait(orientation)) {
+            self.frame = CGRectMake(0, 20+44, CGRectGetWidth(appFrame), CGRectGetHeight(appFrame)-44-50);
+        } else {
+            self.frame = CGRectMake(20+44, 0, CGRectGetHeight(appFrame)-44-50, CGRectGetWidth(appFrame));
+        }
+        [self setSize:self.size];
+    }
 	
 	if (self.animation == VDModalInfoAnimationScaleDown) {
 		self.messageView.transform = CGAffineTransformMakeScale(1.33, 1.33f);
@@ -345,7 +366,7 @@ static NSMutableSet* gModelInfos = nil;
 	self.messageView.alpha = 0.0f;
 	self.hidden = NO;
     
-    [App.ic_keyWindow addSubview:self];
+    [targetWindow addSubview:self];
     
     [UIView animateWithDuration:0.2 animations:^{
         self.messageView.alpha = 1.0f;
@@ -421,6 +442,7 @@ static NSMutableSet* gModelInfos = nil;
                          
                          self.parentWindow.userInteractionEnabled = YES;
                          self.parentWindow = nil;
+                         self.presentationWindow = nil;
                          
                          [self removeFromSuperview];
                          

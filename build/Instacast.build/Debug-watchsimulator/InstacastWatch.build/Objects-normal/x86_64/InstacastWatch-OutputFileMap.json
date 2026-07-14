@@ -1,0 +1,119 @@
+{
+  "" : {
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatch-primary.dia",
+    "emit-module-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatch-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatch-primary-emit-module.dia",
+    "pch" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatch-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatch-primary.swiftdeps"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/InstacastWatchApp.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/InstacastWatchApp~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchChapterExtractor.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchChapterExtractor~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchConnectivityController.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchConnectivityController~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchDownloadManager.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchDownloadManager~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchEpisode.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisode~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchEpisodeViews.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchEpisodeViews~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchManifestStore.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestStore~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchManifestTransfer.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchManifestTransfer~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchPlayerController.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchPlayerController~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/InstacastWatch/WatchStorageManager.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/WatchStorageManager~partial.swiftmodule"
+  },
+  "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/Chris/Developer/instacastplus/build/Instacast.build/Debug-watchsimulator/InstacastWatch.build/Objects-normal/x86_64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}
