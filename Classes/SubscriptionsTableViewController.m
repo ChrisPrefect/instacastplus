@@ -906,7 +906,7 @@
     {
         [USER_DEFAULTS setObject:searchText forKey:kUIPersistenceSubscriptionsSearchTerm];
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSSet* feedUIDs = [DMANAGER.ftsController feedUIDsForSearchTerm:searchText];
+            NSSet* feedUIDs = [DMANAGER.ftsController feedSourceURLsForSearchTerm:searchText];
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (searchGeneration != self->_searchGeneration || ![self.searchBar.text isEqualToString:searchText]) {
                     return;

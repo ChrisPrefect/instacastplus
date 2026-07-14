@@ -1005,7 +1005,10 @@
 "The local app data could not be opened for reset." = "Die lokalen App-Daten konnten zum Zurücksetzen nicht geöffnet werden.";
 "Local Data Unavailable" = "Lokale Daten nicht verfügbar";
 "InstacastPlus could not open the local podcast database. Your data was left unchanged. Check the available storage, restart the device, and open InstacastPlus again." = "InstacastPlus konnte die lokale Podcast-Datenbank nicht öffnen. Ihre Daten wurden nicht verändert. Prüfen Sie den verfügbaren Speicher, starten Sie das Gerät neu und öffnen Sie InstacastPlus erneut.";
+"InstacastPlus could not update the local podcast database. Your data was left unchanged. Make sure enough storage is available, restart the device, and try again." = "InstacastPlus konnte die lokale Podcast-Datenbank nicht aktualisieren. Ihre Daten wurden nicht verändert. Stellen Sie sicher, dass genügend Speicher verfügbar ist, starten Sie das Gerät neu und versuchen Sie es erneut.";
 "The local app data could not be completely deleted. Please try the reset again." = "Die lokalen App-Daten konnten nicht vollständig gelöscht werden. Bitte versuchen Sie das Zurücksetzen erneut.";
+"The search index could not be prepared for reset. No local database data was reset." = "Der Suchindex konnte nicht für das Zurücksetzen vorbereitet werden. Die lokale Datenbank wurde nicht zurückgesetzt.";
+"The local app data was deleted, but the search index could not be rebuilt. Please restart InstacastPlus and try again." = "Die lokalen App-Daten wurden gelöscht, aber der Suchindex konnte nicht neu aufgebaut werden. Bitte starten Sie InstacastPlus neu und versuchen Sie es erneut.";
 "Cached images could not be deleted. No local database data was reset." = "Zwischengespeicherte Bilder konnten nicht gelöscht werden. Die lokale Datenbank wurde nicht zurückgesetzt.";
 "Reset Complete" = "Zurücksetzen abgeschlossen";
 "Please restart the app." = "Bitte starten Sie die App neu.";

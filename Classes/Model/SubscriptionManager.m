@@ -50,6 +50,13 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 @property (nonatomic, strong) NSOperationQueue* mergeQueue;
 @property (nonatomic, strong) NSDate* refreshStartDate;
 @property (nonatomic, strong) NSMutableSet<NSURL*>* feedsMergingURLs;
+@property (nonatomic, strong) NSMutableSet<NSManagedObjectID*>* pendingAutoDownloadFeedObjectIDs;
+@property (nonatomic, strong) dispatch_queue_t autoDownloadFeedScanQueue;
+@property (nonatomic) BOOL autoDownloadFeedScanInFlight;
+
+- (void)_retainPendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs;
+- (void)_retainPendingAutoDownloadFeedObjectIDs:(NSArray<NSManagedObjectID*>*)feedObjectIDs;
+- (void)_removePendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs;
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundIdentifier;
@@ -68,6 +75,109 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 }
 
 static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
+static const NSUInteger ICAutoDownloadFeedScanBatchSize = 20;
+static const NSUInteger ICAutoDownloadCandidateDeliveryBatchSize = 32;
+static NSString* const ICAutoDownloadCandidateEpisodeObjectIDKey = @"episodeObjectID";
+static NSString* const ICAutoDownloadCandidateFeedObjectIDKey = @"feedObjectID";
+static NSString* const ICPendingAutoDownloadFeedUIDsKey = @"ICPendingAutoDownloadFeedUIDs";
+
+static NSArray<NSDictionary*>* ICAutoDownloadCandidatesForFeedObjectIDs(NSManagedObjectContext* context,
+                                                                         NSArray<NSManagedObjectID*>* feedObjectIDs,
+                                                                         NSError** error)
+{
+    NSMutableDictionary<NSString*, NSManagedObjectID*>* feedObjectIDsByUID = [[NSMutableDictionary alloc] init];
+    for (NSManagedObjectID* feedObjectID in feedObjectIDs) {
+        NSError* feedError = nil;
+        CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&feedError];
+        if (![feed isKindOfClass:[CDFeed class]] || feedError || feed.isDeleted ||
+            !feed.subscribed || feed.parked || feed.uid.length == 0) {
+            continue;
+        }
+        feedObjectIDsByUID[feed.uid] = feedObjectID;
+    }
+    if (feedObjectIDsByUID.count == 0) {
+        return @[];
+    }
+
+    NSExpressionDescription* feedUIDExpression = [[NSExpressionDescription alloc] init];
+    feedUIDExpression.name = @"feedUID";
+    feedUIDExpression.expression = [NSExpression expressionForKeyPath:@"feed.uid"];
+    feedUIDExpression.expressionResultType = NSStringAttributeType;
+
+    NSExpressionDescription* latestPubDateExpression = [[NSExpressionDescription alloc] init];
+    latestPubDateExpression.name = @"latestPubDate";
+    latestPubDateExpression.expression = [NSExpression expressionForFunction:@"max:"
+                                                                    arguments:@[[NSExpression expressionForKeyPath:@"pubDate"]]];
+    latestPubDateExpression.expressionResultType = NSDateAttributeType;
+
+    NSFetchRequest* latestDatesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    latestDatesRequest.predicate = [NSPredicate predicateWithFormat:@"pubDate != nil AND feed.uid IN %@",
+                                    feedObjectIDsByUID.allKeys];
+    latestDatesRequest.resultType = NSDictionaryResultType;
+    latestDatesRequest.propertiesToFetch = @[feedUIDExpression, latestPubDateExpression];
+    latestDatesRequest.propertiesToGroupBy = @[@"feed.uid"];
+
+    NSArray<NSDictionary*>* latestDateRows = [context executeFetchRequest:latestDatesRequest error:error];
+    if (!latestDateRows) {
+        return nil;
+    }
+
+    NSCalendar* calendar = [NSCalendar currentCalendar];
+    NSMutableArray<NSPredicate*>* latestDayPredicates = [[NSMutableArray alloc] initWithCapacity:latestDateRows.count];
+    for (NSDictionary* row in latestDateRows) {
+        NSString* feedUID = row[@"feedUID"];
+        NSDate* latestPubDate = row[@"latestPubDate"];
+        if (![feedUID isKindOfClass:[NSString class]] || ![latestPubDate isKindOfClass:[NSDate class]]) {
+            continue;
+        }
+
+        NSDate* startOfDay = [calendar startOfDayForDate:latestPubDate];
+        NSDate* startOfNextDay = [calendar dateByAddingUnit:NSCalendarUnitDay
+                                                      value:1
+                                                     toDate:startOfDay
+                                                    options:0];
+        if (!startOfNextDay) {
+            continue;
+        }
+        [latestDayPredicates addObject:[NSPredicate predicateWithFormat:@"feed.uid == %@ AND pubDate >= %@ AND pubDate < %@",
+                                        feedUID, startOfDay, startOfNextDay]];
+    }
+    if (latestDayPredicates.count == 0) {
+        return @[];
+    }
+
+    NSFetchRequest* candidatesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    NSPredicate* eligiblePredicate = [NSPredicate predicateWithFormat:@"consumed == NO AND archived == NO AND feed.subscribed == YES AND feed.parked == NO"];
+    candidatesRequest.predicate = [NSCompoundPredicate andPredicateWithSubpredicates:@[
+        eligiblePredicate,
+        [NSCompoundPredicate orPredicateWithSubpredicates:latestDayPredicates]
+    ]];
+    candidatesRequest.sortDescriptors = @[
+        [NSSortDescriptor sortDescriptorWithKey:@"feed.uid" ascending:YES],
+        [NSSortDescriptor sortDescriptorWithKey:@"pubDate" ascending:NO],
+        [NSSortDescriptor sortDescriptorWithKey:@"objectHash" ascending:YES]
+    ];
+    candidatesRequest.fetchBatchSize = ICAutoDownloadCandidateDeliveryBatchSize;
+    candidatesRequest.includesSubentities = NO;
+
+    NSArray<CDEpisode*>* episodes = [context executeFetchRequest:candidatesRequest error:error];
+    if (!episodes) {
+        return nil;
+    }
+
+    NSMutableArray<NSDictionary*>* candidates = [[NSMutableArray alloc] initWithCapacity:episodes.count];
+    for (CDEpisode* episode in episodes) {
+        NSManagedObjectID* feedObjectID = feedObjectIDsByUID[episode.feed.uid];
+        if (!feedObjectID || episode.objectID.isTemporaryID) {
+            continue;
+        }
+        [candidates addObject:@{
+            ICAutoDownloadCandidateEpisodeObjectIDKey: episode.objectID,
+            ICAutoDownloadCandidateFeedObjectIDKey: feedObjectID
+        }];
+    }
+    return candidates;
+}
 
 + (SubscriptionManager*) sharedSubscriptionManager
 {
@@ -97,6 +207,12 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
         _mergeQueue.qualityOfService = NSQualityOfServiceUtility;
 
         _feedsMergingURLs = [[NSMutableSet alloc] init];
+        _pendingAutoDownloadFeedObjectIDs = [[NSMutableSet alloc] init];
+        dispatch_queue_attr_t autoDownloadQueueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,
+                                                                                                     QOS_CLASS_UTILITY,
+                                                                                                     0);
+        _autoDownloadFeedScanQueue = dispatch_queue_create("com.instacastplus.feed-auto-download-scan",
+                                                           autoDownloadQueueAttributes);
         
 #if TARGET_OS_IPHONE==0
         _checkTimer = [NSTimer scheduledTimerWithTimeInterval:5*60 block:^(NSTimeInterval time) {
@@ -147,6 +263,15 @@ static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
     }
     
     return [self formattedLastRefreshDate];
+}
+
+- (BOOL)canRefreshFeedsOnCurrentNetwork
+{
+    if (App.networkAccessTechnology == kICNetworkAccessTechnlogyWIFI) {
+        return YES;
+    }
+    return App.networkAccessTechnology > kICNetworkAccessTechnlogyGPRS &&
+           [USER_DEFAULTS boolForKey:EnableRefreshingOver3G];
 }
 
 // Returns YES if the two values differ (nil-safe). Used to avoid dirtying objects on
@@ -225,6 +350,8 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
     // remove from Up Next
     [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:[feed.episodes allObjects]];
 
+    [self.pendingAutoDownloadFeedObjectIDs removeObject:feed.objectID];
+    [self _removePendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
     [DMANAGER unsubscribeFeed:feed];
 }
 
@@ -276,7 +403,21 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
 
         [self _enforceKeepNewestLimitForFeed:feed];
 
-        [DMANAGER save];
+        if (newEpisodes.count > 0) {
+            [self _retainPendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
+        }
+
+        NSError* reloadSaveError = [DMANAGER saveReturningError];
+        if (reloadSaveError) {
+            if (completion) {
+                completion(NO, nil, reloadSaveError);
+            }
+            return;
+        }
+
+        if (newEpisodes.count > 0) {
+            [self _autoDownloadEpisodesInFeedAsynchronously:feed];
+        }
 
         if (completion) {
             completion(YES ,newEpisodes, nil);
@@ -862,8 +1003,8 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
 
 - (void) _finishParsingFeed:(CDFeed*)feed url:(NSURL*)url shouldAutoDownload:(BOOL)shouldAutoDownload
 {
-    if (shouldAutoDownload) {
-        [self _autoDownloadEpisodesInFeedAsynchronously:feed];
+    if (shouldAutoDownload && feed.objectID && !feed.objectID.isTemporaryID) {
+        [self.pendingAutoDownloadFeedObjectIDs addObject:feed.objectID];
     }
 
     [self _enforceKeepNewestLimitForFeed:feed];
@@ -874,6 +1015,75 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
     [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidParseFeedNotification
                                                         object:self
                                                       userInfo:(feed)?[NSDictionary dictionaryWithObject:feed forKey:@"feed"]:nil];
+}
+
+- (NSArray<NSString*>*)_pendingAutoDownloadFeedUIDs
+{
+    id storedValue = [USER_DEFAULTS objectForKey:ICPendingAutoDownloadFeedUIDsKey];
+    if (![storedValue isKindOfClass:[NSArray class]]) {
+        return @[];
+    }
+
+    NSMutableOrderedSet<NSString*>* validFeedUIDs = [[NSMutableOrderedSet alloc] init];
+    for (id value in (NSArray*)storedValue) {
+        if ([value isKindOfClass:[NSString class]] && [value length] > 0) {
+            [validFeedUIDs addObject:value];
+        }
+    }
+    return validFeedUIDs.array;
+}
+
+- (void)_retainPendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs
+{
+    NSAssert([NSThread isMainThread], @"Auto-download handoff persistence belongs to the main-context lifecycle");
+    NSMutableOrderedSet<NSString*>* pendingFeedUIDs = [NSMutableOrderedSet orderedSetWithArray:[self _pendingAutoDownloadFeedUIDs]];
+    NSUInteger previousCount = pendingFeedUIDs.count;
+    for (NSString* feedUID in feedUIDs) {
+        if ([feedUID isKindOfClass:[NSString class]] && feedUID.length > 0) {
+            [pendingFeedUIDs addObject:feedUID];
+        }
+    }
+    if (pendingFeedUIDs.count == previousCount) {
+        return;
+    }
+    [USER_DEFAULTS setObject:pendingFeedUIDs.array forKey:ICPendingAutoDownloadFeedUIDsKey];
+    [USER_DEFAULTS synchronize];
+}
+
+- (void)_retainPendingAutoDownloadFeedObjectIDs:(NSArray<NSManagedObjectID*>*)feedObjectIDs
+{
+    NSMutableArray<NSString*>* feedUIDs = [[NSMutableArray alloc] initWithCapacity:feedObjectIDs.count];
+    for (NSManagedObjectID* feedObjectID in feedObjectIDs) {
+        NSError* error = nil;
+        CDFeed* feed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:&error];
+        if ([feed isKindOfClass:[CDFeed class]] && !error && !feed.isDeleted && feed.uid.length > 0) {
+            [feedUIDs addObject:feed.uid];
+        }
+    }
+    [self _retainPendingAutoDownloadFeedUIDs:feedUIDs];
+}
+
+- (void)_removePendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs
+{
+    NSAssert([NSThread isMainThread], @"Auto-download handoff persistence belongs to the main-context lifecycle");
+    if (feedUIDs.count == 0) {
+        return;
+    }
+    NSMutableOrderedSet<NSString*>* pendingFeedUIDs = [NSMutableOrderedSet orderedSetWithArray:[self _pendingAutoDownloadFeedUIDs]];
+    [pendingFeedUIDs removeObjectsInArray:feedUIDs];
+    if (pendingFeedUIDs.count > 0) {
+        [USER_DEFAULTS setObject:pendingFeedUIDs.array forKey:ICPendingAutoDownloadFeedUIDsKey];
+    } else {
+        [USER_DEFAULTS removeObjectForKey:ICPendingAutoDownloadFeedUIDsKey];
+    }
+    // This also commits the download jobs that CacheManager persisted before this
+    // handoff acknowledgement, so a kill cannot lose both the intent and the job.
+    [USER_DEFAULTS synchronize];
+}
+
+- (void)_startPendingAutoDownloads
+{
+    [self _autoDownloadEpisodesInFeedAsynchronously:nil];
 }
 
 // Marks that this feed already got its one full duration-metadata parse.
@@ -1220,6 +1430,10 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 [localFeed setBool:YES forKey:kFeedPropertyEpisodeLoadingComplete];
             }
 
+            if (initialLoadCount > 0) {
+                [strongSelf _retainPendingAutoDownloadFeedUIDs:@[localFeed.uid ?: @""]];
+            }
+
             NSError* hydrationSaveError = [DMANAGER saveReturningError];
             if (hydrationSaveError) {
                 if (completion) {
@@ -1227,6 +1441,8 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 }
                 return;
             }
+
+            [strongSelf _autoDownloadEpisodesInFeedAsynchronously:localFeed];
 
             if (hasPendingEpisodeLoad) {
                 [[EpisodeLoadingManager sharedManager] queuePendingEpisodesForFeed:localFeed
@@ -1335,8 +1551,18 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 		self.refreshCheckTimer = nil;
         
         
-        // save all changes
-        [DMANAGER save];
+        // Persist the child-context merges before a sibling background context scans
+        // the feed for auto-download candidates.
+        [self _retainPendingAutoDownloadFeedObjectIDs:self.pendingAutoDownloadFeedObjectIDs.allObjects];
+        NSError* refreshSaveError = [DMANAGER saveReturningError];
+        if (!refreshSaveError) {
+            [self _startPendingAutoDownloads];
+            [[CacheManager sharedCacheManager] retryFailedAutomaticDownloadsIfPossible];
+        } else {
+            [[ICDiagnosticLogger shared] logEvent:@"feed-refresh"
+                                          message:@"Neue Episoden konnten nicht für Auto-Download gespeichert werden"
+                                         metadata:@{ @"error": refreshSaveError.localizedDescription ?: @"" }];
+        }
         
         // update application badge
 #if TARGET_OS_IPHONE
@@ -1857,115 +2083,206 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 
 - (void) autoDownloadAllFeedsAsynchronously
 {
-    NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
-    [childContext setParentContext:DMANAGER.objectContext];
-    
-    
-    [childContext performBlockAndWait:^{
-        NSFetchRequest* feedsRequest = [[NSFetchRequest alloc] init];
-        feedsRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:childContext];
-        feedsRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES && parked == NO"];
-        feedsRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES] ];
-        
-        NSError* error;
-        NSArray* feeds = [childContext executeFetchRequest:feedsRequest error:&error];
-        if (error) {
-            ErrLog(@"error getting feeds: %@", error);
-        }
-        
-        for(CDFeed* feed in feeds)
-        {
-            NSArray* sortedEpisodes = [feed chronologicallySortedEpisodes];
-            NSMutableArray* sortedEpisodesIds = [[NSMutableArray alloc] init];
-            for(CDEpisode* episode in sortedEpisodes) {
-                [sortedEpisodesIds addObject:[episode objectID]];
+    NSMutableArray<NSString*>* pendingFeedUIDs = [[NSMutableArray alloc] init];
+    for (CDFeed* feed in DMANAGER.visibleFeeds) {
+        if (feed.subscribed && !feed.parked && !feed.objectID.isTemporaryID) {
+            [self.pendingAutoDownloadFeedObjectIDs addObject:feed.objectID];
+            if (feed.uid.length > 0) {
+                [pendingFeedUIDs addObject:feed.uid];
             }
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                
-                NSMutableArray* thisSortedEpisodes = [[NSMutableArray alloc] init];
-                for(NSManagedObjectID* objectId in sortedEpisodesIds) {
-                    CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext objectWithID:objectId];
-                    if (episode) {
-                        [thisSortedEpisodes addObject:episode];
-                    }
-                }
-                
-                [self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes];
-            });
         }
-    }];
+    }
+    [self _retainPendingAutoDownloadFeedUIDs:pendingFeedUIDs];
+    [self _startPendingAutoDownloads];
 }
 
 - (void)_autoDownloadEpisodesInFeedAsynchronously:(CDFeed*)feed
 {
-    if (!feed || feed.parked || !feed.subscribed || feed.objectID.isTemporaryID) {
+    if (feed) {
+        if (feed.parked || !feed.subscribed) {
+            [self.pendingAutoDownloadFeedObjectIDs removeObject:feed.objectID];
+            [self _removePendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
+            return;
+        }
+        if (feed.objectID.isTemporaryID) {
+            return;
+        }
+        [self _retainPendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
+        [self.pendingAutoDownloadFeedObjectIDs addObject:feed.objectID];
+    }
+
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    if (!cacheManager.isReadyForAutomaticDownloads) {
         return;
     }
 
-    NSManagedObjectID* feedObjectID = feed.objectID;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
-        if (!context) {
-            return;
+    if (self.autoDownloadFeedScanInFlight || self.pendingAutoDownloadFeedObjectIDs.count == 0) {
+        return;
+    }
+
+    NSArray<NSManagedObjectID*>* pendingFeedObjectIDs = self.pendingAutoDownloadFeedObjectIDs.allObjects;
+    NSUInteger feedBatchCount = MIN(pendingFeedObjectIDs.count, ICAutoDownloadFeedScanBatchSize);
+    NSArray<NSManagedObjectID*>* feedObjectIDs = [pendingFeedObjectIDs subarrayWithRange:NSMakeRange(0, feedBatchCount)];
+    NSMutableDictionary<NSManagedObjectID*, NSString*>* feedUIDsByObjectID = [[NSMutableDictionary alloc] initWithCapacity:feedObjectIDs.count];
+    for (NSManagedObjectID* feedObjectID in feedObjectIDs) {
+        NSError* feedError = nil;
+        CDFeed* selectedFeed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:&feedError];
+        if ([selectedFeed isKindOfClass:[CDFeed class]] && !feedError && !selectedFeed.isDeleted && selectedFeed.uid.length > 0) {
+            feedUIDsByObjectID[feedObjectID] = selectedFeed.uid;
         }
+    }
+    [self.pendingAutoDownloadFeedObjectIDs minusSet:[NSSet setWithArray:feedObjectIDs]];
+    self.autoDownloadFeedScanInFlight = YES;
 
-        __block NSArray<NSManagedObjectID*>* episodeObjectIDs = @[];
-        [context performBlockAndWait:^{
-            NSError* feedError = nil;
-            CDFeed* backgroundFeed = (CDFeed*)[context existingObjectWithID:feedObjectID error:&feedError];
-            if (![backgroundFeed isKindOfClass:[CDFeed class]] || feedError || backgroundFeed.parked || !backgroundFeed.subscribed) {
-                return;
-            }
-
-            NSArray* sortedEpisodes = [backgroundFeed chronologicallySortedEpisodes];
-            NSDate* firstPubDate = [[sortedEpisodes firstObject] pubDate];
-            if (!firstPubDate) {
-                return;
-            }
-
-            NSDateComponents* firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
-                                                                           fromDate:firstPubDate];
-            NSMutableArray<NSManagedObjectID*>* objectIDs = [NSMutableArray array];
-            for (CDEpisode* episode in sortedEpisodes) {
-                NSDate* pubDate = episode.pubDate;
-                NSDateComponents* comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay)
-                                                                          fromDate:pubDate];
-                if ([comps day] != [firstComps day] || [comps month] != [firstComps month] || [comps year] != [firstComps year]) {
-                    continue;
-                }
-                if (episode.consumed || episode.archived || episode.objectID.isTemporaryID) {
-                    continue;
-                }
-                [objectIDs addObject:episode.objectID];
-            }
-            episodeObjectIDs = [objectIDs copy];
-        }];
-
-        if (episodeObjectIDs.count == 0) {
-            return;
+    dispatch_async(self.autoDownloadFeedScanQueue, ^{
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        __block NSArray<NSDictionary*>* candidateItems = nil;
+        __block NSError* scanError = nil;
+        if (context) {
+            [context performBlockAndWait:^{
+                candidateItems = ICAutoDownloadCandidatesForFeedObjectIDs(context, feedObjectIDs, &scanError);
+                [context reset];
+            }];
+        } else {
+            scanError = [NSError errorWithDomain:@"SubscriptionManagerAutoDownload"
+                                            code:1
+                                        userInfo:@{NSLocalizedDescriptionKey: @"The podcast database is not available."}];
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSError* currentFeedError = nil;
-            CDFeed* currentFeed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:&currentFeedError];
-            if (![currentFeed isKindOfClass:[CDFeed class]] || currentFeedError || currentFeed.isDeleted ||
-                currentFeed.parked || !currentFeed.subscribed) {
+            if (scanError) {
+                [self.pendingAutoDownloadFeedObjectIDs addObjectsFromArray:feedObjectIDs];
+                self.autoDownloadFeedScanInFlight = NO;
+                ErrLog(@"error scanning auto-download candidates: %@", scanError);
                 return;
             }
 
-            NSMutableArray* thisSortedEpisodes = [[NSMutableArray alloc] initWithCapacity:episodeObjectIDs.count];
-            for (NSManagedObjectID* objectID in episodeObjectIDs) {
-                NSError* error = nil;
-                CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:objectID error:&error];
-                if ([episode isKindOfClass:[CDEpisode class]] && !error && !episode.isDeleted &&
-                    [episode.feed isEqual:currentFeed]) {
-                    [thisSortedEpisodes addObject:episode];
+            __block NSUInteger candidateIndex = 0;
+            __block void (^deliverNextCandidateBatch)(void) = nil;
+            deliverNextCandidateBatch = ^{
+                NSUInteger remainingCount = candidateItems.count - candidateIndex;
+                NSUInteger candidateBatchCount = MIN(remainingCount, ICAutoDownloadCandidateDeliveryBatchSize);
+                NSRange candidateRange = NSMakeRange(candidateIndex, candidateBatchCount);
+                NSArray<NSDictionary*>* candidateBatch = [candidateItems subarrayWithRange:candidateRange];
+                NSMutableDictionary<NSManagedObjectID*, NSMutableArray<CDEpisode*>*>* episodesByFeedObjectID = [[NSMutableDictionary alloc] init];
+
+                for (NSDictionary* candidate in candidateBatch) {
+                    NSManagedObjectID* feedObjectID = candidate[ICAutoDownloadCandidateFeedObjectIDKey];
+                    NSError* currentFeedError = nil;
+                    CDFeed* currentFeed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:&currentFeedError];
+                    if (![currentFeed isKindOfClass:[CDFeed class]] || currentFeedError || currentFeed.isDeleted ||
+                        currentFeed.parked || !currentFeed.subscribed) {
+                        continue;
+                    }
+
+                    NSManagedObjectID* episodeObjectID = candidate[ICAutoDownloadCandidateEpisodeObjectIDKey];
+                    NSError* episodeError = nil;
+                    CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:episodeObjectID error:&episodeError];
+                    if (![episode isKindOfClass:[CDEpisode class]] || episodeError || episode.isDeleted ||
+                        ![episode.feed isEqual:currentFeed]) {
+                        continue;
+                    }
+
+                    NSMutableArray<CDEpisode*>* episodes = episodesByFeedObjectID[feedObjectID];
+                    if (!episodes) {
+                        episodes = [[NSMutableArray alloc] init];
+                        episodesByFeedObjectID[feedObjectID] = episodes;
+                    }
+                    [episodes addObject:episode];
                 }
-            }
-            [self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes];
+
+                for (NSManagedObjectID* feedObjectID in episodesByFeedObjectID) {
+                    NSMutableArray<CDEpisode*>* thisSortedEpisodes = episodesByFeedObjectID[feedObjectID];
+                    [self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes];
+                }
+
+                candidateIndex += candidateBatchCount;
+                if (candidateIndex < candidateItems.count) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        deliverNextCandidateBatch();
+                    });
+                } else {
+                    NSMutableArray<NSString*>* completedFeedUIDs = [[NSMutableArray alloc] initWithCapacity:feedUIDsByObjectID.count];
+                    for (NSManagedObjectID* feedObjectID in feedObjectIDs) {
+                        // A second refresh can enqueue the same feed while this scan is
+                        // delivering. Keep its durable marker for that newer handoff.
+                        if (![self.pendingAutoDownloadFeedObjectIDs containsObject:feedObjectID]) {
+                            NSString* feedUID = feedUIDsByObjectID[feedObjectID];
+                            if (feedUID.length > 0) {
+                                [completedFeedUIDs addObject:feedUID];
+                            }
+                        }
+                    }
+                    [self _removePendingAutoDownloadFeedUIDs:completedFeedUIDs];
+                    self.autoDownloadFeedScanInFlight = NO;
+                    deliverNextCandidateBatch = nil;
+                    [self _startPendingAutoDownloads];
+                    [self recoverPendingAutoDownloadsAfterDatabaseStartup];
+                }
+            };
+            deliverNextCandidateBatch();
         });
     });
+}
+
+- (void)recoverPendingAutoDownloadsAfterDatabaseStartup
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self recoverPendingAutoDownloadsAfterDatabaseStartup];
+        });
+        return;
+    }
+
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    if (!cacheManager.isReadyForAutomaticDownloads || self.autoDownloadFeedScanInFlight) {
+        return;
+    }
+    if (self.pendingAutoDownloadFeedObjectIDs.count > 0) {
+        [self _startPendingAutoDownloads];
+        return;
+    }
+
+    NSArray<NSString*>* pendingFeedUIDs = [self _pendingAutoDownloadFeedUIDs];
+    if (pendingFeedUIDs.count == 0) {
+        return;
+    }
+    NSUInteger recoveryBatchCount = MIN(pendingFeedUIDs.count, ICAutoDownloadFeedScanBatchSize);
+    NSArray<NSString*>* recoveryFeedUIDs = [pendingFeedUIDs subarrayWithRange:NSMakeRange(0, recoveryBatchCount)];
+
+    NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+    request.includesSubentities = NO;
+    request.fetchLimit = 1;
+    NSMutableArray<NSString*>* staleFeedUIDs = [[NSMutableArray alloc] init];
+    BOOL recoveryFetchFailed = NO;
+    for (NSString* feedUID in recoveryFeedUIDs) {
+        request.predicate = [NSPredicate predicateWithFormat:@"uid == %@ AND subscribed == YES AND parked == NO", feedUID];
+        NSError* fetchError = nil;
+        NSArray<CDFeed*>* matchingFeeds = [DMANAGER.objectContext executeFetchRequest:request error:&fetchError];
+        if (!matchingFeeds) {
+            recoveryFetchFailed = YES;
+            ErrLog(@"error recovering pending auto-download feed '%@': %@", feedUID, fetchError);
+            continue;
+        }
+        CDFeed* feed = matchingFeeds.firstObject;
+        if (![feed isKindOfClass:[CDFeed class]] || !feed.subscribed || feed.parked || feed.objectID.isTemporaryID) {
+            [staleFeedUIDs addObject:feedUID];
+            continue;
+        }
+        [self.pendingAutoDownloadFeedObjectIDs addObject:feed.objectID];
+    }
+
+    [self _removePendingAutoDownloadFeedUIDs:staleFeedUIDs];
+
+    if (self.pendingAutoDownloadFeedObjectIDs.count > 0) {
+        [self _startPendingAutoDownloads];
+    } else if (!recoveryFetchFailed && [self _pendingAutoDownloadFeedUIDs].count > 0) {
+        // Yield between bounded stale batches as well; thousands of removed feeds must
+        // never become one main-thread cleanup pass.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self recoverPendingAutoDownloadsAfterDatabaseStartup];
+        });
+    }
 }
 
 - (void) autoDownloadEpisodesInFeedAsynchronously:(CDFeed*)feed

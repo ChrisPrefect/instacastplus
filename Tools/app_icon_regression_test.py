@@ -73,6 +73,7 @@ def main():
         "appiconClassicAlt1",
         "appiconClassicAlt2",
         "appiconClassicAlt3",
+        "appiconClassicAlt4",
     ]
     icon_composer_names = [
         "InstacastPlus_Icon_Core",
@@ -80,6 +81,7 @@ def main():
         "InstacastPlus_Icon_Classic_Alt1",
         "InstacastPlus_Icon_Classic_Alt2",
         "InstacastPlus_Icon_Classic_Alt3",
+        "InstacastPlus_Icon_Classic_Alt4",
     ]
     expected_previews = [
         *icon_composer_previews[:2],

@@ -14,6 +14,7 @@
 #import "InstacastBackupImporter.h"
 #import "InstacastPlus-Swift.h"
 #include <limits.h>
+#include <time.h>
 
 #if TARGET_OS_IPHONE
 #import "CacheOperation_iOS7.h"
@@ -43,6 +44,15 @@ static NSString* const ICCacheDeletionErrorKey = @"error";
 static NSString* const ICCacheDeletionNeedsRecalculationKey = @"needsRecalculation";
 static NSString* const ICCacheDeletionResolvedURLKey = @"resolvedURL";
 static NSString* const ICCacheDeletionFileWasPresentKey = @"fileWasPresent";
+static const NSUInteger ICAutomaticDownloadRetryScanBatchSize = 50;
+static const NSUInteger ICAutomaticDownloadRetryTrackedCapacity = 3;
+static const NSTimeInterval ICAutomaticDownloadRetryInitialBackoff = 60.0;
+static const NSTimeInterval ICAutomaticDownloadRetryMaximumBackoff = 6.0 * 60.0 * 60.0;
+static NSString* const ICAutomaticDownloadRetryClassificationKey = @"retryClassification";
+static NSString* const ICAutomaticDownloadRetryAttemptKey = @"retryAttempt";
+static NSString* const ICAutomaticDownloadRetryNextEligibleTimestampKey = @"retryNextEligibleTimestamp";
+static NSString* const ICAutomaticDownloadRetryTransient = @"transient";
+static NSString* const ICAutomaticDownloadRetryPermanent = @"permanent";
 
 NSString* CacheManagerDidStartCachingNotification = @"CacheManagerDidStartCachingNotification";
 NSString* CacheManagerDidEndCachingNotification = @"CacheManagerDidEndCachingNotification";
@@ -60,6 +70,7 @@ NSString* CacheManagerWillCommitCacheFileDeletionNotification = @"CacheManagerWi
 NSString* CacheManagerDidDeleteCacheFilesNotification = @"CacheManagerDidDeleteCacheFilesNotification";
 NSString* CacheManagerDidRestoreCacheNotification = @"CacheManagerDidRestoreCacheNotification";
 NSString* CacheManagerDidFinishBuildingCacheIndexNotification = @"CacheManagerDidFinishBuildingCacheIndexNotification";
+NSString* CacheManagerDidBecomeReadyForAutomaticDownloadsNotification = @"CacheManagerDidBecomeReadyForAutomaticDownloadsNotification";
 
 NSString* CacheManagerWiFiDidBecomeAvailableNotification = @"CacheManagerWiFiDidBecomeAvailableNotification";
 
@@ -274,6 +285,15 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
       overwriteCellularLock:(BOOL)overwriteCellularLock
         reportsFailureToUser:(BOOL)reportsFailureToUser
                   completion:(void (^)(NSError* error))completion;
+- (NSString*)_automaticRetryClassificationForError:(NSError*)error;
+- (NSTimeInterval)_automaticRetryBackoffForAttempt:(NSUInteger)attempt;
+- (NSDictionary*)_automaticRetryMetadataByAddingMissingState:(NSDictionary*)metadata error:(NSError*)error;
+- (BOOL)_automaticRetryFailureIsStaleForEpisode:(CDEpisode*)episode;
+- (void)_cancelAutomaticRetryWake;
+- (void)_scheduleAutomaticRetryWakeAtTimestamp:(NSTimeInterval)timestamp;
+- (void)_processAutomaticRetryScanChunk;
+- (void)_drainPendingAutomaticRetries;
+- (void)_automaticRetryOperationDidFinishWithIdentifier:(NSString*)identifier;
 @end
 
 
@@ -308,6 +328,18 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     NSUInteger                  _failedDownloadRestoreGeneration;
     NSUInteger                  _failedDownloadMutationGeneration;
     NSMutableDictionary<NSString*, NSNumber*>* _failedDownloadMutationGenerationsByEpisodeHash;
+    NSMutableOrderedSet<NSString*>* _pendingAutomaticRetryEpisodeHashes;
+    NSMutableSet<NSString*>*    _automaticRetryInFlightEpisodeHashes;
+    NSMutableDictionary<NSString*, NSNumber*>* _automaticRetryAttemptsByActiveEpisodeHash;
+    NSMutableSet<NSString*>*    _automaticRetryMetadataUpdateEpisodeHashes;
+    NSMutableSet<NSString*>*    _automaticRetrySuppressedEpisodeHashes;
+    dispatch_source_t           _automaticRetryWakeSource;
+    NSTimeInterval              _automaticRetryWakeTimestamp;
+    NSTimeInterval              _automaticRetryNextWakeTimestamp;
+    NSUInteger                  _automaticRetryWakeGeneration;
+    NSUInteger                  _automaticRetryScanCursor;
+    BOOL                        _automaticRetryScanInProgress;
+    BOOL                        _automaticRetryRescanRequested;
     NSMutableDictionary<NSString*, void (^)(void)>* _backgroundSessionCompletionHandlers;
     NSMutableDictionary<NSString*, NSURLSession*>* _orphanedBackgroundSessionsByIdentifier;
     NSMutableDictionary*        _streamingCacheProgresses;
@@ -426,6 +458,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         _downloadErrorsByEpisodeHash = [[NSMutableDictionary alloc] init];
         _failedDownloadMetadataByEpisodeHash = [[NSMutableDictionary alloc] init];
         _failedDownloadMutationGenerationsByEpisodeHash = [[NSMutableDictionary alloc] init];
+        _pendingAutomaticRetryEpisodeHashes = [[NSMutableOrderedSet alloc] init];
+        _automaticRetryInFlightEpisodeHashes = [[NSMutableSet alloc] init];
+        _automaticRetryAttemptsByActiveEpisodeHash = [[NSMutableDictionary alloc] init];
+        _automaticRetryMetadataUpdateEpisodeHashes = [[NSMutableSet alloc] init];
+        _automaticRetrySuppressedEpisodeHashes = [[NSMutableSet alloc] init];
         _failedDownloadPersistenceQueue = dispatch_queue_create("com.vemedio.instacast.failedDownloadPersistence", DISPATCH_QUEUE_SERIAL);
         dispatch_set_target_queue(_failedDownloadPersistenceQueue, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
         _backgroundSessionCompletionHandlers = [[NSMutableDictionary alloc] init];
@@ -479,7 +516,14 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (void)_restoreCachingEpisodesWhenHistoryReady
 {
-    if (_cachingEpisodesRestored) return;
+    if (_cachingEpisodesRestored) {
+        [self retryFailedAutomaticDownloadsIfPossible];
+        if (self.readyForAutomaticDownloads) {
+            [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidBecomeReadyForAutomaticDownloadsNotification
+                                                                object:self];
+        }
+        return;
+    }
     [self.cacheHistory reloadIfNeededWithCompletion:^(NSError* historyError) {
         if (historyError) {
             ErrLog(@"download history is still unavailable: %@", historyError);
@@ -488,6 +532,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         if (self->_cachingEpisodesRestored || !self->_cacheIndexReady) return;
         self->_cachingEpisodesRestored = YES;
         [self restoreCachingEpisodes];
+        [self retryFailedAutomaticDownloadsIfPossible];
+        [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidBecomeReadyForAutomaticDownloadsNotification
+                                                            object:self];
     }];
 }
 
@@ -659,6 +706,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         }
     }
     [self _startNextDownloadOperations];
+    [self retryFailedAutomaticDownloadsIfPossible];
     if (![self canDownload]) {
         _rateDate = nil;
         _rateBytes = 0LL;
@@ -952,9 +1000,6 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
         overwriteCellularLock:overwriteCellularLock
           reportsFailureToUser:reportsFailureToUser
                     completion:nil];
-    if (!reportsFailureToUser && episode.objectHash.length > 0) {
-        _downloadErrorsByEpisodeHash[episode.objectHash] = error;
-    }
     if (_downloadOperationsByIdentifier.count > 0) {
         _currentQueueHadFailure = YES;
     }
@@ -1285,9 +1330,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         BOOL autoCacheVideo = [feed boolForKey:AutoCacheNewVideoEpisodes];
 
         if (!episode.video && !autoCacheAudio) {
+            [self retryFailedAutomaticDownloadsIfPossible];
             return NO;
         }
         else if (episode.video && !autoCacheVideo) {
+            [self retryFailedAutomaticDownloadsIfPossible];
             return NO;
         }
     }
@@ -2337,6 +2384,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     if (![operation isExecuting]) {
         [self _removeTrackedDownloadOperation:operation];
         [self _completeBackgroundSessionForIdentifier:operation.identifier];
+        [self _automaticRetryOperationDidFinishWithIdentifier:operation.identifier];
         [self _startNextDownloadOperations];
         [self _finishDownloadBatchAfterOperation:operation];
         [self coalescedPerformSelector:@selector(_postDidUpdateNotification) afterDelay:0.1];
@@ -2538,8 +2586,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	for(CACHE_OPERATION_CLASS* operation in operations) {
 		BOOL manuallySuspended = [_manuallySuspendedDownloadIdentifiers containsObject:operation.identifier];
 		operation.suspended = ![self _networkAllowsDownloadOperation:operation] || manuallySuspended;
-	}
+    }
     [self _startNextDownloadOperations];
+    [self _drainPendingAutomaticRetries];
 }
 
 - (void) resumeCachingEpisode:(CDEpisode*)episode
@@ -2561,6 +2610,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 - (BOOL)isCacheIndexReady
 {
     return _cacheIndexReady;
+}
+
+- (BOOL)isReadyForAutomaticDownloads
+{
+    return _cacheIndexReady && self.cacheHistory.isLoaded && _cachingEpisodesRestored;
 }
 
 
@@ -2965,6 +3019,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 [self->_failedDownloadEpisodes addObjectsFromArray:restoredEpisodes];
                 [self didChangeValueForKey:@"failedDownloadEpisodes"];
             }
+            [self retryFailedAutomaticDownloadsIfPossible];
         });
     });
 }
@@ -2990,11 +3045,16 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         if (completion) completion(nil);
         return;
     }
+    [_pendingAutomaticRetryEpisodeHashes removeObject:episodeHash];
+    [_automaticRetrySuppressedEpisodeHashes addObject:episodeHash];
     _failedDownloadMutationGeneration += 1;
     NSNumber* mutationGeneration = @(_failedDownloadMutationGeneration);
     _failedDownloadMutationGenerationsByEpisodeHash[episodeHash] = mutationGeneration;
     [self _deletePersistedFailedDownloadForIdentifier:episodeHash completion:^(NSError* error) {
         if (error) {
+            if ([self->_failedDownloadMutationGenerationsByEpisodeHash[episodeHash] isEqual:mutationGeneration]) {
+                [self->_automaticRetrySuppressedEpisodeHashes removeObject:episodeHash];
+            }
             if (completion) completion(error);
             return;
         }
@@ -3019,6 +3079,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         [self->_downloadErrorsByEpisodeHash removeObjectForKey:episodeHash];
         [self->_failedDownloadMetadataByEpisodeHash removeObjectForKey:episodeHash];
         [self->_failedDownloadMutationGenerationsByEpisodeHash removeObjectForKey:episodeHash];
+        [self->_automaticRetrySuppressedEpisodeHashes removeObject:episodeHash];
         if (completion) completion(nil);
     }];
 }
@@ -3048,6 +3109,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     for (NSString* identifier in identifiers) {
         _failedDownloadMutationGenerationsByEpisodeHash[identifier] = clearGeneration;
         mutationGenerationsByIdentifier[identifier] = clearGeneration;
+        [_pendingAutomaticRetryEpisodeHashes removeObject:identifier];
+        [_automaticRetrySuppressedEpisodeHashes addObject:identifier];
     }
 
     [self _deletePersistedFailedDownloadFilesForIdentifiers:identifiers.allObjects
@@ -3079,6 +3142,12 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 [self->_failedDownloadMutationGenerationsByEpisodeHash removeObjectForKey:identifier];
             }
         }
+        for (NSString* identifier in identifiers) {
+            if ([identifiersToRemove containsObject:identifier] ||
+                [self->_failedDownloadMutationGenerationsByEpisodeHash[identifier] isEqual:mutationGenerationsByIdentifier[identifier]]) {
+                [self->_automaticRetrySuppressedEpisodeHashes removeObject:identifier];
+            }
+        }
         if (completion) completion(error);
     }];
 }
@@ -3104,9 +3173,16 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     [identifiers addObjectsFromArray:_downloadErrorsByEpisodeHash.allKeys];
     [identifiers addObjectsFromArray:_failedDownloadMetadataByEpisodeHash.allKeys];
     NSMutableDictionary<NSString*, NSNumber*>* mutationGenerationsByIdentifier = [NSMutableDictionary dictionaryWithCapacity:identifiers.count];
+    _automaticRetryScanInProgress = NO;
+    _automaticRetryRescanRequested = NO;
+    _automaticRetryScanCursor = 0;
+    _automaticRetryNextWakeTimestamp = 0;
+    [self _cancelAutomaticRetryWake];
+    [_pendingAutomaticRetryEpisodeHashes removeAllObjects];
     for (NSString* identifier in identifiers) {
         _failedDownloadMutationGenerationsByEpisodeHash[identifier] = clearGeneration;
         mutationGenerationsByIdentifier[identifier] = clearGeneration;
+        [_automaticRetrySuppressedEpisodeHashes addObject:identifier];
     }
 
     [self _deletePersistedFailedDownloadsForIdentifiers:identifiers.allObjects
@@ -3136,6 +3212,12 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 [self->_downloadErrorsByEpisodeHash removeObjectForKey:identifier];
                 [self->_failedDownloadMetadataByEpisodeHash removeObjectForKey:identifier];
                 [self->_failedDownloadMutationGenerationsByEpisodeHash removeObjectForKey:identifier];
+            }
+        }
+        for (NSString* identifier in identifiers) {
+            if ([identifiersToRemove containsObject:identifier] ||
+                [self->_failedDownloadMutationGenerationsByEpisodeHash[identifier] isEqual:mutationGenerationsByIdentifier[identifier]]) {
+                [self->_automaticRetrySuppressedEpisodeHashes removeObject:identifier];
             }
         }
         if (completion) {
@@ -3180,21 +3262,361 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         return NO;
     }
 
+    BOOL automatic = [metadata[@"automatic"] boolValue];
     BOOL overwriteCellularLock = [metadata[@"overwriteCellularLock"] boolValue];
-    BOOL started = [self cacheEpisode:episode
-              overwriteCellularLock:overwriteCellularLock
-             reportsFailureToUser:NO];
+    if (automatic) {
+        _automaticRetryAttemptsByActiveEpisodeHash[identifier] = @([metadata[ICAutomaticDownloadRetryAttemptKey] unsignedIntegerValue]);
+    }
+    BOOL started = [self _cacheEpisode:episode
+                             autoCache:automatic
+               overwriteCellularLock:overwriteCellularLock
+                  reportsFailureToUser:NO
+                              queueRank:nil];
     if (!started) {
         NSError* retryError = [self downloadErrorForEpisode:episode] ?: [self _downloadStartError:@"The episode download could not be started.".ls];
+        [_automaticRetryMetadataUpdateEpisodeHashes addObject:identifier];
         [self _recordDownloadError:retryError
                         forEpisode:episode
-                         automatic:NO
+                         automatic:automatic
             overwriteCellularLock:overwriteCellularLock
               reportsFailureToUser:YES
                         completion:nil];
+        [_automaticRetryMetadataUpdateEpisodeHashes removeObject:identifier];
+        [_automaticRetryAttemptsByActiveEpisodeHash removeObjectForKey:identifier];
         if (error) *error = retryError;
     }
     return started;
+}
+
+- (NSString*)_automaticRetryClassificationForError:(NSError*)error
+{
+    if (!error) {
+        return ICAutomaticDownloadRetryPermanent;
+    }
+
+    NSError* underlyingError = error.userInfo[NSUnderlyingErrorKey];
+    NSInteger statusCode = 0;
+    if ([error.domain isEqualToString:@"ICCacheOperationErrorDomain"]) {
+        if (error.code == 5) {
+            return ICAutomaticDownloadRetryTransient;
+        }
+        if (error.code >= 400 && error.code <= 599) {
+            statusCode = error.code;
+        }
+    }
+
+    if (statusCode == 408 || statusCode == 425 || statusCode == 429 || statusCode >= 500) {
+        return ICAutomaticDownloadRetryTransient;
+    }
+    if (statusCode >= 400) {
+        return ICAutomaticDownloadRetryPermanent;
+    }
+    if ([error.domain isEqualToString:@"ICCacheOperationErrorDomain"]) {
+        return ICAutomaticDownloadRetryPermanent;
+    }
+
+    if ([error.domain isEqualToString:NSURLErrorDomain]) {
+        switch (error.code) {
+            case NSURLErrorTimedOut:
+            case NSURLErrorCannotFindHost:
+            case NSURLErrorCannotConnectToHost:
+            case NSURLErrorNetworkConnectionLost:
+            case NSURLErrorDNSLookupFailed:
+            case NSURLErrorNotConnectedToInternet:
+            case NSURLErrorResourceUnavailable:
+            case NSURLErrorCannotLoadFromNetwork:
+                return ICAutomaticDownloadRetryTransient;
+
+            case NSURLErrorUserAuthenticationRequired:
+            case NSURLErrorUserCancelledAuthentication:
+            case NSURLErrorBadURL:
+            case NSURLErrorUnsupportedURL:
+            case NSURLErrorCancelled:
+            case NSURLErrorNoPermissionsToReadFile:
+                return ICAutomaticDownloadRetryPermanent;
+
+            default:
+                return ICAutomaticDownloadRetryPermanent;
+        }
+    }
+
+    if (underlyingError && underlyingError != error) {
+        return [self _automaticRetryClassificationForError:underlyingError];
+    }
+    return ICAutomaticDownloadRetryPermanent;
+}
+
+- (NSTimeInterval)_automaticRetryBackoffForAttempt:(NSUInteger)attempt
+{
+    NSTimeInterval backoff = ICAutomaticDownloadRetryInitialBackoff;
+    NSUInteger remainingDoublings = attempt > 1 ? attempt - 1 : 0;
+    while (remainingDoublings > 0 && backoff < ICAutomaticDownloadRetryMaximumBackoff) {
+        backoff = MIN(ICAutomaticDownloadRetryMaximumBackoff, backoff * 2.0);
+        remainingDoublings -= 1;
+    }
+    return backoff;
+}
+
+- (void)_cancelAutomaticRetryWake
+{
+    NSAssert([NSThread isMainThread], @"Automatic retry scheduling must stay on the main thread");
+    _automaticRetryWakeGeneration += 1;
+    if (_automaticRetryWakeSource) {
+        dispatch_source_cancel(_automaticRetryWakeSource);
+        _automaticRetryWakeSource = nil;
+    }
+    _automaticRetryWakeTimestamp = 0;
+}
+
+- (void)_scheduleAutomaticRetryWakeAtTimestamp:(NSTimeInterval)timestamp
+{
+    NSAssert([NSThread isMainThread], @"Automatic retry scheduling must stay on the main thread");
+    if (timestamp <= 0) {
+        return;
+    }
+    if (timestamp <= [NSDate date].timeIntervalSince1970) {
+        [self retryFailedAutomaticDownloadsIfPossible];
+        return;
+    }
+    if (_automaticRetryWakeSource && _automaticRetryWakeTimestamp <= timestamp) {
+        return;
+    }
+
+    [self _cancelAutomaticRetryWake];
+    _automaticRetryWakeTimestamp = timestamp;
+    _automaticRetryWakeSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    NSUInteger generation = ++_automaticRetryWakeGeneration;
+
+    time_t seconds = (time_t)timestamp;
+    long nanoseconds = (long)((timestamp - (NSTimeInterval)seconds) * (NSTimeInterval)NSEC_PER_SEC);
+    struct timespec deadline = { .tv_sec = seconds, .tv_nsec = nanoseconds };
+    dispatch_source_set_timer(_automaticRetryWakeSource,
+                              dispatch_walltime(&deadline, 0),
+                              DISPATCH_TIME_FOREVER,
+                              NSEC_PER_SEC / 10);
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_set_event_handler(_automaticRetryWakeSource, ^{
+        CacheManager* strongSelf = weakSelf;
+        if (!strongSelf || strongSelf->_automaticRetryWakeGeneration != generation) {
+            return;
+        }
+        [strongSelf _cancelAutomaticRetryWake];
+        [strongSelf retryFailedAutomaticDownloadsIfPossible];
+    });
+    dispatch_resume(_automaticRetryWakeSource);
+}
+
+- (NSDictionary*)_automaticRetryMetadataByAddingMissingState:(NSDictionary*)metadata error:(NSError*)error
+{
+    if (metadata[ICAutomaticDownloadRetryClassificationKey] &&
+        metadata[ICAutomaticDownloadRetryAttemptKey] &&
+        metadata[ICAutomaticDownloadRetryNextEligibleTimestampKey]) {
+        return metadata;
+    }
+
+    NSMutableDictionary* normalizedMetadata = [metadata mutableCopy];
+    normalizedMetadata[ICAutomaticDownloadRetryClassificationKey] = [self _automaticRetryClassificationForError:error];
+    if (!normalizedMetadata[ICAutomaticDownloadRetryAttemptKey]) {
+        normalizedMetadata[ICAutomaticDownloadRetryAttemptKey] = @1;
+    }
+    if (!normalizedMetadata[ICAutomaticDownloadRetryNextEligibleTimestampKey]) {
+        normalizedMetadata[ICAutomaticDownloadRetryNextEligibleTimestampKey] = @0;
+    }
+    return [normalizedMetadata copy];
+}
+
+- (BOOL)_automaticRetryFailureIsStaleForEpisode:(CDEpisode*)episode
+{
+    CDFeed* feed = episode.feed;
+    if (!episode || episode.isDeleted || !feed || feed.isDeleted || !feed.subscribed || feed.parked ||
+        episode.consumed || episode.archived || [self episodeIsCached:episode fastLookup:YES] ||
+        [self automaticCachingDisabledForEpisode:episode]) {
+        return YES;
+    }
+
+    BOOL autoCacheAudio = [feed boolForKey:AutoCacheNewAudioEpisodes];
+    BOOL autoCacheVideo = [feed boolForKey:AutoCacheNewVideoEpisodes];
+    return (!episode.video && !autoCacheAudio) || (episode.video && !autoCacheVideo);
+}
+
+- (void)retryFailedAutomaticDownloadsIfPossible
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self retryFailedAutomaticDownloadsIfPossible];
+        });
+        return;
+    }
+    if (!_cacheIndexReady || !self.cacheHistory.isLoaded || _clearingAllCache) {
+        return;
+    }
+    if (_automaticRetryScanInProgress) {
+        _automaticRetryRescanRequested = YES;
+        return;
+    }
+
+    _automaticRetryScanInProgress = YES;
+    _automaticRetryRescanRequested = NO;
+    _automaticRetryNextWakeTimestamp = 0;
+    _automaticRetryScanCursor = _failedDownloadEpisodes.count;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _processAutomaticRetryScanChunk];
+    });
+}
+
+- (void)_processAutomaticRetryScanChunk
+{
+    NSAssert([NSThread isMainThread], @"Automatic retry eligibility must be evaluated on the main context");
+    if (!_automaticRetryScanInProgress) {
+        return;
+    }
+    if (!_cacheIndexReady || !self.cacheHistory.isLoaded || _clearingAllCache) {
+        _automaticRetryScanInProgress = NO;
+        _automaticRetryRescanRequested = NO;
+        _automaticRetryScanCursor = 0;
+        return;
+    }
+
+    _automaticRetryScanCursor = MIN(_automaticRetryScanCursor, _failedDownloadEpisodes.count);
+    NSUInteger batchLength = MIN(ICAutomaticDownloadRetryScanBatchSize, _automaticRetryScanCursor);
+    NSUInteger batchStart = _automaticRetryScanCursor - batchLength;
+    NSArray<CDEpisode*>* batch = [_failedDownloadEpisodes subarrayWithRange:NSMakeRange(batchStart, batchLength)];
+    _automaticRetryScanCursor = batchStart;
+    NSTimeInterval now = [NSDate date].timeIntervalSince1970;
+
+    for (CDEpisode* episode in batch) {
+        NSString* identifier = episode.objectHash;
+        NSDictionary* metadata = identifier.length > 0 ? _failedDownloadMetadataByEpisodeHash[identifier] : nil;
+        if (![metadata[@"automatic"] boolValue] || [_automaticRetrySuppressedEpisodeHashes containsObject:identifier]) {
+            continue;
+        }
+        if ([self _automaticRetryFailureIsStaleForEpisode:episode]) {
+            [self clearDownloadErrorForEpisode:episode];
+            continue;
+        }
+
+        NSError* error = _downloadErrorsByEpisodeHash[identifier];
+        NSDictionary* normalizedMetadata = [self _automaticRetryMetadataByAddingMissingState:metadata error:error];
+        if (normalizedMetadata != metadata) {
+            _failedDownloadMetadataByEpisodeHash[identifier] = normalizedMetadata;
+            metadata = normalizedMetadata;
+        }
+        if (![metadata[ICAutomaticDownloadRetryClassificationKey] isEqualToString:ICAutomaticDownloadRetryTransient] ||
+            _downloadOperationsByIdentifier[identifier]) {
+            continue;
+        }
+        NSTimeInterval nextEligibleTimestamp = [metadata[ICAutomaticDownloadRetryNextEligibleTimestampKey] doubleValue];
+        if (nextEligibleTimestamp > now) {
+            if (_automaticRetryNextWakeTimestamp == 0 || nextEligibleTimestamp < _automaticRetryNextWakeTimestamp) {
+                _automaticRetryNextWakeTimestamp = nextEligibleTimestamp;
+            }
+            continue;
+        }
+        [_pendingAutomaticRetryEpisodeHashes addObject:identifier];
+    }
+
+    if (_automaticRetryScanCursor > 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _processAutomaticRetryScanChunk];
+        });
+        return;
+    }
+
+    BOOL needsRescan = _automaticRetryRescanRequested;
+    _automaticRetryScanInProgress = NO;
+    _automaticRetryRescanRequested = NO;
+    if (!needsRescan) {
+        [self _cancelAutomaticRetryWake];
+        [self _scheduleAutomaticRetryWakeAtTimestamp:_automaticRetryNextWakeTimestamp];
+    }
+    [self _drainPendingAutomaticRetries];
+    if (needsRescan) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self retryFailedAutomaticDownloadsIfPossible];
+        });
+    }
+}
+
+- (void)_drainPendingAutomaticRetries
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _drainPendingAutomaticRetries];
+        });
+        return;
+    }
+    if (!_cacheIndexReady || !self.cacheHistory.isLoaded || ![self canDownload] || self.suspended || _clearingAllCache) {
+        return;
+    }
+
+    NSUInteger processedCount = 0;
+    while (_pendingAutomaticRetryEpisodeHashes.count > 0 &&
+           processedCount < ICAutomaticDownloadRetryScanBatchSize &&
+           _downloadOperationsByIdentifier.count < ICAutomaticDownloadRetryTrackedCapacity &&
+           _automaticRetryInFlightEpisodeHashes.count < ICAutomaticDownloadRetryTrackedCapacity) {
+        processedCount += 1;
+        NSString* identifier = _pendingAutomaticRetryEpisodeHashes.firstObject;
+        [_pendingAutomaticRetryEpisodeHashes removeObjectAtIndex:0];
+        if (identifier.length == 0 || [_automaticRetrySuppressedEpisodeHashes containsObject:identifier]) {
+            continue;
+        }
+
+        NSDictionary* metadata = _failedDownloadMetadataByEpisodeHash[identifier];
+        if (![metadata[@"automatic"] boolValue] || _downloadOperationsByIdentifier[identifier]) {
+            continue;
+        }
+        CDEpisode* episode = [DMANAGER episodeWithObjectHash:identifier];
+        if (!episode) {
+            for (CDEpisode* failedEpisode in [_failedDownloadEpisodes copy]) {
+                if ([failedEpisode.objectHash isEqualToString:identifier]) {
+                    [self clearDownloadErrorForEpisode:failedEpisode];
+                    break;
+                }
+            }
+            continue;
+        }
+        if ([self _automaticRetryFailureIsStaleForEpisode:episode]) {
+            [self clearDownloadErrorForEpisode:episode];
+            continue;
+        }
+
+        NSError* error = _downloadErrorsByEpisodeHash[identifier];
+        metadata = [self _automaticRetryMetadataByAddingMissingState:metadata error:error];
+        _failedDownloadMetadataByEpisodeHash[identifier] = metadata;
+        if (![metadata[ICAutomaticDownloadRetryClassificationKey] isEqualToString:ICAutomaticDownloadRetryTransient] ||
+            [metadata[ICAutomaticDownloadRetryNextEligibleTimestampKey] doubleValue] > [NSDate date].timeIntervalSince1970) {
+            continue;
+        }
+
+        _automaticRetryAttemptsByActiveEpisodeHash[identifier] = @([metadata[ICAutomaticDownloadRetryAttemptKey] unsignedIntegerValue]);
+        [_automaticRetryInFlightEpisodeHashes addObject:identifier];
+        BOOL started = [self _cacheEpisode:episode
+                                autoCache:YES
+                  overwriteCellularLock:[metadata[@"overwriteCellularLock"] boolValue]
+                     reportsFailureToUser:NO
+                                 queueRank:nil];
+        if (!started) {
+            [_automaticRetryInFlightEpisodeHashes removeObject:identifier];
+            [_automaticRetryAttemptsByActiveEpisodeHash removeObjectForKey:identifier];
+        }
+    }
+    if (_pendingAutomaticRetryEpisodeHashes.count > 0 &&
+        _downloadOperationsByIdentifier.count < ICAutomaticDownloadRetryTrackedCapacity &&
+        _automaticRetryInFlightEpisodeHashes.count < ICAutomaticDownloadRetryTrackedCapacity) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _drainPendingAutomaticRetries];
+        });
+    }
+}
+
+- (void)_automaticRetryOperationDidFinishWithIdentifier:(NSString*)identifier
+{
+    if (identifier.length > 0) {
+        [_automaticRetryInFlightEpisodeHashes removeObject:identifier];
+        [_automaticRetryAttemptsByActiveEpisodeHash removeObjectForKey:identifier];
+    }
+    [self _drainPendingAutomaticRetries];
 }
 
 - (void)_recordDownloadError:(NSError*)error
@@ -3217,22 +3639,50 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                      @"reportsFailureToUser": @(reportsFailureToUser),
                                      @"error": error.localizedDescription ?: @"",
                                  }];
-    if (!reportsFailureToUser) {
-        if (completion) completion(nil);
-        return;
-    }
-
     NSString* episodeHash = episode.objectHash;
-    _failedDownloadMutationGeneration += 1;
-    _failedDownloadMutationGenerationsByEpisodeHash[episodeHash] = @(_failedDownloadMutationGeneration);
-    _downloadErrorsByEpisodeHash[episodeHash] = error;
-    NSDictionary* metadata = @{
+    NSDictionary* previousMetadata = _failedDownloadMetadataByEpisodeHash[episodeHash];
+    NSUInteger previousAttempt = [previousMetadata[ICAutomaticDownloadRetryAttemptKey] unsignedIntegerValue];
+    previousAttempt = MAX(previousAttempt, [_automaticRetryAttemptsByActiveEpisodeHash[episodeHash] unsignedIntegerValue]);
+    NSMutableDictionary* metadata = [@{
         @"errorDomain": error.domain ?: @"ICCacheOperationErrorDomain",
         @"errorCode": @(error.code),
         @"errorDescription": error.localizedDescription ?: @"The episode download could not be completed.".ls,
         @"overwriteCellularLock": @(overwriteCellularLock),
-    };
-    _failedDownloadMetadataByEpisodeHash[episodeHash] = metadata;
+        @"automatic": @(automatic),
+        @"reportsFailureToUser": @(reportsFailureToUser),
+    } mutableCopy];
+    if (automatic) {
+        BOOL metadataOnlyUpdate = [_automaticRetryMetadataUpdateEpisodeHashes containsObject:episodeHash];
+        NSUInteger attempt = metadataOnlyUpdate
+            ? MAX((NSUInteger)1, previousAttempt)
+            : (previousAttempt == NSUIntegerMax ? NSUIntegerMax : previousAttempt + 1);
+        NSString* classification = [self _automaticRetryClassificationForError:error];
+        NSTimeInterval nextEligibleTimestamp = 0;
+        if ([classification isEqualToString:ICAutomaticDownloadRetryTransient]) {
+            BOOL preservesEligibility = metadataOnlyUpdate &&
+                [previousMetadata[ICAutomaticDownloadRetryClassificationKey] isEqualToString:classification] &&
+                previousMetadata[ICAutomaticDownloadRetryNextEligibleTimestampKey];
+            nextEligibleTimestamp = preservesEligibility
+                ? [previousMetadata[ICAutomaticDownloadRetryNextEligibleTimestampKey] doubleValue]
+                : [NSDate date].timeIntervalSince1970 + [self _automaticRetryBackoffForAttempt:attempt];
+        }
+        metadata[ICAutomaticDownloadRetryClassificationKey] = classification;
+        metadata[ICAutomaticDownloadRetryAttemptKey] = @(attempt);
+        metadata[ICAutomaticDownloadRetryNextEligibleTimestampKey] = @(nextEligibleTimestamp);
+        if (nextEligibleTimestamp > 0) {
+            [self _scheduleAutomaticRetryWakeAtTimestamp:nextEligibleTimestamp];
+            if (_automaticRetryScanInProgress) {
+                _automaticRetryRescanRequested = YES;
+            }
+        }
+    }
+
+    [_pendingAutomaticRetryEpisodeHashes removeObject:episodeHash];
+    [_automaticRetrySuppressedEpisodeHashes removeObject:episodeHash];
+    _failedDownloadMutationGeneration += 1;
+    _failedDownloadMutationGenerationsByEpisodeHash[episodeHash] = @(_failedDownloadMutationGeneration);
+    _downloadErrorsByEpisodeHash[episodeHash] = error;
+    _failedDownloadMetadataByEpisodeHash[episodeHash] = [metadata copy];
     if (![_failedDownloadEpisodeHashes containsObject:episodeHash]) {
         [_failedDownloadEpisodeHashes addObject:episodeHash];
         [self willChangeValueForKey:@"failedDownloadEpisodes"];
@@ -3365,6 +3815,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         }
         _cancelledDownloadRemovalRequestsByIdentifier[operation.identifier] = [terminalRequest copy];
         [self _finishCancelledDownloadRemovalForIdentifier:operation.identifier];
+        [self _automaticRetryOperationDidFinishWithIdentifier:operation.identifier];
         [self _startNextDownloadOperations];
         [self _finishDownloadBatchAfterOperation:operation];
         if (queueOwnerRemoved && retryDeferredCancellation) {
@@ -3516,6 +3967,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         }
         _cancelledDownloadRemovalRequestsByIdentifier[operation.identifier] = [terminalRequest copy];
         [self _finishCancelledDownloadRemovalForIdentifier:operation.identifier];
+        [self _automaticRetryOperationDidFinishWithIdentifier:operation.identifier];
         [self _startNextDownloadOperations];
         [self _finishDownloadBatchAfterOperation:operation];
         return;
@@ -3599,6 +4051,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         }
 #endif
     }
+
+    [self _automaticRetryOperationDidFinishWithIdentifier:operation.identifier];
     
     _flags.supressSendUpdate = YES;
     dispatch_async(dispatch_get_main_queue(), ^{

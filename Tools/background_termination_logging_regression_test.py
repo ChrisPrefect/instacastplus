@@ -28,9 +28,12 @@ require(
     "Startup diagnostics must separately flag previous background terminations and record elapsed time since the last state.",
 )
 
+unexpected_classifier = engine_source.split("private static func didPreviousSessionEndUnexpectedly", 1)[1].split(
+    "private static func didPreviousSessionEndInBackground", 1
+)[0]
 require(
-    '"sceneDidEnterBackground"' not in engine_source.split("private static func didPreviousSessionEndUnexpectedly", 1)[1].split("}", 1)[0],
-    "sceneDidEnterBackground must not be the only classification path; background exits need their own diagnostic event.",
+    "!didPreviousSessionEndInBackground(state)" in unexpected_classifier,
+    "A normal sceneDidEnterBackground termination must not also be classified as an unexpected crash.",
 )
 
 background_block = scene_source.split("- (void)sceneDidEnterBackground:", 1)[1].split("- (void)templateApplicationScene:", 1)[0]

@@ -995,6 +995,9 @@ extension ICiCloudSyncManager {
             }
         }
         resumePendingFinalDeviceRecordUpdateIfNeeded()
+        requestKnownRecordSystemFieldsPruneIfNeeded(
+            accountRecordName: currentAccountUserRecordName
+        )
         return true
     }
 

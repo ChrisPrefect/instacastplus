@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pins kill-safe copying of a legacy Core Data SQLite/WAL/SHM store."""
+"""Pins kill-safe supported rewriting of a legacy Core Data store."""
 
 from pathlib import Path
 
@@ -13,34 +13,44 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-init_start = DATABASE.find("- (id) init")
-init_end = DATABASE.find("- (NSError*)_databaseInitializationErrorWithUnderlyingError:", init_start)
-require(init_start != -1 and init_end != -1, "DatabaseManager init boundary is missing.")
-initializer = DATABASE[init_start:init_end]
+def method_body(signature: str) -> str:
+    implementation = DATABASE.find("@implementation DatabaseManager")
+    start = DATABASE.find(signature, implementation)
+    require(start != -1, f"Missing method: {signature}")
+    brace = DATABASE.find("{", start)
+    depth = 0
+    for index in range(brace, len(DATABASE)):
+        if DATABASE[index] == "{":
+            depth += 1
+        elif DATABASE[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return DATABASE[brace + 1:index]
+    raise AssertionError(f"Unterminated method: {signature}")
 
-# Simulated crash state: the destination main SQLite file exists, its WAL/SHM may not, and
-# the untouched previous-version triplet still exists. A durable marker must make the next
-# launch discard that destination before the ordinary destination-exists gate can accept it.
-marker_declaration = initializer.find("migrationMarkerURL")
-marker_recovery = initializer.find("fileExistsAtPath:migrationMarkerURL.path")
-partial_cleanup = initializer.find("_removeIncompleteCopiedStoreAtURL:_databaseURL", marker_recovery)
-destination_gate = initializer.find("fileExistsAtPath:[_databaseURL path]", partial_cleanup)
-require(-1 < marker_declaration <= marker_recovery < partial_cleanup < destination_gate,
-        "An interrupted upgrade must remove the partial destination triplet before its main SQLite file can be accepted.")
 
-marker_write = initializer.find("writeToURL:migrationMarkerURL")
-main_copy = initializer.find("copyItemAtURL:urlOfLastDataStoreFile toURL:_databaseURL")
-require(-1 < marker_write < main_copy,
-        "The durable in-progress marker must be written before the first destination file is copied.")
-require("NSDataWritingAtomic" in initializer[marker_write - 300:main_copy],
-        "The migration marker must be created atomically so a process kill cannot leave an ambiguous marker.")
+preparation = method_body("+ (BOOL)_prepareDataStoreMigrationWithError:")
+building_write = preparation.find("_writeDataStoreMigrationMarker:marker")
+target_cleanup = preparation.find("_removePreparedDataStoreAtURL", building_write)
+supported_migration = preparation.find("migratePersistentStore", target_cleanup)
+count_compare = preparation.find("isEqualToDictionary", supported_migration)
+ready_phase = preparation.find("ICDataStoreMigrationPhaseReady", count_compare)
+ready_write = preparation.find("_writeDataStoreMigrationMarker:readyMarker", ready_phase)
+require(-1 < building_write < target_cleanup < supported_migration < count_compare < ready_phase < ready_write,
+        "A building marker must precede target creation, and ready may be written only after supported migration and exact count verification.")
+require("copyItemAtURL" not in preparation,
+        "Raw SQLite/WAL copying preserves obsolete tables and is not a supported Core Data migration.")
+require("NSDataWritingAtomic" in DATABASE,
+        "Building/ready marker transitions must be atomic across process kills.")
 
+initializer = method_body("- (id) init")
+ready_gate = initializer.find("ICDataStoreMigrationPhaseReady")
 store_open = initializer.find("NSManagedObjectContext* startupContext = self.objectContext;")
 completion_save = initializer.find("saveReturningError", store_open)
 marker_remove = initializer.find("removeItemAtURL:migrationMarkerURL", completion_save)
 source_cleanup = initializer.find("[self _deleteObsoleteDataStores]", marker_remove)
-require(-1 < store_open < completion_save < marker_remove < source_cleanup,
-        "The source store may be deleted only after the copied target opened, saved, and had its in-progress marker cleared.")
+require(-1 < ready_gate < store_open < completion_save < marker_remove < source_cleanup,
+        "The source must survive until a verified target opens, app migrations save, and the marker commits.")
 
 migrate_start = DATABASE.find("- (void) _migrateDatabase")
 migrate_end = DATABASE.find("- (void) _deleteObsoleteDataStores", migrate_start)
@@ -48,4 +58,4 @@ require(migrate_start != -1 and migrate_end != -1, "Database migration boundary 
 require("_deleteObsoleteDataStores" not in DATABASE[migrate_start:migrate_end],
         "Schema/data migration must not delete the source before the target completion save is confirmed.")
 
-print("Database upgrade-copy kill-safety regression checks passed")
+print("Database supported-upgrade kill-safety regression checks passed")

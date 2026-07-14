@@ -260,8 +260,8 @@ cloud_inventory_refresh_reason = method_body(MANAGER, "func refreshCloudInventor
 require(
     'logSyncEvent("Cloud-Inventar-Abfrage gestartet"' in cloud_inventory_refresh_reason
     and "pendingCloudInventoryRefreshReason = reason" in cloud_inventory_refresh_reason
-    and 'self.storeCloudInventory(box.snapshot(), reason: reason)' in cloud_inventory_refresh_reason
-    and 'self.storeCloudInventory([:], reason: reason)' in cloud_inventory_refresh_reason
+    and 'self.storeCloudInventory(countsByType, reason: reason)' in cloud_inventory_refresh_reason
+    and 'countsByType = zoneIsMissing ? [:] : box.snapshot()' in cloud_inventory_refresh_reason
     and 'self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen"' in cloud_inventory_refresh_reason
     and '"reason": reason' in cloud_inventory_refresh_reason
     and "cloudKitErrorMetadata(error)" in cloud_inventory_refresh_reason,

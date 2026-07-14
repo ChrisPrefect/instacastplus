@@ -78,9 +78,13 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 @property (nonatomic, strong) NSMapTable<CPListItem*, id>* carPlayLegacyItemHandlers;
 @property (nonatomic) BOOL carPlayLastKnownIsPlaying;
 @property (nonatomic, copy) NSSet<UIOpenURLContext*>* pendingOpenURLContexts;
+@property (nonatomic, strong) NSMutableArray<NSUserActivity*>* pendingUserActivities;
 
 - (void)_handleSpotlightUserActivity:(NSUserActivity*)userActivity;
 - (void)_mainViewControllerDidBecomeReady:(NSNotification*)notification;
+- (void)_databaseDidBecomeReadyForCarPlay:(NSNotification*)notification;
+- (void)_databaseDidFailForCarPlay:(NSNotification*)notification;
+- (CPListTemplate*)carPlayDatabaseUnavailableTemplateForError:(NSError*)error;
 
 @end
 
@@ -185,8 +189,22 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         }
 #endif
 
-        if ([DatabaseManager dataStoreNeedsMigration]) {
+        InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
+        [appDelegate setNotificationSceneReady:NO];
+        if (connectionOptions.notificationResponse) {
+            [appDelegate handleNotificationResponse:connectionOptions.notificationResponse completionHandler:nil];
+        }
+        if (appDelegate.databaseStartupState == ICDatabaseStartupStateFailed) {
+            self.mainViewController = nil;
+            [UIManager sharedManager].mainViewController = nil;
+            self.window.rootViewController = [InstacastAppDelegate databaseUnavailableViewControllerForError:appDelegate.databasePreparationError];
+            appDelegate.window = self.window;
+            [appDelegate.window makeKeyAndVisible];
+            return;
+        }
+        else if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
             self.pendingOpenURLContexts = connectionOptions.URLContexts;
+            self.pendingUserActivities = [connectionOptions.userActivities.allObjects mutableCopy];
             [[NSNotificationCenter defaultCenter] addObserver:self
                                                      selector:@selector(_mainViewControllerDidBecomeReady:)
                                                          name:InstacastMainViewControllerDidBecomeReadyNotification
@@ -194,16 +212,13 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
             UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
             ICLocalizeViewText(migrationViewController.view);
             self.window.rootViewController = migrationViewController;
-            InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
             self.mainViewController = nil;
-            appDelegate.mainViewController = nil;
             [UIManager sharedManager].mainViewController = nil;
             appDelegate.window = self.window;
             [appDelegate.window makeKeyAndVisible];
         }
         else
         {
-            InstacastAppDelegate* appDelegate = (InstacastAppDelegate *)[UIApplication sharedApplication].delegate;
             DatabaseManager* databaseManager = [DatabaseManager sharedDatabaseManager];
             if (databaseManager.initializationError) {
                 self.mainViewController = nil;
@@ -215,7 +230,7 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                 return;
             }
 
-            MainViewController_4* mainViewController = [MainViewController_4 mainViewController];
+            MainViewController_4* mainViewController = appDelegate.mainViewController ?: [MainViewController_4 mainViewController];
 
             self.mainViewController = mainViewController;
             appDelegate.mainViewController = mainViewController;
@@ -241,13 +256,14 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                 [[TranscriptionQueue shared] resumeIfNeeded];
             });
 
-            [[AppleWatchSyncManager sharedManager] start];
-
-
             // Handle URL that launched the app
             if (connectionOptions.URLContexts.count > 0) {
                 [self scene:scene openURLContexts:connectionOptions.URLContexts];
             }
+            for (NSUserActivity* userActivity in connectionOptions.userActivities) {
+                [self scene:scene continueUserActivity:userActivity];
+            }
+            [appDelegate setNotificationSceneReady:YES];
         }
 
     }
@@ -273,10 +289,21 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     }
 
     self.mainViewController = mainViewController;
+    UISceneActivationState activationState = self.window.windowScene.activationState;
+    if (activationState == UISceneActivationStateForegroundActive ||
+        activationState == UISceneActivationStateForegroundInactive) {
+        [self sceneWillEnterForeground:self.window.windowScene];
+    }
     if (self.pendingOpenURLContexts.count > 0) {
         [self scene:self.window.windowScene openURLContexts:self.pendingOpenURLContexts];
         self.pendingOpenURLContexts = nil;
     }
+    for (NSUserActivity* userActivity in self.pendingUserActivities) {
+        [self scene:self.window.windowScene continueUserActivity:userActivity];
+    }
+    self.pendingUserActivities = nil;
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    [appDelegate setNotificationSceneReady:YES];
     [[NSNotificationCenter defaultCenter] removeObserver:self
                                                     name:InstacastMainViewControllerDidBecomeReadyNotification
                                                   object:nil];
@@ -299,6 +326,24 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                                             @"urlContextCount": @(URLContexts.count),
                                             @"urls": URLDescriptions,
                                         }];
+
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState == ICDatabaseStartupStateFailed) {
+        return;
+    }
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        NSMutableSet<UIOpenURLContext*>* pendingContexts = [self.pendingOpenURLContexts mutableCopy] ?: [NSMutableSet set];
+        [pendingContexts unionSet:URLContexts];
+        self.pendingOpenURLContexts = pendingContexts;
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                      object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_mainViewControllerDidBecomeReady:)
+                                                     name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                   object:nil];
+        return;
+    }
 
     for (UIOpenURLContext *context in URLContexts) {
         NSURL *url = context.URL;
@@ -449,6 +494,24 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 }
 
 - (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity {
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState == ICDatabaseStartupStateFailed) {
+        return;
+    }
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        if (!self.pendingUserActivities) {
+            self.pendingUserActivities = [NSMutableArray array];
+        }
+        [self.pendingUserActivities addObject:userActivity];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                      object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_mainViewControllerDidBecomeReady:)
+                                                     name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                   object:nil];
+        return;
+    }
     if ([userActivity.activityType isEqualToString:CSSearchableItemActionType]) {
         [self _handleSpotlightUserActivity:userActivity];
         return;
@@ -545,6 +608,13 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                                         metadata:@{
                                             @"role": scene.session.role ?: @"",
                                         }];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                  object:nil];
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.window == self.window && self.window.windowScene == scene) {
+        [appDelegate setNotificationSceneReady:NO];
+    }
 }
 
 
@@ -554,11 +624,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                                             @"role": scene.session.role ?: @"",
                                         }];
     InstacastAppDelegate *appDelegate = (InstacastAppDelegate *)App.delegate;
-    if (appDelegate.mainViewController) {
+    if (appDelegate.databaseStartupState == ICDatabaseStartupStateReady && appDelegate.mainViewController) {
         [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
         [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
+        [[TranscriptionQueue shared] resumeIfNeeded];
     }
-    [[TranscriptionQueue shared] resumeIfNeeded];
 #if !TARGET_OS_MACCATALYST
     // iPadOS Stage Manager: maximumSize freigeben (war startSize für initiale Grösse)
     if ([scene isKindOfClass:[UIWindowScene class]]) {
@@ -580,8 +650,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     // show fresh data as soon as the user switches away from the app.
     // sceneDidEnterBackground fires AFTER the home screen appears — too late for the
     // first widget render. sceneWillResignActive fires BEFORE, so this is the right place.
-    [[WidgetDataExporter sharedExporter] exportNowPlayingSnapshot];
-    [WidgetKitHelper reloadAllTimelines];
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState == ICDatabaseStartupStateReady) {
+        [[WidgetDataExporter sharedExporter] exportNowPlayingSnapshot];
+        [WidgetKitHelper reloadAllTimelines];
+    }
 
 #if TARGET_OS_MACCATALYST
     // Mac Catalyst: Fenstergrösse in UserDefaults speichern.
@@ -601,13 +674,21 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 
 - (NSMutableDictionary*)_diagnosticLifecycleMetadataForScene:(UIScene*)scene
 {
-    PlaybackManager* playbackManager = [PlaybackManager playbackManager];
-    CDEpisode* episode = playbackManager.playingEpisode;
-    BOOL playbackActive = (episode && playbackManager.ready && !playbackManager.paused);
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
     NSMutableDictionary* metadata = [@{
         @"role": scene.session.role ?: @"",
         @"applicationState": ICApplicationStateDiagnosticString(App.applicationState),
         @"backgroundTimeRemaining": @(App.backgroundTimeRemaining),
+        @"databaseStartupState": @(appDelegate.databaseStartupState),
+    } mutableCopy];
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        return metadata;
+    }
+
+    PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+    CDEpisode* episode = playbackManager.playingEpisode;
+    BOOL playbackActive = (episode && playbackManager.ready && !playbackManager.paused);
+    [metadata addEntriesFromDictionary:@{
         @"queuedTranscriptions": @([TranscriptionQueue shared].count),
         @"playbackActive": @(playbackActive),
         @"playbackEpisodeHash": episode.objectHash ?: @"",
@@ -615,7 +696,7 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         @"playbackPaused": @(playbackManager.paused),
         @"playbackTime": @(playbackManager.time),
         @"playbackDuration": @(playbackManager.duration),
-    } mutableCopy];
+    }];
     return metadata;
 }
 
@@ -627,6 +708,10 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
                                         }];
     if ([ICAppearanceManager sharedManager].appearanceMode == ICAppearanceModeAutomatic) {
         [[ICAppearanceManager sharedManager] updateAppearance];
+    }
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        return;
     }
     [self _updateAppContentAfterBecomingActive];
     [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
@@ -682,6 +767,10 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         return;
     }
 
+    if (![sman canRefreshFeedsOnCurrentNetwork]) {
+        return;
+    }
+
     // Skip if last refresh was less than 30 minutes ago
     if (_lastAutoRefreshDate && [[NSDate date] timeIntervalSinceDate:_lastAutoRefreshDate] < kAutoRefreshCooldown) {
         return;
@@ -697,6 +786,10 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     // to restore the scene back to its current state.
     [[ICDiagnosticLogger shared] recordLifecycle:@"sceneDidEnterBackground"
                                         metadata:[self _diagnosticLifecycleMetadataForScene:scene]];
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        return;
+    }
     
     // Save changes in the application's managed object context when the application transitions to the background.
     [[UNUserNotificationCenter currentNotificationCenter] setBadgeCount:([USER_DEFAULTS boolForKey:ShowApplicationBadgeForUnseen]) ? DMANAGER.unplayedList.numberOfEpisodes : 0 withCompletionHandler:nil];
@@ -763,6 +856,31 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
 
 - (void)carPlayDidConnectInterfaceController:(CPInterfaceController*)interfaceController
 {
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState == ICDatabaseStartupStateFailed) {
+        self.interfaceController = interfaceController;
+        self.carPlayRootTemplate = [self carPlayDatabaseUnavailableTemplateForError:appDelegate.databasePreparationError];
+        [self carPlaySetRootTemplate:self.carPlayRootTemplate onInterfaceController:interfaceController animated:NO];
+        return;
+    }
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        self.interfaceController = interfaceController;
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                      object:nil];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:InstacastDatabaseStartupDidFailNotification
+                                                      object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_databaseDidBecomeReadyForCarPlay:)
+                                                     name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_databaseDidFailForCarPlay:)
+                                                     name:InstacastDatabaseStartupDidFailNotification
+                                                   object:nil];
+        return;
+    }
     if (self.interfaceController == interfaceController && self.carPlayRootTemplate) {
         return;
     }
@@ -810,6 +928,19 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         return;
     }
 
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady) {
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                      object:nil];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:InstacastDatabaseStartupDidFailNotification
+                                                      object:nil];
+        self.interfaceController = nil;
+        self.carPlayRootTemplate = nil;
+        return;
+    }
+
     NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
     [nc removeObserver:self name:DatabaseManagerDidUpdateObservedFeedNotification object:nil];
     [nc removeObserver:self name:DatabaseManagerDidAddBookmarkNotification object:nil];
@@ -836,6 +967,42 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     self.carPlayLastKnownIsPlaying = NO;
 }
 
+- (void)_databaseDidBecomeReadyForCarPlay:(NSNotification*)notification
+{
+    (void)notification;
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                  object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:InstacastDatabaseStartupDidFailNotification
+                                                  object:nil];
+    CPInterfaceController* interfaceController = self.interfaceController;
+    self.interfaceController = nil;
+    if (interfaceController) {
+        [self carPlayDidConnectInterfaceController:interfaceController];
+    }
+}
+
+- (void)_databaseDidFailForCarPlay:(NSNotification*)notification
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:InstacastMainViewControllerDidBecomeReadyNotification
+                                                  object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:InstacastDatabaseStartupDidFailNotification
+                                                  object:nil];
+    if (!self.interfaceController) {
+        return;
+    }
+    NSError* error = [notification.object isKindOfClass:NSError.class]
+        ? notification.object
+        : ((InstacastAppDelegate*)App.delegate).databasePreparationError;
+    self.carPlayRootTemplate = [self carPlayDatabaseUnavailableTemplateForError:error];
+    [self carPlaySetRootTemplate:self.carPlayRootTemplate
+           onInterfaceController:self.interfaceController
+                        animated:NO];
+}
+
 #pragma mark - CarPlay Helpers
 
 static NSString* const kCarPlayTemplateKindKey = @"kind";
@@ -849,6 +1016,15 @@ static NSString* const kCarPlayTemplateKindBookmarks = @"bookmarks";
 static NSString* const kCarPlayTemplateKindChapters = @"chapters";
 static NSString* const kCarPlayTemplateSourceKey = @"source";
 static NSUInteger const kCarPlayEpisodeLimit = 100;
+
+- (CPListTemplate*)carPlayDatabaseUnavailableTemplateForError:(NSError*)error
+{
+    CPListItem* item = [[CPListItem alloc] initWithText:@"Local Data Unavailable".ls
+                                            detailText:error.localizedDescription];
+    item.enabled = NO;
+    CPListSection* section = [[CPListSection alloc] initWithItems:@[item]];
+    return [[CPListTemplate alloc] initWithTitle:@"InstacastPlus" sections:@[section]];
+}
 
 - (void)carPlaySetRootTemplate:(CPTemplate*)template onInterfaceController:(CPInterfaceController*)interfaceController animated:(BOOL)animated
 {

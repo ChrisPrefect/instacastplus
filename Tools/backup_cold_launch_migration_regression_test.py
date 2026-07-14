@@ -14,11 +14,38 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def method_body(source: str, signature: str) -> str:
+    start = source.find(signature)
+    require(start >= 0, f"Missing method: {signature}")
+    opening_brace = source.find("{", start)
+    require(opening_brace >= 0, f"Missing method body: {signature}")
+    depth = 0
+    for index in range(opening_brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening_brace:index + 1]
+    raise AssertionError(f"Unterminated method body: {signature}")
+
+
 require("pendingOpenURLContexts" in SCENE,
         "The scene must retain launch URL contexts while database migration owns the root controller.")
-migration = SCENE.split("if ([DatabaseManager dataStoreNeedsMigration])", 1)[1].split("else", 1)[0]
-require("connectionOptions.URLContexts" in migration and "pendingOpenURLContexts" in migration,
-        "Cold-launch URL contexts must be captured in the migration branch, not only after normal startup.")
+will_connect = method_body(
+    SCENE,
+    "- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions",
+)
+require("dataStoreNeedsMigration" not in will_connect,
+        "The scene must not independently preflight migration; AppDelegate owns database startup state.")
+not_ready = will_connect.split(
+    "else if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady)", 1
+)[1].split("else", 1)[0]
+require("connectionOptions.URLContexts" in not_ready
+        and "pendingOpenURLContexts" in not_ready
+        and "connectionOptions.userActivities" in not_ready
+        and "pendingUserActivities" in not_ready,
+        "Cold-launch URL contexts and activities must be retained until AppDelegate reports database readiness.")
 require("InstacastMainViewControllerDidBecomeReadyNotification" in SCENE
         and "InstacastMainViewControllerDidBecomeReadyNotification" in APP,
         "Scene and app startup need one explicit readiness handoff after migration.")

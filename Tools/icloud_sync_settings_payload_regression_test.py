@@ -50,6 +50,7 @@ for key in [
     '"ICDiagnosticPreviousSessionEndedInBackground"',
     '"ICDiagnosticPreviousSessionEndedUnexpectedly"',
     '"ICDiagnosticPreviousSessionState"',
+    '"FTSIndexVersion"',
 ]:
     require(key in body, f"{key} must not be synced as an app setting.")
 

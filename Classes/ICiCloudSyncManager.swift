@@ -182,6 +182,8 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
     nonisolated static let suppressSubscriptionDeletionsKey = "ICiCloudSyncSuppressSubscriptionDeletions"
     nonisolated static let cloudInventoryKey = "ICiCloudSyncCloudInventory"
     nonisolated static let cloudInventoryPayloadScanCompletedKey = "ICiCloudSyncCloudInventoryPayloadScanCompleted"
+    nonisolated static let knownRecordSystemFieldsPruneVersionsKey = "ICiCloudSyncKnownRecordSystemFieldsPruneVersions"
+    nonisolated static let knownRecordSystemFieldsPruneVersion = 1
     nonisolated static let transitionalSubscriptionInventoryRecordsKey = "ICiCloudSyncTransitionalSubscriptionInventoryRecords"
     nonisolated static let subscriptionListSettingsLocalModifiedDateKey = "ICiCloudSyncSubscriptionListSettingsLocalModifiedDate"
     nonisolated static let subscriptionListSettingsBaselineKey = "ICiCloudSyncSubscriptionListSettingsBaseline"
@@ -1089,7 +1091,8 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
                     Self.scrollPositionsLocalModifiedDateKey, Self.suppressSubscriptionDeletionsKey,
                     Self.subscriptionListSettingsLocalModifiedDateKey, Self.subscriptionListSettingsBaselineKey,
                     Self.lastSyncDateKey, Self.deviceRecordShouldStampSyncDateKey, Self.cloudInventoryKey,
-                    Self.cloudInventoryPayloadScanCompletedKey] {
+                    Self.cloudInventoryPayloadScanCompletedKey,
+                    Self.knownRecordSystemFieldsPruneVersionsKey] {
             defaults.removeObject(forKey: key)
         }
         cachedSyncTotalCounts = nil
@@ -1223,6 +1226,38 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
         Self.syncMetadataValue(forKey: Self.transitionalSubscriptionInventoryRecordsKey) as? [String: String] ?? [:]
     }
 
+    func knownRecordSystemFieldsPruneVersion(for accountRecordName: String) -> Int {
+        (defaults.dictionary(forKey: Self.knownRecordSystemFieldsPruneVersionsKey)?[accountRecordName] as? NSNumber)?.intValue ?? 0
+    }
+
+    func setKnownRecordSystemFieldsPruneVersion(_ version: Int, for accountRecordName: String) {
+        var versions = defaults.dictionary(forKey: Self.knownRecordSystemFieldsPruneVersionsKey) ?? [:]
+        versions[accountRecordName] = version
+        defaults.set(versions, forKey: Self.knownRecordSystemFieldsPruneVersionsKey)
+    }
+
+    func requestKnownRecordSystemFieldsPruneIfNeeded(accountRecordName: String) {
+        guard knownRecordSystemFieldsPruneVersion(for: accountRecordName)
+                < Self.knownRecordSystemFieldsPruneVersion else { return }
+        if pendingCloudInventoryRefreshReason == nil {
+            pendingCloudInventoryRefreshReason = "knownSystemFieldsCleanup"
+        }
+        runPendingCloudInventoryRefreshIfNeeded()
+    }
+
+    nonisolated static func cloudInventoryZoneIsMissing(_ error: Error) -> Bool {
+        guard let cloudError = error as? CKError else { return false }
+        switch cloudError.code {
+        case .zoneNotFound, .userDeletedZone, .unknownItem:
+            return true
+        case .partialFailure:
+            let nestedErrors = cloudError.partialErrorsByItemID?.values.map { $0 } ?? []
+            return !nestedErrors.isEmpty && nestedErrors.allSatisfy { cloudInventoryZoneIsMissing($0) }
+        default:
+            return false
+        }
+    }
+
     func refreshCloudInventory(reason: String) {
         guard isICloudAccountIdentityVerified, !isICloudAccountSignedOut else {
             pendingCloudInventoryRefreshReason = reason
@@ -1240,6 +1275,12 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
             pendingCloudInventoryRefreshReason = reason
             return
         }
+        guard let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey),
+              !accountRecordName.isEmpty else {
+            cloudInventoryRefreshErrorText = NSLocalizedString("iCloud data counts could not be updated.", comment: "")
+            postStateChanged()
+            return
+        }
         let generation = cloudAccountGeneration
         pendingCloudInventoryRefreshReason = nil
         cloudInventoryRefreshErrorText = nil
@@ -1249,61 +1290,162 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
         metadata.merge(syncDiagnosticsMetadata()) { current, _ in current }
         logSyncEvent("Cloud-Inventar-Abfrage gestartet", metadata: metadata)
 
-        let shouldInspectPayloads = !defaults.bool(forKey: Self.cloudInventoryPayloadScanCompletedKey)
-        let box = ICCloudInventoryCountsBox(
-            transitionalSubscriptionRecordChangeTags: transitionalSubscriptionInventoryRecords(),
-            inspectSubscriptionPayloads: shouldInspectPayloads
-        )
-        let configuration = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
-        // Payloads are required once to identify records written by the unreleased
-        // same-type tombstone protocol. Thereafter the record change tag is sufficient;
-        // normal count refreshes transfer only CloudKit system metadata.
-        configuration.desiredKeys = shouldInspectPayloads ? ["payload"] : []
-        let operation = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID],
-                                                          configurationsByRecordZoneID: [zoneID: configuration])
-        operation.fetchAllChanges = true
-        operation.qualityOfService = .utility
-        operation.recordWasChangedBlock = { _, result in
-            if case .success(let record) = result {
-                box.record(record)
-            }
-        }
-        operation.recordWithIDWasDeletedBlock = { recordID, _ in
-            box.remove(recordName: recordID.recordName)
-        }
-        operation.fetchRecordZoneChangesResultBlock = { [weak self] result in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard generation == self.cloudAccountGeneration else { return }
-                self.isFetchingCloudInventory = false
+        let shouldPruneKnownRecordSystemFields = knownRecordSystemFieldsPruneVersion(for: accountRecordName)
+            < Self.knownRecordSystemFieldsPruneVersion
+
+        func startCloudInventory(pruneCandidates: [String: Data]?) {
+            let shouldInspectPayloads = !defaults.bool(forKey: Self.cloudInventoryPayloadScanCompletedKey)
+            let box = ICCloudInventoryCountsBox(
+                transitionalSubscriptionRecordChangeTags: transitionalSubscriptionInventoryRecords(),
+                inspectSubscriptionPayloads: shouldInspectPayloads
+            )
+            let configuration = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
+            // Payloads are required once to identify records written by the unreleased
+            // same-type tombstone protocol. Thereafter the record change tag is sufficient;
+            // normal count refreshes transfer only CloudKit system metadata.
+            configuration.desiredKeys = shouldInspectPayloads ? ["payload"] : []
+            let operation = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID],
+                                                              configurationsByRecordZoneID: [zoneID: configuration])
+            operation.fetchAllChanges = true
+            operation.qualityOfService = .utility
+            operation.recordWasChangedBlock = { _, result in
                 switch result {
-                case .success:
-                    self.setSyncMetadata(box.transitionalSubscriptionRecords(),
-                                         forKey: Self.transitionalSubscriptionInventoryRecordsKey)
+                case .success(let record):
+                    box.record(record)
+                case .failure:
+                    box.markRecordFetchFailure()
+                }
+            }
+            operation.recordWithIDWasDeletedBlock = { recordID, _ in
+                box.remove(recordName: recordID.recordName)
+            }
+            operation.recordZoneFetchResultBlock = { _, result in
+                switch result {
+                case .success(let result):
+                    box.markZoneFetchCompleted(moreComing: result.moreComing)
+                case .failure(let error):
+                    if Self.cloudInventoryZoneIsMissing(error) {
+                        box.markZoneMissing()
+                    } else {
+                        box.markRecordFetchFailure()
+                    }
+                }
+            }
+            operation.fetchRecordZoneChangesResultBlock = { [weak self] result in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard generation == self.cloudAccountGeneration else { return }
+                    defer {
+                        if generation == self.cloudAccountGeneration {
+                            self.isFetchingCloudInventory = false
+                            self.runPendingCloudInventoryRefreshIfNeeded()
+                        }
+                    }
+
+                    let countsByType: [String: Int]
+                    let observedRecordNames: Set<String>
+                    let zoneIsMissing: Bool
+                    switch result {
+                    case .success:
+                        zoneIsMissing = box.observedMissingZone()
+                        guard zoneIsMissing || box.inventoryIsComplete() else {
+                            self.cloudInventoryRefreshErrorText = NSLocalizedString("iCloud data counts could not be updated.", comment: "")
+                            self.logSyncEvent("Cloud-Inventar-Abfrage unvollständig", metadata: ["reason": reason])
+                            self.postStateChanged()
+                            return
+                        }
+                        countsByType = zoneIsMissing ? [:] : box.snapshot()
+                        observedRecordNames = zoneIsMissing ? [] : box.observedRecordNames()
+                    case .failure(let error):
+                        zoneIsMissing = box.observedMissingZone() || Self.cloudInventoryZoneIsMissing(error)
+                        guard zoneIsMissing else {
+                            self.cloudInventoryRefreshErrorText = NSLocalizedString("iCloud data counts could not be updated.", comment: "")
+                            var metadata = self.cloudKitErrorMetadata(error)
+                            metadata["reason"] = reason
+                            metadata.merge(self.syncDiagnosticsMetadata()) { current, _ in current }
+                            self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen", metadata: metadata)
+                            self.postStateChanged()
+                            return
+                        }
+                        countsByType = [:]
+                        observedRecordNames = []
+                    }
+
+                    guard self.defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else { return }
+                    self.setSyncMetadata(
+                        zoneIsMissing ? [String: String]() : box.transitionalSubscriptionRecords(),
+                        forKey: Self.transitionalSubscriptionInventoryRecordsKey
+                    )
                     if shouldInspectPayloads {
                         self.setSyncMetadata(true, forKey: Self.cloudInventoryPayloadScanCompletedKey)
                     }
-                    self.storeCloudInventory(box.snapshot(), reason: reason)
-                    self.fetchDeviceRecordsForInventory(box.deviceIDs(), generation: generation)
-                case .failure(let error):
-                    if let ckError = error as? CKError, ckError.code == .zoneNotFound || ckError.code == .userDeletedZone {
-                        self.setSyncMetadata([String: String](),
-                                             forKey: Self.transitionalSubscriptionInventoryRecordsKey)
-                        self.setSyncMetadata(true, forKey: Self.cloudInventoryPayloadScanCompletedKey)
-                        self.storeCloudInventory([:], reason: reason)
-                    } else {
-                        self.cloudInventoryRefreshErrorText = NSLocalizedString("iCloud data counts could not be updated.", comment: "")
-                        var metadata = self.cloudKitErrorMetadata(error)
-                        metadata["reason"] = reason
-                        metadata.merge(self.syncDiagnosticsMetadata()) { current, _ in current }
-                        self.logSyncEvent("Cloud-Inventar-Abfrage fehlgeschlagen", metadata: metadata)
-                        self.postStateChanged()
+                    self.storeCloudInventory(countsByType, reason: reason)
+                    if !zoneIsMissing {
+                        self.fetchDeviceRecordsForInventory(box.deviceIDs(), generation: generation)
+                    }
+
+                    guard let pruneCandidates else { return }
+                    do {
+                        let deletedCount = try await Self.pruneKnownRecordSystemFields(
+                            keeping: observedRecordNames,
+                            candidatesAtInventoryStart: pruneCandidates,
+                            accountRecordName: accountRecordName
+                        )
+                        guard generation == self.cloudAccountGeneration,
+                              self.defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else { return }
+                        self.setKnownRecordSystemFieldsPruneVersion(
+                            Self.knownRecordSystemFieldsPruneVersion,
+                            for: accountRecordName
+                        )
+                        if deletedCount > 0 {
+                            self.logSyncEvent("Lokale CloudKit-Systemfelder bereinigt", metadata: [
+                                "reason": reason,
+                                "deleted": deletedCount,
+                                "remaining": observedRecordNames.count,
+                            ])
+                        }
+                    } catch {
+                        self.logSyncEvent("Cloud-Inventar-Bereinigung fehlgeschlagen", metadata: [
+                            "reason": reason,
+                            "error": (error as NSError).localizedDescription,
+                        ])
                     }
                 }
-                self.runPendingCloudInventoryRefreshIfNeeded()
             }
+            database.add(operation)
         }
-        database.add(operation)
+
+        if shouldPruneKnownRecordSystemFields {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let candidates = try await Self.snapshotKnownRecordSystemFieldsForPruning(
+                        accountRecordName: accountRecordName
+                    )
+                    guard generation == self.cloudAccountGeneration,
+                          self.defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+                        self.isFetchingCloudInventory = false
+                        self.runPendingCloudInventoryRefreshIfNeeded()
+                        return
+                    }
+                    startCloudInventory(pruneCandidates: candidates)
+                } catch {
+                    self.logSyncEvent("Cloud-Inventar-Bereinigung konnte nicht vorbereitet werden", metadata: [
+                        "reason": reason,
+                        "error": (error as NSError).localizedDescription,
+                    ])
+                    guard generation == self.cloudAccountGeneration,
+                          self.defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else {
+                        self.isFetchingCloudInventory = false
+                        self.runPendingCloudInventoryRefreshIfNeeded()
+                        return
+                    }
+                    startCloudInventory(pruneCandidates: nil)
+                }
+            }
+        } else {
+            startCloudInventory(pruneCandidates: nil)
+        }
     }
 
     // The device list used to stay empty ("Noch keine synchronisierten Geräte") until a

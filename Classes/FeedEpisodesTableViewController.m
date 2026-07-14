@@ -207,10 +207,34 @@
 
 - (void) updateEpisodes
 {
-    if (!self->isDownloadedFilter)
-    {
-        self.episodes = [self.fetchController fetchedObjects];
+    self.episodes = [self.fetchController fetchedObjects] ?: @[];
+}
+
+- (BOOL) _removeEpisodeFromDisplayedListIfNeededAfterMutation:(CDEpisode*)episode atIndexPath:(NSIndexPath*)indexPath
+{
+    NSPredicate* predicate = self.fetchController.fetchRequest.predicate;
+    if (!predicate || [predicate evaluateWithObject:episode]) {
+        return NO;
     }
+
+    if (!indexPath || indexPath.section != 0 || indexPath.row >= [self.episodes count]) {
+        return NO;
+    }
+
+    CDEpisode* displayedEpisode = self.episodes[indexPath.row];
+    BOOL isSameEpisode = (displayedEpisode == episode || [displayedEpisode isEqual:episode]);
+    if (!isSameEpisode && episode.objectHash.length > 0) {
+        isSameEpisode = [displayedEpisode.objectHash isEqualToString:episode.objectHash];
+    }
+    if (!isSameEpisode) {
+        return NO;
+    }
+
+    NSMutableArray* episodes = [self.episodes mutableCopy];
+    [episodes removeObjectAtIndex:indexPath.row];
+    self.episodes = [episodes copy];
+    [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+    return YES;
 }
 
 - (BOOL) showsImage
@@ -218,13 +242,13 @@
     return NO;
 }
 
-- (void) _updateFetchControllerWithEpisodeGuids:(NSSet*)episodeGuids
+- (void) _updateFetchControllerWithEpisodeObjectHashes:(NSSet*)episodeObjectHashes
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
     if ([self.searchTerm length] > 0)
     {
-        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && guid IN %@", self.feed, @NO, episodeGuids];
+        fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && objectHash IN %@", self.feed, @NO, episodeObjectHashes];
         
     } else {
         fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@", self.feed, @NO];
@@ -246,13 +270,13 @@
     if ([searchTerm length] > 0)
     {
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-            NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:searchTerm];
+            NSSet* episodeObjectHashes = [DMANAGER.ftsController episodeObjectHashesForSearchTerm:searchTerm];
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (searchGeneration != self->_searchGeneration || ![self.searchTerm isEqualToString:searchTerm]) {
                     return;
                 }
 
-                [self _updateFetchControllerWithEpisodeGuids:episodeGuids];
+                [self _updateFetchControllerWithEpisodeObjectHashes:episodeObjectHashes];
                 [self.tableView reloadData];
                 [self _updateToolbarItemsAnimated:NO];
                 [self _updateToolbarLabels];
@@ -261,7 +285,7 @@
         return;
     }
 
-    [self _updateFetchControllerWithEpisodeGuids:nil];
+    [self _updateFetchControllerWithEpisodeObjectHashes:nil];
 }
 
 #pragma mark - FetchedResultsController delegate
@@ -454,6 +478,16 @@
         if (sm.refreshing) {
             ((ICRefreshControl*)self.refreshControl).refreshText = sm.refreshStatusText;
         }
+    }];
+
+    [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachedEpisodes" task:^(__unused id object, __unused NSDictionary* change) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            FeedEpisodesTableViewController* strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf->isDownloadedFilter || !strongSelf.viewIfLoaded.window) {
+                return;
+            }
+            [strongSelf downloadedUpdateEpisodes];
+        });
     }];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -741,6 +775,7 @@
     SubscriptionManager* sman = [SubscriptionManager sharedSubscriptionManager];
     [sman removeTaskObserver:self forKeyPath:@"formattedLastRefreshDate"];
     [sman removeTaskObserver:self forKeyPath:@"refreshStatusText"];
+    [[CacheManager sharedCacheManager] removeTaskObserver:self forKeyPath:@"cachedEpisodes"];
 }
 
 #pragma mark -
@@ -805,7 +840,6 @@
         if (error) {
             [self presentError:error];
         }
-        [sman autoDownloadEpisodesInFeed:self.feed];
         if ([newEpisodes count] > 0) {
             PlaySoundFile(@"NewEpisodes",NO);
         }
@@ -1124,15 +1158,23 @@
     [self downloadedUpdateEpisodes];
 }
 
--(void) downloadedUpdateEpisodes
+- (void) downloadedUpdateEpisodes
 {
     BOOL reverseOrder = ([[self.feed stringForKey:FeedSortOrder] isEqualToString:SortOrderOlderFirst]);
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
-    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && downloaded == %@", self.feed, @NO, @YES];
+    NSSet<NSString*>* cachedHashes = [CacheManager sharedCacheManager].cachedEpisodeObjectHashes;
+    fetchRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ && archived == %@ && objectHash IN %@", self.feed, @NO, cachedHashes];
     fetchRequest.sortDescriptors = @[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:reverseOrder] ];
-    self.episodes = [DMANAGER.objectContext executeFetchRequest:fetchRequest error:nil] ?: @[];
+
+    self.fetchController = [[NSFetchedResultsController alloc] initWithFetchRequest:fetchRequest managedObjectContext:DMANAGER.objectContext sectionNameKeyPath:nil cacheName:nil];
+    self.fetchController.delegate = self;
+    NSError* fetchError = nil;
+    if (![self.fetchController performFetch:&fetchError]) {
+        ErrLog(@"Could not fetch downloaded feed episodes: %@", fetchError);
+    }
+    [self updateEpisodes];
     [self.tableView reloadData];
-        [self _updateToolbarItemsAnimated:NO];
+    [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
 }
 

@@ -8,13 +8,22 @@
 
 #import <Foundation/Foundation.h>
 
+@class NSManagedObjectContext;
+
 @interface ICFTSController : NSObject
 
 - (id) initWithSearchIndexURL:(NSURL*)url;
 
 - (void) open;
+- (BOOL) indexNeedsRebuild;
+- (BOOL) prepareForExternalStoreMutation:(NSError**)error;
 
-- (void) indexFeeds:(NSArray*)feeds;
+- (void) rebuildIndexWithManagedObjectContext:(NSManagedObjectContext*)context
+                                   completion:(void (^)(NSError* error))completion;
+
+- (void) stageChangesForManagedObjectContext:(NSManagedObjectContext*)context;
+- (void) commitStagedChangesForManagedObjectContext:(NSManagedObjectContext*)context;
+- (void) setCommittedChangesManagedObjectContext:(NSManagedObjectContext*)context;
 
 - (void) addFeed:(CDFeed*)feed;
 - (void) updateFeed:(CDFeed*)feed;
@@ -24,7 +33,7 @@
 - (void) updateEpisode:(CDEpisode*)episode;
 - (void) removeEpisode:(CDEpisode*)episode;
 
-- (NSSet*) feedUIDsForSearchTerm:(NSString*)search;
-- (NSSet*) episodeUIDsForSearchTerm:(NSString*)search;
+- (NSSet*) feedSourceURLsForSearchTerm:(NSString*)search;
+- (NSSet*) episodeObjectHashesForSearchTerm:(NSString*)search;
 
 @end

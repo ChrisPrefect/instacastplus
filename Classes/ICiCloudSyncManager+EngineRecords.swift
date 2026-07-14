@@ -1405,6 +1405,16 @@ extension ICiCloudSyncManager {
             "ICDiagnosticPreviousSessionEndedInBackground",
             "ICDiagnosticPreviousSessionEndedUnexpectedly",
             "ICDiagnosticPreviousSessionState",
+            // This is the version of the device-local SQLite FTS file. Every device must
+            // rebuild its own index; syncing the flag can make another device skip repair.
+            "FTSIndexVersion",
+            "FTSMigrationDone",
+            // Per-device WatchConnectivity transport bookkeeping. A remote settings apply
+            // refreshes appearance, which sends a fresh Watch manifest and advances these
+            // revisions. Syncing them as settings therefore echoed settings_app forever.
+            "ICAppleWatchManifestRevision",
+            "ICAppleWatchPendingManifestRevision",
+            "ICAppleWatchReceivedManifestAcknowledgementRevision",
         ]
     }
 

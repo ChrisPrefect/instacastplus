@@ -8,6 +8,7 @@
 
 #import <objc/runtime.h>
 #include <sys/xattr.h>
+#include <sqlite3.h>
 
 #if TARGET_OS_IPHONE
 #else
@@ -34,6 +35,7 @@
 
 
 #define MODEL_VERSION 5
+#define DATA_STORE_GENERATION 6
 NSTimeInterval kTrialReferenceDate = 0;
 
 static DatabaseManager* gSharedDatabaseManager = nil;
@@ -42,9 +44,25 @@ NSString* DatabaseManagerDidUpdateObservedFeedNotification = @"DatabaseManagerDi
 NSString* DatabaseManagerDidAddBookmarkNotification = @"DatabaseManagerDidAddBookmarkNotification";
 
 static NSString* kDefaultEpisodePositionMigrationDone = @"EpisodePositionMigrationDone";
-static NSString* kDefaultFTSMigrationDone = @"FTSMigrationDone";
+static NSString* kDefaultFTSIndexVersion = @"FTSIndexVersion";
+static const NSInteger kFTSIndexVersion = 3;
+static NSString* const kCurrentFTSIndexFilename = @"FTSIndex-v3.sqlite";
+static NSString* const kLegacyFTSIndexFilename = @"FTSIndex.sqlite";
+static NSString* const kDefaultLegacyFTSMigrationDone = @"FTSMigrationDone";
 static NSString* kDefaultSpotlightMigrationDone = @"SpotlightMigrationDone";
 static const NSUInteger kEpisodeDeletionBatchSize = 50;
+static NSString* const ICDataStoreMigrationPhaseBuilding = @"building";
+static NSString* const ICDataStoreMigrationPhaseReady = @"ready";
+static NSString* const ICDataStoreMigrationPhaseCommitting = @"committing";
+static NSString* const ICDataStoreMigrationPhaseKey = @"phase";
+static NSString* const ICDataStoreMigrationSourcePathKey = @"sourcePath";
+static NSString* const ICDataStoreMigrationTargetPathKey = @"targetPath";
+static NSString* const ICDataStoreMigrationEntityCountsKey = @"entityCounts";
+static NSString* const ICDataStoreMigrationGenerationKey = @"generation";
+static NSString* const ICDataStoreMigrationFormatVersionKey = @"formatVersion";
+static NSString* const ICDataStoreMigrationSourceStoreUUIDKey = @"sourceStoreUUID";
+static NSString* const ICDataStoreMigrationTargetStoreUUIDKey = @"targetStoreUUID";
+static const NSInteger ICDataStoreMigrationFormatVersion = 1;
 
 static BOOL ICFeedPropertyAffectsEpisodeCount(NSString* key)
 {
@@ -73,9 +91,34 @@ static NSString* kBookmarksProperty = @"bookmarks";
 @property (nonatomic, strong, readwrite) ICFTSController* ftsController;
 @property (nonatomic, strong, readwrite) ICSpotlightIndexer* spotlightIndexer;
 @property (nonatomic, readwrite) BOOL ftsIndexing;
+@property (nonatomic) NSUInteger ftsIndexingOperationCount;
 
++ (NSURL*)_currentDataStoreURL;
++ (NSURL*)_dataStoreMigrationMarkerURL;
++ (NSURL*)_authoritativeSourceDataStoreURLWithError:(NSError**)error;
++ (NSURL*)_legacyMigrationSourceURLForTargetURL:(NSURL*)targetURL error:(NSError**)error;
++ (NSURL*)_validatedLegacyDataStoreURL:(NSURL*)storeURL error:(NSError**)error;
++ (NSDictionary*)_readDataStoreMigrationMarkerWithError:(NSError**)error;
++ (BOOL)_writeDataStoreMigrationMarker:(NSDictionary*)marker error:(NSError**)error;
++ (BOOL)_prepareDataStoreMigrationWithError:(NSError**)error;
++ (NSString*)_relativeDataStorePathForURL:(NSURL*)storeURL error:(NSError**)error;
++ (NSURL*)_dataStoreURLForRelativePath:(NSString*)relativePath error:(NSError**)error;
++ (BOOL)_removePreparedDataStoreAtURL:(NSURL*)storeURL error:(NSError**)error;
++ (NSManagedObjectModel*)_compatibleSourceModelForMetadata:(NSDictionary*)metadata error:(NSError**)error;
++ (NSDictionary<NSString*, NSNumber*>*)_entityCountsAtStoreURL:(NSURL*)storeURL
+                                                         model:(NSManagedObjectModel*)model
+                                                       options:(NSDictionary*)options
+                                                         error:(NSError**)error;
++ (BOOL)_validatePreparedStoreAtURL:(NSURL*)storeURL
+                     expectedCounts:(NSDictionary<NSString*, NSNumber*>*)expectedCounts
+                  expectedStoreUUID:(NSString*)expectedStoreUUID
+                              error:(NSError**)error;
++ (BOOL)_sqliteStoreAtURLIsClean:(NSURL*)storeURL error:(NSError**)error;
++ (NSError*)_dataStoreMigrationErrorWithUnderlyingError:(NSError*)underlyingError;
++ (NSSet<NSString*>*)_obsoleteDataStoreFilenames;
++ (BOOL)_isRemovableObsoleteDataStoreItemAtURL:(NSURL*)itemURL;
 - (NSError*)_databaseInitializationErrorWithUnderlyingError:(NSError*)underlyingError;
-- (NSError*)_removeIncompleteCopiedStoreAtURL:(NSURL*)storeURL;
+- (void)_finalizeVersionedFTSMigration;
 - (void)_deleteEpisodeObjectIDs:(NSArray<NSManagedObjectID*>*)episodeObjectIDs
                      startingAt:(NSUInteger)startIndex
      successfullyDeletedEpisodes:(NSMutableArray<CDEpisode*>*)successfullyDeletedEpisodes
@@ -142,11 +185,16 @@ static NSString* kBookmarksProperty = @"bookmarks";
 
 + (DatabaseManager*) sharedDatabaseManager
 {
-	if (!gSharedDatabaseManager) {
-		gSharedDatabaseManager = [self alloc];
-		gSharedDatabaseManager = [gSharedDatabaseManager init];
-	}
-	return gSharedDatabaseManager;
+    // Core Data lifecycle callbacks recurse into DMANAGER while init is still running, so the
+    // object must stay pre-published. The reentrant lock lets that same thread through while a
+    // detached/background caller waits instead of observing and opening a half-built container.
+    @synchronized (self) {
+        if (!gSharedDatabaseManager) {
+            gSharedDatabaseManager = [self alloc];
+            gSharedDatabaseManager = [gSharedDatabaseManager init];
+        }
+        return gSharedDatabaseManager;
+    }
 }
 
 #pragma mark -
@@ -156,7 +204,7 @@ NS_INLINE NSString* _ModelFile(void) {
 }
 
 NS_INLINE NSString* _DataStoreFile(void) {
-    return [NSString stringWithFormat:@"DataStore%d.sqlite", MODEL_VERSION];
+    return [NSString stringWithFormat:@"DataStore%d.sqlite", DATA_STORE_GENERATION];
 }
 
 + (NSString*) currentDataStoreFilename
@@ -175,7 +223,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
         _DataStoreFile(),
         [_DataStoreFile() stringByAppendingString:@"-shm"],
         [_DataStoreFile() stringByAppendingString:@"-wal"],
-        @"FTSIndex.sqlite",
+        kLegacyFTSIndexFilename,
         @"CacheHistory.plist",
         @"CustomViewFilterSets.plist",
     ];
@@ -208,7 +256,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
     NSFileManager* fman = [[NSFileManager alloc] init];
     NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
     NSInteger version;
-    for(version = MODEL_VERSION-1; version>0; version--)
+    for(version = DATA_STORE_GENERATION-1; version>0; version--)
     {
         // Check Data/ folder first
         NSURL* url = [NSURL fileURLWithPath:[dataPath stringByAppendingPathComponent:[NSString stringWithFormat:@"DataStore%ld.sqlite", (long)version]]];
@@ -226,46 +274,798 @@ NS_INLINE NSString* _DataStoreFile(void) {
     return [NSURL fileURLWithPath:[[DatabaseManager pathToDocuments] stringByAppendingPathComponent:@"DataStore.sqlite"]];
 }
 
++ (NSInteger)_dataStoreGenerationForURL:(NSURL*)storeURL
+{
+    NSString* filename = storeURL.lastPathComponent;
+    if ([filename isEqualToString:@"DataStore.sqlite"]) {
+        return 0;
+    }
+
+    NSRegularExpression* expression = [NSRegularExpression regularExpressionWithPattern:@"^DataStore([1-9][0-9]*)\\.sqlite$"
+                                                                                  options:0
+                                                                                    error:nil];
+    NSTextCheckingResult* match = [expression firstMatchInString:filename
+                                                          options:0
+                                                            range:NSMakeRange(0, filename.length)];
+    if (!match || match.numberOfRanges != 2) {
+        return NSNotFound;
+    }
+    return [[filename substringWithRange:[match rangeAtIndex:1]] integerValue];
+}
+
++ (NSURL*)_validatedLegacyDataStoreURL:(NSURL*)storeURL error:(NSError**)error
+{
+    NSString* documentsPath = self.pathToDocuments.stringByStandardizingPath;
+    NSString* dataPath = [documentsPath stringByAppendingPathComponent:@"Data"];
+    NSString* storePath = storeURL.path.stringByStandardizingPath;
+    NSString* parentPath = storePath.stringByDeletingLastPathComponent;
+    NSInteger generation = [self _dataStoreGenerationForURL:storeURL];
+    BOOL validLocation = [parentPath isEqualToString:documentsPath] || [parentPath isEqualToString:dataPath];
+    if (!validLocation || generation == NSNotFound || generation >= DATA_STORE_GENERATION) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:68
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The previous database marker references an unsupported store."}];
+        }
+        return nil;
+    }
+
+    NSError* resourceError = nil;
+    id isSymbolicLink = nil;
+    id isRegularFile = nil;
+    BOOL readSymbolicLinkState = [storeURL getResourceValue:&isSymbolicLink
+                                                     forKey:NSURLIsSymbolicLinkKey
+                                                      error:&resourceError];
+    BOOL readRegularFileState = [storeURL getResourceValue:&isRegularFile
+                                                    forKey:NSURLIsRegularFileKey
+                                                     error:&resourceError];
+    NSString* resolvedPath = storeURL.URLByResolvingSymlinksInPath.path.stringByStandardizingPath;
+    if (!readSymbolicLinkState || !readRegularFileState || [isSymbolicLink boolValue] ||
+        ![isRegularFile boolValue] || ![resolvedPath isEqualToString:storePath]) {
+        if (error) {
+            *error = resourceError ?: [NSError errorWithDomain:@"DatabaseManager"
+                                                          code:69
+                                                      userInfo:@{NSLocalizedDescriptionKey: @"The previous database is not a regular store file."}];
+        }
+        return nil;
+    }
+    return [NSURL fileURLWithPath:storePath];
+}
+
++ (NSURL*)_legacyMigrationSourceURLForTargetURL:(NSURL*)targetURL error:(NSError**)error
+{
+    NSURL* markerURL = [NSURL fileURLWithPath:[targetURL.path stringByAppendingString:@".migration-in-progress"]];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:markerURL.path]) {
+        return nil;
+    }
+
+    id isSymbolicLink = nil;
+    NSError* markerResourceError = nil;
+    if (![markerURL getResourceValue:&isSymbolicLink forKey:NSURLIsSymbolicLinkKey error:&markerResourceError] ||
+        [isSymbolicLink boolValue]) {
+        if (error) {
+            *error = markerResourceError ?: [NSError errorWithDomain:@"DatabaseManager"
+                                                                 code:70
+                                                             userInfo:@{NSLocalizedDescriptionKey: @"The previous database migration marker is not a regular file."}];
+        }
+        return nil;
+    }
+
+    NSError* readError = nil;
+    NSString* markedSourcePath = [NSString stringWithContentsOfURL:markerURL
+                                                          encoding:NSUTF8StringEncoding
+                                                             error:&readError];
+    NSString* documentsPath = self.pathToDocuments.stringByStandardizingPath;
+    NSRange documentsRange = [markedSourcePath rangeOfString:@"/Documents/" options:NSBackwardsSearch];
+    if (!markedSourcePath || documentsRange.location == NSNotFound) {
+        if (error) {
+            *error = readError ?: [NSError errorWithDomain:@"DatabaseManager"
+                                                      code:71
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"The previous database migration marker is damaged."}];
+        }
+        return nil;
+    }
+
+    NSUInteger relativeStart = NSMaxRange(documentsRange);
+    NSString* relativePath = [markedSourcePath substringFromIndex:relativeStart];
+    NSURL* sourceURL = [NSURL fileURLWithPath:[documentsPath stringByAppendingPathComponent:relativePath]];
+    sourceURL = [self _validatedLegacyDataStoreURL:sourceURL error:error];
+    if (!sourceURL) {
+        return nil;
+    }
+
+    NSInteger targetGeneration = [self _dataStoreGenerationForURL:targetURL];
+    NSInteger sourceGeneration = [self _dataStoreGenerationForURL:sourceURL];
+    if (sourceGeneration >= targetGeneration) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:72
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The previous database migration marker does not reference an older store."}];
+        }
+        return nil;
+    }
+    return sourceURL;
+}
+
++ (NSURL*)_authoritativeSourceDataStoreURLWithError:(NSError**)error
+{
+    NSURL* sourceURL = [self _urlOfLastDataStoreFile];
+    NSMutableSet<NSString*>* visitedPaths = [NSMutableSet set];
+    while ([[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path]) {
+        sourceURL = [self _validatedLegacyDataStoreURL:sourceURL error:error];
+        if (!sourceURL) {
+            return nil;
+        }
+        if ([visitedPaths containsObject:sourceURL.path]) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"DatabaseManager"
+                                             code:73
+                                         userInfo:@{NSLocalizedDescriptionKey: @"The previous database migration markers contain a cycle."}];
+            }
+            return nil;
+        }
+        [visitedPaths addObject:sourceURL.path];
+
+        NSError* markerError = nil;
+        NSURL* markedSourceURL = [self _legacyMigrationSourceURLForTargetURL:sourceURL error:&markerError];
+        if (markerError) {
+            if (error) *error = markerError;
+            return nil;
+        }
+        if (!markedSourceURL) {
+            return sourceURL;
+        }
+        sourceURL = markedSourceURL;
+    }
+    return sourceURL;
+}
+
++ (NSURL*)_currentDataStoreURL
+{
+    NSString* dataPath = [self pathToSubfolder:@"Data" parent:[self pathToDocuments]];
+    return dataPath.length > 0 ? [NSURL fileURLWithPath:[dataPath stringByAppendingPathComponent:_DataStoreFile()]] : nil;
+}
+
++ (NSURL*)_dataStoreMigrationMarkerURL
+{
+    NSURL* storeURL = [self _currentDataStoreURL];
+    return storeURL ? [NSURL fileURLWithPath:[storeURL.path stringByAppendingString:@".migration-in-progress"]] : nil;
+}
+
++ (NSError*)_dataStoreMigrationErrorWithUnderlyingError:(NSError*)underlyingError
+{
+    NSMutableDictionary* userInfo = [@{
+        NSLocalizedDescriptionKey: @"InstacastPlus could not update the local podcast database. Your data was left unchanged. Make sure enough storage is available, restart the device, and try again.".ls,
+    } mutableCopy];
+    if (underlyingError) {
+        userInfo[NSUnderlyingErrorKey] = underlyingError;
+    }
+    return [NSError errorWithDomain:@"DatabaseManager" code:42 userInfo:userInfo];
+}
+
++ (NSString*)_relativeDataStorePathForURL:(NSURL*)storeURL error:(NSError**)error
+{
+    NSString* documentsPath = self.pathToDocuments.stringByStandardizingPath;
+    NSString* storePath = storeURL.path.stringByStandardizingPath;
+    NSString* documentsPrefix = [documentsPath stringByAppendingString:@"/"];
+    if (documentsPath.length == 0 || storePath.length == 0 || ![storePath hasPrefix:documentsPrefix]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:43
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The database migration path is outside the app's Documents directory."}];
+        }
+        return nil;
+    }
+    return [storePath substringFromIndex:documentsPrefix.length];
+}
+
++ (NSURL*)_dataStoreURLForRelativePath:(NSString*)relativePath error:(NSError**)error
+{
+    if (relativePath.length == 0 || relativePath.isAbsolutePath) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:44
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker contains an invalid path."}];
+        }
+        return nil;
+    }
+
+    NSURL* storeURL = [NSURL fileURLWithPath:[[self pathToDocuments] stringByAppendingPathComponent:relativePath]];
+    NSString* canonicalRelativePath = [self _relativeDataStorePathForURL:storeURL error:error];
+    if (!canonicalRelativePath || ![canonicalRelativePath isEqualToString:relativePath]) {
+        if (error && !*error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:45
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker path is not canonical."}];
+        }
+        return nil;
+    }
+    return storeURL;
+}
+
++ (NSDictionary*)_readDataStoreMigrationMarkerWithError:(NSError**)error
+{
+    NSURL* markerURL = [self _dataStoreMigrationMarkerURL];
+    NSData* markerData = markerURL ? [NSData dataWithContentsOfURL:markerURL options:0 error:error] : nil;
+    if (!markerData) {
+        return nil;
+    }
+
+    id propertyList = [NSPropertyListSerialization propertyListWithData:markerData
+                                                                 options:NSPropertyListImmutable
+                                                                  format:nil
+                                                                   error:error];
+    if (![propertyList isKindOfClass:NSDictionary.class]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:46
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker is damaged."}];
+        }
+        return nil;
+    }
+    return propertyList;
+}
+
++ (BOOL)_writeDataStoreMigrationMarker:(NSDictionary*)marker error:(NSError**)error
+{
+    NSData* markerData = [NSPropertyListSerialization dataWithPropertyList:marker
+                                                                     format:NSPropertyListBinaryFormat_v1_0
+                                                                    options:0
+                                                                      error:error];
+    if (!markerData) {
+        return NO;
+    }
+    return [markerData writeToURL:[self _dataStoreMigrationMarkerURL]
+                          options:NSDataWritingAtomic
+                            error:error];
+}
+
++ (BOOL)_removePreparedDataStoreAtURL:(NSURL*)storeURL error:(NSError**)error
+{
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    for (NSString* suffix in @[@"", @"-wal", @"-shm", @"-journal"]) {
+        NSURL* fileURL = [NSURL fileURLWithPath:[storeURL.path stringByAppendingString:suffix]];
+        if (![fileManager fileExistsAtPath:fileURL.path]) {
+            continue;
+        }
+        if (![fileManager removeItemAtURL:fileURL error:error]) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
++ (NSManagedObjectModel*)_compatibleSourceModelForMetadata:(NSDictionary*)metadata error:(NSError**)error
+{
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSMutableArray<NSURL*>* modelURLs = [NSMutableArray array];
+    for (NSURL* modelDirectoryURL in [[NSBundle mainBundle] URLsForResourcesWithExtension:@"momd" subdirectory:nil] ?: @[]) {
+        NSArray<NSURL*>* children = [fileManager contentsOfDirectoryAtURL:modelDirectoryURL
+                                                includingPropertiesForKeys:nil
+                                                                   options:NSDirectoryEnumerationSkipsHiddenFiles
+                                                                     error:nil];
+        for (NSURL* childURL in children) {
+            if ([childURL.pathExtension isEqualToString:@"mom"]) {
+                [modelURLs addObject:childURL];
+            }
+        }
+    }
+    [modelURLs addObjectsFromArray:[[NSBundle mainBundle] URLsForResourcesWithExtension:@"mom" subdirectory:nil] ?: @[]];
+    [modelURLs sortUsingComparator:^NSComparisonResult(NSURL* left, NSURL* right) {
+        return [left.path compare:right.path];
+    }];
+
+    NSManagedObjectModel* compatibleSourceModel = nil;
+    NSDictionary* compatibleHashes = nil;
+    for (NSURL* modelURL in modelURLs) {
+        NSManagedObjectModel* candidate = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
+        if (!candidate || ![candidate isConfiguration:nil compatibleWithStoreMetadata:metadata]) {
+            continue;
+        }
+        if (!compatibleSourceModel) {
+            compatibleSourceModel = candidate;
+            compatibleHashes = candidate.entityVersionHashesByName;
+        }
+        else if (![compatibleHashes isEqualToDictionary:candidate.entityVersionHashesByName]) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"DatabaseManager"
+                                             code:47
+                                         userInfo:@{NSLocalizedDescriptionKey: @"More than one bundled database model matches the existing store."}];
+            }
+            return nil;
+        }
+    }
+
+    if (!compatibleSourceModel && error) {
+        *error = [NSError errorWithDomain:@"DatabaseManager"
+                                     code:48
+                                 userInfo:@{NSLocalizedDescriptionKey: @"No bundled database model matches the existing store."}];
+    }
+    return compatibleSourceModel;
+}
+
++ (NSDictionary<NSString*, NSNumber*>*)_entityCountsAtStoreURL:(NSURL*)storeURL
+                                                         model:(NSManagedObjectModel*)model
+                                                       options:(NSDictionary*)options
+                                                         error:(NSError**)error
+{
+    NSPersistentStoreCoordinator* coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:model];
+    NSError* addError = nil;
+    NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                         configuration:nil
+                                                                   URL:storeURL
+                                                               options:options
+                                                                 error:&addError];
+    if (!store) {
+        if (error) *error = addError;
+        return nil;
+    }
+
+    NSManagedObjectContext* context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    context.persistentStoreCoordinator = coordinator;
+    context.undoManager = nil;
+    __block NSError* countError = nil;
+    __block NSMutableDictionary<NSString*, NSNumber*>* entityCounts = [NSMutableDictionary dictionary];
+    NSArray<NSEntityDescription*>* entities = [model.entities sortedArrayUsingComparator:^NSComparisonResult(NSEntityDescription* left, NSEntityDescription* right) {
+        return [left.name compare:right.name];
+    }];
+    [context performBlockAndWait:^{
+        for (NSEntityDescription* entity in entities) {
+            if (entity.isAbstract || entity.name.length == 0) {
+                continue;
+            }
+            NSFetchRequest* request = [[NSFetchRequest alloc] initWithEntityName:entity.name];
+            request.includesSubentities = NO;
+            NSUInteger count = [context countForFetchRequest:request error:&countError];
+            if (count == NSNotFound) {
+                break;
+            }
+            entityCounts[entity.name] = @(count);
+        }
+        [context reset];
+        context.persistentStoreCoordinator = nil;
+    }];
+
+    NSError* removeError = nil;
+    if (![coordinator removePersistentStore:store error:&removeError] && !countError) {
+        countError = removeError;
+    }
+    if (countError) {
+        if (error) *error = countError;
+        return nil;
+    }
+    return entityCounts;
+}
+
++ (BOOL)_sqliteStoreAtURLIsClean:(NSURL*)storeURL error:(NSError**)error
+{
+    sqlite3* database = NULL;
+    int openResult = sqlite3_open_v2(storeURL.path.fileSystemRepresentation,
+                                    &database,
+                                    SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+                                    NULL);
+    if (openResult != SQLITE_OK) {
+        NSString* message = database ? [NSString stringWithUTF8String:sqlite3_errmsg(database)] : @"SQLite could not open the prepared store.";
+        if (database) sqlite3_close(database);
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:49 userInfo:@{NSLocalizedDescriptionKey: message ?: @"SQLite open failed."}];
+        }
+        return NO;
+    }
+
+    BOOL valid = NO;
+    sqlite3_stmt* statement = NULL;
+    int prepareResult = sqlite3_prepare_v2(database, "PRAGMA quick_check", -1, &statement, NULL);
+    if (prepareResult == SQLITE_OK && sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char* result = sqlite3_column_text(statement, 0);
+        valid = result && strcmp((const char*)result, "ok") == 0 && sqlite3_step(statement) == SQLITE_DONE;
+    }
+    sqlite3_finalize(statement);
+
+    NSInteger obsoleteTableCount = -1;
+    statement = NULL;
+    const char* obsoleteTableQuery = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND (name LIKE 'ANSCK%' OR name IN ('ACHANGE', 'ATRANSACTION', 'ATRANSACTIONSTRING'))";
+    if (valid && sqlite3_prepare_v2(database, obsoleteTableQuery, -1, &statement, NULL) == SQLITE_OK && sqlite3_step(statement) == SQLITE_ROW) {
+        obsoleteTableCount = sqlite3_column_int64(statement, 0);
+    }
+    sqlite3_finalize(statement);
+
+    NSString* sqliteMessage = [NSString stringWithUTF8String:sqlite3_errmsg(database)] ?: @"SQLite validation failed.";
+    sqlite3_close(database);
+    if (!valid || obsoleteTableCount != 0) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:50
+                                     userInfo:@{NSLocalizedDescriptionKey: valid ? @"The prepared database still contains obsolete CloudKit or history tables." : sqliteMessage}];
+        }
+        return NO;
+    }
+    return YES;
+}
+
++ (BOOL)_validatePreparedStoreAtURL:(NSURL*)storeURL
+                     expectedCounts:(NSDictionary<NSString*, NSNumber*>*)expectedCounts
+                  expectedStoreUUID:(NSString*)expectedStoreUUID
+                              error:(NSError**)error
+{
+    if (![[NSFileManager defaultManager] fileExistsAtPath:storeURL.path]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:51 userInfo:@{NSLocalizedDescriptionKey: @"The prepared database file is missing."}];
+        }
+        return NO;
+    }
+    if (![self _sqliteStoreAtURLIsClean:storeURL error:error]) {
+        return NO;
+    }
+
+    NSError* metadataError = nil;
+    NSDictionary* metadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                         URL:storeURL
+                                                                                     options:nil
+                                                                                       error:&metadataError];
+    NSString* storeUUID = metadata[NSStoreUUIDKey];
+    if (!metadata || expectedStoreUUID.length == 0 || ![storeUUID isEqualToString:expectedStoreUUID]) {
+        if (error) {
+            *error = metadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:52 userInfo:@{NSLocalizedDescriptionKey: @"The prepared database identity does not match its migration marker."}];
+        }
+        return NO;
+    }
+
+    NSURL* modelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
+    NSManagedObjectModel* currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
+    if (![currentModel isConfiguration:nil compatibleWithStoreMetadata:metadata]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:53 userInfo:@{NSLocalizedDescriptionKey: @"The prepared database does not match the current model."}];
+        }
+        return NO;
+    }
+
+    if (expectedCounts) {
+        NSDictionary* entityCounts = [self _entityCountsAtStoreURL:storeURL
+                                                              model:currentModel
+                                                            options:@{NSPersistentHistoryTrackingKey: @NO}
+                                                              error:error];
+        if (!entityCounts || ![entityCounts isEqualToDictionary:expectedCounts]) {
+            if (error && !*error) {
+                *error = [NSError errorWithDomain:@"DatabaseManager" code:54 userInfo:@{NSLocalizedDescriptionKey: @"The prepared database is incomplete."}];
+            }
+            return NO;
+        }
+    }
+    return YES;
+}
+
++ (BOOL)_prepareDataStoreMigrationWithError:(NSError**)error
+{
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSURL* targetURL = [self _currentDataStoreURL];
+    NSURL* markerURL = [self _dataStoreMigrationMarkerURL];
+    if (!targetURL || !markerURL) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:55 userInfo:@{NSLocalizedDescriptionKey: @"The database directory is unavailable."}];
+        }
+        return NO;
+    }
+
+    NSDictionary* marker = nil;
+    if ([fileManager fileExistsAtPath:markerURL.path]) {
+        marker = [self _readDataStoreMigrationMarkerWithError:error];
+        if (!marker) return NO;
+    }
+    else if ([fileManager fileExistsAtPath:targetURL.path]) {
+        NSError* metadataError = nil;
+        NSDictionary* metadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                             URL:targetURL
+                                                                                         options:nil
+                                                                                           error:&metadataError];
+        NSURL* modelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
+        NSManagedObjectModel* currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
+        if (!metadata || ![currentModel isConfiguration:nil compatibleWithStoreMetadata:metadata]) {
+            if (error) *error = metadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:56 userInfo:@{NSLocalizedDescriptionKey: @"The current database does not match the bundled model."}];
+            return NO;
+        }
+        return YES;
+    }
+    else {
+        NSURL* sourceURL = [self _authoritativeSourceDataStoreURLWithError:error];
+        if (!sourceURL && error && *error) {
+            return NO;
+        }
+        if (![fileManager fileExistsAtPath:sourceURL.path]) {
+            return YES;
+        }
+
+        NSError* metadataError = nil;
+        NSDictionary* sourceMetadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                                    URL:sourceURL
+                                                                                                options:nil
+                                                                                                  error:&metadataError];
+        NSString* sourceStoreUUID = sourceMetadata[NSStoreUUIDKey];
+        NSString* sourcePath = [self _relativeDataStorePathForURL:sourceURL error:error];
+        NSString* targetPath = [self _relativeDataStorePathForURL:targetURL error:error];
+        if (!sourceMetadata || sourceStoreUUID.length == 0 || !sourcePath || !targetPath) {
+            if (error && !*error) *error = metadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:57 userInfo:@{NSLocalizedDescriptionKey: @"The existing database identity could not be read."}];
+            return NO;
+        }
+        if (![self _compatibleSourceModelForMetadata:sourceMetadata error:error]) {
+            return NO;
+        }
+
+        marker = @{
+            ICDataStoreMigrationFormatVersionKey: @(ICDataStoreMigrationFormatVersion),
+            ICDataStoreMigrationGenerationKey: @(DATA_STORE_GENERATION),
+            ICDataStoreMigrationPhaseKey: ICDataStoreMigrationPhaseBuilding,
+            ICDataStoreMigrationSourcePathKey: sourcePath,
+            ICDataStoreMigrationTargetPathKey: targetPath,
+            ICDataStoreMigrationSourceStoreUUIDKey: sourceStoreUUID,
+        };
+        if (![self _writeDataStoreMigrationMarker:marker error:error]) {
+            return NO;
+        }
+    }
+
+    NSString* phase = marker[ICDataStoreMigrationPhaseKey];
+    NSString* sourcePath = marker[ICDataStoreMigrationSourcePathKey];
+    NSString* targetPath = marker[ICDataStoreMigrationTargetPathKey];
+    NSNumber* formatVersion = marker[ICDataStoreMigrationFormatVersionKey];
+    NSNumber* generation = marker[ICDataStoreMigrationGenerationKey];
+    NSString* sourceStoreUUID = marker[ICDataStoreMigrationSourceStoreUUIDKey];
+    if (![phase isKindOfClass:NSString.class] || ![sourcePath isKindOfClass:NSString.class] ||
+        ![targetPath isKindOfClass:NSString.class] || ![formatVersion isKindOfClass:NSNumber.class] ||
+        ![generation isKindOfClass:NSNumber.class] || ![sourceStoreUUID isKindOfClass:NSString.class] ||
+        formatVersion.integerValue != ICDataStoreMigrationFormatVersion || generation.integerValue != DATA_STORE_GENERATION) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:58 userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker is invalid."}];
+        }
+        return NO;
+    }
+
+    NSString* markerTargetStoreUUID = marker[ICDataStoreMigrationTargetStoreUUIDKey];
+    NSDictionary* markerEntityCounts = marker[ICDataStoreMigrationEntityCountsKey];
+    BOOL markerIsReady = [phase isEqualToString:ICDataStoreMigrationPhaseReady];
+    BOOL markerIsCommitting = [phase isEqualToString:ICDataStoreMigrationPhaseCommitting];
+    BOOL preparedMarkerHasValidTypes =
+        (!markerIsReady && !markerIsCommitting) ||
+        ([markerTargetStoreUUID isKindOfClass:NSString.class] &&
+         (!markerIsReady || [markerEntityCounts isKindOfClass:NSDictionary.class]));
+    if (!preparedMarkerHasValidTypes) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:58 userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker is invalid."}];
+        }
+        return NO;
+    }
+
+    NSURL* sourceURL = [self _dataStoreURLForRelativePath:sourcePath error:error];
+    sourceURL = sourceURL ? [self _validatedLegacyDataStoreURL:sourceURL error:error] : nil;
+    NSURL* markedTargetURL = [self _dataStoreURLForRelativePath:targetPath error:error];
+    if (!sourceURL || !markedTargetURL || ![markedTargetURL.path isEqualToString:targetURL.path] || [sourceURL.path isEqualToString:targetURL.path]) {
+        if (error && !*error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:59 userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker targets an unexpected store."}];
+        }
+        return NO;
+    }
+    if (![fileManager fileExistsAtPath:sourceURL.path]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:60 userInfo:@{NSLocalizedDescriptionKey: @"The source database needed to finish the update is missing."}];
+        }
+        return NO;
+    }
+
+    NSError* sourceMetadataError = nil;
+    NSDictionary* sourceMetadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                               URL:sourceURL
+                                                                                           options:nil
+                                                                                             error:&sourceMetadataError];
+    if (!sourceMetadata || ![sourceMetadata[NSStoreUUIDKey] isEqualToString:sourceStoreUUID]) {
+        if (error) *error = sourceMetadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:61 userInfo:@{NSLocalizedDescriptionKey: @"The source database no longer matches the migration marker."}];
+        return NO;
+    }
+    NSManagedObjectModel* compatibleSourceModel = [self _compatibleSourceModelForMetadata:sourceMetadata error:error];
+    if (!compatibleSourceModel) {
+        return NO;
+    }
+
+    if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting]) {
+        return [self _validatePreparedStoreAtURL:targetURL
+                                  expectedCounts:nil
+                               expectedStoreUUID:markerTargetStoreUUID
+                                           error:error];
+    }
+
+    if ([phase isEqualToString:ICDataStoreMigrationPhaseReady]) {
+        if ([self _validatePreparedStoreAtURL:targetURL
+                               expectedCounts:markerEntityCounts
+                            expectedStoreUUID:markerTargetStoreUUID
+                                        error:nil]) {
+            return YES;
+        }
+
+        NSMutableDictionary* rebuildingMarker = [marker mutableCopy];
+        rebuildingMarker[ICDataStoreMigrationPhaseKey] = ICDataStoreMigrationPhaseBuilding;
+        [rebuildingMarker removeObjectForKey:ICDataStoreMigrationEntityCountsKey];
+        [rebuildingMarker removeObjectForKey:ICDataStoreMigrationTargetStoreUUIDKey];
+        if (![self _writeDataStoreMigrationMarker:rebuildingMarker error:error]) {
+            return NO;
+        }
+        marker = rebuildingMarker;
+        phase = ICDataStoreMigrationPhaseBuilding;
+    }
+
+    if (![phase isEqualToString:ICDataStoreMigrationPhaseBuilding]) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:62 userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker has an unknown phase."}];
+        }
+        return NO;
+    }
+
+    NSDictionary* sourceOptions = @{NSPersistentHistoryTrackingKey: @YES};
+    NSDictionary* sourceEntityCounts = [self _entityCountsAtStoreURL:sourceURL
+                                                                model:compatibleSourceModel
+                                                              options:sourceOptions
+                                                                error:error];
+    if (!sourceEntityCounts) {
+        return NO;
+    }
+    if (![self _removePreparedDataStoreAtURL:targetURL error:error]) {
+        return NO;
+    }
+
+    NSPersistentStoreCoordinator* sourceCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:compatibleSourceModel];
+    NSError* migrationError = nil;
+    NSPersistentStore* sourceStore = [sourceCoordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                                      configuration:nil
+                                                                                URL:sourceURL
+                                                                            options:sourceOptions
+                                                                              error:&migrationError];
+    if (!sourceStore) {
+        if (error) *error = migrationError;
+        return NO;
+    }
+
+    NSDictionary* targetOptions = @{NSPersistentHistoryTrackingKey: @NO};
+    NSPersistentStore* migratedStore = [sourceCoordinator migratePersistentStore:sourceStore
+                                                                            toURL:targetURL
+                                                                          options:targetOptions
+                                                                         withType:NSSQLiteStoreType
+                                                                            error:&migrationError];
+    if (!migratedStore) {
+        if ([sourceCoordinator.persistentStores containsObject:sourceStore]) {
+            [sourceCoordinator removePersistentStore:sourceStore error:nil];
+        }
+        if (error) *error = migrationError;
+        return NO;
+    }
+    if (![sourceCoordinator removePersistentStore:migratedStore error:&migrationError]) {
+        if (error) *error = migrationError;
+        return NO;
+    }
+
+    NSURL* currentModelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
+    NSManagedObjectModel* currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:currentModelURL];
+    NSError* targetMetadataError = nil;
+    NSDictionary* targetMetadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                               URL:targetURL
+                                                                                           options:nil
+                                                                                             error:&targetMetadataError];
+    if (!targetMetadata) {
+        if (error) *error = targetMetadataError;
+        return NO;
+    }
+    if (![currentModel isConfiguration:nil compatibleWithStoreMetadata:targetMetadata]) {
+        NSPersistentStoreCoordinator* migrationCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:currentModel];
+        NSDictionary* lightweightOptions = @{
+            NSMigratePersistentStoresAutomaticallyOption: @YES,
+            NSInferMappingModelAutomaticallyOption: @YES,
+            NSPersistentHistoryTrackingKey: @NO,
+        };
+        NSPersistentStore* currentStore = [migrationCoordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                                              configuration:nil
+                                                                                        URL:targetURL
+                                                                                    options:lightweightOptions
+                                                                                      error:&migrationError];
+        if (!currentStore || ![migrationCoordinator removePersistentStore:currentStore error:&migrationError]) {
+            if (error) *error = migrationError;
+            return NO;
+        }
+    }
+
+    NSDictionary* entityCounts = [self _entityCountsAtStoreURL:targetURL
+                                                          model:currentModel
+                                                        options:@{NSPersistentHistoryTrackingKey: @NO}
+                                                          error:error];
+    if (!entityCounts) {
+        return NO;
+    }
+    NSMutableDictionary* sourceProjection = [NSMutableDictionary dictionaryWithCapacity:sourceEntityCounts.count];
+    NSMutableDictionary* targetProjection = [NSMutableDictionary dictionaryWithCapacity:sourceEntityCounts.count];
+    for (NSString* entityName in sourceEntityCounts) {
+        NSNumber* targetCount = entityCounts[entityName];
+        if (!targetCount) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"DatabaseManager" code:63 userInfo:@{NSLocalizedDescriptionKey: @"The migrated database is missing an entity from the source model."}];
+            }
+            return NO;
+        }
+        sourceProjection[entityName] = sourceEntityCounts[entityName];
+        targetProjection[entityName] = targetCount;
+    }
+    if (![sourceProjection isEqualToDictionary:targetProjection] || ![self _sqliteStoreAtURLIsClean:targetURL error:error]) {
+        if (error && !*error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager" code:64 userInfo:@{NSLocalizedDescriptionKey: @"The migrated database failed verification."}];
+        }
+        return NO;
+    }
+
+    targetMetadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                 URL:targetURL
+                                                                             options:nil
+                                                                               error:&targetMetadataError];
+    NSString* targetStoreUUID = targetMetadata[NSStoreUUIDKey];
+    if (targetStoreUUID.length == 0) {
+        if (error) *error = targetMetadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:65 userInfo:@{NSLocalizedDescriptionKey: @"The migrated database identity could not be read."}];
+        return NO;
+    }
+
+    NSMutableDictionary* readyMarker = [marker mutableCopy];
+    readyMarker[ICDataStoreMigrationPhaseKey] = ICDataStoreMigrationPhaseReady;
+    readyMarker[ICDataStoreMigrationEntityCountsKey] = entityCounts;
+    readyMarker[ICDataStoreMigrationTargetStoreUUIDKey] = targetStoreUUID;
+    return [self _writeDataStoreMigrationMarker:readyMarker error:error];
+}
+
++ (void) prepareDataStoreMigrationWithCompletion:(void (^)(NSError* error))completion
+{
+    static dispatch_queue_t migrationQueue;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,
+                                                                                   QOS_CLASS_UTILITY,
+                                                                                   0);
+        migrationQueue = dispatch_queue_create("com.instacastplus.datastore-migration", attributes);
+    });
+    dispatch_async(migrationQueue, ^{
+        @autoreleasepool {
+            NSError* migrationError = nil;
+            BOOL success = [self _prepareDataStoreMigrationWithError:&migrationError];
+            NSError* presentedError = success ? nil : [self _dataStoreMigrationErrorWithUnderlyingError:migrationError];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) completion(presentedError);
+            });
+        }
+    });
+}
+
 + (BOOL) dataStoreNeedsMigrationForFileAtURL:(NSURL*)storeURL
 {
     NSURL *modelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
     NSManagedObjectModel* destinationModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
-    
     NSError *error = nil;
-    NSDictionary *sourceMetadata;
-    
+    NSDictionary *sourceMetadata = nil;
     @try {
         sourceMetadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
                                                                                     URL:storeURL
                                                                                 options:nil
                                                                                   error:&error];
     }
-    @catch (NSException *exception) {
+    @catch (__unused NSException *exception) {
     }
-    
-    return (![destinationModel isConfiguration:nil compatibleWithStoreMetadata:sourceMetadata]);
+    return !sourceMetadata || ![destinationModel isConfiguration:nil compatibleWithStoreMetadata:sourceMetadata];
 }
 
 + (BOOL) dataStoreNeedsMigration
 {
-    // check current file (in Data/ subfolder)
-    NSURL* storeURL = [NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:_DataStoreFile()]];
-    NSFileManager* fman = [[NSFileManager alloc] init];
-    NSURL* migrationMarkerURL = [NSURL fileURLWithPath:[storeURL.path stringByAppendingString:@".migration-in-progress"]];
-    if ([fman fileExistsAtPath:migrationMarkerURL.path]) {
+    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSURL* storeURL = [self _currentDataStoreURL];
+    NSURL* migrationMarkerURL = [self _dataStoreMigrationMarkerURL];
+    if ([fileManager fileExistsAtPath:migrationMarkerURL.path]) {
         return YES;
     }
-    if ([fman fileExistsAtPath:[storeURL path]]) {
+    if ([fileManager fileExistsAtPath:storeURL.path]) {
         return [self dataStoreNeedsMigrationForFileAtURL:storeURL];
     }
 
-    // check old file
-    NSURL* urlOfLastDataStoreFile = [self _urlOfLastDataStoreFile];
-    if ([fman fileExistsAtPath:[urlOfLastDataStoreFile path]]) {
-        return [self dataStoreNeedsMigrationForFileAtURL:urlOfLastDataStoreFile];
-    }
-
-    return NO;
+    NSURL* previousStoreURL = [self _urlOfLastDataStoreFile];
+    return [fileManager fileExistsAtPath:previousStoreURL.path];
 }
 
 - (id) init
@@ -291,77 +1091,71 @@ NS_INLINE NSString* _DataStoreFile(void) {
         [DatabaseManager _migrateRootFilesToDataFolder];
 
         NSFileManager* fileManager = [NSFileManager defaultManager];
-        NSURL* migrationMarkerURL = [NSURL fileURLWithPath:[_databaseURL.path stringByAppendingString:@".migration-in-progress"]];
-        NSURL* urlOfLastDataStoreFile = [DatabaseManager _urlOfLastDataStoreFile];
-        BOOL legacyStoreExists = [fileManager fileExistsAtPath:urlOfLastDataStoreFile.path];
+        NSURL* migrationMarkerURL = [DatabaseManager _dataStoreMigrationMarkerURL];
+        NSURL* previousStoreURL = [DatabaseManager _urlOfLastDataStoreFile];
+        BOOL legacyStoreExists = [fileManager fileExistsAtPath:previousStoreURL.path];
+        BOOL migrationInProgress = [fileManager fileExistsAtPath:migrationMarkerURL.path];
 
-        // The current SQLite file alone does not prove that its WAL/SHM companions were copied.
-        // If the previous launch died mid-copy, rebuild the entire destination triplet while the
-        // previous-version source is still intact.
-        if ([fileManager fileExistsAtPath:migrationMarkerURL.path]) {
-            if (!legacyStoreExists) {
-                NSError* missingSourceError = [NSError errorWithDomain:@"DatabaseManager"
-                                                                   code:41
-                                                               userInfo:@{NSLocalizedDescriptionKey: @"The previous database version needed to finish the interrupted upgrade is missing."}];
-                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:missingSourceError];
+        // The asynchronous preparation owns all destructive work. Initialization may only open
+        // a fully verified target (ready), or resume the app's idempotent post-migration saves
+        // (committing). A building/invalid marker must never expose a killed, empty SQLite file.
+        if (migrationInProgress) {
+            NSError* markerError = nil;
+            NSDictionary* marker = [DatabaseManager _readDataStoreMigrationMarkerWithError:&markerError];
+            BOOL markerHasValidTypes =
+                [marker[ICDataStoreMigrationPhaseKey] isKindOfClass:NSString.class] &&
+                [marker[ICDataStoreMigrationSourcePathKey] isKindOfClass:NSString.class] &&
+                [marker[ICDataStoreMigrationTargetPathKey] isKindOfClass:NSString.class] &&
+                [marker[ICDataStoreMigrationFormatVersionKey] isKindOfClass:NSNumber.class] &&
+                [marker[ICDataStoreMigrationGenerationKey] isKindOfClass:NSNumber.class] &&
+                [marker[ICDataStoreMigrationEntityCountsKey] isKindOfClass:NSDictionary.class] &&
+                [marker[ICDataStoreMigrationTargetStoreUUIDKey] isKindOfClass:NSString.class];
+            if (!markerHasValidTypes) {
+                NSError* invalidMarkerError = markerError ?: [NSError errorWithDomain:@"DatabaseManager"
+                                                                                  code:66
+                                                                              userInfo:@{NSLocalizedDescriptionKey: @"The database migration marker is invalid."}];
+                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:invalidMarkerError];
                 return self;
             }
-            NSError* cleanupError = [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
-            if (cleanupError) {
-                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:cleanupError];
+            NSString* phase = marker[ICDataStoreMigrationPhaseKey];
+            NSString* sourcePath = marker[ICDataStoreMigrationSourcePathKey];
+            NSString* targetPath = marker[ICDataStoreMigrationTargetPathKey];
+            NSURL* sourceURL = [DatabaseManager _dataStoreURLForRelativePath:sourcePath error:&markerError];
+            NSURL* targetURL = [DatabaseManager _dataStoreURLForRelativePath:targetPath error:&markerError];
+            BOOL phaseCanOpen = [phase isEqualToString:ICDataStoreMigrationPhaseReady] ||
+                                [phase isEqualToString:ICDataStoreMigrationPhaseCommitting];
+            BOOL markerIsComplete = marker && phaseCanOpen &&
+                                    [marker[ICDataStoreMigrationFormatVersionKey] integerValue] == ICDataStoreMigrationFormatVersion &&
+                                    [marker[ICDataStoreMigrationGenerationKey] integerValue] == DATA_STORE_GENERATION &&
+                                    [marker[ICDataStoreMigrationEntityCountsKey] isKindOfClass:NSDictionary.class] &&
+                                    [marker[ICDataStoreMigrationTargetStoreUUIDKey] isKindOfClass:NSString.class] &&
+                                    [targetURL.path isEqualToString:_databaseURL.path] &&
+                                    [fileManager fileExistsAtPath:sourceURL.path] &&
+                                    [fileManager fileExistsAtPath:targetURL.path];
+            if (!markerIsComplete) {
+                NSError* invalidMarkerError = markerError ?: [NSError errorWithDomain:@"DatabaseManager"
+                                                                                  code:66
+                                                                              userInfo:@{NSLocalizedDescriptionKey: @"The database update has not finished preparing a verified store."}];
+                self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:invalidMarkerError];
                 return self;
             }
-        }
 
-        // find old database file and make a copy for new database
-        if (![fileManager fileExistsAtPath:[_databaseURL path]])
-        {
-            if (legacyStoreExists)
-            {
-                NSError* error;
-                if (![fileManager fileExistsAtPath:migrationMarkerURL.path]) {
-                    NSData* markerData = [urlOfLastDataStoreFile.path dataUsingEncoding:NSUTF8StringEncoding];
-                    if (![markerData writeToURL:migrationMarkerURL options:NSDataWritingAtomic error:&error]) {
-                        ErrLog(@"error creating database migration marker: %@", error);
-                        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
-                        return self;
-                    }
-                }
-
-                if (![fileManager copyItemAtURL:urlOfLastDataStoreFile toURL:_databaseURL error:&error]) {
-                    ErrLog(@"error copying old database file to new location: %@", error);
-                    [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
-                    self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
+            if ([phase isEqualToString:ICDataStoreMigrationPhaseReady]) {
+                NSMutableDictionary* committingMarker = [marker mutableCopy];
+                committingMarker[ICDataStoreMigrationPhaseKey] = ICDataStoreMigrationPhaseCommitting;
+                if (![DatabaseManager _writeDataStoreMigrationMarker:committingMarker error:&markerError]) {
+                    self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:markerError];
                     return self;
                 }
-
-                NSURL* shmURL = [[urlOfLastDataStoreFile URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"];
-                NSURL* toShmURL = [[_databaseURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-shm"];
-                if ([fileManager fileExistsAtPath:[shmURL path]]) {
-                    NSError* error;
-                    if (![fileManager copyItemAtURL:shmURL toURL:toShmURL error:&error]) {
-                        ErrLog(@"error copying old database shm file to new location: %@", error);
-                        [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
-                        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
-                        return self;
-                    }
-                }
-
-                NSURL* walURL = [[urlOfLastDataStoreFile URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"];
-                NSURL* toWalURL = [[_databaseURL URLByDeletingPathExtension] URLByAppendingPathExtension:@"sqlite-wal"];
-                if ([fileManager fileExistsAtPath:[walURL path]]) {
-                    NSError* error;
-                    if (![fileManager copyItemAtURL:walURL toURL:toWalURL error:&error]) {
-                        ErrLog(@"error copying old database wal file to new location: %@", error);
-                        [self _removeIncompleteCopiedStoreAtURL:_databaseURL];
-                        self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:error];
-                        return self;
-                    }
-                }
             }
         }
-
-        BOOL migrationInProgress = [fileManager fileExistsAtPath:migrationMarkerURL.path];
+        else if (![fileManager fileExistsAtPath:_databaseURL.path] && legacyStoreExists) {
+            NSError* preparationRequiredError = [NSError errorWithDomain:@"DatabaseManager"
+                                                                     code:67
+                                                                 userInfo:@{NSLocalizedDescriptionKey: @"The existing database must be prepared before it can be opened."}];
+            self.initializationError = [self _databaseInitializationErrorWithUnderlyingError:preparationRequiredError];
+            return self;
+        }
 
         BOOL shouldCreateInitialData = ![fileManager fileExistsAtPath:[_databaseURL path]];
         NSManagedObjectContext* startupContext = self.objectContext;
@@ -462,7 +1256,7 @@ NS_INLINE NSString* _DataStoreFile(void) {
 #endif
         
         
-        _ftsController = [[ICFTSController alloc] initWithSearchIndexURL:[NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"FTSIndex.sqlite"]]];
+        _ftsController = [[ICFTSController alloc] initWithSearchIndexURL:[NSURL fileURLWithPath:[[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:kCurrentFTSIndexFilename]]];
         [_ftsController open];
         _spotlightIndexer = [[ICSpotlightIndexer alloc] init];
 
@@ -473,6 +1267,14 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                  selector:@selector(managedObjectContextObjectsDidChangeNotification:)
                                                      name:NSManagedObjectContextObjectsDidChangeNotification
                                                    object:self.objectContext];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(managedObjectContextWillSaveNotification:)
+                                                     name:NSManagedObjectContextWillSaveNotification
+                                                   object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(managedObjectContextDidSaveNotification:)
+                                                     name:NSManagedObjectContextDidSaveNotification
+                                                   object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(transcriptionDidFinishNotification:)
                                                      name:ICTranscriptionDidFinishNotification
@@ -491,35 +1293,6 @@ NS_INLINE NSString* _DataStoreFile(void) {
     }
     return [NSError errorWithDomain:@"DatabaseManager" code:40 userInfo:userInfo];
 }
-
-- (NSError*)_removeIncompleteCopiedStoreAtURL:(NSURL*)storeURL
-{
-    if (!storeURL) {
-        return nil;
-    }
-    NSURL* baseURL = [storeURL URLByDeletingPathExtension];
-    NSArray<NSURL*>* copiedURLs = @[
-        storeURL,
-        [baseURL URLByAppendingPathExtension:@"sqlite-shm"],
-        [baseURL URLByAppendingPathExtension:@"sqlite-wal"],
-    ];
-    NSFileManager* fileManager = [NSFileManager defaultManager];
-    NSError* firstCleanupError = nil;
-    for (NSURL* copiedURL in copiedURLs) {
-        if (![fileManager fileExistsAtPath:copiedURL.path]) {
-            continue;
-        }
-        NSError* cleanupError = nil;
-        if (![fileManager removeItemAtURL:copiedURL error:&cleanupError]) {
-            ErrLog(@"incomplete copied database file could not be removed at %@: %@", copiedURL.path, cleanupError);
-            if (!firstCleanupError) {
-                firstCleanupError = cleanupError;
-            }
-        }
-    }
-    return firstCleanupError;
-}
-
 
 - (void) _createDatabase
 {
@@ -733,34 +1506,77 @@ NS_INLINE NSString* _DataStoreFile(void) {
 
 - (void) _migrateFTS
 {
-    if ([USER_DEFAULTS boolForKey:kDefaultFTSMigrationDone]) {
+    NSManagedObjectContext* committedChangesContext = [self newExportBackgroundContext];
+    [self.ftsController setCommittedChangesManagedObjectContext:committedChangesContext];
+
+    if ([USER_DEFAULTS integerForKey:kDefaultFTSIndexVersion] >= kFTSIndexVersion &&
+        ![self.ftsController indexNeedsRebuild]) {
+        [self _finalizeVersionedFTSMigration];
         return;
     }
-    
-    self.ftsIndexing = YES;
-    
-    NSManagedObjectContext* childContext = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
-    [childContext setParentContext:self.objectContext];
-    
-    [childContext performBlock:^{
-        
-        NSFetchRequest* feedRequest = [[NSFetchRequest alloc] init];
-        feedRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:childContext];
-        feedRequest.fetchBatchSize = 50;
-        
-        NSError* error;
-        NSArray* objects = [childContext executeFetchRequest:feedRequest error:&error];
-        if (error) {
-            ErrLog(@"error fetching feeds from private context: %@", error);
+
+    [self _beginFTSIndexing];
+
+    NSManagedObjectContext* indexContext = [self newExportBackgroundContext];
+    if (!indexContext) {
+        ErrLog(@"FTS index rebuild could not open its read-only data context");
+        [self _endFTSIndexing];
+        return;
+    }
+    indexContext.undoManager = nil;
+
+    [self.ftsController rebuildIndexWithManagedObjectContext:indexContext completion:^(NSError* error) {
+        if (!error) {
+            [USER_DEFAULTS setInteger:kFTSIndexVersion forKey:kDefaultFTSIndexVersion];
+            [self _finalizeVersionedFTSMigration];
         }
-        
-        [self.ftsController indexFeeds:objects];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [USER_DEFAULTS setBool:YES forKey:kDefaultFTSMigrationDone];
-            self.ftsIndexing = NO;
-        });
+        else {
+            ErrLog(@"FTS index rebuild failed: %@", error);
+        }
+        [self _endFTSIndexing];
     }];
+}
+
+- (void)_finalizeVersionedFTSMigration
+{
+    // The previous build understands only the uncompressed filename. Publish its rebuild
+    // request durably before removing that file, so a TestFlight rollback can never open an
+    // empty index while still believing the legacy one-shot migration already completed.
+    [USER_DEFAULTS setBool:NO forKey:kDefaultLegacyFTSMigrationDone];
+    if (![USER_DEFAULTS synchronize]) {
+        ErrLog(@"Could not persist the legacy FTS rebuild marker; keeping the rollback index");
+        return;
+    }
+
+    NSString* documentsPath = [DatabaseManager pathToDocuments];
+    NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:documentsPath];
+    NSArray<NSString*>* suffixes = @[@"", @"-wal", @"-shm", @"-journal", @".dirty", @".rebuild"];
+    for (NSString* directoryPath in @[documentsPath, dataPath]) {
+        NSString* legacyPath = [directoryPath stringByAppendingPathComponent:kLegacyFTSIndexFilename];
+        for (NSString* suffix in suffixes) {
+            NSString* path = [legacyPath stringByAppendingString:suffix];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                continue;
+            }
+            NSError* cleanupError = nil;
+            if (![[NSFileManager defaultManager] removeItemAtPath:path error:&cleanupError]) {
+                ErrLog(@"Could not remove legacy FTS index item at %@: %@", path, cleanupError.localizedDescription);
+            }
+        }
+    }
+}
+
+- (void)_beginFTSIndexing
+{
+    self.ftsIndexingOperationCount += 1;
+    self.ftsIndexing = YES;
+}
+
+- (void)_endFTSIndexing
+{
+    NSAssert(self.ftsIndexingOperationCount > 0, @"Unbalanced FTS indexing operation");
+    self.ftsIndexingOperationCount -= 1;
+    self.ftsIndexing = self.ftsIndexingOperationCount > 0;
 }
 
 - (void) _migrateSpotlight
@@ -816,32 +1632,73 @@ NS_INLINE NSString* _DataStoreFile(void) {
 #undef IC_MIGRATE_STEP
 }
 
-// Deletes leftover old Core Data stores (DataStore<n>.sqlite for n != current MODEL_VERSION,
-// plus their -wal/-shm). A schema migration copies data into the new store but never removes the
-// old one — e.g. DataStore4.sqlite (287 MB) sat next to the live DataStore5.sqlite. Idempotent.
+// Deletes old Core Data generations only after the verified current store has opened and saved.
+// Legacy releases used both Documents/ and Documents/Data/, so cleanup must cover both locations.
++ (NSSet<NSString*>*)_obsoleteDataStoreFilenames
+{
+    NSArray<NSString*>* suffixes = @[@"", @"-wal", @"-shm", @"-journal", @".migration-in-progress"];
+    NSMutableArray<NSString*>* baseNames = [NSMutableArray arrayWithObject:@"DataStore.sqlite"];
+    for (NSInteger generation = 1; generation < DATA_STORE_GENERATION; generation++) {
+        [baseNames addObject:[NSString stringWithFormat:@"DataStore%ld.sqlite", (long)generation]];
+    }
+
+    NSMutableSet<NSString*>* filenames = [NSMutableSet set];
+    for (NSString* baseName in baseNames) {
+        for (NSString* suffix in suffixes) {
+            [filenames addObject:[baseName stringByAppendingString:suffix]];
+        }
+    }
+    return filenames;
+}
+
++ (BOOL)_isRemovableObsoleteDataStoreItemAtURL:(NSURL*)itemURL
+{
+    id isRegularFile = nil;
+    id isSymbolicLink = nil;
+    NSError* resourceError = nil;
+    BOOL readRegularFileState = [itemURL getResourceValue:&isRegularFile
+                                                   forKey:NSURLIsRegularFileKey
+                                                    error:&resourceError];
+    BOOL readSymbolicLinkState = [itemURL getResourceValue:&isSymbolicLink
+                                                    forKey:NSURLIsSymbolicLinkKey
+                                                     error:&resourceError];
+    if (!readRegularFileState || !readSymbolicLinkState) {
+        ErrLog(@"[DataStoreCleanup] could not inspect %@: %@", itemURL.path, resourceError.localizedDescription);
+        return NO;
+    }
+    return [isRegularFile boolValue] && ![isSymbolicLink boolValue];
+}
+
 - (void) _deleteObsoleteDataStores
 {
     NSFileManager* fman = [NSFileManager defaultManager];
-    NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]];
-    NSString* current = _DataStoreFile();  // e.g. "DataStore5.sqlite" (also guards -wal/-shm)
-    NSArray* files = [fman contentsOfDirectoryAtPath:dataPath error:nil];
+    NSString* documentsPath = [DatabaseManager pathToDocuments];
+    NSString* dataPath = [DatabaseManager pathToSubfolder:@"Data" parent:documentsPath];
+    NSSet<NSString*>* obsoleteFilenames = [DatabaseManager _obsoleteDataStoreFilenames];
     NSMutableArray* removed = [NSMutableArray array];
     long long freedBytes = 0;
-    for (NSString* file in files) {
-        if (![file hasPrefix:@"DataStore"] || [file rangeOfString:@".sqlite"].location == NSNotFound) {
-            continue;
-        }
-        if ([file hasPrefix:current]) {
-            continue;  // the live store (and its -wal/-shm)
-        }
-        NSString* full = [dataPath stringByAppendingPathComponent:file];
-        long long size = [[fman attributesOfItemAtPath:full error:nil] fileSize];
-        NSError* err = nil;
-        if ([fman removeItemAtPath:full error:&err]) {
-            [removed addObject:file];
-            freedBytes += size;
-        } else {
-            ErrLog(@"[DataStoreCleanup] failed to remove %@: %@", file, err.localizedDescription);
+    for (NSString* directoryPath in @[dataPath, documentsPath]) {
+        NSArray* files = [fman contentsOfDirectoryAtPath:directoryPath error:nil];
+        for (NSString* file in files) {
+            if (![obsoleteFilenames containsObject:file]) {
+                continue;
+            }
+            NSString* fullPath = [directoryPath stringByAppendingPathComponent:file];
+            NSURL* fileURL = [NSURL fileURLWithPath:fullPath];
+            if (![DatabaseManager _isRemovableObsoleteDataStoreItemAtURL:fileURL]) {
+                ErrLog(@"[DataStoreCleanup] skipped non-regular item %@", fullPath);
+                continue;
+            }
+            long long size = [[fman attributesOfItemAtPath:fullPath error:nil] fileSize];
+            NSError* cleanupError = nil;
+            if ([fman removeItemAtPath:fullPath error:&cleanupError]) {
+                NSString* location = [directoryPath isEqualToString:dataPath] ? [@"Data/" stringByAppendingString:file] : file;
+                [removed addObject:location];
+                freedBytes += size;
+            }
+            else {
+                ErrLog(@"[DataStoreCleanup] failed to remove %@: %@", fullPath, cleanupError.localizedDescription);
+            }
         }
     }
     // Log via the diagnostic logger (works in Release too) only when something was actually
@@ -1195,7 +2052,7 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
         }
         return error ?: [NSError errorWithDomain:@"DatabaseManager"
                                              code:2
-                                         userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Die lokale Datenbank konnte nicht gespeichert werden.", nil)}];
+                                             userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"Die lokale Datenbank konnte nicht gespeichert werden.", nil)}];
     }
     NSArray<CDFeed*>* feedsWithSavedCountChanges = [_feedsAwaitingCountSave.allObjects copy];
     [_feedsAwaitingCountSave removeAllObjects];
@@ -1222,6 +2079,20 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
         dispatch_async(dispatch_get_main_queue(), ^{
             [self resetAllUserDataWithCompletion:completion];
         });
+        return;
+    }
+    NSError* indexPreparationError = nil;
+    if (![self.ftsController prepareForExternalStoreMutation:&indexPreparationError]) {
+        NSMutableDictionary* userInfo = [@{
+            NSLocalizedDescriptionKey: @"The search index could not be prepared for reset. No local database data was reset.".ls,
+        } mutableCopy];
+        if (indexPreparationError) {
+            userInfo[NSUnderlyingErrorKey] = indexPreparationError;
+        }
+        NSError* publicError = [NSError errorWithDomain:@"DatabaseManager"
+                                                   code:32
+                                               userInfo:userInfo];
+        if (completion) completion(publicError);
         return;
     }
     NSManagedObjectContext* context = [self newBackgroundContext];
@@ -1269,9 +2140,34 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
                                                userInfo:@{
                                                    NSLocalizedDescriptionKey: @"The local app data could not be completely deleted. Please try the reset again.".ls,
                                                    NSUnderlyingErrorKey: resetError,
-                                               }];
+                                                   }];
             }
-            if (completion) completion(publicError);
+            NSManagedObjectContext* indexContext = [self newExportBackgroundContext];
+            if (!indexContext) {
+                NSError* indexError = [NSError errorWithDomain:@"DatabaseManager"
+                                                          code:33
+                                                      userInfo:@{NSLocalizedDescriptionKey: @"The local app data was deleted, but the search index could not be rebuilt. Please restart InstacastPlus and try again.".ls}];
+                if (completion) completion(publicError ?: indexError);
+                return;
+            }
+
+            [self _beginFTSIndexing];
+            [self.ftsController rebuildIndexWithManagedObjectContext:indexContext completion:^(NSError* indexError) {
+                [self _endFTSIndexing];
+                if (indexError) {
+                    ErrLog(@"FTS rebuild after local data reset failed: %@", indexError);
+                }
+                NSError* reportedError = publicError;
+                if (!reportedError && indexError) {
+                    reportedError = [NSError errorWithDomain:@"DatabaseManager"
+                                                        code:34
+                                                    userInfo:@{
+                                                        NSLocalizedDescriptionKey: @"The local app data was deleted, but the search index could not be rebuilt. Please restart InstacastPlus and try again.".ls,
+                                                        NSUnderlyingErrorKey: indexError,
+                                                    }];
+                }
+                if (completion) completion(reportedError);
+            }];
         });
     }];
 }
@@ -1335,7 +2231,6 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     {
         if ([insertedObject isKindOfClass:[CDEpisode class]]) {
             CDEpisode* episode = (CDEpisode*)insertedObject;
-            [self.ftsController addEpisode:episode];
             [self.spotlightIndexer addEpisode:episode];
             if (episode.feed) {
                 [feedsWithChangedEpisodeCounts addObject:episode.feed];
@@ -1345,7 +2240,6 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
             }
         }
         else if ([insertedObject isKindOfClass:[CDFeed class]]) {
-            [self.ftsController addFeed:(CDFeed*)insertedObject];
             [self.spotlightIndexer addFeed:(CDFeed*)insertedObject];
         }
         else if ([insertedObject isKindOfClass:[CDFeedProperty class]]) {
@@ -1364,13 +2258,6 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
         NSDictionary* cv = [updatedObject changedValues];
         NSDictionary* currentEventChanges = [updatedObject changedValuesForCurrentEvent];
         
-        if ([updatedObject isKindOfClass:[CDEpisode class]] && (cv[@"title"] || cv[@"summary"] || cv[@"fulltext"])) {
-            [self.ftsController updateEpisode:(CDEpisode*)updatedObject];
-        }
-        else if ([updatedObject isKindOfClass:[CDFeed class]] && (cv[@"title"] || cv[@"author"] || cv[@"summary"])) {
-            [self.ftsController updateFeed:(CDFeed*)updatedObject];
-        }
-
         if ([updatedObject isKindOfClass:[CDEpisode class]] &&
             (cv[@"title"] || cv[@"subtitle"] || cv[@"summary"] || cv[@"fulltext"] ||
              cv[@"transcriptsJSON_"] || cv[@"imageURL_"] || cv[@"duration"] ||
@@ -1428,7 +2315,6 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     {
         if ([deletedObject isKindOfClass:[CDEpisode class]]) {
             CDEpisode* episode = (CDEpisode*)deletedObject;
-            [self.ftsController removeEpisode:episode];
             [self.spotlightIndexer removeEpisode:episode];
             CDFeed* feed = episode.feed ?: [episode committedValuesForKeys:@[@"feed"]][@"feed"];
             if ([feed isKindOfClass:[CDFeed class]]) {
@@ -1439,7 +2325,6 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
             }
         }
         else if ([deletedObject isKindOfClass:[CDFeed class]]) {
-            [self.ftsController removeFeed:(CDFeed*)deletedObject];
             [self.spotlightIndexer removeFeed:(CDFeed*)deletedObject];
         }
         else if ([deletedObject isKindOfClass:[CDFeedProperty class]]) {
@@ -1466,6 +2351,32 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
             [feed invalidateCountsAwaitingSave:[_feedsAwaitingCountSave containsObject:feed]];
         }
     }
+}
+
+- (BOOL)_managedObjectContextUsesPrimaryPersistentStore:(NSManagedObjectContext*)context
+{
+    return context && context.parentContext == nil &&
+           context.persistentStoreCoordinator == self.storeCoordinator;
+}
+
+- (void) managedObjectContextWillSaveNotification:(NSNotification*)notification
+{
+    NSManagedObjectContext* context = notification.object;
+    if (![context isKindOfClass:NSManagedObjectContext.class] ||
+        ![self _managedObjectContextUsesPrimaryPersistentStore:context]) {
+        return;
+    }
+    [self.ftsController stageChangesForManagedObjectContext:context];
+}
+
+- (void) managedObjectContextDidSaveNotification:(NSNotification*)notification
+{
+    NSManagedObjectContext* context = notification.object;
+    if (![context isKindOfClass:NSManagedObjectContext.class] ||
+        ![self _managedObjectContextUsesPrimaryPersistentStore:context]) {
+        return;
+    }
+    [self.ftsController commitStagedChangesForManagedObjectContext:context];
 }
 
 - (void) transcriptionDidFinishNotification:(NSNotification*)notification
@@ -2513,7 +3424,6 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
             NSDictionary* options = @{
                 NSMigratePersistentStoresAutomaticallyOption: @YES,
                 NSInferMappingModelAutomaticallyOption: @YES,
-                NSPersistentHistoryTrackingKey: @YES,
             };
             NSError* addError = nil;
             __unused CFAbsoluteTime openStart = CFAbsoluteTimeGetCurrent();
@@ -2588,9 +3498,6 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     storeDescription.type = NSSQLiteStoreType;
     storeDescription.shouldMigrateStoreAutomatically = YES;
     storeDescription.shouldInferMappingModelAutomatically = YES;
-    // Required: existing stores may already use persistent history tracking.
-    // Without this flag, CoreData forces Read Only mode on the existing store.
-    [storeDescription setOption:@YES forKey:NSPersistentHistoryTrackingKey];
     _persistentContainer.persistentStoreDescriptions = @[storeDescription];
     __block BOOL storeLoadFailed = NO;
     __block NSError* storeLoadError = nil;

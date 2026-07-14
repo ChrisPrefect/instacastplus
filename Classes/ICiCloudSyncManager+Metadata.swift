@@ -244,6 +244,158 @@ extension ICiCloudSyncManager {
         }
     }
 
+    nonisolated static func snapshotKnownRecordSystemFieldsForPruning(
+        accountRecordName: String
+    ) async throws -> [String: Data] {
+        guard !accountRecordName.isEmpty else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale CloudKit-Systemfelder konnte nicht bestimmt werden."
+            )
+        }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
+            )
+        }
+
+        var candidates: [String: Data] = [:]
+        var lastRecordName: String?
+        while true {
+            let lowerBound = lastRecordName
+            let page: (scanned: Int, digests: [String: Data], lastRecordName: String?) = try await context.perform {
+                let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+                if let lowerBound {
+                    request.predicate = NSPredicate(
+                        format: "accountRecordName == %@ AND recordName > %@",
+                        accountRecordName,
+                        lowerBound
+                    )
+                } else {
+                    request.predicate = NSPredicate(
+                        format: "accountRecordName == %@",
+                        accountRecordName
+                    )
+                }
+                request.sortDescriptors = [NSSortDescriptor(key: "recordName", ascending: true)]
+                request.includesSubentities = false
+                request.fetchLimit = maximumRecordZoneChangesPerBatch
+                request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+                let entries = try context.fetch(request)
+                var pageDigests: [String: Data] = [:]
+                var pageLastRecordName: String?
+                for entry in entries {
+                    guard let recordName = entry.value(forKey: "recordName") as? String,
+                          !recordName.isEmpty,
+                          let systemFieldsData = entry.value(forKey: "systemFieldsData") as? Data,
+                          pageDigests[recordName] == nil else {
+                        throw knownRecordSystemFieldsStoreError(
+                            code: 2,
+                            description: "Ein lokaler CloudKit-Systemfeldeintrag ist beschädigt."
+                        )
+                    }
+                    pageLastRecordName = recordName
+                    pageDigests[recordName] = Data(SHA256.hash(data: systemFieldsData))
+                }
+                let result = (entries.count, pageDigests, pageLastRecordName)
+                context.reset()
+                return result
+            }
+            for (recordName, digest) in page.digests {
+                guard candidates[recordName] == nil else {
+                    throw knownRecordSystemFieldsStoreError(
+                        code: 2,
+                        description: "Ein lokaler CloudKit-Systemfeldeintrag ist mehrfach vorhanden."
+                    )
+                }
+                candidates[recordName] = digest
+            }
+            guard page.scanned > 0, let pageLastRecordName = page.lastRecordName else {
+                return candidates
+            }
+            lastRecordName = pageLastRecordName
+            await Task.yield()
+        }
+    }
+
+    @discardableResult
+    nonisolated static func pruneKnownRecordSystemFields(
+        keeping observedRecordNames: Set<String>,
+        candidatesAtInventoryStart: [String: Data],
+        accountRecordName: String
+    ) async throws -> Int {
+        guard !accountRecordName.isEmpty else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der iCloud-Account für lokale CloudKit-Systemfelder konnte nicht bestimmt werden."
+            )
+        }
+        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+            throw knownRecordSystemFieldsStoreError(
+                code: 1,
+                description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
+            )
+        }
+
+        let staleCandidates = candidatesAtInventoryStart
+            .filter { !observedRecordNames.contains($0.key) }
+            .sorted { $0.key < $1.key }
+        var deletedCount = 0
+        var index = staleCandidates.startIndex
+        while index < staleCandidates.endIndex {
+            let end = staleCandidates.index(
+                index,
+                offsetBy: maximumRecordZoneChangesPerBatch,
+                limitedBy: staleCandidates.endIndex
+            ) ?? staleCandidates.endIndex
+            let chunk = Dictionary<String, Data>(
+                uniqueKeysWithValues: staleCandidates[index..<end].map { ($0.key, $0.value) }
+            )
+            let chunkDeletedCount = try await context.perform {
+                let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
+                request.predicate = NSPredicate(
+                    format: "accountRecordName == %@ AND recordName IN %@",
+                    accountRecordName,
+                    Array(chunk.keys)
+                )
+                request.includesSubentities = false
+                request.fetchLimit = maximumRecordZoneChangesPerBatch
+                request.fetchBatchSize = maximumRecordZoneChangesPerBatch
+                var loadedRecordNames: Set<String> = []
+                var pageDeletedCount = 0
+                for entry in try context.fetch(request) {
+                    guard let recordName = entry.value(forKey: "recordName") as? String,
+                          !recordName.isEmpty,
+                          loadedRecordNames.insert(recordName).inserted,
+                          let candidateDigest = chunk[recordName],
+                          let currentData = entry.value(forKey: "systemFieldsData") as? Data else {
+                        throw knownRecordSystemFieldsStoreError(
+                            code: 2,
+                            description: "Ein lokaler CloudKit-Systemfeldeintrag ist beschädigt oder mehrfach vorhanden."
+                        )
+                    }
+                    let currentDigest = Data(SHA256.hash(data: currentData))
+                    if candidateDigest == currentDigest {
+                        context.delete(entry)
+                        pageDeletedCount += 1
+                    }
+                }
+                if context.hasChanges {
+                    try context.save()
+                }
+                context.reset()
+                return pageDeletedCount
+            }
+            deletedCount += chunkDeletedCount
+            index = end
+            if index < staleCandidates.endIndex {
+                await Task.yield()
+            }
+        }
+        return deletedCount
+    }
+
     @discardableResult
     nonisolated static func deleteKnownRecordSystemFields(
         accountRecordName: String? = nil

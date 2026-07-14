@@ -18,13 +18,13 @@ end = DATABASE.find("- (id) init", start)
 require(start != -1 and end != -1, "Database migration preflight boundary is missing.")
 preflight = DATABASE[start:end]
 
-# Simulated restart after a kill: the current-version SQLite file may already exist and look
-# schema-compatible, while the durable marker says its SQLite/WAL/SHM copy is incomplete.
-# The scene must still enter the migration UI before DatabaseManager performs recovery work.
-marker_path = preflight.find('stringByAppendingString:@".migration-in-progress"')
+# Simulated restart after a kill: the current-generation SQLite file may look compatible while
+# the durable phased marker says preparation/commit is incomplete. AppDelegate must still keep
+# the visible migration UI up until the utility-queue preparation validates it.
+marker_path = preflight.find("_dataStoreMigrationMarkerURL")
 marker_check = preflight.find("fileExistsAtPath:migrationMarkerURL.path", marker_path)
 visible_migration = preflight.find("return YES;", marker_check)
-current_store_gate = preflight.find("fileExistsAtPath:[storeURL path]")
+current_store_gate = preflight.find("fileExistsAtPath:storeURL.path")
 require(-1 < marker_path < marker_check < visible_migration < current_store_gate,
         "An in-progress marker must select the visible migration path before the current store is accepted.")
 

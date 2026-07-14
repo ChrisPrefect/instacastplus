@@ -81,8 +81,8 @@ add_episode = method_body(fts, "- (void) addEpisode:")
 remove_episode = method_body(fts, "- (void) removeEpisode:")
 remove_feed = method_body(fts, "- (void) removeFeed:")
 index_feeds = method_body(fts, "- (void) indexFeeds:")
-feed_search = method_body(fts, "- (NSSet*) feedUIDsForSearchTerm:")
-episode_search = method_body(fts, "- (NSSet*) episodeUIDsForSearchTerm:")
+feed_search = method_body(fts, "- (NSSet*) feedSourceURLsForSearchTerm:")
+episode_search = method_body(fts, "- (NSSet*) episodeObjectHashesForSearchTerm:")
 index_feeds_db_block = source_between(index_feeds, "[self.queue inDatabase:", "\n    }];")
 fts_update_observer = source_between(
     database_manager,
@@ -91,7 +91,7 @@ fts_update_observer = source_between(
 )
 
 bug_present(
-    "[self.queue inDatabase:" in add_episode and "episode." in add_episode,
+    "episode." in source_between(add_episode, "dispatch_async(self.writeQueue", "\n    });"),
     "FTS addEpisode reads CDEpisode properties inside the FMDB queue instead of snapshotting on the Core Data context queue.",
 )
 bug_present(
@@ -119,11 +119,11 @@ bug_present(
 subscription_search = method_body(subscriptions, "- (void) _searchTermDidChange")
 feed_update_fetch = method_body(feed_episodes, "- (void) _updateFetchController")
 bug_present(
-    "feedUIDsForSearchTerm" in subscription_search and "dispatch_get_global_queue" not in subscription_search and "performFetch:nil" in subscription_search and "reloadData" in subscription_search,
+    "feedSourceURLsForSearchTerm" in subscription_search and "dispatch_get_global_queue" not in subscription_search and "performFetch:nil" in subscription_search and "reloadData" in subscription_search,
     "Subscription search runs synchronous FTS, Core Data fetch, and table reload on the main search path.",
 )
 bug_present(
-    "episodeUIDsForSearchTerm" in feed_update_fetch and "performFetch:nil" in feed_update_fetch,
+    "episodeObjectHashesForSearchTerm" in feed_update_fetch and "performFetch:nil" in feed_update_fetch,
     "Feed episode search runs synchronous FTS and Core Data fetch on the main search path.",
 )
 
@@ -207,7 +207,7 @@ bug_present(
     "Downloaded filter scans all cached episodes and reloads the table on main.",
 )
 bug_present(
-    "episodeUIDsForSearchTerm" in cdepisode_sorted and "executeFetchRequest" in cdepisode_sorted and "executeFetchRequest" in cdepisode_sorted.split("fetchRequest2", 1)[-1] and "[self.list sortedEpisodes]" in list_update,
+    "episodeObjectHashesForSearchTerm" in cdepisode_sorted and "executeFetchRequest" in cdepisode_sorted and "executeFetchRequest" in cdepisode_sorted.split("fetchRequest2", 1)[-1] and "[self.list sortedEpisodes]" in list_update,
     "Episode lists can run FTS plus two Core Data fetches synchronously when updating visible lists.",
 )
 

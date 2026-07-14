@@ -266,8 +266,8 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     }
 
     if ([self.query length] > 0) {
-        NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:self.query];
-        [subPredicates addObject:[NSPredicate predicateWithFormat:@"guid IN %@", episodeGuids]];
+        NSSet* episodeObjectHashes = [DMANAGER.ftsController episodeObjectHashesForSearchTerm:self.query];
+        [subPredicates addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", episodeObjectHashes]];
     }
 
     return [NSCompoundPredicate andPredicateWithSubpredicates:subPredicates];
@@ -627,8 +627,8 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         }
         
         if ([contextSelf.query length] > 0) {
-            NSSet* episodeGuids = [DMANAGER.ftsController episodeUIDsForSearchTerm:contextSelf.query];
-            [subPredicates addObject:[NSPredicate predicateWithFormat:@"guid IN %@", episodeGuids]];
+            NSSet* episodeObjectHashes = [DMANAGER.ftsController episodeObjectHashesForSearchTerm:contextSelf.query];
+            [subPredicates addObject:[NSPredicate predicateWithFormat:@"objectHash IN %@", episodeObjectHashes]];
         }
         
         

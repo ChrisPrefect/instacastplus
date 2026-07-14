@@ -42,6 +42,7 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 
 - (void) refreshFeeds:(NSArray*)feeds etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)handler;
 - (void) refreshFeed:(CDFeed*)feed etagHandling:(BOOL)etagHandling completion:(ICSubscriptionManagerRefreshCompletionBlock)handler;
+- (BOOL) canRefreshFeedsOnCurrentNetwork;
 
 // Phase 2 of the iCloud two-phase subscription apply: fills a stub feed (subscribed, but
 // never refreshed, no episodes) with content. Unlike refreshFeed:, this never merges the
@@ -70,6 +71,7 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 - (BOOL) autoDownloadEpisode:(CDEpisode*)episode;
 - (void) autoDownloadEpisodesInFeedAsynchronously:(CDFeed*)feed;
 - (void) autoDownloadAllFeedsAsynchronously;
+- (void) recoverPendingAutoDownloadsAfterDatabaseStartup;
 
 /* Importing */
 

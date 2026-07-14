@@ -219,9 +219,13 @@ struct ICCloudSyncItemMetadataUpdateFields: OptionSet, Sendable {
 // ICListScrollPositions=2" counts) — and deletions during the stream must subtract.
 final class ICCloudInventoryCountsBox: @unchecked Sendable {
     private var recordNamesByType: [String: Set<String>] = [:]
+    private var allObservedRecordNames = Set<String>()
     private var deviceRecordIDs: [CKRecord.ID] = []
     private var transitionalSubscriptionRecordChangeTags: [String: String]
     private var observedSubscriptionRecordNames = Set<String>()
+    private var recordFetchFailed = false
+    private var zoneFetchCompleted = false
+    private var zoneMissing = false
     private let inspectSubscriptionPayloads: Bool
     private let lock = NSLock()
 
@@ -233,6 +237,7 @@ final class ICCloudInventoryCountsBox: @unchecked Sendable {
 
     func record(_ record: CKRecord) {
         lock.lock()
+        allObservedRecordNames.insert(record.recordID.recordName)
         if record.recordType == "ICSubscription" {
             let recordName = record.recordID.recordName
             observedSubscriptionRecordNames.insert(recordName)
@@ -277,6 +282,7 @@ final class ICCloudInventoryCountsBox: @unchecked Sendable {
 
     func remove(recordName: String) {
         lock.lock()
+        allObservedRecordNames.remove(recordName)
         for type in recordNamesByType.keys {
             recordNamesByType[type]?.remove(recordName)
         }
@@ -284,6 +290,44 @@ final class ICCloudInventoryCountsBox: @unchecked Sendable {
         observedSubscriptionRecordNames.remove(recordName)
         deviceRecordIDs.removeAll { $0.recordName == recordName }
         lock.unlock()
+    }
+
+    func markRecordFetchFailure() {
+        lock.lock()
+        recordFetchFailed = true
+        lock.unlock()
+    }
+
+    func markZoneFetchCompleted(moreComing: Bool) {
+        lock.lock()
+        if !moreComing {
+            zoneFetchCompleted = true
+        }
+        lock.unlock()
+    }
+
+    func markZoneMissing() {
+        lock.lock()
+        zoneMissing = true
+        lock.unlock()
+    }
+
+    func inventoryIsComplete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return zoneFetchCompleted && !recordFetchFailed && !zoneMissing
+    }
+
+    func observedRecordNames() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return allObservedRecordNames
+    }
+
+    func observedMissingZone() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return zoneMissing
     }
 
     func snapshot() -> [String: Int] {

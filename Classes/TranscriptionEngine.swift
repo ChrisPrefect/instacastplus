@@ -414,7 +414,7 @@ private struct ICDiagnosticLogLine: Encodable {
             "applicationWillTerminate",
             "sceneDidDisconnect",
         ]
-        return !expectedStates.contains(state)
+        return !didPreviousSessionEndInBackground(state) && !expectedStates.contains(state)
     }
 
     private static func didPreviousSessionEndInBackground(_ state: String) -> Bool {

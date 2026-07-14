@@ -1939,13 +1939,17 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                                     CDEpisode* ep = (CDEpisode*)[strongSelf.episodes objectAtIndex:indexPath.row];
                                                     BOOL flag = !ep.consumed;
                                                     strongSelf.userAction = YES;
+                                                    strongSelf.suppressNextListReload = YES;
                                                     [DMANAGER markEpisode:ep asConsumed:flag];
                                                     if (flag && [ep isEqual:[AudioSession sharedAudioSession].episode]) {
                                                         [[AudioSession sharedAudioSession] stop];
                                                     }
-                                                    EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[strongSelf.tableView cellForRowAtIndexPath:indexPath];
-                                                    if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-                                                        [cell updatePlayedAndStarredState];
+                                                    BOOL removed = [strongSelf _removeEpisodeFromDisplayedListIfNeededAfterMutation:ep atIndexPath:indexPath];
+                                                    if (!removed) {
+                                                        EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[strongSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
+                                                            [cell updatePlayedAndStarredState];
+                                                        }
                                                     }
                                                     [strongSelf _updateToolbarItemsAnimated:NO];
                                                     [strongSelf _updateToolbarLabels];

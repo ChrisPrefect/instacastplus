@@ -485,7 +485,7 @@ private struct WatchPlayerView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     playerControls(compact: compact)
-                        .frame(height: proxy.size.height, alignment: .top)
+                        .frame(minHeight: proxy.size.height, alignment: .top)
 
                     if !episode.chapters.isEmpty {
                         chapterListSection

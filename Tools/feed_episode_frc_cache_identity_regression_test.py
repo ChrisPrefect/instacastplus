@@ -28,7 +28,7 @@ def method_body(signature: str) -> str:
 
 
 for signature in (
-    "- (void) _updateFetchControllerWithEpisodeGuids:",
+    "- (void) _updateFetchControllerWithEpisodeObjectHashes:",
     "- (void) _filterFavoriteEpisode",
     "- (void) _filterUnlistenedEpisode",
     "- (void) _filterUnfinishedEpisode",

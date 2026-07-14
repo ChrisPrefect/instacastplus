@@ -1002,7 +1002,10 @@
 "The local app data could not be opened for reset." = "The local app data could not be opened for reset.";
 "Local Data Unavailable" = "Local Data Unavailable";
 "InstacastPlus could not open the local podcast database. Your data was left unchanged. Check the available storage, restart the device, and open InstacastPlus again." = "InstacastPlus could not open the local podcast database. Your data was left unchanged. Check the available storage, restart the device, and open InstacastPlus again.";
+"InstacastPlus could not update the local podcast database. Your data was left unchanged. Make sure enough storage is available, restart the device, and try again." = "InstacastPlus could not update the local podcast database. Your data was left unchanged. Make sure enough storage is available, restart the device, and try again.";
 "The local app data could not be completely deleted. Please try the reset again." = "The local app data could not be completely deleted. Please try the reset again.";
+"The search index could not be prepared for reset. No local database data was reset." = "The search index could not be prepared for reset. No local database data was reset.";
+"The local app data was deleted, but the search index could not be rebuilt. Please restart InstacastPlus and try again." = "The local app data was deleted, but the search index could not be rebuilt. Please restart InstacastPlus and try again.";
 "Cached images could not be deleted. No local database data was reset." = "Cached images could not be deleted. No local database data was reset.";
 "Reset Complete" = "Reset Complete";
 "Please restart the app." = "Please restart the app.";

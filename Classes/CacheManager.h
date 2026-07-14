@@ -25,6 +25,7 @@ extern NSString* CacheManagerWillCommitCacheFileDeletionNotification;   // useri
 extern NSString* CacheManagerDidDeleteCacheFilesNotification;           // userinfo = episodeHashes/all
 extern NSString* CacheManagerDidRestoreCacheNotification;               // userinfo = episodeHashes
 extern NSString* CacheManagerDidFinishBuildingCacheIndexNotification;
+extern NSString* CacheManagerDidBecomeReadyForAutomaticDownloadsNotification;
 
 extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 
@@ -75,6 +76,7 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 
 @property (nonatomic, readonly) NSArray* cachedEpisodes;
 @property (nonatomic, readonly, getter=isCacheIndexReady) BOOL cacheIndexReady;
+@property (nonatomic, readonly, getter=isReadyForAutomaticDownloads) BOOL readyForAutomaticDownloads;
 - (void)prepareCacheIndexIfNeeded;
 // Immutable value snapshot safe to request from background Core Data contexts.
 // Unlike cachedEpisodes, this never exposes main-context managed objects.
@@ -90,6 +92,7 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 - (void) clearAllDownloadErrors;
 - (void) clearAllDownloadErrorsWithCompletion:(void (^)(NSError* error))completion;
 - (BOOL) retryFailedDownloadForEpisode:(CDEpisode*)episode error:(NSError**)error;
+- (void) retryFailedAutomaticDownloadsIfPossible;
 
 
 - (NSArray*) cachingEpisodes;  // observable

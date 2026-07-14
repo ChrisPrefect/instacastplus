@@ -20,6 +20,7 @@ EXPECTED_UI_ICONS = [
     "appiconClassicAlt1",
     "appiconClassicAlt2",
     "appiconClassicAlt3",
+    "appiconClassicAlt4",
 ]
 
 EXPECTED_ICON_NAMES = [
@@ -35,6 +36,7 @@ EXPECTED_ICON_NAMES = [
     "InstacastPlus_Icon_Classic_Alt1",
     "InstacastPlus_Icon_Classic_Alt2",
     "InstacastPlus_Icon_Classic_Alt3",
+    "InstacastPlus_Icon_Classic_Alt4",
 ]
 
 OLD_APP_ICON_NAMES = {"AppIcon", "AppIcon-1", "AppIcon-2", "AppIcon-3", "AppIcon-4", "AppIcon-5", "AppIcon-6", "AppIcon-7"}
@@ -43,6 +45,7 @@ DOWNLOAD_ICON_NAMES = {
     "InstacastPlus_Icon_Classic_Alt1",
     "InstacastPlus_Icon_Classic_Alt2",
     "InstacastPlus_Icon_Classic_Alt3",
+    "InstacastPlus_Icon_Classic_Alt4",
 }
 INTERMEDIATE_ICON_NAMES = {"AppIcon-8", "AppIcon-9", "AppIcon-10", "AppIcon-11", "AppIcon-12", "AppIcon-13"}
 INTERMEDIATE_PREVIEW_NAMES = {"appicon8", "appicon9", "appicon10", "appicon11", "appicon12", "appicon13"}

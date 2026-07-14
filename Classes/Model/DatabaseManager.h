@@ -31,6 +31,7 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 + (NSString*) pathToDocuments;
 + (NSString*) pathToSubfolder:(NSString*)subfolder parent:(NSString*)pathToParentFolder;
 + (BOOL) dataStoreNeedsMigration;
++ (void)prepareDataStoreMigrationWithCompletion:(void (^)(NSError* error))completion;
 + (NSString*) currentDataStoreFilename;
 + (NSString*)normalizedFeedURLStringForURLString:(NSString*)URLString;
 + (NSArray<NSString*>*)equivalentFeedURLStringsForURLString:(NSString*)URLString;

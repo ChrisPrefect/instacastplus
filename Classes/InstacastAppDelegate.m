@@ -50,6 +50,15 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 static NSString* const ICTranscriptionContinuedGPUPath = @"continued-gpu";
 static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing";
 static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @"InstacastMainViewControllerDidBecomeReadyNotification";
+NSNotificationName const InstacastDatabaseStartupDidFailNotification = @"InstacastDatabaseStartupDidFailNotification";
+static NSString* const ICPendingBackgroundSessionIdentifierKey = @"identifier";
+static NSString* const ICPendingBackgroundSessionCompletionKey = @"completion";
+static NSString* const ICPendingRemoteNotificationUserInfoKey = @"userInfo";
+static NSString* const ICPendingRemoteNotificationCompletionKey = @"completion";
+static NSString* const ICPendingNotificationInteractionUserInfoKey = @"userInfo";
+static NSString* const ICPendingNotificationInteractionActionKey = @"action";
+static NSString* const ICBackgroundFeedRefreshAttemptsKey = @"ICBackgroundFeedRefreshAttempts";
+static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
 @interface InstacastAppDelegate () <UNUserNotificationCenterDelegate>
 @property BOOL resettingContext;
@@ -57,6 +66,21 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 @property (strong) VDModalInfo* loadingInfo;
 @property (nonatomic, strong) DirectoryFeedViewController* feedView;
 @property (nonatomic, strong) NSURL* pendingBackupFileURL;
+@property (nonatomic, readwrite) ICDatabaseStartupState databaseStartupState;
+@property (nonatomic, strong, readwrite) NSError* databasePreparationError;
+@property (nonatomic, strong) NSMutableArray<NSDictionary*>* pendingBackgroundURLSessionEvents;
+@property (nonatomic, strong) NSMutableArray<NSDictionary*>* pendingApplicationOpenURLs;
+@property (nonatomic, strong) NSDictionary* pendingDatabaseLaunchOptions;
+@property (nonatomic) BOOL databaseStartupDidBegin;
+@property (nonatomic, strong) NSMutableArray<BGTask*>* pendingTranscriptionBackgroundTasks;
+@property (nonatomic, strong) NSMapTable<BGTask*, id>* activeTranscriptionTaskExpirationHandlers;
+@property (nonatomic, strong) NSMutableArray<NSDictionary*>* pendingDatabaseRemoteNotifications;
+@property (nonatomic, strong) NSMutableArray* pendingDatabaseFetchCompletionHandlers;
+@property (nonatomic, strong) NSMutableArray<NSDictionary*>* pendingNotificationInteractions;
+@property (nonatomic, strong) NSMutableSet<NSString*>* handledNotificationResponseIdentifiers;
+@property (nonatomic) BOOL notificationSceneReady;
+@property (nonatomic) UIBackgroundTaskIdentifier pendingDatabaseSystemCallbacksBackgroundTask;
+@property (nonatomic) NSUInteger pendingDatabaseSystemCallbacksBackgroundTaskGeneration;
 
 @end
 
@@ -106,14 +130,14 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
 - (void)_registerTranscriptionBackgroundTasks {
     [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionProcessingTaskIdentifier
-                                                         usingQueue:nil
+                                                         usingQueue:dispatch_get_main_queue()
                                                       launchHandler:^(BGTask * _Nonnull task) {
         [self _handleTranscriptionProcessingTask:(BGProcessingTask*)task];
     }];
 
     if (@available(iOS 26.0, *)) {
         BOOL registered = [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifier
-                                                                                usingQueue:nil
+                                                                                usingQueue:dispatch_get_main_queue()
                                                                              launchHandler:^(BGTask * _Nonnull task) {
             [self _handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)task];
         }];
@@ -127,18 +151,82 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
     }
 }
 
+- (void)_scheduleTranscriptionProcessingTask {
+    BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
+    request.requiresExternalPower = NO;
+    request.requiresNetworkConnectivity = NO;
+    NSError* error = nil;
+    if (![[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:&error]) {
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGProcessingTask konnte nicht erneut geplant werden"
+                                     metadata:@{ @"error": error.localizedDescription ?: @"" }];
+    }
+}
+
+- (void)_installTranscriptionTaskExpirationHandler:(BGTask*)task {
+    __weak typeof(self) weakSelf = self;
+    __weak BGTask* weakTask = task;
+    task.expirationHandler = ^{
+        dispatch_block_t expire = ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            BGTask* task = weakTask;
+            if (self && task) {
+                [self _expireTranscriptionTask:task];
+            }
+        };
+        if ([NSThread isMainThread]) {
+            expire();
+        }
+        else {
+            dispatch_async(dispatch_get_main_queue(), expire);
+        }
+    };
+}
+
+- (void)_expireTranscriptionTask:(BGTask*)task {
+    if ([self.pendingTranscriptionBackgroundTasks containsObject:task]) {
+        [self.pendingTranscriptionBackgroundTasks removeObjectIdenticalTo:task];
+        [task setTaskCompletedWithSuccess:NO];
+        if ([task isKindOfClass:BGProcessingTask.class]) {
+            [self _scheduleTranscriptionProcessingTask];
+        }
+        return;
+    }
+
+    void (^activeExpirationHandler)(void) = [self.activeTranscriptionTaskExpirationHandlers objectForKey:task];
+    if (activeExpirationHandler) {
+        [self.activeTranscriptionTaskExpirationHandlers removeObjectForKey:task];
+        activeExpirationHandler();
+    }
+}
+
+- (BOOL)_deferTranscriptionTaskUntilDatabaseReady:(BGTask*)task {
+    [self _installTranscriptionTaskExpirationHandler:task];
+    if (self.databaseStartupState == ICDatabaseStartupStateReady) {
+        return NO;
+    }
+    if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
+        [task setTaskCompletedWithSuccess:NO];
+        if ([task isKindOfClass:BGProcessingTask.class]) {
+            [self _scheduleTranscriptionProcessingTask];
+        }
+        return YES;
+    }
+
+    [self.pendingTranscriptionBackgroundTasks addObject:task];
+    return YES;
+}
+
 - (void)_handleTranscriptionProcessingTask:(BGProcessingTask*)processingTask {
+    if ([self _deferTranscriptionTaskUntilDatabaseReady:processingTask]) {
+        return;
+    }
     __block id queueObserver = nil;
     __block BOOL taskCompleted = NO;
-    void (^scheduleNextRequest)(void) = ^{
-        BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
-        request.requiresExternalPower = NO;
-        request.requiresNetworkConnectivity = NO;
-        [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:nil];
-    };
     void (^completeTask)(BOOL) = ^(BOOL success) {
         if (taskCompleted) return;
         taskCompleted = YES;
+        [self.activeTranscriptionTaskExpirationHandlers removeObjectForKey:processingTask];
         if (queueObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
             queueObserver = nil;
@@ -149,16 +237,16 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
                                      metadata:@{
                                          @"path": ICTranscriptionLegacyProcessingPath,
                                          @"success": @(success),
-                                     }];
+        }];
         [processingTask setTaskCompletedWithSuccess:success];
-        scheduleNextRequest();
+        [self _scheduleTranscriptionProcessingTask];
     };
-    processingTask.expirationHandler = ^{
+    [self.activeTranscriptionTaskExpirationHandlers setObject:[^{
         [[ICDiagnosticLogger shared] logEvent:@"background-task" message:@"BGProcessingTask abgelaufen" metadata:@{
             @"path": ICTranscriptionLegacyProcessingPath,
         }];
         completeTask(NO);
-    };
+    } copy] forKey:processingTask];
 
     [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:ICTranscriptionLegacyProcessingPath
                                                                   detail:@"BGProcessingTask gestartet"];
@@ -187,6 +275,9 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 }
 
 - (void)_handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)continuedTask API_AVAILABLE(ios(26.0)) {
+    if ([self _deferTranscriptionTaskUntilDatabaseReady:continuedTask]) {
+        return;
+    }
     __block id queueObserver = nil;
     __block id progressObserver = nil;
     __block BOOL taskCompleted = NO;
@@ -197,6 +288,7 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
     void (^completeTask)(BOOL, NSString*) = ^(BOOL success, NSString* reason) {
         if (taskCompleted) return;
         taskCompleted = YES;
+        [self.activeTranscriptionTaskExpirationHandlers removeObjectForKey:continuedTask];
         if (queueObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
             queueObserver = nil;
@@ -217,7 +309,7 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
         [continuedTask setTaskCompletedWithSuccess:success];
     };
 
-    continuedTask.expirationHandler = ^{
+    [self.activeTranscriptionTaskExpirationHandlers setObject:[^{
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGContinuedProcessingTask abgelaufen"
                                      metadata:@{
@@ -225,7 +317,7 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
                                      }];
         [[TranscriptionQueue shared] expireContinuedGPUBackgroundExecutionWithReason:@"continued-gpu-expired"];
         completeTask(NO, @"continued-gpu-expired");
-    };
+    } copy] forKey:continuedTask];
 
     [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:ICTranscriptionContinuedGPUPath
                                                                   detail:@"BGContinuedProcessingTask mit GPU gestartet"];
@@ -276,6 +368,28 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+    self.databaseStartupState = ICDatabaseStartupStateNotStarted;
+    self.databasePreparationError = nil;
+    self.pendingBackgroundURLSessionEvents = [NSMutableArray array];
+    self.pendingApplicationOpenURLs = [NSMutableArray array];
+    self.pendingTranscriptionBackgroundTasks = [NSMutableArray array];
+    self.activeTranscriptionTaskExpirationHandlers = [NSMapTable strongToStrongObjectsMapTable];
+    self.pendingDatabaseRemoteNotifications = [NSMutableArray array];
+    self.pendingDatabaseFetchCompletionHandlers = [NSMutableArray array];
+    self.pendingNotificationInteractions = [NSMutableArray array];
+    self.handledNotificationResponseIdentifiers = [NSMutableSet set];
+    self.pendingDatabaseSystemCallbacksBackgroundTask = UIBackgroundTaskInvalid;
+    self.pendingDatabaseLaunchOptions = [launchOptions copy] ?: @{};
+    self.databaseStartupDidBegin = NO;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_protectedDataDidBecomeAvailable:)
+                                                 name:UIApplicationProtectedDataDidBecomeAvailable
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(_automaticDownloadsDidBecomeReady:)
+                                                 name:CacheManagerDidBecomeReadyForAutomaticDownloadsNotification
+                                               object:nil];
+
     if ([USER_DEFAULTS valueForKey:InterfaceThemeDefaultActive] == nil)
     {
         [USER_DEFAULTS setBool:true forKey:InterfaceThemeDefaultActive];
@@ -304,9 +418,6 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
     [App initializeLoggers];
     [[ICDiagnosticLogger shared] start];
-    if (@available(iOS 17.0, *)) {
-        [ICiCloudSyncManager logSyncMetadataStorageSnapshot:@"launch"];
-    }
     [[ICDiagnosticLogger shared] recordLifecycle:@"applicationDidFinishLaunching"
                                         metadata:@{
                                             @"launchOptionsCount": @(launchOptions.count),
@@ -314,14 +425,17 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
     [self _registerTranscriptionBackgroundTasks];
 
-    if ([DatabaseManager dataStoreNeedsMigration]) {
+    if (!application.protectedDataAvailable) {
+        self.databaseStartupState = ICDatabaseStartupStatePreparing;
         UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
         ICLocalizeViewText(migrationViewController.view);
         self.window.rootViewController = migrationViewController;
-        [self performSelector:@selector(_startUpApplicationWithLaunchOptions:) withObject:launchOptions afterDelay:0.1];
+        [[ICDiagnosticLogger shared] logEvent:@"database"
+                                      message:@"Datenbankstart wartet auf geschützte Daten"
+                                     metadata:nil];
     }
     else {
-        [self _startUpApplicationWithLaunchOptions:launchOptions];
+        [self _beginDatabaseStartupWithLaunchOptions:self.pendingDatabaseLaunchOptions];
     }
 
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
@@ -341,10 +455,6 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
     }
         
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(applicationDidTimeout:) name:kApplicationDidTimeoutNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(_protectedDataDidBecomeAvailable:)
-                                                 name:UIApplicationProtectedDataDidBecomeAvailable
-                                               object:nil];
    
 //    if ([USER_DEFAULTS valueForKey:ScreenTimerAlwaysActive] == nil)
 //    {
@@ -406,11 +516,230 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 {
 }
 
+- (BOOL)_hasPendingNotificationBackgroundAction {
+    for (NSDictionary* interaction in self.pendingNotificationInteractions) {
+        if ([interaction[ICPendingNotificationInteractionActionKey] isEqualToString:@"play"]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (void)_endPendingDatabaseSystemCallbacksBackgroundTaskIfPossible {
+    if (self.pendingBackgroundURLSessionEvents.count > 0 ||
+        self.pendingDatabaseRemoteNotifications.count > 0 ||
+        self.pendingDatabaseFetchCompletionHandlers.count > 0 ||
+        [self _hasPendingNotificationBackgroundAction] ||
+        self.pendingDatabaseSystemCallbacksBackgroundTask == UIBackgroundTaskInvalid) {
+        return;
+    }
+    UIBackgroundTaskIdentifier identifier = self.pendingDatabaseSystemCallbacksBackgroundTask;
+    self.pendingDatabaseSystemCallbacksBackgroundTask = UIBackgroundTaskInvalid;
+    [App endBackgroundTask:identifier];
+}
+
+- (void)_completePendingDatabaseSystemCallbacksWithResult:(UIBackgroundFetchResult)result {
+    NSArray<NSDictionary*>* sessionEvents = [self.pendingBackgroundURLSessionEvents copy];
+    NSArray<NSDictionary*>* notifications = [self.pendingDatabaseRemoteNotifications copy];
+    NSArray* fetchCompletionHandlers = [self.pendingDatabaseFetchCompletionHandlers copy];
+    [self.pendingBackgroundURLSessionEvents removeAllObjects];
+    [self.pendingDatabaseRemoteNotifications removeAllObjects];
+    [self.pendingDatabaseFetchCompletionHandlers removeAllObjects];
+    NSMutableArray<NSDictionary*>* retainedUIInteractions = [NSMutableArray array];
+    for (NSDictionary* interaction in self.pendingNotificationInteractions) {
+        if ([interaction[ICPendingNotificationInteractionActionKey] isEqualToString:UNNotificationDefaultActionIdentifier]) {
+            [retainedUIInteractions addObject:interaction];
+        }
+    }
+    self.pendingNotificationInteractions = retainedUIInteractions;
+    [self _endPendingDatabaseSystemCallbacksBackgroundTaskIfPossible];
+
+    for (NSDictionary* event in sessionEvents) {
+        void (^completionHandler)(void) = event[ICPendingBackgroundSessionCompletionKey];
+        if (completionHandler) completionHandler();
+    }
+    for (NSDictionary* event in notifications) {
+        void (^completionHandler)(UIBackgroundFetchResult) = event[ICPendingRemoteNotificationCompletionKey];
+        if (completionHandler) completionHandler(result);
+    }
+    for (id storedHandler in fetchCompletionHandlers) {
+        void (^completionHandler)(UIBackgroundFetchResult) = storedHandler;
+        if (completionHandler) completionHandler(result);
+    }
+}
+
+- (void)_expirePendingDatabaseSystemCallbacksBackgroundTaskForGeneration:(NSUInteger)generation {
+    if (self.pendingDatabaseSystemCallbacksBackgroundTaskGeneration != generation ||
+        self.pendingDatabaseSystemCallbacksBackgroundTask == UIBackgroundTaskInvalid) {
+        return;
+    }
+    [self _completePendingDatabaseSystemCallbacksWithResult:UIBackgroundFetchResultFailed];
+}
+
+- (void)_beginPendingDatabaseSystemCallbacksBackgroundTaskIfNeeded {
+    if (self.pendingDatabaseSystemCallbacksBackgroundTask != UIBackgroundTaskInvalid) {
+        return;
+    }
+    NSUInteger backgroundTaskGeneration = ++self.pendingDatabaseSystemCallbacksBackgroundTaskGeneration;
+    __weak typeof(self) weakSelf = self;
+    self.pendingDatabaseSystemCallbacksBackgroundTask = [App beginBackgroundTaskWithName:@"Database startup callbacks"
+                                                                        expirationHandler:^{
+        [weakSelf _expirePendingDatabaseSystemCallbacksBackgroundTaskForGeneration:backgroundTaskGeneration];
+    }];
+    if (self.pendingDatabaseSystemCallbacksBackgroundTask == UIBackgroundTaskInvalid) {
+        [self _completePendingDatabaseSystemCallbacksWithResult:UIBackgroundFetchResultFailed];
+    }
+}
+
+- (void)_failPendingDatabaseStartupWork {
+    [self _completePendingDatabaseSystemCallbacksWithResult:UIBackgroundFetchResultFailed];
+    [self.pendingNotificationInteractions removeAllObjects];
+
+    for (BGTask* task in self.pendingTranscriptionBackgroundTasks) {
+        task.expirationHandler = nil;
+        [task setTaskCompletedWithSuccess:NO];
+        if ([task isKindOfClass:BGProcessingTask.class]) {
+            [self _scheduleTranscriptionProcessingTask];
+        }
+    }
+    [self.pendingTranscriptionBackgroundTasks removeAllObjects];
+
+}
+
+- (void)_replayPendingNotificationInteractionsIfPossible
+{
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        return;
+    }
+
+    NSArray<NSDictionary*>* interactions = [self.pendingNotificationInteractions copy];
+    NSMutableArray<NSDictionary*>* remainingInteractions = [NSMutableArray array];
+    BOOL blockedByEarlierInteraction = NO;
+    [self.pendingNotificationInteractions removeAllObjects];
+    for (NSDictionary* interaction in interactions) {
+        NSString* actionIdentifier = interaction[ICPendingNotificationInteractionActionKey];
+        BOOL waitsForScene = [actionIdentifier isEqualToString:UNNotificationDefaultActionIdentifier] &&
+                             !self.notificationSceneReady;
+        if (blockedByEarlierInteraction || waitsForScene) {
+            blockedByEarlierInteraction = YES;
+            [remainingInteractions addObject:interaction];
+            continue;
+        }
+        [self _performNotificationInteractionWithUserInfo:interaction[ICPendingNotificationInteractionUserInfoKey]
+                                         actionIdentifier:actionIdentifier];
+    }
+    [self.pendingNotificationInteractions addObjectsFromArray:remainingInteractions];
+    [self _endPendingDatabaseSystemCallbacksBackgroundTaskIfPossible];
+}
+
+- (void)_replayPendingDatabaseStartupWork {
+    NSArray<BGTask*>* tasks = [self.pendingTranscriptionBackgroundTasks copy];
+    [self.pendingTranscriptionBackgroundTasks removeAllObjects];
+    for (BGTask* task in tasks) {
+        if ([task isKindOfClass:BGProcessingTask.class]) {
+            [self _handleTranscriptionProcessingTask:(BGProcessingTask*)task];
+        }
+        else if (@available(iOS 26.0, *)) {
+            if ([task isKindOfClass:BGContinuedProcessingTask.class]) {
+                [self _handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)task];
+            }
+            else {
+                [task setTaskCompletedWithSuccess:NO];
+            }
+        }
+        else {
+            [task setTaskCompletedWithSuccess:NO];
+        }
+    }
+
+    NSArray<NSDictionary*>* notifications = [self.pendingDatabaseRemoteNotifications copy];
+    [self.pendingDatabaseRemoteNotifications removeAllObjects];
+    for (NSDictionary* event in notifications) {
+        NSDictionary* userInfo = event[ICPendingRemoteNotificationUserInfoKey];
+        void (^completionHandler)(UIBackgroundFetchResult) = event[ICPendingRemoteNotificationCompletionKey];
+        [self application:App didReceiveRemoteNotification:userInfo fetchCompletionHandler:completionHandler];
+    }
+
+    NSArray* fetchCompletionHandlers = [self.pendingDatabaseFetchCompletionHandlers copy];
+    [self.pendingDatabaseFetchCompletionHandlers removeAllObjects];
+    for (id storedHandler in fetchCompletionHandlers) {
+        void (^completionHandler)(UIBackgroundFetchResult) = storedHandler;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        [self application:App performFetchWithCompletionHandler:completionHandler];
+#pragma clang diagnostic pop
+    }
+
+    [self _replayPendingNotificationInteractionsIfPossible];
+    [self _endPendingDatabaseSystemCallbacksBackgroundTaskIfPossible];
+}
+
 - (void)_protectedDataDidBecomeAvailable:(NSNotification *)notification
 {
+    if (!self.databaseStartupDidBegin && self.pendingDatabaseLaunchOptions) {
+        [self _beginDatabaseStartupWithLaunchOptions:self.pendingDatabaseLaunchOptions];
+    }
     if (self.mainViewController) {
         [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
         [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
+    }
+}
+
+- (void)_automaticDownloadsDidBecomeReady:(NSNotification*)notification
+{
+    (void)notification;
+    [self _recoverPendingAutoDownloadsIfReady];
+}
+
+- (void)_recoverPendingAutoDownloadsIfReady
+{
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        return;
+    }
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    if (!cacheManager.isReadyForAutomaticDownloads) {
+        return;
+    }
+    [[SubscriptionManager sharedSubscriptionManager] recoverPendingAutoDownloadsAfterDatabaseStartup];
+}
+
+- (void)_beginDatabaseStartupWithLaunchOptions:(NSDictionary *)launchOptions
+{
+    if (self.databaseStartupDidBegin || !App.protectedDataAvailable) {
+        return;
+    }
+    self.databaseStartupDidBegin = YES;
+    self.pendingDatabaseLaunchOptions = nil;
+
+    if ([DatabaseManager dataStoreNeedsMigration]) {
+        self.databaseStartupState = ICDatabaseStartupStatePreparing;
+        UIViewController* migrationViewController = [[UIViewController alloc] initWithNibName:@"DataMigrationView" bundle:nil];
+        ICLocalizeViewText(migrationViewController.view);
+        self.window.rootViewController = migrationViewController;
+        __weak typeof(self) weakSelf = self;
+        [DatabaseManager prepareDataStoreMigrationWithCompletion:^(NSError* error) {
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            if (error) {
+                self.databaseStartupState = ICDatabaseStartupStateFailed;
+                self.databasePreparationError = error;
+                [[NSNotificationCenter defaultCenter] postNotificationName:InstacastDatabaseStartupDidFailNotification
+                                                                    object:error];
+                [[ICDiagnosticLogger shared] logEvent:@"database"
+                                              message:@"Lokale Datenbank konnte nicht vorbereitet werden"
+                                             metadata:@{ @"error": error.description ?: @"" }];
+                [self _failPendingDatabaseStartupWork];
+                if (self.window) {
+                    self.window.rootViewController = [InstacastAppDelegate databaseUnavailableViewControllerForError:error];
+                    [self.window makeKeyAndVisible];
+                }
+                return;
+            }
+            [self _startUpApplicationWithLaunchOptions:launchOptions];
+        }];
+    }
+    else {
+        [self _startUpApplicationWithLaunchOptions:launchOptions];
     }
 }
 
@@ -421,6 +750,11 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
         [[ICDiagnosticLogger shared] logEvent:@"database"
                                       message:@"Lokale Datenbank konnte beim Start nicht geöffnet werden"
                                      metadata:@{ @"error": databaseManager.initializationError.description ?: @"" }];
+        self.databaseStartupState = ICDatabaseStartupStateFailed;
+        self.databasePreparationError = databaseManager.initializationError;
+        [[NSNotificationCenter defaultCenter] postNotificationName:InstacastDatabaseStartupDidFailNotification
+                                                            object:databaseManager.initializationError];
+        [self _failPendingDatabaseStartupWork];
         self.mainViewController = nil;
         [UIManager sharedManager].mainViewController = nil;
         self.window.rootViewController = [InstacastAppDelegate databaseUnavailableViewControllerForError:databaseManager.initializationError];
@@ -435,27 +769,17 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
     self.window.rootViewController = self.mainViewController;
 
     [self.window makeKeyAndVisible];
-    [[NSNotificationCenter defaultCenter] postNotificationName:InstacastMainViewControllerDidBecomeReadyNotification
-                                                        object:self.mainViewController];
+    // The snapshot counts indexed iCloud rows through DatabaseManager on a detached task.
+    // Start it only after the main-thread store initialization/migration has completed; doing
+    // this from didFinishLaunching raced the lazy persistent container and opened it twice.
+    if (@available(iOS 17.0, *)) {
+        [ICiCloudSyncManager logSyncMetadataStorageSnapshot:@"launch"];
+    }
     [InstacastBackupImporter resumePendingBookmarkImportIfNeeded];
     [InstacastBackupImporter startDeferredRestoreRecovery];
     if (self.pendingBackupFileURL) {
         [self.mainViewController openBackupFileURL:self.pendingBackupFileURL];
         self.pendingBackupFileURL = nil;
-    }
-
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    if ([launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey]) {
-        UILocalNotification* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
-        [self application:App didReceiveLocalNotification:notification];
-    }
-    #pragma clang diagnostic pop
-
-    if ([launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey]) {
-        NSDictionary* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsRemoteNotificationKey];
-        [self application:App didReceiveRemoteNotification:notification fetchCompletionHandler:^(UIBackgroundFetchResult result) {
-        }];
     }
 
     [self _updateAppContentAfterBecomingActive];
@@ -488,6 +812,38 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
     if (handledTranscriptionLaunchArguments) {
         [[ICDiagnosticLogger shared] logEvent:@"debug-automation" message:@"Launch-Argumente verarbeitet" metadata:nil];
     }
+
+    self.databasePreparationError = nil;
+    self.databaseStartupState = ICDatabaseStartupStateReady;
+    [self _recoverPendingAutoDownloadsIfReady];
+    [self _replayPendingDatabaseStartupWork];
+
+    NSArray<NSDictionary*>* pendingSessionEvents = [self.pendingBackgroundURLSessionEvents copy];
+    [self.pendingBackgroundURLSessionEvents removeAllObjects];
+    for (NSDictionary* event in pendingSessionEvents) {
+        NSString* identifier = event[ICPendingBackgroundSessionIdentifierKey];
+        void (^completionHandler)(void) = event[ICPendingBackgroundSessionCompletionKey];
+        [[CacheManager sharedCacheManager] handleEventsForBackgroundURLSession:identifier
+                                                             completionHandler:completionHandler];
+    }
+    [self _endPendingDatabaseSystemCallbacksBackgroundTaskIfPossible];
+
+    NSArray<NSDictionary*>* pendingOpenURLs = [self.pendingApplicationOpenURLs copy];
+    [self.pendingApplicationOpenURLs removeAllObjects];
+    for (NSDictionary* pendingURL in pendingOpenURLs) {
+        [self application:App openURL:pendingURL[@"url"] options:pendingURL[@"options"] ?: @{}];
+    }
+
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    if ([launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey]) {
+        UILocalNotification* notification = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
+        [self application:App didReceiveLocalNotification:notification];
+    }
+    #pragma clang diagnostic pop
+
+    [[NSNotificationCenter defaultCenter] postNotificationName:InstacastMainViewControllerDidBecomeReadyNotification
+                                                        object:self.mainViewController];
 }
 
 + (UIViewController*)databaseUnavailableViewControllerForError:(NSError*)error
@@ -544,6 +900,17 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
                                             @"path": url.path ?: @"",
                                             @"absoluteString": url.absoluteString ?: @"",
                                         }];
+
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
+            return NO;
+        }
+        if (!self.pendingApplicationOpenURLs) {
+            self.pendingApplicationOpenURLs = [NSMutableArray array];
+        }
+        [self.pendingApplicationOpenURLs addObject:@{ @"url": url, @"options": options ?: @{} }];
+        return YES;
+    }
 
     NSSet* subscribeSchemes = [NSSet setWithObjects:@"pcast", @"itpc", @"podcast", @"podcast-subscribe", @"instacast-subscribe", @"instacast", nil];
     __block BOOL handled = NO;
@@ -725,6 +1092,11 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
 {
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        [[ICDiagnosticLogger shared] recordLifecycle:@"applicationDidEnterBackground"
+                                            metadata:@{ @"databaseStartupState": @(self.databaseStartupState) }];
+        return;
+    }
     [[ICDiagnosticLogger shared] recordLifecycle:@"applicationDidEnterBackground"
                                         metadata:@{
                                             @"queuedTranscriptions": @([TranscriptionQueue shared].count),
@@ -740,6 +1112,9 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
 - (void)applicationWillTerminate:(UIApplication *)application
 {
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        return;
+    }
     [[ICDiagnosticLogger shared] recordLifecycle:@"applicationWillTerminate"
                                         metadata:@{
                                             @"queuedTranscriptions": @([TranscriptionQueue shared].count),
@@ -786,6 +1161,19 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo fetchCompletionHandler:(void (^)(UIBackgroundFetchResult result))handler
 {
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
+            handler(UIBackgroundFetchResultFailed);
+        }
+        else {
+            [self.pendingDatabaseRemoteNotifications addObject:@{
+                ICPendingRemoteNotificationUserInfoKey: userInfo ?: @{},
+                ICPendingRemoteNotificationCompletionKey: [handler copy],
+            }];
+            [self _beginPendingDatabaseSystemCallbacksBackgroundTaskIfNeeded];
+        }
+        return;
+    }
     if (@available(iOS 17.0, *)) {
         if ([[ICiCloudSyncManager sharedManager] shouldHandleRemoteNotification:userInfo]) {
             [[ICiCloudSyncManager sharedManager] performBackgroundSyncWithCompletion:handler];
@@ -864,6 +1252,112 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
     }
 }
 
+- (void)_performNotificationInteractionWithUserInfo:(NSDictionary*)userInfo
+                                   actionIdentifier:(NSString*)actionIdentifier
+{
+    NSDictionary* aps = [userInfo[@"aps"] isKindOfClass:NSDictionary.class] ? userInfo[@"aps"] : nil;
+    id topLevelEpisodeHash = userInfo[@"episode_hash"];
+    id nestedEpisodeHash = aps[@"episode_hash"];
+    NSString* episodeHash = [topLevelEpisodeHash isKindOfClass:NSString.class]
+        ? topLevelEpisodeHash
+        : ([nestedEpisodeHash isKindOfClass:NSString.class] ? nestedEpisodeHash : nil);
+    if (episodeHash.length == 0) {
+        return;
+    }
+
+    CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
+    if (!episode) {
+        return;
+    }
+    if ([actionIdentifier isEqualToString:@"play"]) {
+        [[AudioSession sharedAudioSession] playEpisode:episode];
+    }
+    else if ([actionIdentifier isEqualToString:UNNotificationDefaultActionIdentifier]) {
+        [self.mainViewController showShowNotesOfEpisode:episode animated:NO];
+    }
+}
+
+- (void)_enqueueNotificationInteractionWithUserInfo:(NSDictionary*)userInfo
+                                   actionIdentifier:(NSString*)actionIdentifier
+{
+    NSDictionary* immutableUserInfo = [userInfo copy] ?: @{};
+    NSString* immutableAction = [actionIdentifier copy] ?: UNNotificationDefaultActionIdentifier;
+    BOOL requiresReadyScene = [immutableAction isEqualToString:UNNotificationDefaultActionIdentifier];
+    if (self.databaseStartupState == ICDatabaseStartupStateReady &&
+        self.pendingNotificationInteractions.count == 0 &&
+        (!requiresReadyScene || self.notificationSceneReady)) {
+        [self _performNotificationInteractionWithUserInfo:immutableUserInfo actionIdentifier:immutableAction];
+        return;
+    }
+    if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
+        return;
+    }
+    if (!self.pendingNotificationInteractions) {
+        self.pendingNotificationInteractions = [NSMutableArray array];
+    }
+    [self.pendingNotificationInteractions addObject:@{
+        ICPendingNotificationInteractionUserInfoKey: immutableUserInfo,
+        ICPendingNotificationInteractionActionKey: immutableAction,
+    }];
+    if ([immutableAction isEqualToString:@"play"]) {
+        [self _beginPendingDatabaseSystemCallbacksBackgroundTaskIfNeeded];
+    }
+}
+
+- (void)setNotificationSceneReady:(BOOL)ready
+{
+    _notificationSceneReady = ready;
+    if (ready) {
+        [self _replayPendingNotificationInteractionsIfPossible];
+    }
+}
+
+- (void)handleNotificationResponse:(UNNotificationResponse*)response
+                 completionHandler:(void (^)(void))completionHandler
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self handleNotificationResponse:response completionHandler:completionHandler];
+        });
+        return;
+    }
+
+    NSString* actionIdentifier = response.actionIdentifier;
+    if (!response || [actionIdentifier isEqualToString:UNNotificationDismissActionIdentifier]) {
+        if (completionHandler) completionHandler();
+        return;
+    }
+
+    UNNotificationRequest* request = response.notification.request;
+    NSString* requestIdentifier = request.identifier;
+    NSString* responseIdentifier = nil;
+    if (requestIdentifier.length > 0) {
+        responseIdentifier = [NSString stringWithFormat:@"%@|%.6f|%@",
+                              requestIdentifier,
+                              response.notification.date.timeIntervalSince1970,
+                              actionIdentifier ?: @""];
+    }
+    if (responseIdentifier.length > 0 &&
+        [self.handledNotificationResponseIdentifiers containsObject:responseIdentifier]) {
+        if (completionHandler) completionHandler();
+        return;
+    }
+    if (responseIdentifier.length > 0) {
+        [self.handledNotificationResponseIdentifiers addObject:responseIdentifier];
+    }
+
+    [self _enqueueNotificationInteractionWithUserInfo:request.content.userInfo
+                                     actionIdentifier:actionIdentifier];
+    if (completionHandler) completionHandler();
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+ didReceiveNotificationResponse:(UNNotificationResponse *)response
+         withCompletionHandler:(void (^)(void))completionHandler
+{
+    [self handleNotificationResponse:response completionHandler:completionHandler];
+}
+
 // UILocalNotification delegate methods are deprecated but kept for backwards compatibility
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -874,10 +1368,8 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
         return;
     }
 
-    NSString* episodeHash = notification.userInfo[@"episode_hash"];
-
-    CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
-    [self.mainViewController showShowNotesOfEpisode:episode animated:NO];
+    [self _enqueueNotificationInteractionWithUserInfo:notification.userInfo
+                                     actionIdentifier:UNNotificationDefaultActionIdentifier];
 
     [application cancelLocalNotification:notification];
 }
@@ -888,11 +1380,8 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 #pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)localNotification completionHandler:(void (^)(void))completionHandler
 {
-    if ([identifier isEqualToString:@"play"]) {
-        NSString* episodeHash = localNotification.userInfo[@"episode_hash"];
-        CDEpisode* episode = [DMANAGER episodeWithObjectHash:episodeHash];
-        [[AudioSession sharedAudioSession] playEpisode:episode];
-    }
+    [self _enqueueNotificationInteractionWithUserInfo:localNotification.userInfo
+                                     actionIdentifier:identifier];
 
     completionHandler();
 }
@@ -904,42 +1393,92 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 #pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (void)application:(UIApplication *)application handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completionHandler
 {
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
+            completionHandler();
+        }
+        else {
+            if (!self.pendingBackgroundURLSessionEvents) {
+                self.pendingBackgroundURLSessionEvents = [NSMutableArray array];
+            }
+            [self.pendingBackgroundURLSessionEvents addObject:@{
+                ICPendingBackgroundSessionIdentifierKey: identifier ?: @"",
+                ICPendingBackgroundSessionCompletionKey: [completionHandler copy],
+            }];
+            [self _beginPendingDatabaseSystemCallbacksBackgroundTaskIfNeeded];
+        }
+        return;
+    }
     [[CacheManager sharedCacheManager] handleEventsForBackgroundURLSession:identifier completionHandler:completionHandler];
 }
 
 - (void)application:(UIApplication *)application performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult result))completionHandler
 {
+    if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+        if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
+            completionHandler(UIBackgroundFetchResultFailed);
+        }
+        else {
+            [self.pendingDatabaseFetchCompletionHandlers addObject:[completionHandler copy]];
+            [self _beginPendingDatabaseSystemCallbacksBackgroundTaskIfNeeded];
+        }
+        return;
+    }
     dispatch_async(dispatch_get_main_queue(), ^{
-        // return immediately if there's no internet
-        if (App.networkAccessTechnology < kICNetworkAccessTechnlogyEDGE) {
+        SubscriptionManager* subscriptionManager = [SubscriptionManager sharedSubscriptionManager];
+        if (![subscriptionManager canRefreshFeedsOnCurrentNetwork]) {
             completionHandler(UIBackgroundFetchResultFailed);
             return;
         }
-        
-        // 1 abo rauspicken, biggest last update interval
-        NSArray* subscriptions = [DMANAGER visibleFeeds];
-        NSSortDescriptor* sortDescriptor = [[NSSortDescriptor alloc] initWithKey:@"lastUpdate" ascending:YES];
-        NSArray* sortedSubscriptions = [subscriptions sortedArrayUsingDescriptors:@[ sortDescriptor ]];
-        
-        NSMutableArray* firstSubscriptions = [[NSMutableArray alloc] init];
-        NSInteger i=0;
-        
-#define MAX_SUBSCRIPTIONS_TO_FETCH 1
-        
-        for(CDFeed* feed in sortedSubscriptions)
-        {
-            [firstSubscriptions addObject:feed];
-            i++;
-            if (i>=MAX_SUBSCRIPTIONS_TO_FETCH) {
-                break;
+
+        NSArray<CDFeed*>* subscriptions = [DMANAGER visibleFeeds];
+        NSDictionary* savedAttempts = [USER_DEFAULTS dictionaryForKey:ICBackgroundFeedRefreshAttemptsKey];
+        NSMutableDictionary<NSString*, NSNumber*>* backgroundRefreshAttempts = [savedAttempts mutableCopy] ?: [NSMutableDictionary dictionary];
+        NSMutableSet<NSString*>* currentFeedIdentifiers = [NSMutableSet setWithCapacity:subscriptions.count];
+        NSMutableArray<CDFeed*>* refreshCandidates = [NSMutableArray arrayWithCapacity:subscriptions.count];
+        for (CDFeed* feed in subscriptions) {
+            if (feed.parked || feed.uid.length == 0) {
+                continue;
+            }
+            [currentFeedIdentifiers addObject:feed.uid];
+            [refreshCandidates addObject:feed];
+        }
+        for (NSString* feedIdentifier in [backgroundRefreshAttempts.allKeys copy]) {
+            if (![currentFeedIdentifiers containsObject:feedIdentifier]) {
+                [backgroundRefreshAttempts removeObjectForKey:feedIdentifier];
             }
         }
-        
-        
+        [refreshCandidates sortUsingComparator:^NSComparisonResult(CDFeed* left, CDFeed* right) {
+            NSNumber* leftAttempt = backgroundRefreshAttempts[left.uid] ?: @0;
+            NSNumber* rightAttempt = backgroundRefreshAttempts[right.uid] ?: @0;
+            NSComparisonResult attemptOrder = [leftAttempt compare:rightAttempt];
+            if (attemptOrder != NSOrderedSame) {
+                return attemptOrder;
+            }
+            NSComparisonResult updateOrder = [(left.lastUpdate ?: [NSDate distantPast]) compare:(right.lastUpdate ?: [NSDate distantPast])];
+            if (updateOrder != NSOrderedSame) {
+                return updateOrder;
+            }
+            return [left.uid compare:right.uid];
+        }];
+
+        NSUInteger batchCount = MIN(ICBackgroundFeedRefreshBatchSize, refreshCandidates.count);
+        NSArray<CDFeed*>* selectedSubscriptions = [refreshCandidates subarrayWithRange:NSMakeRange(0, batchCount)];
+        NSNumber* attemptDate = @([NSDate date].timeIntervalSince1970);
+        for (CDFeed* feed in selectedSubscriptions) {
+            backgroundRefreshAttempts[feed.uid] = attemptDate;
+        }
+        [USER_DEFAULTS setObject:backgroundRefreshAttempts forKey:ICBackgroundFeedRefreshAttemptsKey];
+
+        if (selectedSubscriptions.count == 0) {
+            completionHandler(UIBackgroundFetchResultNoData);
+            return;
+        }
+
         NSDate* startDate = [NSDate date];
-        [[SubscriptionManager sharedSubscriptionManager] refreshFeeds:firstSubscriptions
-                                                         etagHandling:YES
-                                                           completion:^(BOOL success, NSArray *newEpisodes, NSError* error) {
+        [subscriptionManager refreshFeeds:selectedSubscriptions
+                             etagHandling:YES
+                               completion:^(BOOL success, NSArray *newEpisodes, NSError* error) {
 
                                                                ErrLog(@"background fetch interval: %lf sec", [[NSDate date] timeIntervalSinceDate:startDate]);
                                                                

@@ -11,6 +11,8 @@ RESET = (ROOT / "Classes" / "ImportExportSettingsViewController.m").read_text()
 SYNC = (ROOT / "Classes" / "ICiCloudSyncManager.swift").read_text()
 DB_H = (ROOT / "Classes" / "Model" / "DatabaseManager.h").read_text()
 DB_M = (ROOT / "Classes" / "Model" / "DatabaseManager.m").read_text()
+FTS_H = (ROOT / "Classes" / "Model" / "ICFTSController.h").read_text()
+FTS_M = (ROOT / "Classes" / "Model" / "ICFTSController.m").read_text()
 IMAGE_CACHE = (ROOT / "Classes" / "ImageCacheManager.m").read_text()
 IMAGE_CACHE_H = (ROOT / "Classes" / "ImageCacheManager.h").read_text()
 LOCALIZATIONS = [
@@ -47,6 +49,17 @@ for entity in ("Feed", "Episode", "Bookmark", "EpisodeList", "Playlist", "AppleW
             f"Factory reset is missing the {entity} entity.")
 require("NSBatchDeleteRequest" in DB_M and "mergeChangesFromRemoteContextSave" in DB_M,
         "Large factory resets must use background batch deletion and merge object-ID changes into the UI context.")
+database_reset = DB_M.split("- (void)resetAllUserDataWithCompletion:", 1)[1].split("\n\n- (", 1)[0]
+require("prepareForExternalStoreMutation:" in FTS_H and
+        "_markIndexDirty:" in FTS_M.split("prepareForExternalStoreMutation:", 1)[1],
+        "Batch store mutations need a public crash-safe FTS dirty handoff before bypassing save notifications.")
+require("prepareForExternalStoreMutation:" in database_reset and
+        database_reset.find("prepareForExternalStoreMutation:") < database_reset.find("NSBatchDeleteRequest"),
+        "Factory reset must durably mark FTS before the first Core Data batch delete.")
+require("newExportBackgroundContext" in database_reset and
+        "rebuildIndexWithManagedObjectContext" in database_reset and
+        database_reset.find("rebuildIndexWithManagedObjectContext") > database_reset.find("executeRequest:deleteRequest"),
+        "Factory reset must rebuild and compact FTS from the authoritative post-delete store before completing.")
 image_clear = IMAGE_CACHE.split("- (BOOL) clearTheFuckingCache", 1)[1].split("@end", 1)[0]
 require("error:" in image_clear and "return NO" in image_clear,
         "Image-cache deletion must report filesystem failures instead of always claiming success.")
@@ -61,6 +74,8 @@ for localization in LOCALIZATIONS:
     for key in (
         "The local app data could not be opened for reset.",
         "The local app data could not be completely deleted. Please try the reset again.",
+        "The search index could not be prepared for reset. No local database data was reset.",
+        "The local app data was deleted, but the search index could not be rebuilt. Please restart InstacastPlus and try again.",
         "Cached images could not be deleted. No local database data was reset.",
     ):
         require(f'"{key}" =' in localization,

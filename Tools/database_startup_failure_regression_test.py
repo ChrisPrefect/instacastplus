@@ -35,8 +35,14 @@ require(-1 < context_check < create < fetch_controller,
         "The store must be opened and checked before default inserts or fetched-results controllers are created.")
 require("if (!startupContext)" in initializer[context_check:create] and "return self;" in initializer[context_check:create],
         "A failed store open must stop DatabaseManager initialization instead of continuing with a nil context.")
-require(initializer.count("[self _removeIncompleteCopiedStoreAtURL:_databaseURL]") >= 3,
-        "A failed legacy store/WAL/SHM copy must remove the incomplete new copy so the next launch can retry from the untouched source.")
+prepare_start = DB_M.find("+ (BOOL)_prepareDataStoreMigrationWithError:", DB_M.find("@implementation DatabaseManager"))
+prepare_end = DB_M.find("+ (void) prepareDataStoreMigrationWithCompletion:", prepare_start)
+preparation = DB_M[prepare_start:prepare_end]
+require("ICDataStoreMigrationPhaseBuilding" in preparation and
+        preparation.find("_removePreparedDataStoreAtURL") < preparation.find("migratePersistentStore"),
+        "An interrupted supported migration must remain building and discard only its non-authoritative target before retrying.")
+require("removeItemAtURL:sourceURL" not in preparation and "removeItemAtPath:sourceURL.path" not in preparation,
+        "Preparation failure must never delete the authoritative legacy source store.")
 
 container_start = DB_M.find("- (NSPersistentContainer *)persistentContainer")
 container_end = DB_M.find("- (void)refreshAllObjects", container_start)
