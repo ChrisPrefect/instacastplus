@@ -49,7 +49,7 @@ require("queueDeviceRecord()" not in enable_branch, "The switch tap must not syn
 account_reconciliation = method_body(MANAGER, "func reconcileAvailableICloudAccount")
 require(
     "refreshAccountStatus()" in enable_branch
-    and "scheduleCurrentEnabledDataForUpload()" in account_reconciliation,
+    and "continueEnabledSyncAfterAccountVerification()" in account_reconciliation,
     "The switch tap must verify the account before scheduling initial queueing asynchronously.",
 )
 
@@ -69,7 +69,9 @@ require("await self.performLowPrioritySync()" in low_priority_sync, "Automatic i
 require("MainActor.run" not in low_priority_sync, "Low-priority automatic sync must not hand CKSyncEngine across actors via MainActor.run.")
 
 perform_low_priority_sync = method_body(MANAGER, "func performLowPrioritySync")
-require("sendChangesAndApplyCallbackOutcomes(syncEngine" in perform_low_priority_sync, "Low-priority automatic sync must still send queued changes through the callback-outcome wrapper.")
+require("sendChangesAndApplyCallbackOutcomes(" in perform_low_priority_sync
+        and "syncEngine," in perform_low_priority_sync,
+        "Low-priority automatic sync must still send queued changes through the callback-outcome wrapper.")
 require("try await syncEngine.fetchChanges()" in perform_low_priority_sync, "Low-priority automatic sync must still fetch remote changes.")
 
 plan_builder = method_body(MANAGER, "nonisolated static func buildInitialUploadPlan")
@@ -79,13 +81,57 @@ require("MainActor.run" not in plan_builder and "await self." not in plan_builde
 
 episode_fetch = method_body(MANAGER, "nonisolated static func episodeObjectHashesForInitialUploadPlan")
 subscription_fetch = method_body(MANAGER, "nonisolated static func subscribedFeedURLsForInitialUploadPlan")
-require("DatabaseManager.shared()" in episode_fetch and "await context.perform" in episode_fetch, "Initial episode planning must fetch identifiers on a Core Data background context.")
-require("DatabaseManager.shared()" in subscription_fetch and "await context.perform" in subscription_fetch, "Initial subscription planning must fetch identifiers on a Core Data background context.")
+require("newICloudSyncBackgroundContext()" in episode_fetch and "await context.perform" in episode_fetch, "Initial episode planning must use the dedicated iCloud coordinator off the UI path.")
+require("newICloudSyncBackgroundContext()" in subscription_fetch and "await context.perform" in subscription_fetch, "Initial subscription planning must use the dedicated iCloud coordinator off the UI path.")
 require("fetchBatchSize" not in episode_fetch, "DictionaryResultType episode planning fetches must not set fetchBatchSize because Core Data returns unbatched dictionary rows and warns on the switch path.")
 require("fetchBatchSize" not in subscription_fetch, "DictionaryResultType subscription planning fetches must not set fetchBatchSize because Core Data returns unbatched dictionary rows and warns on the switch path.")
 require("fetchLimit = Self.pendingChangeQueueChunkSize + 1" in episode_fetch, "Initial episode planning must fetch at most one bounded page plus a has-more row.")
 require("fetchLimit = Self.pendingChangeQueueChunkSize + 1" in subscription_fetch, "Initial subscription planning must fetch at most one bounded page plus a has-more row.")
 require("while true" not in episode_fetch and "while true" not in subscription_fetch, "Initial planning must not loop through the entire library in one task.")
+
+metadata_writer = method_body(
+    MANAGER,
+    "nonisolated static func upsertSyncItemMetadata(\n        accountRecordName: String",
+)
+require(
+    "newICloudSyncBackgroundContext()" in metadata_writer,
+    "Backfill metadata writes must use the dedicated iCloud coordinator instead of contending with UI Core Data.",
+)
+require(
+    metadata_writer.count("Task.checkCancellation()") >= 2
+    and metadata_writer.find("Task.checkCancellation()") < metadata_writer.find("context.save()"),
+    "A cancelled old-account metadata writer must stop before it can commit later chunks.",
+)
+
+account_switch = method_body(MANAGER, "func beginICloudAccountSwitch")
+require(
+    "await cancelAndAwaitInitialQueueTask()" in account_switch
+    and account_switch.find("await cancelAndAwaitInitialQueueTask()")
+    < account_switch.find("deleteSyncItemMetadata"),
+    "Account cleanup must wait until the cancelled old-account backfill writer has stopped.",
+)
+account_reconcile = method_body(MANAGER, "func reconcileAvailableICloudAccount")
+require(
+    "await cancelAndAwaitInitialQueueTask()" in account_reconcile
+    and account_reconcile.find("await cancelAndAwaitInitialQueueTask()")
+    < account_reconcile.find("deleteSyncItemMetadata"),
+    "An account change discovered after inactivity must also stop the old writer before cleanup.",
+)
+
+for callback_reader in [
+    "nonisolated static func knownRecordSystemFieldsForSyncEngineCallback",
+    "nonisolated static func syncItemMetadataByRecordNameForSyncEngineCallback",
+    "nonisolated static func localOutboxEntriesByRecordName",
+    "nonisolated static func subscriptionPayloadsByFeedURL",
+    "nonisolated static func episodeStatesByObjectHash",
+    "nonisolated static func episodeListPayloadsForSyncEngineCallback",
+]:
+    callback_body = method_body(MANAGER, callback_reader)
+    require(
+        "newICloudSyncBackgroundContext()" in callback_body
+        and "newBackgroundContext()" not in callback_body,
+        f"{callback_reader} must not lock the UI coordinator while CloudKit drains large batches.",
+    )
 
 plan_apply = method_body(MANAGER, "func applyInitialUploadPlan")
 require("var pendingKeys = pendingRecordZoneChangeKeys()" in plan_apply, "Initial queue application must reuse pending-change keys instead of rebuilding them per chunk.")
@@ -93,7 +139,7 @@ require("pendingKeys: &pendingKeys" in plan_apply, "Initial queue application mu
 require("await Task.yield()" in plan_apply, "Initial queue application must yield between CKSyncEngine state chunks.")
 require("queueDeviceRecord(stampLastSyncDate: true)" in plan_apply, "Initial user-data queueing must still publish a real Last Sync device record.")
 require("scheduleLowPrioritySync()" in plan_apply, "Initial queue application must schedule low-priority sync only after queued state is prepared.")
-require("recordInitialUploadBatchesQueued(plan.pages)" in plan_apply, "Initial queue application must register every bounded page checkpoint before one consolidated send cycle.")
+require("recordInitialUploadBatchesQueued(" in plan_apply and "plan.pages" in plan_apply, "Initial queue application must register every bounded page checkpoint before one consolidated send cycle.")
 
 add_pending_saves = method_body(MANAGER, "func addPendingSaves(_ recordIDs: [CKRecord.ID], pendingKeys: inout Set<String>")
 require("let pendingKeys = Set(syncEngine?.state.pendingRecordZoneChanges.map" not in add_pending_saves, "Reusable pending-key additions must not rescan all pending CKSyncEngine changes.")

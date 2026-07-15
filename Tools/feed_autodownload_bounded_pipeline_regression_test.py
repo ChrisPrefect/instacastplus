@@ -97,8 +97,11 @@ require("dispatch_after" not in asynchronous and "NSTimer" not in asynchronous,
 main_handoff = asynchronous.split("dispatch_async(dispatch_get_main_queue(), ^{", 1)[1]
 start_download = main_handoff.find("[self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes]")
 revalidate_feed = main_handoff.find("existingObjectWithID:feedObjectID")
-require(revalidate_feed != -1 and "!currentFeed.subscribed" in main_handoff[:start_download]
-        and "currentFeed.parked" in main_handoff[:start_download],
+eligibility = body("- (BOOL)automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:")
+require(revalidate_feed != -1
+        and "automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:currentFeed" in main_handoff[:start_download]
+        and "!feed.subscribed" in eligibility
+        and "feed.parked" in eligibility,
         "Every delivered batch must revalidate that the feed is still active.")
 require("episode.feed isEqual:currentFeed" in main_handoff[:start_download],
         "Every candidate must still belong to the feed that produced it before download starts.")

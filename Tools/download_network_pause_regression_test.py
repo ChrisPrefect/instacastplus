@@ -80,7 +80,10 @@ require(paused_filter != -1 and paused_filter < scheduled_add,
 require("[self _startNextDownloadOperations]" in resume_one,
         "Resuming a previously unscheduled paused job must run the bounded scheduler again.")
 
-cache_episode = method_body(MANAGER, "queueRank:(NSNumber*)queueRank")
+cache_episode = method_body(
+    MANAGER,
+    "deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup",
+)
 require("_networkAllowsDownloadOperation:cacheOperation" in cache_episode and "cacheOperation.suspended" in cache_episode,
         "A newly queued offline job must start suspended without losing its queue intent.")
 auto_cache = method_body(MANAGER, "- (BOOL) autoCacheEpisode:")

@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANAGER = (ROOT / "Classes" / "ICiCloudSyncManager.swift").read_text()
 REMOTE = (ROOT / "Classes" / "ICiCloudSyncManager+RemoteApply.swift").read_text()
+ENGINE = (ROOT / "Classes" / "ICiCloudSyncManager+EngineRecords.swift").read_text()
 
 
 def require(condition: bool, message: str) -> None:
@@ -27,86 +28,121 @@ def method_body(source: str, signature: str) -> str:
     raise AssertionError(f"Unterminated method: {signature}")
 
 
-require('finalDeviceRecordUpdatePendingKey = "ICiCloudSyncFinalDeviceRecordUpdatePending"' in MANAGER,
-        "Turning the last switch off needs a durable final-device intent key.")
+require(
+    'pendingDeviceControlIntentsKey = "ICiCloudSyncPendingDeviceControlIntents"' in MANAGER,
+    "Every all-off device update needs a durable revisioned control-intent store.",
+)
 file_keys = method_body(MANAGER, "nonisolated static var fileBackedSyncMetadataKeys")
-require("finalDeviceRecordUpdatePendingKey" in file_keys,
-        "The final-device intent must use the atomic file-backed metadata store.")
+require(
+    "pendingDeviceControlIntentsKey" in file_keys,
+    "Device control intents must use the atomic file-backed metadata store.",
+)
 
 options = method_body(MANAGER, "@objc func syncOptionsChanged")
 persist = options.find("persistFinalDeviceRecordUpdateIntent()")
 signed_out = options.find("isICloudAccountSignedOut")
-require(-1 not in (persist, signed_out) and persist < signed_out,
-        "The last toggle must persist its final-device intent even when the phone is already offline/signed out.")
+require(
+    -1 not in (persist, signed_out) and persist < signed_out,
+    "Every toggle must persist its device revision before offline/network early returns.",
+)
+persist_wrapper = method_body(MANAGER, "func persistFinalDeviceRecordUpdateIntent")
+require(
+    "persistPendingDeviceControlSaveIntent()" in persist_wrapper,
+    "The compatibility entry point must capture a revisioned payload, not a boolean.",
+)
 
 start = method_body(MANAGER, "@objc func start")
-require("anySyncEnabled || hasPendingFinalDeviceRecordUpdate" in start
-        and "initializeSyncEngineIfNeeded()" in start
-        and "refreshAccountStatus()" in start,
-        "Cold start with all categories off must still verify the account and resume the durable device update.")
+startup_recovery = method_body(MANAGER, "func startPostInitializationRecoveryLifecycle")
+require(
+    "startPostInitializationRecoveryLifecycle()" in start
+    and "anySyncEnabled || self.hasPendingDeviceControlIntents" in startup_recovery
+    and "initializeSyncEngineIfNeeded()" in startup_recovery
+    and "refreshAccountStatus()" in startup_recovery,
+    "Cold start with all categories off must verify the account and resume the durable revision.",
+)
 
 reconcile = method_body(REMOTE, "func reconcileAvailableICloudAccount")
-require(reconcile.find("setICloudAccountIdentityVerified(true)")
-        < reconcile.find("resumePendingFinalDeviceRecordUpdateIfNeeded()"),
-        "A pending final device record must resume only after the real iCloud account is verified.")
+require(
+    reconcile.find("setICloudAccountIdentityVerified(true)")
+    < reconcile.find("resumePendingDeviceControlIntentsForVerifiedAccount()"),
+    "A pending device revision may resume only after CloudKit verifies the real account.",
+)
 
+control_sender = method_body(MANAGER, "func sendPendingDeviceControlIntents")
+require(
+    "sendFinalDeviceRecordUpdate()" in control_sender and "anySyncEnabled" not in control_sender,
+    "The all-off sender must not depend on a user-data category being enabled.",
+)
 final_send = method_body(MANAGER, "func sendFinalDeviceRecordUpdate")
-require("setError(error)" in final_send
-        and 'scheduleSyncRetryAfterFailure(error: error, reason: "finalDeviceRecord")' in final_send,
-        "Final all-off device sends must never swallow their CloudKit error.")
-require("clearPendingFinalDeviceRecordUpdateIntent()" not in final_send,
-        "The durable intent may clear only from the exact CloudKit save acknowledgement, not sendChanges returning.")
+require(
+    "setError(error)" in final_send
+    and 'scheduleSyncRetryAfterFailure(error: error, reason: "finalDeviceRecord")' in final_send,
+    "All-off device sends must surface and retry CloudKit failures.",
+)
+require(
+    "clearPendingDeviceControlIntent" not in final_send,
+    "sendChanges returning cannot acknowledge a durable device revision.",
+)
 
+device_record = method_body(ENGINE, "nonisolated static func deviceRecordForSyncEngineCallback")
+require(
+    "snapshot.pendingDeviceControlIntents" in device_record
+    and "localMutationRevisionPayloadKey" in device_record,
+    "The exact durable revision must travel in the ICDevice record.",
+)
 sent = method_body(REMOTE, "func handleSentRecordZoneChanges")
-match_ack = method_body(REMOTE, "func deviceRecordAcknowledgementMatchesCurrentSyncOptions")
-for option in ["episodesEnabled", "subscriptionsEnabled", "settingsEnabled"]:
-    require(option in match_ack,
-            f"A device acknowledgement must compare the current {option} value before clearing the intent.")
-require("clearPendingFinalDeviceRecordUpdateIntent()" in sent
-        and "deviceRecordID(for: deviceID)" in sent
-        and "deviceRecordAcknowledgementMatchesCurrentSyncOptions(payload)" in sent,
-        "Only an acknowledgement of this installation's currently desired ICDevice payload may clear the final intent.")
-require("queueDeviceRecord(scheduleSync: false)" in sent
-        and "requiresImmediateFinalDeviceRecordResend" in sent,
-        "A stale in-flight device acknowledgement must retain the intent and queue the current payload without starting a nested send from the callback.")
+require(
+    "acknowledgePendingDeviceControlSave" in sent,
+    "Only the exact saved ICDevice revision may complete the durable intent.",
+)
+acknowledge = method_body(MANAGER, "func acknowledgePendingDeviceControlSave")
+require(
+    "currentRevision == sentRevision" in acknowledge
+    and "requiresImmediateFinalDeviceRecordResend = true" in acknowledge,
+    "A stale save acknowledgement must retain and immediately requeue the newer revision.",
+)
 
 send_wrapper = method_body(MANAGER, "func sendChangesAndApplyCallbackOutcomes")
-require("requiresImmediateFinalDeviceRecordResend" in send_wrapper
-        and "continue" in send_wrapper,
-        "The outer send loop must immediately send the current device payload after the stale acknowledgement callback returns.")
+require(
+    "requiresImmediateFinalDeviceRecordResend" in send_wrapper and "continue" in send_wrapper,
+    "The outer send loop must send the requeued revision after its callback returns.",
+)
 
 
-def acknowledgement_transition(desired: dict[str, bool], acknowledged: dict[str, object]) -> tuple[bool, bool]:
-    """Returns (clear durable intent, queue current payload)."""
-    keys = ("episodesEnabled", "subscriptionsEnabled", "settingsEnabled")
-    matches = all(type(acknowledged.get(key)) is bool
-                  and acknowledged[key] == desired[key]
-                  for key in keys)
+def acknowledgement_transition(current_revision: str, sent_revision: str) -> tuple[bool, bool]:
+    matches = current_revision == sent_revision
     return matches, not matches
 
 
-# Sequence proof for the real race:
-# 1. An ON payload is already in flight.
-# 2. The user turns the last category off; the durable all-off intent is set, but the
-#    duplicate pending key cannot replace the in-flight save yet.
-# 3. The old ON acknowledgement arrives. It must not clear the all-off intent; after
-#    that callback returns, the now-unblocked device key must be queued and sent again.
-all_off = {"episodesEnabled": False, "subscriptionsEnabled": False, "settingsEnabled": False}
-old_on_ack = {"episodesEnabled": True, "subscriptionsEnabled": False, "settingsEnabled": False}
-require(acknowledgement_transition(all_off, old_on_ack) == (False, True),
-        "An old ON acknowledgement must retain and immediately requeue the durable all-off intent.")
-require(acknowledgement_transition(all_off, all_off) == (True, False),
-        "Only the exact false/false/false acknowledgement may complete the all-off intent.")
-require(acknowledgement_transition(all_off, {}) == (False, True),
-        "A malformed/legacy device acknowledgement must not be mistaken for an exact all-off payload.")
+# An old ON payload may be in flight when the last switch is turned off. Payload booleans
+# can repeat across later edits, so only the captured mutation revision is a safe ACK key.
+require(
+    acknowledgement_transition("all-off-r2", "old-on-r1") == (False, True),
+    "An old ON acknowledgement must retain and requeue the all-off revision.",
+)
+require(
+    acknowledgement_transition("all-off-r2", "all-off-r2") == (True, False),
+    "Only the exact all-off revision may complete the intent.",
+)
+require(
+    acknowledgement_transition("same-options-r3", "same-options-r2") == (False, True),
+    "Identical option values from an older mutation must not clear a newer revision.",
+)
 
 retry = method_body(MANAGER, "func scheduleSyncRetryAfterFailure(code:")
-require("anySyncEnabled || hasPendingFinalDeviceRecordUpdate" in retry
-        and "resumePendingFinalDeviceRecordUpdateIfNeeded()" in retry,
-        "Automatic retry must remain alive when every user-data category is off.")
+require(
+    "anySyncEnabled || hasPendingDeviceControlIntents" in retry
+    and "resumePendingDeviceControlIntentsForVerifiedAccount()" in retry,
+    "Automatic retry must remain alive when every user-data category is off.",
+)
 
-status = method_body(MANAGER, "@objc var statusText")
-require(status.find("hasPendingFinalDeviceRecordUpdate") < status.find('NSLocalizedString("Aus"'),
-        "A pending/failed final device update must be visible instead of always being masked by 'Off'.")
+legacy_migration = method_body(
+    MANAGER, "func migrateLegacyFinalDeviceRecordUpdateIntentIfNeeded"
+)
+require(
+    legacy_migration.find("persistPendingDeviceControlSaveIntent")
+    < legacy_migration.find("clearPendingFinalDeviceRecordUpdateIntent"),
+    "Released boolean intents may clear only after their revisioned replacement is durable.",
+)
 
 print("iCloud final device-intent regression checks passed")

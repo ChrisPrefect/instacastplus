@@ -41,7 +41,13 @@ def body(source: str, signature: str) -> str:
     raise AssertionError(f"Unterminated body: {signature}")
 
 
-remove_batch = body(MANAGER, "- (void)_removeCacheForEpisodes:")
+remove_batch = body(
+    MANAGER,
+    "- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                       automatic:(BOOL)automatic\n"
+    "             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                      completion:",
+)
 finish_files = body(MANAGER, "- (void)_finishCacheFileDeletionForItems:")
 complete_deletion = body(MANAGER, "- (void)_completeCacheDeletionForIdentifier:")
 destructive_finish = body(MANAGER, "- (NSError*) _finishDestructiveCacheClear")

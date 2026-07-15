@@ -36,6 +36,7 @@ static NSString * const ICBackupDownloadStageFilename = @"downloads.plist";
 static NSString * const ICBackupDownloadCancellationDirectoryName = @"DownloadCancellations";
 static NSString * const ICBackupBookmarkStageStateActive = @"active";
 static NSString * const ICBackupBookmarkStageStateCancelled = @"cancelled";
+static const NSUInteger ICBackupFeedSettingsBatchSize = 100;
 
 static NSDictionary *ICBackupPendingNowPlayingRecord(NSString *guid,
                                                      NSString *feedURL,
@@ -204,6 +205,29 @@ static NSString *ICBackupLegacyFeedSettingType(NSString *key, NSString *value) {
     return @"string";
 }
 
+static BOOL ICBackupFeedSettingAlreadyMatches(CDFeedProperty *property,
+                                              NSString *type,
+                                              NSString *stringValue,
+                                              BOOL boolValue,
+                                              int32_t integerValue,
+                                              double doubleValue) {
+    BOOL hasDefaultNonBooleanValues = property.stringValue == nil &&
+        property.doubleValue == 0 && property.int32Value == 0;
+    if ([type isEqualToString:@"string"]) {
+        return [property.stringValue isEqualToString:stringValue] &&
+            property.doubleValue == 0 && property.int32Value == 0 && !property.boolValue;
+    }
+    if ([type isEqualToString:@"double"]) {
+        return property.doubleValue == doubleValue && property.stringValue == nil &&
+            property.int32Value == 0 && !property.boolValue;
+    }
+    if ([type isEqualToString:@"integer"]) {
+        return property.int32Value == integerValue && property.stringValue == nil &&
+            property.doubleValue == 0 && !property.boolValue;
+    }
+    return property.boolValue == boolValue && hasDefaultNonBooleanValues;
+}
+
 static BOOL ICBackupApplyFeedSetting(CDFeed *feed, NSString *key, NSString *type, NSString *value) {
     BOOL boolValue = NO;
     int32_t integerValue = 0;
@@ -228,6 +252,10 @@ static BOOL ICBackupApplyFeedSetting(CDFeed *feed, NSString *key, NSString *type
 
     CDFeedProperty *property = [feed propertyForKey:key insertOnDemand:YES];
     if (!property) return NO;
+    if (ICBackupFeedSettingAlreadyMatches(property, type, value, boolValue,
+                                          integerValue, doubleValue)) {
+        return YES;
+    }
     property.stringValue = nil;
     property.doubleValue = 0;
     property.int32Value = 0;
@@ -977,7 +1005,7 @@ static void runOnMain(void (^block)(void)) {
         }
 
         NSError *importError = nil;
-        NSInteger count = [self _importBookmarks:bookmarks operation:nil error:&importError];
+        [self _importBookmarks:bookmarks operation:nil error:&importError];
         if (importError) {
             ErrLog(@"Could not resume pending bookmark import: %@", importError);
             finishAttempt(importError);
@@ -990,7 +1018,7 @@ static void runOnMain(void (^block)(void)) {
             finishAttempt(cleanupError);
             return;
         }
-        DebugLog(@"Resumed pending bookmark import (%ld new bookmarks)", (long)count);
+        DebugLog(@"Resumed pending bookmark import");
         finishAttempt(nil);
     }];
     recoveryOperation.qualityOfService = NSQualityOfServiceUtility;
@@ -1578,8 +1606,19 @@ static void runOnMain(void (^block)(void)) {
                         if (cb.setTotalProgress) cb.setTotalProgress(feedProgress);
                     });
                 }
-            } else if (cat == ICBackupImportBookmarks || cat == ICBackupImportDownloads) {
+            } else if (cat == ICBackupImportBookmarks || cat == ICBackupImportDownloads ||
+                       cat == ICBackupImportFeedSettings) {
+                if (cat == ICBackupImportFeedSettings) {
+                    runOnMain(^{
+                        [[ICiCloudSyncManager sharedManager] beginLocalOutboxBatch];
+                    });
+                }
                 count = importBlock(&phaseError);
+                if (cat == ICBackupImportFeedSettings) {
+                    runOnMain(^{
+                        [[ICiCloudSyncManager sharedManager] endLocalOutboxBatch];
+                    });
+                }
             } else {
                 runOnMain(^{
                     count = importBlock(&phaseError);
@@ -1730,7 +1769,9 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
                                                        ICBackupImportPlaylists |
                                                        ICBackupImportDownloads |
                                                        ICBackupImportAppleWatch;
-    if (!(categories & episodeLookupCategories)) return nil;
+    ICBackupImportCategory feedURLMappingCategories = episodeLookupCategories |
+                                                       ICBackupImportFeedSettings;
+    if (!(categories & feedURLMappingCategories)) return nil;
 
     NSMutableSet<NSString *> *candidateGUIDs = [NSMutableSet set];
     if (categories & (ICBackupImportEpisodeStatus | ICBackupImportDownloads)) {
@@ -1768,7 +1809,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             if (episode.guid.length > 0) [candidateGUIDs addObject:episode.guid];
         }
     }
-    if (candidateGUIDs.count == 0) return nil;
+    if (candidateGUIDs.count == 0 && !(categories & ICBackupImportFeedSettings)) return nil;
 
     NSMutableSet<NSString *> *indexedFeedURLs = [NSMutableSet set];
 
@@ -1780,6 +1821,21 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     }
     __block NSError *fetchError = nil;
     [context performBlockAndWait:^{
+        if (categories & ICBackupImportFeedSettings) {
+            NSFetchRequest<NSDictionary *> *feedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+            feedRequest.resultType = NSDictionaryResultType;
+            feedRequest.includesSubentities = NO;
+            feedRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES AND sourceURL_ != nil"];
+            feedRequest.propertiesToFetch = @[@"sourceURL_"];
+            feedRequest.fetchBatchSize = ICBackupFeedSettingsBatchSize;
+            NSArray<NSDictionary *> *feedRows = [context executeFetchRequest:feedRequest error:&fetchError];
+            if (!feedRows) return;
+            for (NSDictionary *feedRow in feedRows) {
+                NSString *feedURL = feedRow[@"sourceURL_"];
+                if (feedURL.length > 0) [indexedFeedURLs addObject:feedURL];
+            }
+        }
+
         NSArray<NSString *> *GUIDs = candidateGUIDs.allObjects;
         const NSUInteger episodeFetchBatchSize = 400;
         for (NSUInteger offset = 0; offset < GUIDs.count; offset += episodeFetchBatchSize) {
@@ -1893,6 +1949,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         if (error) *error = ICBackupImportPersistenceError(nil);
         return 0;
     }
+    context.mergePolicy = NSErrorMergePolicy;
     [context performBlockAndWait:^{
         NSFetchRequest *feedRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
         feedRequest.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ == %@", resolvedFeedURL];
@@ -1934,12 +1991,36 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         }
 
         if (context.hasChanges) {
+            NSError *journalError = nil;
+            if (![ICiCloudSyncManager journalBackgroundEpisodeChangesInContext:context
+                                                                          error:&journalError]) {
+                [context rollback];
+                count = 0;
+                phaseError = ICBackupImportPersistenceError(journalError);
+                return;
+            }
+            NSError *commitPreparationError = nil;
+            ICBackgroundLocalOutboxCommitPlan *commitPlan =
+                [ICiCloudSyncManager prepareBackgroundLocalOutboxCommitInContext:context
+                                                                           error:&commitPreparationError];
+            if (!commitPlan) {
+                [context rollback];
+                count = 0;
+                phaseError = ICBackupImportPersistenceError(commitPreparationError);
+                return;
+            }
             NSError *saveError = nil;
             if (![context save:&saveError]) {
+                [ICiCloudSyncManager cancelBackgroundLocalOutboxCommit:commitPlan];
                 ErrLog(@"could not import episode status for %@: %@", ICRedactedURLStringForLogging(resolvedFeedURL), saveError);
                 [context rollback];
                 count = 0;
                 phaseError = ICBackupImportPersistenceError(saveError);
+            } else {
+                [ICiCloudSyncManager completeBackgroundLocalOutboxCommit:commitPlan];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [[ICiCloudSyncManager sharedManager] backgroundLocalEpisodeChangesDidCommit];
+                });
             }
         }
     }];
@@ -1966,64 +2047,231 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
 
 + (NSInteger)importFeedSettingsFromBackup:(InstacastBackupData *)backup error:(NSError **)error {
     NSInteger count = 0;
-
     NSSet *internalKeys = [NSSet setWithObjects:@"episodeLoadingComplete", @"loadedEpisodeCount", @"totalExpectedEpisodes", nil];
 
-    for (ICBackupPodcast *podcast in backup.podcasts) {
-        if (!podcast.feedURL) continue;
-        NSURL *feedURL = [NSURL URLWithString:podcast.feedURL];
-        if (!feedURL) continue;
-
-        CDFeed *feed = [DMANAGER feedWithSourceURL:feedURL];
-        if (!feed) continue;
-
-        if (podcast.rank > 0) {
-            feed.rank = podcast.rank;
+    for (NSUInteger offset = 0; offset < backup.podcasts.count;
+         offset += ICBackupFeedSettingsBatchSize) {
+        NSRange range = NSMakeRange(
+            offset,
+            MIN(ICBackupFeedSettingsBatchSize, backup.podcasts.count - offset)
+        );
+        NSArray<ICBackupPodcast *> *podcastBatch = [backup.podcasts subarrayWithRange:range];
+        NSMutableArray<NSArray *> *resolvedPodcasts = [NSMutableArray arrayWithCapacity:podcastBatch.count];
+        NSMutableSet<NSString *> *resolvedFeedURLs = [NSMutableSet setWithCapacity:podcastBatch.count];
+        for (ICBackupPodcast *podcast in podcastBatch) {
+            NSString *resolvedFeedURL = [self _resolvedFeedURLForBackupURL:podcast.feedURL];
+            if (resolvedFeedURL.length == 0) continue;
+            [resolvedPodcasts addObject:@[resolvedFeedURL, podcast]];
+            [resolvedFeedURLs addObject:resolvedFeedURL];
         }
-        feed.parked = podcast.parked;
+        if (resolvedPodcasts.count == 0) continue;
 
-        if (podcast.username.length > 0) {
-            feed.username = podcast.username;
-            count++;
+        NSManagedObjectContext *context = [DMANAGER newICloudSyncBackgroundContext];
+        if (!context) {
+            if (error) *error = ICBackupImportPersistenceError(nil);
+            return 0;
         }
-        if (podcast.password.length > 0) {
-            feed.password = podcast.password;
-            count++;
-        }
+        context.mergePolicy = NSErrorMergePolicy;
 
-        if (podcast.settings) {
-            for (NSString *originalKey in podcast.settings) {
-                if ([internalKeys containsObject:originalKey]) continue;
-
-                NSString *value = podcast.settings[originalKey];
-                if (!value || value.length == 0) continue;
-
-                // Translate UID-prefixed keys: old UID → new feed's UID
-                NSString *key = originalKey;
-                if (key.length > 37 && [key characterAtIndex:36] == '_') {
-                    NSString *prefix = [key substringToIndex:36];
-                    if ([prefix characterAtIndex:8] == '-' && [prefix characterAtIndex:13] == '-' &&
-                        [prefix characterAtIndex:18] == '-' && [prefix characterAtIndex:23] == '-') {
-                        NSString *suffix = [key substringFromIndex:36];
-                        key = [feed.uid stringByAppendingString:suffix];
-                    }
-                }
-
-                NSString *type = podcast.settingTypes[originalKey];
-                if (type.length == 0) {
-                    type = ICBackupLegacyFeedSettingType(key, value);
-                }
-                if (ICBackupApplyFeedSetting(feed, key, type, value)) {
-                    count++;
-                }
+        __block NSInteger batchCount = 0;
+        __block NSError *batchError = nil;
+        __block NSArray<NSString *> *credentialFeedURLs = @[];
+        __block ICBackgroundLocalSubscriptionMergePlan *mergePlan = nil;
+        __block ICBackgroundLocalOutboxCommitPlan *outboxCommitPlan = nil;
+        __block BOOL committedChanges = NO;
+        __block NSError *credentialError = nil;
+        BOOL restoresCredentials = NO;
+        for (NSArray *resolvedPodcast in resolvedPodcasts) {
+            ICBackupPodcast *podcast = resolvedPodcast[1];
+            if (podcast.password.length > 0) {
+                restoresCredentials = YES;
+                break;
             }
         }
-    }
+        ICLocalCredentialRestoreLease *credentialRestoreLease = restoresCredentials
+            ? [ICiCloudSyncManager beginLocalCredentialRestore]
+            : nil;
+        [context performBlockAndWait:^{
+            NSFetchRequest<CDFeed *> *request = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
+            request.predicate = [NSPredicate predicateWithFormat:@"sourceURL_ IN %@", resolvedFeedURLs];
+            request.includesSubentities = NO;
+            request.fetchBatchSize = ICBackupFeedSettingsBatchSize;
+            request.relationshipKeyPathsForPrefetching = @[@"properties"];
+            NSError *fetchError = nil;
+            NSArray<CDFeed *> *feeds = [context executeFetchRequest:request error:&fetchError];
+            if (!feeds) {
+                batchError = ICBackupImportPersistenceError(fetchError);
+                return;
+            }
+            NSMutableDictionary<NSString *, CDFeed *> *feedsByURL = [NSMutableDictionary dictionaryWithCapacity:feeds.count];
+            for (CDFeed *feed in feeds) {
+                NSString *feedURL = [feed valueForKey:@"sourceURL_"];
+                if (feedURL.length > 0) feedsByURL[feedURL] = feed;
+            }
 
-    NSError *saveError = ICBackupSaveMainContext();
-    if (saveError) {
-        if (error) *error = saveError;
-        return 0;
+            NSMutableDictionary<NSString *, NSDictionary *> *credentialIntents = [NSMutableDictionary dictionary];
+            for (NSArray *resolvedPodcast in resolvedPodcasts) {
+                NSString *feedURL = resolvedPodcast[0];
+                ICBackupPodcast *podcast = resolvedPodcast[1];
+                CDFeed *feed = feedsByURL[feedURL];
+                if (!feed) continue;
+
+                if (podcast.rank > 0 && feed.rank != podcast.rank) {
+                    feed.rank = podcast.rank;
+                }
+                if (feed.parked != podcast.parked) {
+                    feed.parked = podcast.parked;
+                }
+                if (podcast.username.length > 0) {
+                    if (![feed.username isEqualToString:podcast.username]) {
+                        feed.username = podcast.username;
+                    }
+                    batchCount++;
+                }
+                if (podcast.password.length > 0) {
+                    NSString *expectedPassword = feed.password;
+                    if (![expectedPassword isEqualToString:podcast.password]) {
+                        credentialIntents[feedURL] = @{
+                            @"expectedPassword": expectedPassword ?: @"",
+                            @"expectedPasswordPresent": @(expectedPassword != nil),
+                            @"desiredUsername": feed.username ?: @"",
+                            @"desiredPassword": podcast.password,
+                        };
+                    }
+                    batchCount++;
+                }
+
+                for (NSString *originalKey in podcast.settings ?: @{}) {
+                    if ([internalKeys containsObject:originalKey]) continue;
+                    NSString *value = podcast.settings[originalKey];
+                    if (value.length == 0) continue;
+
+                    // Translate UID-prefixed keys: old UID → the current local feed UID.
+                    NSString *key = originalKey;
+                    if (key.length > 37 && [key characterAtIndex:36] == '_') {
+                        NSString *prefix = [key substringToIndex:36];
+                        if ([prefix characterAtIndex:8] == '-' && [prefix characterAtIndex:13] == '-' &&
+                            [prefix characterAtIndex:18] == '-' && [prefix characterAtIndex:23] == '-') {
+                            NSString *suffix = [key substringFromIndex:36];
+                            key = [feed.uid stringByAppendingString:suffix];
+                        }
+                    }
+
+                    NSString *type = podcast.settingTypes[originalKey];
+                    if (type.length == 0) {
+                        type = ICBackupLegacyFeedSettingType(key, value);
+                    }
+                    if (ICBackupApplyFeedSetting(feed, key, type, value)) {
+                        batchCount++;
+                    }
+                }
+            }
+
+            NSError *journalError = nil;
+            if (![ICiCloudSyncManager journalBackgroundSubscriptionChangesInContext:context
+                                                                   credentialIntents:credentialIntents
+                                                                               error:&journalError]) {
+                [context rollback];
+                batchError = ICBackupImportPersistenceError(journalError);
+                return;
+            }
+
+            NSPredicate *userObjectPredicate = [NSPredicate predicateWithBlock:^BOOL(NSManagedObject *object, NSDictionary *bindings) {
+                NSString *entityName = object.entity.name;
+                return [entityName isEqualToString:@"Feed"] || [entityName isEqualToString:@"FeedProperty"];
+            }];
+            NSArray<NSManagedObject *> *insertedUserObjects =
+                [[context.insertedObjects allObjects] filteredArrayUsingPredicate:userObjectPredicate];
+            NSArray<NSManagedObject *> *updatedUserObjects =
+                [[context.updatedObjects allObjects] filteredArrayUsingPredicate:userObjectPredicate];
+
+            if (insertedUserObjects.count > 0) {
+                NSError *permanentIDError = nil;
+                if (![context obtainPermanentIDsForObjects:insertedUserObjects error:&permanentIDError]) {
+                    [context rollback];
+                    batchError = ICBackupImportPersistenceError(permanentIDError);
+                    return;
+                }
+            }
+
+            NSMutableArray<NSString *> *insertedURIs = [NSMutableArray arrayWithCapacity:insertedUserObjects.count];
+            for (NSManagedObject *object in insertedUserObjects) {
+                NSString *URIString = object.objectID.URIRepresentation.absoluteString;
+                if (URIString.length > 0) [insertedURIs addObject:URIString];
+            }
+            NSMutableArray<NSString *> *updatedURIs = [NSMutableArray arrayWithCapacity:updatedUserObjects.count];
+            for (NSManagedObject *object in updatedUserObjects) {
+                NSString *URIString = object.objectID.URIRepresentation.absoluteString;
+                if (URIString.length > 0) [updatedURIs addObject:URIString];
+            }
+            if (insertedURIs.count > 0 || updatedURIs.count > 0) {
+                __block NSError *mergePreparationError = nil;
+                runOnMain(^{
+                    mergePlan = [[ICiCloudSyncManager sharedManager]
+                        prepareBackgroundLocalSubscriptionMergeWithInsertedObjectURIStrings:insertedURIs
+                        updatedObjectURIStrings:updatedURIs
+                        error:&mergePreparationError];
+                });
+                if (!mergePlan) {
+                    [context rollback];
+                    batchError = ICBackupImportPersistenceError(mergePreparationError);
+                    return;
+                }
+            }
+
+            if (context.hasChanges) {
+                NSError *commitPreparationError = nil;
+                outboxCommitPlan =
+                    [ICiCloudSyncManager prepareBackgroundLocalOutboxCommitInContext:context
+                                                                               error:&commitPreparationError];
+                if (!outboxCommitPlan) {
+                    [context rollback];
+                    batchError = ICBackupImportPersistenceError(commitPreparationError);
+                    return;
+                }
+                NSError *saveError = nil;
+                if (![context save:&saveError]) {
+                    [ICiCloudSyncManager cancelBackgroundLocalOutboxCommit:outboxCommitPlan];
+                    [context rollback];
+                    batchError = ICBackupImportPersistenceError(saveError);
+                    return;
+                }
+                [ICiCloudSyncManager completeBackgroundLocalOutboxCommit:outboxCommitPlan];
+                committedChanges = YES;
+            }
+
+            credentialFeedURLs = credentialIntents.allKeys;
+        }];
+        if (!batchError && credentialFeedURLs.count > 0) {
+            [ICiCloudSyncManager resolvePendingLocalCredentialIntentsWithRestoreLease:credentialRestoreLease
+                                                                              feedURLs:credentialFeedURLs
+                                                                                  error:&credentialError];
+        }
+        if (credentialRestoreLease) {
+            [ICiCloudSyncManager endLocalCredentialRestore:credentialRestoreLease];
+        }
+
+        if (batchError) {
+            if (error) *error = batchError;
+            return 0;
+        }
+
+        if (mergePlan || committedChanges) {
+            runOnMain(^{
+                if (mergePlan) {
+                    [[ICiCloudSyncManager sharedManager]
+                        commitBackgroundLocalSubscriptionMergePlan:mergePlan];
+                } else {
+                    [[ICiCloudSyncManager sharedManager] backgroundLocalOutboxChangesDidCommit];
+                }
+            });
+        }
+
+        if (credentialError) {
+            if (error) *error = credentialError;
+            return 0;
+        }
+        count += batchCount;
     }
     return count;
 }

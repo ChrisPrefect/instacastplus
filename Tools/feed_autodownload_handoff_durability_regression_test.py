@@ -21,7 +21,14 @@ def require(condition: bool, message: str) -> None:
 
 
 def body(source: str, signature: str) -> str:
-    implementation = source.find("@implementation")
+    if source is SUBSCRIPTION_M:
+        implementation = source.find("@implementation SubscriptionManager")
+    elif source is CACHE_M:
+        implementation = source.find("@implementation CacheManager")
+    elif source is APP_DELEGATE:
+        implementation = source.find("@implementation InstacastAppDelegate")
+    else:
+        implementation = 0
     start = source.find(signature, max(0, implementation))
     require(start != -1, f"Missing function or method: {signature}")
     brace = source.find("{", start)

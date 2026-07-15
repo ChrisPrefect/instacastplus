@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model7.xcdatamodel"
+MODEL = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model8.xcdatamodel"
 
 SWIFT_PROOF = r'''
 import CoreData

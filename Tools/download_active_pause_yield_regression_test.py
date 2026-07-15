@@ -40,7 +40,7 @@ require("setMaxConcurrentOperationCount:3" in MANAGER,
 require("_downloadPauseYieldTokensByIdentifier" in MANAGER,
         "Pause-yield ownership needs an identity token so cancel cannot resurrect a job.")
 
-request_yield = body(MANAGER, "- (void)_requestDownloadOperationYield:")
+request_yield = body(MANAGER, "- (BOOL)_requestDownloadOperationYield:")
 require("operation isExecuting" in request_yield and "[operation cancel]" in request_yield and
         "_replaceYieldedDownloadOperation" in request_yield,
         "A queued or active suspended operation must end once and be replaced from durable resume data.")

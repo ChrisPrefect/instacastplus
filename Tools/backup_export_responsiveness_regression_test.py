@@ -98,6 +98,13 @@ require(
     and "cachedEpisodeHashes" in builder,
     "Background builder must fetch from its own context and use the immutable cached-episode snapshot.",
 )
+feed_fetch = builder.split("// Podcasts", 1)[1].split("NSArray* feeds", 1)[0]
+require(
+    "relationshipKeyPathsForPrefetching" in feed_fetch
+    and '@"properties"' in feed_fetch,
+    "The independent export context must prefetch feed properties once; otherwise each podcast "
+    "fires a cold serial relationship query and makes the spinner-based background export much slower.",
+)
 require(
     "writeToURL:url options:NSDataWritingAtomic error:" in builder,
     "Backup file writes must be checked instead of opening a share sheet for a missing file.",

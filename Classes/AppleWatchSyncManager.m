@@ -338,9 +338,7 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
                             updatedObjectIDs:(NSArray<NSManagedObjectID*>*)updatedObjectIDs
                                        error:(NSError*)error;
 - (AppleWatchEpisodeState*)_applyPersistedTransientDownloadProgressPayload:(NSDictionary*)payload;
-- (AppleWatchEpisodeState*)_applyTransientDownloadProgressPayload:(NSDictionary*)payload
-                                                             state:(AppleWatchEpisodeState*)state
-                                                     eventRevision:(int64_t)eventRevision;
+- (AppleWatchEpisodeState*)_applyTransientDownloadProgressPayload:(NSDictionary*)payload;
 
 @end
 

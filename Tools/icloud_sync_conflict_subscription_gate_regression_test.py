@@ -33,9 +33,9 @@ def method_body(source: str, signature: str) -> str:
 
 apply_record = method_body(SOURCE, "func applyRemoteRecord(_ record:")
 
-subscription_staging = apply_record.split(
-    "} else if record.recordType == RecordKind.subscription", 1
-)[1].split("let wasApplyingRemoteChange", 1)[0]
+subscription_staging = apply_record[apply_record.find(
+    "if record.recordType == RecordKind.subscription"
+):]
 for record_kind in (
     "RecordKind.subscription",
     "RecordKind.subscriptionTombstone",
@@ -49,7 +49,8 @@ require("markPendingSubscriptionFetchIncomplete()" in subscription_staging and
         < subscription_staging.find("stagePendingSubscriptionStates"),
         "A conflict subscription row must close the complete-fetch gate before it is staged.")
 require("payloadData: payloadData" in subscription_staging and
-        "defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName" in subscription_staging,
+        "defaults.string(forKey: Self.accountUserRecordNameKey)" in subscription_staging and
+        "== accountRecordName" in subscription_staging,
         "A conflict subscription row must preserve its exact payload and verify the account after staging.")
 for destructive_call in (
     "applyRemoteSubscription(payload",

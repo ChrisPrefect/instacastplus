@@ -383,13 +383,15 @@
     UIAlertAction* defaultAction = [UIAlertAction actionWithTitle:@"Unsubscribe".ls style:UIAlertActionStyleDefault
                                                           handler:^(UIAlertAction * action) {
                                                               STRONG_SELF
-                                                              
-                                                              [self perform:^(id sender) {
-                                                                  [[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:self.feed];
-                                                                  
-                                                                  [self.navigationController popToRootViewControllerAnimated:YES];
-                                                              } afterDelay:0.3];
-                                                              
+                                                              [[SubscriptionManager sharedSubscriptionManager]
+                                                                  unsubscribeFeed:self.feed
+                                                                  completion:^(NSError* error) {
+                                                                      if (error) {
+                                                                          [self presentError:error];
+                                                                          return;
+                                                                      }
+                                                                      [self.navigationController popToRootViewControllerAnimated:YES];
+                                                                  }];
                                                               self.alertController = nil;
                                                           }];
     [alert addAction:defaultAction];

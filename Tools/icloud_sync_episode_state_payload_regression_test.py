@@ -61,6 +61,6 @@ require('payload["updatedAt"] = updatedAt' in materialize, "Batch materializatio
 require("episodeStatesByObjectHash(" in materialize, "Batch materialization must source episode payloads from the batched fetch.")
 require("newBackgroundContext()" not in materialize, "Record materialization must not create a context per record.")
 
-apply_remote = method_body(MANAGER, "func applyRemoteEpisodeState")
+apply_remote = method_body(MANAGER, "func applyPendingEpisodeStateBatchInBackground")
 for key in ["played", "position", "starred", "updatedAt"]:
     require(key in apply_remote, f"Remote episode apply must still use {key}.")

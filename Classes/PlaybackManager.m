@@ -31,6 +31,7 @@
 #import "ICImageCacheOperation.h"
 #import "CacheManager.h"
 #import <MediaPlayer/MediaPlayer.h>
+#include <limits.h>
 
 #define SEND_UPDATE [self _sendUpdateNotification];
 
@@ -145,6 +146,12 @@ static const int64_t ICStreamingHighPriorityChunkSize = 512 * 1024;
 static const int64_t ICStreamingBackfillChunkSize = 512 * 1024;
 static const void* ICStreamingQueueSpecific = &ICStreamingQueueSpecific;
 
+typedef NS_ENUM(NSUInteger, ICStreamingCacheLoaderState) {
+    ICStreamingCacheLoaderStateActive,
+    ICStreamingCacheLoaderStateSucceeded,
+    ICStreamingCacheLoaderStateFailed,
+};
+
 static BOOL ICCacheStreamingImportWasSuperseded(NSError* error)
 {
     return [error.domain isEqualToString:@"CacheManager"] && error.code == 42;
@@ -171,7 +178,9 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, readonly, getter=isCacheComplete) BOOL cacheComplete;
 @property (nonatomic, readonly, getter=isCacheTerminal) BOOL cacheTerminal;
 @property (nonatomic, copy, readonly) NSString* leaseToken;
-@property (nonatomic, copy) void (^progressChangeHandler)(double progress, BOOL cacheComplete);
+@property (nonatomic, copy) void (^progressChangeHandler)(double progress,
+                                                         unsigned long long downloadedBytes,
+                                                         ICStreamingCacheLoaderState state);
 - (instancetype)initWithEpisode:(CDEpisode*)episode
                       remoteURL:(NSURL*)remoteURL
                    expectedSize:(int64_t)expectedSize
@@ -220,7 +229,9 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, strong) dispatch_queue_t resourceLoaderQueue;
 @property (nonatomic, strong) NSURL* assetURL;
 @property (nonatomic) double lastNotifiedProgress;
-@property (nonatomic) BOOL lastNotifiedComplete;
+@property (nonatomic) unsigned long long lastNotifiedFileSize;
+@property (nonatomic) ICStreamingCacheLoaderState terminalState;
+@property (nonatomic) ICStreamingCacheLoaderState lastNotifiedState;
 @end
 
 @implementation ICStreamingCacheLoader
@@ -341,12 +352,12 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 
 - (BOOL)isCacheComplete
 {
-    return self.cacheCoverageComplete;
+    return self.terminalState == ICStreamingCacheLoaderStateSucceeded;
 }
 
 - (BOOL)isCacheTerminal
 {
-    return self.cacheImportFinished || self.stopped;
+    return self.terminalState != ICStreamingCacheLoaderStateActive || self.cacheImportFinished || self.stopped;
 }
 
 - (void)_releaseDetachedRetentionIfPossible
@@ -437,6 +448,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         return;
     }
     self.terminalStateReported = YES;
+    self.terminalState = ICStreamingCacheLoaderStateFailed;
     self.stopped = YES;
     self.cacheImportFinished = YES;
     self.cacheCoverageComplete = NO;
@@ -541,6 +553,26 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     return nil;
 }
 
+- (BOOL)_adoptResponseFileExtensionWithError:(NSError**)error
+{
+    NSString* responseExtension = [CacheManager fileExtensionForMIMEType:self.mimeType];
+    if (responseExtension.length == 0 ||
+        [self.tempURL.pathExtension caseInsensitiveEquals:responseExtension]) {
+        return YES;
+    }
+
+    NSURL* previousURL = self.tempURL;
+    NSURL* correctedURL = [[previousURL URLByDeletingPathExtension] URLByAppendingPathExtension:responseExtension];
+    if (![[NSFileManager defaultManager] moveItemAtURL:previousURL toURL:correctedURL error:error]) {
+        return NO;
+    }
+    self.tempURL = correctedURL;
+    if ([self.readURL isEqual:previousURL]) {
+        self.readURL = correctedURL;
+    }
+    return YES;
+}
+
 - (double)_currentCoverageProgress
 {
     int64_t targetLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
@@ -565,6 +597,22 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     return MIN(MAX(progress, 0.0), 1.0);
 }
 
+- (unsigned long long)_downloadedCoverageBytes
+{
+    unsigned long long downloadedBytes = 0;
+    for (NSValue* value in self.downloadedRanges) {
+        ICStreamByteRange range = ICStreamRangeFromValue(value);
+        if (!ICStreamByteRangeIsValid(range)) {
+            continue;
+        }
+        unsigned long long rangeBytes = (unsigned long long)(range.end - range.start);
+        downloadedBytes = ULLONG_MAX - downloadedBytes < rangeBytes
+            ? ULLONG_MAX
+            : downloadedBytes + rangeBytes;
+    }
+    return downloadedBytes;
+}
+
 - (void)_notifyProgressIfNeededForce:(BOOL)force
 {
     if (!self.progressChangeHandler) {
@@ -572,19 +620,25 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     }
 
     double progress = [self _currentCoverageProgress];
-    BOOL complete = self.cacheCoverageComplete;
+    unsigned long long downloadedBytes = [self _downloadedCoverageBytes];
+    ICStreamingCacheLoaderState state = self.terminalState;
     BOOL progressChanged = (fabs(progress - self.lastNotifiedProgress) >= 0.003);
-    BOOL completionChanged = (complete != self.lastNotifiedComplete);
-    if (!force && !progressChanged && !completionChanged) {
+    unsigned long long byteDifference = downloadedBytes >= self.lastNotifiedFileSize
+        ? downloadedBytes - self.lastNotifiedFileSize
+        : self.lastNotifiedFileSize - downloadedBytes;
+    BOOL downloadedBytesChanged = (byteDifference >= (unsigned long long)ICStreamingBackfillChunkSize);
+    BOOL stateChanged = (state != self.lastNotifiedState);
+    if (!force && !progressChanged && !downloadedBytesChanged && !stateChanged) {
         return;
     }
 
     self.lastNotifiedProgress = progress;
-    self.lastNotifiedComplete = complete;
+    self.lastNotifiedFileSize = downloadedBytes;
+    self.lastNotifiedState = state;
 
-    void (^handler)(double, BOOL) = [self.progressChangeHandler copy];
+    void (^handler)(double, unsigned long long, ICStreamingCacheLoaderState) = [self.progressChangeHandler copy];
     dispatch_async(dispatch_get_main_queue(), ^{
-        handler(progress, complete);
+        handler(progress, downloadedBytes, state);
     });
 }
 
@@ -834,6 +888,12 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     [self.writeHandle closeFile];
     self.writeHandle = nil;
 
+    NSError* extensionError = nil;
+    if (![self _adoptResponseFileExtensionWithError:&extensionError]) {
+        [self _failWithError:extensionError];
+        return;
+    }
+
     self.validationAsset = [AVURLAsset URLAssetWithURL:self.tempURL options:nil];
     __weak ICStreamingCacheLoader* weakSelf = self;
     [self.validationAsset loadValuesAsynchronouslyForKeys:@[@"tracks", @"playable"] completionHandler:^{
@@ -884,11 +944,29 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
                             [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:innerSelf.episode
                                                                                    leaseToken:innerSelf.leaseToken];
                         }
+                        CacheManager* cacheManager = [CacheManager sharedCacheManager];
+                        NSURL* supersedingCachedURL = (importWasSuperseded && [cacheManager episodeIsCached:innerSelf.episode])
+                            ? [cacheManager URLForCachedEpisode:innerSelf.episode]
+                            : nil;
                         dispatch_async(innerSelf.resourceLoaderQueue, ^{
-                            if (innerSelf.stopped || importWasSuperseded) {
+                            if (innerSelf.stopped) {
                                 innerSelf.cacheImportFinished = YES;
                                 [innerSelf.session finishTasksAndInvalidate];
                                 innerSelf.session = nil;
+                                [innerSelf _releaseDetachedRetentionIfPossible];
+                            } else if (importWasSuperseded) {
+                                innerSelf.terminalStateReported = YES;
+                                innerSelf.terminalState = supersedingCachedURL
+                                    ? ICStreamingCacheLoaderStateSucceeded
+                                    : ICStreamingCacheLoaderStateFailed;
+                                innerSelf.cacheImportFinished = YES;
+                                [innerSelf.session finishTasksAndInvalidate];
+                                innerSelf.session = nil;
+                                if (supersedingCachedURL) {
+                                    innerSelf.readURL = supersedingCachedURL;
+                                    [innerSelf _processPendingRequests];
+                                }
+                                [innerSelf _notifyProgressIfNeededForce:YES];
                                 [innerSelf _releaseDetachedRetentionIfPossible];
                             } else {
                                 [innerSelf _failWithError:error];
@@ -902,6 +980,8 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
                     [cacheManager finishStreamingCacheForEpisode:innerSelf.episode
                                                        leaseToken:innerSelf.leaseToken];
                     dispatch_async(innerSelf.resourceLoaderQueue, ^{
+                        innerSelf.terminalStateReported = YES;
+                        innerSelf.terminalState = ICStreamingCacheLoaderStateSucceeded;
                         innerSelf.cacheImportFinished = YES;
                         [innerSelf.session finishTasksAndInvalidate];
                         innerSelf.session = nil;
@@ -1178,6 +1258,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, readwrite) double streamingCacheProgress;
 @property (nonatomic, readwrite) BOOL streamingCacheComplete;
 - (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
+- (BOOL)_cancelStreamingCacheForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken;
 @end
 
 
@@ -1230,9 +1311,13 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void)_cacheManagerDidCancelStreamingCacheEpisode:(NSNotification*)notification
 {
-    CDEpisode* episode = notification.userInfo[@"episode"];
+    NSString* episodeHash = notification.userInfo[@"episodeHash"];
+    if (episodeHash.length == 0) {
+        CDEpisode* episode = notification.userInfo[@"episode"];
+        episodeHash = episode.objectHash;
+    }
     NSString* leaseToken = notification.userInfo[@"leaseToken"];
-    [self _cancelStreamingCacheForEpisode:episode leaseToken:leaseToken];
+    [self _cancelStreamingCacheForEpisodeHash:episodeHash leaseToken:leaseToken];
 }
 
 
@@ -1854,9 +1939,6 @@ didReceiveResponse:(NSURLResponse *)response
                               ![eman automaticCachingDisabledForEpisode:anEpisode] &&
                               media.fileURL != nil &&
                               anEpisode.objectHash.length > 0);
-    if (canCacheViaStream && [eman isCachingSourceOfEpisode:anEpisode]) {
-        [eman cancelCachingEpisode:anEpisode disableAutoDownload:NO];
-    }
     BOOL shouldCacheViaStream = canCacheViaStream;
 
     self.playingEpisode = anEpisode;
@@ -1916,9 +1998,12 @@ didReceiveResponse:(NSURLResponse *)response
     if (shouldCacheViaStream) {
         __weak PlaybackManager* weakSelf = self;
         NSString* episodeHash = anEpisode.objectHash;
-        self.streamCacheLoader.progressChangeHandler = ^(double progress, BOOL cacheComplete) {
+        self.streamCacheLoader.progressChangeHandler = ^(double progress,
+                                                         unsigned long long downloadedBytes,
+                                                         ICStreamingCacheLoaderState state) {
             [[CacheManager sharedCacheManager] updateStreamingCacheForEpisode:anEpisode
                                                                      progress:progress
+                                                             downloadedBytes:downloadedBytes
                                                                    leaseToken:streamCacheLeaseToken];
             PlaybackManager* strongSelf = weakSelf;
             if (!strongSelf) {
@@ -1928,8 +2013,10 @@ didReceiveResponse:(NSURLResponse *)response
             if (!playingEpisode || ![playingEpisode.objectHash isEqualToString:episodeHash]) {
                 return;
             }
-            strongSelf.streamingCacheActive = !cacheComplete;
-            strongSelf.streamingCacheProgress = progress;
+            BOOL cacheActive = (state == ICStreamingCacheLoaderStateActive);
+            BOOL cacheComplete = (state == ICStreamingCacheLoaderStateSucceeded);
+            strongSelf.streamingCacheActive = cacheActive;
+            strongSelf.streamingCacheProgress = cacheComplete ? 1.0 : (cacheActive ? progress : 0.0);
             strongSelf.streamingCacheComplete = cacheComplete;
             [strongSelf _sendUpdateNotification];
         };
@@ -2842,8 +2929,12 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken
 {
+    return [self _cancelStreamingCacheForEpisodeHash:episode.objectHash leaseToken:leaseToken];
+}
+
+- (BOOL)_cancelStreamingCacheForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken
+{
 #if TARGET_OS_IPHONE
-    NSString* episodeHash = episode.objectHash;
     if (episodeHash.length == 0 || leaseToken.length == 0) {
         return NO;
     }
@@ -2851,6 +2942,9 @@ didReceiveResponse:(NSURLResponse *)response
     BOOL stoppedLoader = [ICStreamingCacheLoader cancelDetachedLoaderForEpisodeHash:episodeHash
                                                                           leaseToken:leaseToken];
     if (self.streamCacheLoader && [self.streamCacheLoader matchesEpisodeHash:episodeHash leaseToken:leaseToken]) {
+        CDEpisode* episode = [self.playingEpisode.objectHash isEqualToString:episodeHash]
+            ? self.playingEpisode
+            : nil;
         BOOL hasPlayer = (self.player != nil);
         NSTimeInterval resumeTime = hasPlayer ? [self time] : 0;
         if (self.seekingPositionChangeDate && [self.seekingPositionChangeDate timeIntervalSinceNow] > -1 && self.duration > 0) {
@@ -2864,10 +2958,12 @@ didReceiveResponse:(NSURLResponse *)response
         self.streamingCacheProgress = 0.0;
         self.streamingCacheComplete = NO;
         [loader cancelAndDiscardPartialCache];
-        [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:episode leaseToken:leaseToken];
+        if (episode) {
+            [[CacheManager sharedCacheManager] finishStreamingCacheForEpisode:episode leaseToken:leaseToken];
+        }
         stoppedLoader = YES;
 
-        if (hasPlayer) {
+        if (hasPlayer && episode) {
             [self openWithEpisode:episode at:resumeTime autostart:wasPlaying];
         } else {
             [self _sendUpdateNotification];

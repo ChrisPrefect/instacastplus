@@ -12,6 +12,7 @@
 #import "ICCacheHistory.h"
 #import "UtilityFunctions.h"
 #import "InstacastBackupImporter.h"
+#import "SubscriptionManager.h"
 #import "InstacastPlus-Swift.h"
 #include <limits.h>
 #include <time.h>
@@ -29,6 +30,7 @@
 
 static NSString* kUserDefaultsCachingEpisodesKey = @"CachingEpisodesKey";
 static NSString* const ICCachingEpisodeJobKeyPrefix = @"CachingEpisodeJob.";
+static NSString* const ICSubscriptionCleanupDeferredDownloadJobKeyPrefix = @"SubscriptionCleanupDeferredDownloadJob.";
 static NSString* const ICDownloadQueueSuspended = @"DownloadQueueSuspended";
 static const long long ICCachingEpisodeRankStep = 1024LL;
 static NSString* const ICCacheDeletionHashKey = @"hash";
@@ -107,52 +109,94 @@ static NSError* ICCacheDeletionDurabilityError(NSError* underlyingError)
                            }];
 }
 
-static void ICRemoveTranscriptCacheForEpisodeHashes(NSSet<NSString*>* episodeHashes)
-{
-    if (episodeHashes.count == 0) return;
+@interface ICCachePhysicalURLSnapshot : NSObject
+@property (nonatomic, copy) NSDictionary<NSString*, NSArray<NSURL*>*>* URLsByEpisodeHash;
+@property (nonatomic, strong) NSError* error;
+@end
 
+@implementation ICCachePhysicalURLSnapshot
+@end
+
+@interface ICTranscriptCacheSnapshot : NSObject
+@property (nonatomic, copy) NSDictionary<NSString*, NSArray<NSURL*>*>* URLsByEpisodeHash;
+@property (nonatomic, strong) NSError* error;
+@end
+
+@implementation ICTranscriptCacheSnapshot
+@end
+
+static ICTranscriptCacheSnapshot* ICTranscriptCacheURLSnapshot(void)
+{
+    ICTranscriptCacheSnapshot* snapshot = [[ICTranscriptCacheSnapshot alloc] init];
     NSString* transcriptCachePath = ICTranscriptArtifactsPath();
     if (transcriptCachePath.length == 0) {
-        return;
+        snapshot.URLsByEpisodeHash = @{};
+        return snapshot;
     }
 
-    NSFileManager* fileManager = [NSFileManager defaultManager];
+    NSFileManager* fileManager = [[NSFileManager alloc] init];
     NSError* directoryError = nil;
     NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:&directoryError];
-    if (directoryError) {
-        if (!ICCacheFileErrorMeansMissing(directoryError)) {
-            [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
-                                                   message:@"Transcript-Cache konnte nicht gelesen werden"
-                                                      path:transcriptCachePath
-                                                  metadata:@{ @"error": directoryError.localizedDescription ?: @"" }];
-        }
-        return;
-    }
+    if (ICCacheFileErrorMeansMissing(directoryError)) directoryError = nil;
 
-    NSInteger removedFileCount = 0;
-    NSInteger failedFileCount = 0;
-    NSError* firstRemovalError = nil;
+    NSMutableDictionary<NSString*, NSMutableArray<NSURL*>*>* mutableURLsByHash = [NSMutableDictionary dictionary];
     for (NSString* fileName in fileNames) {
         if (![[fileName pathExtension] isEqualToString:@"trcache"]) continue;
         NSString* baseName = [fileName stringByDeletingPathExtension];
         NSRange separator = [baseName rangeOfString:@"_" options:NSBackwardsSearch];
         if (separator.location == NSNotFound || separator.location == 0) continue;
         NSString* episodeHash = [baseName substringToIndex:separator.location];
-        if (![episodeHashes containsObject:episodeHash]) continue;
+        NSMutableArray<NSURL*>* URLs = mutableURLsByHash[episodeHash];
+        if (!URLs) {
+            URLs = [NSMutableArray array];
+            mutableURLsByHash[episodeHash] = URLs;
+        }
+        [URLs addObject:[NSURL fileURLWithPath:[transcriptCachePath stringByAppendingPathComponent:fileName]]];
+    }
 
-        NSString* filePath = [transcriptCachePath stringByAppendingPathComponent:fileName];
-        NSError* removalError = nil;
-        if ([fileManager removeItemAtPath:filePath error:&removalError] || ICCacheFileErrorMeansMissing(removalError)) {
-            removedFileCount += 1;
-        } else {
-            failedFileCount += 1;
-            if (!firstRemovalError) firstRemovalError = removalError;
+    NSMutableDictionary<NSString*, NSArray<NSURL*>*>* URLsByHash = [NSMutableDictionary dictionaryWithCapacity:mutableURLsByHash.count];
+    [mutableURLsByHash enumerateKeysAndObjectsUsingBlock:^(NSString* episodeHash,
+                                                            NSMutableArray<NSURL*>* URLs,
+                                                            BOOL* stop) {
+        URLsByHash[episodeHash] = [URLs copy];
+    }];
+    snapshot.URLsByEpisodeHash = [URLsByHash copy];
+    snapshot.error = directoryError;
+    return snapshot;
+}
+
+static NSError* ICRemoveTranscriptCacheURLsForEpisodeHashes(NSSet<NSString*>* episodeHashes,
+                                                             ICTranscriptCacheSnapshot* snapshot)
+{
+    if (snapshot.error) {
+        NSString* transcriptCachePath = ICTranscriptArtifactsPath();
+        [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
+                                               message:@"Transcript-Cache konnte nicht gelesen werden"
+                                                  path:transcriptCachePath
+                                              metadata:@{ @"error": snapshot.error.localizedDescription ?: @"" }];
+        return snapshot.error;
+    }
+    if (episodeHashes.count == 0) return nil;
+
+    NSFileManager* fileManager = [[NSFileManager alloc] init];
+    NSInteger removedFileCount = 0;
+    NSInteger failedFileCount = 0;
+    NSError* firstRemovalError = nil;
+    for (NSString* episodeHash in episodeHashes) {
+        for (NSURL* fileURL in snapshot.URLsByEpisodeHash[episodeHash]) {
+            NSError* removalError = nil;
+            if ([fileManager removeItemAtURL:fileURL error:&removalError] || ICCacheFileErrorMeansMissing(removalError)) {
+                removedFileCount += 1;
+            } else {
+                failedFileCount += 1;
+                if (!firstRemovalError) firstRemovalError = removalError;
+            }
         }
     }
     if (removedFileCount > 0 || failedFileCount > 0) {
         [[ICDiagnosticLogger shared] logDirectoryEvent:@"cache"
                                                message:(failedFileCount == 0 ? @"Transcript-Artefakte für Episoden entfernt" : @"Transcript-Artefakte konnten nicht vollständig entfernt werden")
-                                                  path:transcriptCachePath
+                                                  path:ICTranscriptArtifactsPath()
                                               metadata:@{
                                                   @"episodeHashes": @(episodeHashes.count),
                                                   @"removedFiles": @(removedFileCount),
@@ -160,6 +204,18 @@ static void ICRemoveTranscriptCacheForEpisodeHashes(NSSet<NSString*>* episodeHas
                                                   @"error": firstRemovalError.localizedDescription ?: @"",
                                               }];
     }
+    return firstRemovalError;
+}
+
+static NSError* ICRemoveTranscriptCacheForEpisodeHashesReturningError(NSSet<NSString*>* episodeHashes)
+{
+    if (episodeHashes.count == 0) return nil;
+    return ICRemoveTranscriptCacheURLsForEpisodeHashes(episodeHashes, ICTranscriptCacheURLSnapshot());
+}
+
+static void ICRemoveTranscriptCacheForEpisodeHashes(NSSet<NSString*>* episodeHashes)
+{
+    (void)ICRemoveTranscriptCacheForEpisodeHashesReturningError(episodeHashes);
 }
 
 static NSError* ICClearAllTranscriptCache(void)
@@ -206,16 +262,30 @@ static NSError* ICClearAllTranscriptCache(void)
                                              completion:(void (^)(NSSet<NSString*>* successfulIdentifiers, NSError* error))completion;
 - (void) _deletePersistedFailedDownloadFilesForIdentifiers:(NSArray<NSString*>*)identifiers
                                                   completion:(void (^)(NSSet<NSString*>* successfulIdentifiers, NSError* error))completion;
+- (void) _clearDownloadErrorsForEpisodeHashes:(NSSet<NSString*>*)episodeHashes
+                                     completion:(void (^)(NSError* error))completion;
 - (NSDictionary*) savedCachingInfoForIdentifier:(NSString*)identifier;
 - (NSString*) _savedCachingKeyForIdentifier:(NSString*)identifier;
 - (void) _persistCachingOperation:(CACHE_OPERATION_CLASS*)operation;
 - (void) _removeSavedCachingInfoForIdentifier:(NSString*)identifier;
 - (void) _removeAllSavedCachingInfos;
 - (NSArray<NSDictionary*>*) _savedCachingInfosMigratingLegacyIfNeeded;
+- (NSUInteger)_restoreDownloadsDeferredBySubscriptionCleanup;
 - (void) _startNextDownloadOperations;
+- (BOOL)_subscriptionCleanupBlocksEpisode:(CDEpisode*)episode;
+- (BOOL)_deferDownloadUntilSubscriptionCleanupFinishes:(CDEpisode*)episode
+                                               autoCache:(BOOL)autoCache
+                                 overwriteCellularLock:(BOOL)overwriteCellularLock
+                                    reportsFailureToUser:(BOOL)reportsFailureToUser
+                                  preservesConsumedState:(BOOL)preservesConsumedState
+                                                queueRank:(NSNumber*)queueRank;
+- (void)_promoteDownloadsDeferredBySubscriptionCleanup;
+- (void)_removeDownloadDeferredBySubscriptionCleanupForIdentifier:(NSString*)identifier
+                                              removeNormalDescriptor:(BOOL)removeNormalDescriptor;
+- (void)_resumeDownloadsAfterSubscriptionCleanupProtectionChange:(NSNotification*)notification;
 - (BOOL) _networkAllowsDownloadOperation:(CACHE_OPERATION_CLASS*)operation;
 - (BOOL) _removeTrackedDownloadOperation:(CACHE_OPERATION_CLASS*)operation;
-- (void)_requestDownloadOperationYield:(CACHE_OPERATION_CLASS*)operation;
+- (BOOL)_requestDownloadOperationYield:(CACHE_OPERATION_CLASS*)operation;
 - (BOOL)_replaceYieldedDownloadOperation:(CACHE_OPERATION_CLASS*)operation;
 - (void)_removeCachingEpisodeForIdentifierIfUnowned:(NSString*)identifier;
 - (void) _ensureDownloadUpdateTimer;
@@ -224,14 +294,36 @@ static NSError* ICClearAllTranscriptCache(void)
 - (void) _addDownloadedBytes:(unsigned long long)bytes;
 - (void) _subtractDownloadedBytes:(unsigned long long)bytes;
 - (void) _invalidateDownloadedBytesAndRecalculate;
+- (unsigned long long)_activeStreamingCacheBytes;
+- (void)_setStreamingCacheBytes:(unsigned long long)bytes forIdentifier:(NSString*)identifier;
+- (void)_removeStreamingCacheBytesForIdentifier:(NSString*)identifier;
+- (BOOL)_removeOrphanedStreamingCacheDirectoriesWithFileManager:(NSFileManager*)fileManager
+                                                           error:(NSError**)error;
+- (ICCachePhysicalURLSnapshot*)_physicalCacheURLSnapshot;
+- (void)_removeCacheRequestsForEpisodes:(NSArray<CDEpisode*>*)episodes
+                               automatic:(BOOL)automatic
+                     physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
+                              completion:(void (^)(NSError* error))completion;
 - (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes
                        automatic:(BOOL)automatic
+                      completion:(void (^)(NSError* error))completion;
+- (void)_removeCacheForFeeds:(NSArray<CDFeed*>*)feeds
+                    automatic:(BOOL)automatic
+preserveSubscriptionCleanupDeferredStarts:(BOOL)preserveDeferredStarts
+                   completion:(void (^)(NSError* error))completion;
+- (void)_cancelCachingFeeds:(NSArray<CDFeed*>*)feeds
+preserveSubscriptionCleanupDeferredStarts:(BOOL)preserveDeferredStarts
+                  completion:(void (^)(NSError* error))completion;
+- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes
+                       automatic:(BOOL)automatic
+             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
                       completion:(void (^)(NSError* error))completion;
 - (void)_performCacheFileDeletionForItems:(NSArray<NSDictionary*>*)items
                                      token:(NSString*)token
                                 generation:(NSUInteger)generation
                                  automatic:(BOOL)automatic
-                       deletionPreparation:(ICCacheDeletionPreparation*)deletionPreparation;
+                       deletionPreparation:(ICCacheDeletionPreparation*)deletionPreparation
+                       physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot;
 - (void)_finishCacheFileDeletionForItems:(NSArray<NSDictionary*>*)items
                                   results:(NSArray<NSDictionary*>*)results
                                     token:(NSString*)token
@@ -241,6 +333,7 @@ static NSError* ICClearAllTranscriptCache(void)
 - (void)_completeCacheDeletionForIdentifier:(NSString*)identifier error:(NSError*)error;
 - (void)_beginRemovalAfterCancellingEpisode:(CDEpisode*)episode
                                   automatic:(BOOL)automatic
+                        physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
                                   completion:(void (^)(NSError* error))completion;
 - (void)_finishCancelledDownloadRemovalForIdentifier:(NSString*)identifier;
 - (NSArray<NSManagedObjectID*>*)_autoClearSelectionFromItems:(NSArray<NSDictionary*>*)items
@@ -268,6 +361,7 @@ static NSError* ICClearAllTranscriptCache(void)
           disableAutoDownload:(BOOL)disableAutodownload
                    completion:(void (^)(BOOL waitsForOperationEnd, NSError* error))completion;
 - (void)_cancelTrackedDownloadOperationAfterDurableIntent:(CACHE_OPERATION_CLASS*)operation;
+- (void)_cancelDownloadOperationForStreamingTransition:(CACHE_OPERATION_CLASS*)operation;
 - (void)_cancelCachingEpisodeAfterDurableIntent:(CDEpisode*)episode
                             disableAutoDownload:(BOOL)disableAutodownload;
 - (void)_cancelStreamingCacheForEpisodeAfterDurableIntent:(CDEpisode*)episode
@@ -277,6 +371,13 @@ static NSError* ICClearAllTranscriptCache(void)
 overwriteCellularLock:(BOOL)overwriteCellularLock
 reportsFailureToUser:(BOOL)reportsFailureToUser
              queueRank:(NSNumber*)queueRank;
+- (BOOL) _cacheEpisode:(CDEpisode*)episode
+             autoCache:(BOOL)autoCache
+overwriteCellularLock:(BOOL)overwriteCellularLock
+reportsFailureToUser:(BOOL)reportsFailureToUser
+             queueRank:(NSNumber*)queueRank
+preservesConsumedState:(BOOL)preservesConsumedState
+deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup;
 - (void) _completeBackgroundSessionForIdentifier:(NSString*)identifier;
 - (void) _cancelOrphanedBackgroundSession:(NSString*)identifier;
 - (void)_recordDownloadError:(NSError*)error
@@ -284,6 +385,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                    automatic:(BOOL)automatic
       overwriteCellularLock:(BOOL)overwriteCellularLock
         reportsFailureToUser:(BOOL)reportsFailureToUser
+      preservesConsumedState:(BOOL)preservesConsumedState
                   completion:(void (^)(NSError* error))completion;
 - (NSString*)_automaticRetryClassificationForError:(NSError*)error;
 - (NSTimeInterval)_automaticRetryBackoffForAttempt:(NSUInteger)attempt;
@@ -293,6 +395,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 - (void)_scheduleAutomaticRetryWakeAtTimestamp:(NSTimeInterval)timestamp;
 - (void)_processAutomaticRetryScanChunk;
 - (void)_drainPendingAutomaticRetries;
+- (void)_continueDrainingPendingAutomaticRetries;
 - (void)_automaticRetryOperationDidFinishWithIdentifier:(NSString*)identifier;
 @end
 
@@ -313,6 +416,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     NSMutableSet<NSString*>*    _cachingEpisodeHashes;
     NSMutableDictionary<NSString*, CACHE_OPERATION_CLASS*>* _downloadOperationsByIdentifier;
     NSMutableSet<NSString*>*    _scheduledDownloadOperationIdentifiers;
+    NSMutableDictionary<NSString*, NSDictionary*>* _subscriptionCleanupDeferredDownloadInfosByIdentifier;
+    NSMutableDictionary<NSString*, CDEpisode*>* _subscriptionCleanupDeferredDownloadEpisodesByIdentifier;
+    NSMutableSet<NSString*>*    _subscriptionCleanupBackgroundSessionCancellationIdentifiers;
+    BOOL                        _subscriptionCleanupResumeScheduled;
+    BOOL                        _subscriptionCleanupPromotionRequested;
+    NSArray<NSString*>*         _subscriptionCleanupPromotionIdentifiers;
+    NSUInteger                 _subscriptionCleanupPromotionCursor;
     NSMutableSet<NSString*>*    _finalizingDownloadOperationIdentifiers;
     NSMutableDictionary<NSString*, NSString*>* _downloadPauseYieldTokensByIdentifier;
     NSMutableDictionary<NSString*, NSNumber*>* _downloadQueueRanksByIdentifier;
@@ -340,10 +450,15 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     NSUInteger                  _automaticRetryScanCursor;
     BOOL                        _automaticRetryScanInProgress;
     BOOL                        _automaticRetryRescanRequested;
+    NSUInteger                  _automaticRetryDrainRemainingCount;
+    BOOL                        _automaticRetryDrainContinuationScheduled;
+    BOOL                        _automaticRetryDrainRescanRequested;
     NSMutableDictionary<NSString*, void (^)(void)>* _backgroundSessionCompletionHandlers;
     NSMutableDictionary<NSString*, NSURLSession*>* _orphanedBackgroundSessionsByIdentifier;
     NSMutableDictionary*        _streamingCacheProgresses;
     NSMutableDictionary<NSString*, NSString*>* _streamingCacheLeaseTokensByIdentifier;
+    NSMutableDictionary<NSString*, NSNumber*>* _streamingCacheBytesByIdentifier;
+    NSMutableSet<NSString*>*    _streamingCacheRecoveryCandidateTokens;
     unsigned long long          _downloadedBytes;
     BOOL                        _downloadedBytesKnown;
     BOOL                        _downloadedBytesRecalculationInFlight;
@@ -446,6 +561,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         _cachingEpisodeHashes = [[NSMutableSet alloc] init];
         _downloadOperationsByIdentifier = [[NSMutableDictionary alloc] init];
         _scheduledDownloadOperationIdentifiers = [[NSMutableSet alloc] init];
+        _subscriptionCleanupDeferredDownloadInfosByIdentifier = [[NSMutableDictionary alloc] init];
+        _subscriptionCleanupDeferredDownloadEpisodesByIdentifier = [[NSMutableDictionary alloc] init];
+        _subscriptionCleanupBackgroundSessionCancellationIdentifiers = [[NSMutableSet alloc] init];
         _finalizingDownloadOperationIdentifiers = [[NSMutableSet alloc] init];
         _downloadPauseYieldTokensByIdentifier = [[NSMutableDictionary alloc] init];
         _downloadQueueRanksByIdentifier = [[NSMutableDictionary alloc] init];
@@ -469,6 +587,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         _orphanedBackgroundSessionsByIdentifier = [[NSMutableDictionary alloc] init];
         _streamingCacheProgresses = [[NSMutableDictionary alloc] init];
         _streamingCacheLeaseTokensByIdentifier = [[NSMutableDictionary alloc] init];
+        _streamingCacheBytesByIdentifier = [[NSMutableDictionary alloc] init];
+        _streamingCacheRecoveryCandidateTokens = [[NSMutableSet alloc] init];
         
         NSString* historyFile = [[DatabaseManager pathToSubfolder:@"Data" parent:[DatabaseManager pathToDocuments]] stringByAppendingPathComponent:@"CacheHistory.plist"];
         _cacheHistory = [[ICCacheHistory alloc] initWithContentsOfFile:historyFile];
@@ -487,6 +607,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                                      name:UIApplicationWillEnterForegroundNotification
                                                    object:nil];
 #endif
+        [[NSNotificationCenter defaultCenter]
+            addObserver:self
+               selector:@selector(_resumeDownloadsAfterSubscriptionCleanupProtectionChange:)
+                   name:SubscriptionManagerUnsubscribeCleanupProtectionDidChangeNotification
+                 object:nil];
         [self _buildCacheIndexInBackground];
 	}
 
@@ -538,6 +663,61 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     }];
 }
 
+- (BOOL)_removeOrphanedStreamingCacheDirectoriesWithFileManager:(NSFileManager*)fileManager
+                                                           error:(NSError**)error
+{
+    NSString* streamingRoot = [[CacheManager _pathToCache] stringByAppendingPathComponent:@"Streaming"];
+    NSError* listingError = nil;
+    NSArray<NSString*>* candidateNames = [fileManager contentsOfDirectoryAtPath:streamingRoot
+                                                                           error:&listingError];
+    if (!candidateNames) {
+        if (ICCacheFileErrorMeansMissing(listingError)) {
+            return YES;
+        }
+        if (error) *error = listingError;
+        return NO;
+    }
+
+    __block NSArray<NSString*>* removableCandidateNames = nil;
+    void (^reserveInactiveCandidates)(void) = ^{
+        NSSet<NSString*>* activeLeaseTokens = [NSSet setWithArray:self->_streamingCacheLeaseTokensByIdentifier.allValues];
+        NSMutableArray<NSString*>* removable = [NSMutableArray arrayWithCapacity:candidateNames.count];
+        for (NSString* candidateName in candidateNames) {
+            if ([activeLeaseTokens containsObject:candidateName]) {
+                continue;
+            }
+            [self->_streamingCacheRecoveryCandidateTokens addObject:candidateName];
+            [removable addObject:candidateName];
+        }
+        removableCandidateNames = [removable copy];
+    };
+    if ([NSThread isMainThread]) {
+        reserveInactiveCandidates();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), reserveInactiveCandidates);
+    }
+
+    NSError* firstRemovalError = nil;
+    for (NSString* candidateName in removableCandidateNames) {
+        NSString* candidatePath = [streamingRoot stringByAppendingPathComponent:candidateName];
+        NSError* removalError = nil;
+        if (![fileManager removeItemAtPath:candidatePath error:&removalError] &&
+            !ICCacheFileErrorMeansMissing(removalError) && !firstRemovalError) {
+            firstRemovalError = removalError;
+        }
+    }
+    void (^releaseCandidateReservations)(void) = ^{
+        [self->_streamingCacheRecoveryCandidateTokens minusSet:[NSSet setWithArray:removableCandidateNames]];
+    };
+    if ([NSThread isMainThread]) {
+        releaseCandidateReservations();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), releaseCandidateReservations);
+    }
+    if (firstRemovalError && error) *error = firstRemovalError;
+    return firstRemovalError == nil;
+}
+
 - (void)_buildCacheIndexInBackground
 {
     NSAssert([NSThread isMainThread], @"Cache index lifecycle must start on the main thread");
@@ -553,6 +733,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     _downloadedBytesRecalculationInFlight = YES;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSFileManager* fman = [[NSFileManager alloc] init];
+        NSError* streamingCleanupError = nil;
+        BOOL streamingCleanupSucceeded = [self _removeOrphanedStreamingCacheDirectoriesWithFileManager:fman
+                                                                                                  error:&streamingCleanupError];
+        NSString* streamingPath = [[CacheManager _pathToCache] stringByAppendingPathComponent:@"Streaming"];
         NSError* directoryError = nil;
         NSArray<NSString*>* directoryContent = [fman contentsOfDirectoryAtPath:storagePath error:&directoryError];
         BOOL cacheIndexSnapshotValid = (directoryContent != nil);
@@ -565,10 +749,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         NSMutableArray<NSString*>* episodeHashes = [[NSMutableArray alloc] init];
         NSMutableDictionary<NSString*, NSURL*>* cachedURLsByHash = [[NSMutableDictionary alloc] init];
         unsigned long long indexedBytes = 0;
-        __block BOOL downloadedBytesSnapshotValid = cacheIndexSnapshotValid;
+        __block BOOL downloadedBytesSnapshotValid = cacheIndexSnapshotValid && streamingCleanupSucceeded;
         if (cacheIndexSnapshotValid) {
             for (NSString* filename in directoryContent) {
                 NSString* filePath = [storagePath stringByAppendingPathComponent:filename];
+                if ([filePath isEqualToString:streamingPath]) {
+                    continue;
+                }
                 NSError* attributesError = nil;
                 NSDictionary* attributes = [fman attributesOfItemAtPath:filePath error:&attributesError];
                 if (attributes) {
@@ -603,6 +790,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 return NO;
             }];
             for (NSURL* fileURL in partialFiles) {
+                if ([fileURL.path isEqualToString:streamingPath]) {
+                    [partialFiles skipDescendants];
+                    continue;
+                }
                 NSNumber* regularFile = nil;
                 NSNumber* fileSize = nil;
                 NSError* resourceError = nil;
@@ -622,6 +813,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 return;
             }
             self->_cacheIndexScanInFlight = NO;
+            if (!streamingCleanupSucceeded) {
+                [[ICDiagnosticLogger shared] logEvent:@"cache"
+                                              message:@"Verwaiste Streaming-Dateien konnten nicht entfernt werden"
+                                             metadata:@{ @"error": streamingCleanupError.localizedDescription ?: @"" }];
+            }
             if (!cacheIndexSnapshotValid) {
                 self->_cacheIndexReady = NO;
                 [[ICDiagnosticLogger shared] logEvent:@"cache"
@@ -657,7 +853,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
             self->_cacheIndexReady = YES;
             if (downloadedBytesSnapshotValid && self->_downloadedBytesGeneration == downloadedBytesGeneration) {
-                [self _setDownloadedBytes:indexedBytes known:YES];
+                unsigned long long activeStreamingBytes = [self _activeStreamingCacheBytes];
+                unsigned long long totalBytes = ULLONG_MAX - indexedBytes < activeStreamingBytes
+                    ? ULLONG_MAX
+                    : indexedBytes + activeStreamingBytes;
+                [self _setDownloadedBytes:totalBytes known:YES];
             } else if (!self->_downloadedBytesKnown) {
                 [self recalculateDownloadedBytesInBackground];
             }
@@ -700,7 +900,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     for(CACHE_OPERATION_CLASS* operation in operations) {
         BOOL manuallySuspended = [_manuallySuspendedDownloadIdentifiers containsObject:operation.identifier];
         BOOL networkAllowed = [self _networkAllowsDownloadOperation:operation];
-        operation.suspended = !networkAllowed || self.suspended || manuallySuspended;
+        CDEpisode* episode = [operation.userInfo isKindOfClass:[CDEpisode class]]
+            ? operation.userInfo : nil;
+        operation.suspended = !networkAllowed || self.suspended || manuallySuspended
+            || [self _subscriptionCleanupBlocksEpisode:episode];
         if (!self.suspended && !manuallySuspended && !networkAllowed) {
             [self _requestDownloadOperationYield:operation];
         }
@@ -836,6 +1039,35 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
     return candidate.length > 0 ? candidate : @"mp3";
 }
 
++ (NSString*)fileExtensionForMIMEType:(NSString*)mimeType
+{
+    NSString* normalized = [mimeType.lowercaseString componentsSeparatedByString:@";"].firstObject;
+    normalized = [normalized stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSDictionary<NSString*, NSString*>* extensions = @{
+        @"audio/mpeg": @"mp3",
+        @"audio/mp3": @"mp3",
+        @"audio/mpeg3": @"mp3",
+        @"audio/mpeg4": @"m4a",
+        @"audio/mp4": @"m4a",
+        @"audio/mp4a": @"m4a",
+        @"audio/x-m4a": @"m4a",
+        @"audio/m4a": @"m4a",
+        @"audio/mp4a-latm": @"m4a",
+        @"audio/aac": @"aac",
+        @"audio/x-aac": @"aac",
+        @"audio/ogg": @"ogg",
+        @"application/ogg": @"ogg",
+        @"audio/wav": @"wav",
+        @"audio/x-wav": @"wav",
+        @"audio/flac": @"flac",
+        @"video/mpeg4": @"m4v",
+        @"video/x-m4v": @"m4v",
+        @"video/mp4": @"mp4",
+        @"video/quicktime": @"mov",
+    };
+    return extensions[normalized];
+}
+
 - (NSString*) _extensionForEpisode:(CDEpisode*)episode
 {
     CDMedium* media = [episode preferedMedium];
@@ -843,7 +1075,7 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
 
     NSString* extension = [[media.fileURL path] pathExtension];
 
-    if (!extension) {
+    if (extension.length == 0) {
         NSString* urlString = [media.fileURL absoluteString];
         NSRange lastDotRange = [urlString rangeOfString:@"." options:NSBackwardsSearch];
         if (lastDotRange.location != NSNotFound && lastDotRange.location < [urlString length]-1) {
@@ -851,20 +1083,8 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
         }
     }
 
-    NSDictionary* mimeToExtension = @{
-        @"audio/mpeg"       : @"mp3",
-        @"audio/mpeg4"      : @"m4a",
-        @"audio/mp4a"       : @"m4a",
-        @"audio/x-m4a"      : @"m4a",
-        @"audio/mp4"        : @"mp4",
-        @"video/mpeg4"      : @"m4v",
-        @"video/x-m4v"      : @"m4v",
-        @"video/mp4"        : @"m4v",
-        @"video/quicktime"  : @"mov",
-    };
-
-    NSString* constructedExtension = mimeToExtension[[media.mimeType lowercaseString]];
-    NSArray* knownExtensions = [mimeToExtension allValues];
+    NSString* constructedExtension = [CacheManager fileExtensionForMIMEType:media.mimeType];
+    NSSet* knownExtensions = [NSSet setWithObjects:@"mp3", @"m4a", @"aac", @"ogg", @"wav", @"flac", @"m4v", @"mp4", @"mov", nil];
     if (![knownExtensions containsObject:[extension lowercaseString]] && constructedExtension) {
         extension = constructedExtension;
     }
@@ -938,7 +1158,9 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
     if (!cacheURL || leaseToken.length == 0) return nil;
     NSString* streamingRoot = [[CacheManager _pathToCache] stringByAppendingPathComponent:@"Streaming"];
     NSString* leaseDirectory = [streamingRoot stringByAppendingPathComponent:leaseToken];
-    NSString* filename = [cacheURL.lastPathComponent stringByAppendingString:@".part"];
+    NSString* extension = cacheURL.pathExtension;
+    NSString* baseName = [cacheURL.lastPathComponent stringByDeletingPathExtension];
+    NSString* filename = [NSString stringWithFormat:@"%@.part.%@", baseName, extension];
     return [NSURL fileURLWithPath:[leaseDirectory stringByAppendingPathComponent:filename]];
 }
 
@@ -993,12 +1215,14 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
                          automatic:(BOOL)automatic
             overwriteCellularLock:(BOOL)overwriteCellularLock
               reportsFailureToUser:(BOOL)reportsFailureToUser
+            preservesConsumedState:(BOOL)preservesConsumedState
 {
     [self _recordDownloadError:error
                     forEpisode:episode
                      automatic:automatic
         overwriteCellularLock:overwriteCellularLock
           reportsFailureToUser:reportsFailureToUser
+        preservesConsumedState:preservesConsumedState
                     completion:nil];
     if (_downloadOperationsByIdentifier.count > 0) {
         _currentQueueHadFailure = YES;
@@ -1024,6 +1248,282 @@ static NSString* ICSanitizeFilenameExtension(NSString* extension)
                                                               }];
         });
     }
+}
+
+- (BOOL)_subscriptionCleanupBlocksEpisode:(CDEpisode*)episode
+{
+    NSAssert([NSThread isMainThread], @"Download queue ownership must stay on the main thread");
+    return [[SubscriptionManager sharedSubscriptionManager]
+        downloadsBlockedDuringUnsubscribeCleanupForFeed:episode.feed];
+}
+
+- (BOOL)_deferDownloadUntilSubscriptionCleanupFinishes:(CDEpisode*)episode
+                                               autoCache:(BOOL)autoCache
+                                 overwriteCellularLock:(BOOL)overwriteCellularLock
+                                    reportsFailureToUser:(BOOL)reportsFailureToUser
+                                  preservesConsumedState:(BOOL)preservesConsumedState
+                                                queueRank:(NSNumber*)queueRank
+{
+    NSAssert([NSThread isMainThread], @"Deferred download ownership must stay on the main thread");
+    NSString* identifier = episode.objectHash;
+    if (identifier.length == 0 || ![episode preferedMedium].fileURL) return NO;
+
+    NSDictionary* existingInfo = _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier];
+    BOOL effectiveAutomatic = existingInfo
+        ? [existingInfo[@"automatic"] boolValue] && autoCache : autoCache;
+    BOOL effectiveCellular = [existingInfo[@"cellular"] boolValue] || overwriteCellularLock;
+    BOOL effectiveReportsFailure = [existingInfo[@"reportsFailureToUser"] boolValue]
+        || reportsFailureToUser;
+    BOOL existingPreservesConsumedState = [existingInfo[@"automatic"] boolValue]
+        || [existingInfo[@"preservesConsumedState"] boolValue];
+    BOOL requestedPreservesConsumedState = autoCache || preservesConsumedState;
+    BOOL effectivePreservesConsumed = existingInfo
+        ? existingPreservesConsumedState && requestedPreservesConsumedState
+        : requestedPreservesConsumedState;
+    BOOL effectiveSuspended = existingInfo
+        ? [existingInfo[@"suspended"] boolValue]
+        : [_manuallySuspendedDownloadIdentifiers containsObject:identifier];
+    NSNumber* effectiveRank = existingInfo[@"queueRank"] ?: queueRank;
+    if (![effectiveRank isKindOfClass:[NSNumber class]]) {
+        effectiveRank = @(_nextDownloadQueueRank + ICCachingEpisodeRankStep);
+    }
+    _nextDownloadQueueRank = MAX(_nextDownloadQueueRank, effectiveRank.longLongValue);
+
+    NSDictionary* info = @{
+        @"identifier": identifier,
+        @"automatic": @(effectiveAutomatic),
+        @"cellular": @(effectiveCellular),
+        @"reportsFailureToUser": @(effectiveReportsFailure),
+        @"preservesConsumedState": @(effectivePreservesConsumed),
+        @"suspended": @(effectiveSuspended),
+        @"queueRank": effectiveRank,
+    };
+    BOOL newOwner = existingInfo == nil;
+    BOOL wasCaching = [self isCaching];
+    if (newOwner && !_flags.restoringCachingEpisodes) {
+        [self willChangeValueForKey:@"cachingEpisodes"];
+    }
+    _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier] = info;
+    _subscriptionCleanupDeferredDownloadEpisodesByIdentifier[identifier] = episode;
+    if (newOwner) {
+        _subscriptionCleanupPromotionRequested = YES;
+    }
+    NSString* key = [ICSubscriptionCleanupDeferredDownloadJobKeyPrefix
+        stringByAppendingString:identifier];
+    [USER_DEFAULTS setObject:info forKey:key];
+    if (newOwner && !_flags.restoringCachingEpisodes) {
+        [self didChangeValueForKey:@"cachingEpisodes"];
+        BOOL alreadyVisible = _downloadOperationsByIdentifier[identifier]
+            || _streamingCacheLeaseTokensByIdentifier[identifier];
+        if (!alreadyVisible) {
+            [[NSNotificationCenter defaultCenter]
+                postNotificationName:wasCaching
+                    ? CacheManagerDidAddEpisodeToCachingQueueNotification
+                    : CacheManagerDidStartCachingNotification
+                              object:self];
+            [[NSNotificationCenter defaultCenter]
+                postNotificationName:CacheManagerDidStartCachingEpisodeNotification
+                              object:self
+                            userInfo:@{ @"episode": episode }];
+        }
+        [self _postDidUpdateNotification];
+    }
+    return YES;
+}
+
+- (void)_removeDownloadDeferredBySubscriptionCleanupForIdentifier:(NSString*)identifier
+                                              removeNormalDescriptor:(BOOL)removeNormalDescriptor
+{
+    if (identifier.length == 0) return;
+    NSString* key = [ICSubscriptionCleanupDeferredDownloadJobKeyPrefix
+        stringByAppendingString:identifier];
+    BOOL hasInMemoryOwner =
+        _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier] != nil;
+    id persistedInfo = [USER_DEFAULTS objectForKey:key];
+    if (!hasInMemoryOwner && !persistedInfo) return;
+    if (!hasInMemoryOwner) {
+        [USER_DEFAULTS removeObjectForKey:key];
+        if (removeNormalDescriptor && !_downloadOperationsByIdentifier[identifier]) {
+            [self _removeSavedCachingInfoForIdentifier:identifier];
+            [_downloadQueueRanksByIdentifier removeObjectForKey:identifier];
+            [_manuallySuspendedDownloadIdentifiers removeObject:identifier];
+        }
+        return;
+    }
+    BOOL wasCaching = [self isCaching];
+    [self willChangeValueForKey:@"cachingEpisodes"];
+    [_subscriptionCleanupDeferredDownloadInfosByIdentifier removeObjectForKey:identifier];
+    [_subscriptionCleanupDeferredDownloadEpisodesByIdentifier removeObjectForKey:identifier];
+    [USER_DEFAULTS removeObjectForKey:key];
+    if (removeNormalDescriptor && !_downloadOperationsByIdentifier[identifier]) {
+        [self _removeSavedCachingInfoForIdentifier:identifier];
+        [_downloadQueueRanksByIdentifier removeObjectForKey:identifier];
+        [_manuallySuspendedDownloadIdentifiers removeObject:identifier];
+    }
+    [self didChangeValueForKey:@"cachingEpisodes"];
+    [self _postDidUpdateNotification];
+    if (wasCaching && ![self isCaching]) {
+        if (_totalOps > 0) {
+            [self _finishDownloadBatchAfterOperation:nil];
+        } else {
+            [[NSNotificationCenter defaultCenter]
+                postNotificationName:CacheManagerDidEndCachingNotification
+                              object:self];
+        }
+    }
+}
+
+- (void)_promoteDownloadsDeferredBySubscriptionCleanup
+{
+    NSAssert([NSThread isMainThread], @"Deferred download promotion must stay on the main thread");
+    if (!_subscriptionCleanupPromotionIdentifiers) {
+        if (!_subscriptionCleanupPromotionRequested) return;
+        _subscriptionCleanupPromotionRequested = NO;
+        _subscriptionCleanupPromotionIdentifiers =
+            [_subscriptionCleanupDeferredDownloadInfosByIdentifier.allKeys
+                sortedArrayUsingComparator:^NSComparisonResult(NSString* left, NSString* right) {
+                    NSNumber* leftRank = self->_subscriptionCleanupDeferredDownloadInfosByIdentifier[left][@"queueRank"];
+                    NSNumber* rightRank = self->_subscriptionCleanupDeferredDownloadInfosByIdentifier[right][@"queueRank"];
+                    NSComparisonResult rankOrder = [leftRank compare:rightRank];
+                    return rankOrder == NSOrderedSame ? [left compare:right] : rankOrder;
+                }];
+        _subscriptionCleanupPromotionCursor = 0;
+    }
+
+    NSUInteger end = MIN(_subscriptionCleanupPromotionCursor + 32,
+                         _subscriptionCleanupPromotionIdentifiers.count);
+    for (; _subscriptionCleanupPromotionCursor < end;
+         _subscriptionCleanupPromotionCursor += 1) {
+        NSString* identifier = _subscriptionCleanupPromotionIdentifiers[
+            _subscriptionCleanupPromotionCursor
+        ];
+        NSDictionary* info = _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier];
+        CDEpisode* episode = _subscriptionCleanupDeferredDownloadEpisodesByIdentifier[identifier];
+        if (!info || !episode || [self _subscriptionCleanupBlocksEpisode:episode]) continue;
+
+        CDFeed* feed = episode.feed;
+        BOOL automatic = [info[@"automatic"] boolValue];
+        BOOL valid = !episode.isDeleted && feed && !feed.isDeleted
+            && (feed.subscribed || feed.parked)
+            && (!automatic || (feed.subscribed && !feed.parked))
+            && [episode preferedMedium].fileURL;
+        if (!valid) {
+            [self cancelCachingEpisode:episode disableAutoDownload:NO];
+            continue;
+        }
+        if (_cacheDeletionTokensByIdentifier[identifier]
+            || _cacheImportTokensByIdentifier[identifier]
+            || [_subscriptionCleanupBackgroundSessionCancellationIdentifiers
+                containsObject:identifier]) {
+            continue;
+        }
+        CACHE_OPERATION_CLASS* existingOperation =
+            _downloadOperationsByIdentifier[identifier];
+        if ((existingOperation && !existingOperation.cancelled)
+            || _streamingCacheLeaseTokensByIdentifier[identifier]
+            || [self episodeIsCached:episode]) {
+            [self _removeDownloadDeferredBySubscriptionCleanupForIdentifier:identifier
+                                                        removeNormalDescriptor:YES];
+            continue;
+        }
+        if ([info[@"suspended"] boolValue]) {
+            [_manuallySuspendedDownloadIdentifiers addObject:identifier];
+        }
+
+        BOOL accepted = [self _cacheEpisode:episode
+                                  autoCache:automatic
+                    overwriteCellularLock:[info[@"cellular"] boolValue]
+                       reportsFailureToUser:[info[@"reportsFailureToUser"] boolValue]
+                                   queueRank:info[@"queueRank"]
+                     preservesConsumedState:[info[@"preservesConsumedState"] boolValue]
+              deferDuringSubscriptionCleanup:YES];
+        if (accepted && _downloadOperationsByIdentifier[identifier]) {
+            [self _removeDownloadDeferredBySubscriptionCleanupForIdentifier:identifier
+                                                        removeNormalDescriptor:NO];
+        }
+    }
+
+    if (_subscriptionCleanupPromotionCursor < _subscriptionCleanupPromotionIdentifiers.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _promoteDownloadsDeferredBySubscriptionCleanup];
+        });
+    } else {
+        _subscriptionCleanupPromotionIdentifiers = nil;
+        _subscriptionCleanupPromotionCursor = 0;
+        if (_subscriptionCleanupPromotionRequested) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self _promoteDownloadsDeferredBySubscriptionCleanup];
+            });
+        }
+    }
+}
+
+- (void)_resumeDownloadsAfterSubscriptionCleanupProtectionChange:(NSNotification*)notification
+{
+    (void)notification;
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _resumeDownloadsAfterSubscriptionCleanupProtectionChange:nil];
+        });
+        return;
+    }
+    _subscriptionCleanupPromotionRequested = YES;
+    if (_subscriptionCleanupResumeScheduled) return;
+    _subscriptionCleanupResumeScheduled = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_subscriptionCleanupResumeScheduled = NO;
+
+        for (CACHE_OPERATION_CLASS* operation in
+             [self->_downloadOperationsByIdentifier.allValues copy]) {
+            CDEpisode* episode = [operation.userInfo isKindOfClass:[CDEpisode class]]
+                ? operation.userInfo : nil;
+            BOOL manuallySuspended =
+                [self->_manuallySuspendedDownloadIdentifiers containsObject:operation.identifier];
+            operation.suspended = self.suspended || manuallySuspended
+                || ![self _networkAllowsDownloadOperation:operation]
+                || [self _subscriptionCleanupBlocksEpisode:episode];
+        }
+
+        NSUInteger waitingManualCount = 0;
+        if (!self.suspended) {
+            for (NSString* identifier in self->_subscriptionCleanupDeferredDownloadInfosByIdentifier) {
+                NSDictionary* info = self->_subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier];
+                CDEpisode* episode = self->_subscriptionCleanupDeferredDownloadEpisodesByIdentifier[identifier];
+                if ([info[@"automatic"] boolValue] || [info[@"suspended"] boolValue]
+                    || !episode || [self _subscriptionCleanupBlocksEpisode:episode]) continue;
+                CDFeed* feed = episode.feed;
+                BOOL valid = !episode.isDeleted && feed && !feed.isDeleted
+                    && (feed.subscribed || feed.parked)
+                    && [episode preferedMedium].fileURL;
+                if (!valid
+                    || self->_cacheDeletionTokensByIdentifier[identifier]
+                    || self->_cacheImportTokensByIdentifier[identifier]
+                    || [self->_subscriptionCleanupBackgroundSessionCancellationIdentifiers
+                        containsObject:identifier]
+                    || self->_downloadOperationsByIdentifier[identifier]
+                    || self->_streamingCacheLeaseTokensByIdentifier[identifier]
+                    || [self episodeIsCached:episode fastLookup:YES]) continue;
+                waitingManualCount += 1;
+                if (waitingManualCount >= 3) break;
+            }
+        }
+        if (waitingManualCount > 0 && self->_scheduledDownloadOperationIdentifiers.count >= 3) {
+            for (CACHE_OPERATION_CLASS* operation in [self->_downloadOperationsByIdentifier.allValues copy]) {
+                if (waitingManualCount == 0) break;
+                if (operation.automatic && !operation.cancelled && !operation.finished &&
+                    ![self->_finalizingDownloadOperationIdentifiers containsObject:operation.identifier] &&
+                    [self->_scheduledDownloadOperationIdentifiers containsObject:operation.identifier] &&
+                    [self _requestDownloadOperationYield:operation]) {
+                    waitingManualCount -= 1;
+                }
+            }
+        }
+
+        [self _promoteDownloadsDeferredBySubscriptionCleanup];
+        [self _startNextDownloadOperations];
+        [self retryFailedAutomaticDownloadsIfPossible];
+        [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
+    });
 }
 
 - (BOOL) _cacheEpisode:(CDEpisode*)episode autoCache:(BOOL)autoCache overwriteCellularLock:(BOOL)overwriteCellularLock
@@ -1052,6 +1552,23 @@ overwriteCellularLock:(BOOL)overwriteCellularLock
 reportsFailureToUser:(BOOL)reportsFailureToUser
              queueRank:(NSNumber*)queueRank
 {
+    return [self _cacheEpisode:episode
+                     autoCache:autoCache
+       overwriteCellularLock:overwriteCellularLock
+          reportsFailureToUser:reportsFailureToUser
+                      queueRank:queueRank
+        preservesConsumedState:NO
+ deferDuringSubscriptionCleanup:YES];
+}
+
+- (BOOL) _cacheEpisode:(CDEpisode*)episode
+             autoCache:(BOOL)autoCache
+overwriteCellularLock:(BOOL)overwriteCellularLock
+reportsFailureToUser:(BOOL)reportsFailureToUser
+             queueRank:(NSNumber*)queueRank
+preservesConsumedState:(BOOL)preservesConsumedState
+deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup
+{
 	if (!episode) {
 		return NO;
 	}
@@ -1062,9 +1579,22 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	NSString* identifier = episode.objectHash;
 	if (identifier.length == 0) {
 		NSError* error = [self _downloadStartError:@"The episode cannot be downloaded because its local identifier is missing.".ls];
-		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser];
+		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser preservesConsumedState:preservesConsumedState];
 		return NO;
 	}
+    CDFeed* feed = episode.feed;
+    if (autoCache && (!feed || feed.isDeleted || !feed.subscribed || feed.parked)) {
+        return NO;
+    }
+    BOOL subscriptionCleanupBlocked = [self _subscriptionCleanupBlocksEpisode:episode];
+    if (subscriptionCleanupBlocked && deferDuringSubscriptionCleanup) {
+        return [self _deferDownloadUntilSubscriptionCleanupFinishes:episode
+                                                           autoCache:autoCache
+                                             overwriteCellularLock:overwriteCellularLock
+                                                reportsFailureToUser:reportsFailureToUser
+                                              preservesConsumedState:preservesConsumedState
+                                                            queueRank:queueRank];
+    }
     if (_cacheDeletionTokensByIdentifier[identifier] || _cacheImportTokensByIdentifier[identifier]) {
         return NO;
     }
@@ -1089,18 +1619,17 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	CDMedium* media = [episode preferedMedium];
 	if (!media.fileURL) {
 		NSError* error = [self _downloadStartError:@"This episode does not provide a downloadable media file.".ls];
-		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser];
+		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser preservesConsumedState:preservesConsumedState];
 		return NO;
 	}
 
 	NSURL* url = [self URLForCachedEpisode:episode];
 	if (!url) {
 		NSError* error = [self _downloadStartError:@"The download file location could not be created on this device.".ls];
-		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser];
+		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser preservesConsumedState:preservesConsumedState];
 		return NO;
 	}
 
-	CDFeed* feed = episode.feed;
 #if TARGET_OS_IPHONE
 	CACHE_OPERATION_CLASS* cacheOperation = [[CACHE_OPERATION_CLASS alloc] initWithURL:media.fileURL
                                                                  localURL:[self URLForCachedEpisode:episode]
@@ -1114,7 +1643,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 #endif
 	if (!cacheOperation) {
 		NSError* error = [self _downloadStartError:@"The episode download could not be started.".ls];
-		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser];
+		[self _handleDownloadStartError:error forEpisode:episode automatic:autoCache overwriteCellularLock:overwriteCellularLock reportsFailureToUser:reportsFailureToUser preservesConsumedState:preservesConsumedState];
 		return NO;
 	}
 #if TARGET_OS_IPHONE
@@ -1127,8 +1656,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     cacheOperation.automatic = autoCache;
     cacheOperation.reportsFailureToUser = reportsFailureToUser;
     cacheOperation.overwriteCellularLock = overwriteCellularLock;
+    cacheOperation.preservesConsumedState = preservesConsumedState;
     BOOL manuallySuspended = [_manuallySuspendedDownloadIdentifiers containsObject:episode.objectHash];
-    cacheOperation.suspended = self.suspended || manuallySuspended || ![self _networkAllowsDownloadOperation:cacheOperation];
+    cacheOperation.suspended = self.suspended || manuallySuspended
+        || ![self _networkAllowsDownloadOperation:cacheOperation]
+        || subscriptionCleanupBlocked;
     if ([cacheOperation respondsToSelector:@selector(setQualityOfService:)]) {
         cacheOperation.qualityOfService = autoCache ? NSOperationQualityOfServiceUtility : NSOperationQualityOfServiceUserInitiated;
 	}
@@ -1182,40 +1714,53 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
     while (_scheduledDownloadOperationIdentifiers.count < 3) {
         CACHE_OPERATION_CLASS* nextOperation = nil;
-        for (CDEpisode* episode in _cachingEpisodes) {
+        CACHE_OPERATION_CLASS* nextAutomaticOperation = nil;
+        for (CDEpisode* episode in [_cachingEpisodes copy]) {
             NSString* identifier = episode.objectHash;
             CACHE_OPERATION_CLASS* operation = identifier.length > 0 ? _downloadOperationsByIdentifier[identifier] : nil;
             if (operation && !operation.cancelled &&
+                ![_subscriptionCleanupBackgroundSessionCancellationIdentifiers containsObject:identifier] &&
                 ![_scheduledDownloadOperationIdentifiers containsObject:identifier] &&
-                !operation.suspended) {
-                nextOperation = operation;
-                break;
+                ![_finalizingDownloadOperationIdentifiers containsObject:identifier] &&
+                !operation.finished &&
+                !operation.suspended && ![self _subscriptionCleanupBlocksEpisode:episode]) {
+                if (!operation.automatic) {
+                    nextOperation = operation;
+                    break;
+                }
+                nextAutomaticOperation = nextAutomaticOperation ?: operation;
             }
         }
+        nextOperation = nextOperation ?: nextAutomaticOperation;
         if (!nextOperation) {
             break;
         }
         [_scheduledDownloadOperationIdentifiers addObject:nextOperation.identifier];
         [_downloadQueue addOperation:nextOperation];
     }
+    [self _ensureDownloadUpdateTimer];
 }
 
-- (void)_requestDownloadOperationYield:(CACHE_OPERATION_CLASS*)operation
+- (BOOL)_requestDownloadOperationYield:(CACHE_OPERATION_CLASS*)operation
 {
 #if TARGET_OS_IPHONE
     NSString* identifier = operation.identifier;
     if (identifier.length == 0 || _downloadOperationsByIdentifier[identifier] != operation ||
         ![_scheduledDownloadOperationIdentifiers containsObject:identifier] ||
+        operation.cancelled || operation.finished ||
+        [_finalizingDownloadOperationIdentifiers containsObject:identifier] ||
         _downloadPauseYieldTokensByIdentifier[identifier]) {
-        return;
+        return NO;
     }
     _downloadPauseYieldTokensByIdentifier[identifier] = NSUUID.UUID.UUIDString;
     [operation cancel];
     if (![operation isExecuting]) {
         [self _replaceYieldedDownloadOperation:operation];
     }
+    return YES;
 #else
     (void)operation;
+    return NO;
 #endif
 }
 
@@ -1244,10 +1789,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     replacement.automatic = operation.automatic;
     replacement.reportsFailureToUser = operation.reportsFailureToUser;
     replacement.overwriteCellularLock = operation.overwriteCellularLock;
+    replacement.preservesConsumedState = operation.preservesConsumedState;
     replacement.qualityOfService = operation.qualityOfService;
     replacement.suspended = self.suspended ||
         [_manuallySuspendedDownloadIdentifiers containsObject:identifier] ||
-        ![self _networkAllowsDownloadOperation:replacement];
+        ![self _networkAllowsDownloadOperation:replacement] ||
+        [self _subscriptionCleanupBlocksEpisode:
+            [replacement.userInfo isKindOfClass:[CDEpisode class]] ? replacement.userInfo : nil];
 
     [_scheduledDownloadOperationIdentifiers removeObject:identifier];
     _downloadOperationsByIdentifier[identifier] = replacement;
@@ -1264,7 +1812,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (void) _ensureDownloadUpdateTimer
 {
-    if (_updateTimer || _downloadOperationsByIdentifier.count == 0) {
+    if (_updateTimer || _downloadOperationsByIdentifier.count == 0 ||
+        _scheduledDownloadOperationIdentifiers.count == 0) {
         return;
     }
 
@@ -1360,8 +1909,92 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (void) resetAutoCacheForFeed:(CDFeed*)feed
 {
-    [self.cacheHistory resetValuesForEpisodes:feed.episodes.allObjects completion:^(NSError* error) {
+    if (!feed) return;
+    [self resetAutoCacheForFeeds:@[feed] completion:^(NSError* error) {
         if (error) ErrLog(@"could not reset feed auto-download history: %@", error);
+    }];
+}
+
+- (void)resetAutoCacheForFeeds:(NSArray<CDFeed*>*)feeds
+                     completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self resetAutoCacheForFeeds:feeds completion:completion];
+        });
+        return;
+    }
+
+    feeds = [NSOrderedSet orderedSetWithArray:feeds ?: @[]].array;
+    if (feeds.count == 0) {
+        if (completion) completion(nil);
+        return;
+    }
+
+    [self.cacheHistory reloadIfNeededWithCompletion:^(NSError* historyError) {
+        if (historyError) {
+            if (completion) completion(historyError);
+            return;
+        }
+
+        NSMutableArray<NSURL*>* feedObjectURIs = [NSMutableArray arrayWithCapacity:feeds.count];
+        for (CDFeed* feed in feeds) {
+            if (feed.objectID && !feed.objectID.isTemporaryID) {
+                [feedObjectURIs addObject:feed.objectID.URIRepresentation];
+            }
+        }
+        NSError* databaseUnavailableError = [NSError errorWithDomain:@"CacheManager"
+                                                                 code:51
+                                                             userInfo:@{NSLocalizedDescriptionKey: @"Podcast download data could not be accessed for cleanup. Please restart InstacastPlus and try again.".ls}];
+        NSArray<NSURL*>* immutableFeedObjectURIs = [feedObjectURIs copy];
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSManagedObjectContext* selectionContext = [DMANAGER newICloudSyncBackgroundContext];
+            if (!selectionContext) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (completion) completion(databaseUnavailableError);
+                });
+                return;
+            }
+            [selectionContext performBlock:^{
+            NSError* selectionError = nil;
+            NSPersistentStoreCoordinator* selectionCoordinator = selectionContext.persistentStoreCoordinator;
+            NSMutableArray<CDFeed*>* backgroundFeeds = [NSMutableArray arrayWithCapacity:immutableFeedObjectURIs.count];
+            for (NSURL* feedObjectURI in immutableFeedObjectURIs) {
+                NSManagedObjectID* feedObjectID = [selectionCoordinator managedObjectIDForURIRepresentation:feedObjectURI];
+                if (!feedObjectID) {
+                    selectionError = databaseUnavailableError;
+                    break;
+                }
+                CDFeed* feed = (CDFeed*)[selectionContext existingObjectWithID:feedObjectID error:&selectionError];
+                if (!feed || selectionError) break;
+                [backgroundFeeds addObject:feed];
+            }
+
+            NSMutableSet<NSString*>* episodeHashes = [NSMutableSet set];
+            if (!selectionError && backgroundFeeds.count > 0) {
+                NSFetchRequest* request = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+                request.predicate = [NSPredicate predicateWithFormat:@"feed IN %@ AND objectHash != nil", backgroundFeeds];
+                request.resultType = NSDictionaryResultType;
+                request.propertiesToFetch = @[@"objectHash"];
+                request.returnsDistinctResults = YES;
+                request.fetchBatchSize = 400;
+                NSArray<NSDictionary*>* rows = [selectionContext executeFetchRequest:request error:&selectionError];
+                for (NSDictionary* row in rows) {
+                    NSString* episodeHash = row[@"objectHash"];
+                    if (episodeHash.length > 0) [episodeHashes addObject:episodeHash];
+                }
+            }
+
+            NSSet<NSString*>* immutableEpisodeHashes = [episodeHashes copy];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (selectionError) {
+                    if (completion) completion(selectionError);
+                    return;
+                }
+                [self.cacheHistory resetValuesForEpisodeHashes:immutableEpisodeHashes completion:completion];
+            });
+            }];
+        });
     }];
 }
 
@@ -1379,9 +2012,23 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                        automatic:(BOOL)automatic
                       completion:(void (^)(NSError* error))completion
 {
+    [self _removeCacheRequestsForEpisodes:episodes
+                                automatic:automatic
+                      physicalURLSnapshot:nil
+                               completion:completion];
+}
+
+- (void)_removeCacheRequestsForEpisodes:(NSArray<CDEpisode*>*)episodes
+                               automatic:(BOOL)automatic
+                     physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
+                              completion:(void (^)(NSError* error))completion
+{
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self removeCacheForEpisodes:episodes automatic:automatic completion:completion];
+            [self _removeCacheRequestsForEpisodes:episodes
+                                        automatic:automatic
+                              physicalURLSnapshot:physicalURLSnapshot
+                                       completion:completion];
         });
         return;
     }
@@ -1425,11 +2072,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     if (settledEpisodes.count > 0) {
         [self _removeCacheForEpisodes:settledEpisodes
                             automatic:automatic
+                  physicalURLSnapshot:physicalURLSnapshot
                            completion:operationCompletion];
     }
     for (CDEpisode* episode in activeEpisodes) {
         [self _beginRemovalAfterCancellingEpisode:episode
                                          automatic:automatic
+                               physicalURLSnapshot:physicalURLSnapshot
                                         completion:operationCompletion];
     }
 }
@@ -1464,7 +2113,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	if ([self isCachingEpisode:episode] ||
         _cancelledDownloadRemovalRequestsByIdentifier[episode.objectHash] ||
         [InstacastBackupImporter ownsDeferredDownloadWithObjectHash:episode.objectHash]) {
-		[self _beginRemovalAfterCancellingEpisode:episode automatic:automatic completion:completion];
+		[self _beginRemovalAfterCancellingEpisode:episode
+                                         automatic:automatic
+                               physicalURLSnapshot:nil
+                                        completion:completion];
 		return;
 	}
 
@@ -1473,11 +2125,18 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (void)_beginRemovalAfterCancellingEpisode:(CDEpisode*)episode
                                   automatic:(BOOL)automatic
+                        physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
                                   completion:(void (^)(NSError* error))completion
 {
     NSString* identifier = episode.objectHash;
     NSDictionary* existingRequest = _cancelledDownloadRemovalRequestsByIdentifier[identifier];
     if (existingRequest) {
+        id existingPhysicalURLSnapshot = existingRequest[@"physicalURLSnapshot"];
+        if (physicalURLSnapshot && (!existingPhysicalURLSnapshot || existingPhysicalURLSnapshot == NSNull.null)) {
+            NSMutableDictionary* updatedRequest = [existingRequest mutableCopy];
+            updatedRequest[@"physicalURLSnapshot"] = physicalURLSnapshot;
+            _cancelledDownloadRemovalRequestsByIdentifier[identifier] = [updatedRequest copy];
+        }
         if (completion) {
             NSMutableArray* completions = _cacheDeletionCompletionsByIdentifier[identifier] ?: [NSMutableArray array];
             [completions addObject:[completion copy]];
@@ -1501,6 +2160,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         @"downloaded": @(episode.downloaded),
         @"wasCached": @(wasCached),
         @"cacheDeletionPreparation": deletionPreparation,
+        @"physicalURLSnapshot": physicalURLSnapshot ?: (id)NSNull.null,
     };
     if (completion) {
         _cacheDeletionCompletionsByIdentifier[identifier] = [NSMutableArray arrayWithObject:[completion copy]];
@@ -1589,6 +2249,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     NSURL* localURL = request[@"url"] == NSNull.null ? nil : request[@"url"];
     NSManagedObjectID* objectID = request[@"objectID"];
     ICCacheDeletionPreparation* deletionPreparation = request[@"cacheDeletionPreparation"];
+    ICCachePhysicalURLSnapshot* physicalURLSnapshot = request[@"physicalURLSnapshot"] == NSNull.null
+        ? nil
+        : request[@"physicalURLSnapshot"];
 
     dispatch_async(_cacheDeletionQueue, ^{
         NSError* preparationError = [deletionPreparation waitForPreparation];
@@ -1603,15 +2266,56 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
             });
         }
         NSFileManager* fileManager = [[NSFileManager alloc] init];
-        NSError* attributesError = nil;
-        NSDictionary* fileAttributes = localURL ? [fileManager attributesOfItemAtPath:localURL.path error:&attributesError] : nil;
-        BOOL fileWasPresent = (fileAttributes != nil);
-        BOOL shouldRecalculateBytes = fileWasPresent || (attributesError && !ICCacheFileErrorMeansMissing(attributesError));
+        NSMutableOrderedSet<NSURL*>* physicalURLs = [NSMutableOrderedSet orderedSet];
+        if (localURL) [physicalURLs addObject:localURL];
+        if (physicalURLSnapshot) {
+            [physicalURLs addObjectsFromArray:physicalURLSnapshot.URLsByEpisodeHash[identifier] ?: @[]];
+        }
+
+        BOOL wasAccounted = [request[@"terminalDownloadSucceeded"] boolValue] ||
+            [request[@"wasCached"] boolValue] || [request[@"downloaded"] boolValue];
+        BOOL fileWasPresent = NO;
+        BOOL needsRecalculation = NO;
+        unsigned long long removedBytes = 0;
         NSError* removalError = preparationError ? ICCacheDeletionDurabilityError(preparationError) : nil;
-        BOOL success = !preparationError &&
-            (!localURL || [fileManager removeItemAtURL:localURL error:&removalError] || ICCacheFileErrorMeansMissing(removalError));
+        if (!removalError && physicalURLSnapshot.error) removalError = physicalURLSnapshot.error;
+        BOOL success = (removalError == nil);
+        NSURL* remainingURL = success ? nil : physicalURLs.firstObject;
         if (success) {
-            ICRemoveTranscriptCacheForEpisodeHashes([NSSet setWithObject:identifier]);
+            needsRecalculation = !wasAccounted;
+            for (NSURL* physicalURL in physicalURLs) {
+                NSError* attributesError = nil;
+                NSDictionary* fileAttributes = [fileManager attributesOfItemAtPath:physicalURL.path error:&attributesError];
+                if (!fileAttributes && ICCacheFileErrorMeansMissing(attributesError)) continue;
+                if (!fileAttributes) {
+                    needsRecalculation = YES;
+                } else if ([fileAttributes[NSFileType] isEqualToString:NSFileTypeDirectory]) {
+                    success = NO;
+                    remainingURL = remainingURL ?: physicalURL;
+                    removalError = removalError ?: [NSError errorWithDomain:NSCocoaErrorDomain
+                                                                        code:NSFileWriteInvalidFileNameError
+                                                                    userInfo:@{NSLocalizedDescriptionKey: @"The episode cache path is not a regular file."}];
+                    continue;
+                } else {
+                    fileWasPresent = YES;
+                }
+
+                NSError* mediaRemovalError = nil;
+                BOOL removed = [fileManager removeItemAtURL:physicalURL error:&mediaRemovalError]
+                    || ICCacheFileErrorMeansMissing(mediaRemovalError);
+                if (removed) {
+                    if (fileAttributes) removedBytes += [fileAttributes fileSize];
+                } else {
+                    success = NO;
+                    remainingURL = remainingURL ?: physicalURL;
+                    removalError = removalError ?: mediaRemovalError;
+                }
+            }
+        }
+        if (success && !fileWasPresent) needsRecalculation = YES;
+        if (!success && removedBytes > 0) needsRecalculation = YES;
+        if (success) {
+            if (!physicalURLSnapshot) ICRemoveTranscriptCacheForEpisodeHashes([NSSet setWithObject:identifier]);
 #if TARGET_OS_IPHONE
             [CACHE_OPERATION_CLASS deleteResumeInfoForIdentifier:identifier];
 #endif
@@ -1650,12 +2354,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 NSError* rollbackSaveError = nil;
                 if (storedEpisode) {
                     BOOL terminalDownloadSucceeded = [request[@"terminalDownloadSucceeded"] boolValue];
+                    BOOL restoreAsCached = terminalDownloadSucceeded || [request[@"wasCached"] boolValue] || remainingURL != nil;
                     [self willChangeValueForKey:@"cachedEpisodes"];
-                    if (terminalDownloadSucceeded || [request[@"wasCached"] boolValue]) {
+                    if (restoreAsCached) {
                         [self->_cachedEpisodes addObject:storedEpisode];
                     }
-                    if (localURL) self->_cachedURLIndex[identifier] = localURL;
-                    storedEpisode.downloaded = terminalDownloadSucceeded || [request[@"downloaded"] boolValue];
+                    if (remainingURL) self->_cachedURLIndex[identifier] = remainingURL;
+                    storedEpisode.downloaded = restoreAsCached || [request[@"downloaded"] boolValue];
                     storedEpisode.lastDownloaded = terminalDownloadSucceeded
                         ? request[@"terminalDownloadedAt"]
                         : (request[@"lastDownloaded"] == NSNull.null ? nil : request[@"lastDownloaded"]);
@@ -1688,8 +2393,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 }
                 [self _presentCacheDeletionError:publicError automatic:automatic];
             }
-            if (shouldRecalculateBytes) {
+            if (needsRecalculation) {
                 [self _invalidateDownloadedBytesAndRecalculate];
+            } else if (success && wasAccounted) {
+                [self _subtractDownloadedBytes:removedBytes];
             }
             [self _completeCacheDeletionForIdentifier:identifier error:publicError];
             [self _completeBackgroundSessionForIdentifier:identifier];
@@ -1706,28 +2413,284 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                    automatic:(BOOL)automatic
                   completion:(void (^)(NSError* error))completion
 {
+    [self removeCacheForFeeds:feed ? @[feed] : @[] automatic:automatic completion:completion];
+}
+
+- (void)removeCacheForFeeds:(NSArray<CDFeed*>*)feeds
+                    automatic:(BOOL)automatic
+                   completion:(void (^)(NSError* error))completion
+{
+    [self _removeCacheForFeeds:feeds
+                     automatic:automatic
+ preserveSubscriptionCleanupDeferredStarts:NO
+                    completion:completion];
+}
+
+- (void)removeCacheForFeedsDuringSubscriptionCleanup:(NSArray<CDFeed*>*)feeds
+                                           completion:(void (^)(NSError* error))completion
+{
+    [self _removeCacheForFeeds:feeds
+                     automatic:NO
+ preserveSubscriptionCleanupDeferredStarts:YES
+                    completion:completion];
+}
+
+- (void)_removeCacheForFeeds:(NSArray<CDFeed*>*)feeds
+                    automatic:(BOOL)automatic
+preserveSubscriptionCleanupDeferredStarts:(BOOL)preserveDeferredStarts
+                   completion:(void (^)(NSError* error))completion
+{
     if (![NSThread isMainThread]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self removeCacheForFeed:feed automatic:automatic completion:completion];
+            [self _removeCacheForFeeds:feeds
+                             automatic:automatic
+         preserveSubscriptionCleanupDeferredStarts:preserveDeferredStarts
+                            completion:completion];
         });
         return;
     }
-    [self cancelCachingFeed:feed];
 
-    NSMutableOrderedSet<CDEpisode*>* episodes = [NSMutableOrderedSet orderedSet];
+    feeds = [NSOrderedSet orderedSetWithArray:feeds ?: @[]].array;
+    if (feeds.count == 0) {
+        if (completion) completion(nil);
+        return;
+    }
+
+    NSSet<CDFeed*>* feedSet = [NSSet setWithArray:feeds];
+    NSMutableDictionary<NSString*, CDEpisode*>* candidateEpisodesByURI = [NSMutableDictionary dictionary];
+    NSMutableOrderedSet<NSURL*>* candidateEpisodeURIs = [NSMutableOrderedSet orderedSet];
+    void (^addCandidateEpisode)(CDEpisode*) = ^(CDEpisode* episode) {
+        if (![feedSet containsObject:episode.feed] || !episode.objectID || episode.objectID.isTemporaryID) return;
+        NSURL* episodeURI = episode.objectID.URIRepresentation;
+        candidateEpisodesByURI[episodeURI.absoluteString] = episode;
+        [candidateEpisodeURIs addObject:episodeURI];
+    };
+    for (CDEpisode* episode in [_cachingEpisodes copy]) {
+        addCandidateEpisode(episode);
+    }
     for (CDEpisode* episode in [self cachedEpisodes]) {
-        if ([episode.feed isEqual:feed] && !(automatic && episode.starred)) {
-            [episodes addObject:episode];
+        addCandidateEpisode(episode);
+    }
+
+    NSMutableArray<NSURL*>* feedObjectURIs = [NSMutableArray arrayWithCapacity:feeds.count];
+    for (CDFeed* feed in feeds) {
+        if (feed.objectID && !feed.objectID.isTemporaryID) {
+            [feedObjectURIs addObject:feed.objectID.URIRepresentation];
         }
     }
-    for (CDEpisode* episode in feed.episodes) {
-        if (!(automatic && episode.starred)) [episodes addObject:episode];
-    }
-    [self removeCacheForEpisodes:episodes.array automatic:automatic completion:completion];
+    NSError* databaseUnavailableError = [NSError errorWithDomain:@"CacheManager"
+                                                             code:52
+                                                         userInfo:@{NSLocalizedDescriptionKey: @"Podcast download data could not be accessed for cleanup. Please restart InstacastPlus and try again.".ls}];
+
+    __block BOOL cancellationFinished = NO;
+    __block BOOL removalFinished = NO;
+    __block NSError* cancellationError = nil;
+    __block NSError* cacheRemovalError = nil;
+    void (^finishIfReady)(void) = ^{
+        if (cancellationFinished && removalFinished && completion) {
+            completion(cacheRemovalError ?: cancellationError);
+        }
+    };
+    [self _cancelCachingFeeds:feeds
+ preserveSubscriptionCleanupDeferredStarts:preserveDeferredStarts
+                  completion:^(NSError* error) {
+        cancellationError = error;
+        cancellationFinished = YES;
+        finishIfReady();
+    }];
+
+    NSArray<NSURL*>* immutableFeedObjectURIs = [feedObjectURIs copy];
+    dispatch_async(_cacheDeletionQueue, ^{
+        ICCachePhysicalURLSnapshot* physicalURLSnapshot = [self _physicalCacheURLSnapshot];
+        if (physicalURLSnapshot.error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                cacheRemovalError = physicalURLSnapshot.error;
+                removalFinished = YES;
+                finishIfReady();
+            });
+            return;
+        }
+
+        NSArray<NSString*>* physicalEpisodeHashes = physicalURLSnapshot.URLsByEpisodeHash.allKeys;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSManagedObjectContext* selectionContext = [DMANAGER newICloudSyncBackgroundContext];
+            if (!selectionContext) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    cacheRemovalError = databaseUnavailableError;
+                    removalFinished = YES;
+                    finishIfReady();
+                });
+                return;
+            }
+            [selectionContext performBlock:^{
+        NSError* selectionError = nil;
+        NSPersistentStoreCoordinator* selectionCoordinator = selectionContext.persistentStoreCoordinator;
+        NSMutableArray<CDFeed*>* backgroundFeeds = [NSMutableArray arrayWithCapacity:immutableFeedObjectURIs.count];
+        for (NSURL* feedObjectURI in immutableFeedObjectURIs) {
+            NSManagedObjectID* feedObjectID = [selectionCoordinator managedObjectIDForURIRepresentation:feedObjectURI];
+            if (!feedObjectID) {
+                selectionError = databaseUnavailableError;
+                break;
+            }
+            CDFeed* feed = (CDFeed*)[selectionContext existingObjectWithID:feedObjectID error:&selectionError];
+            if (!feed || selectionError) break;
+            [backgroundFeeds addObject:feed];
+        }
+
+        NSMutableOrderedSet<NSManagedObjectID*>* selectedEpisodeObjectIDs = [NSMutableOrderedSet orderedSet];
+        if (!selectionError && backgroundFeeds.count > 0) {
+            NSFetchRequest* request = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+            request.predicate = [NSPredicate predicateWithFormat:@"feed IN %@ AND lastDownloaded != nil", backgroundFeeds];
+            request.resultType = NSManagedObjectIDResultType;
+            NSArray<NSManagedObjectID*>* historyObjectIDs = [selectionContext executeFetchRequest:request error:&selectionError];
+            if (historyObjectIDs) [selectedEpisodeObjectIDs addObjectsFromArray:historyObjectIDs];
+
+            const NSUInteger cleanupSelectionHashBatchSize = 400;
+            for (NSUInteger offset = 0;
+                 !selectionError && offset < physicalEpisodeHashes.count;
+                 offset += cleanupSelectionHashBatchSize) {
+                NSRange hashRange = NSMakeRange(offset,
+                                                MIN(cleanupSelectionHashBatchSize, physicalEpisodeHashes.count - offset));
+                NSArray<NSString*>* hashBatch = [physicalEpisodeHashes subarrayWithRange:hashRange];
+                NSFetchRequest* hashRequest = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+                hashRequest.predicate = [NSPredicate predicateWithFormat:@"feed IN %@ AND objectHash IN %@",
+                                         backgroundFeeds,
+                                         hashBatch];
+                hashRequest.resultType = NSManagedObjectIDResultType;
+                NSArray<NSManagedObjectID*>* hashObjectIDs = [selectionContext executeFetchRequest:hashRequest error:&selectionError];
+                if (hashObjectIDs) [selectedEpisodeObjectIDs addObjectsFromArray:hashObjectIDs];
+            }
+        }
+        NSMutableArray<NSURL*>* selectedEpisodeObjectURIs = [NSMutableArray arrayWithCapacity:selectedEpisodeObjectIDs.count];
+        for (NSManagedObjectID* episodeObjectID in selectedEpisodeObjectIDs) {
+            [selectedEpisodeObjectURIs addObject:episodeObjectID.URIRepresentation];
+        }
+        NSArray<NSURL*>* immutableSelectedEpisodeObjectURIs = [selectedEpisodeObjectURIs copy];
+        NSArray<CDFeed*>* immutableBackgroundFeeds = [backgroundFeeds copy];
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (selectionError) {
+                cacheRemovalError = selectionError;
+                removalFinished = YES;
+                finishIfReady();
+                return;
+            }
+
+            NSManagedObjectContext* mainContext = DMANAGER.objectContext;
+            if (!mainContext) {
+                cacheRemovalError = databaseUnavailableError;
+                removalFinished = YES;
+                finishIfReady();
+                return;
+            }
+            [candidateEpisodeURIs addObjectsFromArray:immutableSelectedEpisodeObjectURIs];
+            NSArray<NSURL*>* episodeObjectURIs = candidateEpisodeURIs.array;
+            NSPersistentStoreCoordinator* mainCoordinator = mainContext.persistentStoreCoordinator;
+            const NSUInteger cleanupBatchSize = 100;
+            __block NSUInteger nextURIIndex = 0;
+            __block NSError* firstRemovalError = nil;
+            void (^finishTranscriptCleanup)(void) = ^{
+                dispatch_async(self->_cacheDeletionQueue, ^{
+                    ICTranscriptCacheSnapshot* transcriptSnapshot = ICTranscriptCacheURLSnapshot();
+                    NSArray<NSString*>* transcriptEpisodeHashes = transcriptSnapshot.URLsByEpisodeHash.allKeys;
+                    [selectionContext performBlock:^{
+                        NSError* transcriptSelectionError = transcriptSnapshot.error;
+                        NSMutableSet<NSString*>* matchedTranscriptEpisodeHashes = [NSMutableSet set];
+                        const NSUInteger cleanupTranscriptHashBatchSize = 400;
+                        for (NSUInteger offset = 0;
+                             !transcriptSelectionError && offset < transcriptEpisodeHashes.count;
+                             offset += cleanupTranscriptHashBatchSize) {
+                            NSRange hashRange = NSMakeRange(offset,
+                                                            MIN(cleanupTranscriptHashBatchSize, transcriptEpisodeHashes.count - offset));
+                            NSArray<NSString*>* hashBatch = [transcriptEpisodeHashes subarrayWithRange:hashRange];
+                            NSFetchRequest* transcriptRequest = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+                            transcriptRequest.predicate = [NSPredicate predicateWithFormat:@"feed IN %@ AND objectHash IN %@",
+                                                           immutableBackgroundFeeds,
+                                                           hashBatch];
+                            transcriptRequest.resultType = NSDictionaryResultType;
+                            transcriptRequest.propertiesToFetch = @[@"objectHash"];
+                            transcriptRequest.returnsDistinctResults = YES;
+                            NSArray<NSDictionary*>* rows = [selectionContext executeFetchRequest:transcriptRequest
+                                                                                           error:&transcriptSelectionError];
+                            for (NSDictionary* row in rows) {
+                                NSString* episodeHash = row[@"objectHash"];
+                                if (episodeHash.length > 0) [matchedTranscriptEpisodeHashes addObject:episodeHash];
+                            }
+                        }
+
+                        NSSet<NSString*>* immutableMatchedTranscriptEpisodeHashes = [matchedTranscriptEpisodeHashes copy];
+                        dispatch_async(self->_cacheDeletionQueue, ^{
+                            NSError* transcriptRemovalError = ICRemoveTranscriptCacheURLsForEpisodeHashes(immutableMatchedTranscriptEpisodeHashes,
+                                                                                                            transcriptSnapshot);
+                            NSError* transcriptCleanupError = transcriptSelectionError ?: transcriptRemovalError;
+                            dispatch_async(dispatch_get_main_queue(), ^{
+                                if (!firstRemovalError && transcriptCleanupError) firstRemovalError = transcriptCleanupError;
+                                cacheRemovalError = firstRemovalError;
+                                removalFinished = YES;
+                                finishIfReady();
+                            });
+                        });
+                    }];
+                });
+            };
+            __block void (^processNextChunk)(void) = nil;
+            processNextChunk = ^{
+                if (nextURIIndex >= episodeObjectURIs.count) {
+                    processNextChunk = nil;
+                    finishTranscriptCleanup();
+                    return;
+                }
+
+                NSRange chunkRange = NSMakeRange(nextURIIndex,
+                                                 MIN(cleanupBatchSize, episodeObjectURIs.count - nextURIIndex));
+                nextURIIndex = NSMaxRange(chunkRange);
+                NSArray<NSURL*>* URIChunk = [episodeObjectURIs subarrayWithRange:chunkRange];
+                NSMutableArray<CDEpisode*>* episodes = [NSMutableArray arrayWithCapacity:URIChunk.count];
+                for (NSURL* episodeObjectURI in URIChunk) {
+                    CDEpisode* episode = candidateEpisodesByURI[episodeObjectURI.absoluteString];
+                    if (!episode) {
+                        NSManagedObjectID* episodeObjectID = [mainCoordinator managedObjectIDForURIRepresentation:episodeObjectURI];
+                        NSError* bindingError = nil;
+                        if (episodeObjectID) {
+                            episode = (CDEpisode*)[mainContext existingObjectWithID:episodeObjectID error:&bindingError];
+                        } else {
+                            bindingError = databaseUnavailableError;
+                        }
+                        if (!firstRemovalError && bindingError) firstRemovalError = bindingError;
+                    }
+                    if ([episode isKindOfClass:[CDEpisode class]] && !episode.isDeleted) {
+                        [episodes addObject:episode];
+                    }
+                }
+
+                [self _removeCacheRequestsForEpisodes:episodes
+                                            automatic:automatic
+                                  physicalURLSnapshot:physicalURLSnapshot
+                                           completion:^(NSError* removalError) {
+                    if (!firstRemovalError && removalError) firstRemovalError = removalError;
+                    dispatch_async(dispatch_get_main_queue(), processNextChunk);
+                }];
+            };
+            processNextChunk();
+        });
+            }];
+        });
+    });
 }
 
 - (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes
                        automatic:(BOOL)automatic
+                      completion:(void (^)(NSError* error))completion
+{
+    [self _removeCacheForEpisodes:episodes
+                        automatic:automatic
+              physicalURLSnapshot:nil
+                       completion:completion];
+}
+
+- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes
+                       automatic:(BOOL)automatic
+             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
                       completion:(void (^)(NSError* error))completion
 {
     NSAssert([NSThread isMainThread], @"Cache deletion state must be mutated on the main thread");
@@ -1888,8 +2851,45 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                           token:token
                                      generation:generation
                                       automatic:automatic
-                            deletionPreparation:deletionPreparation];
+                            deletionPreparation:deletionPreparation
+                            physicalURLSnapshot:physicalURLSnapshot];
     });
+}
+
+- (ICCachePhysicalURLSnapshot*)_physicalCacheURLSnapshot
+{
+    NSFileManager* fileManager = [[NSFileManager alloc] init];
+    NSString* storagePath = [CacheManager _pathToStorageLocation];
+    NSError* directoryError = nil;
+    NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:storagePath error:&directoryError];
+    if (ICCacheFileErrorMeansMissing(directoryError)) directoryError = nil;
+
+    NSMutableDictionary<NSString*, NSMutableOrderedSet<NSURL*>*>* mutableURLsByHash = [NSMutableDictionary dictionary];
+    for (NSString* fileName in fileNames) {
+        NSString* nameWithoutExtension = [fileName stringByDeletingPathExtension];
+        NSRange lastSeparator = [nameWithoutExtension rangeOfString:@" - " options:NSBackwardsSearch];
+        NSString* identifier = lastSeparator.location == NSNotFound
+            ? nameWithoutExtension
+            : [nameWithoutExtension substringFromIndex:NSMaxRange(lastSeparator)];
+        if (identifier.length == 0) continue;
+        NSMutableOrderedSet<NSURL*>* physicalURLs = mutableURLsByHash[identifier];
+        if (!physicalURLs) {
+            physicalURLs = [NSMutableOrderedSet orderedSet];
+            mutableURLsByHash[identifier] = physicalURLs;
+        }
+        [physicalURLs addObject:[NSURL fileURLWithPath:[storagePath stringByAppendingPathComponent:fileName]]];
+    }
+
+    NSMutableDictionary<NSString*, NSArray<NSURL*>*>* URLsByHash = [NSMutableDictionary dictionaryWithCapacity:mutableURLsByHash.count];
+    [mutableURLsByHash enumerateKeysAndObjectsUsingBlock:^(NSString* identifier,
+                                                           NSMutableOrderedSet<NSURL*>* physicalURLs,
+                                                           BOOL* stop) {
+        URLsByHash[identifier] = physicalURLs.array;
+    }];
+    ICCachePhysicalURLSnapshot* snapshot = [[ICCachePhysicalURLSnapshot alloc] init];
+    snapshot.URLsByEpisodeHash = [URLsByHash copy];
+    snapshot.error = directoryError;
+    return snapshot;
 }
 
 - (void)_performCacheFileDeletionForItems:(NSArray<NSDictionary*>*)items
@@ -1897,6 +2897,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                 generation:(NSUInteger)generation
                                  automatic:(BOOL)automatic
                        deletionPreparation:(ICCacheDeletionPreparation*)deletionPreparation
+                       physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot
 {
     @autoreleasepool {
         NSError* preparationError = [deletionPreparation waitForPreparation];
@@ -1951,24 +2952,37 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
             }
         }
 
-        NSString* storagePath = [CacheManager _pathToStorageLocation];
-        NSError* URLResolutionError = nil;
-        NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:storagePath error:&URLResolutionError];
-        if (ICCacheFileErrorMeansMissing(URLResolutionError)) URLResolutionError = nil;
-        for (NSString* fileName in fileNames) {
-            NSString* nameWithoutExtension = [fileName stringByDeletingPathExtension];
-            NSRange lastSeparator = [nameWithoutExtension rangeOfString:@" - " options:NSBackwardsSearch];
-            NSString* identifier = lastSeparator.location == NSNotFound
-                ? nameWithoutExtension
-                : [nameWithoutExtension substringFromIndex:NSMaxRange(lastSeparator)];
-            if (![requestedHashes containsObject:identifier]) continue;
-            NSMutableOrderedSet<NSURL*>* physicalURLs = physicalURLsByHash[identifier];
-            if (!physicalURLs) {
-                physicalURLs = [NSMutableOrderedSet orderedSet];
-                physicalURLsByHash[identifier] = physicalURLs;
+        NSError* URLResolutionError = physicalURLSnapshot.error;
+        if (physicalURLSnapshot) {
+            for (NSString* identifier in requestedHashes) {
+                NSArray<NSURL*>* snapshotURLs = physicalURLSnapshot.URLsByEpisodeHash[identifier];
+                if (snapshotURLs.count == 0) continue;
+                NSMutableOrderedSet<NSURL*>* physicalURLs = physicalURLsByHash[identifier];
+                if (!physicalURLs) {
+                    physicalURLs = [NSMutableOrderedSet orderedSet];
+                    physicalURLsByHash[identifier] = physicalURLs;
+                }
+                [physicalURLs addObjectsFromArray:snapshotURLs];
             }
-            NSURL* fileURL = [NSURL fileURLWithPath:[storagePath stringByAppendingPathComponent:fileName]];
-            [physicalURLs addObject:fileURL];
+        } else {
+            NSString* storagePath = [CacheManager _pathToStorageLocation];
+            NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:storagePath error:&URLResolutionError];
+            if (ICCacheFileErrorMeansMissing(URLResolutionError)) URLResolutionError = nil;
+            for (NSString* fileName in fileNames) {
+                NSString* nameWithoutExtension = [fileName stringByDeletingPathExtension];
+                NSRange lastSeparator = [nameWithoutExtension rangeOfString:@" - " options:NSBackwardsSearch];
+                NSString* identifier = lastSeparator.location == NSNotFound
+                    ? nameWithoutExtension
+                    : [nameWithoutExtension substringFromIndex:NSMaxRange(lastSeparator)];
+                if (![requestedHashes containsObject:identifier]) continue;
+                NSMutableOrderedSet<NSURL*>* physicalURLs = physicalURLsByHash[identifier];
+                if (!physicalURLs) {
+                    physicalURLs = [NSMutableOrderedSet orderedSet];
+                    physicalURLsByHash[identifier] = physicalURLs;
+                }
+                NSURL* fileURL = [NSURL fileURLWithPath:[storagePath stringByAppendingPathComponent:fileName]];
+                [physicalURLs addObject:fileURL];
+            }
         }
 
         for (NSDictionary* item in items) {
@@ -2051,7 +3065,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
             }];
         }
 
-        ICRemoveTranscriptCacheForEpisodeHashes(successfullyRemovedHashes);
+        if (!physicalURLSnapshot) ICRemoveTranscriptCacheForEpisodeHashes(successfullyRemovedHashes);
         dispatch_async(dispatch_get_main_queue(), ^{
             [self _finishCacheFileDeletionForItems:items
                                            results:results
@@ -2195,6 +3209,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         void (^completion)(NSError*) = completionObject;
         completion(error);
     }
+    if (_subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]) {
+        [self _resumeDownloadsAfterSubscriptionCleanupProtectionChange:nil];
+    }
 }
 
 - (void)_presentCacheDeletionError:(NSError*)error automatic:(BOOL)automatic
@@ -2215,7 +3232,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (BOOL) isCaching
 {
-	return (_downloadOperationsByIdentifier.count > 0 || _streamingCacheLeaseTokensByIdentifier.count > 0);
+	return (_downloadOperationsByIdentifier.count > 0
+        || _streamingCacheLeaseTokensByIdentifier.count > 0
+        || _subscriptionCleanupDeferredDownloadInfosByIdentifier.count > 0);
 }
 
 - (CACHE_OPERATION_CLASS*) _cacheOperationForEpisode:(CDEpisode*)episode
@@ -2238,6 +3257,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     [_manuallySuspendedDownloadIdentifiers removeObject:identifier];
     [self _removeSavedCachingInfoForIdentifier:identifier];
     [self _removeCachingEpisodeForIdentifierIfUnowned:identifier];
+    if (_subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]) {
+        [self _resumeDownloadsAfterSubscriptionCleanupProtectionChange:nil];
+    }
     return YES;
 }
 
@@ -2278,25 +3300,31 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 - (BOOL) isCachingEpisode:(CDEpisode*)episode
 {
     NSString* identifier = episode.objectHash;
-    return identifier.length > 0 && [_cachingEpisodeHashes containsObject:identifier];
+    return identifier.length > 0
+        && ([_cachingEpisodeHashes containsObject:identifier]
+            || _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]);
 }
 
 - (BOOL) isCachingFeed:(CDFeed*)feed
 {
     NSArray* operations = [_downloadOperationsByIdentifier.allValues copy];
-	for(CACHE_OPERATION_CLASS* operation in operations) {
+    for(CACHE_OPERATION_CLASS* operation in operations) {
         CDEpisode* episode = (CDEpisode*)operation.userInfo;
         if (![operation isCancelled] && [episode.feed isEqual:feed]) {
             return YES;
         }
 	}
 
+    for (CDEpisode* episode in _subscriptionCleanupDeferredDownloadEpisodesByIdentifier.allValues) {
+        if ([episode.feed isEqual:feed]) return YES;
+    }
+
     return NO;
 }
 
 - (void) cancelCaching
 {
-    for (CDEpisode* episode in [_cachingEpisodes copy]) {
+    for (CDEpisode* episode in [self cachingEpisodes]) {
         [self cancelCachingEpisode:episode disableAutoDownload:NO];
     }
 }
@@ -2306,26 +3334,36 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     [self _cancelCachingEpisode:episode disableAutoDownload:disableAutodownload completion:nil];
 }
 
+- (void)_cancelDownloadOperationForStreamingTransition:(CACHE_OPERATION_CLASS*)operation
+{
+    NSString* identifier = operation.identifier;
+    if (identifier.length == 0) return;
+    BOOL hasPendingYield = _downloadPauseYieldTokensByIdentifier[identifier] != nil;
+    if (!hasPendingYield &&
+        (operation.cancelled ||
+         operation.finished ||
+         [_finalizingDownloadOperationIdentifiers containsObject:identifier])) {
+        return;
+    }
+    if (_downloadOperationsByIdentifier[identifier] == operation) {
+        [_downloadPauseYieldTokensByIdentifier removeObjectForKey:identifier];
+        [self _cancelTrackedDownloadOperationAfterDurableIntent:operation];
+    }
+}
+
 - (void)_cancelCachingEpisode:(CDEpisode*)episode
           disableAutoDownload:(BOOL)disableAutodownload
                    completion:(void (^)(BOOL waitsForOperationEnd, NSError* error))completion
 {
     NSAssert([NSThread isMainThread], @"Download cancellation lifecycle must run on the main thread");
-    BOOL hasStreamingCache = [self _hasStreamingCacheForEpisode:episode];
 	CACHE_OPERATION_CLASS* operation = [self _cacheOperationForEpisode:episode];
-	if (operation && [_finalizingDownloadOperationIdentifiers containsObject:operation.identifier]) {
-        if (disableAutodownload) {
-            [self.cacheHistory setEpisode:episode didAutoDownload:YES completion:^(NSError* error) {
-                if (error) ErrLog(@"could not disable auto-download after cancellation: %@", error);
-            }];
-        }
-        if (completion) completion(YES, nil);
-        return;
-	}
     NSString *identifier = episode.objectHash;
+    BOOL operationIsFinalizing = operation
+        && [_finalizingDownloadOperationIdentifiers containsObject:operation.identifier];
     BOOL needsDeferredRestoreCommit = [InstacastBackupImporter ownsDeferredDownloadWithObjectHash:identifier];
     if (identifier.length == 0 || !needsDeferredRestoreCommit) {
-        BOOL waitsForOperationEnd = operation && operation.isExecuting;
+        BOOL waitsForOperationEnd = operation
+            && (operation.isExecuting || operationIsFinalizing);
         [self _cancelCachingEpisodeAfterDurableIntent:episode disableAutoDownload:disableAutodownload];
         if (completion) completion(waitsForOperationEnd, nil);
         return;
@@ -2365,7 +3403,11 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         }
 
         CACHE_OPERATION_CLASS *currentOperation = [self _cacheOperationForEpisode:episode];
-        BOOL waitsForOperationEnd = currentOperation && currentOperation.isExecuting;
+        BOOL currentOperationIsFinalizing = currentOperation
+            && [self->_finalizingDownloadOperationIdentifiers
+                containsObject:currentOperation.identifier];
+        BOOL waitsForOperationEnd = currentOperation
+            && (currentOperation.isExecuting || currentOperationIsFinalizing);
         [self _cancelCachingEpisodeAfterDurableIntent:episode disableAutoDownload:disableAutodownload];
         [InstacastBackupImporter retryPendingDeferredRestoreIfNeeded];
         for (void (^pendingCompletion)(BOOL, NSError*) in completions) {
@@ -2377,14 +3419,26 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 - (void)_cancelTrackedDownloadOperationAfterDurableIntent:(CACHE_OPERATION_CLASS*)operation
 {
     if (!operation) return;
-    [_downloadPauseYieldTokensByIdentifier removeObjectForKey:operation.identifier];
-    [self _removeSavedCachingInfoForIdentifier:operation.identifier];
+    NSString* identifier = operation.identifier;
+    BOOL operationWasExecuting = operation.isExecuting;
+    BOOL mustInvalidateBackgroundSession = !operationWasExecuting &&
+        _backgroundSessionCompletionHandlers[identifier] != nil;
+    if (mustInvalidateBackgroundSession &&
+        _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]) {
+        [_subscriptionCleanupBackgroundSessionCancellationIdentifiers addObject:identifier];
+    }
+    [_downloadPauseYieldTokensByIdentifier removeObjectForKey:identifier];
+    [self _removeSavedCachingInfoForIdentifier:identifier];
     [operation cancel];
 
-    if (![operation isExecuting]) {
+    if (!operationWasExecuting) {
         [self _removeTrackedDownloadOperation:operation];
-        [self _completeBackgroundSessionForIdentifier:operation.identifier];
-        [self _automaticRetryOperationDidFinishWithIdentifier:operation.identifier];
+        if (mustInvalidateBackgroundSession) {
+            [self _cancelOrphanedBackgroundSession:identifier];
+        } else {
+            [self _completeBackgroundSessionForIdentifier:identifier];
+        }
+        [self _automaticRetryOperationDidFinishWithIdentifier:identifier];
         [self _startNextDownloadOperations];
         [self _finishDownloadBatchAfterOperation:operation];
         [self coalescedPerformSelector:@selector(_postDidUpdateNotification) afterDelay:0.1];
@@ -2394,11 +3448,15 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 - (void)_cancelCachingEpisodeAfterDurableIntent:(CDEpisode*)episode
                             disableAutoDownload:(BOOL)disableAutodownload
 {
+    [self _removeDownloadDeferredBySubscriptionCleanupForIdentifier:episode.objectHash
+                                                 removeNormalDescriptor:YES];
     BOOL hasStreamingCache = [self _hasStreamingCacheForEpisode:episode];
 	CACHE_OPERATION_CLASS* operation = [self _cacheOperationForEpisode:episode];
-	if (operation)  {
+    BOOL operationIsFinalizing = operation
+        && [_finalizingDownloadOperationIdentifiers containsObject:operation.identifier];
+	if (operation && !operationIsFinalizing)  {
         [self _cancelTrackedDownloadOperationAfterDurableIntent:operation];
-    } else if (!hasStreamingCache && [self isCachingEpisode:episode]) {
+    } else if (!operationIsFinalizing && !hasStreamingCache && [self isCachingEpisode:episode]) {
         NSString* identifier = episode.objectHash;
         [self willChangeValueForKey:@"cachingEpisodes"];
         [_cachingEpisodes removeObject:episode];
@@ -2437,6 +3495,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         ownerEpisode = operationEpisode;
     }
 
+    [self _removeDownloadDeferredBySubscriptionCleanupForIdentifier:objectHash
+                                                 removeNormalDescriptor:YES];
     if (ownerEpisode) {
         [self _cancelCachingEpisodeAfterDurableIntent:ownerEpisode disableAutoDownload:NO];
     } else {
@@ -2444,8 +3504,15 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         NSString *streamingLeaseToken = _streamingCacheLeaseTokensByIdentifier[objectHash];
         if (streamingLeaseToken.length > 0) {
             cancelledStreamingWithoutEpisode = YES;
+            [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidCancelStreamingCacheEpisodeNotification
+                                                                object:self
+                                                              userInfo:@{
+                                                                  @"episodeHash" : objectHash,
+                                                                  @"leaseToken" : streamingLeaseToken,
+                                                              }];
             [_streamingCacheLeaseTokensByIdentifier removeObjectForKey:objectHash];
             [_streamingCacheProgresses removeObjectForKey:objectHash];
+            [self _removeStreamingCacheBytesForIdentifier:objectHash];
             [self _postDidUpdateNotification];
             [self _invalidateDownloadedBytesAndRecalculate];
         }
@@ -2454,6 +3521,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     [self _removeCachingEpisodeForIdentifierIfUnowned:objectHash];
     BOOL ownerRemoved = !_downloadOperationsByIdentifier[objectHash]
         && !_streamingCacheLeaseTokensByIdentifier[objectHash]
+        && !_subscriptionCleanupDeferredDownloadInfosByIdentifier[objectHash]
         && ![_cachingEpisodeHashes containsObject:objectHash];
     if (cancelledStreamingWithoutEpisode && ownerRemoved && ![self isCaching]) {
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
@@ -2509,10 +3577,12 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                                         object:self
                                                       userInfo:@{
                                                           @"episode" : episode,
+                                                          @"episodeHash" : key,
                                                           @"leaseToken" : leaseToken,
                                                       }];
+    [self _removeStreamingCacheBytesForIdentifier:key];
     [self _postDidUpdateNotification];
-    [self _invalidateDownloadedBytesAndRecalculate];
+    [self autoClearAndMakeRoomForBytes:0 automatic:YES];
     if (![self isCaching]) {
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
     }
@@ -2520,17 +3590,206 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (void) cancelCachingFeed:(CDFeed*)feed
 {
+    if (!feed) return;
+    [self cancelCachingFeeds:@[feed] completion:^(NSError* error) {
+        if (error) ErrLog(@"could not clear failed downloads for feed: %@", error);
+    }];
+}
+
+- (void)cancelCachingFeeds:(NSArray<CDFeed*>*)feeds
+                  completion:(void (^)(NSError* error))completion
+{
+    [self _cancelCachingFeeds:feeds
+ preserveSubscriptionCleanupDeferredStarts:NO
+                  completion:completion];
+}
+
+- (void)_cancelCachingFeeds:(NSArray<CDFeed*>*)feeds
+preserveSubscriptionCleanupDeferredStarts:(BOOL)preserveDeferredStarts
+                  completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _cancelCachingFeeds:feeds
+         preserveSubscriptionCleanupDeferredStarts:preserveDeferredStarts
+                          completion:completion];
+        });
+        return;
+    }
+
+    feeds = [NSOrderedSet orderedSetWithArray:feeds ?: @[]].array;
+    if (feeds.count == 0) {
+        if (completion) completion(nil);
+        return;
+    }
+
+    NSError* databaseUnavailableError = [NSError errorWithDomain:@"CacheManager"
+                                                             code:53
+                                                         userInfo:@{NSLocalizedDescriptionKey: @"Podcast download data could not be accessed for cleanup. Please restart InstacastPlus and try again.".ls}];
+    NSMutableArray<NSURL*>* feedObjectURIs = [NSMutableArray arrayWithCapacity:feeds.count];
+    for (CDFeed* feed in feeds) {
+        if (feed.objectID && !feed.objectID.isTemporaryID) {
+            [feedObjectURIs addObject:feed.objectID.URIRepresentation];
+        }
+    }
+    if (feedObjectURIs.count != feeds.count) {
+        if (completion) completion(databaseUnavailableError);
+        return;
+    }
+
+    NSSet<CDFeed*>* feedSet = [NSSet setWithArray:feeds];
+    NSMutableSet<NSString*>* handledIdentifiers = [NSMutableSet set];
     for (CDEpisode* episode in [_cachingEpisodes copy]) {
-        if ([episode.feed isEqual:feed])
-        {
+        if ([feedSet containsObject:episode.feed]) {
+            NSString* identifier = episode.objectHash;
+            if (identifier.length > 0) [handledIdentifiers addObject:identifier];
+            if (preserveDeferredStarts &&
+                _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]) {
+                CACHE_OPERATION_CLASS* operation = _downloadOperationsByIdentifier[identifier];
+                if (operation) {
+                    [self _cancelTrackedDownloadOperationAfterDurableIntent:operation];
+                }
+                if ([self _hasStreamingCacheForEpisode:episode]) {
+                    [self _cancelStreamingCacheForEpisodeAfterDurableIntent:episode
+                                                         disableAutoDownload:NO];
+                }
+                continue;
+            }
             [self cancelCachingEpisode:episode disableAutoDownload:NO];
         }
     }
-    for (CDEpisode* episode in [_failedDownloadEpisodes copy]) {
-        if ([episode.feed isEqual:feed]) {
-            [self clearDownloadErrorForEpisode:episode];
+    if (!preserveDeferredStarts) {
+        for (NSString* identifier in
+             [_subscriptionCleanupDeferredDownloadEpisodesByIdentifier.allKeys copy]) {
+            CDEpisode* episode = _subscriptionCleanupDeferredDownloadEpisodesByIdentifier[identifier];
+            if (![handledIdentifiers containsObject:identifier]
+                && [feedSet containsObject:episode.feed]) {
+                [self cancelCachingEpisode:episode disableAutoDownload:NO];
+            }
         }
     }
+
+    NSSet<NSString*>* immutableInMemoryFailedEpisodeHashes = [_failedDownloadEpisodeHashes copy];
+    NSArray<NSURL*>* immutableFeedObjectURIs = [feedObjectURIs copy];
+    dispatch_async(_failedDownloadPersistenceQueue, ^{
+        [self _migrateLegacyFailedDownloadsNow];
+        NSFileManager* fileManager = [[NSFileManager alloc] init];
+        NSString* directoryPath = [self _failedDownloadsStateDirectoryPath];
+        NSError* listingError = nil;
+        NSArray<NSString*>* filenames = [fileManager contentsOfDirectoryAtPath:directoryPath error:&listingError];
+        if (!filenames && ICCacheFileErrorMeansMissing(listingError)) {
+            filenames = @[];
+            listingError = nil;
+        }
+        if (listingError) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) completion(databaseUnavailableError);
+            });
+            return;
+        }
+
+        NSMutableSet<NSString*>* persistedFailedEpisodeHashes = [NSMutableSet set];
+        NSError* firstReadError = nil;
+        for (NSString* filename in filenames) {
+            if (![filename.pathExtension isEqualToString:@"failed-download"]) {
+                continue;
+            }
+            NSString* path = [directoryPath stringByAppendingPathComponent:filename];
+            NSError* readError = nil;
+            NSData* data = [NSData dataWithContentsOfFile:path options:0 error:&readError];
+            if (!data) {
+                if (!ICCacheFileErrorMeansMissing(readError) && !firstReadError) {
+                    firstReadError = readError;
+                }
+                continue;
+            }
+            NSError* propertyListError = nil;
+            NSDictionary* metadata = [NSPropertyListSerialization propertyListWithData:data
+                                                                                options:NSPropertyListImmutable
+                                                                                 format:NULL
+                                                                                  error:&propertyListError];
+            if (![metadata isKindOfClass:[NSDictionary class]] || propertyListError) {
+                continue;
+            }
+            NSString* episodeHash = metadata[@"episodeHash"];
+            if (episodeHash.length > 0) {
+                [persistedFailedEpisodeHashes addObject:episodeHash];
+            }
+        }
+        if (firstReadError) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) completion(databaseUnavailableError);
+            });
+            return;
+        }
+
+        NSMutableSet<NSString*>* candidateFailedEpisodeHashes = [NSMutableSet setWithSet:immutableInMemoryFailedEpisodeHashes];
+        [candidateFailedEpisodeHashes unionSet:persistedFailedEpisodeHashes];
+        if (candidateFailedEpisodeHashes.count == 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (completion) completion(nil);
+            });
+            return;
+        }
+
+        NSArray<NSString*>* immutableCandidateFailedEpisodeHashes = candidateFailedEpisodeHashes.allObjects;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            NSManagedObjectContext* selectionContext = [DMANAGER newICloudSyncBackgroundContext];
+            if (!selectionContext) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (completion) completion(databaseUnavailableError);
+                });
+                return;
+            }
+            [selectionContext performBlock:^{
+                NSError* selectionError = nil;
+                NSPersistentStoreCoordinator* selectionCoordinator = selectionContext.persistentStoreCoordinator;
+                NSMutableArray<CDFeed*>* backgroundFeeds = [NSMutableArray arrayWithCapacity:immutableFeedObjectURIs.count];
+                for (NSURL* feedObjectURI in immutableFeedObjectURIs) {
+                    NSManagedObjectID* feedObjectID = [selectionCoordinator managedObjectIDForURIRepresentation:feedObjectURI];
+                    if (!feedObjectID) {
+                        selectionError = databaseUnavailableError;
+                        break;
+                    }
+                    CDFeed* feed = (CDFeed*)[selectionContext existingObjectWithID:feedObjectID error:&selectionError];
+                    if (!feed || selectionError) break;
+                    [backgroundFeeds addObject:feed];
+                }
+
+                NSMutableSet<NSString*>* matchedEpisodeHashes = [NSMutableSet set];
+                const NSUInteger failedDownloadSelectionHashBatchSize = 400;
+                for (NSUInteger offset = 0;
+                     !selectionError && offset < immutableCandidateFailedEpisodeHashes.count;
+                     offset += failedDownloadSelectionHashBatchSize) {
+                    NSRange hashRange = NSMakeRange(offset,
+                                                    MIN(failedDownloadSelectionHashBatchSize,
+                                                        immutableCandidateFailedEpisodeHashes.count - offset));
+                    NSArray<NSString*>* hashBatch = [immutableCandidateFailedEpisodeHashes subarrayWithRange:hashRange];
+                    NSFetchRequest* request = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+                    request.predicate = [NSPredicate predicateWithFormat:@"feed IN %@ AND objectHash IN %@",
+                                         backgroundFeeds,
+                                         hashBatch];
+                    request.resultType = NSDictionaryResultType;
+                    request.propertiesToFetch = @[@"objectHash"];
+                    request.returnsDistinctResults = YES;
+                    NSArray<NSDictionary*>* rows = [selectionContext executeFetchRequest:request error:&selectionError];
+                    for (NSDictionary* row in rows) {
+                        NSString* episodeHash = row[@"objectHash"];
+                        if (episodeHash.length > 0) [matchedEpisodeHashes addObject:episodeHash];
+                    }
+                }
+
+                NSSet<NSString*>* immutableMatchedEpisodeHashes = [matchedEpisodeHashes copy];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (selectionError) {
+                        if (completion) completion(selectionError);
+                        return;
+                    }
+                    [self _clearDownloadErrorsForEpisodeHashes:immutableMatchedEpisodeHashes completion:completion];
+                });
+            }];
+        });
+    });
 }
 
 
@@ -2585,7 +3844,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	NSArray* operations = [_downloadOperationsByIdentifier.allValues copy];
 	for(CACHE_OPERATION_CLASS* operation in operations) {
 		BOOL manuallySuspended = [_manuallySuspendedDownloadIdentifiers containsObject:operation.identifier];
-		operation.suspended = ![self _networkAllowsDownloadOperation:operation] || manuallySuspended;
+        CDEpisode* episode = [operation.userInfo isKindOfClass:[CDEpisode class]]
+            ? operation.userInfo : nil;
+		operation.suspended = ![self _networkAllowsDownloadOperation:operation] || manuallySuspended
+            || [self _subscriptionCleanupBlocksEpisode:episode];
     }
     [self _startNextDownloadOperations];
     [self _drainPendingAutomaticRetries];
@@ -2597,7 +3859,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	if (operation) {
 		[_manuallySuspendedDownloadIdentifiers removeObject:operation.identifier];
 		[self _persistCachingOperation:operation];
-		operation.suspended = self.suspended || ![self _networkAllowsDownloadOperation:operation];
+		operation.suspended = self.suspended || ![self _networkAllowsDownloadOperation:operation]
+            || [self _subscriptionCleanupBlocksEpisode:episode];
 		[self _startNextDownloadOperations];
 	}
 }
@@ -2685,7 +3948,28 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (NSArray*) cachingEpisodes
 {
-	return [_cachingEpisodes copy];
+	NSMutableOrderedSet<CDEpisode*>* episodes =
+        [NSMutableOrderedSet orderedSetWithArray:_cachingEpisodes];
+    NSArray<NSString*>* deferredIdentifiers =
+        [_subscriptionCleanupDeferredDownloadInfosByIdentifier.allKeys
+            sortedArrayUsingComparator:^NSComparisonResult(NSString* left, NSString* right) {
+                NSNumber* leftRank = self->_subscriptionCleanupDeferredDownloadInfosByIdentifier[left][@"queueRank"];
+                NSNumber* rightRank = self->_subscriptionCleanupDeferredDownloadInfosByIdentifier[right][@"queueRank"];
+                NSComparisonResult rankOrder = [leftRank compare:rightRank];
+                return rankOrder == NSOrderedSame ? [left compare:right] : rankOrder;
+            }];
+    for (NSString* identifier in deferredIdentifiers) {
+        CDEpisode* episode = _subscriptionCleanupDeferredDownloadEpisodesByIdentifier[identifier];
+        if (episode) [episodes addObject:episode];
+    }
+	return episodes.array;
+}
+
+- (BOOL) canReorderCachingEpisodes
+{
+    return _subscriptionCleanupDeferredDownloadInfosByIdentifier.count == 0
+        && _streamingCacheLeaseTokensByIdentifier.count == 0
+        && _cachingEpisodes.count == _downloadOperationsByIdentifier.count;
 }
 
 - (NSArray<CDEpisode*>*) failedDownloadEpisodes
@@ -3098,6 +4382,14 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     for (CDEpisode* episode in episodes) {
         if (episode.objectHash.length > 0) [identifiers addObject:episode.objectHash];
     }
+    [self _clearDownloadErrorsForEpisodeHashes:identifiers completion:completion];
+}
+
+- (void)_clearDownloadErrorsForEpisodeHashes:(NSSet<NSString*>*)episodeHashes
+                                    completion:(void (^)(NSError* error))completion
+{
+    NSAssert([NSThread isMainThread], @"Failed-download state must be mutated on the main thread");
+    NSSet<NSString*>* identifiers = [episodeHashes copy] ?: [NSSet set];
     if (identifiers.count == 0) {
         if (completion) completion(nil);
         return;
@@ -3244,15 +4536,16 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         if (error) *error = [self _downloadStartError:@"The download cannot be retried while downloaded files are being cleared. Wait for the operation to finish and try again.".ls];
         return NO;
     }
-    if (_cacheDeletionTokensByIdentifier[identifier]) {
+    BOOL subscriptionCleanupBlocked = [self _subscriptionCleanupBlocksEpisode:episode];
+    if (!subscriptionCleanupBlocked && _cacheDeletionTokensByIdentifier[identifier]) {
         if (error) *error = [self _downloadStartError:@"The download is still being removed. Wait for the operation to finish and try again.".ls];
         return NO;
     }
-    if (_cacheImportTokensByIdentifier[identifier]) {
+    if (!subscriptionCleanupBlocked && _cacheImportTokensByIdentifier[identifier]) {
         if (error) *error = [self _downloadStartError:@"A file is currently being imported for this episode. Wait for the import to finish and try again.".ls];
         return NO;
     }
-    if ([self episodeIsCached:episode]) {
+    if (!subscriptionCleanupBlocked && [self episodeIsCached:episode]) {
         [self clearDownloadErrorForEpisode:episode];
         return YES;
     }
@@ -3264,6 +4557,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
     BOOL automatic = [metadata[@"automatic"] boolValue];
     BOOL overwriteCellularLock = [metadata[@"overwriteCellularLock"] boolValue];
+    BOOL preservesConsumedState = [metadata[@"preservesConsumedState"] boolValue];
     if (automatic) {
         _automaticRetryAttemptsByActiveEpisodeHash[identifier] = @([metadata[ICAutomaticDownloadRetryAttemptKey] unsignedIntegerValue]);
     }
@@ -3271,7 +4565,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                              autoCache:automatic
                overwriteCellularLock:overwriteCellularLock
                   reportsFailureToUser:NO
-                              queueRank:nil];
+                              queueRank:nil
+                preservesConsumedState:preservesConsumedState
+         deferDuringSubscriptionCleanup:YES];
     if (!started) {
         NSError* retryError = [self downloadErrorForEpisode:episode] ?: [self _downloadStartError:@"The episode download could not be started.".ls];
         [_automaticRetryMetadataUpdateEpisodeHashes addObject:identifier];
@@ -3280,6 +4576,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                          automatic:automatic
             overwriteCellularLock:overwriteCellularLock
               reportsFailureToUser:YES
+            preservesConsumedState:preservesConsumedState
                         completion:nil];
         [_automaticRetryMetadataUpdateEpisodeHashes removeObject:identifier];
         [_automaticRetryAttemptsByActiveEpisodeHash removeObjectForKey:identifier];
@@ -3448,7 +4745,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         });
         return;
     }
-    if (!_cacheIndexReady || !self.cacheHistory.isLoaded || _clearingAllCache) {
+    if (!_cacheIndexReady || !self.cacheHistory.isLoaded || _clearingAllCache ||
+        [self _subscriptionCleanupBlocksEpisode:nil]) {
         return;
     }
     if (_automaticRetryScanInProgress) {
@@ -3489,6 +4787,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         NSString* identifier = episode.objectHash;
         NSDictionary* metadata = identifier.length > 0 ? _failedDownloadMetadataByEpisodeHash[identifier] : nil;
         if (![metadata[@"automatic"] boolValue] || [_automaticRetrySuppressedEpisodeHashes containsObject:identifier]) {
+            continue;
+        }
+        if ([self _subscriptionCleanupBlocksEpisode:episode]) {
             continue;
         }
         if ([self _automaticRetryFailureIsStaleForEpisode:episode]) {
@@ -3549,13 +4850,31 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     if (!_cacheIndexReady || !self.cacheHistory.isLoaded || ![self canDownload] || self.suspended || _clearingAllCache) {
         return;
     }
+    if (_automaticRetryDrainRemainingCount > 0) {
+        _automaticRetryDrainRescanRequested = YES;
+    } else {
+        _automaticRetryDrainRemainingCount = _pendingAutomaticRetryEpisodeHashes.count;
+    }
+    [self _continueDrainingPendingAutomaticRetries];
+}
 
-    NSUInteger processedCount = 0;
+- (void)_continueDrainingPendingAutomaticRetries
+{
+    NSAssert([NSThread isMainThread], @"Automatic retry draining belongs to the main thread");
+    _automaticRetryDrainContinuationScheduled = NO;
+    if (!_cacheIndexReady || !self.cacheHistory.isLoaded || ![self canDownload]
+        || self.suspended || _clearingAllCache) {
+        return;
+    }
+
+    NSUInteger inspectedCount = 0;
     while (_pendingAutomaticRetryEpisodeHashes.count > 0 &&
-           processedCount < ICAutomaticDownloadRetryScanBatchSize &&
+           _automaticRetryDrainRemainingCount > 0 &&
+           inspectedCount < ICAutomaticDownloadRetryScanBatchSize &&
            _downloadOperationsByIdentifier.count < ICAutomaticDownloadRetryTrackedCapacity &&
            _automaticRetryInFlightEpisodeHashes.count < ICAutomaticDownloadRetryTrackedCapacity) {
-        processedCount += 1;
+        inspectedCount += 1;
+        _automaticRetryDrainRemainingCount -= 1;
         NSString* identifier = _pendingAutomaticRetryEpisodeHashes.firstObject;
         [_pendingAutomaticRetryEpisodeHashes removeObjectAtIndex:0];
         if (identifier.length == 0 || [_automaticRetrySuppressedEpisodeHashes containsObject:identifier]) {
@@ -3574,6 +4893,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                     break;
                 }
             }
+            continue;
+        }
+        if ([self _subscriptionCleanupBlocksEpisode:episode]) {
+            [_pendingAutomaticRetryEpisodeHashes addObject:identifier];
             continue;
         }
         if ([self _automaticRetryFailureIsStaleForEpisode:episode]) {
@@ -3601,9 +4924,20 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
             [_automaticRetryAttemptsByActiveEpisodeHash removeObjectForKey:identifier];
         }
     }
-    if (_pendingAutomaticRetryEpisodeHashes.count > 0 &&
+    if (_pendingAutomaticRetryEpisodeHashes.count == 0) {
+        _automaticRetryDrainRemainingCount = 0;
+    }
+    if (_automaticRetryDrainRemainingCount > 0 &&
         _downloadOperationsByIdentifier.count < ICAutomaticDownloadRetryTrackedCapacity &&
-        _automaticRetryInFlightEpisodeHashes.count < ICAutomaticDownloadRetryTrackedCapacity) {
+        _automaticRetryInFlightEpisodeHashes.count < ICAutomaticDownloadRetryTrackedCapacity &&
+        !_automaticRetryDrainContinuationScheduled) {
+        _automaticRetryDrainContinuationScheduled = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _continueDrainingPendingAutomaticRetries];
+        });
+    } else if (_automaticRetryDrainRemainingCount == 0 &&
+               _automaticRetryDrainRescanRequested) {
+        _automaticRetryDrainRescanRequested = NO;
         dispatch_async(dispatch_get_main_queue(), ^{
             [self _drainPendingAutomaticRetries];
         });
@@ -3624,6 +4958,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                    automatic:(BOOL)automatic
       overwriteCellularLock:(BOOL)overwriteCellularLock
         reportsFailureToUser:(BOOL)reportsFailureToUser
+      preservesConsumedState:(BOOL)preservesConsumedState
                   completion:(void (^)(NSError* error))completion
 {
     if (!episode || episode.objectHash.length == 0 || !error) {
@@ -3637,6 +4972,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                      @"automatic": @(automatic),
                                      @"overwriteCellularLock": @(overwriteCellularLock),
                                      @"reportsFailureToUser": @(reportsFailureToUser),
+                                     @"preservesConsumedState": @(preservesConsumedState),
                                      @"error": error.localizedDescription ?: @"",
                                  }];
     NSString* episodeHash = episode.objectHash;
@@ -3650,6 +4986,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         @"overwriteCellularLock": @(overwriteCellularLock),
         @"automatic": @(automatic),
         @"reportsFailureToUser": @(reportsFailureToUser),
+        @"preservesConsumedState": @(preservesConsumedState),
     } mutableCopy];
     if (automatic) {
         BOOL metadataOnlyUpdate = [_automaticRetryMetadataUpdateEpisodeHashes containsObject:episodeHash];
@@ -3694,6 +5031,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
 - (void) reorderCachingEpisodeFromIndex:(NSUInteger)fromIndex toIndex:(NSUInteger)toIndex
 {
+    if (![self canReorderCachingEpisodes]) {
+        return;
+    }
     if (fromIndex >= _cachingEpisodes.count || toIndex >= _cachingEpisodes.count || fromIndex == toIndex) {
         return;
     }
@@ -3827,6 +5167,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	if (succeeded)
 	{
         [_finalizingDownloadOperationIdentifiers addObject:operation.identifier];
+        [_scheduledDownloadOperationIdentifiers removeObject:operation.identifier];
+        [self _startNextDownloadOperations];
         [self _persistSuccessfulDownloadForOperation:operation completion:^(NSError* error) {
             [self _finishCacheOperationDidEnd:operation persistenceError:error];
         }];
@@ -3857,7 +5199,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     };
 
     @try {
-        if (!operation.automatic) {
+        if (!operation.automatic && !operation.preservesConsumedState) {
             episode.consumed = NO;
         }
         episode.lastDownloaded = [NSDate date];
@@ -4040,6 +5382,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                          automatic:operation.automatic
             overwriteCellularLock:operation.overwriteCellularLock
               reportsFailureToUser:operation.reportsFailureToUser
+            preservesConsumedState:operation.preservesConsumedState
                         completion:failurePersistenceCompletion];
 #if TARGET_OS_IPHONE
         if (operation.reportsFailureToUser && !operation.automatic && App.applicationState == UIApplicationStateActive) {
@@ -4090,14 +5433,18 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     if (_downloadOperationsByIdentifier.count > 0 || _totalOps == 0) {
         return;
     }
+    [_updateTimer invalidate];
+    _updateTimer = nil;
+    _rateDate = nil;
+    _rateBytes = 0;
+    self.rate = 0;
+    if (_subscriptionCleanupDeferredDownloadInfosByIdentifier.count > 0) return;
 
     BOOL queueHadFailure = _currentQueueHadFailure;
     _currentQueueHadFailure = NO;
     _totalOps = 0;
     self.suspended = NO;
     [USER_DEFAULTS setBool:NO forKey:ICDownloadQueueSuspended];
-    [_updateTimer invalidate];
-    _updateTimer = nil;
     BOOL hasStreamingCache = (_streamingCacheLeaseTokensByIdentifier.count > 0);
 
     if (!hasStreamingCache && operation && !queueHadFailure && !operation.cancelled && !operation.failed) {
@@ -4231,7 +5578,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 	if (operation) {
 		return ([operation isExecuting] && operation.suspended);
 	}
-	return 0;
+    NSDictionary* deferredInfo =
+        _subscriptionCleanupDeferredDownloadInfosByIdentifier[episode.objectHash];
+    return deferredInfo != nil
+        && (self.suspended || [deferredInfo[@"suspended"] boolValue]);
 }
 
 - (NSString*) _streamingCacheKeyForEpisode:(CDEpisode*)episode
@@ -4246,15 +5596,46 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     return (key && _streamingCacheLeaseTokensByIdentifier[key] != nil);
 }
 
-- (NSString*) beginStreamingCacheForEpisode:(CDEpisode*)episode acquiredNewLease:(BOOL*)acquiredNewLease
+- (NSString*) beginStreamingCacheForEpisode:(CDEpisode*)episode
+                           acquiredNewLease:(BOOL*)acquiredNewLease
 {
     if (acquiredNewLease) *acquiredNewLease = NO;
     NSString* key = [self _streamingCacheKeyForEpisode:episode];
-    if (!key || _clearingAllCache || _cacheDeletionTokensByIdentifier[key]) {
+    if (!key || _clearingAllCache) {
+        return nil;
+    }
+    CACHE_OPERATION_CLASS* sourceOperation = _downloadOperationsByIdentifier[key];
+    BOOL sourceOperationHasPendingYield = _downloadPauseYieldTokensByIdentifier[key] != nil;
+    if (sourceOperation &&
+        !sourceOperationHasPendingYield && sourceOperation.cancelled) {
+        sourceOperation = nil;
+    }
+    if (sourceOperation &&
+        !sourceOperationHasPendingYield &&
+        (sourceOperation.finished ||
+         [_finalizingDownloadOperationIdentifiers containsObject:key])) {
+        return nil;
+    }
+    if ([self _subscriptionCleanupBlocksEpisode:episode]) {
+        BOOL accepted = [self _deferDownloadUntilSubscriptionCleanupFinishes:episode
+                                                                    autoCache:NO
+                                                      overwriteCellularLock:YES
+                                                         reportsFailureToUser:NO
+                                                       preservesConsumedState:YES
+                                                                     queueRank:nil];
+        if (accepted && sourceOperation) {
+            [self _cancelDownloadOperationForStreamingTransition:sourceOperation];
+        }
+        return nil;
+    }
+    if (_cacheDeletionTokensByIdentifier[key]) {
         return nil;
     }
     NSString* existingLeaseToken = _streamingCacheLeaseTokensByIdentifier[key];
     if (existingLeaseToken.length > 0) {
+        if (sourceOperation) {
+            [self _cancelDownloadOperationForStreamingTransition:sourceOperation];
+        }
         return existingLeaseToken;
     }
     if (_cacheImportTokensByIdentifier[key] || [self episodeIsCached:episode]) {
@@ -4264,10 +5645,17 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
     BOOL wasCaching = [self isCaching];
     BOOL wasTrackingEpisode = [self isCachingEpisode:episode];
-    NSString* leaseToken = NSUUID.UUID.UUIDString;
+    NSString* leaseToken = nil;
+    do {
+        leaseToken = NSUUID.UUID.UUIDString;
+    } while ([_streamingCacheRecoveryCandidateTokens containsObject:leaseToken]);
     _streamingCacheLeaseTokensByIdentifier[key] = leaseToken;
     _streamingCacheProgresses[key] = @(0.0);
+    _streamingCacheBytesByIdentifier[key] = @0;
     if (acquiredNewLease) *acquiredNewLease = YES;
+    if (sourceOperation) {
+        [self _cancelDownloadOperationForStreamingTransition:sourceOperation];
+    }
 
     if (!wasTrackingEpisode) {
         [self willChangeValueForKey:@"cachingEpisodes"];
@@ -4284,7 +5672,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     return leaseToken;
 }
 
-- (void) updateStreamingCacheForEpisode:(CDEpisode*)episode progress:(double)progress leaseToken:(NSString*)leaseToken
+- (void) updateStreamingCacheForEpisode:(CDEpisode*)episode
+                               progress:(double)progress
+                        downloadedBytes:(unsigned long long)downloadedBytes
+                             leaseToken:(NSString*)leaseToken
 {
     NSString* key = [self _streamingCacheKeyForEpisode:episode];
     if (!key || ![_streamingCacheLeaseTokensByIdentifier[key] isEqualToString:leaseToken]) {
@@ -4293,8 +5684,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 
     double normalizedProgress = MIN(MAX(progress, 0.0), 1.0);
     _streamingCacheProgresses[key] = @(normalizedProgress);
+    [self _setStreamingCacheBytes:downloadedBytes forIdentifier:key];
 
     [self _postDidUpdateNotification];
+    unsigned long long maxAllowedBytes = (unsigned long long)[USER_DEFAULTS integerForKey:AutoCacheStorageLimit] * 1024LLU * 1024LLU;
+    if (!_downloadedBytesKnown || (maxAllowedBytes > 0 && _downloadedBytes > maxAllowedBytes)) {
+        [self autoClearAndMakeRoomForBytes:0 automatic:YES];
+    }
 }
 
 - (void) finishStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken
@@ -4304,11 +5700,13 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         return;
     }
 
+    [self _removeStreamingCacheBytesForIdentifier:key];
     [_streamingCacheLeaseTokensByIdentifier removeObjectForKey:key];
     [_streamingCacheProgresses removeObjectForKey:key];
     [self _removeCachingEpisodeForIdentifierIfUnowned:key];
 
     [self _postDidUpdateNotification];
+    [self autoClearAndMakeRoomForBytes:0 automatic:YES];
     if (![self isCaching]) {
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidEndCachingNotification object:self];
     }
@@ -4333,6 +5731,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                      automatic:NO
         overwriteCellularLock:NO
           reportsFailureToUser:YES
+        preservesConsumedState:YES
                     completion:nil];
     [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidFailCachingEpisodeNotification
                                                         object:self
@@ -4468,6 +5867,55 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     }
 }
 
+- (unsigned long long)_activeStreamingCacheBytes
+{
+    unsigned long long total = 0;
+    for (NSNumber* value in _streamingCacheBytesByIdentifier.allValues) {
+        unsigned long long bytes = value.unsignedLongLongValue;
+        total = ULLONG_MAX - total < bytes ? ULLONG_MAX : total + bytes;
+    }
+    return total;
+}
+
+- (void)_setStreamingCacheBytes:(unsigned long long)bytes forIdentifier:(NSString*)identifier
+{
+    if (identifier.length == 0) {
+        return;
+    }
+
+    unsigned long long previousBytes = [_streamingCacheBytesByIdentifier[identifier] unsignedLongLongValue];
+    if (previousBytes == bytes) {
+        return;
+    }
+    _streamingCacheBytesByIdentifier[identifier] = @(bytes);
+    if (!_downloadedBytesKnown) {
+        return;
+    }
+
+    if (bytes > previousBytes) {
+        unsigned long long addedBytes = bytes - previousBytes;
+        unsigned long long totalBytes = ULLONG_MAX - _downloadedBytes < addedBytes
+            ? ULLONG_MAX
+            : _downloadedBytes + addedBytes;
+        [self _setDownloadedBytes:totalBytes known:YES];
+    } else {
+        unsigned long long removedBytes = previousBytes - bytes;
+        [self _setDownloadedBytes:(removedBytes >= _downloadedBytes ? 0 : _downloadedBytes - removedBytes)
+                            known:YES];
+    }
+}
+
+- (void)_removeStreamingCacheBytesForIdentifier:(NSString*)identifier
+{
+    if (identifier.length == 0) {
+        return;
+    }
+    if (_streamingCacheBytesByIdentifier[identifier]) {
+        [self _setStreamingCacheBytes:0 forIdentifier:identifier];
+    }
+    [_streamingCacheBytesByIdentifier removeObjectForKey:identifier];
+}
+
 - (void)_addDownloadedBytes:(unsigned long long)bytes
 {
     if (bytes == 0) {
@@ -4512,7 +5960,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
         NSFileManager* fman = [[NSFileManager alloc] init];
         __block unsigned long long size = 0;
-        __block BOOL scanSnapshotValid = YES;
+        NSError* streamingCleanupError = nil;
+        __block BOOL scanSnapshotValid = [self _removeOrphanedStreamingCacheDirectoriesWithFileManager:fman
+                                                                                                  error:&streamingCleanupError];
+        NSString* streamingPath = [[CacheManager _pathToCache] stringByAppendingPathComponent:@"Streaming"];
         void (^accumulateDirectory)(NSString*) = ^(NSString* directoryPath) {
             if (!scanSnapshotValid || directoryPath.length == 0) {
                 if (directoryPath.length == 0) scanSnapshotValid = NO;
@@ -4534,6 +5985,10 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
             }];
             for (NSURL* fileURL in files) {
                 @autoreleasepool {
+                    if ([fileURL.path isEqualToString:streamingPath]) {
+                        [files skipDescendants];
+                        continue;
+                    }
                     NSError* resourceError = nil;
                     NSDictionary* values = [fileURL resourceValuesForKeys:@[NSURLIsRegularFileKey, NSURLFileSizeKey]
                                                                     error:&resourceError];
@@ -4568,10 +6023,14 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                 self->_downloadedBytesKnown = NO;
                 [[ICDiagnosticLogger shared] logEvent:@"cache"
                                               message:@"Download-Speicher konnte nicht vollständig gelesen werden"
-                                             metadata:@{}];
+                                             metadata:@{ @"error": streamingCleanupError.localizedDescription ?: @"" }];
                 return;
             }
-            [self _setDownloadedBytes:size known:YES];
+            unsigned long long activeStreamingBytes = [self _activeStreamingCacheBytes];
+            unsigned long long totalBytes = ULLONG_MAX - size < activeStreamingBytes
+                ? ULLONG_MAX
+                : size + activeStreamingBytes;
+            [self _setDownloadedBytes:totalBytes known:YES];
             if (self->_hasPendingAutoClear) {
                 unsigned long long pendingBytes = self->_pendingAutoClearBytes;
                 BOOL pendingAutomatic = self->_pendingAutoClearAutomatic;
@@ -4783,11 +6242,24 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     [_cachedURLIndex addEntriesFromDictionary:remainingURLs];
     [_cachingEpisodes removeAllObjects];
     [_cachingEpisodeHashes removeAllObjects];
+    [_subscriptionCleanupDeferredDownloadInfosByIdentifier removeAllObjects];
+    [_subscriptionCleanupDeferredDownloadEpisodesByIdentifier removeAllObjects];
+    [_subscriptionCleanupBackgroundSessionCancellationIdentifiers removeAllObjects];
+    _subscriptionCleanupPromotionRequested = NO;
+    _subscriptionCleanupPromotionIdentifiers = nil;
+    _subscriptionCleanupPromotionCursor = 0;
+    [_streamingCacheLeaseTokensByIdentifier removeAllObjects];
+    [_streamingCacheProgresses removeAllObjects];
+    [_streamingCacheBytesByIdentifier removeAllObjects];
+    [_streamingCacheRecoveryCandidateTokens removeAllObjects];
     [_scheduledDownloadOperationIdentifiers removeAllObjects];
     [_downloadQueueRanksByIdentifier removeAllObjects];
     [_manuallySuspendedDownloadIdentifiers removeAllObjects];
     _nextDownloadQueueRank = 0;
     _totalOps = 0;
+    _automaticRetryDrainRemainingCount = 0;
+    _automaticRetryDrainContinuationScheduled = NO;
+    _automaticRetryDrainRescanRequested = NO;
     [self didChangeValueForKey:@"cachedEpisodes"];
     _downloadedBytesGeneration += 1;
     [self _setDownloadedBytes:_cacheClearRemainingBytes known:YES];
@@ -4924,7 +6396,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
 {
     NSDictionary* defaults = [USER_DEFAULTS dictionaryRepresentation];
     for (NSString* key in defaults) {
-        if ([key hasPrefix:ICCachingEpisodeJobKeyPrefix]) {
+        if ([key hasPrefix:ICCachingEpisodeJobKeyPrefix]
+            || [key hasPrefix:ICSubscriptionCleanupDeferredDownloadJobKeyPrefix]) {
             [USER_DEFAULTS removeObjectForKey:key];
         }
     }
@@ -4949,6 +6422,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         @"automatic": @(operation.automatic),
         @"cellular": @(operation.overwriteCellularLock),
         @"reportsFailureToUser": @(operation.reportsFailureToUser),
+        @"preservesConsumedState": @(operation.preservesConsumedState),
         @"suspended": @([_manuallySuspendedDownloadIdentifiers containsObject:identifier]),
         @"queueRank": rank,
     };
@@ -5020,11 +6494,76 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     return savedInfos;
 }
 
+- (NSUInteger)_restoreDownloadsDeferredBySubscriptionCleanup
+{
+    NSDictionary* defaults = [USER_DEFAULTS dictionaryRepresentation];
+    NSMutableArray<NSDictionary*>* infos = [NSMutableArray array];
+    for (NSString* key in defaults) {
+        if (![key hasPrefix:ICSubscriptionCleanupDeferredDownloadJobKeyPrefix]) continue;
+        NSDictionary* info = [defaults[key] isKindOfClass:[NSDictionary class]]
+            ? defaults[key] : nil;
+        NSString* identifier = info[@"identifier"];
+        if (identifier.length == 0) {
+            [USER_DEFAULTS removeObjectForKey:key];
+            continue;
+        }
+        [infos addObject:info];
+    }
+    if (infos.count == 0) return 0;
+
+    NSArray<NSString*>* identifiers = [infos valueForKey:@"identifier"];
+    NSArray<CDEpisode*>* episodes = [DMANAGER episodesWithObjectHashes:identifiers];
+    NSMutableDictionary<NSString*, CDEpisode*>* episodesByIdentifier =
+        [NSMutableDictionary dictionaryWithCapacity:episodes.count];
+    for (CDEpisode* episode in episodes) {
+        if (episode.objectHash.length > 0) {
+            episodesByIdentifier[episode.objectHash] = episode;
+        }
+    }
+
+    [self willChangeValueForKey:@"cachingEpisodes"];
+    NSUInteger restoredCount = 0;
+    for (NSDictionary* rawInfo in infos) {
+        NSString* identifier = rawInfo[@"identifier"];
+        CDEpisode* episode = episodesByIdentifier[identifier];
+        if (!episode) {
+            if (![InstacastBackupImporter ownsDeferredDownloadWithObjectHash:identifier]) {
+                [USER_DEFAULTS removeObjectForKey:
+                    [ICSubscriptionCleanupDeferredDownloadJobKeyPrefix
+                        stringByAppendingString:identifier]];
+            }
+            continue;
+        }
+        NSMutableDictionary* info = [rawInfo mutableCopy];
+        NSNumber* rank = info[@"queueRank"];
+        if (![rank isKindOfClass:[NSNumber class]]) {
+            rank = @(_nextDownloadQueueRank + ICCachingEpisodeRankStep);
+            info[@"queueRank"] = rank;
+            [USER_DEFAULTS setObject:info
+                              forKey:[ICSubscriptionCleanupDeferredDownloadJobKeyPrefix
+                                stringByAppendingString:identifier]];
+        }
+        _nextDownloadQueueRank = MAX(_nextDownloadQueueRank, rank.longLongValue);
+        if ([info[@"suspended"] boolValue]) {
+            [_manuallySuspendedDownloadIdentifiers addObject:identifier];
+        }
+        _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier] = [info copy];
+        _subscriptionCleanupDeferredDownloadEpisodesByIdentifier[identifier] = episode;
+        restoredCount += 1;
+    }
+    [self didChangeValueForKey:@"cachingEpisodes"];
+    if (restoredCount > 0) {
+        _subscriptionCleanupPromotionRequested = YES;
+    }
+    return restoredCount;
+}
+
 - (void) restoreCachingEpisodes
 {
     if (!_cacheIndexReady) {
         return;
     }
+    NSUInteger deferredRestoreCount = [self _restoreDownloadsDeferredBySubscriptionCleanup];
     NSArray<NSDictionary*>* savedInfos = [[self _savedCachingInfosMigratingLegacyIfNeeded]
         sortedArrayUsingComparator:^NSComparisonResult(NSDictionary* left, NSDictionary* right) {
             NSComparisonResult rankOrder = [left[@"queueRank"] compare:right[@"queueRank"]];
@@ -5052,6 +6591,7 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
         NSString* identifier = info[@"identifier"];
         BOOL automatic = [info[@"automatic"] boolValue];
         BOOL cellular = [info[@"cellular"] boolValue];
+        BOOL preservesConsumedState = [info[@"preservesConsumedState"] boolValue];
         NSNumber* reportsValue = info[@"reportsFailureToUser"];
         BOOL reportsFailureToUser = reportsValue ? reportsValue.boolValue : !automatic;
         if ([info[@"suspended"] boolValue]) {
@@ -5062,7 +6602,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
                                              autoCache:automatic
                                overwriteCellularLock:cellular
                                   reportsFailureToUser:reportsFailureToUser
-                                              queueRank:info[@"queueRank"]];
+                                              queueRank:info[@"queueRank"]
+                                preservesConsumedState:preservesConsumedState
+                         deferDuringSubscriptionCleanup:NO];
         if (!restored) {
             [_manuallySuspendedDownloadIdentifiers removeObject:identifier];
             [self _removeSavedCachingInfoForIdentifier:identifier];
@@ -5073,7 +6615,8 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     if (savedInfos.count > 0) {
         [self didChangeValueForKey:@"cachingEpisodes"];
     }
-    if (_downloadOperationsByIdentifier.count > 0) {
+    if (_downloadOperationsByIdentifier.count > 0
+        || _subscriptionCleanupDeferredDownloadInfosByIdentifier.count > 0) {
         _currentQueueHadFailure = NO;
         [[NSNotificationCenter defaultCenter] postNotificationName:CacheManagerDidStartCachingNotification object:self];
         [self _startNextDownloadOperations];
@@ -5081,6 +6624,9 @@ reportsFailureToUser:(BOOL)reportsFailureToUser
     } else if (self.suspended) {
         self.suspended = NO;
         [USER_DEFAULTS setBool:NO forKey:ICDownloadQueueSuspended];
+    }
+    if (deferredRestoreCount > 0) {
+        [self _promoteDownloadsDeferredBySubscriptionCleanup];
     }
 }
 
@@ -5165,20 +6711,90 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
 
     unsigned long long requestedBytes = ULLONG_MAX - loadedBytes < bytes ? ULLONG_MAX : loadedBytes + bytes;
     unsigned long long spaceToDelete = requestedBytes - maxAllowedBytes;
-    NSArray* loadedEpisodes = [self cachedEpisodes];
-    loadedEpisodes = [loadedEpisodes sortedArrayUsingFunction:ReverseDownloadDateSort context:NULL];
-
-    NSMutableArray<NSDictionary*>* selectionItems = [NSMutableArray array];
-    for (CDEpisode* episode in loadedEpisodes) {
-        NSString* identifier = episode.objectHash;
-        NSURL* URL = identifier.length > 0 ? _cachedURLIndex[identifier] : nil;
-        if (episode.starred || !URL || episode.objectID.isTemporaryID || _cacheDeletionTokensByIdentifier[identifier]) continue;
-        [selectionItems addObject:@{ @"objectID": episode.objectID, @"url": URL }];
-    }
-    if (selectionItems.count == 0) return;
-
+    NSMutableSet<NSString*>* excludedHashes = [NSMutableSet setWithArray:_cacheDeletionTokensByIdentifier.allKeys];
+    [excludedHashes addObjectsFromArray:_cacheImportTokensByIdentifier.allKeys];
     _autoClearSelectionInFlight = YES;
     dispatch_async(_cacheDeletionQueue, ^{
+        NSFileManager* fileManager = [[NSFileManager alloc] init];
+        NSString* storagePath = [CacheManager _pathToStorageLocation];
+        NSError* directoryError = nil;
+        NSArray<NSString*>* directoryContent = [fileManager contentsOfDirectoryAtPath:storagePath error:&directoryError];
+        if (!directoryContent && ICCacheFileErrorMeansMissing(directoryError)) {
+            directoryContent = @[];
+            directoryError = nil;
+        }
+
+        NSMutableDictionary<NSString*, NSURL*>* URLsByEpisodeHash = [NSMutableDictionary dictionary];
+        if (directoryContent) {
+            for (NSString* filename in directoryContent) {
+                NSString* nameWithoutExtension = filename.stringByDeletingPathExtension;
+                NSRange lastSeparator = [nameWithoutExtension rangeOfString:@" - " options:NSBackwardsSearch];
+                NSString* identifier = lastSeparator.location == NSNotFound
+                    ? nameWithoutExtension
+                    : [nameWithoutExtension substringFromIndex:NSMaxRange(lastSeparator)];
+                if (identifier.length > 0 && ![excludedHashes containsObject:identifier]) {
+                    URLsByEpisodeHash[identifier] = [NSURL fileURLWithPath:[storagePath stringByAppendingPathComponent:filename]];
+                }
+            }
+        }
+
+        __block NSError* selectionError = directoryError;
+        __block NSArray<NSDictionary*>* selectionItems = @[];
+        NSManagedObjectContext* context = selectionError ? nil : [DMANAGER newBackgroundContext];
+        if (!selectionError && !context) {
+            selectionError = [NSError errorWithDomain:@"CacheManager"
+                                                  code:50
+                                              userInfo:@{NSLocalizedDescriptionKey: @"The download database was not available for automatic storage cleanup.".ls}];
+        }
+        if (context) {
+            [context performBlockAndWait:^{
+                NSMutableArray<CDEpisode*>* loadedEpisodes = [NSMutableArray array];
+                NSArray<NSString*>* episodeHashes = URLsByEpisodeHash.allKeys;
+                const NSUInteger fetchBatchSize = 400;
+                for (NSUInteger offset = 0; offset < episodeHashes.count; offset += fetchBatchSize) {
+                    NSRange range = NSMakeRange(offset, MIN(fetchBatchSize, episodeHashes.count - offset));
+                    NSArray<NSString*>* hashBatch = [episodeHashes subarrayWithRange:range];
+                    NSFetchRequest* request = [NSFetchRequest fetchRequestWithEntityName:@"Episode"];
+                    request.predicate = [NSPredicate predicateWithFormat:@"objectHash IN %@", hashBatch];
+                    request.relationshipKeyPathsForPrefetching = @[@"feed", @"feed.properties"];
+                    NSError* fetchError = nil;
+                    NSArray<CDEpisode*>* fetchedEpisodes = [context executeFetchRequest:request error:&fetchError];
+                    if (!fetchedEpisodes) {
+                        selectionError = fetchError;
+                        break;
+                    }
+                    [loadedEpisodes addObjectsFromArray:fetchedEpisodes];
+                }
+                if (selectionError) return;
+
+                NSArray<CDEpisode*>* sortedEpisodes = [loadedEpisodes sortedArrayUsingFunction:ReverseDownloadDateSort
+                                                                                       context:NULL];
+                NSMutableArray<NSDictionary*>* items = [NSMutableArray arrayWithCapacity:sortedEpisodes.count];
+                NSMutableSet<NSString*>* seenIdentifiers = [NSMutableSet setWithCapacity:sortedEpisodes.count];
+                for (CDEpisode* episode in sortedEpisodes) {
+                    NSString* identifier = episode.objectHash;
+                    NSURL* URL = identifier.length > 0 ? URLsByEpisodeHash[identifier] : nil;
+                    if (episode.starred || !URL || episode.objectID.isTemporaryID || [seenIdentifiers containsObject:identifier]) {
+                        continue;
+                    }
+                    [seenIdentifiers addObject:identifier];
+                    [items addObject:@{ @"objectID": episode.objectID, @"url": URL }];
+                }
+                selectionItems = [items copy];
+            }];
+        }
+
+        if (selectionError) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self->_autoClearSelectionInFlight = NO;
+                [self _recordPendingAutoClearBytes:bytes automatic:automatic];
+                [[ICDiagnosticLogger shared] logEvent:@"cache"
+                                              message:@"Automatische Download-Auswahl konnte nicht geladen werden"
+                                             metadata:@{ @"error": selectionError.localizedDescription ?: @"" }];
+            });
+            return;
+        }
+
         BOOL needsRecalculation = NO;
         NSArray<NSManagedObjectID*>* selectedObjectIDs = [self _autoClearSelectionFromItems:selectionItems
                                                                               bytesToDelete:spaceToDelete
@@ -5308,7 +6924,13 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
     if (error) {
         ErrLog(@"orphaned background download session %@ ended with error: %@", identifier, error);
     }
+    BOOL wasDeferredCleanupCancellation =
+        [_subscriptionCleanupBackgroundSessionCancellationIdentifiers containsObject:identifier];
+    [_subscriptionCleanupBackgroundSessionCancellationIdentifiers removeObject:identifier];
     [self _completeBackgroundSessionForIdentifier:identifier];
+    if (wasDeferredCleanupCancellation) {
+        [self _resumeDownloadsAfterSubscriptionCleanupProtectionChange:nil];
+    }
 }
 
 - (void) handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completionHandler
@@ -5319,6 +6941,20 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
     }
     _backgroundSessionCompletionHandlers[identifier] = [completionHandler copy];
     CACHE_OPERATION_CLASS* foundOperation = _downloadOperationsByIdentifier[identifier];
+    if (!foundOperation) {
+        NSDictionary* deferredInfo =
+            _subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier];
+        if (!deferredInfo) {
+            NSString* deferredKey = [ICSubscriptionCleanupDeferredDownloadJobKeyPrefix
+                stringByAppendingString:identifier];
+            deferredInfo = [USER_DEFAULTS objectForKey:deferredKey];
+        }
+        if ([deferredInfo isKindOfClass:[NSDictionary class]]) {
+            [_subscriptionCleanupBackgroundSessionCancellationIdentifiers addObject:identifier];
+            [self _cancelOrphanedBackgroundSession:identifier];
+            return;
+        }
+    }
     
     if (!foundOperation) {
         NSDictionary* savedInfo = [self savedCachingInfoForIdentifier:identifier];
@@ -5329,6 +6965,7 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
         CDEpisode* episode = [DMANAGER episodeWithObjectHash:identifier];
         BOOL automatic = [savedInfo[@"automatic"] boolValue];
         BOOL cellular = [savedInfo[@"cellular"] boolValue];
+        BOOL preservesConsumedState = [savedInfo[@"preservesConsumedState"] boolValue];
         NSNumber* reportsValue = savedInfo[@"reportsFailureToUser"];
         BOOL reportsFailureToUser = reportsValue ? reportsValue.boolValue : !automatic;
         if ([savedInfo[@"suspended"] boolValue]) {
@@ -5339,9 +6976,16 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
                      autoCache:automatic
        overwriteCellularLock:cellular
           reportsFailureToUser:reportsFailureToUser
-                      queueRank:savedInfo[@"queueRank"]];
+                      queueRank:savedInfo[@"queueRank"]
+        preservesConsumedState:preservesConsumedState
+ deferDuringSubscriptionCleanup:NO];
         }
         if (!_downloadOperationsByIdentifier[identifier]) {
+            if (_subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]) {
+                [_subscriptionCleanupBackgroundSessionCancellationIdentifiers addObject:identifier];
+                [self _cancelOrphanedBackgroundSession:identifier];
+                return;
+            }
             [_manuallySuspendedDownloadIdentifiers removeObject:identifier];
             [self _removeSavedCachingInfoForIdentifier:identifier];
             [self _cancelOrphanedBackgroundSession:identifier];
@@ -5554,7 +7198,12 @@ static NSComparisonResult ReverseDownloadDateSort(CDEpisode* obj1, CDEpisode* ob
                 !self->_cacheDeletionTokensByIdentifier[identifier] &&
                 !self->_clearingAllCache &&
                 !episode.isDeleted && episode.managedObjectContext != nil;
-            if (tokenIsCurrent) [self->_cacheImportTokensByIdentifier removeObjectForKey:identifier];
+            if (tokenIsCurrent) {
+                [self->_cacheImportTokensByIdentifier removeObjectForKey:identifier];
+                if (self->_subscriptionCleanupDeferredDownloadInfosByIdentifier[identifier]) {
+                    [self _resumeDownloadsAfterSubscriptionCleanupProtectionChange:nil];
+                }
+            }
 
             NSError* completionError = error;
             if (success && !canPublish) {

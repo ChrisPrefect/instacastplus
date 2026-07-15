@@ -207,13 +207,14 @@ require(
     "The one-shot retry wake must have one explicit cancellation path that clears all scheduler state.",
 )
 
-drain = method_body(CACHE, "- (void)_drainPendingAutomaticRetries")
+drain_entry = method_body(CACHE, "- (void)_drainPendingAutomaticRetries")
+drain = method_body(CACHE, "- (void)_continueDrainingPendingAutomaticRetries")
 require(
     "ICAutomaticDownloadRetryTrackedCapacity" in drain
     and "_downloadOperationsByIdentifier.count" in drain
     and "_automaticRetryInFlightEpisodeHashes.count" in drain
-    and "[self canDownload]" in drain
-    and "self.suspended" in drain,
+    and "[self canDownload]" in drain_entry
+    and "self.suspended" in drain_entry,
     "Retry creation must wait for an active network queue and stop at a small fixed tracked-download capacity.",
 )
 require(
@@ -224,7 +225,8 @@ require(
     "Pending retries must resolve managed objects just in time and revalidate policy before starting.",
 )
 require(
-    "processedCount < ICAutomaticDownloadRetryScanBatchSize" in drain
+    "inspectedCount < ICAutomaticDownloadRetryScanBatchSize" in drain
+    and "_automaticRetryDrainRemainingCount" in drain
     and "dispatch_async(dispatch_get_main_queue()" in drain,
     "Synchronous start rejections and stale hashes must also yield instead of draining an unbounded queue in one main turn.",
 )
@@ -243,7 +245,8 @@ require(
 )
 cancel = method_body(CACHE, "- (void)_cancelTrackedDownloadOperationAfterDurableIntent:")
 require(
-    "_automaticRetryOperationDidFinishWithIdentifier:operation.identifier" in cancel,
+    "NSString* identifier = operation.identifier" in cancel
+    and "_automaticRetryOperationDidFinishWithIdentifier:identifier" in cancel,
     "A queued retry cancelled before execution must also release its retry capacity.",
 )
 

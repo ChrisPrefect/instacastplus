@@ -41,5 +41,33 @@ watch_loop = builder.split("BOOL hasAppleWatchEpisodes", 1)[1].split("// Playlis
 require("executeFetchRequest" not in watch_loop,
         "Apple Watch export must not execute one Core Data fetch per state.")
 
+# `newExportBackgroundContext` starts cold. Fetching the abstract List entity and then
+# touching subtype-only relationships makes every playlist/list fire its own SQL faults.
+# Warm each concrete subtype and every relationship the XML loop reads before iterating.
+lists_section = builder.split("// Playlists", 1)[1].split("// Settings", 1)[0]
+require(
+    'initWithEntityName:@"Playlist"' in lists_section,
+    "Cold full export must fetch Playlist directly instead of faulting each subtype from List.",
+)
+for key_path in [
+    "playlistEpisodes",
+    "playlistEpisodes.episode",
+    "playlistEpisodes.episode.feed",
+    "playlistEpisodes.episode.media",
+]:
+    require(
+        f'@"{key_path}"' in lists_section,
+        f"Cold playlist export must prefetch {key_path} before serializing memberships.",
+    )
+require(
+    'initWithEntityName:@"EpisodeList"' in lists_section
+    and '@"includedFeeds"' in lists_section,
+    "Cold EpisodeList export must prefetch includedFeeds instead of faulting once per list.",
+)
+require(
+    'initWithEntityName:@"List"' not in lists_section,
+    "The abstract List fetch must not remain as the cold N+1 source after concrete subtype prefetching.",
+)
+
 
 print("Full-export scaling regression checks passed")

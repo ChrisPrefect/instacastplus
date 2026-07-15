@@ -59,6 +59,10 @@ typedef NS_ENUM(NSInteger, ICSubscribeOptions) {
 // (widget export) never contend for the main coordinator's store lock and can never block
 // the main-thread UI. Read-only: never call -save on this context.
 - (NSManagedObjectContext*)newExportBackgroundContext;
+
+// Writable private context for iCloud batches on a dedicated store coordinator. Saves
+// are merged explicitly so sync-private staging rows never flood the UI view context.
+- (NSManagedObjectContext*)newICloudSyncBackgroundContext;
 - (void)resetAllUserDataWithCompletion:(void (^)(NSError* error))completion;
 
 - (void) beginInterruptSaving;

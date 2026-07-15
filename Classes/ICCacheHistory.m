@@ -427,6 +427,19 @@ static NSError* ICCacheHistoryError(NSInteger code, NSString* description, NSErr
     for (CDEpisode* episode in episodes) {
         if (episode.objectHash.length > 0) [episodeHashes addObject:episode.objectHash];
     }
+    [self resetValuesForEpisodeHashes:episodeHashes completion:completion];
+}
+
+- (void)resetValuesForEpisodeHashes:(NSSet<NSString*>*)episodeHashes
+                         completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self resetValuesForEpisodeHashes:episodeHashes completion:completion];
+        });
+        return;
+    }
+    episodeHashes = [episodeHashes copy] ?: [NSSet set];
     if (episodeHashes.count == 0) {
         if (completion) completion(nil);
         return;

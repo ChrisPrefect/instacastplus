@@ -536,22 +536,29 @@ static CGFloat ICDownloadRetryButtonWidth(void)
 // Override to support conditional rearranging of the table view.
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    return indexPath.section == 0 && indexPath.row < self.activeDownloadCount;
+    return indexPath.section == 0
+        && indexPath.row < self.activeDownloadCount
+        && [[CacheManager sharedCacheManager] canReorderCachingEpisodes];
 }
 
 - (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)fromIndexPath toIndexPath:(NSIndexPath *)toIndexPath
 {
     NSUInteger activeCount = self.activeDownloadCount;
-    if (fromIndexPath.row >= activeCount || toIndexPath.row >= activeCount) {
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    if (![cacheManager canReorderCachingEpisodes]
+        || fromIndexPath.row >= activeCount || toIndexPath.row >= activeCount) {
         return;
     }
     _userAction = YES;
-    [[CacheManager sharedCacheManager] reorderCachingEpisodeFromIndex:fromIndexPath.row toIndex:toIndexPath.row];
+    [cacheManager reorderCachingEpisodeFromIndex:fromIndexPath.row toIndex:toIndexPath.row];
     _userAction = NO;
 }
 
 - (NSIndexPath*)tableView:(UITableView*)tableView targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath*)sourceIndexPath toProposedIndexPath:(NSIndexPath*)proposedDestinationIndexPath
 {
+    if (![[CacheManager sharedCacheManager] canReorderCachingEpisodes]) {
+        return sourceIndexPath;
+    }
     NSUInteger activeCount = self.activeDownloadCount;
     if (activeCount == 0) {
         return sourceIndexPath;

@@ -27,7 +27,7 @@ def body(signature: str) -> str:
 
 
 reset_episode = body("- (void)resetValuesForEpisode:")
-reset_batch = body("- (void)resetValuesForEpisodes:")
+reset_batch = body("- (void)resetValuesForEpisodeHashes:")
 delete_hashes = body("- (NSError*)_deleteEpisodeHashes:")
 
 require("didAutoDownload:NO" in reset_episode,

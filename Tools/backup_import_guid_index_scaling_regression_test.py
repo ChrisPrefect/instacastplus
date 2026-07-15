@@ -16,8 +16,12 @@ def require(condition: bool, message: str) -> None:
 
 require("_buildGuidIndexForBackup:" in SOURCE and "categories:(ICBackupImportCategory)categories" in SOURCE,
         "GUID indexing must know the selected backup/categories instead of scanning the whole database.")
-require("episodeLookupCategories" in SOURCE and "if (!(categories & episodeLookupCategories))" in SOURCE,
-        "A settings-only import must skip episode indexing entirely.")
+require("episodeLookupCategories" in SOURCE and "feedURLMappingCategories" in SOURCE and
+        "ICBackupImportFeedSettings" in SOURCE,
+        "A settings-only import must build feed identity mapping without scanning episodes.")
+require('initWithEntityName:@"Feed"' in SOURCE and
+        'propertiesToFetch = @[@"sourceURL_"]' in SOURCE,
+        "Settings-only restore must map subscribed feed URLs with a bounded dictionary fetch.")
 require("candidateGUIDs" in SOURCE and "episodeFetchBatchSize" in SOURCE and 'guid IN %@' in SOURCE,
         "Only backup-referenced GUIDs may be fetched, in bounded indexed batches.")
 require('guid != nil AND feed.sourceURL_ != nil' not in SOURCE,

@@ -36,7 +36,8 @@ def body(source: str, signature: str) -> str:
     raise AssertionError(f"Unterminated method: {signature}")
 
 
-require("- (NSString*) beginStreamingCacheForEpisode:(CDEpisode*)episode acquiredNewLease:(BOOL*)acquiredNewLease;" in CACHE_HEADER,
+require("beginStreamingCacheForEpisode:(CDEpisode*)episode" in CACHE_HEADER and
+        "acquiredNewLease:(BOOL*)acquiredNewLease" in CACHE_HEADER,
         "Loader creation needs a unique ownership token and an explicit new-vs-reattached result.")
 require("leaseToken:(NSString*)leaseToken" in CACHE_HEADER and
         CACHE_HEADER.count("leaseToken:(NSString*)leaseToken") >= 3,
@@ -64,9 +65,10 @@ require(acquire != -1 and take_detached != -1 and create_loader != -1 and
         "Playback must acquire the CacheManager lease before taking or creating a stream writer.")
 require(open_episode.count("beginStreamingCacheForEpisode:anEpisode") == 1 and
         "NSString* streamCacheLeaseToken" in open_episode and
+        "expectedBytes:" not in open_episode and
         "acquiredNewLease:&acquiredNewStreamCacheLease" in open_episode and
         "if (streamCacheLeaseToken.length == 0)" in open_episode,
-        "Lease rejection must select direct playback without ghost bookkeeping or a false write error.")
+        "Lease rejection must select direct playback without ghost bookkeeping, a false write error, or eviction based on feed-declared size.")
 require("leaseToken:streamCacheLeaseToken" in open_episode and
         "failStreamingCacheForEpisode:anEpisode" in open_episode and
         "error:streamCacheStartError" in open_episode,

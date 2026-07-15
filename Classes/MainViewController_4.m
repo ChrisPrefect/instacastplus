@@ -322,9 +322,10 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     // Initialize MainMenuListUIDs with defaults if not set
     // Also migrate: if key exists but doesn't contain default list UIDs, add them
     NSArray* existingUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
+    BOOL migratedDefaults = [USER_DEFAULTS boolForKey:@"MainMenuListUIDsMigratedDefaults"];
     if (!existingUIDs) {
         [USER_DEFAULTS setObject:@[@"default.favorites", @"default.unplayed", @"default.started", @"default.downloaded"] forKey:@"MainMenuListUIDs"];
-    } else if (![USER_DEFAULTS boolForKey:@"MainMenuListUIDsMigratedDefaults"]) {
+    } else if (!migratedDefaults) {
         // One-time migration: add default list UIDs that were previously hardcoded
         NSMutableArray* uids = [existingUIDs mutableCopy];
         NSArray* defaults = @[@"default.favorites", @"default.unplayed", @"default.started"];

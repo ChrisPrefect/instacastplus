@@ -33,6 +33,12 @@
 @property (nonatomic, strong) NSURL * paymentURL;
 @property (nonatomic, strong) NSString * username;
 @property (nonatomic, copy) NSString * password;
+- (BOOL)compareAndSetPassword:(NSString *)password
+             expectedPassword:(NSString *)expectedPassword
+      expectedPasswordPresent:(BOOL)expectedPasswordPresent
+                      didMatch:(BOOL *)didMatch
+                         error:(NSError **)error
+    NS_SWIFT_NAME(compareAndSetPassword(_:expected:expectedPresent:didMatch:));
 @property (nonatomic) int32_t rank;
 @property (nonatomic) BOOL subscribed;
 @property (nonatomic) BOOL parked;

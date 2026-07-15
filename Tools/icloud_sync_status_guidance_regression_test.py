@@ -102,11 +102,25 @@ require(
     "Sync activity must distinguish verification of this device's uploads from remote downloads.",
 )
 fetched_changes = method_body(MANAGER, "func handleFetchedRecordZoneChanges")
-fetched_direction = method_body(MANAGER, "func fetchedActivityDirection")
 require(
     "fetchedActivityDirection" in fetched_changes
-    and "payload[\"deviceID\"]" in fetched_direction,
+    and "verifiedOwnEchoModifications" in fetched_changes
+    and 'record["deviceID"]' in fetched_changes
+    and "recordChangeTag" in fetched_changes,
     "Fetched records must classify own-device echoes as verification activity.",
+)
+fetched_direction = method_body(MANAGER, "func fetchedActivityDirection")
+require(
+    "verifiedOwnEchoModifications" in fetched_direction
+    and "verifiedOwnEchoRecordNames" in fetched_direction
+    and "isVisibleSyncActivityDeletion" in fetched_direction,
+    "Own list/settings echoes and inverse tombstone deletions must not be labelled as downloads.",
+)
+require(
+    "localEchoModifications" in fetched_changes
+    and "remoteModifications" in fetched_changes
+    and "orderedModifications(remoteModifications)" in fetched_changes,
+    "Records just uploaded by this device must archive server fields without reapplying thousands of identical values on the main context.",
 )
 activity_status = method_body(MANAGER, "func syncActivityStatusText")
 require(
@@ -128,9 +142,10 @@ require(
 status_row_start = SETTINGS.find("if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {")
 status_row_end = SETTINGS.find("if (indexPath.section == ICiCloudSyncSettingsSectionOptions)", status_row_start)
 status_row = SETTINGS[status_row_start:status_row_end]
+status_cell = method_body(SETTINGS, "- (UITableViewCell*)statusCellWithStatusText:")
 require(
-    'multilineInfoCellWithIdentifier:@"ICiCloudSyncStatusCell"' in status_row
-    and "cell.detailTextLabel.numberOfLines = 0" in status_row,
+    "statusCellWithStatusText:statusText" in status_row
+    and "content.secondaryTextProperties.numberOfLines = 0" in status_cell,
     "The complete iCloud status must wrap on a dedicated multiline row.",
 )
 configure_sync_now = method_body(SETTINGS, "- (void)configureSyncNowCell")

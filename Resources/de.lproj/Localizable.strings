@@ -1539,7 +1539,7 @@
 "iCloud Status unbekannt." = "iCloud-Status unbekannt.";
 "iCloud ist vorübergehend nicht verfügbar." = "iCloud ist vorübergehend nicht verfügbar.";
 "iCloud Sync will continue in smaller batches." = "iCloud Sync verarbeitet die Änderungen in kleineren Schritten.";
-"iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync konnte nicht abgeschlossen werden.";
+"iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync konnte nicht abgeschlossen werden. Die Synchronisation wird automatisch erneut versucht.";
 "iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt." = "iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt.";
 "Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an." = "Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an.";
 "InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen." = "InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen.";
@@ -1567,6 +1567,7 @@
 "Use My Settings for All Devices" = "Meine Einstellungen für alle Geräte verwenden";
 "Decide Later" = "Später entscheiden";
 "Choose which iCloud settings should be used." = "Wähle, welche iCloud-Einstellungen verwendet werden sollen.";
+"Prüft, ob in iCloud bereits Einstellungen vorhanden sind…" = "Prüft, ob in iCloud bereits Einstellungen vorhanden sind…";
 
 /* App Intents and Shortcuts */
 "Play or Pause" = "Abspielen oder pausieren";
@@ -1694,6 +1695,7 @@
 "Retry" = "Erneut versuchen";
 "All Loaded" = "Alle geladenen";
 "Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut." = "Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.";
+"Abbestellte Podcasts wurden gespeichert, aber ihre lokalen Downloads konnten noch nicht vollständig entfernt werden. InstacastPlus versucht es später erneut." = "Abbestellte Podcasts wurden gespeichert, aber ihre lokalen Downloads konnten noch nicht vollständig entfernt werden. InstacastPlus versucht es später erneut.";
 "Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht." = "Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht.";
 "Die lokale Datenbank wird gerade exklusiv aktualisiert." = "Die lokale Datenbank wird gerade exklusiv aktualisiert.";
 "Die lokale Datenbank konnte nicht gespeichert werden." = "Die lokale Datenbank konnte nicht gespeichert werden.";
@@ -1728,3 +1730,19 @@
 "Apple Watch progress could not be saved." = "Der Apple-Watch-Fortschritt konnte nicht gespeichert werden.";
 "The backup could not be exported because the local podcast database could not be opened. Check the available storage, restart InstacastPlus, and try again." = "Das Backup konnte nicht exportiert werden, weil die lokale Podcast-Datenbank nicht geöffnet werden konnte. Prüfe den freien Speicherplatz, starte InstacastPlus neu und versuche es erneut.";
 "The backup could not be analyzed. No data was changed. Check the available storage and try again." = "Das Backup konnte nicht analysiert werden. Es wurden keine Daten geändert. Prüfe den freien Speicherplatz und versuche es erneut.";
+"Vorhandene iCloud-Daten werden vor dem Hochladen geprüft…" = "Vorhandene iCloud-Daten werden vor dem Hochladen geprüft…";
+"The download database was not available for automatic storage cleanup." = "Die Download-Datenbank war für die automatische Speicherbereinigung nicht verfügbar.";
+"Podcast download data could not be accessed for cleanup. Please restart InstacastPlus and try again." = "Auf die Podcast-Downloaddaten konnte für die Bereinigung nicht zugegriffen werden. Bitte starte InstacastPlus neu und versuche es erneut.";
+"Die vorgemerkte Wiederherstellung der Podcast-Zugangsdaten ist beschädigt." = "Die vorgemerkte Wiederherstellung der Podcast-Zugangsdaten ist beschädigt.";
+"Die importierten Podcast-Zugangsdaten sind unvollständig." = "Die importierten Podcast-Zugangsdaten sind unvollständig.";
+"Die importierten Podcast-Zugangsdaten passen nicht mehr zum lokalen Podcast." = "Die importierten Podcast-Zugangsdaten passen nicht mehr zum lokalen Podcast.";
+"Die Podcast-Zugangsdaten wurden zwischenzeitlich geändert und nicht überschrieben." = "Die Podcast-Zugangsdaten wurden zwischenzeitlich geändert und nicht überschrieben.";
+"Die importierten Podcast-Zugangsdaten konnten nicht sicher gespeichert werden." = "Die importierten Podcast-Zugangsdaten konnten nicht sicher gespeichert werden.";
+"Der lokale Speicher für die importierten Podcast-Zugangsdaten konnte nicht geöffnet werden." = "Der lokale Speicher für die importierten Podcast-Zugangsdaten konnte nicht geöffnet werden.";
+"Der iCloud-Account hat sich während der lokalen Änderung geändert. Die Änderung wurde nicht gespeichert." = "Der iCloud-Account hat sich während der lokalen Änderung geändert. Die Änderung wurde nicht gespeichert.";
+"Der iCloud-Account für die lokale Änderung konnte nicht bestimmt werden." = "Der iCloud-Account für die lokale Änderung konnte nicht bestimmt werden.";
+"Ein lokaler iCloud-Outbox-Eintrag ist beschädigt." = "Ein lokaler iCloud-Outbox-Eintrag ist beschädigt.";
+"Ein lokaler iCloud-Outbox-Eintrag ist mehrfach vorhanden." = "Ein lokaler iCloud-Outbox-Eintrag ist mehrfach vorhanden.";
+"Die importierten Podcast-Einstellungen konnten nicht in der Oberfläche aktualisiert werden." = "Die importierten Podcast-Einstellungen konnten nicht in der Oberfläche aktualisiert werden.";
+"The podcast could not be unsubscribed because the change could not be saved. Check available storage and try again." = "Der Podcast konnte nicht abbestellt werden, weil die Änderung nicht gespeichert werden konnte. Prüfe den freien Speicherplatz und versuche es erneut.";
+"The podcast could not be unsubscribed because it is no longer available." = "Der Podcast konnte nicht abbestellt werden, weil er nicht mehr verfügbar ist.";

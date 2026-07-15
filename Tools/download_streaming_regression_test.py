@@ -107,13 +107,13 @@ open_episode = objc_method(
 )
 require(
     "automaticCachingDisabledForEpisode:anEpisode" in open_episode
-    and "isCachingSourceOfEpisode:anEpisode" in open_episode
-    and "cancelCachingEpisode:anEpisode disableAutoDownload:NO" in open_episode
+    and "beginStreamingCacheForEpisode:anEpisode" in open_episode
+    and "cancelCachingEpisode:anEpisode disableAutoDownload:NO" not in open_episode
     and "takeDetachedLoaderForEpisodeHash" in open_episode
     and "streamCacheStartError" in open_episode
     and "failStreamingCacheForEpisode:anEpisode" in open_episode
     and "BOOL shouldCacheViaStream = canCacheViaStream" in open_episode,
-    "Playback start must prefer stream-caching and reattach the existing per-hash writer.",
+    "Playback start must atomically transition to stream-caching and reattach the existing per-hash writer.",
 )
 
 prepare_temp = objc_method(playback_manager, "- (BOOL)_prepareTempFileWithError:")
@@ -174,10 +174,19 @@ playback_cancel = objc_method(
     "- (BOOL)_cancelStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken",
 )
 require(
-    "cancelAndDiscardPartialCache" in playback_cancel
-    and "finishStreamingCacheForEpisode:episode" in playback_cancel
-    and "leaseToken:leaseToken" in playback_cancel
-    and "openWithEpisode:episode at:resumeTime autostart:wasPlaying" in playback_cancel,
+    "_cancelStreamingCacheForEpisodeHash:episode.objectHash" in playback_cancel,
+    "Episode-backed cancellation must delegate to the hash-owned streaming writer path.",
+)
+
+playback_cancel_by_hash = objc_method(
+    playback_manager,
+    "- (BOOL)_cancelStreamingCacheForEpisodeHash:(NSString*)episodeHash leaseToken:(NSString*)leaseToken",
+)
+require(
+    "cancelAndDiscardPartialCache" in playback_cancel_by_hash
+    and "finishStreamingCacheForEpisode:episode" in playback_cancel_by_hash
+    and "leaseToken:leaseToken" in playback_cancel_by_hash
+    and "openWithEpisode:episode at:resumeTime autostart:wasPlaying" in playback_cancel_by_hash,
     "Cancelling active stream-caching must stop the loader and keep current playback on the direct stream.",
 )
 

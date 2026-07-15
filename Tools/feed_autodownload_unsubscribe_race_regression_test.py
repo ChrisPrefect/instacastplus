@@ -33,12 +33,17 @@ asynchronous = body("- (void)_autoDownloadEpisodesInFeedAsynchronously:")
 main_handoff = asynchronous.split("dispatch_async(dispatch_get_main_queue(), ^{", 1)[1]
 start_download = main_handoff.find("[self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes]")
 revalidate_feed = main_handoff.find("existingObjectWithID:feedObjectID")
-revalidate_subscription = main_handoff.find("!currentFeed.subscribed")
+revalidate_subscription = main_handoff.find(
+    "automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:currentFeed"
+)
 require(revalidate_feed != -1 and revalidate_subscription != -1 and
         revalidate_feed < revalidate_subscription < start_download,
         "The main-thread handoff must re-fetch and revalidate the feed after an unsubscribe can race the background scan.")
-require("currentFeed.parked" in main_handoff[:start_download] and
-        "episode.feed isEqual:currentFeed" in main_handoff[:start_download],
+require("episode.feed isEqual:currentFeed" in main_handoff[:start_download],
         "Only episodes that still belong to the active subscribed feed may enter auto-download.")
+
+eligibility = body("- (BOOL)automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:")
+require("!feed.subscribed" in eligibility and "feed.parked" in eligibility,
+        "The shared eligibility check must reject feeds that are no longer active.")
 
 print("Feed auto-download unsubscribe race regression checks passed")

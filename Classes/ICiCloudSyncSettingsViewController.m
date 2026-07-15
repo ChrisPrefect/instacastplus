@@ -60,7 +60,7 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self selector:@selector(syncStateDidChange:) name:ICiCloudSyncStateDidChangeNotification object:nil];
-    [center addObserver:self selector:@selector(syncStateDidChange:) name:ICiCloudSyncDevicesDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(syncDevicesDidChange:) name:ICiCloudSyncDevicesDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(updateAppearance) name:ICAppearanceManagerDidUpdateAppearanceNotification object:nil];
 
     [[ICiCloudSyncManager sharedManager] start];
@@ -164,7 +164,19 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
 - (void)syncStateDidChange:(NSNotification*)notification
 {
-    [self reloadStatusAndDevicesSections];
+    [self reloadStatusAndStorageSections];
+}
+
+- (void)syncDevicesDidChange:(NSNotification*)notification
+{
+    if (!self.isViewLoaded) {
+        return;
+    }
+    self.cachedDevices = [ICiCloudSyncManager sharedManager].devices;
+    [UIView performWithoutAnimation:^{
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:ICiCloudSyncSettingsSectionDevices]
+                      withRowAnimation:UITableViewRowAnimationNone];
+    }];
 }
 
 #pragma mark - Table view data source
@@ -195,14 +207,8 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 {
     if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {
         if (indexPath.row == 0) {
-            UITableViewCell *cell = [self multilineInfoCellWithIdentifier:@"ICiCloudSyncStatusCell"];
-            cell.selectionStyle = UITableViewCellSelectionStyleNone;
-            cell.accessoryType = UITableViewCellAccessoryNone;
-            cell.textLabel.text = @"Status".ls;
-            cell.detailTextLabel.text = [ICiCloudSyncManager sharedManager].statusText;
-            cell.detailTextLabel.numberOfLines = 0;
-            cell.detailTextLabel.lineBreakMode = NSLineBreakByWordWrapping;
-            return cell;
+            NSString *statusText = [ICiCloudSyncManager sharedManager].statusText;
+            return [self statusCellWithStatusText:statusText];
         }
 
         UITableViewCell *cell = [self buttonCell];
@@ -485,6 +491,9 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     }];
     [ICiCloudSyncManager logSyncMetadataStorageSnapshot:@"icloud-switch-value-changed"];
 
+    // The exact cloud counts require a full-zone scan. Stop/defer that optional work
+    // before the switch starts the user-requested send/fetch cycle.
+    [[ICiCloudSyncManager sharedManager] requestCloudInventoryRefreshAfterOptionChange];
     switch (sender.tag) {
         case ICiCloudSyncOptionRowEpisodes:
             [[ICiCloudSyncManager sharedManager] setEpisodesSyncEnabled:sender.on];
@@ -503,9 +512,6 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         @"row": @(sender.tag),
         @"requestedOn": @(sender.on),
     }];
-    // The upload/fetch is asynchronous. Request one hard inventory refresh after that
-    // work completes; scanning here would show the old counts and race the actual sync.
-    [[ICiCloudSyncManager sharedManager] requestCloudInventoryRefreshAfterSync];
     [self reloadStatusAndDevicesSections];
     [[ICDiagnosticLogger shared] logEvent:@"icloud-sync-ui"
                                   message:@"Sync-Schalter Status/Devices neu geladen"
@@ -543,6 +549,41 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
         return (displayName.length > 0) ? [NSString stringWithFormat:@"%@ (%@)", displayName, @"This Device".ls] : @"This Device".ls;
     }
     return (displayName.length > 0) ? displayName : @"Unbekanntes Gerät".ls;
+}
+
+- (UITableViewCell*)statusCellWithStatusText:(NSString*)statusText
+{
+    static NSString *identifier = @"ICiCloudSyncStatusCell";
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:identifier];
+    if (cell == nil) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+    }
+
+    UIListContentConfiguration *content = [UIListContentConfiguration subtitleCellConfiguration];
+    content.text = @"Status".ls;
+    content.secondaryText = statusText;
+    content.prefersSideBySideTextAndSecondaryText = NO;
+    content.textProperties.font = [[UIFontMetrics metricsForTextStyle:UIFontTextStyleBody]
+        scaledFontForFont:[UIFont systemFontOfSize:ICFontSize(17)]];
+    content.textProperties.color = ICTextColor;
+    content.textProperties.adjustsFontForContentSizeCategory = YES;
+    content.secondaryTextProperties.font = [[UIFontMetrics metricsForTextStyle:UIFontTextStyleFootnote]
+        scaledFontForFont:[UIFont systemFontOfSize:ICFontSize(14)]];
+    content.secondaryTextProperties.color = ICMutedTextColor;
+    content.secondaryTextProperties.numberOfLines = 0;
+    content.secondaryTextProperties.lineBreakMode = NSLineBreakByWordWrapping;
+    content.secondaryTextProperties.adjustsFontForContentSizeCategory = YES;
+
+    cell.contentConfiguration = content;
+    cell.backgroundColor = ICGroupCellBackgroundColor;
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    cell.accessoryView = nil;
+    cell.isAccessibilityElement = YES;
+    cell.accessibilityLabel = @"Status".ls;
+    cell.accessibilityValue = statusText;
+    cell.accessibilityTraits = UIAccessibilityTraitStaticText;
+    return cell;
 }
 
 - (UITableViewCell*)multilineInfoCellWithIdentifier:(NSString*)identifier
@@ -587,6 +628,19 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
 
     [UIView performWithoutAnimation:^{
         [self.tableView reloadSections:mutableSections withRowAnimation:UITableViewRowAnimationNone];
+    }];
+}
+
+- (void)reloadStatusAndStorageSections
+{
+    if (!self.isViewLoaded) {
+        return;
+    }
+
+    NSMutableIndexSet *sections = [NSMutableIndexSet indexSetWithIndex:ICiCloudSyncSettingsSectionStatus];
+    [sections addIndex:ICiCloudSyncSettingsSectionStorage];
+    [UIView performWithoutAnimation:^{
+        [self.tableView reloadSections:sections withRowAnimation:UITableViewRowAnimationNone];
     }];
 }
 

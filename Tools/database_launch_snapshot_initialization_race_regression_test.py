@@ -36,8 +36,8 @@ snapshot_wrapper = method_body(MANAGER, "@objc nonisolated static func logSyncMe
 snapshot_reader = method_body(METADATA, "nonisolated static func syncMetadataStorageSnapshot")
 require("Task.detached" in snapshot_wrapper,
         "The launch diagnostic is no longer detached; update this concurrency proof.")
-require("DatabaseManager.shared()?.newBackgroundContext()" in snapshot_reader,
-        "The launch diagnostic no longer opens Core Data; update this concurrency proof.")
+require("DatabaseManager.shared()?.newICloudSyncBackgroundContext()" in snapshot_reader,
+        "The launch diagnostic no longer opens the dedicated iCloud Core Data context; update this concurrency proof.")
 
 did_finish = method_body(
     APP,

@@ -120,32 +120,35 @@ for obsolete in ["subscriptionRecordURLs", "episodeLocalModifiedDates", "subscri
             f"Callback snapshots must not read the whole legacy dictionary: {obsolete}")
 
 # Remote chunks preload metadata once, apply conflicts, update metadata, then save/yield.
-modifications = body(REMOTE, "func processFetchedModificationBatch")
+modifications = body(REMOTE, "func applyPendingEpisodeStateBatchInBackground")
 require("prepareSyncItemMetadataContextBatch" in modifications
         and "upsertSyncItemMetadata" in modifications,
         "Remote episode chunks must read/write indexed clocks in their Core Data transaction.")
 require("episodeSyncItemMetadataIdentityWrite" in modifications
         and "updating: []" in modifications
-        and modifications.find("updating: []") < modifications.find("applyRemoteEpisodeState"),
+        and modifications.find("updating: []") < modifications.find("episode.consumed"),
         "A corrupt/colliding episode metadata identity must abort the whole chunk before any episode object is mutated.")
 single_remote = body(REMOTE, "func applyRemoteRecord")
-require("episodeSyncItemMetadataIdentityWrite" in single_remote
-        and single_remote.find("updating: []") < single_remote.find("applyRemoteEpisodeState"),
+require("applyPendingEpisodeStateBatchInBackground" in single_remote,
         "Server-conflict episode apply must validate/insert its identity before mutating local state.")
 pending_episodes = body(REMOTE, "func applyPendingEpisodeStates")
-require("episodeSyncItemMetadataIdentityWrite" in pending_episodes
-        and pending_episodes.find("updating: []") < pending_episodes.find("applyRemoteEpisodeState"),
+require("applyPendingEpisodeStateBatchInBackground" in pending_episodes,
         "Pending episode replay must validate all row identities before mutating a chunk.")
 pending_subscriptions = body(REMOTE, "func applyPendingSubscriptions")
-require("prepareSyncItemMetadataContextBatch" in pending_subscriptions
-        and "metadataBatch: &metadataBatch" in pending_subscriptions
-        and "func updateSubscriptionSyncItemMetadata" in REMOTE
-        and "upsertSyncItemMetadata" in REMOTE,
+subscription_worker = body(
+    REMOTE,
+    "nonisolated static func applyPendingSubscriptionBatchInBackground",
+)
+require("applyPendingSubscriptionBatchInBackground" in pending_subscriptions
+        and "prepareSyncItemMetadataContextBatch" in subscription_worker
+        and "metadataBatch: &metadataBatch" in subscription_worker
+        and "func updateMetadata" in subscription_worker
+        and "upsertSyncItemMetadata" in subscription_worker,
         "Remote subscription chunks must use one indexed batch, not N+1 metadata reads.")
-subscription_identity = body(REMOTE, "func ensureSubscriptionSyncItemMetadataMapping")
-require("subscriptionRecordName(forFeedURL:" in subscription_identity
-        and "subscriptionTombstoneRecordName(forFeedURL:" in subscription_identity
-        and "guard" in subscription_identity,
+require("func ensureMetadataMapping" in subscription_worker
+        and "subscriptionRecordName(forFeedURL:" in subscription_worker
+        and "subscriptionTombstoneRecordName(forFeedURL:" in subscription_worker
+        and "widersprüchliche Identität" in subscription_worker,
         "A malformed CloudKit record must not map one record hash onto another feed before subscription side effects run.")
 
 # Identity is not opened until pending/unbound rows and legacy files are safely bound to the

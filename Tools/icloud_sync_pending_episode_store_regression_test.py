@@ -55,15 +55,15 @@ require('pendingEpisodeStateEntityName = "ICCloudPendingEpisodeState"' in MANAGE
 fetched = method_body(REMOTE, "func handleFetchedRecordZoneChanges")
 stage_call = fetched.find("stagePendingEpisodeStates")
 apply_call = fetched.find("processFetchedModificationBatch")
-commit_call = fetched.rfind("performSynchronousRemoteApplyBatch {", stage_call, apply_call)
-remove_call = fetched.find("removePendingEpisodeStates", commit_call)
-require(-1 not in (stage_call, apply_call, commit_call, remove_call)
-        and stage_call < commit_call < apply_call < remove_call,
-        "Each remote chunk must durably stage episode payloads before apply, and remove only after the matching local save.")
+commit_call = fetched.find("applyPendingEpisodeStateBatchInBackground", stage_call)
+require(-1 not in (stage_call, commit_call) and stage_call < commit_call,
+        "Each remote chunk must durably stage episode payloads before its background transaction.")
 
-modification_batch = method_body(REMOTE, "func processFetchedModificationBatch")
+modification_batch = method_body(REMOTE, "func applyPendingEpisodeStateBatchInBackground")
 require("mergePendingEpisodeStates" not in modification_batch
-        and "pendingPayloads" not in modification_batch,
+        and "pendingPayloads" not in modification_batch
+        and "context.delete(pending)" in modification_batch
+        and modification_batch.find("context.delete(pending)") < modification_batch.find("context.save()"),
         "Remote episode chunks must not merge/rewrite the growing pending-payload plist.")
 
 pending_replay = method_body(REMOTE, "func applyPendingEpisodeStates")
@@ -81,7 +81,8 @@ for signature in [
     "nonisolated static func deleteAllPendingEpisodeStates",
 ]:
     body = method_body(REMOTE, signature)
-    require("newBackgroundContext()" in body and "context.perform" in body,
+    require(("newBackgroundContext()" in body or "newICloudSyncBackgroundContext()" in body)
+            and "context.perform" in body,
             f"{signature} must run Core Data I/O on a background context.")
 
 stage = method_body(REMOTE, "nonisolated static func stagePendingEpisodeStates")

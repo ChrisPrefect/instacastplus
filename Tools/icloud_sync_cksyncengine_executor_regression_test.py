@@ -45,7 +45,9 @@ require("try await syncEngine.fetchChanges()" not in low_priority_sync, "schedul
 
 perform_low_priority_sync = method_body(MANAGER, "func performLowPrioritySync")
 send_wrapper = method_body(MANAGER, "func sendChangesAndApplyCallbackOutcomes")
-require("sendChangesAndApplyCallbackOutcomes(syncEngine" in perform_low_priority_sync, "Low-priority sync must send through the manager-owned engine wrapper.")
+require("sendChangesAndApplyCallbackOutcomes(" in perform_low_priority_sync
+        and "syncEngine," in perform_low_priority_sync,
+        "Low-priority sync must send through the manager-owned engine wrapper.")
 require("try await syncEngine.sendChanges()" in send_wrapper, "The manager-owned wrapper must call CKSyncEngine directly.")
 require("try await syncEngine.fetchChanges()" in perform_low_priority_sync, "Low-priority sync must fetch through the manager-owned engine.")
 

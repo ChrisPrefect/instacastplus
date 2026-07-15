@@ -91,8 +91,16 @@ require(ordered(metadata_loop, "if (phaseError)", "terminalError = phaseError", 
 require("if (error && *error) return" in main_import,
         "Episode-list import must not run after playlist persistence failed.")
 
+feed_settings_signature = "+ (NSInteger)importFeedSettingsFromBackup:(InstacastBackupData *)backup error:(NSError **)error"
+require(feed_settings_signature in IMPORTER,
+        "The feed settings phase must expose its background transaction failure.")
+require("[context save:&saveError]" in feed_settings and
+        "batchError = ICBackupImportPersistenceError(saveError)" in feed_settings,
+        "The feed settings background transaction must preserve its exact save failure.")
+require(ordered(feed_settings, "if (batchError)", "*error = batchError", "return 0;"),
+        "Feed settings must stop and report a failed background batch before returning success.")
+
 for name, signature, method in (
-    ("feed settings", "+ (NSInteger)importFeedSettingsFromBackup:(InstacastBackupData *)backup error:(NSError **)error", feed_settings),
     ("Apple Watch", "+ (NSInteger)importAppleWatchEpisodesFromBackup:(InstacastBackupData *)backup error:(NSError **)error", watch),
     ("playlists", "+ (NSInteger)importPlaylistsFromBackup:(InstacastBackupData *)backup error:(NSError **)error", playlists),
     ("episode lists", "+ (NSInteger)importEpisodeListsFromBackup:(InstacastBackupData *)backup error:(NSError **)error", episode_lists),

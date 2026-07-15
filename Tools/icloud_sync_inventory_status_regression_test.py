@@ -32,7 +32,7 @@ def method_body(source: str, signature: str) -> str:
     raise AssertionError(f"Unterminated method: {signature}")
 
 
-inventory_refresh = method_body(MANAGER, "func refreshCloudInventory(reason: String)")
+inventory_refresh = method_body(MANAGER, "func refreshCloudInventory(reason:")
 require(
     "cloudInventoryRefreshInProgress" in MANAGER
     and "cloudInventoryRefreshErrorText" in MANAGER,

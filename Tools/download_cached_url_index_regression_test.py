@@ -36,7 +36,12 @@ def body(signature: str) -> str:
 
 
 cached_url = body("- (NSURL*) URLForCachedEpisode:")
-remove_batch = body("- (void)_removeCacheForEpisodes:")
+remove_batch = body(
+    "- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                       automatic:(BOOL)automatic\n"
+    "             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                      completion:"
+)
 perform_import = body("- (void)_importFileAtURL:")
 
 candidate_start = cached_url.find("// Return new-style path")

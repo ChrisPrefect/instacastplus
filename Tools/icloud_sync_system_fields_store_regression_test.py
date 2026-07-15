@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld"
 MODEL7_PATH = MODEL_DIR / "Model7.xcdatamodel" / "contents"
+MODEL8_PATH = MODEL_DIR / "Model8.xcdatamodel" / "contents"
 PROJECT = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 DATABASE = (ROOT / "Classes" / "Model" / "DatabaseManager.m").read_text()
 MANAGER = (ROOT / "Classes" / "ICiCloudSyncManager.swift").read_text()
@@ -39,12 +40,13 @@ def body(source: str, signature: str) -> str:
 
 require(MODEL7_PATH.exists(),
         "The indexed CKRecord system-field store needs additive Core Data Model7.")
+require(MODEL8_PATH.exists(), "The current Model8 must preserve the Model7 system-field store.")
 current_version = plistlib.loads((MODEL_DIR / ".xccurrentversion").read_bytes())
-require(current_version.get("_XCCurrentVersionName") == "Model7.xcdatamodel",
-        "Model7 must be the compiled current Core Data model.")
-require("Model7.xcdatamodel" in PROJECT
-        and "currentVersion = F700B0A17E2D4B00A10B0001 /* Model7.xcdatamodel */;" in PROJECT,
-        "The Xcode version group must compile Model7 as current.")
+require(current_version.get("_XCCurrentVersionName") == "Model8.xcdatamodel",
+        "Model8 must be the compiled current Core Data model.")
+require("Model8.xcdatamodel" in PROJECT
+        and "currentVersion = F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */;" in PROJECT,
+        "The Xcode version group must compile Model8 as current.")
 
 model7 = ET.parse(MODEL7_PATH).getroot()
 system_fields = model7.find("./entity[@name='ICCloudKnownRecordSystemFields']")
@@ -64,6 +66,10 @@ constraints = [
 ]
 require({"accountRecordName", "recordName"} in constraints,
         "System fields must be unique per CloudKit account and record name.")
+model8 = ET.parse(MODEL8_PATH).getroot()
+model8_system_fields = model8.find("./entity[@name='ICCloudKnownRecordSystemFields']")
+require(ET.tostring(model8_system_fields) == ET.tostring(system_fields),
+        "Model8 must not alter the shipped Model7 system-field entity.")
 
 
 def entity_xml(entity: ET.Element) -> bytes:
@@ -146,7 +152,7 @@ persist = body(METADATA, "nonisolated static func persistKnownRecordSystemFields
 delete = body(METADATA, "nonisolated static func removeKnownRecordSystemFields")
 for helper, operation in [(persist, "persist"), (delete, "delete")]:
     require("maximumRecordZoneChangesPerBatch" in helper
-            and "newBackgroundContext()" in helper
+            and "newICloudSyncBackgroundContext()" in helper
             and "context.perform" in helper
             and "context.save()" in helper
             and "context.reset()" in helper
@@ -157,7 +163,7 @@ for helper, operation in [(persist, "persist"), (delete, "delete")]:
 
 sent = body(REMOTE, "func handleSentRecordZoneChanges")
 persist_position = sent.find("try await Self.persistKnownRecordSystemFields")
-ack_position = sent.find("acknowledgeLocalOutboxRecords")
+ack_position = sent.find("acknowledgeLocalOutboxOperationsInBackground")
 conflict_position = sent.find("failedRecordSaves.compactMap")
 failed_apply_position = sent.find("handleFailedRecordSave")
 require(-1 < conflict_position < persist_position < ack_position,
@@ -169,11 +175,12 @@ require("rememberServerRecord" not in failed_save
         and "persistKnownRecordSystemFields" not in failed_save,
         "serverRecordChanged must never synchronously persist on MainActor.")
 
-state_update = body(ENGINE, "func handleEventOnMain")
-require("requiresSyncEngineStateRollbackAfterPersistenceFailure" in state_update
-        and state_update.find("requiresSyncEngineStateRollbackAfterPersistenceFailure")
-            < state_update.find("persistStateSerialization(event.stateSerialization)"),
-        "A failed local system-field transaction must not persist the advanced CloudKit cursor.")
+state_callback = body(ENGINE, "nonisolated func handleEvent")
+state_guard = body(ENGINE, "func statePersistenceGeneration")
+require("case .stateUpdate" in state_callback
+        and "try await persistStateSerialization" in state_callback
+        and "requiresSyncEngineStateRollbackAfterPersistenceFailure" in state_guard,
+        "A failed local system-field transaction must block the off-main CloudKit state write.")
 initializer = body(MANAGER, "func initializeSyncEngineIfNeeded")
 require("requiresSyncEngineStateRollbackAfterPersistenceFailure" in initializer
         and initializer.find("syncEngine = nil") < initializer.find("loadStateSerialization()"),

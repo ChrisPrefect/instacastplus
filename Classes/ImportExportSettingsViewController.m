@@ -857,6 +857,7 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] initWithEntityName:@"Feed"];
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == YES"];
     fetchRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+    fetchRequest.relationshipKeyPathsForPrefetching = @[@"properties"];
     fetchRequest.fetchBatchSize = ICBackupFetchBatchSize;
     NSArray* feeds = [context executeFetchRequest:fetchRequest error:error];
     if (!feeds) return nil;
@@ -1068,11 +1069,27 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     if (hasAppleWatchEpisodes) [xml appendString:@"  </appleWatchEpisodes>\n"];
 
     // Playlists
-    NSFetchRequest *listsRequest = [[NSFetchRequest alloc] initWithEntityName:@"List"];
-    listsRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
-    listsRequest.fetchBatchSize = ICBackupFetchBatchSize;
-    NSArray *fetchedLists = [context executeFetchRequest:listsRequest error:error];
-    if (!fetchedLists) return nil;
+    NSFetchRequest *playlistsRequest = [[NSFetchRequest alloc] initWithEntityName:@"Playlist"];
+    playlistsRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+    playlistsRequest.relationshipKeyPathsForPrefetching = @[
+        @"playlistEpisodes",
+        @"playlistEpisodes.episode",
+        @"playlistEpisodes.episode.feed",
+        @"playlistEpisodes.episode.media",
+    ];
+    playlistsRequest.fetchBatchSize = ICBackupFetchBatchSize;
+    NSArray *fetchedPlaylists = [context executeFetchRequest:playlistsRequest error:error];
+    if (!fetchedPlaylists) return nil;
+
+    NSFetchRequest *episodeListsRequest = [[NSFetchRequest alloc] initWithEntityName:@"EpisodeList"];
+    episodeListsRequest.sortDescriptors = @[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]];
+    episodeListsRequest.relationshipKeyPathsForPrefetching = @[@"includedFeeds"];
+    episodeListsRequest.fetchBatchSize = ICBackupFetchBatchSize;
+    NSArray *fetchedEpisodeLists = [context executeFetchRequest:episodeListsRequest error:error];
+    if (!fetchedEpisodeLists) return nil;
+
+    NSArray *fetchedLists = [[fetchedPlaylists arrayByAddingObjectsFromArray:fetchedEpisodeLists]
+        sortedArrayUsingDescriptors:@[[[NSSortDescriptor alloc] initWithKey:@"rank" ascending:YES]]];
     NSMutableArray *lists = [NSMutableArray array];
     NSMutableSet<NSString *> *seenListUIDs = [NSMutableSet set];
     for (CDList *list in fetchedLists) {
@@ -1466,29 +1483,35 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
             return;
         }
 
-        [[ICiCloudSyncManager sharedManager] prepareForLocalAppResetWithCompletion:^(NSError *syncError) {
-            if (syncError) {
-                [self _showResetError:syncError];
-                return;
-            }
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            BOOL clearedImages = [[ImageCacheManager sharedImageCacheManager] cancelImageDownloadsAndClearCache];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!clearedImages) {
+                    NSError *imageError = [NSError errorWithDomain:@"AppReset"
+                                                              code:1
+                                                          userInfo:@{NSLocalizedDescriptionKey: @"Cached images could not be deleted. No local database data was reset.".ls}];
+                    [self _showResetError:imageError];
+                    return;
+                }
 
-            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                BOOL clearedImages = [[ImageCacheManager sharedImageCacheManager] cancelImageDownloadsAndClearCache];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    if (!clearedImages) {
-                        NSError *imageError = [NSError errorWithDomain:@"AppReset"
-                                                                  code:1
-                                                              userInfo:@{NSLocalizedDescriptionKey: @"Cached images could not be deleted. No local database data was reset.".ls}];
-                        [self _showResetError:imageError];
+                [[ICiCloudSyncManager sharedManager] prepareForLocalAppResetWithCompletion:^(NSError *syncError) {
+                    if (syncError) {
+                        [self _showResetError:syncError];
                         return;
                     }
 
                     [DMANAGER resetAllUserDataWithCompletion:^(NSError *databaseError) {
                         if (databaseError) {
+                            BOOL canRecoverSync = [databaseError.domain isEqualToString:@"DatabaseManager"] &&
+                                (databaseError.code == 30 || databaseError.code == 32);
+                            if (canRecoverSync) {
+                                [[ICiCloudSyncManager sharedManager] recoverAfterLocalAppResetFailure:databaseError];
+                            }
                             [self _showResetError:databaseError];
                             return;
                         }
 
+                        [[ICiCloudSyncManager sharedManager] completeLocalAppReset];
                         NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
                         [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
                         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -1511,9 +1534,9 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
                             [self _showResetCompleteAlert];
                         }
                     }];
-                });
+                }];
             });
-        }];
+        });
     }];
 }
 

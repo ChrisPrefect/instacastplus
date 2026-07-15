@@ -18,6 +18,7 @@ MANAGER = "\n".join(
     ]
 )
 EPISODES_CONTROLLER = (ROOT / "Classes" / "EpisodesTableViewController.m").read_text()
+SUBSCRIPTION_MANAGER = (ROOT / "Classes" / "Model" / "SubscriptionManager.m").read_text()
 
 
 def require(condition: bool, message: str) -> None:
@@ -69,7 +70,7 @@ def method_bodies(signature: str) -> str:
 # feed is physically removed before the sync manager starts on the next launch.
 current_version = plistlib.loads((MODEL_DIR / ".xccurrentversion").read_bytes())
 model_name = current_version.get("_XCCurrentVersionName")
-require(model_name == "Model7.xcdatamodel", "The durable local outbox needs the current versioned Core Data model.")
+require(model_name == "Model8.xcdatamodel", "The durable local outbox needs the current versioned Core Data model.")
 model_path = MODEL_DIR / model_name / "contents"
 require(model_path.exists(), "The current Core Data model version is missing.")
 model = ET.parse(model_path).getroot()
@@ -107,16 +108,17 @@ require(
 )
 project = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 require(
-    "Model7.xcdatamodel" in project
-    and "currentVersion = F700B0A17E2D4B00A10B0001 /* Model7.xcdatamodel */;" in project,
-    "The Xcode version group must compile Model7 as current; otherwise builds rewrite .xccurrentversion.",
+    "Model8.xcdatamodel" in project
+    and "currentVersion = F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */;" in project,
+    "The Xcode version group must compile Model8 as current; otherwise builds rewrite .xccurrentversion.",
 )
 outbox_entities = [entity for entity in model.findall("entity") if entity.get("name") == "ICCloudSyncOutboxEntry"]
 require(len(outbox_entities) == 1, "The Core Data model must contain ICCloudSyncOutboxEntry.")
 outbox_entity = outbox_entities[0]
 require(outbox_entity.get("syncable") == "NO", "The local outbox itself must never be iCloud-synced by Core Data.")
 attributes = {attribute.get("name"): attribute for attribute in outbox_entity.findall("attribute")}
-for attribute in ["accountRecordName", "recordName", "category", "operation", "acknowledged", "revision", "changedAt", "payloadData"]:
+for attribute in ["accountRecordName", "recordName", "category", "operation", "acknowledged",
+                  "acknowledgedRevision", "acknowledgedOperation", "revision", "changedAt", "payloadData"]:
     require(attribute in attributes, f"Outbox attribute is missing: {attribute}")
 require(
     any(
@@ -247,25 +249,27 @@ require(
 # Cloud success acknowledges exactly the submitted revision. An old in-flight ack must
 # preserve and requeue a newer local edit of the same record.
 sent_changes = method_body("func handleSentRecordZoneChanges")
-require("acknowledgeLocalOutboxRecords" in sent_changes, "Successful CloudKit saves must acknowledge the local outbox.")
-ack = method_body("func acknowledgeLocalOutboxRecords")
-ack_operations = method_body("func acknowledgeLocalOutboxOperations")
+require("acknowledgeLocalOutboxOperationsInBackground" in sent_changes,
+        "Successful CloudKit saves and deletes must acknowledge the local outbox off MainActor.")
+ack_operations = method_body("nonisolated static func acknowledgeLocalOutboxOperationsInBackground")
 require(
-    "localMutationRevisionPayloadKey" in ack
-    and "currentRevision == sentRevision" in ack_operations,
-    "An ack may remove only its exact submitted revision.",
+    "currentRevision == sentAttempt.revision" in ack_operations
+    and "currentOperation == sentAttempt.operation" in ack_operations,
+    "An ACK may receipt only its exact submitted revision and operation.",
 )
 require(
-    'setValue(true, forKey: "acknowledged")' in ack_operations
-    and "pairEntries.allSatisfy" in ack_operations,
+    'forKey: "acknowledgedRevision"' in ack_operations
+    and 'forKey: "acknowledgedOperation"' in ack_operations
+    and "localOutboxEntryIsAcknowledged" in ack_operations
+    and "context.delete(" not in ack_operations,
     "A subscription pair must remain durable until both inverse operations are acknowledged.",
 )
 require(
-    "requeue" in ack_operations.lower() or "drainLocalOutbox" in ack_operations,
+    "needsOutboxDrain" in ack_operations,
     "A stale ack must requeue the newer current outbox revision.",
 )
 require(
-    "acknowledgeLocalOutboxDeletes" in sent_changes
+    "deleteRevisionsByRecordName" in sent_changes
     and "pendingDeleteAttempt" in sent_changes
     and "acknowledgeDeleteAttempts" in sent_changes,
     "Physical-delete acknowledgements must peek the exact sent revision and consume it only after durable local ACK.",
@@ -273,31 +277,48 @@ require(
 
 # Live and parked remote data must share the same outbox/LWW decision. A tombstone uses
 # SubscriptionManager so playback, loading, cache and Up Next cleanup are not bypassed.
-episode_apply = method_body("func applyRemoteEpisodeState")
-subscription_apply = method_body("func applyRemoteSubscription(")
+episode_apply = method_body("func applyPendingEpisodeStateBatchInBackground")
+subscription_apply = method_body("func applyPendingSubscriptionBatchInBackground(")
+subscription_consume = method_body("func consumeSubscriptionApplyBatchResult(")
+subscription_cleanup_drain = method_body("func performPendingSubscriptionCleanupIntentDrain(")
+remote_view_merge = method_body("func performSynchronousRemoteViewContextMerge(")
 pending_episodes = method_body("func applyPendingEpisodeStates")
 pending_subscriptions = method_body("func applyPendingSubscriptions")
-require("remoteOutboxDecision" in episode_apply, "Remote episode apply must consult the local outbox first.")
-require("remoteOutboxDecision" in subscription_apply, "Remote subscription apply must consult the local outbox first.")
+require("localOutboxEntityName" in episode_apply
+        and "episodeOutboxRevisionResolvedByMetadata" in episode_apply,
+        "Remote episode apply must consult the exact durable local outbox revision first.")
+require("func remoteDecision" in subscription_apply,
+        "Remote subscription apply must consult the local outbox first.")
 require(
-    "applyRemoteSubscription" in pending_subscriptions
+    "applyPendingSubscriptionBatchInBackground" in pending_subscriptions
     and "applySubscriptionPayload(payload, to:" not in pending_subscriptions,
     "Parked subscriptions must not bypass the live LWW/outbox path.",
 )
 require(
-    "subscriptionOutboxRecordNames" in pending_subscriptions,
+    "subscriptionOutboxRecordNames" in subscription_apply,
     "Parked subscription conflicts must preload both halves of the logical outbox intent.",
 )
 require(
-    "performSynchronousRemoteApplyBatch {" in pending_episodes
-    and "performSynchronousRemoteApplyBatch {" in pending_subscriptions
+    "applyPendingEpisodeStateBatchInBackground" in pending_episodes
+    and "remoteOriginGate.register" in episode_apply
+    and "remoteOriginGate.register" in subscription_apply
+    and "performSynchronousRemoteViewContextMerge" in subscription_consume
+    and "NSManagedObjectContext.mergeChanges" in remote_view_merge
+    and "isApplyingRemoteChange = true" in remote_view_merge
+    and "remoteAppliedObjectIDs.subtract(originObjectIDs)" in subscription_consume
     and "isApplyingRemoteChange = true" not in pending_episodes
     and "isApplyingRemoteChange = true" not in pending_subscriptions,
     "Applying parked remote payloads must not be recaptured as new local outbox mutations.",
 )
 require(
-    "applyRemoteSubscriptionTombstone" in MANAGER
-    and "subscriptionManager.unsubscribeFeed" in MANAGER,
+    "drainPendingSubscriptionCleanupIntentsIfNeeded" in subscription_consume
+    and "performUnsubscribeSideEffects" in subscription_cleanup_drain
+    and "stop]" in SUBSCRIPTION_MANAGER
+    and "cancelLoadingForFeed" in SUBSCRIPTION_MANAGER
+    and "removeCacheForFeeds" in SUBSCRIPTION_MANAGER
+    and "resetAutoCacheForFeeds" in SUBSCRIPTION_MANAGER
+    and "eraseEpisodesFromUpNext" in SUBSCRIPTION_MANAGER
+    and "_removePendingAutoDownloadFeedUIDs" in SUBSCRIPTION_MANAGER,
     "Remote subscription tombstones must run the complete unsubscribe cleanup.",
 )
 fetched_changes = method_body("func handleFetchedRecordZoneChanges")
@@ -367,7 +388,7 @@ reconcile = method_body("func reconcileAvailableICloudAccount")
 require(
     "bindUnboundLocalOutboxEntries" in reconcile
     and "localOutboxHasVerifiedAccountKey" in reconcile
-    and "drainLocalOutbox" in reconcile,
+    and "continueEnabledSyncAfterAccountVerification" in reconcile,
     "Only the first verified account may bind and resume the unbound durable outbox.",
 )
 delete_cloud = method_body("@objc func deleteAllICloudDataWithCompletion")

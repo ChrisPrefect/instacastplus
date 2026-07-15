@@ -23,7 +23,7 @@ MODEL = (
     / "Resources"
     / "Models"
     / "Model5.xcdatamodeld"
-    / "Model7.xcdatamodel"
+    / "Model8.xcdatamodel"
     / "contents"
 ).read_text()
 CURRENT_MODEL = (
@@ -121,7 +121,7 @@ require(
 require(
     'name="watchLastEventRevision" optional="YES" attributeType="Integer 64" '
     'defaultValueString="0"' in MODEL
-    and "Model7.xcdatamodel" in CURRENT_MODEL
+    and "Model8.xcdatamodel" in CURRENT_MODEL
     and "shouldMigrateStoreAutomatically = YES" in DATABASE
     and "shouldInferMappingModelAutomatically = YES" in DATABASE,
     "Existing installations must lightweight-migrate the optional revision floor to zero; the "

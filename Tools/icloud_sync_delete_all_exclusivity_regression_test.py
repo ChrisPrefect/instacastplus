@@ -47,7 +47,7 @@ capture_initial = delete_all.find("let activeInitialQueueTask = initialQueueTask
 cancel_initial = delete_all.find("cancelInitialQueueTask()", capture_initial)
 await_initial = delete_all.find("await activeInitialQueueTask.value", cancel_initial)
 zone_delete = delete_all.find("deleteRecordZone")
-local_reset = delete_all.find("resetAllLocalSyncMetadata()")
+local_reset = delete_all.find("resetAllLocalSyncMetadata(")
 gate_off = delete_all.rfind(f"{GATE} = false")
 intentional_restart = delete_all.find("scheduleCurrentEnabledDataForUpload()")
 require(

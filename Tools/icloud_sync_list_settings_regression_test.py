@@ -60,15 +60,20 @@ require(
 )
 
 record_builder = method_body(manager, "nonisolated static func subscriptionListSettingsRecordForSyncEngineCallback")
+list_payload_builder = method_body(
+    manager,
+    "nonisolated static func subscriptionListSettingsPayloadForSyncEngineCallback",
+)
 for field in ['"episodeLists"', '"mainMenuListUIDs"']:
-    require(field in record_builder, f"ICSubscriptionListSettings must upload {field}.")
+    require(field in list_payload_builder, f"ICSubscriptionListSettings must upload {field}.")
 require(
     "episodeListPayloadsForSyncEngineCallback()" in record_builder,
     "Subscription list settings must materialize CDEpisodeList payloads off the main thread.",
 )
 
 payload_builder = method_body(manager, "nonisolated static func episodeListPayloadsForSyncEngineCallback")
-require("newBackgroundContext()" in payload_builder, "Episode-list payload building must not fetch lists on the main context.")
+require("newICloudSyncBackgroundContext()" in payload_builder,
+        "Episode-list payload building must use the dedicated iCloud coordinator, never the UI context.")
 require('entityName: "EpisodeList"' in payload_builder, "Episode-list payload building must fetch CDEpisodeList rows.")
 require('relationshipKeyPathsForPrefetching = ["includedFeeds"]' in payload_builder, "Included feeds must be prefetched in one list-settings fetch.")
 
@@ -99,8 +104,14 @@ for field in [
 require("sourceURL_" in single_payload, "Included podcasts must sync by stable feed source URL, not local object IDs.")
 
 fingerprint = method_body(manager, "nonisolated static func subscriptionListSettingsFingerprint")
+fingerprint_components = method_body(
+    manager,
+    "nonisolated static func subscriptionListSettingsFingerprint(\n        episodeListPayloads:",
+)
 require("episodeListPayloadsForSyncEngineCallback()" in fingerprint, "Episode-list metadata must affect the list-settings fingerprint.")
-require("mainMenuListUIDsForSyncEngineCallback()" in fingerprint, "Main-menu list visibility must affect the list-settings fingerprint.")
+require("subscriptionListSettingsPayloadForSyncEngineCallback" in fingerprint_components
+        and "mainMenuListUIDsForSyncEngineCallback()" in list_payload_builder,
+        "Main-menu list visibility must affect the list-settings fingerprint.")
 
 has_local = method_body(manager, "nonisolated static func hasLocalSubscriptionListSettings")
 require("hasLocalEpisodeListSettings()" in has_local, "A customized episode-list state must be publishable even without manual feed order.")

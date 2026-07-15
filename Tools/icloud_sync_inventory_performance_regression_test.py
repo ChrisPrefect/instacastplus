@@ -41,8 +41,8 @@ require("runRequestedCloudInventoryRefresh()" in completion,
         "A settings toggle may request one inventory refresh after its sync has really completed.")
 
 toggle = method_body(SETTINGS, "- (void)toggleSyncOption:")
-require("requestCloudInventoryRefreshAfterSync" in toggle,
-        "A settings toggle must explicitly request its post-sync inventory refresh.")
+require("requestCloudInventoryRefreshAfterOptionChange" in toggle,
+        "A settings toggle must request a conditional post-sync inventory refresh.")
 require("refreshCloudInventory" not in toggle,
         "A settings toggle must not scan CloudKit before its asynchronous sync has completed.")
 
@@ -51,8 +51,15 @@ require("requestedCloudInventoryRefreshReason" in request_refresh,
         "The explicit post-sync inventory request must be retained until completion.")
 
 run_requested_refresh = method_body(MANAGER, "func runRequestedCloudInventoryRefresh")
-require('refreshCloudInventory(reason: "settingsActionAfterSync")' in run_requested_refresh,
-        "Only an explicit settings action may start its post-sync full inventory scan.")
+require("guard let reason = requestedCloudInventoryRefreshReason" in run_requested_refresh
+        and "refreshCloudInventory(reason: reason, afterCompletedSync: true)" in run_requested_refresh,
+        "A coalesced explicit settings/deletion/reseed request must retain and forward its reason after sync.")
+require(
+    "settingsOptionChangeAfterSync" in run_requested_refresh
+    and "syncedUserDataInCurrentRun" in run_requested_refresh,
+    "A completed same-account OFF/ON with no user-data mutation must not list all cloud "
+    "records merely to confirm unchanged counts.",
+)
 
 manual_action = method_body(SETTINGS, "- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:")
 require("requestCloudInventoryRefreshAfterSync" in manual_action

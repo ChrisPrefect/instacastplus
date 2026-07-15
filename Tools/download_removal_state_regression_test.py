@@ -49,7 +49,13 @@ remove_feed_with_completion = body(
     "                   automatic:(BOOL)automatic\n"
     "                  completion:(void (^)(NSError* error))completion",
 )
-remove_batch = body(MANAGER, "- (void)_removeCacheForEpisodes:")
+remove_batch = body(
+    MANAGER,
+    "- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                       automatic:(BOOL)automatic\n"
+    "             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                      completion:",
+)
 perform_files = body(MANAGER, "- (void)_performCacheFileDeletionForItems:")
 finish_files = body(MANAGER, "- (void)_finishCacheFileDeletionForItems:")
 cache_episode = body(
@@ -58,12 +64,14 @@ cache_episode = body(
     "             autoCache:(BOOL)autoCache\n"
     "overwriteCellularLock:(BOOL)overwriteCellularLock\n"
     "reportsFailureToUser:(BOOL)reportsFailureToUser\n"
-    "             queueRank:(NSNumber*)queueRank",
+    "             queueRank:(NSNumber*)queueRank\n"
+    "preservesConsumedState:(BOOL)preservesConsumedState\n"
+    "deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup",
 )
-transcripts = body(MANAGER, "static void ICRemoveTranscriptCacheForEpisodeHashes(")
+transcripts = body(MANAGER, "static ICTranscriptCacheSnapshot* ICTranscriptCacheURLSnapshot(")
 
 require("completion:nil" in remove_one and "_removeCacheForEpisodes:" in remove_one_with_completion and
-        "completion:nil" in remove_feed and "removeCacheForEpisodes:episodes.array" in remove_feed_with_completion,
+        "completion:nil" in remove_feed and "removeCacheForFeeds:feed ? @[feed] : @[]" in remove_feed_with_completion,
         "Single and feed deletion must use the durable public partition and one batch for settled unowned files.")
 require("episode.downloaded = NO" in remove_batch and "episode.lastDownloaded = nil" in remove_batch and
         "[_cachedURLIndex removeObjectForKey:" in remove_batch and "saveReturningError" in remove_batch,
@@ -82,7 +90,7 @@ require("existingObjectWithID" in finish_files and "episode.downloaded = restore
         "A failed audio deletion must restore a still-existing episode instead of leaving model/file divergence.")
 require("_cacheDeletionTokensByIdentifier" in cache_episode,
         "A replacement download must not start while the previous file deletion can still win the path race.")
-require(transcripts.count("contentsOfDirectoryAtPath") == 1 and "episodeHashes" in transcripts and
+require(transcripts.count("contentsOfDirectoryAtPath") == 1 and "URLsByEpisodeHash" in transcripts and
         "rangeOfString:@\"_\" options:NSBackwardsSearch" in transcripts and "error:&" in transcripts,
         "Feed deletion must scan the transcript directory once, not once per episode.")
 require("CDEpisode" not in perform_files and ".feed" not in perform_files,

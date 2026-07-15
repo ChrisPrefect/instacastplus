@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODEL4 = ROOT / "Resources" / "Models" / "Model4.xcdatamodeld" / "Model.xcdatamodel"
 MODEL7 = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model7.xcdatamodel"
+MODEL8 = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model8.xcdatamodel"
 
 SWIFT_PROOF = r'''
 import CoreData
@@ -199,6 +200,14 @@ func insertUserFixture(
     bookmark.setValue("guid-\(label)", forKey: "episodeGuid")
     bookmark.setValue(123.75, forKey: "position")
 
+    let episodeList = try insert("EpisodeList")
+    episodeList.setValue("list-\(label)", forKey: "uid")
+    episodeList.setValue("Eigene Liste \(label)", forKey: "name")
+    episodeList.setValue(17, forKey: "rank")
+    episodeList.setValue("List Custom", forKey: "icon")
+    episodeList.setValue(NSSet(object: episode), forKey: "episodes")
+    episodeList.setValue(NSSet(object: feed), forKey: "includedFeeds")
+
     guard includeBinaryRows else {
         try context.save()
         return nil
@@ -255,6 +264,15 @@ func validateUserFixture(
         throw ProofFailure(description: "\(label) bookmark was lost")
     }
     try require((bookmark.value(forKey: "position") as? NSNumber)?.doubleValue == 123.75, "\(label) bookmark value changed")
+
+    let listRequest = NSFetchRequest<NSManagedObject>(entityName: "EpisodeList")
+    listRequest.predicate = NSPredicate(format: "uid == %@", "list-\(label)")
+    guard let episodeList = try context.fetch(listRequest).first else {
+        throw ProofFailure(description: "\(label) episode list was lost")
+    }
+    try require(episodeList.value(forKey: "name") as? String == "Eigene Liste \(label)", "\(label) episode-list attributes changed")
+    try require((episodeList.value(forKey: "episodes") as? Set<NSManagedObject>)?.first == episode, "\(label) episode-list membership was lost")
+    try require((episodeList.value(forKey: "includedFeeds") as? Set<NSManagedObject>)?.first == feed, "\(label) episode-list feed filter was lost")
 
     if let expectedPayload {
         let outboxRequest = NSFetchRequest<NSManagedObject>(entityName: "ICCloudSyncOutboxEntry")
@@ -400,7 +418,8 @@ func runFixture(
 
 let environment = ProcessInfo.processInfo.environment
 guard let model4Path = environment["PUBLISHED_MODEL4_MOM"],
-      let model7Path = environment["CURRENT_MODEL7_MOM"],
+      let model7Path = environment["PREDECESSOR_MODEL7_MOM"],
+      let model8Path = environment["CURRENT_MODEL8_MOM"],
       let storeDirectory = environment["MIGRATION_STORE_DIRECTORY"] else {
     fatalError("Missing clean migration proof paths")
 }
@@ -408,14 +427,21 @@ let directory = URL(fileURLWithPath: storeDirectory, isDirectory: true)
 try runFixture(
     label: "published-model4",
     sourceModelPath: model4Path,
-    currentModelPath: model7Path,
+    currentModelPath: model8Path,
     directory: directory,
     includeBinaryRows: false
 )
 try runFixture(
-    label: "current-model7",
+    label: "predecessor-model7",
     sourceModelPath: model7Path,
-    currentModelPath: model7Path,
+    currentModelPath: model8Path,
+    directory: directory,
+    includeBinaryRows: true
+)
+try runFixture(
+    label: "current-model8",
+    sourceModelPath: model8Path,
+    currentModelPath: model8Path,
     directory: directory,
     includeBinaryRows: true
 )
@@ -446,8 +472,9 @@ with tempfile.TemporaryDirectory(prefix="instacast-clean-datastore-migration-") 
         ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
     ).strip()
     model4_mom = temporary / "PublishedModel4.mom"
-    model7_mom = temporary / "CurrentModel7.mom"
-    for source, destination in [(MODEL4, model4_mom), (MODEL7, model7_mom)]:
+    model7_mom = temporary / "PredecessorModel7.mom"
+    model8_mom = temporary / "CurrentModel8.mom"
+    for source, destination in [(MODEL4, model4_mom), (MODEL7, model7_mom), (MODEL8, model8_mom)]:
         run([
             "xcrun",
             "momc",
@@ -460,7 +487,8 @@ with tempfile.TemporaryDirectory(prefix="instacast-clean-datastore-migration-") 
     proof_environment = os.environ.copy()
     proof_environment.update({
         "PUBLISHED_MODEL4_MOM": str(model4_mom),
-        "CURRENT_MODEL7_MOM": str(model7_mom),
+        "PREDECESSOR_MODEL7_MOM": str(model7_mom),
+        "CURRENT_MODEL8_MOM": str(model8_mom),
         "MIGRATION_STORE_DIRECTORY": str(temporary),
     })
     run(["xcrun", "swift", "-e", SWIFT_PROOF], environment=proof_environment)

@@ -20,6 +20,16 @@ static NSMutableOrderedSet<CDFeed*>* gFeedsPendingCountLoad;
 static BOOL gFeedCountBatchScheduled = NO;
 static BOOL gFeedCountBatchInProgress = NO;
 
+static NSObject* ICFeedCredentialLock(void)
+{
+    static NSObject* lock;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        lock = [[NSObject alloc] init];
+    });
+    return lock;
+}
+
 static NSArray<NSDictionary*>* ICGroupedFeedCountRows(NSManagedObjectContext* context,
                                                        NSArray<NSString*>* feedUIDs,
                                                        BOOL unplayedOnly,
@@ -172,38 +182,114 @@ static NSArray<NSDictionary*>* ICGroupedFeedCountRows(NSManagedObjectContext* co
 
 - (NSString*) password
 {
-	if (!self.username) {
-		return nil;
-	}
-	
-	NSError* error = nil;
-	NSString* password = [SFHFKeychainUtils getPasswordForUsername:self.username andServiceName:[self.sourceURL absoluteString] error:&error];
-	
-	if (error) {
-		ErrLog(@"error getting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
-	}
-	
-	return password;
+    @synchronized(ICFeedCredentialLock()) {
+        if (!self.username) {
+            return nil;
+        }
+
+        NSError* error = nil;
+        NSString* password = [SFHFKeychainUtils getPasswordForUsername:self.username
+                                                        andServiceName:[self.sourceURL absoluteString]
+                                                                 error:&error];
+
+        if (error) {
+            ErrLog(@"error getting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
+        }
+
+        return password;
+    }
 }
 
 - (void) setPassword:(NSString *)password
 {
-	NSError* error = nil;
-	if (password)
-	{
-		if (![SFHFKeychainUtils storeUsername:self.username
-								  andPassword:password
-							   forServiceName:[self.sourceURL absoluteString]
-							   updateExisting:YES
-										error:&error]) {
-			ErrLog(@"error storing password in keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
-		}
-	}
-	else if (self.username) {
-		if (![SFHFKeychainUtils deleteItemForUsername:self.username andServiceName:[self.sourceURL absoluteString] error:&error]) {
-			ErrLog(@"error deleting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
-		}
-	}
+    @synchronized(ICFeedCredentialLock()) {
+        NSError* error = nil;
+        if (password) {
+            if (![SFHFKeychainUtils storeUsername:self.username
+                                      andPassword:password
+                                   forServiceName:[self.sourceURL absoluteString]
+                                   updateExisting:YES
+                                            error:&error]) {
+                ErrLog(@"error storing password in keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
+            }
+        }
+        else if (self.username) {
+            if (![SFHFKeychainUtils deleteItemForUsername:self.username
+                                           andServiceName:[self.sourceURL absoluteString]
+                                                    error:&error]) {
+                ErrLog(@"error deleting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
+            }
+        }
+    }
+}
+
+- (BOOL)compareAndSetPassword:(NSString *)password
+             expectedPassword:(NSString *)expectedPassword
+      expectedPasswordPresent:(BOOL)expectedPasswordPresent
+                      didMatch:(BOOL *)didMatch
+                         error:(NSError **)error
+{
+    @synchronized(ICFeedCredentialLock()) {
+        if (didMatch) *didMatch = NO;
+        NSString* serviceName = [self.sourceURL absoluteString];
+        if (self.username.length == 0 || serviceName.length == 0) {
+            if (error) {
+                *error = [NSError errorWithDomain:@"CDFeedCredentials"
+                                             code:1
+                                         userInfo:@{NSLocalizedDescriptionKey: @"The podcast credential identity is incomplete."}];
+            }
+            return NO;
+        }
+
+        NSError* readError = nil;
+        NSString* currentPassword = [SFHFKeychainUtils getPasswordForUsername:self.username
+                                                               andServiceName:serviceName
+                                                                        error:&readError];
+        if (readError) {
+            if (error) *error = readError;
+            return NO;
+        }
+        if ([currentPassword isEqualToString:password]) {
+            if (didMatch) *didMatch = YES;
+            return YES;
+        }
+        BOOL currentPasswordPresent = currentPassword != nil;
+        BOOL expectedMatches = currentPasswordPresent == expectedPasswordPresent
+            && (!expectedPasswordPresent || [currentPassword isEqualToString:expectedPassword]);
+        if (!expectedMatches) {
+            return YES;
+        }
+
+        NSError* writeError = nil;
+        BOOL stored = [SFHFKeychainUtils storeUsername:self.username
+                                           andPassword:password
+                                        forServiceName:serviceName
+                                        updateExisting:YES
+                                                 error:&writeError];
+        if (!stored || writeError) {
+            if (error) {
+                *error = writeError ?: [NSError errorWithDomain:@"CDFeedCredentials"
+                                                            code:2
+                                                        userInfo:@{NSLocalizedDescriptionKey: @"The podcast credentials could not be saved."}];
+            }
+            return NO;
+        }
+
+        NSError* verifyError = nil;
+        NSString* storedPassword = [SFHFKeychainUtils getPasswordForUsername:self.username
+                                                               andServiceName:serviceName
+                                                                        error:&verifyError];
+        if (verifyError || ![storedPassword isEqualToString:password]) {
+            if (error) {
+                *error = verifyError ?: [NSError errorWithDomain:@"CDFeedCredentials"
+                                                             code:3
+                                                         userInfo:@{NSLocalizedDescriptionKey: @"The podcast credentials could not be verified after saving."}];
+            }
+            return NO;
+        }
+        if (didMatch) *didMatch = YES;
+        return YES;
+    }
 }
 
 + (NSSet*) keyPathsForValuesAffectingEpisodesCount

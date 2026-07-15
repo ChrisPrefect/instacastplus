@@ -106,41 +106,55 @@ require(later_outbox_read != -1
 require(fetched.count("handleLocalPersistenceFailure(error)") >= 4,
         "A live outbox read failure must enter the normal unresolved retry path.")
 
-for signature, toggle in [
-    ("func applyPendingEpisodeStates() async", "episodesSyncEnabled"),
-    ("func applyPendingSubscriptions() async", "subscriptionsSyncEnabled"),
-]:
-    pending = method_body(REMOTE, signature)
-    read = pending.find("try await Self.localOutboxEntries")
-    apply = pending.find("performSynchronousRemoteApplyBatch {", read)
-    require(read != -1 and apply != -1 and read < apply,
-            f"{signature} must complete its outbox read before applying parked data.")
-    require("handleLocalPersistenceFailure(error)" in pending[read:apply]
-            and "return" in pending[read:apply],
-            f"{signature} must retain parked data after an outbox read failure.")
-    require("generation == cloudAccountGeneration" in pending[read:apply]
-            and toggle in pending[read:apply]
-            and "defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName" in pending[read:apply],
-            f"{signature} must revalidate generation, toggle and account around the suspended read.")
+episode_pending = method_body(REMOTE, "func applyPendingEpisodeStates() async")
+episode_worker = method_body(REMOTE, "func applyPendingEpisodeStateBatchInBackground")
+outbox_read = episode_worker.find("context.fetch(outboxRequest)")
+episode_mutation = episode_worker.find("episode.consumed")
+require(outbox_read != -1 and episode_mutation != -1 and outbox_read < episode_mutation,
+        "Pending episodes must read the outbox inside their atomic worker before mutation.")
+require("context.rollback()" in episode_worker[outbox_read:],
+        "A worker outbox-read failure must roll back and retain the staged payload.")
+require("generation == cloudAccountGeneration" in episode_pending
+        and "episodesSyncEnabled" in episode_pending
+        and "defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName" in episode_pending,
+        "Pending episode orchestration must revalidate generation, toggle and account.")
+
+pending = method_body(REMOTE, "func applyPendingSubscriptions() async")
+subscription_worker = method_body(
+    REMOTE,
+    "nonisolated static func applyPendingSubscriptionBatchInBackground",
+)
+read = subscription_worker.find("context.fetch(outboxRequest)")
+apply = subscription_worker.find("func applyChange", read)
+require(read != -1 and apply != -1 and read < apply,
+        "Pending subscriptions must read the outbox in their atomic worker before applying parked data.")
+require("context.rollback()" in subscription_worker[read:],
+        "Pending subscriptions must retain parked data after an outbox read failure.")
+require("generation == cloudAccountGeneration" in pending
+        and "subscriptionsSyncEnabled" in pending
+        and "subscriptionApplyIsValid" in subscription_worker,
+        "Pending subscriptions must revalidate generation, toggle and account around the suspended read.")
 
 
 # (c) ACK and remote-resolution fetches throw. Revision maps and CKSyncEngine changes
 # are consumed only after the corresponding Core Data save succeeds.
-ack_decl = declaration(REMOTE, "func acknowledgeLocalOutboxOperations")
-ack = method_body(REMOTE, "func acknowledgeLocalOutboxOperations")
-require("throws" in ack_decl and "try context.fetch(request)" in ack,
+ack_decl = declaration(REMOTE, "nonisolated static func acknowledgeLocalOutboxOperationsInBackground")
+ack = method_body(REMOTE, "nonisolated static func acknowledgeLocalOutboxOperationsInBackground")
+require("async throws" in ack_decl and "try context.fetch(request)" in ack,
         "CloudKit ACK must fail closed when its outbox fetch fails.")
 require("(try? context.fetch(request)) ?? []" not in ack,
         "CloudKit ACK must not treat a fetch error as an absent outbox row.")
-ack_save = ack.find("saveReturningError")
-ack_remove = ack.find("removePendingRecordChanges")
-require(ack_save != -1 and ack_remove != -1 and ack_save < ack_remove,
-        "ACK may remove CKSyncEngine pending work only after the local ACK save succeeds.")
+require("try context.save()" in ack and "removePendingRecordChanges" not in ack,
+        "The private ACK transaction must commit before MainActor may touch CKSyncEngine state.")
+ack_consume = method_body(REMOTE, "func consumeLocalOutboxAcknowledgementResult")
+require("removePendingRecordChanges" in ack_consume
+        and "currentRevision == acknowledgedAttempt.revision" in ack_consume
+        and "currentOperation == acknowledgedAttempt.operation" in ack_consume,
+        "Post-save ACK consumption must preserve a newer local revision with the same record name.")
 
 sent = method_body(REMOTE, "func handleSentRecordZoneChanges")
-require("try acknowledgeLocalOutboxRecords(event.savedRecords)" in sent
-        and "try acknowledgeLocalOutboxDeletes(acknowledgedDeleteRevisions)" in sent,
-        "Both save and delete ACKs must propagate outbox read/save failures.")
+require(sent.count("try await Self.acknowledgeLocalOutboxOperationsInBackground(") == 1,
+        "Save and delete ACKs must share one awaited private transaction.")
 require("handleLocalPersistenceFailure(error)" in sent,
         "Sent callbacks must keep failed ACKs unresolved and retryable.")
 
@@ -154,7 +168,7 @@ require("removeFirst" not in pending_delete_attempt
         and "removeValue" not in pending_delete_attempt
         and "revisions.removeFirst()" in delete_attempt_commit,
         "Reading a delete-attempt revision must be non-consuming until local ACK commits it.")
-delete_ack = sent.find("try acknowledgeLocalOutboxDeletes(acknowledgedDeleteRevisions)")
+delete_ack = sent.find("try await Self.acknowledgeLocalOutboxOperationsInBackground(")
 delete_attempt_ack = sent.find("syncEngineCallbackGate.acknowledgeDeleteAttempts(")
 delete_checkpoint = sent.find("recordInitialUploadRecordsResolved(resolvedInitialUploadDeleteRecordIDs)")
 require(delete_ack != -1 and delete_attempt_ack != -1 and delete_checkpoint != -1
@@ -187,13 +201,15 @@ commit = flush.find("consumeResolvedLocalOutboxEntries")
 require(prepare != -1 and save != -1 and commit != -1 and prepare < save < commit,
         "A remote batch must prepare, save, then consume its exact resolution maps once.")
 
-subscription_apply = method_body(REMOTE, "func applyRemoteSubscriptionTombstone(")
-prepare = subscription_apply.find("try deleteResolvedLocalOutboxEntries()")
-unsubscribe = subscription_apply.find("subscriptionManager.unsubscribeFeed(feed)", prepare)
-save = subscription_apply.find("saveReturningError", unsubscribe)
-commit = subscription_apply.find("consumeResolvedLocalOutboxEntries", save)
+subscription_consume = method_body(REMOTE, "func consumeSubscriptionApplyBatchResult(")
+prepare = subscription_worker.find("removedOutboxRevisions")
+unsubscribe = subscription_worker.find("func unsubscribe", prepare)
+save = subscription_worker.rfind("context.save()")
+commit = subscription_consume.find("for (recordName, removedRevision)")
 require(prepare != -1 and unsubscribe != -1 and save != -1 and commit != -1
-        and prepare < unsubscribe < save < commit,
-        "Immediate subscription cleanup must consume its resolution maps only after a checked save.")
+        and prepare < unsubscribe < save,
+        "Subscription cleanup must commit its exact outbox resolution with the unsubscribe.")
+require("localOutboxSnapshotCache.removeValue" in subscription_consume[commit:],
+        "Committed subscription resolution maps must be consumed only after the worker save.")
 
 print("iCloud outbox read failure regression checks passed")

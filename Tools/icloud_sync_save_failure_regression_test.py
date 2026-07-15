@@ -56,20 +56,21 @@ require(fetched.count("performSynchronousRemoteApplyBatch {") >= 2,
 # Core Data transaction succeeded. This makes an app kill/disk-full failure replayable.
 require(fetched.find("stagePendingEpisodeStates") < fetched.find("processFetchedModificationBatch"),
         "Enabled episode records must be durably staged before their local Core Data apply.")
-require(fetched.rfind("performSynchronousRemoteApplyBatch {", 0, fetched.find("processFetchedModificationBatch"))
-        < fetched.find("removePendingEpisodeStates"),
-        "Staged episode rows must only be removed after the matching local Core Data commit.")
-modification_batch = method_body(REMOTE, "func processFetchedModificationBatch")
-require("FetchedModificationBatchResult" in REMOTE
-        and "prepareSyncItemMetadataContextBatch" in modification_batch
-        and "upsertSyncItemMetadata" in modification_batch,
+episode_worker = method_body(REMOTE, "func applyPendingEpisodeStateBatchInBackground")
+require("context.delete(pending)" in episode_worker
+        and episode_worker.find("context.delete(pending)") < episode_worker.find("context.save()")
+        and "removePendingEpisodeStates" not in fetched,
+        "The exact staged episode row must be removed by its successful background transaction.")
+require("prepareSyncItemMetadataContextBatch" in episode_worker
+        and "upsertSyncItemMetadata" in episode_worker,
         "Episode clocks must be inserted into the exact Core Data transaction whose success controls pending-payload removal.")
 require("finalizeFetchedEpisodeBatch" not in REMOTE,
         "A post-save metadata finalizer would recreate the kill window between episode data and its logical clock.")
 
 pending_episodes = method_body(REMOTE, "func applyPendingEpisodeStates")
-require("performSynchronousRemoteApplyBatch {" in pending_episodes,
-        "Pending replay must retain its payload when Core Data cannot commit.")
+require("applyPendingEpisodeStateBatchInBackground" in pending_episodes
+        and "context.rollback()" in episode_worker,
+        "Pending replay must retain its payload when the background transaction cannot commit.")
 
 for signature in ["func performLowPrioritySync() async", "func performManualSync() async throws"]:
     sync_path = method_body(MANAGER, signature)

@@ -35,12 +35,14 @@ require("bookmarkImportError" in SOURCE and "terminalError = phaseError" in SOUR
 
 metadata_loop = SOURCE[SOURCE.find("NSInteger metadataTotal"):SOURCE.find("PHASE D: Downloads")]
 bookmark_branch_start = metadata_loop.find(
-    "else if (cat == ICBackupImportBookmarks || cat == ICBackupImportDownloads)"
+    "else if (cat == ICBackupImportBookmarks || cat == ICBackupImportDownloads"
 )
-bookmark_branch_end = metadata_loop.find("} else {", bookmark_branch_start)
+bookmark_branch_end = metadata_loop.find(
+    "\n            } else {\n                runOnMain", bookmark_branch_start
+)
 bookmark_branch = metadata_loop[bookmark_branch_start:bookmark_branch_end]
 require(bookmark_branch_start >= 0 and "count = importBlock(&phaseError);" in bookmark_branch
-        and "runOnMain" not in bookmark_branch,
+        and "runOnMain(^{\n                    count = importBlock(&phaseError);" not in bookmark_branch,
         "The bookmark phase must execute on the import worker, not inside runOnMain.")
 
 print("Backup bookmark import scaling regression checks passed")

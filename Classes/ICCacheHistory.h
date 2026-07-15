@@ -22,6 +22,8 @@
 - (void) resetValuesForEpisode:(CDEpisode*)episode;
 - (void)resetValuesForEpisodes:(NSArray<CDEpisode*>*)episodes
                     completion:(void (^)(NSError* error))completion;
+- (void)resetValuesForEpisodeHashes:(NSSet<NSString*>*)episodeHashes
+                         completion:(void (^)(NSError* error))completion;
 
 - (void)reloadIfNeededWithCompletion:(void (^)(NSError* error))completion;
 - (void)clearWithCompletion:(void (^)(NSError* error))completion;

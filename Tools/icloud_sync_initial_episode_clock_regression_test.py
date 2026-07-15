@@ -37,7 +37,7 @@ episode_writes = plan.split("for objectHash in episodes.values {", 1)[1].split(
 )[0]
 subscription_writes = plan.split("for feedURL in subscriptions.values {", 1)[1]
 
-# A never-synced second device must enter applyRemoteEpisodeState with no local clock.
+# A never-synced second device must enter the EpisodeState worker with no local clock.
 # Otherwise the freshly-created backfill clock is newer than the real cloud value and the
 # LWW guard re-uploads the local defaults without ever reaching the first-merge branch.
 initial_episode_clock_is_nil = "localModifiedAt: nil" in episode_writes
@@ -59,8 +59,8 @@ require(
     "A first episode backfill must not invent a local clock before it has reconciled an existing cloud record.",
 )
 
-apply_remote = method_body(REMOTE, "func applyRemoteEpisodeState")
-require("if localModifiedAt == nil" in apply_remote
+apply_remote = method_body(REMOTE, "func applyPendingEpisodeStateBatchInBackground")
+require("metadata?.localModifiedAt == nil && activeOutbox == nil" in apply_remote
         and "episode.consumed && !played" in apply_remote
         and "episode.position > position" in apply_remote
         and "episode.starred && !starred" in apply_remote,
@@ -88,7 +88,7 @@ for required in [
 sent = method_body(REMOTE, "func handleSentRecordZoneChanges")
 select_clock = sent.find("initialEpisodeRecordsAwaitingAcknowledgedClock(")
 persist_clock = sent.find("try await persistAcknowledgedInitialEpisodeClocks(")
-ack_outbox = sent.find("acknowledgeLocalOutboxRecords(event.savedRecords)")
+ack_outbox = sent.find("acknowledgeLocalOutboxOperationsInBackground(")
 advance_cursor = sent.find("recordInitialUploadRecordsSaved(event.savedRecords.map")
 require(select_clock != -1 and persist_clock != -1 and ack_outbox != -1 and advance_cursor != -1
         and select_clock < persist_clock < ack_outbox < advance_cursor,

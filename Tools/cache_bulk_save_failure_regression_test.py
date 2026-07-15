@@ -33,7 +33,12 @@ def body(signature: str) -> str:
     raise AssertionError(f"Unterminated method: {signature}")
 
 
-remove_batch = body("- (void)_removeCacheForEpisodes:")
+remove_batch = body(
+    "- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                       automatic:(BOOL)automatic\n"
+    "             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                      completion:"
+)
 save_failure = remove_batch.split("if (saveError)", 1)[1].split("return;", 1)[0]
 require(
     "ICCacheDeletionDownloadedKey" in save_failure
@@ -53,9 +58,10 @@ require(
 )
 
 public_remove_batch = body(
-    "- (void) removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
-    "                       automatic:(BOOL)automatic\n"
-    "                      completion:"
+    "- (void)_removeCacheRequestsForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                               automatic:(BOOL)automatic\n"
+    "                     physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                              completion:"
 )
 require(
     public_remove_batch.find("isKindOfClass:[CDEpisode class]")

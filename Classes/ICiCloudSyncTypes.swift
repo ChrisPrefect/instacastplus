@@ -8,6 +8,30 @@
 @preconcurrency import CloudKit
 import Foundation
 
+final class ICCloudInventoryCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        let value = cancelled
+        lock.unlock()
+        return value
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    func checkCancellation() throws {
+        if isCancelled {
+            throw CancellationError()
+        }
+    }
+}
+
 final class ICCloudRecordBatchBox: @unchecked Sendable {
     let records: [CKRecord]
 
@@ -42,6 +66,19 @@ struct ICCloudSyncOutboxSnapshot: Sendable {
     }
 }
 
+struct ICCloudLocalOutboxAcknowledgementAttempt: Sendable, Equatable {
+    let revision: String
+    let operation: String
+}
+
+struct ICCloudLocalOutboxAcknowledgementResult: Sendable {
+    let objectIDURIsByRecordName: [String: URL]
+    let updatedObjectIDURIs: [URL]
+    let acknowledgedAttemptsByRecordName: [String: ICCloudLocalOutboxAcknowledgementAttempt]
+    let fullyAcknowledgedAttemptsByRecordName: [String: ICCloudLocalOutboxAcknowledgementAttempt]
+    let needsOutboxDrain: Bool
+}
+
 struct ICCloudPendingEpisodeStateWrite: Sendable {
     let recordName: String
     let payloadData: Data
@@ -65,6 +102,89 @@ struct ICCloudPendingEpisodeStateSnapshot: Sendable {
             )
         }
         return payload
+    }
+}
+
+enum ICiCloudRemoteApplyCategory: Hashable, Sendable {
+    case episodes
+    case subscriptions
+    case localCapture
+}
+
+struct ICiCloudRemoteApplyCommitLease: Hashable, Sendable {
+    let identifier: UUID
+    let category: ICiCloudRemoteApplyCategory
+    let generation: Int
+    let accountRecordName: String
+    let epoch: UInt64
+}
+
+struct ICCloudEpisodeApplyBatchResult: Sendable {
+    let appliedCount: Int
+    let recordNamesToUpload: Set<String>
+    let recordNamesNeedingOutboxDrain: Set<String>
+    let resolvedOutboxRevisions: [String: String]
+    let remoteClockFloors: [String: Date]
+    let insertedObjectURIStrings: Set<String>
+    let updatedObjectURIStrings: Set<String>
+    let remoteEpisodeObjectURIStrings: Set<String>
+    let originRegistration: UUID?
+    let clockRegistration: UUID?
+    let commitLease: ICiCloudRemoteApplyCommitLease?
+}
+
+final class ICiCloudRemoteEpisodeOriginGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var objectURIStringsByRegistration: [UUID: Set<String>] = [:]
+
+    func register(_ objectURIStrings: Set<String>) -> UUID? {
+        guard !objectURIStrings.isEmpty else { return nil }
+        let registration = UUID()
+        lock.lock()
+        objectURIStringsByRegistration[registration] = objectURIStrings
+        lock.unlock()
+        return registration
+    }
+
+    func take(_ registration: UUID?) -> Set<String> {
+        guard let registration else { return [] }
+        lock.lock()
+        defer { lock.unlock() }
+        return objectURIStringsByRegistration.removeValue(forKey: registration) ?? []
+    }
+
+    func discard(_ registration: UUID?) {
+        guard let registration else { return }
+        lock.lock()
+        objectURIStringsByRegistration.removeValue(forKey: registration)
+        lock.unlock()
+    }
+}
+
+final class ICiCloudRemoteEpisodeClockGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var floorsByRegistration: [UUID: [String: Date]] = [:]
+
+    func register(_ floors: [String: Date]) -> UUID? {
+        guard !floors.isEmpty else { return nil }
+        let registration = UUID()
+        lock.lock()
+        floorsByRegistration[registration] = floors
+        lock.unlock()
+        return registration
+    }
+
+    func floor(for recordName: String) -> Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return floorsByRegistration.values.compactMap { $0[recordName] }.max()
+    }
+
+    func remove(_ registration: UUID?) {
+        guard let registration else { return }
+        lock.lock()
+        floorsByRegistration.removeValue(forKey: registration)
+        lock.unlock()
     }
 }
 
@@ -97,6 +217,52 @@ struct ICCloudPendingSubscriptionStateSnapshot: Sendable {
 struct ICCloudPendingSubscriptionStatePage: Sendable {
     let snapshots: [ICCloudPendingSubscriptionStateSnapshot]
     let nextRecordName: String?
+}
+
+struct ICCloudSubscriptionCredentialUpdate: Sendable {
+    let feedObjectURIString: String
+    let sourceURLString: String
+    let username: String
+    let expectedPassword: String?
+    let password: String
+}
+
+struct ICCloudSubscriptionCleanupIntentSnapshot: Sendable {
+    let recordName: String
+    let revision: String
+    let payloadData: Data
+    let feedObjectURIString: String
+    let feedURL: String
+    let pendingSnapshots: [ICCloudPendingSubscriptionStateSnapshot]
+    var feedSubscribed: Bool? = nil
+}
+
+struct ICCloudSubscriptionCleanupDrainResult: Sendable {
+    let error: NSError?
+    let attemptedGeneration: UInt64
+    let completedGeneration: UInt64
+}
+
+struct ICCloudSubscriptionCleanupProtectionStage: Sendable {
+    let revision: String
+    let stageToken: String
+}
+
+struct ICCloudSubscriptionApplyBatchResult: Sendable {
+    let appliedSnapshots: [ICCloudPendingSubscriptionStateSnapshot]
+    let needsOutboxDrain: Bool
+    let finalOutboxSnapshots: [String: ICCloudSyncOutboxSnapshot]
+    let removedOutboxRevisions: [String: String]
+    let completedOutboxRecordNames: Set<String>
+    let insertedObjectURIStrings: Set<String>
+    let updatedObjectURIStrings: Set<String>
+    let deletedObjectURIStrings: Set<String>
+    let remoteObjectURIStrings: Set<String>
+    let credentialUpdates: [ICCloudSubscriptionCredentialUpdate]
+    let credentialPendingSnapshots: [ICCloudPendingSubscriptionStateSnapshot]
+    let hasPendingSubscriptionCleanup: Bool
+    let originRegistration: UUID?
+    let commitLease: ICiCloudRemoteApplyCommitLease?
 }
 
 struct ICCloudSyncItemMetadataWrite: Sendable {

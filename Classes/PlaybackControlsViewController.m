@@ -587,7 +587,7 @@
     }
 
     if (pman.streamingCacheActive || pman.streamingCacheComplete) {
-        return MAX(bufferedProgress, pman.streamingCacheProgress);
+        return pman.streamingCacheProgress;
     }
 
     return bufferedProgress;

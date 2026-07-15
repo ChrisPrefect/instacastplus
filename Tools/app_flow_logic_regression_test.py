@@ -137,7 +137,13 @@ require(
 
 cache_episode = objc_method(
     cache_manager,
-    "- (BOOL) _cacheEpisode:(CDEpisode*)episode\n             autoCache:(BOOL)autoCache\noverwriteCellularLock:(BOOL)overwriteCellularLock\nreportsFailureToUser:(BOOL)reportsFailureToUser\n             queueRank:(NSNumber*)queueRank",
+    "- (BOOL) _cacheEpisode:(CDEpisode*)episode\n"
+    "             autoCache:(BOOL)autoCache\n"
+    "overwriteCellularLock:(BOOL)overwriteCellularLock\n"
+    "reportsFailureToUser:(BOOL)reportsFailureToUser\n"
+    "             queueRank:(NSNumber*)queueRank\n"
+    "preservesConsumedState:(BOOL)preservesConsumedState\n"
+    "deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup",
 )
 require(
     "CDMedium* media = [episode preferedMedium];" in cache_episode

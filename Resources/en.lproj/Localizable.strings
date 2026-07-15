@@ -1536,7 +1536,7 @@
 "iCloud Status unbekannt." = "iCloud status unknown.";
 "iCloud ist vorübergehend nicht verfügbar." = "iCloud is temporarily unavailable.";
 "iCloud Sync will continue in smaller batches." = "iCloud Sync will continue in smaller batches.";
-"iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync could not be completed.";
+"iCloud Sync konnte nicht abgeschlossen werden." = "iCloud Sync could not be completed. Sync will retry automatically.";
 "iCloud ist vorübergehend nicht erreichbar. Die Synchronisation wird automatisch fortgesetzt." = "iCloud is temporarily unavailable. Sync will continue automatically.";
 "Kein iCloud-Account verfügbar. Melde dich in den Systemeinstellungen bei iCloud an." = "No iCloud account is available. Sign in to iCloud in System Settings.";
 "InstacastPlus darf iCloud auf diesem Gerät nicht verwenden. Prüfe die iCloud- und Bildschirmzeit-Einstellungen." = "InstacastPlus cannot use iCloud on this device. Check the iCloud and Screen Time settings.";
@@ -1564,6 +1564,7 @@
 "Use My Settings for All Devices" = "Use My Settings for All Devices";
 "Decide Later" = "Decide Later";
 "Choose which iCloud settings should be used." = "Choose which iCloud settings should be used.";
+"Prüft, ob in iCloud bereits Einstellungen vorhanden sind…" = "Checking whether settings already exist in iCloud…";
 
 /* App Intents and Shortcuts */
 "Play or Pause" = "Play or Pause";
@@ -1691,6 +1692,7 @@
 "Retry" = "Retry";
 "All Loaded" = "All Loaded";
 "Die synchronisierten Änderungen konnten auf diesem Gerät nicht lokal gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut." = "The synced changes could not be saved locally on this device. Check the available storage and try again.";
+"Abbestellte Podcasts wurden gespeichert, aber ihre lokalen Downloads konnten noch nicht vollständig entfernt werden. InstacastPlus versucht es später erneut." = "Unsubscribed podcasts were saved, but their local downloads could not yet be removed completely. InstacastPlus will try again later.";
 "Die lokalen Daten konnten nicht für iCloud gelesen werden. Die Synchronisation wird automatisch erneut versucht." = "The local data could not be read for iCloud. Sync will retry automatically.";
 "Die lokale Datenbank wird gerade exklusiv aktualisiert." = "The local database is currently being updated exclusively.";
 "Die lokale Datenbank konnte nicht gespeichert werden." = "The local database could not be saved.";
@@ -1725,3 +1727,19 @@
 "Apple Watch progress could not be saved." = "Apple Watch progress could not be saved.";
 "The backup could not be exported because the local podcast database could not be opened. Check the available storage, restart InstacastPlus, and try again." = "The backup could not be exported because the local podcast database could not be opened. Check the available storage, restart InstacastPlus, and try again.";
 "The backup could not be analyzed. No data was changed. Check the available storage and try again." = "The backup could not be analyzed. No data was changed. Check the available storage and try again.";
+"Vorhandene iCloud-Daten werden vor dem Hochladen geprüft…" = "Checking existing iCloud data before uploading…";
+"The download database was not available for automatic storage cleanup." = "The download database was not available for automatic storage cleanup.";
+"Podcast download data could not be accessed for cleanup. Please restart InstacastPlus and try again." = "Podcast download data could not be accessed for cleanup. Please restart InstacastPlus and try again.";
+"Die vorgemerkte Wiederherstellung der Podcast-Zugangsdaten ist beschädigt." = "The pending podcast credential restore is corrupted.";
+"Die importierten Podcast-Zugangsdaten sind unvollständig." = "The imported podcast credentials are incomplete.";
+"Die importierten Podcast-Zugangsdaten passen nicht mehr zum lokalen Podcast." = "The imported podcast credentials no longer match the local podcast.";
+"Die Podcast-Zugangsdaten wurden zwischenzeitlich geändert und nicht überschrieben." = "The podcast credentials changed in the meantime and were not overwritten.";
+"Die importierten Podcast-Zugangsdaten konnten nicht sicher gespeichert werden." = "The imported podcast credentials could not be saved safely.";
+"Der lokale Speicher für die importierten Podcast-Zugangsdaten konnte nicht geöffnet werden." = "The local store for the imported podcast credentials could not be opened.";
+"Der iCloud-Account hat sich während der lokalen Änderung geändert. Die Änderung wurde nicht gespeichert." = "The iCloud account changed while the local change was being saved. The change was not saved.";
+"Der iCloud-Account für die lokale Änderung konnte nicht bestimmt werden." = "The iCloud account for the local change could not be determined.";
+"Ein lokaler iCloud-Outbox-Eintrag ist beschädigt." = "A local iCloud outbox entry is corrupted.";
+"Ein lokaler iCloud-Outbox-Eintrag ist mehrfach vorhanden." = "A local iCloud outbox entry exists more than once.";
+"Die importierten Podcast-Einstellungen konnten nicht in der Oberfläche aktualisiert werden." = "The imported podcast settings could not be updated in the interface.";
+"The podcast could not be unsubscribed because the change could not be saved. Check available storage and try again." = "The podcast could not be unsubscribed because the change could not be saved. Check available storage and try again.";
+"The podcast could not be unsubscribed because it is no longer available." = "The podcast could not be unsubscribed because it is no longer available.";

@@ -26,8 +26,35 @@ NSString* SubscriptionManagerDidFinishRefreshingFeedsNotification = @"Subscripti
 NSString* SubscriptionManagerWillParseFeedNotification = @"SubscriptionManagerWillParseFeedNotification";
 NSString* SubscriptionManagerDidParseFeedNotification = @"SubscriptionManagerDidParseFeedNotification";
 NSString* SubscriptionManagerDidAddEpisodesNotification = @"SubscriptionManagerDidAddEpisodesNotification";
+NSString* SubscriptionManagerUnsubscribeCleanupProtectionDidChangeNotification = @"SubscriptionManagerUnsubscribeCleanupProtectionDidChangeNotification";
 
 static SubscriptionManager* gSharedSubscriptionManager = nil;
+
+@interface ICUnsubscribeCleanupProtectionStage : NSObject
+@property (nonatomic, copy) NSString* revision;
+@property (nonatomic) NSUInteger sequence;
+@end
+
+@implementation ICUnsubscribeCleanupProtectionStage
+@end
+
+@interface ICUnsubscribeCleanupProtectionState : NSObject
+@property (nonatomic, copy) NSString* committedRevision;
+@property (nonatomic) NSUInteger committedSequence;
+@property (nonatomic, strong) NSMutableDictionary<NSString*, ICUnsubscribeCleanupProtectionStage*>* stagesByToken;
+@end
+
+@implementation ICUnsubscribeCleanupProtectionState
+
+- (instancetype)init
+{
+    if ((self = [super init])) {
+        _stagesByToken = [[NSMutableDictionary alloc] init];
+    }
+    return self;
+}
+
+@end
 
 @interface SubscriptionManager ()
 @property (nonatomic, readwrite, strong) NSMutableArray* refreshingFeedURLs;
@@ -51,12 +78,18 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 @property (nonatomic, strong) NSDate* refreshStartDate;
 @property (nonatomic, strong) NSMutableSet<NSURL*>* feedsMergingURLs;
 @property (nonatomic, strong) NSMutableSet<NSManagedObjectID*>* pendingAutoDownloadFeedObjectIDs;
+@property (nonatomic, strong) NSMutableDictionary<NSString*, ICUnsubscribeCleanupProtectionState*>* unsubscribeCleanupProtectionStatesByFeedObjectURIString;
+@property (nonatomic) NSUInteger unsubscribeCleanupProtectionSequence;
+@property (nonatomic, strong) NSLock* unsubscribeCleanupProtectionLock;
+@property (nonatomic) BOOL unsubscribeCleanupRecoveryBlocked;
 @property (nonatomic, strong) dispatch_queue_t autoDownloadFeedScanQueue;
 @property (nonatomic) BOOL autoDownloadFeedScanInFlight;
 
 - (void)_retainPendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs;
 - (void)_retainPendingAutoDownloadFeedObjectIDs:(NSArray<NSManagedObjectID*>*)feedObjectIDs;
 - (void)_removePendingAutoDownloadFeedUIDs:(NSArray<NSString*>*)feedUIDs;
+- (BOOL)_autoDownloadsBlockedDuringUnsubscribeCleanupForFeedObjectID:(NSManagedObjectID*)feedObjectID;
+- (void)_resumeAfterUnsubscribeCleanupProtectionChange;
 
 #if TARGET_OS_IPHONE
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundIdentifier;
@@ -208,6 +241,9 @@ static NSArray<NSDictionary*>* ICAutoDownloadCandidatesForFeedObjectIDs(NSManage
 
         _feedsMergingURLs = [[NSMutableSet alloc] init];
         _pendingAutoDownloadFeedObjectIDs = [[NSMutableSet alloc] init];
+        _unsubscribeCleanupProtectionStatesByFeedObjectURIString = [[NSMutableDictionary alloc] init];
+        _unsubscribeCleanupProtectionLock = [[NSLock alloc] init];
+        _unsubscribeCleanupRecoveryBlocked = YES;
         dispatch_queue_attr_t autoDownloadQueueAttributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,
                                                                                                      QOS_CLASS_UTILITY,
                                                                                                      0);
@@ -324,7 +360,7 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
     }
     
     CDFeed* subscribedFeed = [DMANAGER subscribeFeed:parserFeed withOptions:options];
-    if (autodownload && !subscribedFeed.parked) {
+    if (autodownload && subscribedFeed.subscribed && !subscribedFeed.parked) {
         [self _autoDownloadEpisodesInFeedAsynchronously:subscribedFeed];
     }
     return subscribedFeed;
@@ -332,27 +368,344 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
 
 - (void) unsubscribeFeed:(CDFeed*)feed
 {
+    [self unsubscribeFeed:feed completion:^(NSError* error) {
+        if (error) ErrLog(@"could not unsubscribe feed: %@", error);
+    }];
+}
+
+- (void)unsubscribeFeed:(CDFeed*)feed
+           completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self unsubscribeFeed:feed completion:completion];
+        });
+        return;
+    }
+    if (!feed) {
+        if (completion) {
+            completion([NSError errorWithDomain:@"SubscriptionManager"
+                                            code:1
+                                        userInfo:@{NSLocalizedDescriptionKey: @"The podcast could not be unsubscribed because it is no longer available.".ls}]);
+        }
+        return;
+    }
+    [[ICiCloudSyncManager sharedManager]
+        commitLocalSubscriptionUnsubscribeForFeed:feed
+        completion:^(NSError* error) {
+            if (completion) completion(error);
+        }];
+}
+
+- (void)performUnsubscribeSideEffectsForFeeds:(NSArray<CDFeed*>*)feeds
+                                   completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self performUnsubscribeSideEffectsForFeeds:feeds completion:completion];
+        });
+        return;
+    }
+
+    NSMutableOrderedSet<CDFeed*>* uniqueFeeds = [NSMutableOrderedSet orderedSet];
+    for (CDFeed* feed in feeds) {
+        if ([feed isKindOfClass:[CDFeed class]]) {
+            [uniqueFeeds addObject:feed];
+        }
+    }
+    feeds = uniqueFeeds.array;
+    if (feeds.count == 0) {
+        if (completion) completion(nil);
+        return;
+    }
+
     PlaybackManager* pman = [PlaybackManager playbackManager];
     AudioSession* session = [AudioSession sharedAudioSession];
+    NSSet<CDFeed*>* feedSet = [NSSet setWithArray:feeds];
 
-    if ([pman.playingEpisode.feed isEqual:feed]) {
+    if ([feedSet containsObject:pman.playingEpisode.feed]) {
         [session stop];
     }
 
-    // Cancel any pending episode loading for this feed
-    [[EpisodeLoadingManager sharedManager] cancelLoadingForFeed:feed];
+    EpisodeLoadingManager* loadingManager = [EpisodeLoadingManager sharedManager];
+    for (CDFeed* feed in feeds) {
+        [loadingManager cancelLoadingForFeed:feed];
+    }
 
-    // remove cache
+    NSMutableArray<CDEpisode*>* upNextEpisodes = [NSMutableArray array];
+    for (CDEpisode* episode in session.playlist) {
+        if ([feedSet containsObject:episode.feed]) {
+            [upNextEpisodes addObject:episode];
+        }
+    }
+    if (upNextEpisodes.count > 0) {
+        [session eraseEpisodesFromUpNext:upNextEpisodes];
+    }
+
+    NSMutableSet<NSManagedObjectID*>* feedObjectIDs = [NSMutableSet setWithCapacity:feeds.count];
+    NSMutableArray<NSString*>* feedUIDs = [NSMutableArray arrayWithCapacity:feeds.count];
+    for (CDFeed* feed in feeds) {
+        if (feed.objectID) [feedObjectIDs addObject:feed.objectID];
+        if (feed.uid.length > 0) [feedUIDs addObject:feed.uid];
+    }
+    [self.pendingAutoDownloadFeedObjectIDs minusSet:feedObjectIDs];
+    [self _removePendingAutoDownloadFeedUIDs:feedUIDs];
+
     CacheManager* cman = [CacheManager sharedCacheManager];
-    [cman removeCacheForFeed:feed automatic:NO];
-    [cman resetAutoCacheForFeed:feed];
+    __block BOOL cacheRemovalFinished = NO;
+    __block BOOL historyResetFinished = NO;
+    __block NSError* cacheRemovalError = nil;
+    __block NSError* historyResetError = nil;
+    void (^finishIfReady)(void) = ^{
+        if (!cacheRemovalFinished || !historyResetFinished) return;
+        if (completion) completion(cacheRemovalError ?: historyResetError);
+    };
+    [cman removeCacheForFeedsDuringSubscriptionCleanup:feeds completion:^(NSError* error) {
+        cacheRemovalError = error;
+        cacheRemovalFinished = YES;
+        finishIfReady();
+    }];
+    [cman resetAutoCacheForFeeds:feeds completion:^(NSError* error) {
+        historyResetError = error;
+        historyResetFinished = YES;
+        finishIfReady();
+    }];
+}
 
-    // remove from Up Next
-    [[AudioSession sharedAudioSession] eraseEpisodesFromUpNext:[feed.episodes allObjects]];
+- (void)installAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                  revision:(NSString*)revision
+{
+    if (feedObjectURIString.length == 0 || revision.length == 0) return;
+    [self.unsubscribeCleanupProtectionLock lock];
+    ICUnsubscribeCleanupProtectionState* state =
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+    if (!state) {
+        state = [[ICUnsubscribeCleanupProtectionState alloc] init];
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString] = state;
+    }
 
-    [self.pendingAutoDownloadFeedObjectIDs removeObject:feed.objectID];
-    [self _removePendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
-    [DMANAGER unsubscribeFeed:feed];
+    ICUnsubscribeCleanupProtectionStage* matchingStage = nil;
+    NSMutableArray<NSString*>* matchingStageTokens = [[NSMutableArray alloc] init];
+    for (NSString* stageToken in state.stagesByToken) {
+        ICUnsubscribeCleanupProtectionStage* stage = state.stagesByToken[stageToken];
+        if (![stage.revision isEqualToString:revision]) continue;
+        [matchingStageTokens addObject:stageToken];
+        if (!matchingStage || stage.sequence > matchingStage.sequence) {
+            matchingStage = stage;
+        }
+    }
+    if (matchingStage) {
+        if (matchingStage.sequence > state.committedSequence) {
+            state.committedRevision = matchingStage.revision;
+            state.committedSequence = matchingStage.sequence;
+        }
+        [state.stagesByToken removeObjectsForKeys:matchingStageTokens];
+    } else if (state.committedSequence == 0) {
+        state.committedRevision = revision;
+        state.committedSequence = 0;
+    }
+    BOOL becameUnprotected = !state.committedRevision && state.stagesByToken.count == 0;
+    if (becameUnprotected) {
+        [self.unsubscribeCleanupProtectionStatesByFeedObjectURIString removeObjectForKey:feedObjectURIString];
+    }
+    [self.unsubscribeCleanupProtectionLock unlock];
+    if (becameUnprotected) {
+        [self _resumeAfterUnsubscribeCleanupProtectionChange];
+    }
+}
+
+- (NSString*)stageAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                      revision:(NSString*)revision
+{
+    if (feedObjectURIString.length == 0 || revision.length == 0) return nil;
+    [self.unsubscribeCleanupProtectionLock lock];
+    ICUnsubscribeCleanupProtectionState* state =
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+    if (!state) {
+        state = [[ICUnsubscribeCleanupProtectionState alloc] init];
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString] = state;
+    }
+    NSString* stageToken = NSUUID.UUID.UUIDString;
+    ICUnsubscribeCleanupProtectionStage* stage =
+        [[ICUnsubscribeCleanupProtectionStage alloc] init];
+    stage.revision = revision;
+    stage.sequence = ++self.unsubscribeCleanupProtectionSequence;
+    state.stagesByToken[stageToken] = stage;
+    [self.unsubscribeCleanupProtectionLock unlock];
+    return stageToken;
+}
+
+- (void)commitAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                  revision:(NSString*)revision
+                                                                stageToken:(NSString*)stageToken
+{
+    if (feedObjectURIString.length == 0 || revision.length == 0 || stageToken.length == 0) return;
+    [self.unsubscribeCleanupProtectionLock lock];
+    ICUnsubscribeCleanupProtectionState* state =
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+    ICUnsubscribeCleanupProtectionStage* stage = state.stagesByToken[stageToken];
+    if (!stage || ![stage.revision isEqualToString:revision]) {
+        [self.unsubscribeCleanupProtectionLock unlock];
+        return;
+    }
+    [state.stagesByToken removeObjectForKey:stageToken];
+    if (stage.sequence > state.committedSequence) {
+        state.committedRevision = stage.revision;
+        state.committedSequence = stage.sequence;
+    }
+    BOOL becameUnprotected = !state.committedRevision && state.stagesByToken.count == 0;
+    if (becameUnprotected) {
+        [self.unsubscribeCleanupProtectionStatesByFeedObjectURIString removeObjectForKey:feedObjectURIString];
+    }
+    [self.unsubscribeCleanupProtectionLock unlock];
+    if (becameUnprotected) {
+        [self _resumeAfterUnsubscribeCleanupProtectionChange];
+    }
+}
+
+- (void)cancelAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                  revision:(NSString*)revision
+                                                                stageToken:(NSString*)stageToken
+{
+    if (feedObjectURIString.length == 0 || revision.length == 0 || stageToken.length == 0) return;
+    [self.unsubscribeCleanupProtectionLock lock];
+    ICUnsubscribeCleanupProtectionState* state =
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+    ICUnsubscribeCleanupProtectionStage* stage = state.stagesByToken[stageToken];
+    if (stage && [stage.revision isEqualToString:revision]) {
+        [state.stagesByToken removeObjectForKey:stageToken];
+    }
+    BOOL becameUnprotected = state && !state.committedRevision && state.stagesByToken.count == 0;
+    if (becameUnprotected) {
+        [self.unsubscribeCleanupProtectionStatesByFeedObjectURIString removeObjectForKey:feedObjectURIString];
+    }
+    [self.unsubscribeCleanupProtectionLock unlock];
+    if (becameUnprotected) {
+        [self _resumeAfterUnsubscribeCleanupProtectionChange];
+    }
+}
+
+- (void)completeAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                    revision:(NSString*)revision
+{
+    if (feedObjectURIString.length == 0 || revision.length == 0) return;
+    [self.unsubscribeCleanupProtectionLock lock];
+    ICUnsubscribeCleanupProtectionState* state =
+        self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+    if ([state.committedRevision isEqualToString:revision]) {
+        state.committedRevision = nil;
+    }
+    NSMutableArray<NSString*>* matchingStageTokens = [[NSMutableArray alloc] init];
+    for (NSString* stageToken in state.stagesByToken) {
+        if ([state.stagesByToken[stageToken].revision isEqualToString:revision]) {
+            [matchingStageTokens addObject:stageToken];
+        }
+    }
+    [state.stagesByToken removeObjectsForKeys:matchingStageTokens];
+    BOOL becameUnprotected = state && !state.committedRevision && state.stagesByToken.count == 0;
+    if (becameUnprotected) {
+        [self.unsubscribeCleanupProtectionStatesByFeedObjectURIString removeObjectForKey:feedObjectURIString];
+    }
+    [self.unsubscribeCleanupProtectionLock unlock];
+    if (becameUnprotected) {
+        [self _resumeAfterUnsubscribeCleanupProtectionChange];
+    }
+}
+
+- (BOOL)_autoDownloadsBlockedDuringUnsubscribeCleanupForFeedObjectID:(NSManagedObjectID*)feedObjectID
+{
+    NSString* feedObjectURIString = !feedObjectID.isTemporaryID
+        ? feedObjectID.URIRepresentation.absoluteString : nil;
+    [self.unsubscribeCleanupProtectionLock lock];
+    BOOL blocked = self.unsubscribeCleanupRecoveryBlocked;
+    if (!blocked && feedObjectURIString.length > 0) {
+        ICUnsubscribeCleanupProtectionState* state =
+            self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+        blocked = state.committedRevision.length > 0 || state.stagesByToken.count > 0;
+    }
+    [self.unsubscribeCleanupProtectionLock unlock];
+    return blocked || feedObjectURIString.length == 0;
+}
+
+- (BOOL)automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:(CDFeed*)feed
+{
+    NSAssert([NSThread isMainThread], @"Automatic download eligibility belongs to the main thread");
+    if (![feed isKindOfClass:[CDFeed class]] || feed.isDeleted ||
+        !feed.subscribed || feed.parked) {
+        return YES;
+    }
+    return [self _autoDownloadsBlockedDuringUnsubscribeCleanupForFeedObjectID:feed.objectID];
+}
+
+- (BOOL)downloadsBlockedDuringUnsubscribeCleanupForFeed:(CDFeed*)feed
+{
+    NSAssert([NSThread isMainThread], @"Download cleanup eligibility belongs to the main thread");
+    NSString* feedObjectURIString = [feed isKindOfClass:[CDFeed class]]
+        && !feed.objectID.isTemporaryID
+        ? feed.objectID.URIRepresentation.absoluteString : nil;
+    [self.unsubscribeCleanupProtectionLock lock];
+    BOOL blocked = self.unsubscribeCleanupRecoveryBlocked;
+    if (!blocked && feedObjectURIString.length > 0) {
+        ICUnsubscribeCleanupProtectionState* state =
+            self.unsubscribeCleanupProtectionStatesByFeedObjectURIString[feedObjectURIString];
+        blocked = state.committedRevision.length > 0 || state.stagesByToken.count > 0;
+    }
+    [self.unsubscribeCleanupProtectionLock unlock];
+    return blocked;
+}
+
+- (void)_resumeAfterUnsubscribeCleanupProtectionChange
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self _startPendingAutoDownloads];
+        [[NSNotificationCenter defaultCenter]
+            postNotificationName:SubscriptionManagerUnsubscribeCleanupProtectionDidChangeNotification
+                          object:self];
+    });
+}
+
+- (void)setUnsubscribeCleanupRecoveryBlocked:(BOOL)blocked
+{
+    NSAssert([NSThread isMainThread], @"Unsubscribe cleanup state belongs to the main thread");
+    [self.unsubscribeCleanupProtectionLock lock];
+    BOOL becameUnblocked = _unsubscribeCleanupRecoveryBlocked && !blocked;
+    _unsubscribeCleanupRecoveryBlocked = blocked;
+    [self.unsubscribeCleanupProtectionLock unlock];
+    if (becameUnblocked) [self _resumeAfterUnsubscribeCleanupProtectionChange];
+}
+
+- (void)resetUnsubscribeCleanupProtectionForLocalAppReset
+{
+    NSAssert([NSThread isMainThread], @"Unsubscribe cleanup state belongs to the main thread");
+    [self.unsubscribeCleanupProtectionLock lock];
+    _unsubscribeCleanupRecoveryBlocked = YES;
+    [self.unsubscribeCleanupProtectionStatesByFeedObjectURIString removeAllObjects];
+    [self.unsubscribeCleanupProtectionLock unlock];
+}
+
+- (void)performResubscribeCleanupForFeeds:(NSArray<CDFeed*>*)feeds
+                               completion:(void (^)(NSError* error))completion
+{
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self performResubscribeCleanupForFeeds:feeds completion:completion];
+        });
+        return;
+    }
+
+    NSMutableOrderedSet<CDFeed*>* uniqueFeeds = [NSMutableOrderedSet orderedSet];
+    for (CDFeed* feed in feeds) {
+        if ([feed isKindOfClass:[CDFeed class]]) [uniqueFeeds addObject:feed];
+    }
+    feeds = uniqueFeeds.array;
+    if (feeds.count == 0) {
+        if (completion) completion(nil);
+        return;
+    }
+
+    [[CacheManager sharedCacheManager] resetAutoCacheForFeeds:feeds completion:^(NSError* error) {
+        if (completion) completion(error);
+    }];
 }
 
 - (void) reloadContentOfFeed:(CDFeed*)feed recoverArchivedEpisodes:(BOOL)recoverArchived completion:(ICSubscriptionManagerRefreshCompletionBlock)completion
@@ -1121,10 +1474,10 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
     }
 
     // iCloud sync stubs (subscribed, never refreshed, no episodes) belong to the
-    // sequential hydration queue — a regular refresh would merge the FULL feed in one
-    // main-context push. Same for feeds whose episode backlog is still loading in the
-    // background: merging would insert that backlog in one block, duplicating the work.
-    if ((!feed.lastUpdate && feed.episodes.count == 0) || [[EpisodeLoadingManager sharedManager] isLoadingFeed:feed]) {
+    // sequential hydration queue — a regular refresh would merge the full feed in one
+    // main-context push. The same applies while that backlog is already loading.
+    if ((!feed.lastUpdate && feed.episodes.count == 0) ||
+        [[EpisodeLoadingManager sharedManager] isLoadingFeed:feed]) {
         if (completion) {
             completion(YES, @[], nil);
         }
@@ -2111,16 +2464,26 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
         [self.pendingAutoDownloadFeedObjectIDs addObject:feed.objectID];
     }
 
+    if (self.unsubscribeCleanupRecoveryBlocked) {
+        return;
+    }
+
     CacheManager* cacheManager = [CacheManager sharedCacheManager];
     if (!cacheManager.isReadyForAutomaticDownloads) {
         return;
     }
 
-    if (self.autoDownloadFeedScanInFlight || self.pendingAutoDownloadFeedObjectIDs.count == 0) {
+    NSMutableSet<NSManagedObjectID*>* eligibleFeedObjectIDs = [self.pendingAutoDownloadFeedObjectIDs mutableCopy];
+    for (NSManagedObjectID* feedObjectID in [eligibleFeedObjectIDs copy]) {
+        if ([self _autoDownloadsBlockedDuringUnsubscribeCleanupForFeedObjectID:feedObjectID]) {
+            [eligibleFeedObjectIDs removeObject:feedObjectID];
+        }
+    }
+    if (self.autoDownloadFeedScanInFlight || eligibleFeedObjectIDs.count == 0) {
         return;
     }
 
-    NSArray<NSManagedObjectID*>* pendingFeedObjectIDs = self.pendingAutoDownloadFeedObjectIDs.allObjects;
+    NSArray<NSManagedObjectID*>* pendingFeedObjectIDs = eligibleFeedObjectIDs.allObjects;
     NSUInteger feedBatchCount = MIN(pendingFeedObjectIDs.count, ICAutoDownloadFeedScanBatchSize);
     NSArray<NSManagedObjectID*>* feedObjectIDs = [pendingFeedObjectIDs subarrayWithRange:NSMakeRange(0, feedBatchCount)];
     NSMutableDictionary<NSManagedObjectID*, NSString*>* feedUIDsByObjectID = [[NSMutableDictionary alloc] initWithCapacity:feedObjectIDs.count];
@@ -2160,6 +2523,12 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             __block NSUInteger candidateIndex = 0;
             __block void (^deliverNextCandidateBatch)(void) = nil;
             deliverNextCandidateBatch = ^{
+                if (self.unsubscribeCleanupRecoveryBlocked) {
+                    [self.pendingAutoDownloadFeedObjectIDs addObjectsFromArray:feedObjectIDs];
+                    self.autoDownloadFeedScanInFlight = NO;
+                    deliverNextCandidateBatch = nil;
+                    return;
+                }
                 NSUInteger remainingCount = candidateItems.count - candidateIndex;
                 NSUInteger candidateBatchCount = MIN(remainingCount, ICAutoDownloadCandidateDeliveryBatchSize);
                 NSRange candidateRange = NSMakeRange(candidateIndex, candidateBatchCount);
@@ -2171,7 +2540,7 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                     NSError* currentFeedError = nil;
                     CDFeed* currentFeed = (CDFeed*)[DMANAGER.objectContext existingObjectWithID:feedObjectID error:&currentFeedError];
                     if (![currentFeed isKindOfClass:[CDFeed class]] || currentFeedError || currentFeed.isDeleted ||
-                        currentFeed.parked || !currentFeed.subscribed) {
+                        [self automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:currentFeed]) {
                         continue;
                     }
 
@@ -2204,6 +2573,10 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 } else {
                     NSMutableArray<NSString*>* completedFeedUIDs = [[NSMutableArray alloc] initWithCapacity:feedUIDsByObjectID.count];
                     for (NSManagedObjectID* feedObjectID in feedObjectIDs) {
+                        if ([self _autoDownloadsBlockedDuringUnsubscribeCleanupForFeedObjectID:feedObjectID]) {
+                            [self.pendingAutoDownloadFeedObjectIDs addObject:feedObjectID];
+                            continue;
+                        }
                         // A second refresh can enqueue the same feed while this scan is
                         // delivering. Keep its durable marker for that newer handoff.
                         if (![self.pendingAutoDownloadFeedObjectIDs containsObject:feedObjectID]) {
@@ -2303,6 +2676,13 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 - (BOOL) _autoDownloadEpisode:(CDEpisode*)pickedEpisode inFeed:(CDFeed*)feed
 {
     if (feed.parked || !feed.subscribed) {
+        return NO;
+    }
+    if ([self automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:feed]) {
+        if (feed.objectID && !feed.objectID.isTemporaryID) {
+            [self _retainPendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
+            [self.pendingAutoDownloadFeedObjectIDs addObject:feed.objectID];
+        }
         return NO;
     }
     

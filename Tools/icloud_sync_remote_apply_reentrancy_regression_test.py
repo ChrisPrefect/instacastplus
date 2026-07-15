@@ -88,8 +88,8 @@ paths = {
 minimum_helper_calls = {
     "fetched changes": 2,
     "conflict record": 1,
-    "pending episodes": 1,
-    "pending subscriptions": 2,
+    "pending episodes": 0,
+    "pending subscriptions": 1,
     "subscription sort": 1,
 }
 for name, body in paths.items():
@@ -105,7 +105,7 @@ for name, body in paths.items():
     )
 
 closures = trailing_closure_bodies(REMOTE, "performSynchronousRemoteApplyBatch")
-require(len(closures) >= 7, "Every fetched/replay/list-sort mutation batch must use the helper.")
+require(len(closures) >= 5, "Every remaining main-context subscription/list mutation batch must use the helper.")
 for closure in closures:
     require(
         "await" not in closure
@@ -123,28 +123,33 @@ fetched = paths["fetched changes"]
 require(
     fetched.find("removeKnownRecordSystemFields") < fetched.find("performSynchronousRemoteApplyBatch {")
     and fetched.find("persistKnownRecordSystemFields")
-    < fetched.rfind("performSynchronousRemoteApplyBatch {")
-    < fetched.find("removePendingEpisodeStates"),
-    "Fetched system fields and pending rows must be staged/removed outside each synchronous "
-    "Core Data mutation+flush scope.",
+    < fetched.find("applyPendingEpisodeStateBatchInBackground")
+    < fetched.rfind("performSynchronousRemoteApplyBatch {"),
+    "Fetched episode rows must use the background transaction before remaining main-context work.",
 )
 
 conflict = paths["conflict record"]
 require(
-    conflict.find("performSynchronousRemoteApplyBatch {")
-    < conflict.find("removePendingEpisodeStates"),
-    "Conflict repair must restore local-edit observation before awaiting pending-state removal.",
+    conflict.find("applyPendingEpisodeStateBatchInBackground")
+    < conflict.find("consumeEpisodeApplyBatchResult"),
+    "Episode conflict repair must commit off-main before its exact view-context merge.",
 )
 
 pending_episodes = paths["pending episodes"]
 require(
-    pending_episodes.find("performSynchronousRemoteApplyBatch {")
-    < pending_episodes.find("removePendingEpisodeStates")
+    pending_episodes.find("applyPendingEpisodeStateBatchInBackground")
+    < pending_episodes.find("consumeEpisodeApplyBatchResult")
     < pending_episodes.find("await Task.yield()"),
-    "Pending episode replay must release remote-origin suppression before removal I/O and yield.",
+    "Pending episode replay must merge each background commit before yielding.",
 )
 
 pending_subscriptions = paths["pending subscriptions"]
+require(
+    pending_subscriptions.find("applyPendingSubscriptionBatchInBackground")
+    < pending_subscriptions.find("consumeSubscriptionApplyBatchResult")
+    < pending_subscriptions.find("await Task.yield()"),
+    "Pending feed pages must commit off-main and merge exact IDs before yielding.",
+)
 list_settings = pending_subscriptions.find("if let listSettingsSnapshot")
 require(list_settings != -1, "Missing pending subscription-list settings replay.")
 list_settings_scope = pending_subscriptions[list_settings:]

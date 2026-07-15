@@ -127,9 +127,8 @@ remove_feed_end = CACHE.find("- (void)_removeCacheForEpisodes:", remove_feed_sta
 require(remove_feed_start >= 0 and remove_feed_end > remove_feed_start,
         "Missing podcast download-deletion path.")
 remove_feed = CACHE[remove_feed_start:remove_feed_end]
-require("[self removeCacheForEpisodes:episodes.array" in remove_feed
-        and "[self _removeCacheForEpisodes:episodes.array" not in remove_feed,
-        "Podcast deletion must pass settled deferred-owned episodes through the public durable partition.")
+require("[self _removeCacheRequestsForEpisodes:episodes" in remove_feed,
+        "Podcast deletion must pass every chunk through the central durable ownership partition.")
 
 auto_clear_start = CACHE.find("- (void) autoClearAndMakeRoomForBytes:", implementation_start)
 auto_clear_end = CACHE.find("- (void)_recordPendingAutoClearBytes:", auto_clear_start)

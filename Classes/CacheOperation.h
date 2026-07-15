@@ -34,6 +34,7 @@
 // mark the caching operation as being invoked by the app and not by the user
 @property (assign) BOOL automatic;
 @property BOOL reportsFailureToUser;
+@property BOOL preservesConsumedState;
 @end
 
 

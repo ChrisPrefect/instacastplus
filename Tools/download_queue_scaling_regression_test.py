@@ -49,7 +49,7 @@ membership = method_body("- (BOOL) isCachingEpisode:")
 require("_cachingEpisodeHashes" in membership and "for (" not in membership,
         "Per-episode queue membership must be O(1).")
 
-enqueue = method_body("- (BOOL) _cacheEpisode:(CDEpisode*)episode\n             autoCache:(BOOL)autoCache\noverwriteCellularLock:(BOOL)overwriteCellularLock\nreportsFailureToUser:(BOOL)reportsFailureToUser\n             queueRank:(NSNumber*)queueRank")
+enqueue = method_body("deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup")
 require("_downloadOperationsByIdentifier" in enqueue and "_persistCachingOperation" in enqueue,
         "An enqueue must enter the authoritative identifier index and persist its own descriptor.")
 require("_startNextDownloadOperations" in enqueue and "[_downloadQueue addOperation:cacheOperation]" not in enqueue,
@@ -66,7 +66,7 @@ require(owner_guard < enqueue.find("CACHE_OPERATION_CLASS* cacheOperation") and
 scheduler = method_body("- (void) _startNextDownloadOperations")
 require("_scheduledDownloadOperationIdentifiers.count < 3" in scheduler,
         "Only three operations may be handed to NSOperationQueue at once.")
-require("for (CDEpisode* episode in _cachingEpisodes)" in scheduler,
+require("for (CDEpisode* episode in [_cachingEpisodes copy])" in scheduler,
         "The visible/persisted order must be the scheduler's pending order.")
 require("[_downloadQueue addOperation:nextOperation]" in scheduler,
         "The bounded scheduler must be the sole normal owner of NSOperationQueue insertion.")

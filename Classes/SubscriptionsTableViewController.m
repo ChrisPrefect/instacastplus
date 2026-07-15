@@ -692,14 +692,18 @@
         }]];
         [alert addAction:[UIAlertAction actionWithTitle:@"Unsubscribe".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction* action) {
             self->_flags.userAction = 1;
-            [[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:feed];
-
-            // Refresh fetch controller and reload table
-            [self.fetchController performFetch:nil];
-            [self reloadDataAndTable:YES];
-            self->_flags.userAction = 0;
-
-            [self _updateToolbarLabels];
+            [[SubscriptionManager sharedSubscriptionManager]
+                unsubscribeFeed:feed
+                completion:^(NSError* error) {
+                    self->_flags.userAction = 0;
+                    if (error) {
+                        [self presentError:error];
+                    } else {
+                        [self.fetchController performFetch:nil];
+                        [self reloadDataAndTable:YES];
+                        [self _updateToolbarLabels];
+                    }
+                }];
         }]];
         [self presentViewController:alert animated:YES completion:nil];
     }

@@ -107,7 +107,12 @@ require("ICEpisodeState" in MANAGER and "ICSubscription" in MANAGER and "ICAppSe
 require("ICListScrollPositions" in MANAGER and "ICListScrollPositionsSnapshot()" in MANAGER, "Episode list scroll positions must be included in episode sync.")
 require("backupCredentialValues" in MANAGER and "restoreBackupCredentialValues" in MANAGER, "Settings sync must include app settings stored in the credential store.")
 require('"valueType": Self.feedPropertyValueType(for: property)' in MANAGER, "Podcast settings sync must preserve property value types.")
-require("applyFeedPropertyPayload" in MANAGER, "Podcast settings sync must apply false, zero, and empty values explicitly.")
+subscription_apply = method_body(MANAGER, "nonisolated static func applySubscriptionPayloadInBackground")
+require("cdProperty.boolValue = boolValue" in subscription_apply
+        and "cdProperty.int32Value = int32Value" in subscription_apply
+        and "cdProperty.doubleValue = doubleValue" in subscription_apply
+        and "cdProperty.stringValue = stringValue" in subscription_apply,
+        "Podcast settings sync must apply false, zero, and empty values explicitly.")
 
 manual_completion = method_body(MANAGER, "@objc func performManualSyncWithCompletion")
 require("setError(error)" in manual_completion, "Manual sync errors must be persisted into the transparent sync status.")
@@ -174,11 +179,14 @@ require("applyInitialEpisodeQueue" in initial_upload_apply, "Episode initial que
 require("applyInitialSubscriptionQueue" in initial_upload_apply, "Subscription initial queueing must apply pending changes in chunks.")
 require("Task.yield()" in initial_upload_apply, "Full iCloud queueing must yield back to the UI between large sync categories.")
 
-start_body = source_between(MANAGER, "@objc func start()", "\n    @objc func setEpisodesSyncEnabled")
-require("queueDeviceRecord()" not in start_body, "App launch must not queue a device-only sync that makes Last Sync look current.")
-require("queueDeviceRecordForPendingUserDataIfNeeded()" in start_body, "App launch may only queue the device record when user data is already pending.")
-require("if hasInitialUploadBackfillWork" in start_body and "scheduleCurrentEnabledDataForUpload()" in start_body, "App launch may only resume an already-pending paged initial backfill.")
-require("queueCurrentEnabledDataForUpload()" not in start_body, "App launch must not synchronously queue the whole library.")
+start_body = method_body(MANAGER, "@objc func start()")
+startup_recovery = method_body(MANAGER, "func startPostInitializationRecoveryLifecycle")
+require("startPostInitializationRecoveryLifecycle()" in start_body,
+        "App launch must enter the guarded post-initialization recovery lifecycle.")
+require("queueDeviceRecord()" not in startup_recovery, "App launch must not queue a device-only sync that makes Last Sync look current.")
+require("queueDeviceRecordForPendingUserDataIfNeeded()" in startup_recovery, "App launch may only queue the device record when user data is already pending.")
+require("hasInitialUploadBackfillWork" in startup_recovery and "scheduleCurrentEnabledDataForUpload()" in startup_recovery, "App launch may only resume an already-pending paged initial backfill.")
+require("queueCurrentEnabledDataForUpload()" not in startup_recovery, "App launch must not synchronously queue the whole library.")
 
 sent_changes = method_body(MANAGER, "func handleSentRecordZoneChanges")
 require("event.failedRecordDeletes" in sent_changes, "Record delete failures must be handled, not ignored.")
@@ -207,9 +215,10 @@ require('"iPhone18,2": "iPhone 17 Pro Max"' in MANAGER, "iPhone 17 Pro Max must 
 device_payload = method_body(MANAGER, "nonisolated static func devicePayload")
 require('"name": marketingName' in device_payload and '"model": marketingName' in device_payload, "Local device payload must not store generic iPhone/iPad names.")
 device_record = method_body(MANAGER, "nonisolated static func deviceRecordForSyncEngineCallback")
-require("snapshot.deviceRecordShouldStampSyncDate" in device_record, "Device records may stamp Last Sync only when user data was synced.")
-require('if snapshot.deviceRecordShouldStampSyncDate {\n            payload["lastSyncDate"] = now' in device_record, "Device-only records must not move Last Sync to now.")
+require("snapshot.pendingDeviceControlIntents" in device_record, "Device records must materialize the exact durable payload revision.")
+require("intent.payloadDictionary()" in device_record and "localMutationRevisionPayloadKey" in device_record, "A callback must not rebuild a newer device state behind an older pending revision.")
 queue_device_record = method_body(MANAGER, "func queueDeviceRecord")
+require("persistPendingDeviceControlSaveIntent" in queue_device_record and "stampLastSyncDate: stampLastSyncDate" in queue_device_record, "Last Sync must be frozen into the durable revision before its CK key is queued.")
 require("setSyncMetadata(true, forKey: Self.deviceRecordShouldStampSyncDateKey)" in queue_device_record, "Device Last Sync stamping must survive CKSyncEngine queue callbacks and app restarts.")
 add_pending_saves = method_body(MANAGER, "func addPendingSaves(_ recordIDs: [CKRecord.ID], pendingKeys: inout Set<String>")
 require("containsUserDataRecordID(recordIDs)" in add_pending_saves, "Pending user data must be detected before queueing the device sync date.")
@@ -256,7 +265,7 @@ require(
     'refreshCloudInventory(reason: "settingsView")' in cloud_inventory_refresh,
     "The Objective-C cloud inventory entry point must delegate to the reason-tagged refresher.",
 )
-cloud_inventory_refresh_reason = method_body(MANAGER, "func refreshCloudInventory(reason: String)")
+cloud_inventory_refresh_reason = method_body(MANAGER, "func refreshCloudInventory(reason:")
 require(
     'logSyncEvent("Cloud-Inventar-Abfrage gestartet"' in cloud_inventory_refresh_reason
     and "pendingCloudInventoryRefreshReason = reason" in cloud_inventory_refresh_reason
@@ -278,7 +287,7 @@ for key in ["episodeStates", "subscriptions", "settings", "fetchDate", "reason",
 devices_body = source_between(MANAGER, "@objc var devices: [ICiCloudSyncDeviceInfo] {", "\n    override init()")
 require("cache[deviceID] = localDevicePayload()" not in devices_body, "Devices must not inject the current device before a successful sync.")
 require("guard deviceParticipates(value) else { return nil }" in devices_body, "Devices must only list devices that participate in sync.")
-require("key == deviceID ? value.merging(localDevicePayload()" in devices_body, "Existing current-device cache entries must refresh to the current marketing model name.")
+require("key == currentDeviceID" in devices_body and "value.merging(currentDevicePayload ?? [:])" in devices_body, "Existing current-device cache entries must refresh to the current marketing model name.")
 require("deviceParticipates" in MANAGER, "Device participation must be explicit and based on enabled sync categories.")
 
 sync_options_changed = method_body(MANAGER, "@objc func syncOptionsChanged()")
@@ -321,7 +330,7 @@ require('logSyncEvent("iCloud Upload-Queue baut Daten auf"' in initial_upload_ap
 account_reconciliation = method_body(MANAGER, "func reconcileAvailableICloudAccount")
 require(
     "refreshAccountStatus()" in sync_options_changed
-    and "scheduleCurrentEnabledDataForUpload()" in account_reconciliation,
+    and "continueEnabledSyncAfterAccountVerification()" in account_reconciliation,
     "Toggling sync options must verify the iCloud account before scheduling initial queueing asynchronously.",
 )
 require("queueCurrentEnabledDataForUpload()" not in sync_options_changed, "Toggling sync options must not synchronously queue the whole library on the switch tap.")
@@ -350,7 +359,9 @@ require(
     "Initial upload cursors must not advance before CloudKit confirms the queued user-data saves.",
 )
 require(
-    "recordInitialUploadBatchesQueued(plan.pages)" in initial_upload_apply,
+    "recordInitialUploadBatchesQueued(" in initial_upload_apply
+    and "plan.pages" in initial_upload_apply
+    and "auxiliaryRecordNames: auxiliaryRecordNames" in initial_upload_apply,
     "Initial upload queueing must retain every page checkpoint until CloudKit confirms its user-data records.",
 )
 
@@ -400,10 +411,10 @@ require(
 log_stale = method_body(MANAGER, "nonisolated static func logStaleUserDataSaveChanges")
 require('logSyncEvent("iCloud Upload-Nutzerdaten nicht materialisiert"' in log_stale, "Stale user-data materialization must be visible in customer diagnostics.")
 episode_states_fetch = method_body(MANAGER, "nonisolated static func episodeStatesByObjectHash")
-require("newBackgroundContext()" in episode_states_fetch and "context.performAndWait" in episode_states_fetch, "Episode payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
+require("newICloudSyncBackgroundContext()" in episode_states_fetch and "context.performAndWait" in episode_states_fetch, "Episode payload snapshots must use the dedicated iCloud coordinator so callback reads cannot block the UI store.")
 require('NSPredicate(format: "objectHash IN %@"' in episode_states_fetch, "Episode payload snapshots must use ONE batch fetch, not a fetch per record.")
 subscription_payloads_fetch = method_body(MANAGER, "nonisolated static func subscriptionPayloadsByFeedURL")
-require("newBackgroundContext()" in subscription_payloads_fetch and "context.performAndWait" in subscription_payloads_fetch, "Subscription payload snapshots must be fetched synchronously on a background Core Data context queue during CKSyncEngine callbacks.")
+require("newICloudSyncBackgroundContext()" in subscription_payloads_fetch and "context.performAndWait" in subscription_payloads_fetch, "Subscription payload snapshots must use the dedicated iCloud coordinator so callback reads cannot block the UI store.")
 require('relationshipKeyPathsForPrefetching = ["properties"]' in subscription_payloads_fetch, "Subscription payload snapshots must prefetch feed properties instead of faulting per feed.")
 require("nonisolated static func feedPropertyValueType" in MANAGER and "nonisolated static func defaultFeedPropertyValueType" in MANAGER, "Background subscription payload snapshots must not call main-actor feed property helpers.")
 
@@ -498,18 +509,25 @@ require("These iCloud Sync switches stay local to this device." not in SETTINGS,
 require('"Synced Devices".ls' in SETTINGS, "Device section must use a clear synced-devices header.")
 require("Only devices that have successfully synced with at least one enabled category appear here." not in SETTINGS, "The device section footer copy must be removed.")
 require("displayNameForDevice:" in SETTINGS, "The current-device row must not present a generic iOS device type as the user's chosen device name.")
-require("multilineInfoCellWithIdentifier:" in SETTINGS, "Status and device rows must use a multiline cell layout.")
+require("multilineInfoCellWithIdentifier:" in SETTINGS, "Device rows must use a multiline cell layout.")
 status_row = source_between(SETTINGS, "if (indexPath.section == ICiCloudSyncSettingsSectionStatus) {", "\n    if (indexPath.section == ICiCloudSyncSettingsSectionOptions)")
-require('multilineInfoCellWithIdentifier:@"ICiCloudSyncStatusCell"' in status_row, "The iCloud Sync status must use its own multiline row.")
-require("cell.detailTextLabel.numberOfLines = 0" in status_row, "Long iCloud progress and error guidance must never be truncated.")
+require("statusCellWithStatusText:statusText" in status_row, "The iCloud Sync status must use its own multiline row.")
+status_cell = method_body(SETTINGS, "- (UITableViewCell*)statusCellWithStatusText:")
+require("content.secondaryTextProperties.numberOfLines = 0" in status_cell,
+        "Long iCloud progress and error guidance must never be truncated.")
 require("NSRelativeDateTimeFormatter" in SETTINGS and "localizedStringForDate:" in SETTINGS and "relativeToDate:" in SETTINGS, "Device last-sync dates must be displayed relative to now.")
 require("UITableViewCellStyleSubtitle" in SETTINGS, "Device rows need a full-width subtitle line instead of a narrow value label.")
 require("ICiCloudSyncSettingsDeviceRowHeight" in SETTINGS, "Device rows must be tall enough for two-line sync details.")
 require("heightForRowAtIndexPath" in SETTINGS, "The iCloud Sync settings table must explicitly size multiline rows.")
 require('@"%@\\n%@: %@"' in SETTINGS, "Device details must put Last Sync on a second line when all categories are enabled.")
-# Status redesign: per-category progress ("Lädt herunter… 31/51 Abonnements") instead
-# of a flat item counter, driven by the sync-activity tracker.
-require('"%@ %ld/%ld %@"' in MANAGER, "Sync status must expose per-category item progress while syncing.")
+# Initial backfill has an exact cursor-backed X/Y total. CloudKit fetch callbacks expose
+# only their current batch size, so ordinary fetches must never present that as a global
+# denominator (the old cumulative/batch mix produced impossible values such as 3506/198).
+activity_status = method_body(MANAGER, "func syncActivityStatusText")
+require('"%@ %ld/%ld %@"' not in activity_status and "syncActivityExpectedCount" not in activity_status,
+        "CloudKit callback batch sizes must not be exposed as global sync progress totals.")
+require('"Lädt Episodenstatus hoch… %ld / %ld"' in MANAGER,
+        "Initial episode upload must retain exact cursor-backed X/Y progress.")
 require("beginSyncActivity(" in MANAGER and "recordSyncActivity(" in MANAGER, "Sync progress must be tracked from CKSyncEngine activity.")
 require("clearSyncActivity()" in MANAGER, "Transient sync progress must be cleared after completion or errors.")
 

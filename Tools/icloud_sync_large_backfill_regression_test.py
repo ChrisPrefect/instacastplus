@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 from pathlib import Path
 
 
@@ -49,17 +50,18 @@ plan = method_body(MANAGER, "nonisolated static func buildInitialUploadPlan")
 require("episodeObjectHashesForInitialUploadPlan(cursor:" in plan, "Initial episode upload planning must use a paged fetch.")
 require("subscribedFeedURLsForInitialUploadPlan(cursor:" in plan, "Initial subscription upload planning must use a paged fetch.")
 require(
-    "while episodeBackfillOffset != nil || subscriptionBackfillOffset != nil" not in plan
-    and "pages.append(" not in plan
-    and "pages: [page]" in plan,
-    "One initial upload plan must contain only the next bounded page so the first CloudKit request can start immediately.",
+    "pages.append(" in plan and "pages: [page]" not in plan,
+    "One initial upload plan must prepare a bounded multi-page window so CloudKit can keep draining.",
 )
+window = re.search(r"initialUploadPreparedPageWindowSize\s*=\s*(\d+)", MANAGER)
+require(window is not None and int(window.group(1)) > 1,
+        "The look-ahead window must prepare more than one page.")
 require("append(contentsOf:" not in plan,
-        "Initial upload planning must not duplicate the growing library into whole-plan arrays.")
+        "Initial upload planning must keep bounded identity arrays instead of repeatedly copying them.")
 require("var syncItemMetadataWrites: [ICCloudSyncItemMetadataWrite] = []" in plan
-        and "reserveCapacity(episodes.values.count + subscriptions.values.count)" in plan
+        and "preparedIdentityCapacity" in plan
         and "syncItemMetadataWrites: syncItemMetadataWrites" in plan,
-        "Each page must carry only bounded indexed metadata writes, not copies of prior whole-library dictionaries.")
+        "The prepared window must carry only bounded indexed metadata writes.")
 
 episode_fetch = method_body(MANAGER, "nonisolated static func episodeObjectHashesForInitialUploadPlan")
 subscription_fetch = method_body(MANAGER, "nonisolated static func subscribedFeedURLsForInitialUploadPlan")
@@ -82,7 +84,7 @@ require(
     "Metadata persistence may suspend, so the account/generation/page cursor must be revalidated before queuing CloudKit work.",
 )
 require(
-    "recordInitialUploadBatchesQueued(plan.pages)" in apply_plan,
+    "recordInitialUploadBatchesQueued(" in apply_plan and "plan.pages" in apply_plan,
     "Applying a complete plan must register every page whose CloudKit ACK advances a cursor.",
 )
 require(

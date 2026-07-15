@@ -72,7 +72,8 @@ for signature in [
     "nonisolated static func bindSyncItemMetadata",
 ]:
     helper = body(METADATA, signature)
-    require("newBackgroundContext()" in helper and "context.perform" in helper,
+    expected_context = "newICloudSyncBackgroundContext()"
+    require(expected_context in helper and "context.perform" in helper,
             f"{signature} must keep Core Data I/O off the main actor.")
     require("remoteApplyBatchSize" in helper,
             f"{signature} must bound work to the established <=100-row batch size.")

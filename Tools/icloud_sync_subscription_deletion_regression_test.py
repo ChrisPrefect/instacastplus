@@ -82,16 +82,19 @@ require("RecordKind.subscriptionTombstone" in deletion
 require("localSubscriptionOutboxIntent" in deletion_with_outbox and "scheduleLocalOutboxDrain" in deletion_with_outbox,
         "A newer durable local intent must win over a physical delete from an old client.")
 
-apply_subscription = method_body(MANAGER, "func applyRemoteSubscription(")
-apply_tombstone = method_body(MANAGER, "func applyRemoteSubscriptionTombstone")
-require("remoteOutboxDecision" in apply_subscription and "remoteOutboxDecision" in apply_tombstone,
+subscription_worker = method_body(
+    MANAGER,
+    "nonisolated static func applyPendingSubscriptionBatchInBackground",
+)
+require("func remoteDecision" in subscription_worker
+        and "func applyTombstone" in subscription_worker,
         "Active records and tombstones must share the same logical LWW decision.")
-require("suppressSubscriptionDeletionsKey" in apply_tombstone
-        and "restoreDurableSubscriptionOutboxIntent" in apply_tombstone,
+require("suppressDeletions" in subscription_worker
+        and "restoreOutboxIntent" in subscription_worker,
         "The first-enable union phase must defend local subscriptions against tombstone modifications too.")
-require("localMetadata?.localState" in apply_subscription
-        and "subscriptionSyncItemMetadata" in apply_subscription
-        and "restoreDurableSubscriptionOutboxIntent" in apply_subscription,
+require("localMetadata?.localState" in subscription_worker
+        and "candidateMetadataSnapshots" in subscription_worker
+        and "restoreOutboxIntent" in subscription_worker,
         "A newer local unsubscribe must repair a tombstone intent, never be guessed as a subscribe.")
 
 local_metadata = method_body(MANAGER, "func journalLocalOutboxObjects")
@@ -135,14 +138,15 @@ require("updatedAt" in pending_winners and "isTombstone" in pending_winners
         and "snapshots: candidates.flatMap" in pending_winners,
         "Pending subscription pairs need timestamp LWW plus a deterministic state tie-breaker.")
 pending_subscriptions = method_body(MANAGER, "func applyPendingSubscriptions")
-require("resolvedPendingSubscriptionChanges" in pending_subscriptions,
+require("applyPendingSubscriptionBatchInBackground" in pending_subscriptions
+        and "resolvedPendingSubscriptionChanges" in subscription_worker,
         "Pending apply must reduce active/tombstone records to one logical change per feed.")
 require("pendingSubscriptionStateBatch" in pending_subscriptions
-        and "removePendingSubscriptionStates" in pending_subscriptions,
+        and "removePendingSubscriptionSnapshots" in subscription_worker,
         "Pending pair replay must page durable rows and remove the exact committed pair only.")
-require("applyRemoteSubscriptionTombstone" in pending_subscriptions,
+require("func applyTombstone" in subscription_worker,
         "A dedicated tombstone record parked across a fetch must never be replayed as an active subscription.")
-require("applyPendingLegacySubscriptionDeletion" in pending_subscriptions,
+require("change.isLegacyDeletion" in subscription_worker,
         "A lone released-client physical deletion must still propagate after pair resolution.")
 
 # Frozen-when-off invariants: nothing may be applied while a category is disabled.

@@ -37,14 +37,21 @@ def body(signature: str) -> str:
 
 perform_import = body("- (void)_importFileAtURL:")
 start_import = body("- (void) importFileAtURL:")
-remove_batch = body("- (void)_removeCacheForEpisodes:")
+remove_batch = body(
+    "- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                       automatic:(BOOL)automatic\n"
+    "             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                      completion:(void (^)(NSError* error))completion"
+)
 perform_delete = body("- (void)_performCacheFileDeletionForItems:")
 cache_episode = body(
     "- (BOOL) _cacheEpisode:(CDEpisode*)episode\n"
     "             autoCache:(BOOL)autoCache\n"
     "overwriteCellularLock:(BOOL)overwriteCellularLock\n"
     "reportsFailureToUser:(BOOL)reportsFailureToUser\n"
-    "             queueRank:(NSNumber*)queueRank"
+    "             queueRank:(NSNumber*)queueRank\n"
+    "preservesConsumedState:(BOOL)preservesConsumedState\n"
+    "deferDuringSubscriptionCleanup:(BOOL)deferDuringSubscriptionCleanup"
 )
 cached_url = body("- (NSURL*) URLForCachedEpisode:")
 

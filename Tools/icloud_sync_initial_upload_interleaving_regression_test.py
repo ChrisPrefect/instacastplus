@@ -116,7 +116,9 @@ require(not immediate_reschedule,
         "The regression model must leave failed pending work to the backoff scheduler.")
 
 low_priority = method_body(MANAGER, "func performLowPrioritySync")
-require("if anySyncEnabled, !hasUnresolvedSyncFailures, hasPendingSyncChanges" in low_priority,
+require("shouldScheduleContinuation = anySyncEnabled" in low_priority
+        and "&& !hasUnresolvedSyncFailures" in low_priority
+        and "&& hasPendingSyncChanges" in low_priority,
         "An unresolved send failure must not bypass its retry timer with an immediate low-priority task.")
 
 

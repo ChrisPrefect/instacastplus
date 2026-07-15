@@ -7,6 +7,7 @@
 //
 
 #import "CacheOperation_iOS7.h"
+#import "CacheManager.h"
 #import "HTTPAuthentication.h"
 #import "UtilityFunctions.h"
 #import <AVFoundation/AVFoundation.h>
@@ -453,27 +454,7 @@ static void ICDeleteAllResumeData(void)
 
 - (NSString*)fileExtensionForMIMEType:(NSString*)mimeType
 {
-    NSString* normalized = [mimeType.lowercaseString componentsSeparatedByString:@";"].firstObject;
-    NSDictionary<NSString*, NSString*>* extensions = @{
-        @"audio/mpeg": @"mp3",
-        @"audio/mp3": @"mp3",
-        @"audio/mpeg3": @"mp3",
-        @"audio/mp4": @"m4a",
-        @"audio/x-m4a": @"m4a",
-        @"audio/m4a": @"m4a",
-        @"audio/mp4a-latm": @"m4a",
-        @"audio/aac": @"aac",
-        @"audio/x-aac": @"aac",
-        @"audio/ogg": @"ogg",
-        @"application/ogg": @"ogg",
-        @"audio/wav": @"wav",
-        @"audio/x-wav": @"wav",
-        @"audio/flac": @"flac",
-        @"video/mp4": @"mp4",
-        @"video/x-m4v": @"m4v",
-        @"video/quicktime": @"mov",
-    };
-    return extensions[[normalized stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
+    return [CacheManager fileExtensionForMIMEType:mimeType];
 }
 
 - (BOOL)isCompletePartialContentResponse:(NSHTTPURLResponse*)response actualSize:(long long)actualSize

@@ -9,7 +9,41 @@
 import CoreData
 import CryptoKit
 import Foundation
+import Security
 import UIKit
+
+struct InstallationDeviceIdentityState: Codable, Sendable {
+    let currentDeviceID: String
+    let markerCommitPending: Bool
+    let pendingCleanupDeviceIDs: [String]
+    let cleanupCompletedAccountRecordNames: [String]
+
+    init(
+        currentDeviceID: String,
+        markerCommitPending: Bool,
+        pendingCleanupDeviceIDs: [String],
+        cleanupCompletedAccountRecordNames: [String] = []
+    ) {
+        self.currentDeviceID = currentDeviceID
+        self.markerCommitPending = markerCommitPending
+        self.pendingCleanupDeviceIDs = pendingCleanupDeviceIDs
+        self.cleanupCompletedAccountRecordNames = cleanupCompletedAccountRecordNames
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        currentDeviceID = try values.decode(String.self, forKey: .currentDeviceID)
+        markerCommitPending = try values.decode(Bool.self, forKey: .markerCommitPending)
+        pendingCleanupDeviceIDs = try values.decode(
+            [String].self,
+            forKey: .pendingCleanupDeviceIDs
+        )
+        cleanupCompletedAccountRecordNames = try values.decodeIfPresent(
+            [String].self,
+            forKey: .cleanupCompletedAccountRecordNames
+        ) ?? []
+    }
+}
 
 struct ICCloudSyncItemMetadataContextBatch {
     let accountRecordName: String
@@ -31,12 +65,214 @@ final class ICCloudLegacyKnownRecordSystemFieldsBatch: @unchecked Sendable {
 @available(iOS 17.0, *)
 extension ICiCloudSyncManager {
 
-    func localDevicePayload() -> [String: Any] {
-        Self.devicePayload(deviceID: deviceID,
-                           episodesEnabled: episodesSyncEnabled,
-                           subscriptionsEnabled: subscriptionsSyncEnabled,
-                           settingsEnabled: settingsSyncEnabled,
-                           lastSyncDate: lastSyncDate)
+    nonisolated static func installationDeviceIdentityKeychainQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: installationDeviceIdentityKeychainService,
+            kSecAttrAccount as String: installationDeviceIdentityKeychainAccount,
+            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+        ]
+    }
+
+    nonisolated static func readInstallationDeviceIdentityStateFromKeychain() throws -> InstallationDeviceIdentityState? {
+        var query = installationDeviceIdentityKeychainQuery()
+        query[kSecReturnData as String] = kCFBooleanTrue
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return nil
+        }
+        guard status == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        }
+        guard let data = result as? Data else {
+            throw NSError(
+                domain: "ICiCloudSyncDeviceIdentity",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Die lokale iCloud-Geräteidentität ist beschädigt."]
+            )
+        }
+        return try PropertyListDecoder().decode(InstallationDeviceIdentityState.self, from: data)
+    }
+
+    nonisolated static func writeInstallationDeviceIdentityStateToKeychain(
+        _ state: InstallationDeviceIdentityState
+    ) throws {
+        let data = try PropertyListEncoder().encode(state)
+        let query = installationDeviceIdentityKeychainQuery()
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(updateStatus))
+        }
+        var attributes = query
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let addStatus = SecItemAdd(attributes as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus))
+        }
+    }
+
+    nonisolated static func installationDeviceMarkerURL() throws -> URL {
+        guard let baseURL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            throw NSError(
+                domain: "ICiCloudSyncDeviceIdentity",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Der lokale App-Speicher ist nicht verfügbar."]
+            )
+        }
+        let directoryURL = baseURL.appendingPathComponent(syncMetadataDirectoryName, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        return directoryURL.appendingPathComponent(installationDeviceMarkerFileName)
+    }
+
+    nonisolated static func readInstallationDeviceMarker() throws -> String? {
+        let markerURL = try installationDeviceMarkerURL()
+        guard FileManager.default.fileExists(atPath: markerURL.path) else { return nil }
+        let marker = String(decoding: try Data(contentsOf: markerURL), as: UTF8.self)
+        guard !marker.isEmpty else {
+            throw NSError(
+                domain: "ICiCloudSyncDeviceIdentity",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Die lokale Installationskennung ist beschädigt."]
+            )
+        }
+        return marker
+    }
+
+    nonisolated static func writeInstallationDeviceMarker(_ deviceID: String) throws {
+        try Data(deviceID.utf8).write(
+            to: installationDeviceMarkerURL(),
+            options: .atomic
+        )
+    }
+
+    nonisolated static func resolveInstallationDeviceID() throws -> String {
+        installationDeviceIdentityLock.lock()
+        defer { installationDeviceIdentityLock.unlock() }
+
+        if let resolvedInstallationDeviceID {
+            return resolvedInstallationDeviceID
+        }
+
+        let storedState = try readInstallationDeviceIdentityStateFromKeychain()
+        if let storedState, storedState.markerCommitPending {
+            try writeInstallationDeviceMarker(storedState.currentDeviceID)
+            try writeInstallationDeviceIdentityStateToKeychain(
+                InstallationDeviceIdentityState(
+                    currentDeviceID: storedState.currentDeviceID,
+                    markerCommitPending: false,
+                    pendingCleanupDeviceIDs: storedState.pendingCleanupDeviceIDs,
+                    cleanupCompletedAccountRecordNames:
+                        storedState.cleanupCompletedAccountRecordNames
+                )
+            )
+            UserDefaults.standard.removeObject(forKey: deviceIDKey)
+            resolvedInstallationDeviceID = storedState.currentDeviceID
+            return storedState.currentDeviceID
+        }
+
+        let marker = try readInstallationDeviceMarker()
+        if let storedState, marker == storedState.currentDeviceID {
+            UserDefaults.standard.removeObject(forKey: deviceIDKey)
+            resolvedInstallationDeviceID = storedState.currentDeviceID
+            return storedState.currentDeviceID
+        }
+
+        var pendingCleanupDeviceIDs = Set(storedState?.pendingCleanupDeviceIDs ?? [])
+        if let storedState {
+            pendingCleanupDeviceIDs.insert(storedState.currentDeviceID)
+        }
+        let newDeviceID = UUID().uuidString
+        let preparedState = InstallationDeviceIdentityState(
+            currentDeviceID: newDeviceID,
+            markerCommitPending: true,
+            pendingCleanupDeviceIDs: pendingCleanupDeviceIDs.sorted(),
+            cleanupCompletedAccountRecordNames: []
+        )
+        try writeInstallationDeviceIdentityStateToKeychain(preparedState)
+        try writeInstallationDeviceMarker(newDeviceID)
+        try writeInstallationDeviceIdentityStateToKeychain(
+            InstallationDeviceIdentityState(
+                currentDeviceID: newDeviceID,
+                markerCommitPending: false,
+                pendingCleanupDeviceIDs: preparedState.pendingCleanupDeviceIDs,
+                cleanupCompletedAccountRecordNames:
+                    preparedState.cleanupCompletedAccountRecordNames
+            )
+        )
+        UserDefaults.standard.removeObject(forKey: deviceIDKey)
+        resolvedInstallationDeviceID = newDeviceID
+        return newDeviceID
+    }
+
+    nonisolated static func pendingInstallationDeviceCleanupIDs(
+        accountRecordName: String,
+        currentDeviceID: String
+    ) throws -> [String] {
+        installationDeviceIdentityLock.lock()
+        defer { installationDeviceIdentityLock.unlock() }
+        guard let state = try readInstallationDeviceIdentityStateFromKeychain(),
+              state.currentDeviceID == currentDeviceID else {
+            throw NSError(
+                domain: "ICiCloudSyncDeviceIdentity",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Die lokale iCloud-Geräteidentität hat sich unerwartet geändert."]
+            )
+        }
+        guard !state.cleanupCompletedAccountRecordNames.contains(accountRecordName) else {
+            return []
+        }
+        return state.pendingCleanupDeviceIDs
+    }
+
+    nonisolated static func markInstallationDeviceCleanupCompleted(
+        accountRecordName: String,
+        currentDeviceID: String
+    ) throws {
+        guard !accountRecordName.isEmpty else { return }
+        installationDeviceIdentityLock.lock()
+        defer { installationDeviceIdentityLock.unlock() }
+        guard let state = try readInstallationDeviceIdentityStateFromKeychain(),
+              state.currentDeviceID == currentDeviceID else {
+            throw NSError(
+                domain: "ICiCloudSyncDeviceIdentity",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Die lokale iCloud-Geräteidentität hat sich unerwartet geändert."]
+            )
+        }
+        var completedAccounts = Set(state.cleanupCompletedAccountRecordNames)
+        guard completedAccounts.insert(accountRecordName).inserted else { return }
+        try writeInstallationDeviceIdentityStateToKeychain(
+            InstallationDeviceIdentityState(
+                currentDeviceID: state.currentDeviceID,
+                markerCommitPending: state.markerCommitPending,
+                pendingCleanupDeviceIDs: state.pendingCleanupDeviceIDs,
+                cleanupCompletedAccountRecordNames: completedAccounts.sorted()
+            )
+        )
+    }
+
+    func localDevicePayload() -> [String: Any]? {
+        guard let deviceID else { return nil }
+        return Self.devicePayload(deviceID: deviceID,
+                                  episodesEnabled: episodesSyncEnabled,
+                                  subscriptionsEnabled: subscriptionsSyncEnabled,
+                                  settingsEnabled: settingsSyncEnabled,
+                                  lastSyncDate: lastSyncDate)
     }
 
     nonisolated static func feedPropertyValueType(for property: CDFeedProperty) -> String {
@@ -116,7 +352,7 @@ extension ICiCloudSyncManager {
             )
         }
         guard !records.isEmpty else { return }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw knownRecordSystemFieldsStoreError(
                 code: 1,
                 description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
@@ -205,7 +441,7 @@ extension ICiCloudSyncManager {
         }
         let recordNames = Set(recordIDs.map(\.recordName)).filter { !$0.isEmpty }.sorted()
         guard !recordNames.isEmpty else { return }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw knownRecordSystemFieldsStoreError(
                 code: 1,
                 description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
@@ -245,7 +481,8 @@ extension ICiCloudSyncManager {
     }
 
     nonisolated static func snapshotKnownRecordSystemFieldsForPruning(
-        accountRecordName: String
+        accountRecordName: String,
+        cancellationToken: ICCloudInventoryCancellationToken
     ) async throws -> [String: Data] {
         guard !accountRecordName.isEmpty else {
             throw knownRecordSystemFieldsStoreError(
@@ -253,7 +490,7 @@ extension ICiCloudSyncManager {
                 description: "Der iCloud-Account für lokale CloudKit-Systemfelder konnte nicht bestimmt werden."
             )
         }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw knownRecordSystemFieldsStoreError(
                 code: 1,
                 description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
@@ -263,8 +500,10 @@ extension ICiCloudSyncManager {
         var candidates: [String: Data] = [:]
         var lastRecordName: String?
         while true {
+            try cancellationToken.checkCancellation()
             let lowerBound = lastRecordName
             let page: (scanned: Int, digests: [String: Data], lastRecordName: String?) = try await context.perform {
+                try cancellationToken.checkCancellation()
                 let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
                 if let lowerBound {
                     request.predicate = NSPredicate(
@@ -298,10 +537,12 @@ extension ICiCloudSyncManager {
                     pageLastRecordName = recordName
                     pageDigests[recordName] = Data(SHA256.hash(data: systemFieldsData))
                 }
+                try cancellationToken.checkCancellation()
                 let result = (entries.count, pageDigests, pageLastRecordName)
                 context.reset()
                 return result
             }
+            try cancellationToken.checkCancellation()
             for (recordName, digest) in page.digests {
                 guard candidates[recordName] == nil else {
                     throw knownRecordSystemFieldsStoreError(
@@ -323,7 +564,8 @@ extension ICiCloudSyncManager {
     nonisolated static func pruneKnownRecordSystemFields(
         keeping observedRecordNames: Set<String>,
         candidatesAtInventoryStart: [String: Data],
-        accountRecordName: String
+        accountRecordName: String,
+        cancellationToken: ICCloudInventoryCancellationToken
     ) async throws -> Int {
         guard !accountRecordName.isEmpty else {
             throw knownRecordSystemFieldsStoreError(
@@ -331,7 +573,7 @@ extension ICiCloudSyncManager {
                 description: "Der iCloud-Account für lokale CloudKit-Systemfelder konnte nicht bestimmt werden."
             )
         }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw knownRecordSystemFieldsStoreError(
                 code: 1,
                 description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
@@ -344,6 +586,7 @@ extension ICiCloudSyncManager {
         var deletedCount = 0
         var index = staleCandidates.startIndex
         while index < staleCandidates.endIndex {
+            try cancellationToken.checkCancellation()
             let end = staleCandidates.index(
                 index,
                 offsetBy: maximumRecordZoneChangesPerBatch,
@@ -353,6 +596,7 @@ extension ICiCloudSyncManager {
                 uniqueKeysWithValues: staleCandidates[index..<end].map { ($0.key, $0.value) }
             )
             let chunkDeletedCount = try await context.perform {
+                try cancellationToken.checkCancellation()
                 let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
                 request.predicate = NSPredicate(
                     format: "accountRecordName == %@ AND recordName IN %@",
@@ -381,12 +625,14 @@ extension ICiCloudSyncManager {
                         pageDeletedCount += 1
                     }
                 }
+                try cancellationToken.checkCancellation()
                 if context.hasChanges {
                     try context.save()
                 }
                 context.reset()
                 return pageDeletedCount
             }
+            try cancellationToken.checkCancellation()
             deletedCount += chunkDeletedCount
             index = end
             if index < staleCandidates.endIndex {
@@ -400,7 +646,7 @@ extension ICiCloudSyncManager {
     nonisolated static func deleteKnownRecordSystemFields(
         accountRecordName: String? = nil
     ) async throws -> Int {
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw knownRecordSystemFieldsStoreError(
                 code: 1,
                 description: "Der lokale CloudKit-Systemfeldspeicher konnte nicht geöffnet werden."
@@ -458,11 +704,32 @@ extension ICiCloudSyncManager {
     // the deletion arrives in their next fetch. The CURRENT device cannot be removed.
     @objc func deleteDevice(withID targetDeviceID: String) {
         guard !targetDeviceID.isEmpty, targetDeviceID != deviceID else { return }
+        guard let intent = persistPendingDeviceControlDeleteIntent(
+            targetDeviceID: targetDeviceID
+        ) else { return }
         initializeSyncEngineIfNeeded()
-        syncEngine?.state.add(pendingRecordZoneChanges: [.deleteRecord(deviceRecordID(for: targetDeviceID))])
-        removeDeviceFromCache(targetDeviceID)
-        logSyncEvent("Geräte-Eintrag wird entfernt", metadata: ["targetDeviceID": targetDeviceID])
-        scheduleLowPrioritySync()
+        syncEngine?.state.add(pendingRecordZoneChanges: [
+            .deleteRecord(deviceRecordID(for: intent.targetDeviceID)),
+        ])
+        logSyncEvent("Geräte-Eintrag wird entfernt", metadata: [
+            "targetDeviceID": targetDeviceID,
+            "revision": intent.revision,
+        ])
+        if !isICloudAccountIdentityVerified {
+            setStatus(NSLocalizedString("iCloud prüfen…", comment: ""))
+            Task { @MainActor in
+                await refreshAccountStatus()
+                guard isICloudAccountIdentityVerified else { return }
+                resumePendingDeviceControlIntentsForVerifiedAccount()
+            }
+            postStateChanged()
+            return
+        }
+        if anySyncEnabled {
+            scheduleLowPrioritySync()
+        } else {
+            sendPendingDeviceControlIntents()
+        }
     }
 
     func deviceParticipates(_ payload: [String: Any]) -> Bool {
@@ -719,7 +986,7 @@ extension ICiCloudSyncManager {
             $0.recordName < $1.recordName
         }
         guard !uniqueWrites.isEmpty else { return [] }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw syncItemMetadataStoreError(
                 code: 1,
                 description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
@@ -736,12 +1003,15 @@ extension ICiCloudSyncManager {
 
         var persisted: [ICCloudSyncItemMetadataSnapshot] = []
         var index = uniqueWrites.startIndex
+        try Task.checkCancellation()
         while index < uniqueWrites.endIndex {
+            try Task.checkCancellation()
             let end = uniqueWrites.index(index,
                                          offsetBy: remoteApplyBatchSize,
                                          limitedBy: uniqueWrites.endIndex) ?? uniqueWrites.endIndex
             let chunk = Array(uniqueWrites[index..<end])
             let snapshots = try await context.perform {
+                try Task.checkCancellation()
                 let recordNames = chunk.map(\.recordName)
                 let request = NSFetchRequest<NSManagedObject>(entityName: syncItemMetadataEntityName)
                 request.predicate = NSPredicate(
@@ -812,15 +1082,18 @@ extension ICiCloudSyncManager {
                     chunkSnapshots.append(try syncItemMetadataSnapshot(from: entry))
                 }
                 if context.hasChanges {
+                    try Task.checkCancellation()
                     try context.save()
                 }
                 context.reset()
                 return chunkSnapshots
             }
+            try Task.checkCancellation()
             persisted.append(contentsOf: snapshots)
             index = end
             if index < uniqueWrites.endIndex {
                 await Task.yield()
+                try Task.checkCancellation()
             }
         }
         return persisted
@@ -838,7 +1111,7 @@ extension ICiCloudSyncManager {
         }
         let sortedRecordNames = recordNames.filter { !$0.isEmpty }.sorted()
         guard !sortedRecordNames.isEmpty else { return [:] }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw syncItemMetadataStoreError(
                 code: 1,
                 description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
@@ -881,7 +1154,7 @@ extension ICiCloudSyncManager {
     nonisolated static func deleteSyncItemMetadata(
         accountRecordName: String? = nil
     ) async throws -> Int {
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw syncItemMetadataStoreError(
                 code: 1,
                 description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
@@ -928,7 +1201,7 @@ extension ICiCloudSyncManager {
             )
         }
         guard sourceAccountRecordName != accountRecordName else { return 0 }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw syncItemMetadataStoreError(
                 code: 1,
                 description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
@@ -1277,12 +1550,19 @@ extension ICiCloudSyncManager {
     // updates those does not look like a change. `nonisolated` so the backfill plan can
     // compute it on its background context.
     nonisolated static func subscriptionPayloadHash(for feed: CDFeed) -> String {
+        subscriptionPayloadHash(for: feed, passwordOverride: nil)
+    }
+
+    nonisolated static func subscriptionPayloadHash(
+        for feed: CDFeed,
+        passwordOverride: String?
+    ) -> String {
         var components: [String] = [
             feed.title ?? "",
             String(feed.rank),
             feed.parked ? "1" : "0",
             feed.username ?? "",
-            feed.password ?? "",
+            passwordOverride ?? feed.password ?? "",
         ]
         var propertyComponents: [String] = []
         for property in feed.properties as? Set<CDFeedProperty> ?? [] {
@@ -1427,10 +1707,9 @@ extension ICiCloudSyncManager {
         if syncedUserDataInCurrentRun {
             let now = Date()
             setSyncMetadata(now, forKey: Self.lastSyncDateKey)
-            var payload = localDevicePayload()
+            guard var payload = localDevicePayload() else { return }
             payload["lastSyncDate"] = now
             updateDeviceCache(with: payload)
-            postDevicesChanged()
         }
         clearError()
         resetSyncRetryBackoff()
@@ -1488,8 +1767,14 @@ extension ICiCloudSyncManager {
 
     func backfillProgressStatusText() -> String {
         let counts = syncCounts
-        let uploadsEpisodes = episodesSyncEnabled && defaults.object(forKey: Self.initialEpisodeBackfillOffsetKey) != nil
-        let uploadsSubscriptions = subscriptionsSyncEnabled && defaults.object(forKey: Self.initialSubscriptionBackfillOffsetKey) != nil
+        let uploadsEpisodes = episodesSyncEnabled && hasStoredInitialBackfill(
+            checkpointKey: Self.initialEpisodeBackfillCheckpointKey,
+            offsetKey: Self.initialEpisodeBackfillOffsetKey
+        )
+        let uploadsSubscriptions = subscriptionsSyncEnabled && hasStoredInitialBackfill(
+            checkpointKey: Self.initialSubscriptionBackfillCheckpointKey,
+            offsetKey: Self.initialSubscriptionBackfillOffsetKey
+        )
         if uploadsEpisodes, !uploadsSubscriptions, counts.episodesTotal > 0 {
             let format = NSLocalizedString("Lädt Episodenstatus hoch… %ld / %ld", comment: "")
             return String(format: format, counts.episodesSynced, counts.episodesTotal)
@@ -1548,7 +1833,7 @@ extension ICiCloudSyncManager {
         existingObjectHashes: Set<String>
     ) async throws -> (removed: Int, remaining: Int) {
         guard !accountRecordName.isEmpty,
-              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+              let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             throw syncItemMetadataStoreError(
                 code: 1,
                 description: "Der lokale iCloud-Metadatenspeicher konnte nicht geöffnet werden."
@@ -1604,7 +1889,7 @@ extension ICiCloudSyncManager {
     }
 
     nonisolated static func allLocalEpisodeObjectHashes() async -> Set<String> {
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return [] }
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else { return [] }
         return await context.perform {
             let request = NSFetchRequest<NSDictionary>(entityName: "Episode")
             request.resultType = .dictionaryResultType
@@ -1621,7 +1906,9 @@ extension ICiCloudSyncManager {
         if !syncEngine.state.pendingDatabaseChanges.isEmpty {
             return true
         }
-        let snapshot = Self.syncEngineCallbackSnapshot()
+        guard let snapshot = Self.syncEngineCallbackSnapshot() else {
+            return !syncEngine.state.pendingRecordZoneChanges.isEmpty
+        }
         return syncEngine.state.pendingRecordZoneChanges.contains {
             Self.pendingChangeIsEnabled($0, snapshot: snapshot)
         }
@@ -1655,9 +1942,7 @@ extension ICiCloudSyncManager {
     func beginSyncActivity(_ direction: SyncActivityDirection) {
         if syncActivityDirection != direction {
             syncActivityDirection = direction
-            syncActivityStartDate = Date()
             syncActivityRecordCount = 0
-            syncActivityExpectedCount = 0
         }
     }
 
@@ -1685,27 +1970,13 @@ extension ICiCloudSyncManager {
 
     func clearSyncActivity() {
         syncActivityDirection = nil
-        syncActivityStartDate = nil
         syncActivityRecordCount = 0
-        syncActivityExpectedCount = 0
-        syncActivityKindLabel = nil
     }
 
-    nonisolated static func activityKindLabel(forRecordType recordType: String) -> String? {
-        switch recordType {
-        case RecordKind.episodeState:
-            return NSLocalizedString("Episodes", comment: "")
-        case RecordKind.subscription, RecordKind.subscriptionTombstone:
-            return NSLocalizedString("Subscriptions", comment: "")
-        case RecordKind.appSettings, RecordKind.listScrollPositions:
-            return NSLocalizedString("Settings", comment: "")
-        default:
-            return nil
-        }
-    }
-
-    // "Lädt herunter… 6/51" when the total is known (fetch events report it up front),
-    // otherwise a throughput estimate ("12/s").
+    // CloudKit reports only the size of the current callback, not the total number of
+    // records in the complete fetch. Never combine that batch size with a cumulative
+    // counter: it produced impossible status text such as "3506/198". Initial uploads
+    // have an exact cursor-backed X/Y display; ordinary fetches show only their phase.
     func syncActivityStatusText() -> String? {
         guard let direction = syncActivityDirection else { return nil }
         let base: String
@@ -1717,19 +1988,7 @@ extension ICiCloudSyncManager {
         case .verifying:
             base = NSLocalizedString("Prüft hochgeladene Daten…", comment: "")
         }
-        if syncActivityExpectedCount > 0 {
-            if let kind = syncActivityKindLabel {
-                return String(format: NSLocalizedString("%@ %ld/%ld %@", comment: ""), base, syncActivityRecordCount, syncActivityExpectedCount, kind)
-            }
-            return String(format: NSLocalizedString("%@ %ld/%ld", comment: ""), base, syncActivityRecordCount, syncActivityExpectedCount)
-        }
-        if let start = syncActivityStartDate, syncActivityRecordCount > 0 {
-            let elapsed = max(Date().timeIntervalSince(start), 0.001)
-            let rate = Int((Double(syncActivityRecordCount) / elapsed).rounded())
-            if rate > 0 {
-                return String(format: NSLocalizedString("%@ %ld/s", comment: ""), base, rate)
-            }
-        }
+        if syncActivityRecordCount > 0 { return base }
         // An activity that hasn't moved a single record (e.g. the empty fetch pass of
         // every sync run) shows nothing — flashing "lädt herunter…" although iCloud
         // was empty confused more than it informed.
@@ -2055,7 +2314,7 @@ extension ICiCloudSyncManager {
             }
         }
 
-        if let context = DatabaseManager.shared()?.newBackgroundContext() {
+        if let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() {
             let knownRecordCount = context.performAndWait {
                 let request = NSFetchRequest<NSManagedObject>(entityName: knownRecordSystemFieldsEntityName)
                 request.includesSubentities = false

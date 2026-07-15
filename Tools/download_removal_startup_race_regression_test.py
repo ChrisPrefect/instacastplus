@@ -35,14 +35,15 @@ def body(signature: str) -> str:
     raise AssertionError(f"Unterminated method: {signature}")
 
 
-remove_batch = body("- (void)_removeCacheForEpisodes:")
+remove_batch = body(
+    "- (void)_removeCacheForEpisodes:(NSArray<CDEpisode*>*)episodes\n"
+    "                       automatic:(BOOL)automatic\n"
+    "             physicalURLSnapshot:(ICCachePhysicalURLSnapshot*)physicalURLSnapshot\n"
+    "                      completion:"
+)
 perform_files = body("- (void)_performCacheFileDeletionForItems:")
 finish_files = body("- (void)_finishCacheFileDeletionForItems:")
-remove_feed = body(
-    "- (void) removeCacheForFeed:(CDFeed*)feed\n"
-    "                   automatic:(BOOL)automatic\n"
-    "                  completion:(void (^)(NSError* error))completion"
-)
+remove_feed = body("- (void)_removeCacheForFeeds:")
 
 scan_start = SOURCE.find("- (void)_buildCacheIndexInBackground")
 scan_end = SOURCE.find("- (BOOL) canDownload", scan_start)
@@ -69,7 +70,7 @@ require("ICCacheDeletionResolvedURLKey" in perform_files and
         "ICCacheDeletionFileWasPresentKey" in perform_files and
         "ICCacheDeletionResolvedURLKey" in finish_files,
         "Rollback must restore the URL and downloaded state discovered by the physical deletion phase.")
-require("feed.episodes" in remove_feed,
-        "Unsubscribing during startup must include persisted feed episodes, not only the still-empty cache set.")
+require("lastDownloaded != nil" in remove_feed and "newICloudSyncBackgroundContext" in remove_feed,
+        "Unsubscribing during startup must select persisted feed episodes, not only the still-empty cache set.")
 
 print("Download removal startup-race regression checks passed")

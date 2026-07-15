@@ -14,6 +14,7 @@ extern NSString* SubscriptionManagerWillParseFeedNotification;
 extern NSString* SubscriptionManagerDidParseFeedNotification;       // userinfo "feed": CDFeed object
 extern NSString* SubscriptionManagerDidAddEpisodesNotification;
 extern NSString* SubscriptionManagerDidFinishRefreshingFeedsNotification;
+extern NSString* SubscriptionManagerUnsubscribeCleanupProtectionDidChangeNotification;
 
 @class CDFeed;
 @class CDEpisode;
@@ -28,6 +29,34 @@ typedef void(^ICSubscriptionManagerRefreshCompletionBlock)(BOOL success, NSArray
 - (CDFeed*) subscribeParserFeed:(ICFeed*)parserFeed;
 - (CDFeed*) subscribeParserFeed:(ICFeed*)parserFeed autodownload:(BOOL)autodownload options:(ICSubscribeOptions)options;
 - (void) unsubscribeFeed:(CDFeed*)feed;
+- (void)unsubscribeFeed:(CDFeed*)feed completion:(void (^)(NSError* error))completion;
+- (void)performUnsubscribeSideEffectsForFeeds:(NSArray<CDFeed*>*)feeds
+                                   completion:(void (^)(NSError* error))completion
+    NS_SWIFT_NAME(performUnsubscribeSideEffects(for:completion:));
+- (void)installAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                  revision:(NSString*)revision
+    NS_SWIFT_NAME(installAutoDownloadsDuringUnsubscribeCleanup(feedObjectURIString:revision:));
+- (NSString*)stageAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                      revision:(NSString*)revision
+    NS_SWIFT_NAME(stageAutoDownloadsDuringUnsubscribeCleanup(feedObjectURIString:revision:));
+- (void)commitAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                  revision:(NSString*)revision
+                                                                stageToken:(NSString*)stageToken
+    NS_SWIFT_NAME(commitAutoDownloadsDuringUnsubscribeCleanup(feedObjectURIString:revision:stageToken:));
+- (void)cancelAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                  revision:(NSString*)revision
+                                                                stageToken:(NSString*)stageToken
+    NS_SWIFT_NAME(cancelAutoDownloadsDuringUnsubscribeCleanup(feedObjectURIString:revision:stageToken:));
+- (void)completeAutoDownloadsDuringUnsubscribeCleanupForFeedObjectURIString:(NSString*)feedObjectURIString
+                                                                    revision:(NSString*)revision
+    NS_SWIFT_NAME(completeAutoDownloadsDuringUnsubscribeCleanup(feedObjectURIString:revision:));
+- (BOOL)automaticDownloadsBlockedDuringUnsubscribeCleanupForFeed:(CDFeed*)feed;
+- (BOOL)downloadsBlockedDuringUnsubscribeCleanupForFeed:(CDFeed*)feed;
+- (void)setUnsubscribeCleanupRecoveryBlocked:(BOOL)blocked;
+- (void)resetUnsubscribeCleanupProtectionForLocalAppReset;
+- (void)performResubscribeCleanupForFeeds:(NSArray<CDFeed*>*)feeds
+                               completion:(void (^)(NSError* error))completion
+    NS_SWIFT_NAME(performResubscribeCleanup(for:completion:));
 
 - (void) reloadContentOfFeed:(CDFeed*)feed recoverArchivedEpisodes:(BOOL)recoverArchived completion:(ICSubscriptionManagerRefreshCompletionBlock)completion;
 - (void) subscribeFeedWithURL:(NSURL*)url options:(ICSubscribeOptions)options completion:(void (^)(CDFeed* feed, NSError* error))completion;

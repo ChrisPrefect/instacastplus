@@ -43,7 +43,8 @@ require("_finishCancelledDownloadRemovalForIdentifier" in pending_branch and
 finish_cancelled = body("- (void)_finishCancelledDownloadRemovalForIdentifier:")
 background = finish_cancelled.find("_completeBackgroundSessionForIdentifier:identifier")
 for prerequisite in (
-    "removeItemAtURL:localURL",
+    "for (NSURL* physicalURL in physicalURLs)",
+    "removeItemAtURL:physicalURL",
     "ICRemoveTranscriptCacheForEpisodeHashes",
     "saveReturningError",
     "CacheManagerDidDeleteCacheFilesNotification",

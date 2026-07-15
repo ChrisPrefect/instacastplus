@@ -34,6 +34,7 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 @interface CacheManager : NSObject
 
 + (CacheManager*) sharedCacheManager;
++ (NSString*)fileExtensionForMIMEType:(NSString*)mimeType;
 
 - (NSURL*) URLForCachedEpisode:(CDEpisode*)episode;
 - (BOOL) episodeIsCached:(CDEpisode*)episode;
@@ -53,6 +54,11 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 - (void) removeCacheForFeed:(CDFeed*)feed
                    automatic:(BOOL)automatic
                   completion:(void (^)(NSError* error))completion;
+- (void) removeCacheForFeeds:(NSArray<CDFeed*>*)feeds
+                    automatic:(BOOL)automatic
+                   completion:(void (^)(NSError* error))completion;
+- (void)removeCacheForFeedsDuringSubscriptionCleanup:(NSArray<CDFeed*>*)feeds
+                                           completion:(void (^)(NSError* error))completion;
 - (BOOL) isCaching;
 - (BOOL) isCachingEpisode:(CDEpisode*)episode;
 - (BOOL) isCachingSourceOfEpisode:(CDEpisode*)episode;
@@ -63,6 +69,8 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 - (BOOL)completeDeferredRestoreCancellationForObjectHash:(NSString*)objectHash episode:(CDEpisode*)episode;
 - (void) cancelStreamingCacheForEpisode:(CDEpisode*)episode disableAutoDownload:(BOOL)disableAutodownload;
 - (void) cancelCachingFeed:(CDFeed*)feed;
+- (void) cancelCachingFeeds:(NSArray<CDFeed*>*)feeds
+                  completion:(void (^)(NSError* error))completion;
 
 
 @property (nonatomic) BOOL suspended;
@@ -96,12 +104,15 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 
 
 - (NSArray*) cachingEpisodes;  // observable
+- (BOOL) canReorderCachingEpisodes;
 - (void) reorderCachingEpisodeFromIndex:(NSUInteger)fromIndex toIndex:(NSUInteger)toIndex;
 
 - (BOOL) autoCacheEpisode:(CDEpisode*)episode enableFilters:(BOOL)filters;
 - (BOOL) autoCacheFeed:(CDFeed*)feed;
 - (BOOL) automaticCachingDisabledForEpisode:(CDEpisode*)episode;
 - (void) resetAutoCacheForFeed:(CDFeed*)feed;
+- (void) resetAutoCacheForFeeds:(NSArray<CDFeed*>*)feeds
+                     completion:(void (^)(NSError* error))completion;
 
 
 @property (readonly) double progress;
@@ -115,8 +126,12 @@ extern NSString* CacheManagerWiFiDidBecomeAvailableNotification;
 - (BOOL) isLoadingEpisode:(CDEpisode*)episode;
 - (BOOL) isLoadingEpisodeSuspended:(CDEpisode*)episode;
 
-- (NSString*) beginStreamingCacheForEpisode:(CDEpisode*)episode acquiredNewLease:(BOOL*)acquiredNewLease;
-- (void) updateStreamingCacheForEpisode:(CDEpisode*)episode progress:(double)progress leaseToken:(NSString*)leaseToken;
+- (NSString*) beginStreamingCacheForEpisode:(CDEpisode*)episode
+                           acquiredNewLease:(BOOL*)acquiredNewLease;
+- (void) updateStreamingCacheForEpisode:(CDEpisode*)episode
+                               progress:(double)progress
+                        downloadedBytes:(unsigned long long)downloadedBytes
+                             leaseToken:(NSString*)leaseToken;
 - (void) finishStreamingCacheForEpisode:(CDEpisode*)episode leaseToken:(NSString*)leaseToken;
 - (void) failStreamingCacheForEpisode:(CDEpisode*)episode error:(NSError*)error leaseToken:(NSString*)leaseToken;
 - (double) streamingCacheProgressForEpisode:(CDEpisode*)episode;

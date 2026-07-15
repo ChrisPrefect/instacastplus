@@ -117,6 +117,8 @@ require("cleanupError" in wrapper and "*error = cleanupError" in wrapper,
 resume = body(IMPORTER, "+ (void)resumePendingBookmarkImportIfNeeded")
 require("ICBackupImportQueue" in resume and "NSQualityOfServiceUtility" in resume,
         "Launch recovery must be serialized with imports and run off the main thread at utility priority.")
+require("NSInteger count = [self _importBookmarks:" not in resume,
+        "Release builds must not retain a result used only by the compiled-out DebugLog macro.")
 require(ordered(resume, "ICBackupReadBookmarkStage", "[self _importBookmarks:", "ICBackupRemoveBookmarkStage"),
         "Launch recovery must replay the staged source before deleting it.")
 require("if (importError)" in resume and "return;" in resume,

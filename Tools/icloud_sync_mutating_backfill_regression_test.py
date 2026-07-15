@@ -37,8 +37,12 @@ snapshot = body("func initialUploadSnapshot()")
 require("initialBackfillState" in snapshot,
         "Legacy nonzero offsets without keyset cursors must restart idempotent backfill at zero.")
 legacy = body("func initialBackfillState(")
-require("offset > 0" in legacy and "cursor == nil" in legacy and "defaults.set(0" in legacy,
+require("offset > 0" in legacy and "cursor == nil" in legacy and
+        "persistInitialBackfillCheckpoint(" in legacy and "offset: 0" in legacy,
         "An in-progress legacy offset cannot be mapped safely and must restart instead of skipping records.")
+checkpoint = body("func persistInitialBackfillCheckpoint")
+require("defaults.set(checkpoint, forKey: checkpointKey)" in checkpoint,
+        "Cursor and visible offset must commit as one durable checkpoint before legacy mirrors are updated.")
 
 episode_fetch = body("nonisolated static func episodeObjectHashesForInitialUploadPlan")
 subscription_fetch = body("nonisolated static func subscribedFeedURLsForInitialUploadPlan")

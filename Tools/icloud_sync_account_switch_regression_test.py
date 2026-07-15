@@ -273,9 +273,11 @@ require(
     "An account-status retry must replace an already queued ordinary send retry.",
 )
 
-start = method_body("@objc func start()")
+startup_recovery = method_body("func startPostInitializationRecoveryLifecycle")
 require(
-    "hasInitialUploadBackfillWork, !isICloudAccountSignedOut, isICloudAccountIdentityVerified" in start,
+    "self.hasInitialUploadBackfillWork" in startup_recovery
+    and "!self.isICloudAccountSignedOut" in startup_recovery
+    and "self.isICloudAccountIdentityVerified" in startup_recovery,
     "Cold start must not queue/send old-engine data before the account identity check finishes.",
 )
 
@@ -284,6 +286,7 @@ require(
 # unsubscribes still need durable capture. They must enter a transition-scoped pending
 # outbox and bind only after this launch verifies the real account.
 capture_scope = method_body("nonisolated static func localOutboxCaptureAccountRecordName")
+start = method_body("@objc func start()")
 require(
     "verifiedAccountRecordName" in capture_scope
     and "accountUserRecordNameKey" not in capture_scope,
@@ -345,8 +348,10 @@ require(
 )
 foreground = method_body("@objc func performForegroundSyncIfNeeded")
 require(
-    "await refreshAccountStatus()" in foreground
-    and foreground.find("await refreshAccountStatus()") < foreground.find("scheduleLowPrioritySync()"),
+    "await self.refreshAccountStatus()" in foreground
+    and "await self.continueEnabledSyncAfterAccountVerification()" in foreground
+    and foreground.find("await self.refreshAccountStatus()")
+        < foreground.find("await self.continueEnabledSyncAfterAccountVerification()"),
     "Foreground sync must verify the current account before starting a send.",
 )
 require(

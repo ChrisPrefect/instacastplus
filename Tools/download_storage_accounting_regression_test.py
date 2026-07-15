@@ -56,10 +56,10 @@ require("scanGeneration" in recalculate and "_downloadedBytesGeneration" in reca
 require("scanSnapshotValid" in recalculate and "errorHandler" in recalculate and
         "ICCacheFileErrorMeansMissing" in recalculate and "resourceValuesForKeys" in recalculate,
         "Directory and attribute read failures must invalidate accounting instead of being silently counted as zero bytes.")
-known_publish = recalculate.find("_setDownloadedBytes:size known:YES")
+known_publish = recalculate.find("_setDownloadedBytes:totalBytes known:YES")
 validity_guard = recalculate.find("if (!scanSnapshotValid)")
 require(validity_guard != -1 and known_publish != -1 and validity_guard < known_publish,
-        "Only a complete readable filesystem snapshot may become authoritative known bytes.")
+        "Only a complete readable filesystem snapshot plus tracked active-stream bytes may become authoritative known bytes.")
 
 finish = method_body(MANAGER, "- (void)_finishCacheOperationDidEnd:")
 require("_addDownloadedBytes:operation.finalFileSize" in finish and
@@ -83,7 +83,8 @@ remove_feed_with_completion = method_body(
     "                  completion:(void (^)(NSError* error))completion",
 )
 require("completion:nil" in remove_one and "_removeCacheForEpisodes:" in remove_one_with_completion and
-        "completion:nil" in remove_feed and "removeCacheForEpisodes:episodes.array" in remove_feed_with_completion,
+        "completion:nil" in remove_feed and
+        "removeCacheForFeeds:feed ? @[feed] : @[]" in remove_feed_with_completion,
         "Single and feed deletion must preserve exact batch accounting after durable ownership partitioning.")
 
 finish_removal = method_body(MANAGER, "- (void)_finishCacheFileDeletionForItems:")

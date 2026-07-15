@@ -216,7 +216,7 @@
 {
     double bufferedProgress = (pman.duration > 0) ? (pman.playableDuration / pman.duration) : 0.0;
     if (pman.streamingCacheActive || pman.streamingCacheComplete) {
-        return MAX(bufferedProgress, pman.streamingCacheProgress);
+        return pman.streamingCacheProgress;
     }
     return bufferedProgress;
 }

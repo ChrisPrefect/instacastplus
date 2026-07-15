@@ -120,14 +120,14 @@ require(
     and 'path isEqualToString:@"instacast/podcasts/podcast/settings/setting"' in parser
     and '_currentPodcast.settings[key] = value;' in parser
     and '_currentPodcast.settingTypes[key] = type;' in parser
-    and "for (NSString *originalKey in podcast.settings)" in importer
+    and "for (NSString *originalKey in podcast.settings ?: @{})" in importer
     and "property.int32Value = integerValue" in importer,
     "Podcast FeedProperty backup export/import must preserve integer settings like the near-chapter-end options.",
 )
 
 subscription_payload = icloud_sync.split("nonisolated static func subscriptionPayload(for feed:", 1)[1].split("return [", 1)[0]
 subscription_apply = icloud_sync.split("if let properties = payload[\"properties\"] as? [[String: Any]]", 1)[1].split("if didMutate", 1)[0]
-property_apply = icloud_sync.split("func applyFeedPropertyPayload", 1)[1].split("func queueSubscriptionRecord", 1)[0]
+property_apply = subscription_apply
 internal_keys = icloud_sync.split("nonisolated static let internalFeedPropertyKeys", 1)[1].split("]", 1)[0]
 for key in ["PlayerNearChapterEndForwardSkipMode", "PlayerNearChapterEndForwardSkipWindow"]:
     require(key not in internal_keys, f"{key} must not be treated as an internal feed property.")
@@ -139,7 +139,7 @@ require(
     "iCloud subscription payload must include non-internal integer FeedProperties.",
 )
 require(
-    "applyFeedPropertyPayload(property, to: feed)" in subscription_apply
+    'payload["properties"] as? [[String: Any]]' in icloud_sync
     and "cdProperty.int32Value = int32Value" in property_apply,
     "iCloud subscription apply must restore integer FeedProperties.",
 )

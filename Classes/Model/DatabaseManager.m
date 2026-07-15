@@ -105,6 +105,9 @@ static NSString* kBookmarksProperty = @"bookmarks";
 + (NSURL*)_dataStoreURLForRelativePath:(NSString*)relativePath error:(NSError**)error;
 + (BOOL)_removePreparedDataStoreAtURL:(NSURL*)storeURL error:(NSError**)error;
 + (NSManagedObjectModel*)_compatibleSourceModelForMetadata:(NSDictionary*)metadata error:(NSError**)error;
++ (BOOL)_lightweightMigrateCurrentDataStoreAtURL:(NSURL*)storeURL
+                                    sourceMetadata:(NSDictionary*)sourceMetadata
+                                             error:(NSError**)error;
 + (NSDictionary<NSString*, NSNumber*>*)_entityCountsAtStoreURL:(NSURL*)storeURL
                                                          model:(NSManagedObjectModel*)model
                                                        options:(NSDictionary*)options
@@ -144,6 +147,7 @@ static NSString* kBookmarksProperty = @"bookmarks";
 #endif
     NSInteger                   _savingInterruption;
     NSPersistentStoreCoordinator* _exportStoreCoordinator;
+    NSPersistentStoreCoordinator* _iCloudSyncStoreCoordinator;
     NSMutableSet<CDFeed*>*      _feedsAwaitingCountSave;
 }
 
@@ -584,6 +588,57 @@ NS_INLINE NSString* _DataStoreFile(void) {
     return compatibleSourceModel;
 }
 
++ (BOOL)_lightweightMigrateCurrentDataStoreAtURL:(NSURL*)storeURL
+                                    sourceMetadata:(NSDictionary*)sourceMetadata
+                                             error:(NSError**)error
+{
+    NSManagedObjectModel* sourceModel = [self _compatibleSourceModelForMetadata:sourceMetadata
+                                                                          error:error];
+    NSString* sourceStoreUUID = sourceMetadata[NSStoreUUIDKey];
+    if (!sourceModel || sourceStoreUUID.length == 0) {
+        if (error && !*error) {
+            *error = [NSError errorWithDomain:@"DatabaseManager"
+                                         code:71
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The existing database identity could not be verified for the model update."}];
+        }
+        return NO;
+    }
+    NSDictionary* sourceCounts = [self _entityCountsAtStoreURL:storeURL
+                                                          model:sourceModel
+                                                        options:@{NSPersistentHistoryTrackingKey: @NO}
+                                                          error:error];
+    if (!sourceCounts) {
+        return NO;
+    }
+
+    NSURL* modelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
+    NSManagedObjectModel* currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
+    NSPersistentStoreCoordinator* coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:currentModel];
+    NSDictionary* options = @{
+        NSMigratePersistentStoresAutomaticallyOption: @YES,
+        NSInferMappingModelAutomaticallyOption: @YES,
+        NSPersistentHistoryTrackingKey: @NO,
+    };
+    NSError* migrationError = nil;
+    NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                          configuration:nil
+                                                                    URL:storeURL
+                                                                options:options
+                                                                  error:&migrationError];
+    if (!store) {
+        if (error) *error = migrationError;
+        return NO;
+    }
+    if (![coordinator removePersistentStore:store error:&migrationError]) {
+        if (error) *error = migrationError;
+        return NO;
+    }
+    return [self _validatePreparedStoreAtURL:storeURL
+                               expectedCounts:sourceCounts
+                            expectedStoreUUID:sourceStoreUUID
+                                        error:error];
+}
+
 + (NSDictionary<NSString*, NSNumber*>*)_entityCountsAtStoreURL:(NSURL*)storeURL
                                                          model:(NSManagedObjectModel*)model
                                                        options:(NSDictionary*)options
@@ -760,9 +815,14 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                                                            error:&metadataError];
         NSURL* modelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
         NSManagedObjectModel* currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
-        if (!metadata || ![currentModel isConfiguration:nil compatibleWithStoreMetadata:metadata]) {
-            if (error) *error = metadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:56 userInfo:@{NSLocalizedDescriptionKey: @"The current database does not match the bundled model."}];
+        if (!metadata) {
+            if (error) *error = metadataError ?: [NSError errorWithDomain:@"DatabaseManager" code:56 userInfo:@{NSLocalizedDescriptionKey: @"The current database metadata could not be read."}];
             return NO;
+        }
+        if (![currentModel isConfiguration:nil compatibleWithStoreMetadata:metadata]) {
+            return [self _lightweightMigrateCurrentDataStoreAtURL:targetURL
+                                                    sourceMetadata:metadata
+                                                             error:error];
         }
         return YES;
     }
@@ -866,10 +926,29 @@ NS_INLINE NSString* _DataStoreFile(void) {
     }
 
     if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting]) {
-        return [self _validatePreparedStoreAtURL:targetURL
-                                  expectedCounts:nil
-                               expectedStoreUUID:markerTargetStoreUUID
-                                           error:error];
+        NSError* validationError = nil;
+        if ([self _validatePreparedStoreAtURL:targetURL
+                               expectedCounts:nil
+                            expectedStoreUUID:markerTargetStoreUUID
+                                        error:&validationError]) {
+            return YES;
+        }
+        NSError* targetMetadataError = nil;
+        NSDictionary* targetMetadata = [NSPersistentStoreCoordinator metadataForPersistentStoreOfType:NSSQLiteStoreType
+                                                                                                    URL:targetURL
+                                                                                                options:nil
+                                                                                                  error:&targetMetadataError];
+        NSURL* currentModelURL = [[NSBundle mainBundle] URLForResource:_ModelFile() withExtension:@"momd"];
+        NSManagedObjectModel* currentModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:currentModelURL];
+        BOOL markerIdentityMatches = [targetMetadata[NSStoreUUIDKey] isEqualToString:markerTargetStoreUUID];
+        if (targetMetadata && markerIdentityMatches &&
+            ![currentModel isConfiguration:nil compatibleWithStoreMetadata:targetMetadata]) {
+            return [self _lightweightMigrateCurrentDataStoreAtURL:targetURL
+                                                    sourceMetadata:targetMetadata
+                                                             error:error];
+        }
+        if (error) *error = validationError ?: targetMetadataError;
+        return NO;
     }
 
     if ([phase isEqualToString:ICDataStoreMigrationPhaseReady]) {
@@ -2009,12 +2088,31 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
 
 - (void) _deleteUnsubscribedFeeds
 {
+    NSError* cleanupIntentError = nil;
+    NSArray<NSString*>* protectedFeedObjectURIStringArray =
+        [ICiCloudSyncManager pendingSubscriptionCleanupFeedObjectURIStringsInContext:self.objectContext
+                                                                               error:&cleanupIntentError];
+    if (!protectedFeedObjectURIStringArray) {
+        ErrLog(@"Could not inspect pending subscription cleanup intents: %@", cleanupIntentError);
+        return;
+    }
+    NSSet<NSString*>* protectedFeedObjectURIStrings =
+        [NSSet setWithArray:protectedFeedObjectURIStringArray];
     NSFetchRequest* fetchRequest = [[NSFetchRequest alloc] init];
     fetchRequest.entity = [NSEntityDescription entityForName:@"Feed" inManagedObjectContext:self.objectContext];
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"subscribed == NO"];
-    NSArray* unsubscribedFeeds = [self.objectContext executeFetchRequest:fetchRequest error:nil];
+    NSError* fetchError = nil;
+    NSArray* unsubscribedFeeds = [self.objectContext executeFetchRequest:fetchRequest error:&fetchError];
+    if (!unsubscribedFeeds) {
+        ErrLog(@"Could not inspect unsubscribed feeds: %@", fetchError);
+        return;
+    }
     
     for(NSManagedObject* feed in unsubscribedFeeds) {
+        NSString* feedObjectURIString = feed.objectID.URIRepresentation.absoluteString;
+        if ([protectedFeedObjectURIStrings containsObject:feedObjectURIString]) {
+            continue;
+        }
         [self.objectContext deleteObject:feed];
     }
     [self save];
@@ -2740,6 +2838,14 @@ static const NSInteger kInitialEpisodeLimit = 50;
     if (matches.count > 0) {
         CDFeed *existingFeed = matches.firstObject;
         if (!existingFeed.subscribed) {
+            // Establish a clean transaction boundary before mutating the feed, ranks and
+            // synchronously journaled outbox rows. A failed resubscribe save can then roll
+            // back exactly this operation without discarding unrelated user edits.
+            NSError* resubscribeBaselineSaveError = [self saveReturningError];
+            if (resubscribeBaselineSaveError) {
+                ErrLog(@"error preparing resubscribed feed save: %@", resubscribeBaselineSaveError);
+                return nil;
+            }
             // Feed war unsubscribed aber noch nicht aus Core Data entfernt - reaktivieren
             existingFeed.subscribed = YES;
             existingFeed.parked = NO;
@@ -2751,7 +2857,13 @@ static const NSInteger kInitialEpisodeLimit = 50;
                 }
                 [self _updateFeedOrderNums:feedsCopy];
             }
-            [self save];
+            NSError* resubscribeSaveError = [[ICiCloudSyncManager sharedManager]
+                commitLocalSubscriptionResubscribeCleanupForFeed:existingFeed];
+            if (resubscribeSaveError) {
+                ErrLog(@"error saving resubscribed feed: %@", resubscribeSaveError);
+                [self.objectContext rollback];
+                return nil;
+            }
         }
         return existingFeed;
     }
@@ -3445,6 +3557,46 @@ static NSString* const kManualFeedOrderKey = @"ManualFeedOrder";
     context.persistentStoreCoordinator = _exportStoreCoordinator;
     // Read-only usage; keep faults small and don't hold on to objects.
     context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy;
+    return context;
+}
+
+- (NSManagedObjectContext*)newICloudSyncBackgroundContext
+{
+    NSPersistentContainer* container = [self persistentContainer];
+    if (!container) {
+        return nil;
+    }
+
+    @synchronized (self) {
+        if (!_iCloudSyncStoreCoordinator) {
+            NSPersistentStoreDescription* mainDescription = container.persistentStoreDescriptions.firstObject;
+            NSURL* storeURL = mainDescription.URL;
+            if (!storeURL) {
+                return nil;
+            }
+            NSPersistentStoreCoordinator* coordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:container.managedObjectModel];
+            NSDictionary* options = @{
+                NSMigratePersistentStoresAutomaticallyOption: @YES,
+                NSInferMappingModelAutomaticallyOption: @YES,
+            };
+            NSError* addError = nil;
+            NSPersistentStore* store = [coordinator addPersistentStoreWithType:NSSQLiteStoreType
+                                                                 configuration:nil
+                                                                           URL:storeURL
+                                                                       options:options
+                                                                         error:&addError];
+            if (!store) {
+                ErrLog(@"iCloud sync store coordinator unavailable at %@: %@", storeURL.path, addError.localizedDescription ?: @"unknown error");
+                return nil;
+            }
+            _iCloudSyncStoreCoordinator = coordinator;
+        }
+    }
+
+    NSManagedObjectContext* context = [[NSManagedObjectContext alloc] initWithConcurrencyType:NSPrivateQueueConcurrencyType];
+    context.persistentStoreCoordinator = _iCloudSyncStoreCoordinator;
+    context.mergePolicy = NSErrorMergePolicy;
+    context.undoManager = nil;
     return context;
 }
 

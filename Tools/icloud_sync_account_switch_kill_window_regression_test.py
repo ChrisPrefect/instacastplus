@@ -74,11 +74,13 @@ require(
 
 start = method_body("@objc func start()")
 startup_recovery = start.find("discardStaleICloudAccountEngineStateIfNeeded()")
-startup_engine_init = start.find("initializeSyncEngineIfNeeded()")
+startup_lifecycle = start.find("startPostInitializationRecoveryLifecycle()")
+recovery_lifecycle = method_body("func startPostInitializationRecoveryLifecycle()")
 require(
     startup_recovery != -1
-    and startup_engine_init != -1
-    and startup_recovery < startup_engine_init,
+    and startup_lifecycle != -1
+    and startup_recovery < startup_lifecycle
+    and "initializeSyncEngineIfNeeded()" in recovery_lifecycle,
     "Cold start must discard stale account engine metadata before an engine can be initialized.",
 )
 

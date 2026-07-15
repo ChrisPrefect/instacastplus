@@ -16,7 +16,38 @@ import UIKit
 extension ICiCloudSyncManager {
 
     nonisolated func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
-        await handleEventOnMain(event, syncEngine: syncEngine)
+        switch event {
+        case .stateUpdate(let event):
+            guard let generation = await statePersistenceGeneration(for: syncEngine) else { return }
+            do {
+                try await persistStateSerialization(event.stateSerialization)
+            } catch {
+                await handleStatePersistenceFailure(
+                    error,
+                    syncEngine: syncEngine,
+                    generation: generation
+                )
+            }
+
+        default:
+            await handleEventOnMain(event, syncEngine: syncEngine)
+        }
+    }
+
+    func statePersistenceGeneration(for syncEngine: CKSyncEngine) -> Int? {
+        guard syncEngine === self.syncEngine,
+              !requiresSyncEngineStateRollbackAfterPersistenceFailure else { return nil }
+        return cloudAccountGeneration
+    }
+
+    func handleStatePersistenceFailure(
+        _ error: Error,
+        syncEngine: CKSyncEngine,
+        generation: Int
+    ) {
+        guard syncEngine === self.syncEngine,
+              generation == cloudAccountGeneration else { return }
+        handleLocalPersistenceFailure(error)
     }
 
     func handleEventOnMain(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
@@ -30,9 +61,10 @@ extension ICiCloudSyncManager {
             }
         }
         switch event {
-        case .stateUpdate(let event):
-            guard !requiresSyncEngineStateRollbackAfterPersistenceFailure else { return }
-            persistStateSerialization(event.stateSerialization)
+        case .stateUpdate:
+            // State updates are intercepted by the nonisolated delegate entry point so
+            // JSON encoding and the atomic file write never block MainActor.
+            break
 
         case .accountChange(let event):
             await handleAccountChange(event, syncEngine: syncEngine)
@@ -73,6 +105,7 @@ extension ICiCloudSyncManager {
             markPendingSubscriptionFetchComplete()
             await applyPendingSubscriptions()
             guard generation == cloudAccountGeneration, isICloudAccountIdentityVerified else { return }
+            completeInitialBackfillFetchBeforeUploadIfNeeded()
             // The first complete fetch after (re-)enabling subscription sync has been
             // processed (its catch-up deletions were suppressed) — deletions arriving
             // from now on are live propagation and are applied again. Must happen here,
@@ -90,8 +123,11 @@ extension ICiCloudSyncManager {
             if settingsSyncEnabled, !hasUnresolvedSyncFailures,
                defaults.bool(forKey: Self.initialSettingsBackfillPendingKey),
                !hasPendingInitialSettingsChoice {
+                guard let intent = persistPendingSingletonUploadIntent(
+                    for: appSettingsRecordID()
+                ) else { return }
                 defaults.removeObject(forKey: Self.initialSettingsBackfillPendingKey)
-                setSettingsLocalModifiedDate(Date())
+                setSettingsLocalModifiedDate(intent.modifiedAt)
                 setStoredSyncedSettingsHash(syncedSettingsHash())
                 addPendingSave(appSettingsRecordID())
                 logSyncEvent("Initiale Einstellungen werden hochgeladen (keine in iCloud gefunden)")
@@ -117,7 +153,16 @@ extension ICiCloudSyncManager {
 
     nonisolated func nextRecordZoneChangeBatch(_ context: CKSyncEngine.SendChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.RecordZoneChangeBatch? {
         guard let generation = syncEngineCallbackGate.currentGeneration(for: syncEngine) else { return nil }
-        let snapshot = Self.syncEngineCallbackSnapshot()
+        guard let snapshot = Self.syncEngineCallbackSnapshot() else {
+            syncEngineCallbackGate.recordInitialUploadOutcome(
+                resolvedRecordNames: [],
+                localReadFailed: true,
+                generation: generation,
+                for: syncEngine
+            )
+            return nil
+        }
+        guard !snapshot.requiresInitialBackfillFetchBeforeUpload else { return nil }
         let scopedChanges = syncEngine.state.pendingRecordZoneChanges.filter {
             context.options.scope.contains($0) && Self.pendingChangeIsEnabled($0, snapshot: snapshot)
         }
@@ -155,13 +200,20 @@ extension ICiCloudSyncManager {
 
         guard syncEngineCallbackGate.currentGeneration(for: syncEngine) == generation else { return nil }
 
+        let pendingDeviceControlIntents = snapshot.pendingDeviceControlIntents
+        let localOutboxDeleteRecordIDs = recordIDsToDelete.filter {
+            !$0.recordName.hasPrefix(RecordPrefix.device)
+        }
+        let deviceControlDeleteRecordIDs = recordIDsToDelete.filter {
+            $0.recordName.hasPrefix(RecordPrefix.device)
+        }
         let deleteOutboxLookup = Self.localOutboxEntriesByRecordName(
-            Set(recordIDsToDelete.map(\.recordName)),
+            Set(localOutboxDeleteRecordIDs.map(\.recordName)),
             accountRecordName: snapshot.accountUserRecordName)
         let deleteOutboxEntries = deleteOutboxLookup.values
         var staleDeleteChanges: [CKSyncEngine.PendingRecordZoneChange] = []
         if deleteOutboxLookup.succeeded {
-            recordIDsToDelete = recordIDsToDelete.filter { recordID in
+            recordIDsToDelete = deviceControlDeleteRecordIDs + localOutboxDeleteRecordIDs.filter { recordID in
                 guard let entry = deleteOutboxEntries[recordID.recordName] else { return true }
                 guard entry.operation == Self.localOutboxDeleteOperation,
                       !entry.acknowledged else {
@@ -171,13 +223,29 @@ extension ICiCloudSyncManager {
                 return true
             }
         } else {
-            unresolvedRecordIDs.append(contentsOf: recordIDsToDelete)
-            recordIDsToDelete.removeAll()
+            unresolvedRecordIDs.append(contentsOf: localOutboxDeleteRecordIDs)
+            recordIDsToDelete = deviceControlDeleteRecordIDs
+        }
+        recordIDsToDelete = recordIDsToDelete.filter { recordID in
+            guard recordID.recordName.hasPrefix(RecordPrefix.device) else { return true }
+            let targetDeviceID = String(recordID.recordName.dropFirst(RecordPrefix.device.count))
+            guard let intent = pendingDeviceControlIntents[targetDeviceID],
+                  intent.operation == Self.localOutboxDeleteOperation else {
+                staleDeleteChanges.append(.deleteRecord(recordID))
+                return false
+            }
+            return true
         }
         if !staleDeleteChanges.isEmpty {
             syncEngine.state.remove(pendingRecordZoneChanges: staleDeleteChanges)
         }
         let deleteAttemptRevisions = Dictionary(uniqueKeysWithValues: recordIDsToDelete.compactMap { recordID -> (String, String)? in
+            if recordID.recordName.hasPrefix(RecordPrefix.device) {
+                let targetDeviceID = String(recordID.recordName.dropFirst(RecordPrefix.device.count))
+                guard let pendingDeviceControlIntent = pendingDeviceControlIntents[targetDeviceID],
+                      pendingDeviceControlIntent.operation == Self.localOutboxDeleteOperation else { return nil }
+                return (recordID.recordName, pendingDeviceControlIntent.revision)
+            }
             guard let entry = deleteOutboxEntries[recordID.recordName],
                   entry.operation == Self.localOutboxDeleteOperation,
                   !entry.acknowledged else { return nil }
@@ -208,6 +276,7 @@ extension ICiCloudSyncManager {
         syncEngineCallbackGate.recordInitialUploadOutcome(
             resolvedRecordNames: resolvedInitialUploadRecordNames,
             localReadFailed: !unresolvedRecordIDs.isEmpty,
+            localChangesDeferred: !materialized.deferred.isEmpty,
             generation: generation,
             for: syncEngine
         )
@@ -278,15 +347,16 @@ extension ICiCloudSyncManager {
         let succeeded: Bool
     }
 
-    nonisolated static func materializeRecordsForSyncEngineCallback(_ recordIDs: [CKRecord.ID], snapshot: SyncEngineCallbackSnapshot) -> (records: [CKRecord], stale: [CKSyncEngine.PendingRecordZoneChange], unresolved: [CKRecord.ID]) {
+    nonisolated static func materializeRecordsForSyncEngineCallback(_ recordIDs: [CKRecord.ID], snapshot: SyncEngineCallbackSnapshot) -> (records: [CKRecord], stale: [CKSyncEngine.PendingRecordZoneChange], unresolved: [CKRecord.ID], deferred: [CKRecord.ID]) {
         var records: [CKRecord] = []
         var stale: [CKSyncEngine.PendingRecordZoneChange] = []
+        var deferred: [CKRecord.ID] = []
         let knownRecordLookup = knownRecordSystemFieldsForSyncEngineCallback(
             recordIDs,
             accountRecordName: snapshot.accountUserRecordName
         )
         guard knownRecordLookup.succeeded else {
-            return (records, stale, recordIDs)
+            return (records, stale, recordIDs, deferred)
         }
         var unresolved = recordIDs.filter {
             knownRecordLookup.invalidRecordNames.contains($0.recordName)
@@ -299,15 +369,15 @@ extension ICiCloudSyncManager {
             accountRecordName: snapshot.accountUserRecordName)
         guard localOutboxLookup.succeeded else {
             unresolved.append(contentsOf: materializableRecordIDs)
-            return (records, stale, unresolved)
+            return (records, stale, unresolved, deferred)
         }
         let localOutboxEntriesByRecordName = localOutboxLookup.values
         let legacySyncItemRecordNames = Set(materializableRecordIDs.compactMap { recordID -> String? in
-            guard localOutboxEntriesByRecordName[recordID.recordName] == nil,
-                  recordID.recordName.hasPrefix(RecordPrefix.episode)
-                    || recordID.recordName.hasPrefix(RecordPrefix.subscription) else {
-                return nil
+            if recordID.recordName.hasPrefix(RecordPrefix.episode) {
+                return recordID.recordName
             }
+            guard localOutboxEntriesByRecordName[recordID.recordName] == nil,
+                  recordID.recordName.hasPrefix(RecordPrefix.subscription) else { return nil }
             return recordID.recordName
         })
         let syncItemMetadataLookup = syncItemMetadataByRecordNameForSyncEngineCallback(
@@ -322,6 +392,17 @@ extension ICiCloudSyncManager {
                 let statesLookup = episodeStatesByObjectHash(legacyEpisodeRecordIDs.map { String($0.recordName.dropFirst(RecordPrefix.episode.count)) })
                 for recordID in episodeRecordIDs {
                     if let entry = localOutboxEntriesByRecordName[recordID.recordName] {
+                        guard syncItemMetadataLookup.succeeded else {
+                            unresolved.append(recordID)
+                            continue
+                        }
+                        if episodeOutboxRevisionResolvedByMetadata(
+                            entry,
+                            metadata: syncItemMetadataLookup.values[recordID.recordName]
+                        ) {
+                            stale.append(.saveRecord(recordID))
+                            continue
+                        }
                         guard entry.category == localOutboxEpisodeCategory,
                               entry.operation == localOutboxSaveOperation,
                               !entry.acknowledged,
@@ -498,6 +579,40 @@ extension ICiCloudSyncManager {
         where !recordID.recordName.hasPrefix(RecordPrefix.episode)
             && !recordID.recordName.hasPrefix(RecordPrefix.subscription)
             && !recordID.recordName.hasPrefix(RecordPrefix.subscriptionTombstone) {
+            if recordID.recordName == RecordPrefix.subscriptionListSettings,
+               let entry = localOutboxEntriesByRecordName[recordID.recordName] {
+                guard let singletonIntent = snapshot.pendingSingletonUploadIntents[recordID.recordName],
+                      singletonIntent.revision == entry.revision,
+                      singletonIntent.modifiedAt == entry.changedAt else {
+                    deferred.append(recordID)
+                    continue
+                }
+                guard entry.category == localOutboxSubscriptionListSettingsCategory,
+                      entry.operation == localOutboxSaveOperation,
+                      !entry.acknowledged else {
+                    stale.append(.saveRecord(recordID))
+                    continue
+                }
+                guard var payload = entry.payloadDictionary() else {
+                    unresolved.append(recordID)
+                    continue
+                }
+                payload["updatedAt"] = entry.changedAt
+                payload[localMutationRevisionPayloadKey] = entry.revision
+                let record = mutableRecordForSyncEngineCallback(
+                    recordType: RecordKind.subscriptionListSettings,
+                    recordID: recordID,
+                    knownRecordsByRecordName: knownRecordLookup.recordsByRecordName
+                )
+                populateForSyncEngineCallback(
+                    record,
+                    payload: payload,
+                    updatedAt: entry.changedAt,
+                    deviceID: snapshot.deviceID
+                )
+                records.append(record)
+                continue
+            }
             if let record = recordToSaveForSyncEngineCallback(
                 for: recordID,
                 snapshot: snapshot,
@@ -508,7 +623,7 @@ extension ICiCloudSyncManager {
                 stale.append(.saveRecord(recordID))
             }
         }
-        return (records, stale, unresolved)
+        return (records, stale, unresolved, deferred)
     }
 
     nonisolated static func knownRecordSystemFieldsForSyncEngineCallback(
@@ -528,7 +643,7 @@ extension ICiCloudSyncManager {
         )
         guard recordIDsByRecordName.count <= maximumRecordZoneChangesPerBatch,
               let accountRecordName, !accountRecordName.isEmpty,
-              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+              let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             return KnownRecordSystemFieldsLookup(
                 recordsByRecordName: [:],
                 invalidRecordNames: [],
@@ -642,7 +757,7 @@ extension ICiCloudSyncManager {
         }
         guard recordNames.count <= maximumRecordZoneChangesPerBatch,
               let accountRecordName, !accountRecordName.isEmpty,
-              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+              let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             return SyncItemMetadataLookup(values: [:], succeeded: false)
         }
         return context.performAndWait {
@@ -678,7 +793,7 @@ extension ICiCloudSyncManager {
                                                             accountRecordName: String?) -> SyncOutboxLookup {
         guard !recordNames.isEmpty else { return SyncOutboxLookup(values: [:], succeeded: true) }
         guard let accountRecordName, !accountRecordName.isEmpty,
-              let context = DatabaseManager.shared()?.newBackgroundContext() else {
+              let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             return SyncOutboxLookup(values: [:], succeeded: false)
         }
         return context.performAndWait {
@@ -703,7 +818,6 @@ extension ICiCloudSyncManager {
                       let recordName = entry.value(forKey: "recordName") as? String,
                       let category = entry.value(forKey: "category") as? String,
                       let operation = entry.value(forKey: "operation") as? String,
-                      let acknowledged = entry.value(forKey: "acknowledged") as? Bool,
                       let revision = entry.value(forKey: "revision") as? String,
                       let changedAt = entry.value(forKey: "changedAt") as? Date else {
                     succeeded = false
@@ -722,7 +836,7 @@ extension ICiCloudSyncManager {
                                                                 recordName: recordName,
                                                                 category: category,
                                                                 operation: operation,
-                                                                acknowledged: acknowledged,
+                                                                acknowledged: localOutboxEntryIsAcknowledged(entry),
                                                                 revision: revision,
                                                                 changedAt: changedAt,
                                                                 payloadData: payloadData)
@@ -748,7 +862,7 @@ extension ICiCloudSyncManager {
     // a context + fetch + property faults per subscription record.
     nonisolated static func subscriptionPayloadsByFeedURL(_ feedURLs: [String], deviceID: String) -> SyncPayloadLookup {
         guard !feedURLs.isEmpty else { return SyncPayloadLookup(values: [:], succeeded: true) }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             return SyncPayloadLookup(values: [:], succeeded: false)
         }
         return context.performAndWait {
@@ -808,7 +922,7 @@ extension ICiCloudSyncManager {
 
     nonisolated static func episodeStatesByObjectHash(_ objectHashes: [String]) -> SyncPayloadLookup {
         guard !objectHashes.isEmpty else { return SyncPayloadLookup(values: [:], succeeded: true) }
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else {
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else {
             return SyncPayloadLookup(values: [:], succeeded: false)
         }
         return context.performAndWait {
@@ -846,6 +960,7 @@ extension ICiCloudSyncManager {
         let initialSettingsBackfillPending: Bool
         let initialSettingsChoicePending: Bool
         let hasIncompletePendingSubscriptionFetch: Bool
+        let requiresInitialBackfillFetchBeforeUpload: Bool
         let anySyncEnabled: Bool
         let deviceID: String
         let accountUserRecordName: String?
@@ -853,14 +968,35 @@ extension ICiCloudSyncManager {
         let settingsLocalModifiedDate: Date?
         let scrollPositionsLocalModifiedDate: Date?
         let lastSyncDate: Date?
+        let pendingDeviceControlIntents: [String: PendingDeviceControlIntent]
+        let pendingSingletonUploadIntents: [String: PendingSingletonUploadIntent]
     }
 
-    nonisolated static func syncEngineCallbackSnapshot() -> SyncEngineCallbackSnapshot {
+    nonisolated static func syncEngineCallbackSnapshot() -> SyncEngineCallbackSnapshot? {
         let defaults = UserDefaults.standard
         let episodesEnabled = defaults.bool(forKey: ICiCloudSyncEpisodesEnabled)
         let subscriptionsEnabled = defaults.bool(forKey: ICiCloudSyncSubscriptionsEnabled)
         let settingsEnabled = defaults.bool(forKey: ICiCloudSyncSettingsEnabled)
+        let accountRecordName = defaults.string(forKey: Self.accountUserRecordNameKey)
+        let fetchGateAccount = defaults.string(forKey: Self.initialBackfillFetchBeforeUploadAccountKey)
+        let fetchGateCategories = Set(
+            defaults.stringArray(forKey: Self.initialBackfillFetchBeforeUploadCategoriesKey) ?? []
+        )
+        let requiresFetchBeforeUpload = fetchGateAccount == accountRecordName
+            && ((episodesEnabled
+                    && fetchGateCategories.contains("episodes"))
+                || (subscriptionsEnabled
+                    && fetchGateCategories.contains("subscriptions")))
         let pendingSubscriptionFetchComplete = (syncMetadataValue(forKey: Self.pendingSubscriptionFetchCompleteKey) as? NSNumber)?.boolValue == true
+        var singletonIntents: [String: PendingSingletonUploadIntent] = [:]
+        for intent in pendingSingletonUploadIntents() where intent.accountRecordName == accountRecordName {
+            singletonIntents[intent.recordName] = intent
+        }
+        var deviceControlIntents: [String: PendingDeviceControlIntent] = [:]
+        for intent in pendingDeviceControlIntents() where intent.accountRecordName == accountRecordName {
+            deviceControlIntents[intent.targetDeviceID] = intent
+        }
+        guard let deviceID = deviceIDForSyncEngineCallback() else { return nil }
         return SyncEngineCallbackSnapshot(
             episodesSyncEnabled: episodesEnabled,
             subscriptionsSyncEnabled: subscriptionsEnabled,
@@ -869,13 +1005,16 @@ extension ICiCloudSyncManager {
             initialSettingsChoicePending: syncMetadataValue(forKey: Self.pendingInitialSettingsPayloadKey) != nil,
             hasIncompletePendingSubscriptionFetch: subscriptionsEnabled
                 && !pendingSubscriptionFetchComplete,
+            requiresInitialBackfillFetchBeforeUpload: requiresFetchBeforeUpload,
             anySyncEnabled: episodesEnabled || subscriptionsEnabled || settingsEnabled,
-            deviceID: deviceIDForSyncEngineCallback(),
-            accountUserRecordName: defaults.string(forKey: Self.accountUserRecordNameKey),
+            deviceID: deviceID,
+            accountUserRecordName: accountRecordName,
             deviceRecordShouldStampSyncDate: defaults.bool(forKey: Self.deviceRecordShouldStampSyncDateKey),
             settingsLocalModifiedDate: defaults.object(forKey: Self.settingsLocalModifiedDateKey) as? Date,
             scrollPositionsLocalModifiedDate: defaults.object(forKey: Self.scrollPositionsLocalModifiedDateKey) as? Date,
-            lastSyncDate: defaults.object(forKey: Self.lastSyncDateKey) as? Date
+            lastSyncDate: defaults.object(forKey: Self.lastSyncDateKey) as? Date,
+            pendingDeviceControlIntents: deviceControlIntents,
+            pendingSingletonUploadIntents: singletonIntents
         )
     }
 
@@ -931,17 +1070,18 @@ extension ICiCloudSyncManager {
         snapshot: SyncEngineCallbackSnapshot,
         knownRecordsByRecordName: [String: CKRecord]
     ) -> CKRecord {
-        let defaults = UserDefaults.standard
-        let updatedAt = defaults.object(forKey: Self.subscriptionListSettingsLocalModifiedDateKey) as? Date ?? Date()
-        var payload: [String: Any] = [
-            "sortMode": defaults.string(forKey: FeedListSortMode) ?? "",
-            "updatedAt": updatedAt,
-        ]
-        if let manualOrder = defaults.array(forKey: Self.manualFeedOrderDefaultsKey) as? [String], !manualOrder.isEmpty {
-            payload["manualOrder"] = manualOrder
+        let intent = snapshot.pendingSingletonUploadIntents[recordID.recordName]
+        let updatedAt = intent?.modifiedAt
+            ?? UserDefaults.standard.object(forKey: Self.subscriptionListSettingsLocalModifiedDateKey) as? Date
+            ?? Date()
+        var payload = intent?.payloadDictionary()
+            ?? subscriptionListSettingsPayloadForSyncEngineCallback(
+                episodeListPayloads: episodeListPayloadsForSyncEngineCallback()
+            )
+        payload["updatedAt"] = updatedAt
+        if let revision = intent?.revision {
+            payload[localMutationRevisionPayloadKey] = revision
         }
-        payload["episodeLists"] = episodeListPayloadsForSyncEngineCallback()
-        payload["mainMenuListUIDs"] = mainMenuListUIDsForSyncEngineCallback()
         let record = mutableRecordForSyncEngineCallback(
             recordType: RecordKind.subscriptionListSettings,
             recordID: recordID,
@@ -957,19 +1097,58 @@ extension ICiCloudSyncManager {
     // (sort-mode-only device — publishing would race the real state under LWW; exactly
     // that race flipped the iPhone off "manual" once).
     nonisolated static let subscriptionListSettingsFingerprintPrefix = "v3:"
+    nonisolated static let mainMenuListUIDsSchemaVersion = 1
 
     nonisolated static func subscriptionListSettingsFingerprint() -> String {
+        subscriptionListSettingsFingerprint(
+            episodeListPayloads: episodeListPayloadsForSyncEngineCallback()
+        )
+    }
+
+    nonisolated static func subscriptionListSettingsFingerprint(
+        episodeListPayloads: [[String: Any]]
+    ) -> String {
+        subscriptionListSettingsFingerprint(
+            payload: subscriptionListSettingsPayloadForSyncEngineCallback(
+                episodeListPayloads: episodeListPayloads
+            )
+        )
+    }
+
+    nonisolated static func subscriptionListSettingsPayloadForSyncEngineCallback(
+        episodeListPayloads: [[String: Any]]
+    ) -> [String: Any] {
         let defaults = UserDefaults.standard
-        let sortMode = defaults.string(forKey: FeedListSortMode) ?? ""
-        let manualOrder = (defaults.array(forKey: manualFeedOrderDefaultsKey) as? [String]) ?? []
+        var payload: [String: Any] = [
+            "sortMode": defaults.string(forKey: FeedListSortMode) ?? "",
+            "episodeLists": episodeListPayloads,
+            "mainMenuListUIDs": mainMenuListUIDsForSyncEngineCallback(),
+            "mainMenuListUIDsSchemaVersion": mainMenuListUIDsSchemaVersion,
+        ]
+        if let manualOrder = defaults.array(forKey: manualFeedOrderDefaultsKey) as? [String],
+           !manualOrder.isEmpty {
+            payload["manualOrder"] = manualOrder
+        }
+        return payload
+    }
+
+    nonisolated static func subscriptionListSettingsFingerprint(
+        payload: [String: Any]
+    ) -> String {
+        let sortMode = payload["sortMode"] as? String ?? ""
+        let manualOrder = payload["manualOrder"] as? [String] ?? []
         var components = ["sortMode=\(sortMode)", "manualOrder=\(manualOrder.joined(separator: "\u{1}"))"]
-        components.append("mainMenuListUIDs=\(mainMenuListUIDsForSyncEngineCallback().joined(separator: "\u{1}"))")
-        components.append(contentsOf: episodeListPayloadsForSyncEngineCallback().map { episodeListFingerprintComponent($0) })
+        let mainMenuListUIDs = payload["mainMenuListUIDs"] as? [String] ?? []
+        components.append("mainMenuListUIDs=\(mainMenuListUIDs.joined(separator: "\u{1}"))")
+        let mainMenuSchemaVersion = payload["mainMenuListUIDsSchemaVersion"] as? Int ?? 0
+        components.append("mainMenuListUIDsSchemaVersion=\(mainMenuSchemaVersion)")
+        let episodeListPayloads = payload["episodeLists"] as? [[String: Any]] ?? []
+        components.append(contentsOf: episodeListPayloads.map { episodeListFingerprintComponent($0) })
         return subscriptionListSettingsFingerprintPrefix + sha256Hex(components.joined(separator: "\u{2}"))
     }
 
     nonisolated static func episodeListPayloadsForSyncEngineCallback() -> [[String: Any]] {
-        guard let context = DatabaseManager.shared()?.newBackgroundContext() else { return [] }
+        guard let context = DatabaseManager.shared()?.newICloudSyncBackgroundContext() else { return [] }
         return context.performAndWait {
             let request = NSFetchRequest<CDEpisodeList>(entityName: "EpisodeList")
             request.includesSubentities = false
@@ -1013,7 +1192,10 @@ extension ICiCloudSyncManager {
     }
 
     nonisolated static func mainMenuListUIDsForSyncEngineCallback() -> [String] {
-        UserDefaults.standard.array(forKey: "MainMenuListUIDs") as? [String] ?? []
+        if let storedUIDs = UserDefaults.standard.array(forKey: "MainMenuListUIDs") as? [String] {
+            return storedUIDs
+        }
+        return defaultMainMenuListUIDs()
     }
 
     nonisolated static func episodeListFingerprintComponent(_ payload: [String: Any]) -> String {
@@ -1189,20 +1371,26 @@ extension ICiCloudSyncManager {
         for recordID: CKRecord.ID,
         snapshot: SyncEngineCallbackSnapshot,
         knownRecordsByRecordName: [String: CKRecord]
-    ) -> CKRecord {
-        let now = Date()
-        var payload = localDevicePayloadForSyncEngineCallback(snapshot: snapshot)
-        if snapshot.deviceRecordShouldStampSyncDate {
-            payload["lastSyncDate"] = now
-        }
-        payload["updatedAt"] = now
+    ) -> CKRecord? {
+        let targetDeviceID = String(recordID.recordName.dropFirst(RecordPrefix.device.count))
+        guard targetDeviceID == snapshot.deviceID,
+              let intent = snapshot.pendingDeviceControlIntents[targetDeviceID],
+              intent.operation == localOutboxSaveOperation,
+              var payload = intent.payloadDictionary() else { return nil }
+        let updatedAt = payload["updatedAt"] as? Date ?? intent.createdAt
+        payload[localMutationRevisionPayloadKey] = intent.revision
         let record = mutableRecordForSyncEngineCallback(
             recordType: RecordKind.device,
             recordID: recordID,
             knownRecordsByRecordName: knownRecordsByRecordName
         )
-        populateForSyncEngineCallback(record, payload: payload, updatedAt: now, deviceID: snapshot.deviceID)
-        record["deviceID"] = snapshot.deviceID as CKRecordValue
+        populateForSyncEngineCallback(
+            record,
+            payload: payload,
+            updatedAt: updatedAt,
+            deviceID: snapshot.deviceID
+        )
+        record["deviceID"] = targetDeviceID as CKRecordValue
         return record
     }
 
@@ -1232,13 +1420,23 @@ extension ICiCloudSyncManager {
         snapshot: SyncEngineCallbackSnapshot,
         knownRecordsByRecordName: [String: CKRecord]
     ) -> CKRecord {
-        let updatedAt = snapshot.settingsLocalModifiedDate ?? Date()
+        let intent = snapshot.pendingSingletonUploadIntents[recordID.recordName]
+        let updatedAt = intent?.modifiedAt ?? snapshot.settingsLocalModifiedDate ?? Date()
+        var payload = intent?.payloadDictionary()
+            ?? appSettingsPayloadForSyncEngineCallback(
+                updatedAt: updatedAt,
+                deviceID: snapshot.deviceID
+            )
+        payload["updatedAt"] = updatedAt
+        if let revision = intent?.revision {
+            payload[localMutationRevisionPayloadKey] = revision
+        }
         let record = mutableRecordForSyncEngineCallback(
             recordType: RecordKind.appSettings,
             recordID: recordID,
             knownRecordsByRecordName: knownRecordsByRecordName
         )
-        populateForSyncEngineCallback(record, payload: appSettingsPayloadForSyncEngineCallback(updatedAt: updatedAt, deviceID: snapshot.deviceID), updatedAt: updatedAt, deviceID: snapshot.deviceID)
+        populateForSyncEngineCallback(record, payload: payload, updatedAt: updatedAt, deviceID: snapshot.deviceID)
         return record
     }
 
@@ -1247,13 +1445,22 @@ extension ICiCloudSyncManager {
         snapshot: SyncEngineCallbackSnapshot,
         knownRecordsByRecordName: [String: CKRecord]
     ) -> CKRecord {
-        let updatedAt = snapshot.scrollPositionsLocalModifiedDate ?? ICListScrollPositionsLastModifiedDate() ?? Date()
-        let payload: [String: Any] = [
+        let intent = snapshot.pendingSingletonUploadIntents[recordID.recordName]
+        let updatedAt = intent?.modifiedAt
+            ?? snapshot.scrollPositionsLocalModifiedDate
+            ?? ICListScrollPositionsLastModifiedDate()
+            ?? Date()
+        var payload = intent?.payloadDictionary() ?? [
             "positions": ICListScrollPositionsSnapshot() ?? [:],
             "lastModified": updatedAt,
             "deviceID": snapshot.deviceID,
             "updatedAt": updatedAt,
         ]
+        payload["lastModified"] = updatedAt
+        payload["updatedAt"] = updatedAt
+        if let revision = intent?.revision {
+            payload[localMutationRevisionPayloadKey] = revision
+        }
         let record = mutableRecordForSyncEngineCallback(
             recordType: RecordKind.listScrollPositions,
             recordID: recordID,
@@ -1394,6 +1601,9 @@ extension ICiCloudSyncManager {
             // Travels with subscription sync (ICSubscriptionListSettings), not settings sync.
             FeedListSortMode,
             "MainMenuListUIDs",
+            "MainMenuListUIDsMigratedDefaults",
+            "MainMenuListUIDsEmptyRepairV1",
+            "MainMenuListUIDsEmptyRepairPendingUploadV1",
         ]
     }
 
@@ -1440,14 +1650,16 @@ extension ICiCloudSyncManager {
         try? PropertyListSerialization.data(fromPropertyList: dictionary, format: .binary, options: 0)
     }
 
-    nonisolated static func deviceIDForSyncEngineCallback() -> String {
-        let defaults = UserDefaults.standard
-        if let stored = defaults.string(forKey: Self.deviceIDKey), !stored.isEmpty {
-            return stored
+    nonisolated static func deviceIDForSyncEngineCallback() -> String? {
+        do {
+            return try resolveInstallationDeviceID()
+        } catch {
+            logSyncEvent("Lokale iCloud-Geräteidentität konnte nicht gelesen werden", metadata: [
+                "errorDomain": (error as NSError).domain,
+                "errorCode": (error as NSError).code,
+            ])
+            return nil
         }
-        let newID = UUID().uuidString
-        defaults.set(newID, forKey: Self.deviceIDKey)
-        return newID
     }
 
     nonisolated static func deviceMarketingNameForSyncEngineCallback() -> String {

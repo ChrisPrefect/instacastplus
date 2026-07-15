@@ -48,6 +48,12 @@ require(
     "Live progress/storage notifications must be separate from durable episode-state changes "
     "and identify affected episode hashes.",
 )
+require(
+    "- (AppleWatchEpisodeState*)_applyTransientDownloadProgressPayload:(NSDictionary*)payload\n"
+    "                                                             state:" not in MANAGER,
+    "The private interface must declare the implemented one-argument transient progress selector; "
+    "a stale three-argument declaration hides selector drift and produces an incomplete-implementation warning.",
+)
 
 incoming = method_body(MANAGER, "- (void)_handleIncomingPayloadOnMainThread:")
 progress_route = incoming.split('[@"watch.downloadProgress"]', 1)

@@ -90,10 +90,19 @@ require(method.find("cancelDownloadsAndClearCacheWithCompletion") < method.find(
         "Settings and database data must not be destroyed until cache cancellation/deletion succeeded.")
 require(method.find("prepareForLocalAppResetWithCompletion") < method.find("resetAllUserDataWithCompletion"),
         "iCloud must be quiesced before subscriptions are removed locally.")
+require(method.find("cancelImageDownloadsAndClearCache") < method.find("prepareForLocalAppResetWithCompletion"),
+        "Image-cache failure must be known before iCloud options and producer state are reset.")
 require("if (error)" in method and "_showResetError" in method,
         "A cache or database failure must be shown and must not fall through to Reset Complete.")
 require("resetAllUserDataWithCompletion" in method and "cancelImageDownloadsAndClearCache" in method,
         "Reset must await complete local-database and image-cache deletion before reporting success.")
+require("databaseError.domain isEqualToString:@\"DatabaseManager\"" in method and
+        "databaseError.code == 30 || databaseError.code == 32" in method and
+        "recoverAfterLocalAppResetFailure:databaseError" in method,
+        "Only database failures proven to occur before user-data deletion may restore iCloud options and runtime.")
+require("completeLocalAppReset" in method and
+        method.find("completeLocalAppReset") < method.find("removePersistentDomainForName"),
+        "A successful database reset must close the retained iCloud-option rollback transaction before defaults are erased.")
 require("exit(0)" not in RESET,
         "The app must never terminate itself after reset; iOS reports programmatic exit like a crash.")
 

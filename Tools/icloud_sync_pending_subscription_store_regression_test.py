@@ -127,7 +127,7 @@ for signature in [
     "nonisolated static func deleteAllPendingSubscriptionStates",
 ]:
     body = method_body(REMOTE, signature)
-    require("newBackgroundContext()" in body and "context.perform" in body,
+    require("newICloudSyncBackgroundContext()" in body and "context.perform" in body,
             f"{signature} must keep Core Data I/O off the main actor.")
 
 stage = method_body(REMOTE, "nonisolated static func stagePendingSubscriptionStates")
@@ -163,8 +163,15 @@ require("pendingSubscriptionUpdates" not in modification_batch
         "Fetched chunks must not rebuild the growing pending-subscription dictionary on the main actor.")
 
 pending_replay = method_body(REMOTE, "func applyPendingSubscriptions")
+subscription_worker = method_body(
+    REMOTE,
+    "nonisolated static func applyPendingSubscriptionBatchInBackground",
+)
+subscription_consume = method_body(REMOTE, "func consumeSubscriptionApplyBatchResult")
 require("pendingSubscriptionStateBatch" in pending_replay
-        and "removePendingSubscriptionStates" in pending_replay
+        and "applyPendingSubscriptionBatchInBackground" in pending_replay
+        and "removePendingSubscriptionSnapshots" in subscription_worker
+        and "removePendingSubscriptionStates" in subscription_consume
         and "pendingPayloads" not in pending_replay
         and "pendingSubscriptionPayloadsKey" not in pending_replay,
         "Pending subscriptions must page indexed rows and conditionally remove only committed snapshots.")

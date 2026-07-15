@@ -30,10 +30,17 @@ def body(signature: str) -> str:
 
 
 unsubscribe = body("- (void) unsubscribeAction:")
-require("[[SubscriptionManager sharedSubscriptionManager] unsubscribeFeed:self.feed]" in unsubscribe,
-        "Feed detail unsubscribe must use the lifecycle owner that cancels loading, cache, auto-download, Up Next, playback, and persistence.")
+require("[[SubscriptionManager sharedSubscriptionManager]" in unsubscribe and
+        "unsubscribeFeed:self.feed" in unsubscribe and
+        "completion:^(NSError* error)" in unsubscribe,
+        "Feed detail unsubscribe must use the asynchronous lifecycle owner that durably commits before cleanup.")
 require("[DMANAGER unsubscribeFeed:self.feed]" not in unsubscribe and
         "removeCacheForFeed:self.feed" not in unsubscribe,
         "A UI controller must not execute only a partial unsubscribe transaction.")
+require("presentError:error" in unsubscribe and
+        unsubscribe.find("if (error)") < unsubscribe.find("popToRootViewControllerAnimated"),
+        "Feed detail unsubscribe must remain visible and explain a commit failure.")
+require("afterDelay:0.3" not in unsubscribe,
+        "Feed detail unsubscribe must not hide persistence ordering behind a delay.")
 
 print("Feed unsubscribe lifecycle regression checks passed")

@@ -32,27 +32,21 @@ require("Dictionary(uniqueKeysWithValues:" not in dedupe,
 require("objectID.uriRepresentation().absoluteString" in dedupe,
         "Duplicate episode rows need a stable, deterministic winner instead of fetch-order-dependent selection.")
 
-remote_batch = method_body("func resolvedEpisodesForRemoteBatch")
+remote_batch = method_body("func applyPendingEpisodeStateBatchInBackground")
 pending_replay = method_body("func applyPendingEpisodeStates")
+sent_changes = method_body("func handleSentRecordZoneChanges")
 failed_save = method_body("func handleFailedRecordSave")
 single_record_apply = method_body("func applyRemoteRecord")
-single_episode_lookup = method_body("func episode(for payload:")
-single_hash_lookup = method_body("func deterministicallyResolvedEpisode(forObjectHash")
 require("deterministicallyResolvedEpisodesByObjectHash" in remote_batch,
         "Live remote batches must deduplicate corrupt/legacy duplicate episode hashes safely.")
-require("deterministicallyResolvedEpisodesByObjectHash" in pending_replay,
-        "Pending episode replay must use the same deterministic duplicate winner.")
+require("applyPendingEpisodeStateBatchInBackground" in pending_replay,
+        "Pending episode replay must use the shared deterministic background worker.")
 require("case .serverRecordChanged:" in failed_save
-        and "applyRemoteRecord(serverRecord)" in failed_save
-        and "episode(for: payload)" in single_record_apply,
-        "The duplicate regression must cover the single-record CloudKit conflict path.")
-require("databaseManager.episode(withObjectHash:" not in single_episode_lookup
-        and "deterministicallyResolvedEpisode(forObjectHash:" in single_episode_lookup,
-        "A serverRecordChanged conflict must not fall back to DatabaseManager's fetch-order firstObject.")
-require("deterministicallyResolvedEpisodesByObjectHash" in single_hash_lookup,
-        "Conflict, live-batch and pending replay paths must share one deterministic duplicate resolver.")
+        and "applyPendingEpisodeStateBatchInBackground" in sent_changes
+        and "applyPendingEpisodeStateBatchInBackground" in single_record_apply,
+        "Every CloudKit conflict path must use the shared deterministic background worker.")
 require("Dictionary(uniqueKeysWithValues: episodes" not in remote_batch
-        and "Dictionary(uniqueKeysWithValues: episodes" not in pending_replay,
+        and "Dictionary(uniqueKeysWithValues: episodes" not in REMOTE,
         "Neither episode resolution path may retain the duplicate-key fatal initializer.")
 
 # All application paths must choose the same stable object-ID winner regardless of Core

@@ -31,7 +31,7 @@ def method_body(source: str, signature: str) -> str:
 
 record = method_body(TYPES, "func record(_ record: CKRecord)")
 remove = method_body(TYPES, "func remove(recordName: String)")
-refresh = method_body(MANAGER, "func refreshCloudInventory(reason: String)")
+refresh = method_body(MANAGER, "func refreshCloudInventory(reason:")
 snapshot = method_body(METADATA, "nonisolated static func snapshotKnownRecordSystemFieldsForPruning")
 prune = method_body(METADATA, "nonisolated static func pruneKnownRecordSystemFields")
 reconcile = method_body(REMOTE, "func reconcileAvailableICloudAccount")
@@ -57,13 +57,19 @@ require(
     "Per-record and per-zone failures must make a nominal operation result ineligible for pruning.",
 )
 require(
-    "newBackgroundContext()" in snapshot
+    "newICloudSyncBackgroundContext()" in snapshot
     and "accountRecordName == %@" in snapshot
     and "recordName > %@" in snapshot
     and "systemFieldsData" in snapshot
     and "SHA256.hash" in snapshot
     and "await Task.yield()" in snapshot,
     "Capture the exact account-scoped rows and system-field versions before the Cloud inventory starts.",
+)
+require(
+    "cancellationToken" in snapshot
+    and snapshot.count("checkCancellation()") >= 2,
+    "Cancelling an inventory must stop its paged local system-field snapshot, not only "
+    "discard the later CloudKit callback.",
 )
 require(
     "candidatesAtInventoryStart" in prune
@@ -78,8 +84,16 @@ require(
     "Delete only unchanged rows from the pre-inventory snapshot in bounded transactions; concurrent inserts/updates must survive.",
 )
 require(
+    "cancellationToken" in prune
+    and prune.count("checkCancellation()") >= 2
+    and prune.find("checkCancellation()", prune.find("context.perform"))
+        < prune.find("context.save()"),
+    "Cancelling an inventory must stop pruning before another local transaction commits.",
+)
+require(
     "pruneKnownRecordSystemFields" in refresh
     and "snapshotKnownRecordSystemFieldsForPruning" in refresh
+    and "cloudInventoryCancellationToken" in refresh
     and "shouldPruneKnownRecordSystemFields" in refresh,
     "Only an account whose cleanup version is stale should snapshot and prune local system fields.",
 )
