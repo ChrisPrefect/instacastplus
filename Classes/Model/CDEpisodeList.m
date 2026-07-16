@@ -78,7 +78,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 {
     [super awakeFromFetch];
     
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
     if ([self.orderBy isEqualToString:@"manuel"]) {
@@ -93,14 +93,14 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     // Match the model's defaultValueString="YES"
     self.continuousPlayback = YES;
 
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }
 
 - (void) willTurnIntoFault
 {
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:NO];
     }
 }
@@ -499,7 +499,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
         // which is deallocated together with the caller — the delayed blocks then message
         // a dangling pointer (both iPad SIGSEGVs of 10.06.2026, triggered on every save
         // during the sync). Count synchronously inside the owning context instead.
-        if (self.managedObjectContext != DMANAGER.objectContext) {
+        if (self.managedObjectContext.concurrencyType != NSMainQueueConcurrencyType) {
             return [self _countEpisodesViaStore];
         }
         [self perform:^(id sender) {
@@ -518,7 +518,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
     }
 
     // See numberOfEpisodes: never capture a non-main context in the async machinery.
-    if (self.managedObjectContext != DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType != NSMainQueueConcurrencyType) {
         completion([self _countEpisodesViaStore]);
         return;
     }

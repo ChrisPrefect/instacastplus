@@ -3611,9 +3611,14 @@ extension ICiCloudSyncManager {
             // Covers both real failures and the re-queued conflict/zone repairs above —
             // nothing else triggers the next send attempt.
             scheduleSyncRetryAfterFailure(code: lastFailureCode, reason: "failedRecordSends")
-        } else if !hasUnresolvedSyncFailures {
-            await queueNextInitialUploadPageDuringActiveSend()
-            markSyncCompletedIfFinished()
+        } else {
+            if !event.failedRecordSaves.isEmpty || !event.failedRecordDeletes.isEmpty {
+                handledRecordZonePartialFailureInCurrentSend = true
+            }
+            if !hasUnresolvedSyncFailures {
+                await queueNextInitialUploadPageDuringActiveSend()
+                markSyncCompletedIfFinished()
+            }
         }
     }
 
@@ -4092,7 +4097,7 @@ extension ICiCloudSyncManager {
                 }
                 if serverRecord.recordType == RecordKind.episodeState {
                     retryRecords.append(.saveRecord(recordID))
-                    return false
+                    return true
                 }
                 let currentEntry = localOutboxSnapshotCache[recordID.recordName]
                 let sentSaveWasResolved = currentEntry == nil

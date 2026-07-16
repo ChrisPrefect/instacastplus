@@ -99,6 +99,13 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 
 @end
 
+@interface ICNewsModeRecyclePlan : NSObject
+@property (nonatomic, copy) NSArray<NSManagedObjectID*>* oldEpisodeObjectIDs;
+@property (nonatomic, copy) NSArray<NSManagedObjectID*>* newestDayEpisodeObjectIDs;
+@end
+
+@implementation ICNewsModeRecyclePlan
+@end
 
 
 @implementation SubscriptionManager {
@@ -110,9 +117,69 @@ static SubscriptionManager* gSharedSubscriptionManager = nil;
 static const NSTimeInterval kPerFeedRefreshTimeout = 8.0;
 static const NSUInteger ICAutoDownloadFeedScanBatchSize = 20;
 static const NSUInteger ICAutoDownloadCandidateDeliveryBatchSize = 32;
+static const NSUInteger ICNewsModeRecycleBatchSize = 32;
 static NSString* const ICAutoDownloadCandidateEpisodeObjectIDKey = @"episodeObjectID";
 static NSString* const ICAutoDownloadCandidateFeedObjectIDKey = @"feedObjectID";
 static NSString* const ICPendingAutoDownloadFeedUIDsKey = @"ICPendingAutoDownloadFeedUIDs";
+
+static ICNewsModeRecyclePlan* ICNewsModeRecyclePlanForFeedObjectID(NSManagedObjectContext* context,
+                                                                   NSManagedObjectID* feedObjectID,
+                                                                   NSError** error)
+{
+    CDFeed* feed = (CDFeed*)[context existingObjectWithID:feedObjectID error:error];
+    if (![feed isKindOfClass:[CDFeed class]] || (error && *error)) {
+        if (error && !*error) {
+            *error = [NSError errorWithDomain:@"SubscriptionManagerNewsMode"
+                                         code:1
+                                     userInfo:@{NSLocalizedDescriptionKey: @"The News Mode feed is no longer available.".ls}];
+        }
+        return nil;
+    }
+
+    NSFetchRequest* latestEpisodeRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    latestEpisodeRequest.predicate = [NSPredicate predicateWithFormat:@"feed == %@ AND pubDate != nil", feed];
+    latestEpisodeRequest.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"pubDate" ascending:NO]];
+    latestEpisodeRequest.fetchLimit = 1;
+    latestEpisodeRequest.includesSubentities = NO;
+    CDEpisode* latestEpisode = [[context executeFetchRequest:latestEpisodeRequest error:error] firstObject];
+    if ((error && *error) || !latestEpisode.pubDate) {
+        if (error && *error) return nil;
+        ICNewsModeRecyclePlan* emptyPlan = [[ICNewsModeRecyclePlan alloc] init];
+        emptyPlan.oldEpisodeObjectIDs = @[];
+        emptyPlan.newestDayEpisodeObjectIDs = @[];
+        return emptyPlan;
+    }
+
+    NSCalendar* calendar = [NSCalendar currentCalendar];
+    NSDate* startOfNewestDay = [calendar startOfDayForDate:latestEpisode.pubDate];
+    NSDate* startOfNextDay = [calendar dateByAddingUnit:NSCalendarUnitDay
+                                                  value:1
+                                                 toDate:startOfNewestDay
+                                                options:0];
+
+    NSFetchRequest* oldEpisodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    oldEpisodesRequest.predicate = [NSPredicate predicateWithFormat:
+        @"feed == %@ AND (pubDate == nil OR pubDate < %@ OR pubDate >= %@)",
+        feed, startOfNewestDay, startOfNextDay];
+    oldEpisodesRequest.resultType = NSManagedObjectIDResultType;
+    oldEpisodesRequest.includesSubentities = NO;
+    NSArray<NSManagedObjectID*>* oldEpisodeObjectIDs = [context executeFetchRequest:oldEpisodesRequest error:error];
+    if (!oldEpisodeObjectIDs) return nil;
+
+    NSFetchRequest* newestDayEpisodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
+    newestDayEpisodesRequest.predicate = [NSPredicate predicateWithFormat:
+        @"feed == %@ AND pubDate >= %@ AND pubDate < %@",
+        feed, startOfNewestDay, startOfNextDay];
+    newestDayEpisodesRequest.resultType = NSManagedObjectIDResultType;
+    newestDayEpisodesRequest.includesSubentities = NO;
+    NSArray<NSManagedObjectID*>* newestDayEpisodeObjectIDs = [context executeFetchRequest:newestDayEpisodesRequest error:error];
+    if (!newestDayEpisodeObjectIDs) return nil;
+
+    ICNewsModeRecyclePlan* plan = [[ICNewsModeRecyclePlan alloc] init];
+    plan.oldEpisodeObjectIDs = oldEpisodeObjectIDs;
+    plan.newestDayEpisodeObjectIDs = newestDayEpisodeObjectIDs;
+    return plan;
+}
 
 static NSArray<NSDictionary*>* ICAutoDownloadCandidatesForFeedObjectIDs(NSManagedObjectContext* context,
                                                                          NSArray<NSManagedObjectID*>* feedObjectIDs,
@@ -750,30 +817,35 @@ static BOOL ICFeedValueDiffers(id currentValue, id newValue)
             [self _deleteUnavailableEpisodesFromFeed:feed withRemoteFeed:parserFeed];
         }
         
-        if ([newEpisodes count] > 0 && [feed boolForKey:AutoDeleteNewsMode]) {
-            [self _recycleOldEpisodesInNewsModeFeed:feed];
-        }
-
-        [self _enforceKeepNewestLimitForFeed:feed];
-
-        if (newEpisodes.count > 0) {
-            [self _retainPendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
-        }
-
-        NSError* reloadSaveError = [DMANAGER saveReturningError];
-        if (reloadSaveError) {
-            if (completion) {
-                completion(NO, nil, reloadSaveError);
+        void (^finishReload)(NSError*) = ^(NSError* newsModeError) {
+            if (newsModeError) {
+                if (completion) completion(NO, nil, newsModeError);
+                return;
             }
-            return;
-        }
 
-        if (newEpisodes.count > 0) {
-            [self _autoDownloadEpisodesInFeedAsynchronously:feed];
-        }
+            [self _enforceKeepNewestLimitForFeed:feed];
 
-        if (completion) {
-            completion(YES ,newEpisodes, nil);
+            if (newEpisodes.count > 0) {
+                [self _retainPendingAutoDownloadFeedUIDs:@[feed.uid ?: @""]];
+            }
+
+            NSError* reloadSaveError = [DMANAGER saveReturningError];
+            if (reloadSaveError) {
+                if (completion) completion(NO, nil, reloadSaveError);
+                return;
+            }
+
+            if (newEpisodes.count > 0) {
+                [self _autoDownloadEpisodesInFeedAsynchronously:feed];
+            }
+
+            if (completion) completion(YES, newEpisodes, nil);
+        };
+
+        if ([newEpisodes count] > 0 && [feed boolForKey:AutoDeleteNewsMode]) {
+            [self _recycleOldEpisodesInNewsModeFeed:feed completion:finishReload];
+        } else {
+            finishReload(nil);
         }
     };
     parser.didEndWithError = ^(NSError* error) {
@@ -1473,17 +1545,6 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
         return;
     }
 
-    // iCloud sync stubs (subscribed, never refreshed, no episodes) belong to the
-    // sequential hydration queue — a regular refresh would merge the full feed in one
-    // main-context push. The same applies while that backlog is already loading.
-    if ((!feed.lastUpdate && feed.episodes.count == 0) ||
-        [[EpisodeLoadingManager sharedManager] isLoadingFeed:feed]) {
-        if (completion) {
-            completion(YES, @[], nil);
-        }
-        return;
-    }
-
     NSURL* url = [feed.sourceURL copy];
     if (!url) {
         if (completion) {
@@ -1492,6 +1553,27 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
         return;
     }
     [self.refreshingFeedURLs addObject:url];
+
+    // A user refresh owns this work too: hydrate a synchronized subscription stub
+    // through the bounded 50-episode path, but keep its refresh slot alive until the
+    // network request really finishes. Silently returning here made the global refresh
+    // complete after its first 0.5-second timer tick without touching any podcast.
+    if (!feed.lastUpdate && feed.episodes.count == 0) {
+        __weak typeof(self) weakSelfForHydration = self;
+        [self hydrateStubFeed:feed completion:^(BOOL success, NSArray* newEpisodes, NSError* error) {
+            __strong typeof(weakSelfForHydration) strongSelf = weakSelfForHydration;
+            if (strongSelf && [strongSelf.refreshingFeedURLs containsObject:url]) {
+                if (!success) {
+                    [strongSelf _markFeedFailedForURL:url timedOut:NO error:error];
+                }
+                [strongSelf _finishRefreshingURL:url];
+            }
+            if (completion) {
+                completion(success, newEpisodes, error);
+            }
+        }];
+        return;
+    }
 
     BOOL notificationBefore = ([self.parserQueue operationCount] == 0);
     if (notificationBefore) {
@@ -1636,28 +1718,42 @@ static NSString* const kFeedPropertyDurationRefreshAttempted = @"durationMetadat
 
                     if ([allNewEpisodes count] > 0) {
                         [strongSelfInner _postDidAddEpisodesNotification:allNewEpisodes];
-                        if ([feed boolForKey:AutoDeleteNewsMode]) {
-                            [strongSelfInner _recycleOldEpisodesInNewsModeFeed:feed];
-                        }
                     }
-
-                    [strongSelfInner _finishParsingFeed:feed url:url shouldAutoDownload:([allNewEpisodes count] > 0)];
 
                     CFTimeInterval mainSeconds = CFAbsoluteTimeGetCurrent() - mainStartTime;
-                    if (mergeSeconds > 0.05 || mainSeconds > 0.05) {
-                        [[ICDiagnosticLogger shared] logEvent:@"feed-refresh-profile"
-                                                      message:@"Feed-Merge-Timing"
-                                                     metadata:@{
-                            @"feed": feed.title ?: @"",
-                            @"mergeSeconds": [NSString stringWithFormat:@"%.3f", mergeSeconds],
-                            @"mainSeconds": [NSString stringWithFormat:@"%.3f", mainSeconds],
-                            @"newEpisodes": @(allNewEpisodes.count).stringValue,
-                            @"remainingFeeds": @(strongSelfInner.refreshingFeedURLs.count).stringValue,
-                        }];
-                    }
+                    void (^finishRefresh)(NSError*) = ^(NSError* newsModeError) {
+                        if (newsModeError) {
+                            ErrLog(@"error applying News Mode to '%@': %@", feed.title, newsModeError);
+                            [strongSelfInner _markFeedFailedForURL:url timedOut:NO error:newsModeError];
+                        }
 
-                    if (completion) {
-                        completion(YES, allNewEpisodes, nil);
+                        [strongSelfInner _finishParsingFeed:feed
+                                                       url:url
+                                        shouldAutoDownload:(!newsModeError && [allNewEpisodes count] > 0)];
+
+                        if (mergeSeconds > 0.05 || mainSeconds > 0.05) {
+                            [[ICDiagnosticLogger shared] logEvent:@"feed-refresh-profile"
+                                                          message:@"Feed-Merge-Timing"
+                                                         metadata:@{
+                                @"feed": feed.title ?: @"",
+                                @"mergeSeconds": [NSString stringWithFormat:@"%.3f", mergeSeconds],
+                                @"mainSeconds": [NSString stringWithFormat:@"%.3f", mainSeconds],
+                                @"newEpisodes": @(allNewEpisodes.count).stringValue,
+                                @"remainingFeeds": @(strongSelfInner.refreshingFeedURLs.count).stringValue,
+                            }];
+                        }
+
+                        if (completion) {
+                            completion(newsModeError == nil,
+                                       newsModeError ? nil : allNewEpisodes,
+                                       newsModeError);
+                        }
+                    };
+
+                    if ([allNewEpisodes count] > 0 && [feed boolForKey:AutoDeleteNewsMode]) {
+                        [strongSelfInner _recycleOldEpisodesInNewsModeFeed:feed completion:finishRefresh];
+                    } else {
+                        finishRefresh(nil);
                     }
                 });
             }
@@ -2268,6 +2364,32 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
             newestLocalEpisodeDate = episode.pubDate;
         }
     }
+
+    // A feed whose historical episodes are still loading already has its newest batch.
+    // Refresh may add the new head before the first episode that exists locally, but the
+    // bounded loader remains the sole owner of the older backlog. This permits a real
+    // network refresh without inserting thousands of historical rows in one merge.
+    BOOL hasIncompleteEpisodeBacklog =
+        ![localFeed boolForKey:kFeedPropertyEpisodeLoadingComplete] &&
+        [localFeed integerForKey:kFeedPropertyTotalExpectedEpisodes] > 0;
+    NSMutableSet<ICEpisode*>* newHeadEpisodes = [[NSMutableSet alloc] init];
+    if (hasIncompleteEpisodeBacklog) {
+        NSArray* newestRemoteEpisodes = [remoteFeed.episodes sortedArrayUsingDescriptors:
+            @[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO]]];
+        for (ICEpisode* remoteEpisode in newestRemoteEpisodes) {
+            CDEpisode* existingEpisode = remoteEpisode.guid ? localEpisodesByGUID[remoteEpisode.guid] : nil;
+            if (!existingEpisode && remoteEpisode.objectHash) {
+                existingEpisode = localEpisodesByObjectHash[remoteEpisode.objectHash];
+            }
+            BOOL reachedExistingEpisode = (existingEpisode != nil);
+            if (reachedExistingEpisode) {
+                break;
+            }
+            if (newHeadEpisodes.count < kHydrationInitialEpisodeLimit) {
+                [newHeadEpisodes addObject:remoteEpisode];
+            }
+        }
+    }
     
 	// merge new entries
 	NSArray* remoteEpisodes = [remoteFeed.episodes sortedArrayUsingDescriptors:@[ [[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:YES] ]];
@@ -2301,6 +2423,11 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 }
                 localEpisode.media = media;
             }
+            continue;
+        }
+
+        if (hasIncompleteEpisodeBacklog &&
+            ![newHeadEpisodes containsObject:remoteEpisode]) {
             continue;
         }
 
@@ -2398,37 +2525,130 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
     }
 }
 
-- (void) _recycleOldEpisodesInNewsModeFeed:(CDFeed*)feed
+- (void) _applyNewsModeRecyclePlan:(ICNewsModeRecyclePlan*)plan
+                    oldEpisodeIndex:(NSUInteger)oldEpisodeIndex
+              newestDayEpisodeIndex:(NSUInteger)newestDayEpisodeIndex
+                         completion:(void (^)(NSError* error))completion
 {
-    NSArray* sortedEpisodes = [feed.episodes sortedArrayUsingDescriptors:@[[[NSSortDescriptor alloc] initWithKey:@"pubDate" ascending:NO]]];
-    NSDate* firstPubDate = [[sortedEpisodes firstObject] pubDate];
-    
-    if (!firstPubDate) {
+    NSUInteger remainingBatchCapacity = ICNewsModeRecycleBatchSize;
+    NSUInteger oldEpisodeEndIndex = MIN(oldEpisodeIndex + remainingBatchCapacity,
+                                        plan.oldEpisodeObjectIDs.count);
+    remainingBatchCapacity -= oldEpisodeEndIndex - oldEpisodeIndex;
+    NSUInteger newestDayEpisodeEndIndex = MIN(newestDayEpisodeIndex + remainingBatchCapacity,
+                                              plan.newestDayEpisodeObjectIDs.count);
+
+    NSMutableArray<CDEpisode*>* oldEpisodes = [[NSMutableArray alloc] initWithCapacity:oldEpisodeEndIndex - oldEpisodeIndex];
+    BOOL changed = NO;
+    for (NSUInteger index = oldEpisodeIndex; index < oldEpisodeEndIndex; index++) {
+        NSError* objectError = nil;
+        CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:plan.oldEpisodeObjectIDs[index]
+                                                                                     error:&objectError];
+        if (objectError || ![episode isKindOfClass:[CDEpisode class]] || episode.isDeleted) {
+            continue;
+        }
+        [oldEpisodes addObject:episode];
+        if (!episode.consumed) {
+            episode.consumed = YES;
+            episode.position = 0;
+            changed = YES;
+        }
+    }
+
+    for (NSUInteger index = newestDayEpisodeIndex; index < newestDayEpisodeEndIndex; index++) {
+        NSError* objectError = nil;
+        CDEpisode* episode = (CDEpisode*)[DMANAGER.objectContext existingObjectWithID:plan.newestDayEpisodeObjectIDs[index]
+                                                                                     error:&objectError];
+        if (objectError || ![episode isKindOfClass:[CDEpisode class]] || episode.isDeleted) {
+            continue;
+        }
+        if (episode.consumed) {
+            episode.consumed = NO;
+            changed = YES;
+        }
+    }
+
+    NSError* saveError = changed ? [DMANAGER saveReturningError] : nil;
+    if (saveError) {
+        if (completion) completion(saveError);
         return;
     }
-    
-    NSDateComponents* firstComps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth |  NSCalendarUnitDay)
-                                                              fromDate:firstPubDate];
-    
-    for (CDEpisode* episode in sortedEpisodes)
-    {
-        NSDate* pubDate = episode.pubDate;
-        
-        NSDateComponents* comps = [[NSCalendar currentCalendar] components:(NSCalendarUnitYear | NSCalendarUnitMonth |  NSCalendarUnitDay)
-                                                                      fromDate:pubDate];
-        
-        if ([comps day] != [firstComps day] || [comps month] != [firstComps month] || [comps year] != [firstComps year])
-        {
-            // is old episode
-            [DMANAGER markEpisode:episode asConsumed:YES];
-            [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:YES];
-        }
-        else
-        {
-            // is new episode
-            [DMANAGER markEpisode:episode asConsumed:NO];
-        }
+    if (oldEpisodes.count > 0) {
+        [[CacheManager sharedCacheManager] removeCacheForEpisodes:oldEpisodes automatic:YES];
     }
+
+    if (oldEpisodeEndIndex < plan.oldEpisodeObjectIDs.count ||
+        newestDayEpisodeEndIndex < plan.newestDayEpisodeObjectIDs.count) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _applyNewsModeRecyclePlan:plan
+                            oldEpisodeIndex:oldEpisodeEndIndex
+                      newestDayEpisodeIndex:newestDayEpisodeEndIndex
+                                 completion:completion];
+        });
+        return;
+    }
+
+    if (completion) completion(nil);
+}
+
+- (void) _recycleOldEpisodesInNewsModeFeed:(CDFeed*)feed
+                                completion:(void (^)(NSError* error))completion
+{
+    NSAssert([NSThread isMainThread], @"News Mode handoff starts from the main-context lifecycle");
+    if (!feed) {
+        if (completion) completion(nil);
+        return;
+    }
+
+    ICiCloudSyncManager* syncManager = [ICiCloudSyncManager sharedManager];
+    [syncManager beginLocalOutboxBatch];
+
+    NSError* saveError = [DMANAGER saveReturningError];
+    if (saveError) {
+        [syncManager endLocalOutboxBatch];
+        if (completion) completion(saveError);
+        return;
+    }
+    if (feed.objectID.isTemporaryID) {
+        [syncManager endLocalOutboxBatch];
+        NSError* objectIDError = [NSError errorWithDomain:@"SubscriptionManagerNewsMode"
+                                                      code:3
+                                                  userInfo:@{NSLocalizedDescriptionKey: @"The News Mode feed could not be persisted.".ls}];
+        if (completion) completion(objectIDError);
+        return;
+    }
+
+    NSManagedObjectID* feedObjectID = feed.objectID;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
+        __block ICNewsModeRecyclePlan* plan = nil;
+        __block NSError* planError = context ? nil : [NSError errorWithDomain:@"SubscriptionManagerNewsMode"
+                                                                          code:2
+                                                                      userInfo:@{NSLocalizedDescriptionKey: @"The podcast database is not available.".ls}];
+        if (context) {
+            [context performBlockAndWait:^{
+                plan = ICNewsModeRecyclePlanForFeedObjectID(context, feedObjectID, &planError);
+                [context reset];
+            }];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (planError || !plan) {
+                [syncManager endLocalOutboxBatch];
+                NSError* recycleError = planError ?: [NSError errorWithDomain:@"SubscriptionManagerNewsMode"
+                                                                          code:4
+                                                                      userInfo:@{NSLocalizedDescriptionKey: @"The News Mode update could not be planned.".ls}];
+                if (completion) completion(recycleError);
+                return;
+            }
+            [self _applyNewsModeRecyclePlan:plan
+                            oldEpisodeIndex:0
+                      newestDayEpisodeIndex:0
+                                 completion:^(NSError* applyError) {
+                [syncManager endLocalOutboxBatch];
+                if (completion) completion(applyError);
+            }];
+        });
+    });
 }
 
 #pragma mark -

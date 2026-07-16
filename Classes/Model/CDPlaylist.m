@@ -56,7 +56,7 @@ NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisode
 - (void) awakeFromFetch
 {
     [super awakeFromFetch];
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }
@@ -64,7 +64,7 @@ NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisode
 - (void) awakeFromInsert
 {
     [super awakeFromInsert];
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }
@@ -72,7 +72,7 @@ NSString* CDPlaylistDidChangeEpisodesNotification = @"CDPlaylistDidChangeEpisode
 - (void) willTurnIntoFault
 {
     _cachedEpisodes = nil;
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:NO];
     }
 }

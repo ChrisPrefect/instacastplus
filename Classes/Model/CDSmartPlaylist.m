@@ -101,7 +101,7 @@ NSString* kSmartListPredicateSortKeyKey = @"sort_key";
 - (void) awakeFromFetch
 {
     [super awakeFromFetch];
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }
@@ -109,7 +109,7 @@ NSString* kSmartListPredicateSortKeyKey = @"sort_key";
 - (void) awakeFromInsert
 {
     [super awakeFromInsert];
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }

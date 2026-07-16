@@ -44,7 +44,7 @@
 - (void) awakeFromFetch
 {
     [super awakeFromFetch];
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }
@@ -52,14 +52,14 @@
 - (void) awakeFromInsert
 {
     [super awakeFromInsert];
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];
     }
 }
 
 - (void) willTurnIntoFault
 {
-    if (self.managedObjectContext == DMANAGER.objectContext) {
+    if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:NO];
     }
 }

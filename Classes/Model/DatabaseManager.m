@@ -925,7 +925,8 @@ NS_INLINE NSString* _DataStoreFile(void) {
         return NO;
     }
 
-    if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting]) {
+    if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting] ||
+        [phase isEqualToString:ICDataStoreMigrationPhaseReady]) {
         NSError* validationError = nil;
         if ([self _validatePreparedStoreAtURL:targetURL
                                expectedCounts:nil
@@ -947,18 +948,13 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                     sourceMetadata:targetMetadata
                                                              error:error];
         }
-        if (error) *error = validationError ?: targetMetadataError;
-        return NO;
+        if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting]) {
+            if (error) *error = validationError ?: targetMetadataError;
+            return NO;
+        }
     }
 
     if ([phase isEqualToString:ICDataStoreMigrationPhaseReady]) {
-        if ([self _validatePreparedStoreAtURL:targetURL
-                               expectedCounts:markerEntityCounts
-                            expectedStoreUUID:markerTargetStoreUUID
-                                        error:nil]) {
-            return YES;
-        }
-
         NSMutableDictionary* rebuildingMarker = [marker mutableCopy];
         rebuildingMarker[ICDataStoreMigrationPhaseKey] = ICDataStoreMigrationPhaseBuilding;
         [rebuildingMarker removeObjectForKey:ICDataStoreMigrationEntityCountsKey];

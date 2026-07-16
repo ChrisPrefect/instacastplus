@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pins bounded pull-to-refresh dispatch around iCloud stub hydration."""
+"""Pins user refresh dispatch while episode hydration is in progress."""
 
 from pathlib import Path
 
@@ -26,22 +26,42 @@ require(
 )
 require(
     "(!feed.lastUpdate && feed.episodes.count == 0)" in refresh_body,
-    "An iCloud subscription stub must remain on the bounded hydration path instead of entering the full feed merge.",
+    "An iCloud subscription stub must be detected for bounded hydration.",
 )
 require(
-    "[[EpisodeLoadingManager sharedManager] isLoadingFeed:feed]" in refresh_body,
-    "Pull to refresh must not duplicate a feed whose episode backlog is already loading.",
+    "[self hydrateStubFeed:feed completion:" in refresh_body,
+    "A user refresh must actively hydrate an iCloud subscription stub instead of silently skipping it.",
 )
 stub_guard = refresh_body.index("(!feed.lastUpdate && feed.episodes.count == 0)")
-duration_check = refresh_body.index("[self _feedNeedsDurationMetadataRefresh:feed]")
+tracking_start = refresh_body.index("[self.refreshingFeedURLs addObject:url]")
+hydration_start = refresh_body.index("[self hydrateStubFeed:feed completion:")
 parser_enqueue = refresh_body.index("[self.parserQueue addOperation:feedParser];")
 require(
-    stub_guard < duration_check < parser_enqueue,
-    "Stub/loading rejection must happen before the synchronous duration query and parser dispatch; normal feeds must still reach the parser queue.",
+    tracking_start < stub_guard < hydration_start < parser_enqueue,
+    "Stub hydration must be owned by refresh tracking so the control stays active until network work finishes.",
 )
 require(
-    "completion(YES, @[], nil);" in refresh_body[:duration_check],
-    "A skipped hydration-owned feed must complete its batch slot without leaving pull-to-refresh hanging.",
+    "_finishRefreshingURL:url" in refresh_body[hydration_start:parser_enqueue],
+    "Stub hydration completion must finish its tracked refresh slot.",
+)
+require(
+    "[[EpisodeLoadingManager sharedManager] isLoadingFeed:feed]" not in refresh_body[:tracking_start],
+    "An episode backlog must not silently suppress the feed network refresh.",
+)
+
+merge_start = SOURCE.index("- (NSArray*) _mergeLocalFeed:")
+merge_end = SOURCE.index("\n- (void) _deleteUnavailableEpisodesFromFeed:", merge_start)
+merge_body = SOURCE[merge_start:merge_end]
+require(
+    "kFeedPropertyEpisodeLoadingComplete" in merge_body
+    and "kFeedPropertyTotalExpectedEpisodes" in merge_body
+    and "reachedExistingEpisode" in merge_body,
+    "Only a feed with a real bounded-load backlog may limit refresh to the new head before its first existing episode.",
+)
+require(
+    "if (hasIncompleteEpisodeBacklog &&" in merge_body
+    and "![newHeadEpisodes containsObject:remoteEpisode]" in merge_body,
+    "Refresh must not bulk-insert the historical backlog while its bounded loader owns that work.",
 )
 
 print("Pull-to-refresh feed dispatch regression checks passed")

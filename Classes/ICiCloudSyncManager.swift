@@ -562,6 +562,7 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
     var isApplyingRemoteChange = false
     var isWritingSyncMetadata = false
     var hasUnresolvedSyncFailures = false
+    var handledRecordZonePartialFailureInCurrentSend = false
     var requiresSyncEngineStateRollbackAfterPersistenceFailure = false
     var settingsDebounceWorkItem: DispatchWorkItem?
     var settingsChangeCheckRevision: UInt64 = 0
@@ -5070,12 +5071,24 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
         guard !requiresInitialBackfillFetchBeforeUpload else { return false }
         while true {
             guard !requiresInitialBackfillFetchBeforeUpload else { return false }
+            handledRecordZonePartialFailureInCurrentSend = false
             do {
                 try await syncEngine.sendChanges()
             } catch {
-                _ = applySyncEngineCallbackOutcome(for: syncEngine, generation: generation)
-                throw error
+                let ckError = error as? CKError
+                let wasFullyHandledPartialFailure = ckError?.code == .partialFailure
+                    && handledRecordZonePartialFailureInCurrentSend
+                    && !hasUnresolvedSyncFailures
+                handledRecordZonePartialFailureInCurrentSend = false
+                if !wasFullyHandledPartialFailure {
+                    _ = applySyncEngineCallbackOutcome(for: syncEngine, generation: generation)
+                    throw error
+                }
+                logSyncEvent("Behandelter CloudKit-Teilkonflikt wird ohne Fehlerstatus fortgesetzt", metadata: [
+                    "partialErrorCount": ckError?.partialErrorsByItemID?.count ?? 0,
+                ])
             }
+            handledRecordZonePartialFailureInCurrentSend = false
             let hasDeferredLocalChanges = applySyncEngineCallbackOutcome(
                 for: syncEngine,
                 generation: generation

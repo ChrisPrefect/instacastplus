@@ -35,7 +35,12 @@ require(
     "_lightweightMigrateCurrentDataStoreAtURL" in target_exists,
     "An existing DataStore6 with Model7 must be migrated before it is rejected as incompatible.",
 )
-committing = prepare[prepare.find("if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting])"):]
+prepared_target = prepare.find("if ([phase isEqualToString:ICDataStoreMigrationPhaseCommitting] ||")
+require(
+    prepared_target >= 0,
+    "Ready and committing targets must share the same identity-preserving validation path.",
+)
+committing = prepare[prepared_target:]
 require(
     "_lightweightMigrateCurrentDataStoreAtURL" in committing
     and "markerIdentityMatches" in committing
@@ -45,7 +50,7 @@ require(
 require(
     committing.find("_lightweightMigrateCurrentDataStoreAtURL")
     < committing.find("if ([phase isEqualToString:ICDataStoreMigrationPhaseReady])"),
-    "The committing-target migration must stay separate from the ready-target rebuild path.",
+    "Prepared-target migration must happen before the structurally invalid ready-target rebuild path.",
 )
 
 migrate = method_body(
