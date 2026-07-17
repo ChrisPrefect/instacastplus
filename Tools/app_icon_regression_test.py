@@ -112,6 +112,24 @@ def main():
     for icon_name in ["InstacastPlus_Icon_Standard", *alternate_composer_names]:
         contents = app_icon_content(icon_name)
         assert_true(contents.get("supported-platforms", {}).get("squares") == "shared", f"{icon_name} must support shared square iOS icon renditions.")
+    standard_icon = app_icon_content("InstacastPlus_Icon_Standard")
+    assert_true(
+        "watchOS" in standard_icon.get("supported-platforms", {}).get("circles", []),
+        "The primary Icon Composer document must provide an adaptive circular watchOS rendition.",
+    )
+    assert_true(
+        project_source.count("ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;") == 4,
+        "The iOS and Watch targets must both use the adaptive Standard Icon Composer document in Debug and Release.",
+    )
+    watch_resources = project_source.split("2CBEA74996B8B0BBF9248195 /* Resources */ = {", 1)[1].split("};", 1)[0]
+    assert_true(
+        "InstacastPlus_Icon_Standard.icon in Resources" in watch_resources,
+        "The Watch target must compile the shared Standard Icon Composer document.",
+    )
+    assert_true(
+        "Assets.xcassets in Resources" not in watch_resources,
+        "The Watch target must not also compile the legacy PNG app icon catalog.",
+    )
     # AppIcon-2…7 were converted to Icon Composer documents in 8e771195 ("neue icons");
     # AppIcon-1 is still a classic appiconset. Accept either representation.
     for icon_name in old_icon_names:

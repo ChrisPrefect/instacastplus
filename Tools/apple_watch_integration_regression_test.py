@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import plistlib
 from xml.etree import ElementTree
 
@@ -140,12 +141,17 @@ require(
 )
 
 require(
-    "InstacastWatch/Assets.xcassets/AppIcon.appiconset/Contents.json" in {
-        str(path.relative_to(ROOT)) for path in (ROOT / "InstacastWatch" / "Assets.xcassets").rglob("*")
-    }
-    and "Assets.xcassets in Resources" in project
-    and "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;" in project,
-    "The Watch target must bundle a real AppIcon asset catalog so the iOS Watch app can list it with an icon.",
+    "watchOS" in json.loads(
+        (ROOT / "Resources" / "AppIcons" / "InstacastPlus_Icon_Standard.icon" / "icon.json").read_text()
+    ).get("supported-platforms", {}).get("circles", [])
+    and project.count("ASSETCATALOG_COMPILER_APPICON_NAME = InstacastPlus_Icon_Standard;") == 4
+    and "InstacastPlus_Icon_Standard.icon in Resources" in project.split(
+        "2CBEA74996B8B0BBF9248195 /* Resources */ = {", 1
+    )[1].split("};", 1)[0]
+    and "Assets.xcassets in Resources" not in project.split(
+        "2CBEA74996B8B0BBF9248195 /* Resources */ = {", 1
+    )[1].split("};", 1)[0],
+    "The Watch target must compile the adaptive Standard Icon Composer document as its primary app icon.",
 )
 
 require(

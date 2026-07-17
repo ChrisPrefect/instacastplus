@@ -9,6 +9,7 @@ struct WatchEpisodeListView: View {
     @ObservedObject private var episodeCollection = WatchManifestStore.shared.episodeCollection
     @ObservedObject private var playbackSummary = WatchPlayerController.shared.listPlaybackSummary
     @State private var playerPath: [String] = []
+    @State private var handledActiveScenePlayback = false
 
     private var accentColor: Color {
         Color(hex: store.accentColorHex)
@@ -81,16 +82,24 @@ struct WatchEpisodeListView: View {
             }
             .onAppear {
                 popUnavailablePlayerIfNeeded()
-                showPlayerForActivePlaybackIfNeeded()
+                handleActiveScenePlaybackIfNeeded()
             }
             // Re-entering the app while an episode is playing lands on the player, not the list.
-            // Navigating back to the list DURING playback stays on the list (no phase change).
+            // Navigating back to the list during playback stays on the list.
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
-                    showPlayerForActivePlaybackIfNeeded()
+                    handleActiveScenePlaybackIfNeeded()
+                } else {
+                    handledActiveScenePlayback = false
                 }
             }
         }
+    }
+
+    private func handleActiveScenePlaybackIfNeeded() {
+        guard scenePhase == .active, !handledActiveScenePlayback else { return }
+        handledActiveScenePlayback = true
+        showPlayerForActivePlaybackIfNeeded()
     }
 
     private func showPlayerForActivePlaybackIfNeeded() {
