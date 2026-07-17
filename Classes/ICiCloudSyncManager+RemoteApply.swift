@@ -6473,6 +6473,17 @@ extension ICiCloudSyncManager {
             ])
             return false
         }
+        let registeredDefaults = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
+        var resetSettingsValueCount = 0
+        if let defaultKeys = payload["defaultKeys"] as? [String] {
+            for key in defaultKeys {
+                guard let registeredDefault = registeredDefaults[key],
+                      Self.shouldSyncSettingsKeyForSyncEngineCallback(key),
+                      Self.isValidSettingsValueForSyncEngineCallback(registeredDefault) else { continue }
+                defaults.removeObject(forKey: key)
+                resetSettingsValueCount += 1
+            }
+        }
         var appliedSettingsValueCount = 0
         for (key, value) in values where Self.shouldSyncSettingsKeyForSyncEngineCallback(key) && Self.isValidSettingsValueForSyncEngineCallback(value) {
             defaults.set(value, forKey: key)
@@ -6496,6 +6507,7 @@ extension ICiCloudSyncManager {
         logSyncEvent("Einstellungs-Payload übernommen", metadata: [
             "settingsValueCount": values.count,
             "appliedSettingsValueCount": appliedSettingsValueCount,
+            "resetSettingsValueCount": resetSettingsValueCount,
             "hasCredentials": credentials != nil,
         ])
         postStateChanged()

@@ -44,6 +44,14 @@ require(
     and "postStateChanged()" in inventory_refresh,
     "Inventory refresh must publish loading, success, and failure state changes.",
 )
+cleanup_start = inventory_refresh.find("defer {")
+cleanup_end = inventory_refresh.find("var countsByType", cleanup_start)
+cleanup = inventory_refresh[cleanup_start:cleanup_end]
+require(
+    cleanup.find("isFetchingCloudInventory = false")
+    < cleanup.find("postStateChanged()"),
+    "Inventory completion must publish again after clearing its loading flag, otherwise the footer remains stuck on Updating iCloud data.",
+)
 
 header = method_body(SETTINGS, "- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:")
 footer = method_body(SETTINGS, "- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:")
@@ -51,6 +59,10 @@ inventory_footer = method_body(SETTINGS, "- (NSString*)cloudInventoryFooterText"
 require(
     '@"iCloud Data".ls' in header and '@"On iCloud".ls' not in header,
     "A cached inventory must be labelled as data, not presented as an unqualified live 'On iCloud' value.",
+)
+require(
+    '@"Beim ersten Sync überträgt iCloud jeden Episodenstatus als eigenen Datensatz.' not in footer,
+    "The explanatory footer directly below Sync Now must be removed.",
 )
 require(
     "cloudInventoryFooterText" in footer

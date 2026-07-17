@@ -415,12 +415,6 @@
     }
     @end
 
-    @interface ICPlaybackViewControllerDismissedAnimator ()
-    {
-        CGFloat _dismissalTranslationBaselineY;
-    }
-    @end
-
     @implementation ICPlaybackViewControllerDismissedAnimator
 
     - (NSTimeInterval)transitionDuration:(id <UIViewControllerContextTransitioning>)transitionContext {
@@ -468,15 +462,15 @@
         
         switch (state) {
             case UIGestureRecognizerStateBegan:
-                _dismissalTranslationBaselineY = translation.y;
                 [self.parent beginInteractiveDismissing];
-                break;
+                // UIKit has already accumulated a small translation when the pan enters
+                // Began. Apply it immediately so the player stays attached to the finger.
+                __attribute__((fallthrough));
             case UIGestureRecognizerStateChanged:
             {
-                CGFloat effectiveTranslationY = MAX(0.0f, translation.y - _dismissalTranslationBaselineY);
-                if (effectiveTranslationY > 0) {
+                if (translation.y > 0) {
                     CGFloat h = CGRectGetHeight(bounds);
-                    CGFloat percent = MIN(MAX(0, (effectiveTranslationY / h) ), 1);
+                    CGFloat percent = MIN(MAX(0, (translation.y / h) ), 1);
                     [self updateInteractiveTransition:percent];
                 }
                 break;
@@ -484,8 +478,7 @@
             case UIGestureRecognizerStateEnded:
             case UIGestureRecognizerStateCancelled:
             {
-                CGFloat effectiveTranslationY = MAX(0.0f, translation.y - _dismissalTranslationBaselineY);
-                if (((velocity.y > 1000 && effectiveTranslationY > 50) || effectiveTranslationY > CGRectGetHeight(bounds)/2) && state != UIGestureRecognizerStateCancelled) {
+                if (((velocity.y > 1000 && translation.y > 50) || translation.y > CGRectGetHeight(bounds)/2) && state != UIGestureRecognizerStateCancelled) {
                     [self finishInteractiveTransition];
                 } else {
                     [self cancelInteractiveTransition];

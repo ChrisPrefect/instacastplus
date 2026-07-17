@@ -51,7 +51,13 @@ require(
     "Once the downward dismissal pan begins on the artwork collection, horizontal paging must be locked instead of recognizing simultaneously with the collection view pan.",
 )
 require(
-    "_dismissalTranslationBaselineY = translation.y" in playback
-    and "translation.y - _dismissalTranslationBaselineY" in playback,
-    "The interactive dismissal must subtract the pan translation at UIGestureRecognizerStateBegan so the player does not jump when UIKit's pan threshold is crossed.",
+    "_dismissalTranslationBaselineY" not in playback
+    and "effectiveTranslationY" not in playback
+    and "translation.y / h" in playback,
+    "The interactive dismissal must follow the full pan translation instead of adding a second dead zone after UIKit recognizes the gesture.",
+)
+require(
+    playback.find("[self.parent beginInteractiveDismissing]")
+    < playback.find("[self updateInteractiveTransition:percent]"),
+    "The player must apply UIKit's already accumulated translation as soon as interactive dismissal begins.",
 )

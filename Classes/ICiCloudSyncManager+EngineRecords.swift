@@ -1527,19 +1527,40 @@ extension ICiCloudSyncManager {
     nonisolated static func appSettingsPayloadForSyncEngineCallback(updatedAt: Date, deviceID: String) -> [String: Any] {
         let defaults = UserDefaults.standard
         let domain = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
-        var values: [String: Any] = [:]
-        for (key, value) in domain {
-            guard shouldSyncSettingsKeyForSyncEngineCallback(key), isValidSettingsValueForSyncEngineCallback(value) else { continue }
-            values[key] = value
-        }
+        let values = syncableNonDefaultSettingsValuesForSyncEngineCallback(domain)
+        let registeredDefaults = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
+        let defaultKeys = registeredDefaults.compactMap { key, value -> String? in
+            guard shouldSyncSettingsKeyForSyncEngineCallback(key),
+                  isValidSettingsValueForSyncEngineCallback(value),
+                  values[key] == nil else { return nil }
+            return key
+        }.sorted()
 
         let credentials = ICRemoteChapterCredentialStore.backupCredentialValues()
         return [
             "values": values,
+            "defaultKeys": defaultKeys,
             "credentials": credentials,
             "deviceID": deviceID,
             "updatedAt": updatedAt,
         ]
+    }
+
+    nonisolated static func syncableNonDefaultSettingsValuesForSyncEngineCallback(_ domain: [String: Any]) -> [String: Any] {
+        let registeredDefaults = UserDefaults.standard.volatileDomain(forName: UserDefaults.registrationDomain)
+        var values: [String: Any] = [:]
+        for (key, value) in domain {
+            guard shouldSyncSettingsKeyForSyncEngineCallback(key),
+                  isValidSettingsValueForSyncEngineCallback(value) else { continue }
+            if let registeredDefault = registeredDefaults[key],
+               let valueObject = value as? NSObject,
+               let defaultObject = registeredDefault as? NSObject,
+               valueObject.isEqual(defaultObject) {
+                continue
+            }
+            values[key] = value
+        }
+        return values
     }
 
     nonisolated static func shouldSyncSettingsKeyForSyncEngineCallback(_ key: String) -> Bool {

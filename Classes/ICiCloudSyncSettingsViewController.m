@@ -363,9 +363,6 @@ static CGFloat const ICiCloudSyncSettingsDeviceRowHeight = 70.0f;
     if (section == ICiCloudSyncSettingsSectionOptions) {
         return @"Sync Episodes keeps played state, playback position, favorites, and list scroll positions in sync. Sync Subscriptions keeps subscribed podcasts, podcast settings, deletions, and sort order in sync.".ls;
     }
-    if (section == ICiCloudSyncSettingsSectionStatus) {
-        return @"Beim ersten Sync überträgt iCloud jeden Episodenstatus als eigenen Datensatz. Der Fortschritt wird oben angezeigt; danach werden nur Änderungen übertragen.".ls;
-    }
     if (section == ICiCloudSyncSettingsSectionStorage) {
         return [self cloudInventoryFooterText];
     }

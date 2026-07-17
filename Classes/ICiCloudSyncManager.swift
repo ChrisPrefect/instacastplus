@@ -1076,11 +1076,7 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
     nonisolated static func syncedSettingsValueCount() -> Int {
         let defaults = UserDefaults.standard
         let domain = Bundle.main.bundleIdentifier.flatMap { defaults.persistentDomain(forName: $0) } ?? [:]
-        var count = 0
-        for (key, value) in domain where shouldSyncSettingsKeyForSyncEngineCallback(key) && isValidSettingsValueForSyncEngineCallback(value) {
-            count += 1
-        }
-        return count
+        return syncableNonDefaultSettingsValuesForSyncEngineCallback(domain).count
     }
 
     @objc var statusText: String {
@@ -3505,10 +3501,11 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
                             self.cloudInventoryOperation = nil
                             self.isFetchingCloudInventory = false
                             self.runPendingCloudInventoryRefreshIfNeeded()
+                            self.postStateChanged()
                         }
                     }
 
-                    let countsByType: [String: Int]
+                    var countsByType: [String: Int]
                     let observedRecordNames: Set<String>
                     let zoneIsMissing: Bool
                     switch result {
@@ -3537,6 +3534,22 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
                         observedRecordNames = []
                     }
 
+                    do {
+                        countsByType[RecordKind.appSettings] = try await self.appSettingsValueCountFromCloud(
+                            recordExists: (countsByType[RecordKind.appSettings] ?? 0) > 0
+                        )
+                    } catch {
+                        self.cloudInventoryRefreshErrorText = NSLocalizedString("iCloud data counts could not be updated.", comment: "")
+                        var metadata = self.cloudKitErrorMetadata(error)
+                        metadata["reason"] = reason
+                        self.logSyncEvent("Cloud-Einstellungszähler fehlgeschlagen", metadata: metadata)
+                        self.postStateChanged()
+                        return
+                    }
+
+                    guard generation == self.cloudAccountGeneration,
+                          refreshGeneration == self.cloudInventoryRefreshGeneration,
+                          !cancellationToken.isCancelled else { return }
                     guard self.defaults.string(forKey: Self.accountUserRecordNameKey) == accountRecordName else { return }
                     self.setSyncMetadata(
                         zoneIsMissing ? [String: String]() : box.transitionalSubscriptionRecords(),
@@ -3619,6 +3632,24 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
         }
     }
 
+    func appSettingsValueCountFromCloud(recordExists: Bool) async throws -> Int {
+        guard recordExists else { return 0 }
+        do {
+            let record = try await database.record(for: appSettingsRecordID())
+            guard let payload = payloadDictionary(from: record),
+                  let values = payload["values"] as? [String: Any] else {
+                throw NSError(
+                    domain: "ICiCloudSyncInventory",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Der iCloud-Einstellungsdatensatz ist ungültig."]
+                )
+            }
+            return Self.syncableNonDefaultSettingsValuesForSyncEngineCallback(values).count
+        } catch let error as CKError where error.code == .unknownItem {
+            return 0
+        }
+    }
+
     // The device list used to stay empty ("Noch keine synchronisierten Geräte") until a
     // category was enabled, because the cache only fills via sync engine events. The
     // The inventory fetch above carries only the shared payload key; fetch the handful
@@ -3647,9 +3678,8 @@ final class ICiCloudSyncEngineCallbackGate: @unchecked Sendable {
     }
 
     func storeCloudInventory(_ countsByType: [String: Int], reason: String) {
-        // The three rows count USER objects only. Helper records (scroll positions,
-        // the sort-order singleton, device entries) must not leak into them — they
-        // showed "Einstellungen: 1" although settings sync was never enabled.
+        // The first two rows count user records. The settings entry is replaced with the
+        // effective non-default value count from the single ICAppSettings payload above.
         let fetchDate = Date()
         let stored: [String: Any] = [
             "episodeStates": countsByType[RecordKind.episodeState] ?? 0,

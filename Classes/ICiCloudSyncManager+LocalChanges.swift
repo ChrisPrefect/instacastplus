@@ -2905,7 +2905,8 @@ extension ICiCloudSyncManager {
 
     private func syncedSettingsHash(values: [String: Any]) -> String {
         var components: [String] = []
-        for (key, value) in values where Self.shouldSyncSettingsKeyForSyncEngineCallback(key) && Self.isValidSettingsValueForSyncEngineCallback(value) {
+        let nonDefaultValues = Self.syncableNonDefaultSettingsValuesForSyncEngineCallback(values)
+        for (key, value) in nonDefaultValues {
             components.append("\(key)=\(value)")
         }
         return Self.sha256Hex(components.sorted().joined(separator: "\u{1}"))
