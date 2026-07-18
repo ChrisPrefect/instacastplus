@@ -36,6 +36,7 @@ simultaneous = method_body(
     "- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:",
 )
 should_begin = method_body(playback, "- (BOOL)gestureRecognizerShouldBegin:")
+handle_pan = method_body(playback, "- (void) handlePan:")
 
 require(
     "[playbackController addDismissalPanGestureRecognizerToView:self.infoViewController.chapterImagesCollection]" in player,
@@ -60,4 +61,11 @@ require(
     playback.find("[self.parent beginInteractiveDismissing]")
     < playback.find("[self updateInteractiveTransition:percent]"),
     "The player must apply UIKit's already accumulated translation as soon as interactive dismissal begins.",
+)
+require(
+    "UIView* coordinateView = recognizer.view.window" in handle_pan
+    and "[recognizer translationInView:coordinateView]" in handle_pan
+    and "[recognizer velocityInView:coordinateView]" in handle_pan
+    and "setTranslation:" not in handle_pan,
+    "The player view moves into the dismissal transition container while the pan remains active; measure translation and velocity in the stable window coordinate space so a fast drag cannot jump when the transition starts.",
 )

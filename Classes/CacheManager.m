@@ -2636,8 +2636,8 @@ preserveSubscriptionCleanupDeferredStarts:(BOOL)preserveDeferredStarts
             __block void (^processNextChunk)(void) = nil;
             processNextChunk = ^{
                 if (nextURIIndex >= episodeObjectURIs.count) {
-                    processNextChunk = nil;
                     finishTranscriptCleanup();
+                    processNextChunk = nil;
                     return;
                 }
 

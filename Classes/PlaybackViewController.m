@@ -542,8 +542,9 @@
 
     - (void) handlePan:(UIPanGestureRecognizer*)recognizer
     {
-        CGPoint translation = [recognizer translationInView:self.parent.view];
-        CGPoint velocity = [recognizer velocityInView:self.parent.view];
+        UIView* coordinateView = recognizer.view.window;
+        CGPoint translation = [recognizer translationInView:coordinateView];
+        CGPoint velocity = [recognizer velocityInView:coordinateView];
 
         UIGestureRecognizerState state = [recognizer state];
         [self _driveTransitionWithTranslation:translation velocity:velocity recognizerState:state];
