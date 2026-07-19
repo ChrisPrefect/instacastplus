@@ -48,6 +48,9 @@
 static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
 static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued";
 static NSString* const ICTranscriptionContinuedGPUPath = @"continued-gpu";
+static NSString* const ICTranscriptionContinuedCPUPath = @"continued-cpu";
+static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionActiveContinuedPath";
+static NSString* const ICTranscriptionBackgroundTaskRequested = @"TranscriptionBackgroundTaskRequested";
 static NSString* const ICTranscriptionLegacyProcessingPath = @"legacy-processing";
 static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @"InstacastMainViewControllerDidBecomeReadyNotification";
 NSNotificationName const InstacastDatabaseStartupDidFailNotification = @"InstacastDatabaseStartupDidFailNotification";
@@ -152,15 +155,26 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 }
 
 - (void)_scheduleTranscriptionProcessingTask {
-    BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
-    request.requiresExternalPower = NO;
-    request.requiresNetworkConnectivity = NO;
-    NSError* error = nil;
-    if (![[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:&error]) {
-        [[ICDiagnosticLogger shared] logEvent:@"background-task"
-                                      message:@"BGProcessingTask konnte nicht erneut geplant werden"
-                                     metadata:@{ @"error": error.localizedDescription ?: @"" }];
+    [[TranscriptionQueue shared] scheduleAutomaticBackgroundProcessingIfNeeded];
+}
+
+- (void)_retireDeferredTranscriptionTaskOwnership:(BGTask*)task reason:(NSString*)reason {
+    BOOL continuedTask = NO;
+    if (@available(iOS 26.0, *)) {
+        continuedTask = [task isKindOfClass:BGContinuedProcessingTask.class];
     }
+    if (continuedTask) {
+        [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+    }
+    [USER_DEFAULTS setBool:NO forKey:ICTranscriptionBackgroundTaskRequested];
+    [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                  message:@"Zurückgestellte Background-Task-Zuständigkeit beendet"
+                                 metadata:@{
+                                     @"identifier": task.identifier ?: @"",
+                                     @"continued": @(continuedTask),
+                                     @"reason": reason ?: @"",
+                                 }];
+    [self _scheduleTranscriptionProcessingTask];
 }
 
 - (void)_installTranscriptionTaskExpirationHandler:(BGTask*)task {
@@ -187,9 +201,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     if ([self.pendingTranscriptionBackgroundTasks containsObject:task]) {
         [self.pendingTranscriptionBackgroundTasks removeObjectIdenticalTo:task];
         [task setTaskCompletedWithSuccess:NO];
-        if ([task isKindOfClass:BGProcessingTask.class]) {
-            [self _scheduleTranscriptionProcessingTask];
-        }
+        [self _retireDeferredTranscriptionTaskOwnership:task reason:@"database-wait-expired"];
         return;
     }
 
@@ -207,9 +219,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     }
     if (self.databaseStartupState == ICDatabaseStartupStateFailed) {
         [task setTaskCompletedWithSuccess:NO];
-        if ([task isKindOfClass:BGProcessingTask.class]) {
-            [self _scheduleTranscriptionProcessingTask];
-        }
+        [self _retireDeferredTranscriptionTaskOwnership:task reason:@"database-already-failed"];
         return YES;
     }
 
@@ -221,21 +231,89 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     if ([self _deferTranscriptionTaskUntilDatabaseReady:processingTask]) {
         return;
     }
+    NSString* requestedContinuedPath = [USER_DEFAULTS stringForKey:ICTranscriptionActiveContinuedPath];
+    if ([requestedContinuedPath hasPrefix:@"continued-"]) {
+        processingTask.expirationHandler = nil;
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGProcessingTask wegen ausstehendem Continued-Lauf abgelehnt"
+                                     metadata:@{
+                                         @"continuedPath": requestedContinuedPath,
+                                     }];
+        [processingTask setTaskCompletedWithSuccess:NO];
+        return;
+    }
     __block id queueObserver = nil;
+    __block id cancellationObserver = nil;
     __block BOOL taskCompleted = NO;
-    void (^completeTask)(BOOL) = ^(BOOL success) {
+    __block BOOL completionRequested = NO;
+    __block BOOL requestedSuccess = YES;
+    __block NSString* requestedReason = nil;
+    __block BOOL executionPathCompleted = NO;
+    __block BOOL persistenceWaitLogged = NO;
+    __block BOOL persistenceRetryAttempted = NO;
+    void (^completeTask)(BOOL, NSString*) = ^(BOOL success, NSString* reason) {
         if (taskCompleted) return;
+        if (!completionRequested) {
+            completionRequested = YES;
+            requestedSuccess = success;
+            requestedReason = [reason copy];
+        }
+        else if (!success) {
+            requestedSuccess = NO;
+            requestedReason = [reason copy];
+        }
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!executionPathCompleted) {
+            executionPathCompleted = YES;
+            [queue completeBackgroundExecutionPathWithSuccess:requestedSuccess reason:requestedReason];
+            if (taskCompleted) return;
+        }
+        if (queue.hasPendingQueuePersistence) {
+            if (!persistenceWaitLogged) {
+                persistenceWaitLogged = YES;
+                [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                              message:@"BGProcessingTask wartet auf Queue-Persistenz"
+                                             metadata:@{
+                                                 @"path": ICTranscriptionLegacyProcessingPath,
+                                                 @"reason": requestedReason ?: @"",
+                                             }];
+            }
+            return;
+        }
+        NSError* queuePersistenceError = queue.queuePersistenceError;
+        if (queuePersistenceError && !persistenceRetryAttempted) {
+            persistenceRetryAttempted = YES;
+            [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                          message:@"BGProcessingTask wiederholt fehlgeschlagenen Queue-Snapshot"
+                                         metadata:@{
+                                             @"path": ICTranscriptionLegacyProcessingPath,
+                                             @"error": queuePersistenceError.localizedDescription ?: @"",
+                                         }];
+            [queue retryQueuePersistenceAfterFailure];
+            return;
+        }
+        if (queuePersistenceError) {
+            requestedSuccess = NO;
+            requestedReason = @"queue-persistence-failed";
+        }
+        success = requestedSuccess;
+        reason = requestedReason;
         taskCompleted = YES;
         [self.activeTranscriptionTaskExpirationHandlers removeObjectForKey:processingTask];
         if (queueObserver) {
             [[NSNotificationCenter defaultCenter] removeObserver:queueObserver];
             queueObserver = nil;
         }
-        [[TranscriptionQueue shared] completeBackgroundExecutionPathWithSuccess:success reason:@"legacy-processing-completed"];
+        if (cancellationObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:cancellationObserver];
+            cancellationObserver = nil;
+        }
+        [USER_DEFAULTS setBool:NO forKey:ICTranscriptionBackgroundTaskRequested];
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGProcessingTask abgeschlossen"
                                      metadata:@{
                                          @"path": ICTranscriptionLegacyProcessingPath,
+                                         @"reason": reason ?: @"",
                                          @"success": @(success),
         }];
         [processingTask setTaskCompletedWithSuccess:success];
@@ -245,7 +323,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         [[ICDiagnosticLogger shared] logEvent:@"background-task" message:@"BGProcessingTask abgelaufen" metadata:@{
             @"path": ICTranscriptionLegacyProcessingPath,
         }];
-        completeTask(NO);
+        completeTask(NO, @"legacy-processing-expired");
     } copy] forKey:processingTask];
 
     [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:ICTranscriptionLegacyProcessingPath
@@ -262,15 +340,32 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                                                        queue:[NSOperationQueue mainQueue]
                                                                   usingBlock:^(__unused NSNotification *note) {
         TranscriptionQueue* queue = [TranscriptionQueue shared];
-        if (!queue.isProcessing && queue.currentItem == nil) {
-            completeTask(YES);
+        if (completionRequested) {
+            completeTask(requestedSuccess, requestedReason);
+            return;
+        }
+        if (!queue.isProcessing && queue.currentItem == nil &&
+            !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
+            completeTask(YES, @"legacy-processing-completed");
+        }
+    }];
+
+    cancellationObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICOpenAIBackgroundCancellationWorkDidChangeNotification"
+                                                                               object:nil
+                                                                                queue:[NSOperationQueue mainQueue]
+                                                                           usingBlock:^(__unused NSNotification *note) {
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!queue.isProcessing && queue.currentItem == nil &&
+            !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
+            completeTask(YES, @"remote-cancellation-reconciled");
         }
     }];
 
     [[TranscriptionQueue shared] resumeIfNeeded];
     TranscriptionQueue* queue = [TranscriptionQueue shared];
-    if (!queue.isProcessing && queue.currentItem == nil) {
-        completeTask(YES);
+    if (!queue.isProcessing && queue.currentItem == nil &&
+        !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
+        completeTask(YES, @"legacy-processing-empty");
     }
 }
 
@@ -278,15 +373,97 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     if ([self _deferTranscriptionTaskUntilDatabaseReady:continuedTask]) {
         return;
     }
+    if (self.activeTranscriptionTaskExpirationHandlers.count > 0) {
+        continuedTask.expirationHandler = nil;
+        [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+        [USER_DEFAULTS setBool:NO forKey:ICTranscriptionBackgroundTaskRequested];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGContinuedProcessingTask wegen aktivem Systemtask abgelehnt"
+                                     metadata:@{
+                                         @"activeTaskCount": @(self.activeTranscriptionTaskExpirationHandlers.count),
+                                     }];
+        [continuedTask setTaskCompletedWithSuccess:NO];
+        [self _scheduleTranscriptionProcessingTask];
+        return;
+    }
+    NSString* continuedPath = [[USER_DEFAULTS stringForKey:ICTranscriptionActiveContinuedPath] copy];
+    BOOL validPath = [continuedPath isEqualToString:ICTranscriptionContinuedGPUPath] ||
+                     [continuedPath isEqualToString:ICTranscriptionContinuedCPUPath];
+    if (!validPath) {
+        [self.activeTranscriptionTaskExpirationHandlers removeObjectForKey:continuedTask];
+        [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+        [USER_DEFAULTS setBool:NO forKey:ICTranscriptionBackgroundTaskRequested];
+        [[TranscriptionQueue shared] deactivateBackgroundExecutionPathWithReason:@"continued-path-missing"];
+        [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                      message:@"BGContinuedProcessingTask ohne gültigen Rechenpfad abgelehnt"
+                                     metadata:@{
+                                         @"identifier": continuedTask.identifier ?: @"",
+                                         @"storedPath": continuedPath ?: @"missing",
+                                     }];
+        [continuedTask setTaskCompletedWithSuccess:NO];
+        return;
+    }
     __block id queueObserver = nil;
     __block id progressObserver = nil;
+    __block id cancellationObserver = nil;
     __block BOOL taskCompleted = NO;
+    __block BOOL completionRequested = NO;
+    __block BOOL requestedSuccess = YES;
+    __block NSString* requestedReason = nil;
+    __block BOOL executionPathCompleted = NO;
+    __block BOOL persistenceWaitLogged = NO;
+    __block BOOL persistenceRetryAttempted = NO;
 
     continuedTask.progress.totalUnitCount = 1000;
     continuedTask.progress.completedUnitCount = 0;
 
     void (^completeTask)(BOOL, NSString*) = ^(BOOL success, NSString* reason) {
         if (taskCompleted) return;
+        if (!completionRequested) {
+            completionRequested = YES;
+            requestedSuccess = success;
+            requestedReason = [reason copy];
+        }
+        else if (!success) {
+            requestedSuccess = NO;
+            requestedReason = [reason copy];
+        }
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!executionPathCompleted) {
+            executionPathCompleted = YES;
+            [queue completeBackgroundExecutionPathWithSuccess:requestedSuccess reason:requestedReason];
+            if (taskCompleted) return;
+        }
+        if (queue.hasPendingQueuePersistence) {
+            if (!persistenceWaitLogged) {
+                persistenceWaitLogged = YES;
+                [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                              message:@"BGContinuedProcessingTask wartet auf Queue-Persistenz"
+                                             metadata:@{
+                                                 @"path": continuedPath,
+                                                 @"reason": requestedReason ?: @"",
+                                             }];
+            }
+            return;
+        }
+        NSError* queuePersistenceError = queue.queuePersistenceError;
+        if (queuePersistenceError && !persistenceRetryAttempted) {
+            persistenceRetryAttempted = YES;
+            [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                          message:@"BGContinuedProcessingTask wiederholt fehlgeschlagenen Queue-Snapshot"
+                                         metadata:@{
+                                             @"path": continuedPath,
+                                             @"error": queuePersistenceError.localizedDescription ?: @"",
+                                         }];
+            [queue retryQueuePersistenceAfterFailure];
+            return;
+        }
+        if (queuePersistenceError) {
+            requestedSuccess = NO;
+            requestedReason = @"queue-persistence-failed";
+        }
+        success = requestedSuccess;
+        reason = requestedReason;
         taskCompleted = YES;
         [self.activeTranscriptionTaskExpirationHandlers removeObjectForKey:continuedTask];
         if (queueObserver) {
@@ -297,35 +474,43 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
             [[NSNotificationCenter defaultCenter] removeObserver:progressObserver];
             progressObserver = nil;
         }
-        [[TranscriptionQueue shared] completeBackgroundExecutionPathWithSuccess:success reason:reason];
+        if (cancellationObserver) {
+            [[NSNotificationCenter defaultCenter] removeObserver:cancellationObserver];
+            cancellationObserver = nil;
+        }
+        [USER_DEFAULTS setBool:NO forKey:ICTranscriptionBackgroundTaskRequested];
+        [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGContinuedProcessingTask abgeschlossen"
                                      metadata:@{
-                                         @"path": ICTranscriptionContinuedGPUPath,
+                                         @"path": continuedPath,
                                          @"reason": reason ?: @"",
                                          @"success": @(success),
                                          @"completedUnitCount": @(continuedTask.progress.completedUnitCount),
-                                     }];
+        }];
         [continuedTask setTaskCompletedWithSuccess:success];
+        [self _scheduleTranscriptionProcessingTask];
     };
 
     [self.activeTranscriptionTaskExpirationHandlers setObject:[^{
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGContinuedProcessingTask abgelaufen"
                                      metadata:@{
-                                         @"path": ICTranscriptionContinuedGPUPath,
-                                     }];
-        [[TranscriptionQueue shared] expireContinuedGPUBackgroundExecutionWithReason:@"continued-gpu-expired"];
-        completeTask(NO, @"continued-gpu-expired");
+                                         @"path": continuedPath,
+        }];
+        NSString* reason = [continuedPath stringByAppendingString:@"-expired"];
+        completeTask(NO, reason);
     } copy] forKey:continuedTask];
 
-    [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:ICTranscriptionContinuedGPUPath
-                                                                  detail:@"BGContinuedProcessingTask mit GPU gestartet"];
+    NSString* detail = [continuedPath isEqualToString:ICTranscriptionContinuedGPUPath]
+        ? @"BGContinuedProcessingTask mit GPU gestartet"
+        : @"BGContinuedProcessingTask mit CPU/Neural Engine gestartet";
+    [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:continuedPath detail:detail];
     [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                   message:@"BGContinuedProcessingTask gestartet"
                                  metadata:@{
                                      @"identifier": continuedTask.identifier ?: @"",
-                                     @"path": ICTranscriptionContinuedGPUPath,
+                                     @"path": continuedPath,
                                      @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
                                  }];
 
@@ -345,15 +530,33 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                                                        queue:[NSOperationQueue mainQueue]
                                                                   usingBlock:^(__unused NSNotification *note) {
         TranscriptionQueue* queue = [TranscriptionQueue shared];
-        if (!queue.isProcessing && queue.currentItem == nil) {
+        if (completionRequested) {
+            completeTask(requestedSuccess, requestedReason);
+            return;
+        }
+        if (!queue.isProcessing && queue.currentItem == nil &&
+            !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
             continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
             completeTask(YES, @"queue-completed");
         }
     }];
 
+    cancellationObserver = [[NSNotificationCenter defaultCenter] addObserverForName:@"ICOpenAIBackgroundCancellationWorkDidChangeNotification"
+                                                                               object:nil
+                                                                                queue:[NSOperationQueue mainQueue]
+                                                                           usingBlock:^(__unused NSNotification *note) {
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        if (!queue.isProcessing && queue.currentItem == nil &&
+            !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
+            continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
+            completeTask(YES, @"remote-cancellation-reconciled");
+        }
+    }];
+
     [[TranscriptionQueue shared] resumeIfNeeded];
     TranscriptionQueue* queue = [TranscriptionQueue shared];
-    if (!queue.isProcessing && queue.currentItem == nil) {
+    if (!queue.isProcessing && queue.currentItem == nil &&
+        !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
         continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
         completeTask(YES, @"queue-empty");
     }
@@ -598,9 +801,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     for (BGTask* task in self.pendingTranscriptionBackgroundTasks) {
         task.expirationHandler = nil;
         [task setTaskCompletedWithSuccess:NO];
-        if ([task isKindOfClass:BGProcessingTask.class]) {
-            [self _scheduleTranscriptionProcessingTask];
-        }
+        [self _retireDeferredTranscriptionTaskOwnership:task reason:@"database-startup-failed"];
     }
     [self.pendingTranscriptionBackgroundTasks removeAllObjects];
 

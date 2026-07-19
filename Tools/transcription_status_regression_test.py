@@ -179,15 +179,15 @@ require(
     "Chapter generator no longer exposes a structured async API, so queue cancellation cannot propagate into LLM work.",
 )
 require(
-    "try await self.chapterGen.generateChaptersAsync(" in queue_source,
-    "Transcription queue is no longer awaiting chapter generation directly, so cancel/remove can leave stale LLM work running.",
+    "semanticArtifacts = try await self.generateSemanticArtifacts(" in queue_source,
+    "Transcription queue is no longer awaiting semantic analysis directly, so cancel/remove can leave stale model work running.",
 )
 require(
-    "item.chapterOnly = true\n        items.append(item)\n        persistQueue()\n        postQueueChangeNotification()\n\n        if !isProcessing && chapterTask == nil && !shouldPauseWhisperKitForBackground {\n            startChapterGenerationTask(for: item, startReason: \"chapter-task-enqueued\")\n        }" in queue_source,
+    "item.chapterOnly = true\n        items.append(item)\n        persistQueue()\n        postQueueChangeNotification()\n\n        if !isProcessing && chapterTask == nil {\n            processNext()\n        }" in queue_source,
     "Chapter-only debug/UI jobs must stay queued behind an active transcription instead of starting a second model task concurrently.",
 )
 require(
-    "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." in queue_source,
+    "Verarbeitung im Hintergrund pausiert. Wird mit verfügbarer Rechenzeit automatisch fortgesetzt." in queue_source,
     "Background-paused jobs still tell users to tap even though foreground resume should restart them automatically.",
 )
 require(
@@ -230,8 +230,10 @@ require(
 require(
     "Kapiteldatei geschrieben" in chapter_source and
     "Kapiteldatei geladen" in chapter_source and
-    "Kapiteldatei entfernt" in chapter_source,
-    "Chapter generator no longer logs persisted chapter file writes/reads/deletes with file snapshots.",
+    "Atomare Episodenanalyse geschrieben" in chapter_source and
+    "KI-Zusammenfassung aus Episodenanalyse geladen" in chapter_source and
+    "Generiertes Analyseartefakt entfernt" in chapter_source,
+    "Chapter generator no longer logs chapter/analysis file writes, reads, and deletes with file snapshots.",
 )
 require(
     "Musik-Timeline geschrieben" in audio_source and
@@ -262,7 +264,8 @@ require(
 )
 require(
     "func saveChaptersThrowing(_ chapters: [ICGeneratedChapter], for episodeHash: String) throws" in chapter_source and
-    "try self.chapterGen.saveChaptersThrowing(chapters, for: episodeHash)" in queue_source,
+    "try chapterGen.saveChaptersThrowing(chapters, for: episodeHash)" in queue_source and
+    "try await self.saveSemanticArtifacts(semanticArtifacts, for: episodeHash)" in queue_source,
     "Chapter persistence errors are being swallowed again instead of being surfaced to the queue/log.",
 )
 require(
@@ -303,9 +306,9 @@ require(
     "Playback no longer prefers user-generated chapters before embedded chapters, so generation can appear to do nothing.",
 )
 require(
-    "Folgen mit vorhandenen Kapiteln bleiben unverändert." in settings_source and
-    "nur Sponsor-Erkennung durchgeführt" not in settings_source,
-    "Settings UI is again promising sponsor detection for existing chapters that the queue does not perform.",
+    "Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt." in settings_source and
+    "Zusammenfassungen benötigen ein Remote-Kapitelmodell." in settings_source,
+    "Settings UI no longer explains publisher-chapter preservation, sponsor overlays, and the remote-summary requirement.",
 )
 require(
     "[processingTask setTaskCompletedWithSuccess:success]" in app_delegate_source and
@@ -317,6 +320,182 @@ require(
     "cell.sizeLabel.numberOfLines = 2;" in controller_source,
     "Queue UI no longer allows two-line status text for detailed updates.",
 )
+for old_text in [
+    "Im Hintergrund transkribieren",
+    "WhisperKit verarbeitet Podcasts im Hintergrund.",
+    "Hintergrund-Transkription",
+]:
+    require(
+        f'NSLocalizedString(@"{old_text}", nil)' not in controller_source,
+        f"Background processing UI still exposes the transcription/provider-specific text '{old_text}'.",
+    )
+
+continued_background_start = controller_source.find("- (void)_submitContinuedBackgroundTask")
+continued_background_end = controller_source.find("- (void)_presentBackgroundExplanationIfNeeded", continued_background_start)
+continued_background_body = controller_source[continued_background_start:continued_background_end]
+require(
+    continued_background_start >= 0
+    and continued_background_end > continued_background_start
+    and 'NSLocalizedString(@"Transkription läuft", nil)' not in continued_background_body,
+    "The continued-background task title still labels every job as transcription.",
+)
+
+for new_text in [
+    "Im Hintergrund verarbeiten",
+    "Verarbeitung läuft",
+    "Instacast verarbeitet Podcasts im Hintergrund.",
+    "Hintergrundverarbeitung",
+    "Die Anfrage wurde an iOS übergeben. Sobald iOS Rechenzeit gewährt, läuft die Verarbeitung im Hintergrund. Wird sie unterbrochen, bleiben Fortschritt und Warteschlange erhalten; fortgesetzt wird beim nächsten verfügbaren Hintergrundlauf oder App-Start.",
+]:
+    require(
+        f'NSLocalizedString(@"{new_text}", nil)' in controller_source,
+        f"Background processing UI is missing the lifecycle-accurate text '{new_text}'.",
+    )
+    require(f'"{new_text}" =' in de_strings, f"German localization is missing '{new_text}'.")
+    require(f'"{new_text}" =' in en_strings, f"English localization is missing '{new_text}'.")
+
+for paused_text in [
+    "Verarbeitung pausiert",
+    "Verarbeitung pausiert (%d%%)",
+    "Verarbeitung pausiert (%d%%, %@ verbleibend)",
+]:
+    require(
+        f'NSLocalizedString(@"{paused_text}", nil)' in controller_source,
+        f"Paused background work is not rendered provider-neutrally as '{paused_text}'.",
+    )
+    require(f'"{paused_text}" =' in de_strings, f"German localization is missing '{paused_text}'.")
+    require(f'"{paused_text}" =' in en_strings, f"English localization is missing '{paused_text}'.")
+
+require(
+    'NSLocalizedString(@"Transkription pausiert", nil)' not in controller_source
+    and 'NSLocalizedString(@"Transkription pausiert (%d%%)", nil)' not in controller_source
+    and 'NSLocalizedString(@"Transkription pausiert (%d%%, %@ verbleibend)", nil)' not in controller_source,
+    "Background-paused analysis is still mislabeled as paused transcription.",
+)
+
+blocked_model_text = "Modell kann während einer laufenden Transkription oder Episodenanalyse nicht geändert werden."
+require(
+    f'NSLocalizedString(@"{blocked_model_text}", nil)' in settings_source
+    and 'NSLocalizedString(@"Modell kann während der Transkription nicht geändert werden.", nil)' not in settings_source,
+    "The model-library header still says only transcription can block model changes.",
+)
+require(f'"{blocked_model_text}" =' in de_strings, "German model-block localization is missing.")
+require(f'"{blocked_model_text}" =' in en_strings, "English model-block localization is missing.")
+
+completed_status_start = controller_source.find("case ICTranscriptionStatusCompleted:")
+completed_status_end = controller_source.find("case ICTranscriptionStatusFailed:", completed_status_start)
+completed_status_body = controller_source[completed_status_start:completed_status_end]
+require(
+    completed_status_start >= 0 and completed_status_end > completed_status_start,
+    "Could not inspect the completed transcription-row status branch.",
+)
+for completed_text in [
+    "Transkription fertig ✓",
+    "Episodenanalyse fertig ✓",
+    "Transkription und Episodenanalyse fertig ✓",
+]:
+    require(
+        f'NSLocalizedString(@"{completed_text}", nil)' in completed_status_body,
+        f"Completed queue rows cannot distinguish '{completed_text}'.",
+    )
+    require(f'"{completed_text}" =' in de_strings, f"German localization is missing '{completed_text}'.")
+    require(f'"{completed_text}" =' in en_strings, f"English localization is missing '{completed_text}'.")
+require(
+    "item.chapterOnly" in completed_status_body and "item.shouldGenerateAnalysis" in completed_status_body,
+    "Completed queue-row wording is not derived from the persisted job intent.",
+)
+require(
+    "hasActiveBackgroundExecutionGrant" in controller_source
+    and 'NSLocalizedString(@"Hintergrund angefordert …", nil)' in controller_source,
+    "A submitted background request is still presented as an active iOS execution grant.",
+)
+require(
+    'isEqualToString:NSLocalizedString(@"Verarbeitung im Hintergrund pausiert. Wird mit verfügbarer Rechenzeit automatisch fortgesetzt.", nil)' in controller_source
+    and 'isEqualToString:NSLocalizedString(@"Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", nil)' not in controller_source,
+    "The queue view does not recognize the current persisted background-pause status.",
+)
+require(
+    "item.automaticallyScheduled && item.nextRetryAt != nil" in controller_source
+    and "_automaticRetryHeadlineForItem:" in controller_source
+    and 'NSLocalizedString(@"Automatischer neuer Versuch um %@", nil)' in controller_source,
+    "Queued automatic retries are still shown as generic interruptions instead of their scheduled retry time.",
+)
+require(
+    "item.progressBaselineStartedAt" in controller_source
+    and "item.progressBaseline" in controller_source
+    and "progressDelta" in controller_source
+    and "remainingProgress / progressDelta" in controller_source
+    and "(1.0 - item.progress) / item.progress" not in controller_source,
+    "Remaining-time estimates still combine resumed absolute progress with only the current run's elapsed time.",
+)
+require(
+    'stringWithFormat:@"%@ — %@", trimmedHeadline, trimmedDetail' in controller_source,
+    "Live phase detail is still discarded as soon as a progress percentage is available.",
+)
+for phase, label in [
+    ("automatic", "Automatische Verarbeitung"),
+    ("transcript-import", "Podcast-Transkript"),
+    ("recovery", "Wiederherstellung"),
+    ("retry", "Neuer Versuch"),
+]:
+    require(
+        f'[phase isEqualToString:@"{phase}"]' in controller_source
+        and f'NSLocalizedString(@"{label}", nil)' in controller_source,
+        f"The visible transcription log still exposes the raw phase tag '{phase}'.",
+    )
+    require(f'"{label}" =' in de_strings, f"German localization is missing '{label}'.")
+    require(f'"{label}" =' in en_strings, f"English localization is missing '{label}'.")
+
+for text in [
+    "Hintergrund angefordert …",
+    "Automatischer neuer Versuch um %@",
+]:
+    require(f'"{text}" =' in de_strings, f"German localization is missing '{text}'.")
+    require(f'"{text}" =' in en_strings, f"English localization is missing '{text}'.")
+
+background_pause_start = queue_source.find("private func finishBackgroundPause(")
+background_pause_end = queue_source.find("// MARK: - Processing", background_pause_start)
+background_pause = queue_source[background_pause_start:background_pause_end]
+require(
+    'message: "Verarbeitung im Hintergrund pausiert"' in background_pause
+    and 'message: "Transkription im Hintergrund pausiert"' not in background_pause,
+    "Background pause logs still mislabel chapter/sponsor/summary analysis as transcription.",
+)
+require(
+    "updateDownloadStatusAfterSpeechModelPreparation" in queue_source
+    and 'NSLocalizedString("Episode wird heruntergeladen.", comment: "")' in queue_source
+    and 'NSLocalizedString("Episode wird heruntergeladen. Modellvorbereitung fehlgeschlagen.", comment: "")' in queue_source,
+    "Episode-download status can remain stuck on speech-model preparation after it completed or failed.",
+)
+require(
+    "audioAnalysisError" in queue_source
+    and 'message: NSLocalizedString("Audioanalyse fehlgeschlagen", comment: "")' in queue_source
+    and 'NSLocalizedString("Verarbeitung wird ohne Audiohinweise fortgesetzt.", comment: "")' in queue_source,
+    "A failed optional audio analysis is still reported to users as successfully completed.",
+)
+
+transcribe_start = backend_source.find("func transcribe(audioURL: URL")
+transcribe_end = backend_source.find("// MARK: -", transcribe_start + 20)
+transcribe_body = backend_source[transcribe_start:transcribe_end]
+require(
+    'statusUpdate(NSLocalizedString("Audioblock wird geladen.", comment: ""))' in transcribe_body
+    and 'statusUpdate(NSLocalizedString("Transkription läuft. Warte auf das erste Segment.", comment: ""))' in transcribe_body
+    and transcribe_body.find('"Audioblock wird geladen."')
+    < transcribe_body.find("AudioProcessor.loadAudioAsFloatArray")
+    < transcribe_body.find('"Transkription läuft. Warte auf das erste Segment."'),
+    "Whisper status says transcription is running before the current audio slice has loaded.",
+)
+
+for text in [
+    "Episode wird heruntergeladen.",
+    "Episode wird heruntergeladen. Modellvorbereitung fehlgeschlagen.",
+    "Audioanalyse fehlgeschlagen",
+    "Verarbeitung wird ohne Audiohinweise fortgesetzt.",
+    "Audioblock wird geladen.",
+    "Transkription läuft. Warte auf das erste Segment.",
+]:
+    require(f'"{text}" =' in de_strings, f"German localization is missing '{text}'.")
+    require(f'"{text}" =' in en_strings, f"English localization is missing '{text}'.")
 require(
     "if ([TranscriptionQueue shared].items.count == 0)" in controller_source
     and "[self setToolbarItems:@[] animated:animated]" in controller_source

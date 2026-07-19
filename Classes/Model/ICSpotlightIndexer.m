@@ -176,6 +176,27 @@ static NSArray<NSString*>* ICSpotlightGeneratedChapterTitlesForEpisodeHash(NSStr
     return titles;
 }
 
+static NSString* ICSpotlightGeneratedSummaryForEpisodeHash(NSString* objectHash)
+{
+    if (objectHash.length == 0) {
+        return @"";
+    }
+
+    NSURL* analysisURL = [ICTranscriptionPaths analysisJSONURLFor:objectHash];
+    NSData* data = [NSData dataWithContentsOfURL:analysisURL options:0 error:nil];
+    if (data.length == 0) {
+        return @"";
+    }
+
+    NSDictionary* json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![json isKindOfClass:[NSDictionary class]]) {
+        return @"";
+    }
+
+    NSString* summary = ICSpotlightString(json[@"summary"]);
+    return [summary stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+}
+
 // Raw snapshots read ONLY Core-Data values (must run on the context's thread) and defer all
 // text cleaning and file I/O to the searchable-item builders, which run on the index queue.
 static NSDictionary* ICSpotlightFeedSnapshot(CDFeed* feed)
@@ -293,6 +314,9 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
     ICSpotlightAppendString(searchableStrings, snapshot[@"summary"]);
     ICSpotlightAppendString(searchableStrings, snapshot[@"fulltext"]);
 
+    NSString* generatedSummary = ICSpotlightGeneratedSummaryForEpisodeHash(objectHash);
+    ICSpotlightAppendString(searchableStrings, generatedSummary);
+
     ICSpotlightAppendKeyword(keywords, snapshot[@"title"]);
     ICSpotlightAppendKeyword(keywords, snapshot[@"subtitle"]);
     ICSpotlightAppendKeyword(keywords, snapshot[@"author"]);
@@ -319,7 +343,8 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
     ICSpotlightAppendString(searchableStrings, ICSpotlightTranscriptTextForEpisodeHash(objectHash));
 
     NSString* fallbackSummary = ICSpotlightString(snapshot[@"summary"]);
-    NSString* summary = ICSpotlightCleanText(fallbackSummary.length > 0 ? fallbackSummary : snapshot[@"fulltext"]);
+    NSString* publisherSummary = ICSpotlightCleanText(fallbackSummary.length > 0 ? fallbackSummary : snapshot[@"fulltext"]);
+    NSString* summary = generatedSummary.length > 0 ? ICSpotlightCleanText(generatedSummary) : publisherSummary;
 
     CSSearchableItemAttributeSet* attributeSet = [[CSSearchableItemAttributeSet alloc] initWithItemContentType:@"public.audio"];
     attributeSet.displayName = snapshot[@"title"];

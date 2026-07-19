@@ -82,6 +82,10 @@
     if ([phase isEqualToString:@"transcribe"]) return NSLocalizedString(@"Transkription", nil);
     if ([phase isEqualToString:@"chapters"])  return NSLocalizedString(@"Kapitel", nil);
     if ([phase isEqualToString:@"background"]) return NSLocalizedString(@"Hintergrund", nil);
+    if ([phase isEqualToString:@"automatic"]) return NSLocalizedString(@"Automatische Verarbeitung", nil);
+    if ([phase isEqualToString:@"transcript-import"]) return NSLocalizedString(@"Podcast-Transkript", nil);
+    if ([phase isEqualToString:@"recovery"])  return NSLocalizedString(@"Wiederherstellung", nil);
+    if ([phase isEqualToString:@"retry"])     return NSLocalizedString(@"Neuer Versuch", nil);
     if ([phase isEqualToString:@"done"])      return NSLocalizedString(@"Fertig", nil);
     if ([phase isEqualToString:@"error"])     return NSLocalizedString(@"Fehler", nil);
     return phase;
@@ -145,6 +149,7 @@
 
 static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
 static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued";
+static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionActiveContinuedPath";
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -169,7 +174,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
                                                      action:@selector(_cancelAll)];
     [self.cancelItem setTitleTextAttributes:@{NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)]} forState:UIControlStateNormal];
 
-    self.pauseItem = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Im Hintergrund transkribieren", nil)
+    self.pauseItem = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedString(@"Im Hintergrund verarbeiten", nil)
                                                      style:UIBarButtonItemStylePlain
                                                     target:self
                                                     action:@selector(_continueInBackground)];
@@ -274,37 +279,46 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 - (void)_continueInBackground {
     if (![self backgroundControlsAvailable]) {
         self.backgroundTaskActive = NO;
-        [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskActive"];
+        [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskRequested"];
         [self _updateBackgroundButtonAppearance];
         return;
     }
 
     if (self.backgroundTaskActive) {
         // Already active — deactivate (cancel the scheduled task)
+        NSString* requestedContinuedPath = [USER_DEFAULTS stringForKey:ICTranscriptionActiveContinuedPath];
+        BOOL isContinuedRequest = [requestedContinuedPath hasPrefix:@"continued-"];
         self.backgroundTaskActive = NO;
-        [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskActive"];
+        [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskRequested"];
         [self _updateBackgroundButtonAppearance];
-        [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
+        if (!isContinuedRequest) {
+            [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
+        }
         if (@available(iOS 26.0, *)) {
             [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionContinuedTaskIdentifier];
         }
-        [[TranscriptionQueue shared] deactivateBackgroundExecutionPathWithReason:@"user-disabled"];
+        [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        [queue deactivateBackgroundExecutionPathWithReason:@"user-disabled"];
+        [queue scheduleAutomaticBackgroundProcessingIfNeeded];
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"Hintergrund-Transkription deaktiviert"
                                      metadata:@{
-                                         @"queueCount": @([TranscriptionQueue shared].count),
+                                         @"continuedRequest": @(isContinuedRequest),
+                                         @"queueCount": @(queue.count),
                                      }];
         return;
     }
 
-    if ([self _shouldUseContinuedGPUBackgroundPath]) {
-        [self _submitContinuedGPUBackgroundTask];
+    if ([self _shouldUseContinuedBackgroundPath]) {
+        [self _submitContinuedBackgroundTask];
     } else {
         [self _submitProcessingBackgroundTask];
     }
 }
 
 - (void)_submitProcessingBackgroundTask {
+    [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
     BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
     request.requiresExternalPower = NO;
     request.requiresNetworkConnectivity = NO;
@@ -327,16 +341,8 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     }
 
     self.backgroundTaskActive = YES;
-    [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundTaskActive"];
+    [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundTaskRequested"];
     [self _updateBackgroundButtonAppearance];
-    [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:@"legacy-processing"
-                                                                  detail:@"BGProcessingTask eingereicht"];
-    [[ICDiagnosticLogger shared] logEvent:@"background-task"
-                                  message:@"Hintergrundpfad aktiviert"
-                                 metadata:@{
-                                     @"path": @"legacy-processing",
-                                     @"queueCount": @([TranscriptionQueue shared].count),
-                                 }];
     [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                   message:@"BGProcessingTask-Request eingereicht"
                                  metadata:@{
@@ -347,22 +353,28 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     [self _presentBackgroundExplanationIfNeeded];
 }
 
-- (void)_submitContinuedGPUBackgroundTask {
+- (void)_submitContinuedBackgroundTask {
     if (@available(iOS 26.0, *)) {
+        BOOL gpuSupported = (BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0;
+        NSString* path = gpuSupported ? @"continued-gpu" : @"continued-cpu";
         BGContinuedProcessingTaskRequest* request = [[BGContinuedProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionContinuedTaskIdentifier
-                                                                                                          title:NSLocalizedString(@"Transkription läuft", nil)
-                                                                                                       subtitle:NSLocalizedString(@"WhisperKit verarbeitet Podcasts im Hintergrund.", nil)];
+                                                                                                          title:NSLocalizedString(@"Verarbeitung läuft", nil)
+                                                                                                       subtitle:NSLocalizedString(@"Instacast verarbeitet Podcasts im Hintergrund.", nil)];
         request.strategy = BGContinuedProcessingTaskRequestSubmissionStrategyFail;
-        request.requiredResources = BGContinuedProcessingTaskRequestResourcesGPU;
+        request.requiredResources = gpuSupported
+            ? BGContinuedProcessingTaskRequestResourcesGPU
+            : BGContinuedProcessingTaskRequestResourcesDefault;
 
+        [USER_DEFAULTS setObject:path forKey:ICTranscriptionActiveContinuedPath];
         NSError* submitError = nil;
         [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:&submitError];
         if (submitError) {
+            [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
             [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                           message:@"BGContinuedProcessingTask-Request fehlgeschlagen"
                                          metadata:@{
                                              @"error": submitError.localizedDescription ?: @"",
-                                             @"path": @"continued-gpu",
+                                             @"path": path,
                                              @"queueCount": @([TranscriptionQueue shared].count),
                                          }];
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Fehler", nil)
@@ -373,23 +385,20 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             return;
         }
 
+        // A visible continued request owns this queue run. Retire only the
+        // still-pending processing request after the continued submit succeeds;
+        // an already delivered processing task is rejected by AppDelegate's
+        // task-ownership check instead of having its grant overwritten.
+        [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
         self.backgroundTaskActive = YES;
-        [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundTaskActive"];
+        [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundTaskRequested"];
         [self _updateBackgroundButtonAppearance];
-        [[TranscriptionQueue shared] activateBackgroundExecutionPathWithPath:@"continued-gpu"
-                                                                      detail:@"BGContinuedProcessingTask mit GPU eingereicht"];
-        [[ICDiagnosticLogger shared] logEvent:@"background-task"
-                                      message:@"Hintergrundpfad aktiviert"
-                                     metadata:@{
-                                         @"path": @"continued-gpu",
-                                         @"queueCount": @([TranscriptionQueue shared].count),
-                                     }];
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGContinuedProcessingTask-Request eingereicht"
                                      metadata:@{
                                          @"identifier": ICTranscriptionContinuedTaskIdentifier,
-                                         @"path": @"continued-gpu",
-                                         @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
+                                         @"path": path,
+                                         @"gpuSupported": @(gpuSupported),
                                          @"queueCount": @([TranscriptionQueue shared].count),
                                      }];
         [self _presentBackgroundExplanationIfNeeded];
@@ -399,8 +408,8 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
 - (void)_presentBackgroundExplanationIfNeeded {
     if (![USER_DEFAULTS boolForKey:@"TranscriptionBackgroundExplained"]) {
         [USER_DEFAULTS setBool:YES forKey:@"TranscriptionBackgroundExplained"];
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Hintergrund-Transkription", nil)
-                                                                      message:NSLocalizedString(@"Die Transkription wird im Hintergrund fortgesetzt, auch wenn die App geschlossen wird. Das System entscheidet, wann und wie lange die Verarbeitung läuft.", nil)
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Hintergrundverarbeitung", nil)
+                                                                      message:NSLocalizedString(@"Die Anfrage wurde an iOS übergeben. Sobald iOS Rechenzeit gewährt, läuft die Verarbeitung im Hintergrund. Wird sie unterbrochen, bleiben Fortschritt und Warteschlange erhalten; fortgesetzt wird beim nächsten verfügbaren Hintergrundlauf oder App-Start.", nil)
                                                                preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
@@ -412,24 +421,25 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     return engine.length == 0 || [engine isEqualToString:@"WhisperKit"];
 }
 
-- (BOOL)_shouldUseContinuedGPUBackgroundPath {
+- (BOOL)_shouldUseContinuedBackgroundPath {
     if (![self _isWhisperKitEngine]) return NO;
-    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];
+    if (@available(iOS 26.0, *)) return YES;
+    return NO;
 }
 
 - (BOOL)backgroundControlsAvailable {
-    if (![self _isWhisperKitEngine]) return YES;
-    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];
+    return YES;
 }
 
 - (void)_syncBackgroundButtonState {
     BOOL available = [self backgroundControlsAvailable];
-    BOOL persistedActive = [USER_DEFAULTS boolForKey:@"TranscriptionBackgroundTaskActive"];
+    BOOL persistedActive = [USER_DEFAULTS boolForKey:@"TranscriptionBackgroundTaskRequested"];
+    BOOL hasActiveGrant = [TranscriptionQueue shared].hasActiveBackgroundExecutionGrant;
     if (!available && persistedActive) {
         persistedActive = NO;
-        [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskActive"];
+        [USER_DEFAULTS setBool:NO forKey:@"TranscriptionBackgroundTaskRequested"];
     }
-    self.backgroundTaskActive = available && persistedActive;
+    self.backgroundTaskActive = available && (persistedActive || hasActiveGrant);
     [self _updateBackgroundButtonAppearance];
     [self _updateToolbarItemsAnimated:NO];
 }
@@ -462,16 +472,24 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     }
 
     self.pauseItem.enabled = YES;
-    if (self.backgroundTaskActive) {
+    BOOL hasActiveGrant = [TranscriptionQueue shared].hasActiveBackgroundExecutionGrant;
+    if (self.backgroundTaskActive && hasActiveGrant) {
         self.pauseItem.title = NSLocalizedString(@"Hintergrund aktiv ✓", nil);
         [self.pauseItem setTitleTextAttributes:@{
             NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)],
             NSForegroundColorAttributeName: [UIColor systemGreenColor]
         } forState:UIControlStateNormal];
-    } else {
-        self.pauseItem.title = NSLocalizedString(@"Im Hintergrund transkribieren", nil);
+    } else if (self.backgroundTaskActive) {
+        self.pauseItem.title = NSLocalizedString(@"Hintergrund angefordert …", nil);
         [self.pauseItem setTitleTextAttributes:@{
-            NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)]
+            NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)],
+            NSForegroundColorAttributeName: self.view.tintColor
+        } forState:UIControlStateNormal];
+    } else {
+        self.pauseItem.title = NSLocalizedString(@"Im Hintergrund verarbeiten", nil);
+        [self.pauseItem setTitleTextAttributes:@{
+            NSFontAttributeName: [UIFont systemFontOfSize:ICFontSize(14)],
+            NSForegroundColorAttributeName: self.view.tintColor
         } forState:UIControlStateNormal];
     }
 }
@@ -569,7 +587,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             // download must not be labelled as interrupted even though isProcessing=NO
             // on the queue (downloads run on the CacheManager, not the queue itself).
             BOOL isDownloading = [item.error isEqualToString:NSLocalizedString(@"Episode wird heruntergeladen...", nil)];
-            BOOL isBackgroundPaused = [item.statusDetail isEqualToString:NSLocalizedString(@"Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.", nil)];
+            BOOL isBackgroundPaused = [item.statusDetail isEqualToString:NSLocalizedString(@"Verarbeitung im Hintergrund pausiert. Wird mit verfügbarer Rechenzeit automatisch fortgesetzt.", nil)];
             if (isDownloading) {
                 CDEpisode* ep = [self _episodeForHash:item.episodeHash];
                 double p = ep ? [[CacheManager sharedCacheManager] cacheProgressForEpisode:ep] : 0.0;
@@ -589,19 +607,25 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
                 int pct = (int)(item.progress * 100);
                 if (pct > 0) {
                     if (remainingText.length > 0) {
-                        headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription pausiert (%d%%, %@ verbleibend)", nil), pct, remainingText];
+                        headline = [NSString stringWithFormat:NSLocalizedString(@"Verarbeitung pausiert (%d%%, %@ verbleibend)", nil), pct, remainingText];
                     } else {
-                        headline = [NSString stringWithFormat:NSLocalizedString(@"Transkription pausiert (%d%%)", nil), pct];
+                        headline = [NSString stringWithFormat:NSLocalizedString(@"Verarbeitung pausiert (%d%%)", nil), pct];
                     }
                     cell.progressView.progress = item.progress;
                     cell.progressView.hidden = NO;
                 } else {
-                    headline = NSLocalizedString(@"Transkription pausiert", nil);
+                    headline = NSLocalizedString(@"Verarbeitung pausiert", nil);
                     cell.progressView.progress = 0;
                     cell.progressView.hidden = YES;
                 }
                 detail = item.statusDetail;
                 cell.timeLabel.text = elapsedText ?: @"";
+            } else if (item.automaticallyScheduled && item.nextRetryAt != nil) {
+                headline = [self _automaticRetryHeadlineForItem:item];
+                detail = nil;
+                cell.progressView.progress = 0;
+                cell.progressView.hidden = YES;
+                cell.timeLabel.text = @"";
             } else if (item.error.length > 0 && ![TranscriptionQueue shared].isProcessing) {
                 headline = NSLocalizedString(@"Unterbrochen", nil);
                 if ([item.error isEqualToString:NSLocalizedString(@"Unterbrochen. Tippe zum Fortsetzen.", nil)]) {
@@ -682,7 +706,13 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
             break;
         }
         case ICTranscriptionStatusCompleted:
-            headline = NSLocalizedString(@"Fertig ✓", nil);
+            if (item.chapterOnly) {
+                headline = NSLocalizedString(@"Episodenanalyse fertig ✓", nil);
+            } else if (item.shouldGenerateAnalysis) {
+                headline = NSLocalizedString(@"Transkription und Episodenanalyse fertig ✓", nil);
+            } else {
+                headline = NSLocalizedString(@"Transkription fertig ✓", nil);
+            }
             detail = nil;
             cell.sizeLabel.textColor = [UIColor systemGreenColor];
             cell.progressView.progress = 1.0;
@@ -909,7 +939,7 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
         return trimmedHeadline;
     }
     if ([trimmedHeadline containsString:@"%"]) {
-        return trimmedHeadline;
+        return [NSString stringWithFormat:@"%@ — %@", trimmedHeadline, trimmedDetail];
     }
     if ([trimmedHeadline isEqualToString:NSLocalizedString(@"Fehler", nil)] ||
         [trimmedHeadline isEqualToString:NSLocalizedString(@"Unterbrochen", nil)]) {
@@ -957,17 +987,36 @@ static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.
     return [NSString stringWithFormat:@"%lds", (long)seconds];
 }
 
+- (NSString*)_automaticRetryHeadlineForItem:(ICTranscriptionQueueItem*)item {
+    if (!item.nextRetryAt) {
+        return nil;
+    }
+    NSDateFormatterStyle dateStyle = [[NSCalendar currentCalendar] isDateInToday:item.nextRetryAt]
+        ? NSDateFormatterNoStyle
+        : NSDateFormatterShortStyle;
+    NSString* retryTime = [NSDateFormatter localizedStringFromDate:item.nextRetryAt
+                                                          dateStyle:dateStyle
+                                                          timeStyle:NSDateFormatterShortStyle];
+    return [NSString stringWithFormat:NSLocalizedString(@"Automatischer neuer Versuch um %@", nil), retryTime];
+}
+
 - (NSString*)_estimatedRemainingTextForItem:(ICTranscriptionQueueItem*)item {
-    if (!item.statusStartedAt || item.progress <= 0.01f || item.progress >= 1.0f) {
+    if (!item.progressBaselineStartedAt || item.progress >= 1.0f) {
         return nil;
     }
 
-    NSTimeInterval elapsed = [[NSDate date] timeIntervalSinceDate:item.statusStartedAt];
+    float progressDelta = item.progress - item.progressBaseline;
+    if (progressDelta <= 0.01f) {
+        return nil;
+    }
+
+    NSTimeInterval elapsed = [[NSDate date] timeIntervalSinceDate:item.progressBaselineStartedAt];
     if (elapsed < 5) {
         return nil;
     }
 
-    NSInteger remaining = MAX(0, (NSInteger)ceil(elapsed * (1.0 - item.progress) / item.progress));
+    double remainingProgress = MAX(0.0, 1.0 - item.progress);
+    NSInteger remaining = MAX(0, (NSInteger)ceil(elapsed * remainingProgress / progressDelta));
     NSInteger minutes = remaining / 60;
     NSInteger seconds = remaining % 60;
     return [NSString stringWithFormat:@"%ld:%02ld", (long)minutes, (long)seconds];

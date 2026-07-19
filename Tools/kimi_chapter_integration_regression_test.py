@@ -1,3 +1,6 @@
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -14,33 +17,79 @@ settings_source = (ROOT / "Classes" / "TranscriptionSettingsViewController.m").r
 chapter_source = (ROOT / "Classes" / "ChapterGenerator.swift").read_text()
 project_source = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 gitignore = (ROOT / ".gitignore").read_text()
-script_source = (ROOT / "Scripts" / "copy_kimi_builtin_env.sh").read_text() if (ROOT / "Scripts" / "copy_kimi_builtin_env.sh").exists() else ""
+script_path = ROOT / "Scripts" / "copy_kimi_builtin_env.sh"
+german_source = (ROOT / "Resources" / "de.lproj" / "Localizable.strings").read_text()
+english_source = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 kimi_body_source = chapter_source.split("private func kimiChatCompletionsBody", 1)[1].split("private static let remoteChaptersSchema", 1)[0]
 
 
 require(
     ".env" in gitignore and ".env.*" in gitignore,
-    "Kimi built-in credentials must be read from a local .env that Git ignores.",
+    "Local developer credentials must remain ignored by Git.",
 )
 
 require(
-    "Copy Kimi Built-In Key" in project_source
-    and "Scripts/copy_kimi_builtin_env.sh" in project_source
-    and "KimiBuiltin.env" in script_source
-    and "KIMI_BUILTIN_API_KEY" in script_source,
-    "The app target must copy only a locally generated Kimi credential resource from .env during build.",
+    script_path.exists()
+    and "Copy Kimi Built-In Key" in project_source
+    and "copy_kimi_builtin_env.sh" in project_source
+    and "KimiBuiltin.env" in project_source,
+    "The intentionally integrated Kimi access is no longer copied into the app bundle at build time.",
 )
 
 require(
     "case kimiAPI" in engine_source
-    and "kimi-k2.6-api-key" in engine_source
-    and 'remoteModelName: "kimi-k2.6"' in engine_source
-    and "Kimi K2.6" in engine_source
+    and "kimi-k3-api-key" in engine_source
+    and 'remoteModelName: "kimi-k3"' in engine_source
+    and "Kimi K3" in engine_source
     and "hasKimiAPIKey" in engine_source
+    and "hasKimiUserAPIKey" in engine_source
     and "kimiAPIKeyPreview" in engine_source
-    and "kimiBuiltinEnvResourceName" in engine_source,
-    "Kimi K2.6 must be a selectable chapter model with built-in or user-provided credentials.",
+    and "if let userKey = kimiUserAPIKey(), !userKey.isEmpty" in engine_source
+    and "return kimiBuiltinAPIKey()" in engine_source
+    and "static func kimiUserAPIKey() -> String?" in engine_source
+    and "return secret(account: kimiAPIKeyAccount)" in engine_source
+    and "if hasKimiUserAPIKey()" in engine_source
+    and 'NSLocalizedString("Integrierter Zugang"' in engine_source
+    and 'private static let kimiBuiltinEnvResourceName = "KimiBuiltin"' in engine_source
+    and 'private static let kimiBuiltinEnvKey = "KIMI_BUILTIN_API_KEY"' in engine_source,
+    "Kimi must prefer the user Keychain key and otherwise use the intentionally integrated bundle key.",
 )
+
+require(
+    "Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key." in engine_source
+    and "Eigener Key wird im iOS-Keychain gespeichert und überschreibt den integrierten Kimi-Zugang." in settings_source
+    and "Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key." in german_source
+    and "Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key." in english_source
+    and "Integrierter Zugang" in german_source
+    and "Integrierter Zugang" in english_source,
+    "Kimi model and credential settings no longer describe the integrated-access and user-key priority contract.",
+)
+
+with tempfile.TemporaryDirectory() as temporary_directory:
+    temporary_root = Path(temporary_directory)
+    (temporary_root / ".env").write_text("KIMI_BUILTIN_API_KEY=harmless-regression-sentinel\n")
+    build_dir = temporary_root / "Build"
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "PROJECT_DIR": str(temporary_root),
+            "TARGET_BUILD_DIR": str(build_dir),
+            "UNLOCALIZED_RESOURCES_FOLDER_PATH": "Resources",
+        }
+    )
+    completed = subprocess.run(
+        ["/bin/sh", str(script_path)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    require(completed.returncode == 0, "The Kimi build script failed against a harmless test credential.")
+    generated = build_dir / "Resources" / "KimiBuiltin.env"
+    require(
+        generated.read_text() == "KIMI_BUILTIN_API_KEY=harmless-regression-sentinel\n",
+        "The Kimi build script did not create the expected bundle resource from the configured developer value.",
+    )
 
 require(
     "case ICChapterModelProviderKimiAPI:" in settings_source
@@ -72,34 +121,12 @@ require(
     and "zwei verschiedene Promotion-Segmente nacheinander" in chapter_source
     and '"response_format"' in chapter_source
     and '"json_schema"' in chapter_source
-    and '"thinking": ["type": "disabled"]' in chapter_source,
+    and '"thinking": ["type": "disabled"]' not in chapter_source,
     "Kimi generation must use Moonshot's Chat Completions endpoint with grounded full-transcript block prompts and structured JSON output.",
 )
 
 require(
     '"temperature"' not in kimi_body_source
     and '"top_p"' not in kimi_body_source,
-    "Kimi K2.6 rejects non-default sampling parameters in non-thinking mode; the app must not send them.",
+    "Kimi K3 rejects non-default sampling parameters; the app must not send them.",
 )
-
-env_path = ROOT / ".env"
-if env_path.exists():
-    env_values = {}
-    for raw_line in env_path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        env_values[key.strip()] = value.strip()
-
-    kimi_key = env_values.get("KIMI_BUILTIN_API_KEY", "")
-    require(kimi_key.startswith("sk-") and len(kimi_key) > 20, "Local .env must define KIMI_BUILTIN_API_KEY.")
-
-    for path in [
-        ROOT / "Classes" / "TranscriptionEngine.swift",
-        ROOT / "Classes" / "ChapterGenerator.swift",
-        ROOT / "Classes" / "TranscriptionSettingsViewController.m",
-        ROOT / "Instacast.xcodeproj" / "project.pbxproj",
-        ROOT / "Scripts" / "copy_kimi_builtin_env.sh",
-    ]:
-        require(kimi_key not in path.read_text(errors="ignore"), f"Kimi key leaked into tracked source: {path.relative_to(ROOT)}")

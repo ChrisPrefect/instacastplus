@@ -1606,6 +1606,7 @@ extension ICiCloudSyncManager {
             kUIPersistenceListScrollPositionsLastModified,
             UncompletedSleepTimeInterval,
             "TranscriptionBackgroundTaskActive",
+            "TranscriptionBackgroundTaskRequested",
             // Device-local playback restore state (AudioSession kPlaybackState* keys).
             // Syncing PlaybackEpisode dirtied the settings hash on EVERY episode change
             // (one settings upload per switch) and made another device restore this

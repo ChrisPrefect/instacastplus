@@ -98,6 +98,25 @@ private func ICMigrateLegacyTranscriptCacheIfNeeded(to dir: URL) {
         return transcriptCacheDirectory().appendingPathComponent("\(episodeHash)_chapters.json")
     }
 
+    @objc static func analysisJSONURL(for episodeHash: String) -> URL {
+        return transcriptCacheDirectory().appendingPathComponent("\(episodeHash)_analysis.json")
+    }
+
+    @objc static func remoteAnalysisJobURL(for episodeHash: String) -> URL {
+        return transcriptCacheDirectory().appendingPathComponent("\(episodeHash)_remote_analysis_job.json")
+    }
+
+    /// Exact generated-analysis artifacts. Callers must use this list instead of
+    /// deleting every file sharing an episode-hash prefix because checkpoints,
+    /// transcript logs, and audio-analysis artifacts have independent lifetimes.
+    @objc static func generatedAnalysisArtifactURLs(for episodeHash: String) -> [URL] {
+        return [
+            chaptersJSONURL(for: episodeHash),
+            analysisJSONURL(for: episodeHash),
+            remoteAnalysisJobURL(for: episodeHash),
+        ]
+    }
+
     @objc static func musicTimelineURL(for episodeHash: String) -> URL {
         return transcriptCacheDirectory().appendingPathComponent("\(episodeHash)_music.json")
     }
@@ -303,6 +322,8 @@ private struct ICDiagnosticLogLine: Encodable {
             }
             metadata.merge(self.fileSnapshot(named: "srt", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash).srt"))) { _, new in new }
             metadata.merge(self.fileSnapshot(named: "chapters", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash)_chapters.json"))) { _, new in new }
+            metadata.merge(self.fileSnapshot(named: "analysis", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash)_analysis.json"))) { _, new in new }
+            metadata.merge(self.fileSnapshot(named: "remoteAnalysisJob", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash)_remote_analysis_job.json"))) { _, new in new }
             metadata.merge(self.fileSnapshot(named: "music", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash)_music.json"))) { _, new in new }
             metadata.merge(self.fileSnapshot(named: "checkpoint", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash)_checkpoint.json"))) { _, new in new }
             metadata.merge(self.fileSnapshot(named: "episodeLog", at: ICTranscriptsDirectoryURL().appendingPathComponent("\(episodeHash)_log.json"))) { _, new in new }
@@ -727,6 +748,33 @@ private struct TranscriptionCheckpoint: Codable {
     }
 }
 
+private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cues: [ICTranscriptCue]
+    private var lastCheckpointProgress: Float = 0
+
+    init(cues: [ICTranscriptCue]) {
+        self.cues = cues
+    }
+
+    func appendAndCheckpointSnapshot(cue: ICTranscriptCue,
+                                     progress: Float) -> [ICTranscriptCue]? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        cues.append(cue)
+        guard progress - lastCheckpointProgress >= 0.01 else { return nil }
+        lastCheckpointProgress = progress
+        return cues
+    }
+
+    func snapshot() -> [ICTranscriptCue] {
+        lock.lock()
+        defer { lock.unlock() }
+        return cues
+    }
+}
+
 // MARK: - TranscriptionEngine
 
 @MainActor
@@ -755,6 +803,9 @@ private struct TranscriptionCheckpoint: Codable {
     private var currentTask: Task<Void, Never>?
     private var currentCompletion: (([ICTranscriptCue]?, Error?) -> Void)?
     private var currentTranscriptionRunID: UUID?
+    private var currentCheckpointAccumulator: ICTranscriptCheckpointAccumulator?
+    private var currentCheckpointEpisodeHash: String?
+    private var currentCheckpointEngineType: ICTranscriptionEngineType?
     private var checkpointCache: [String: TranscriptionCheckpoint] = [:]
 
     nonisolated static func isBackgroundGPUExecutionError(_ error: Error) -> Bool {
@@ -883,23 +934,30 @@ private struct TranscriptionCheckpoint: Codable {
 
                 // Segment callback: fine-grained progress + periodic checkpoint saves.
                 // Accumulate cues so checkpoints contain all transcribed text for crash recovery.
-                nonisolated(unsafe) var lastCheckpointProg: Float = 0
-                nonisolated(unsafe) var accumulatedCues: [ICTranscriptCue] = existingCues
+                let checkpointAccumulator = ICTranscriptCheckpointAccumulator(cues: existingCues)
+                self.currentCheckpointAccumulator = checkpointAccumulator
+                self.currentCheckpointEpisodeHash = episodeHash
+                self.currentCheckpointEngineType = effectiveEngine
                 let segmentCb: @Sendable (ICTranscriptCue) -> Void = { [weak self] cue in
-                    accumulatedCues.append(cue)
                     let cueEnd = cue.end
+                    let segProgress = Float(cueEnd / totalDuration)
+                    let checkpointCues = checkpointAccumulator.appendAndCheckpointSnapshot(
+                        cue: cue,
+                        progress: segProgress
+                    )
                     DispatchQueue.main.async {
-                        guard let self = self else { return }
+                        guard let self = self,
+                              self.currentTranscriptionRunID == transcriptionRunID else { return }
                         // Update progress per segment (much more frequent than per-window callback)
-                        let segProgress = Float(cueEnd / totalDuration)
                         self.currentProgress = segProgress
                         progress(segProgress, .transcribing)
 
                         // Keep checkpoint progress close to the visible progress so short
                         // background pauses resume near where the user left off.
-                        if segProgress - lastCheckpointProg >= 0.01 {
-                            lastCheckpointProg = segProgress
-                            self.saveCheckpointWithCues(episodeHash: episodeHash, cues: accumulatedCues, engineType: effectiveEngine.rawValue)
+                        if let checkpointCues {
+                            self.saveCheckpointWithCues(episodeHash: episodeHash,
+                                                        cues: checkpointCues,
+                                                        engineType: effectiveEngine.rawValue)
                         }
                     }
                 }
@@ -949,6 +1007,9 @@ private struct TranscriptionCheckpoint: Codable {
 
                 // Remove checkpoint
                 self.removeCheckpoint(for: episodeHash)
+                self.currentCheckpointAccumulator = nil
+                self.currentCheckpointEpisodeHash = nil
+                self.currentCheckpointEngineType = nil
 
                 // Reset failure counter
                 self.resetFailureCounter(for: episodeHash)
@@ -978,6 +1039,9 @@ private struct TranscriptionCheckpoint: Codable {
                     self.isTranscribing = false
                     self.currentStatus = wasCancelled ? .none : .failed
                     self.currentTask = nil
+                    self.currentCheckpointAccumulator = nil
+                    self.currentCheckpointEpisodeHash = nil
+                    self.currentCheckpointEngineType = nil
                     // Only call completion if not already called by cancelTranscription()
                     if let completionHandler = self.currentCompletion {
                         self.currentCompletion = nil
@@ -991,12 +1055,28 @@ private struct TranscriptionCheckpoint: Codable {
         }
     }
 
+    @discardableResult
+    func persistCurrentCheckpointForInterruption() -> Bool {
+        guard let episodeHash = currentCheckpointEpisodeHash,
+              let engineType = currentCheckpointEngineType,
+              let cues = currentCheckpointAccumulator?.snapshot() else {
+            return !isTranscribing
+        }
+        guard !cues.isEmpty else { return true }
+        return saveCheckpointWithCues(episodeHash: episodeHash,
+                                      cues: cues,
+                                      engineType: engineType.rawValue)
+    }
+
     @objc func cancelTranscription() {
         let cb = currentCompletion
         currentCompletion = nil
         currentTranscriptionRunID = nil
         currentTask?.cancel()
         currentTask = nil
+        currentCheckpointAccumulator = nil
+        currentCheckpointEpisodeHash = nil
+        currentCheckpointEngineType = nil
         isTranscribing = false
         currentStatus = .none
         // Call completion so withCheckedContinuation in the queue doesn't hang
@@ -1089,6 +1169,69 @@ private struct TranscriptionCheckpoint: Codable {
         let exists = FileManager.default.fileExists(atPath: srtURL(for: episodeHash).path)
         _srtCache[episodeHash] = exists
         return exists
+    }
+
+    /// Reads the exact canonical SRT written by this engine. `nil` means no
+    /// transcript exists; an empty array means the persisted timeline is
+    /// malformed and must not validate revision-bound semantic artifacts.
+    func persistedTranscriptCues(for episodeHash: String) throws -> [ICTranscriptCue]? {
+        let url = srtURL(for: episodeHash)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let content = try String(contentsOf: url, encoding: .utf8)
+        let lines = content.components(separatedBy: .newlines)
+        var cues: [ICTranscriptCue] = []
+        var lineIndex = 0
+        var previousEnd = -Double.infinity
+
+        while lineIndex < lines.count {
+            var line = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty {
+                lineIndex += 1
+                continue
+            }
+            if !line.contains("-->") {
+                lineIndex += 1
+                guard lineIndex < lines.count else { return [] }
+                line = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let timeParts = line.components(separatedBy: "-->")
+            guard timeParts.count == 2 else { return [] }
+            let start = parsePersistedSRTTime(timeParts[0])
+            let end = parsePersistedSRTTime(timeParts[1])
+            lineIndex += 1
+
+            var textLines: [String] = []
+            while lineIndex < lines.count {
+                let textLine = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+                if textLine.isEmpty {
+                    lineIndex += 1
+                    break
+                }
+                textLines.append(textLine)
+                lineIndex += 1
+            }
+            let text = textLines.joined(separator: "\n")
+            guard start.isFinite,
+                  end.isFinite,
+                  start >= 0,
+                  end > start,
+                  start >= previousEnd - 0.001,
+                  !text.isEmpty else { return [] }
+            cues.append(ICTranscriptCue(start: start, end: end, text: text))
+            previousEnd = end
+        }
+        return cues.isEmpty ? [] : cues
+    }
+
+    private func parsePersistedSRTTime(_ value: String) -> Double {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        let parts = normalized.components(separatedBy: ":")
+        guard parts.count == 3,
+              let hours = Double(parts[0]),
+              let minutes = Double(parts[1]),
+              let seconds = Double(parts[2]) else { return -.infinity }
+        return hours * 3600 + minutes * 60 + seconds
     }
 
     /// Invalidate cached hasSRT result (call after SRT creation/deletion).
@@ -1363,9 +1506,95 @@ private struct TranscriptionCheckpoint: Codable {
 
     // MARK: - Post-Processing
 
+    /// Establish one strict timeline before fragments are merged or written to SRT.
+    /// WhisperKit reloads a small amount of audio around slice boundaries, so two
+    /// otherwise valid segments can describe the same fraction of the timeline.
+    private func normalizedTranscriptTimelineCues(_ cues: [ICTranscriptCue]) -> [ICTranscriptCue] {
+        var rejectedCount = 0
+        let orderedCues = cues.enumerated().compactMap { offset, cue -> (offset: Int, cue: ICTranscriptCue)? in
+            let text = cleanedTranscriptText(cue.text)
+            guard cue.start.isFinite,
+                  cue.end.isFinite,
+                  cue.start >= 0,
+                  cue.end > cue.start,
+                  !text.isEmpty else {
+                rejectedCount += 1
+                return nil
+            }
+            return (offset, ICTranscriptCue(start: cue.start, end: cue.end, text: text))
+        }.sorted { lhs, rhs in
+            if lhs.cue.start != rhs.cue.start { return lhs.cue.start < rhs.cue.start }
+            if lhs.cue.end != rhs.cue.end { return lhs.cue.end < rhs.cue.end }
+            return lhs.offset < rhs.offset
+        }
+
+        var normalized: [ICTranscriptCue] = []
+        var overlapClipped = 0
+        var overlapCoalesced = 0
+
+        for entry in orderedCues {
+            let cue = entry.cue
+            guard let previous = normalized.last else {
+                normalized.append(cue)
+                continue
+            }
+
+            if cue.start < previous.end {
+                if cue.text == previous.text {
+                    normalized[normalized.count - 1] = ICTranscriptCue(
+                        start: previous.start,
+                        end: max(previous.end, cue.end),
+                        text: previous.text
+                    )
+                    overlapCoalesced += 1
+                } else if cue.end <= previous.end {
+                    normalized[normalized.count - 1] = ICTranscriptCue(
+                        start: previous.start,
+                        end: previous.end,
+                        text: previous.text + " " + cue.text
+                    )
+                    overlapCoalesced += 1
+                } else {
+                    let normalizedStart = previous.end
+                    guard normalizedStart < cue.end else {
+                        rejectedCount += 1
+                        continue
+                    }
+                    normalized.append(ICTranscriptCue(
+                        start: normalizedStart,
+                        end: cue.end,
+                        text: cue.text
+                    ))
+                    overlapClipped += 1
+                }
+            } else {
+                normalized.append(cue)
+            }
+        }
+
+        if overlapClipped > 0 || overlapCoalesced > 0 || rejectedCount > 0 {
+            NSLog("[TranscriptionEngine] Transcript cue timeline normalized: overlapClipped=%d overlapCoalesced=%d rejected=%d input=%d output=%d",
+                  overlapClipped, overlapCoalesced, rejectedCount, cues.count, normalized.count)
+            ICDiagnosticLogger.shared.logEvent("transcription",
+                                               message: "Transcript cue timeline normalized",
+                                               metadata: [
+                                                "overlapClipped": overlapClipped,
+                                                "overlapCoalesced": overlapCoalesced,
+                                                "rejected": rejectedCount,
+                                                "inputCueCount": cues.count,
+                                                "outputCueCount": normalized.count,
+                                               ] as NSDictionary)
+        }
+
+        return normalized
+    }
+
     /// Clean up WhisperKit segments: merge short fragments, split overly long segments at sentence boundaries.
     private func postProcessCues(_ cues: [ICTranscriptCue]) -> [ICTranscriptCue] {
         guard !cues.isEmpty else { return cues }
+
+        let timelineCues = normalizedTranscriptTimelineCues(cues)
+        guard !timelineCues.isEmpty else { return [] }
 
         var result: [ICTranscriptCue] = []
 
@@ -1375,9 +1604,8 @@ private struct TranscriptionCheckpoint: Codable {
         var pendingStart: Double = 0
         var pendingEnd: Double = 0
 
-        for cue in cues {
-            let text = cleanedTranscriptText(cue.text)
-            if text.isEmpty { continue }
+        for cue in timelineCues {
+            let text = cue.text
 
             if pendingText.isEmpty {
                 pendingText = text
@@ -1470,6 +1698,7 @@ private struct TranscriptionCheckpoint: Codable {
         let episodeHash = url.deletingPathExtension().lastPathComponent
         do {
             try srt.write(to: url, atomically: true, encoding: .utf8)
+            ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "SRT geschrieben",
                                                    path: url.path,
@@ -1493,6 +1722,21 @@ private struct TranscriptionCheckpoint: Codable {
         ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "srt-written")
     }
 
+    /// Persist a publisher-provided timed transcript before semantic analysis.
+    /// Revision validation then rereads this exact local artifact instead of
+    /// downloading mutable network content a second time.
+    func saveImportedTranscriptCues(_ cues: [ICTranscriptCue], for episodeHash: String) throws {
+        guard !episodeHash.isEmpty, !cues.isEmpty else {
+            throw NSError(
+                domain: "TranscriptionEngine.ImportedTranscript",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Ein zeitcodiertes Podcast-Transkript fehlt."]
+            )
+        }
+        try writeSRT(cues: cues, to: ICTranscriptionPaths.srtURL(for: episodeHash))
+        invalidateSRTCache(for: episodeHash)
+    }
+
     private func formatSRTTime(_ seconds: Double) -> String {
         let hours = Int(seconds) / 3600
         let minutes = (Int(seconds) % 3600) / 60
@@ -1507,7 +1751,7 @@ private struct TranscriptionCheckpoint: Codable {
         return ICTranscriptionPaths.checkpointURL(for: episodeHash)
     }
 
-    private func writeCheckpoint(_ checkpoint: TranscriptionCheckpoint, episodeHash: String, message: String) {
+    private func writeCheckpoint(_ checkpoint: TranscriptionCheckpoint, episodeHash: String, message: String) -> Bool {
         let url = checkpointURL(for: episodeHash)
         do {
             let data = try JSONEncoder().encode(checkpoint)
@@ -1523,6 +1767,7 @@ private struct TranscriptionCheckpoint: Codable {
                                                     "engineType": checkpoint.engineType,
                                                     "consecutiveFailures": checkpoint.consecutiveFailures,
                                                    ] as NSDictionary)
+            return true
         } catch {
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "\(message) fehlgeschlagen",
@@ -1535,6 +1780,7 @@ private struct TranscriptionCheckpoint: Codable {
                                                     "consecutiveFailures": checkpoint.consecutiveFailures,
                                                     "error": error.localizedDescription,
                                                    ] as NSDictionary)
+            return false
         }
     }
 
@@ -1545,7 +1791,7 @@ private struct TranscriptionCheckpoint: Codable {
             engineType: engineType,
             consecutiveFailures: loadCheckpoint(for: episodeHash)?.consecutiveFailures ?? 0
         )
-        writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint geschrieben")
+        _ = writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint geschrieben")
     }
 
     private func loadCheckpoint(for episodeHash: String) -> TranscriptionCheckpoint? {
@@ -1591,8 +1837,9 @@ private struct TranscriptionCheckpoint: Codable {
     }
 
     /// Save checkpoint with accumulated cues for crash recovery.
-    /// Called periodically (~every 10%) during transcription.
-    func saveCheckpointWithCues(episodeHash: String, cues: [ICTranscriptCue], engineType: Int) {
+    /// Called periodically (~every 1%) during transcription.
+    @discardableResult
+    func saveCheckpointWithCues(episodeHash: String, cues: [ICTranscriptCue], engineType: Int) -> Bool {
         let existing = loadCheckpoint(for: episodeHash)
         let checkpoint = TranscriptionCheckpoint(
             lastTimestamp: cues.last?.end ?? 0,
@@ -1600,7 +1847,7 @@ private struct TranscriptionCheckpoint: Codable {
             engineType: engineType,
             consecutiveFailures: existing?.consecutiveFailures ?? 0
         )
-        writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint aktualisiert")
+        return writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint aktualisiert")
     }
 
     private func removeCheckpoint(for episodeHash: String) {
@@ -1641,7 +1888,7 @@ private struct TranscriptionCheckpoint: Codable {
             lastTimestamp: 0, cues: [], engineType: engineType.rawValue, consecutiveFailures: 0
         )
         checkpoint.consecutiveFailures += 1
-        writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint-Failure-Counter aktualisiert")
+        _ = writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint-Failure-Counter aktualisiert")
     }
 
     private func resetFailureCounter(for episodeHash: String) {
@@ -1652,7 +1899,7 @@ private struct TranscriptionCheckpoint: Codable {
         guard var checkpoint = loadCheckpoint(for: episodeHash),
               checkpoint.consecutiveFailures != 0 else { return }
         checkpoint.consecutiveFailures = 0
-        writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint-Failure-Counter zurückgesetzt")
+        _ = writeCheckpoint(checkpoint, episodeHash: episodeHash, message: "Checkpoint-Failure-Counter zurückgesetzt")
     }
 
     private func effectiveEngine(for episodeHash: String, checkpoint: TranscriptionCheckpoint?) -> ICTranscriptionEngineType {
@@ -1675,6 +1922,10 @@ private struct TranscriptionCheckpoint: Codable {
 
     @objc func chaptersJSONURL(for episodeHash: String) -> URL {
         return ICTranscriptionPaths.chaptersJSONURL(for: episodeHash)
+    }
+
+    @objc func analysisJSONURL(for episodeHash: String) -> URL {
+        return ICTranscriptionPaths.analysisJSONURL(for: episodeHash)
     }
 
     @objc func musicTimelineURL(for episodeHash: String) -> URL {
@@ -1769,6 +2020,7 @@ private struct TranscriptionCheckpoint: Codable {
             return false
         }
     }
+
 }
 
 @objc class ICModelDownloadProgress: NSObject, @unchecked Sendable {
@@ -2550,6 +2802,12 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
     private static let chapterModelKey = "ChapterGenerationModel"
     private static let defaultChapterModelIdentifier = "gemma-4-e2b-it-q4-k"
     private static let removedTextModelIdentifiers: Set<String> = ["granite-3.3-2b-instruct-q4-k-m"]
+    private static let legacyChapterModelSuccessors: [String: String] = [
+        "openai-chatgpt-5.5-oauth": "openai-codex-gpt-5.6-sol-oauth",
+        "openai-codex-oauth": "openai-codex-gpt-5.6-sol-oauth",
+        "anthropic-claude-opus-4.7-api-key": "anthropic-claude-sonnet-5-api-key",
+        "kimi-k2.6-api-key": "kimi-k3-api-key",
+    ]
     private static let modelRootDirectoryName = "DownloadedModels"
     private static let downloadStateLock = NSLock()
     private static let removedModelCleanupLock = NSLock()
@@ -2591,52 +2849,52 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             supportsCompilation: false
         ),
         ICDownloadableModel(
-            identifier: "openai-codex-oauth",
-            title: "OpenAI Codex",
-            shortTitle: "Codex",
+            identifier: "openai-codex-gpt-5.6-sol-oauth",
+            title: "OpenAI Codex GPT-5.6 Sol",
+            shortTitle: "GPT-5.6 Sol",
             detail: NSLocalizedString("Sendet das vollständige Transkript über den Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
             chapterProvider: .openAICodexOAuth,
-            remoteModelName: "gpt-5.5"
+            remoteModelName: "gpt-5.6-sol"
         ),
         ICDownloadableModel(
-            identifier: "openai-chatgpt-5.5-api-key",
-            title: "OpenAI ChatGPT 5.5",
-            shortTitle: "ChatGPT 5.5",
-            detail: NSLocalizedString("Sendet das vollständige Transkript an OpenAI. OpenAI API-Key erforderlich.", comment: ""),
+            identifier: "openai-gpt-5.6-terra-api-key",
+            title: "OpenAI GPT-5.6 Terra",
+            shortTitle: "GPT-5.6 Terra",
+            detail: NSLocalizedString("Sendet das vollständige Transkript an OpenAI. Die Antwort wird für die unterbrechungsfeste Wiederaufnahme mindestens 30 Tage bei OpenAI gespeichert. OpenAI API-Key erforderlich.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
             chapterProvider: .openAIAPI,
-            remoteModelName: "gpt-5.5"
+            remoteModelName: "gpt-5.6-terra"
         ),
         ICDownloadableModel(
-            identifier: "kimi-k2.6-api-key",
-            title: "Kimi K2.6",
-            shortTitle: "Kimi K2.6",
+            identifier: "kimi-k3-api-key",
+            title: "Kimi K3",
+            shortTitle: "Kimi K3",
             detail: NSLocalizedString("Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
             chapterProvider: .kimiAPI,
-            remoteModelName: "kimi-k2.6"
+            remoteModelName: "kimi-k3"
         ),
         ICDownloadableModel(
-            identifier: "anthropic-claude-opus-4.7-api-key",
-            title: "Anthropic Claude Opus 4.7",
-            shortTitle: "Claude Opus 4.7",
+            identifier: "anthropic-claude-sonnet-5-api-key",
+            title: "Anthropic Claude Sonnet 5",
+            shortTitle: "Claude Sonnet 5",
             detail: NSLocalizedString("Sendet das vollständige Transkript an Anthropic. Anthropic API-Key erforderlich.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
             chapterProvider: .anthropicAPI,
-            remoteModelName: "claude-opus-4-7"
+            remoteModelName: "claude-sonnet-5"
         ),
         ICDownloadableModel(
             identifier: "gemma-4-e2b-it-q4-k",
@@ -2695,8 +2953,8 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             return model(identifier: "whisperkit-small")!
         case .textToChapters:
             if let identifier = UserDefaults.standard.string(forKey: chapterModelKey) {
-                if identifier == "openai-chatgpt-5.5-oauth",
-                   let selectedModel = model(identifier: "openai-codex-oauth") {
+                if let successorIdentifier = legacyChapterModelSuccessors[identifier],
+                   let selectedModel = model(identifier: successorIdentifier) {
                     UserDefaults.standard.set(selectedModel.identifier, forKey: chapterModelKey)
                     return selectedModel
                 }

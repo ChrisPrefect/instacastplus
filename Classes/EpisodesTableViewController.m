@@ -2089,11 +2089,11 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
             [actions addObject:deleteTranscriptAction];
         }
         if (hasGeneratedChapters) {
-            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil)
+            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Analyse löschen", nil)
                                                          image:[UIImage systemImageNamed:@"list.number"]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
-                                                           [[ChapterGenerator shared] removeGeneratedChaptersFor:episode];
+                                                           [[ChapterGenerator shared] removeGeneratedAnalysisForEpisodeHash:episode.objectHash];
                                                            [weakSelf.tableView reloadData];
                                                            [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": episode.objectHash}];
                                                        }];

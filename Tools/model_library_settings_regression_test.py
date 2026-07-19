@@ -49,10 +49,10 @@ require(
     "Gemma 4 E2B-it is missing from the downloadable chapter model catalog.",
 )
 chapter_model_order = [
-    'identifier: "openai-codex-oauth"',
-    'identifier: "openai-chatgpt-5.5-api-key"',
-    'identifier: "kimi-k2.6-api-key"',
-    'identifier: "anthropic-claude-opus-4.7-api-key"',
+    'identifier: "openai-codex-gpt-5.6-sol-oauth"',
+    'identifier: "openai-gpt-5.6-terra-api-key"',
+    'identifier: "kimi-k3-api-key"',
+    'identifier: "anthropic-claude-sonnet-5-api-key"',
     'identifier: "gemma-4-e2b-it-q4-k"',
     'identifier: "apple-foundation-models"',
 ]
@@ -82,15 +82,16 @@ require(
 )
 require(
     "ICChapterModelProvider" in engine_source
-    and "openai-chatgpt-5.5-api-key" in engine_source
-    and 'remoteModelName: "gpt-5.5"' in engine_source
-    and "openai-codex-oauth" in engine_source
+    and "openai-gpt-5.6-terra-api-key" in engine_source
+    and 'remoteModelName: "gpt-5.6-terra"' in engine_source
+    and "openai-codex-gpt-5.6-sol-oauth" in engine_source
+    and 'remoteModelName: "gpt-5.6-sol"' in engine_source
     and "OpenAI Codex" in engine_source
-    and "anthropic-claude-opus-4.7-api-key" in model_catalog_source
-    and 'remoteModelName: "claude-opus-4-7"' in model_catalog_source
-    and "kimi-k2.6-api-key" in model_catalog_source
-    and 'remoteModelName: "kimi-k2.6"' in model_catalog_source,
-    "Remote chapter models must offer OpenAI API key, OpenAI Codex login, Anthropic Claude Opus 4.7, and Kimi K2.6.",
+    and "anthropic-claude-sonnet-5-api-key" in model_catalog_source
+    and 'remoteModelName: "claude-sonnet-5"' in model_catalog_source
+    and "kimi-k3-api-key" in model_catalog_source
+    and 'remoteModelName: "kimi-k3"' in model_catalog_source,
+    "Remote analysis models must offer OpenAI API key, OpenAI Codex login, Anthropic Claude Sonnet 5, and Kimi K3.",
 )
 require(
     "ICRemoteChapterCredentialStore" in engine_source
@@ -333,7 +334,7 @@ require(
 require(
     "modelMutationBlockReasonForRole" in settings_source
     and "_updateBlockedHeader" in settings_source
-    and "Modell kann während der Transkription nicht geändert werden." in settings_source
+    and "Modell kann während einer laufenden Transkription oder Episodenanalyse nicht geändert werden." in settings_source
     and "TranscriptionQueueViewController" in settings_source
     and "return model.detail;" in settings_source,
     "The model settings UI still puts the mutation block warning in model rows or lacks a link back to the transcription queue.",

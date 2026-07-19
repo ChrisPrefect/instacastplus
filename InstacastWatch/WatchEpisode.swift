@@ -272,16 +272,16 @@ extension WatchEpisode {
         }
     }
 
-    // Same first-order semantics as PlaybackManager's matchingSkipNameForChapter on the phone:
-    // case-insensitive containsString against the feed's skip chapter names. Generated sponsor
-    // chapters exist only on the phone; file-embedded sponsor chapters carry a "Sponsor:" title
-    // (ChapterGenerator convention), which the sponsor toggle covers here.
+    // Same semantics as PlaybackManager's matchingSkipNameForChapter on the phone:
+    // the sponsor toggle contributes the conventional title tag to the ordinary,
+    // case-insensitive contains matcher.
     func chapterWillBeSkipped(_ chapter: WatchChapter) -> Bool {
-        let lowerTitle = chapter.title.lowercased()
-        if autoSkipSponsors, lowerTitle.hasPrefix("sponsor:") {
-            return true
+        var effectiveSkipNames = skipChapterNames
+        if autoSkipSponsors {
+            effectiveSkipNames.append("Sponsor: ")
         }
-        return skipChapterNames.contains { name in
+        let lowerTitle = chapter.title.lowercased()
+        return effectiveSkipNames.contains { name in
             !name.isEmpty && lowerTitle.contains(name.lowercased())
         }
     }

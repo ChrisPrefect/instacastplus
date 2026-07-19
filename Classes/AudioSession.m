@@ -20,6 +20,10 @@
 #import "CDFeed+Helper.h"
 #import <MediaPlayer/MediaPlayer.h>
 
+@interface PlaybackManager (ICChapterPersistence)
+@property (nonatomic, readonly, strong) NSArray* embeddedChaptersForPersistence;
+@end
+
 static NSString* kPlaybackStateEpisode = @"PlaybackEpisode";
 static NSString* kPlaybackStatePlaylist = @"PlaybackPlaylist";
 static NSString* kPlaybackStateSourceList = @"PlaybackSourceList";
@@ -307,10 +311,16 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
         PlaybackManager* pman = [PlaybackManager playbackManager];
         
         NSSet* storedChapters = [pman.playingEpisode chapters];
+        NSArray* publisherChapters = pman.embeddedChaptersForPersistence;
+        DebugLog(@"Chapter persistence source: episode=%@ playback=%lu publisher=%lu stored=%lu",
+                 pman.playingEpisode.objectHash,
+                 (unsigned long)pman.chapters.count,
+                 (unsigned long)publisherChapters.count,
+                 (unsigned long)storedChapters.count);
         
-        if (pman.chapters > 0 && [storedChapters count] == 0)
+        if (pman.chapters.count > 0 && publisherChapters.count > 0 && [storedChapters count] == 0)
         {
-            [pman.chapters enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
+            [publisherChapters enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL *stop) {
                 
                 CDChapter* ch = [NSEntityDescription insertNewObjectForEntityForName:@"Chapter" inManagedObjectContext:DMANAGER.objectContext];
                 ch.index = (int32_t)idx;

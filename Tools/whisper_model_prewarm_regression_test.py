@@ -54,18 +54,51 @@ require(
     "Whisper model migration is no longer per-model and could delete a stale Documents model when another model already exists in Application Support.",
 )
 
+migration_block = block_between(
+    "private nonisolated static func migrateFromDocumentsIfNeeded()",
+    "// MARK: - Model State",
+)
 require(
-    "prepareModelDirectoryForCoreML(in: modelDir)" in SOURCE
-    and "NSFileProtectionCompleteUntilFirstUserAuthentication" in SOURCE
-    and "compiledModelValidationIssue(in: modelDir)" in SOURCE,
-    "Whisper model folders are not normalized for Core ML mmap access before load/download readiness checks.",
+    "compiledModelValidationIssue(in: dst) == nil" in migration_block
+    and "compiledModelValidationIssue(in: src) == nil" in migration_block
+    and "try fm.removeItem(at: dst)" in migration_block
+    and "try? fm.removeItem(at: src)" not in migration_block
+    and "try? fm.removeItem(at: docsHub)" not in migration_block,
+    "Model migration can still delete the valid Documents cache merely because a partial Application Support destination exists.",
+)
+
+require(
+    '"MelSpectrogram"' in SOURCE
+    and '"AudioEncoder"' in SOURCE
+    and '"TextDecoder"' in SOURCE
+    and "requiredCompiledModelNames" in SOURCE,
+    "Whisper model readiness does not require the three Core ML bundles WhisperKit actually loads.",
+)
+
+local_folder_block = block_between(
+    "private nonisolated func localModelFolder(",
+    "// MARK: - Compute Options",
+)
+require(
+    "prepareModelDirectoryForCoreML" not in local_folder_block,
+    "A read-only Whisper model readiness query still rewrites model-file attributes and can destabilize Core ML cache identity.",
+)
+
+cleanup_block = block_between(
+    "private nonisolated static func removeOriginalModelSources(in folder: URL)",
+    "/// One-time migration:",
+)
+require(
+    "compiledModelValidationIssue(in: folder)" in cleanup_block,
+    "Original Whisper model sources can still be deleted before every required compiled model passes mmap validation.",
 )
 
 require(
     "coreMLFileCanBeMemoryMapped" in SOURCE
     and "Data(contentsOf: url, options: [.mappedIfSafe])" in SOURCE
+    and 'appendingPathComponent("coremldata.bin")' in SOURCE
     and "weightBin" in SOURCE,
-    "Whisper model validation still does not exercise the same mmap-style file access that Core ML needs for weight.bin.",
+    "Whisper model validation does not mmap-check the compiled payload formats Core ML actually loads.",
 )
 
 helper_block = block_between(
@@ -88,10 +121,39 @@ factory_block = block_between(
 )
 
 require(
+    "prepareModelDirectoryForCoreML(in: folderURL)" in factory_block
+    and "NSFileProtectionCompleteUntilFirstUserAuthentication" in SOURCE,
+    "Whisper model folders are not normalized for Core ML mmap access on the actual load path.",
+)
+
+require(
     "return try await ensureModelLoaded(existing, statusUpdate: statusUpdate)" in factory_block,
     "WhisperKit backend still returns cached instances without ensuring the models are actually loaded.",
 )
 require(
     "load: false" in factory_block and "try await whisper.loadModels()" in factory_block,
     "WhisperKit backend no longer performs explicit model loading for on-disk models.",
+)
+require(
+    "prewarm: true" in factory_block
+    and 'statusUpdate(NSLocalizedString("Spracherkennungsmodell wird kompiliert."' not in factory_block
+    and '"prewarmSeconds"' in factory_block
+    and '"modelLoadSeconds"' in factory_block
+    and '"encoderSpecializationSeconds"' in factory_block
+    and '"decoderSpecializationSeconds"' in factory_block
+    and '"requiredModelInventory"' in factory_block,
+    "Cached-model restart loading either misreports every safe prewarm check as a recompile or does not measure the pass separately.",
+)
+require(
+    "prewarm: false" in download_block
+    and "try await whisper.prewarmModels()" in download_block
+    and download_block.find("prepareModelDirectoryForCoreML")
+    < download_block.find("try await whisper.prewarmModels()")
+    < download_block.find("removeOriginalModelSources"),
+    "Downloaded model attributes are not normalized before the one required device-specialization prewarm.",
+)
+require(
+    '"modelLoadSeconds": max(0, timings.modelLoading - timings.prewarmLoadTime)' in factory_block
+    and '"totalPreparationSeconds": timings.modelLoading' in factory_block,
+    "Whisper diagnostics still double-count prewarm as both prewarm and model-load time.",
 )

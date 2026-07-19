@@ -36,17 +36,41 @@ require(
 )
 require(
     "refreshBackgroundContinuation(reason: \"applicationDidEnterBackground\")" in queue_source
-    and "pauseWhisperKitForBackgroundIfNeeded(reason: \"background-task-expired\")" in queue_source
-    and "backgroundContinuationTask == .invalid" in queue_source.split("private var shouldPauseWhisperKitForBackground", 1)[1].split("@objc(activateBackgroundExecutionPathWithPath:detail:)", 1)[0],
-    "WhisperKit still pauses immediately on background instead of using the short UIApplication background window first.",
+    and "pausePipelineForBackgroundIfNeeded(reason: \"applicationDidEnterBackground\")" in queue_source
+    and "!hasActiveWhisperKitBackgroundExecution" in queue_source.split("private var shouldPauseWhisperKitForBackground", 1)[1].split("@objc(activateBackgroundExecutionPathWithPath:detail:)", 1)[0]
+    and "backgroundContinuationTask == .invalid" not in queue_source.split("private var shouldPauseWhisperKitForBackground", 1)[1].split("@objc(activateBackgroundExecutionPathWithPath:detail:)", 1)[0],
+    "WhisperKit still treats an ordinary UIApplication background window as permission to submit GPU work.",
 )
 require(
     "TranscriptionEngine.isBackgroundGPUExecutionError(error)" in queue_source
     and "finishBackgroundPause" in queue_source,
     "Queue does not turn the known background-GPU error into a resumable pause.",
 )
+background_pause_body = queue_source.split(
+    "private func finishBackgroundPause(for item: ICTranscriptionQueueItem", 1
+)[1].split("// MARK: - Processing", 1)[0]
 require(
-    "isProcessing || chapterTask != nil || !pendingDownloadHashes.isEmpty" in queue_source
+    "scheduleRetry(for: item" not in background_pause_body
+    and "item.status = .queued" in background_pause_body
+    and "item.nextRetryAt = nil" in background_pause_body
+    and "item.error = nil" in background_pause_body
+    and "scheduleAutomaticBackgroundProcessing(earliestBeginDate: nil)" in background_pause_body,
+    "An expected app-background pause is still treated as an error with a delayed retry instead of an immediately resumable queued state.",
+)
+require(
+    queue_source.count("guard persistCheckpointBeforeInterruption(for: item, reason: reason) else") >= 2
+    and "guard engine.persistCurrentCheckpointForInterruption() else" in queue_source,
+    "Background pause/profile transitions still cancel transcription before flushing the latest synchronized cue snapshot.",
+)
+profile_transition_body = queue_source.split(
+    "private func beginWhisperKitComputeProfileTransitionIfNeeded", 1
+)[1].split("@discardableResult\n    private func pauseWhisperKitForBackgroundIfNeeded", 1)[0]
+require(
+    "item.progress = 0" not in profile_transition_body,
+    "Switching to the granted background compute profile still resets visible transcription progress to zero.",
+)
+require(
+    "isProcessing || chapterTask != nil || computeProfileTransitionTask != nil || !pendingDownloadHashes.isEmpty" in queue_source
     and "UIApplication.shared.applicationState == .background" in queue_source
     and "engine.engineType != .whisperKit" not in queue_source.split("private func refreshBackgroundContinuation", 1)[1].split("private func beginBackgroundContinuationIfNeeded", 1)[0],
     "Short background continuation does not cover downloads, music analysis, WhisperKit work, and chapter generation uniformly.",
@@ -106,9 +130,10 @@ require(
 )
 require(
     "backgroundControlsAvailable" in controller_source
-    and "TranscriptionBackgroundTaskActive" in queue_source
-    and "UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskEnabledKey)" in queue_source,
-    "Background button state still persists across fresh WhisperKit runs.",
+    and "TranscriptionBackgroundTaskRequested" in controller_source
+    and "grantedBackgroundExecutionPath" in queue_source
+    and "UserDefaults" not in queue_source.split("private var activeBackgroundExecutionPath", 1)[1].split("private var hasActiveWhisperKitBackgroundExecution", 1)[0],
+    "A submitted background request is still confused with a process-local system grant.",
 )
 require(
     "_updateToolbarItemsAnimated" in controller_source
@@ -118,20 +143,24 @@ require(
 require(
     "BGContinuedProcessingTaskRequest" in controller_source
     and "BGContinuedProcessingTaskRequestResourcesGPU" in controller_source
+    and "BGContinuedProcessingTaskRequestResourcesDefault" in controller_source
+    and '"continued-cpu"' in controller_source
     and "supportedResources" in controller_source
-    and "Hintergrundpfad aktiviert" in controller_source,
-    "WhisperKit background still does not submit the iOS 26 continued-processing GPU path transparently.",
+    and "activateBackgroundExecutionPathWithPath" in app_delegate_source,
+    "WhisperKit background does not select a supported iOS 26 continued GPU or CPU/ANE path.",
 )
 require(
-    "- (BOOL)_shouldUseContinuedGPUBackgroundPath {\n    if (![self _isWhisperKitEngine]) return NO;\n    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];\n}" in controller_source
-    and "- (BOOL)backgroundControlsAvailable {\n    if (![self _isWhisperKitEngine]) return YES;\n    return [TranscriptionQueue supportsContinuedGPUBackgroundProcessing];\n}" in controller_source,
-    "WhisperKit background UI can still submit BGContinuedProcessingTask when the device reports no GPU background support.",
+    "- (BOOL)_shouldUseContinuedBackgroundPath {\n    if (![self _isWhisperKitEngine]) return NO;\n    if (@available(iOS 26.0, *)) return YES;\n    return NO;\n}" in controller_source
+    and "- (BOOL)backgroundControlsAvailable {\n    return YES;\n}" in controller_source,
+    "WhisperKit background UI still hides the CPU/ANE continued path when GPU background support is unavailable.",
 )
 require(
     "BGContinuedProcessingTask" in app_delegate_source
     and "progress.completedUnitCount" in app_delegate_source
+    and "ICTranscriptionActiveContinuedPath" in app_delegate_source
+    and "continued-cpu" in app_delegate_source
     and "continued-gpu" in app_delegate_source,
-    "The iOS 26 continued-processing task is not registered, monitored, and logged.",
+    "The iOS 26 continued-processing task does not preserve, monitor, and log the selected CPU/GPU path.",
 )
 require(
     "com.apple.developer.background-tasks.continued-processing.gpu" in entitlements_source,
@@ -175,10 +204,11 @@ require(
 require(
     "previousSessionEndedUnexpectedly" in engine_source
     and "TranscriptionQueue.crashGuardKey" in queue_source
-    and "UserDefaults.standard.set(true, forKey: TranscriptionQueue.crashGuardKey)" in queue_source.split("private func startChapterGenerationTask", 1)[1].split("chapterTask = Task", 1)[0]
+    and "armCrashGuard(for: item)" in queue_source.split("private func startChapterGenerationTask", 1)[1].split("chapterTask = Task", 1)[0]
     and "ICDiagnosticLogger.shared.previousSessionEndedUnexpectedly" in queue_source
     and "crashGuardProtectedStatuses" in queue_source
-    and "previousEndedUnexpectedly || hasCrashGuardProtectedItems" in queue_source,
+    and "crashGuardEpisodeHashKey" in queue_source
+    and "requiresExplicitRetryAfterCrash" in queue_source,
     "Crash guard still treats an app kill during an active transcription/chapter run as expected lifecycle and silently auto-resumes.",
 )
 require(
@@ -186,6 +216,7 @@ require(
     and "alreadyMarkedInterrupted" in queue_source
     and "if !alreadyMarkedInterrupted" in queue_source
     and "didMarkInterruptedItem" in queue_source
+    and "item.requiresExplicitRetryAfterCrash = true" in queue_source
     and "persistQueue()" in queue_source.split("if didMarkInterruptedItem", 1)[1].split("postQueueChangeNotification()", 1)[0],
     "Crash guard still appends duplicate interruption log entries when resumeIfNeeded is invoked more than once after an app kill.",
 )
@@ -197,11 +228,14 @@ require(
     "Crash guard still blocks cloud-only chapter generation after an app kill even though no local model load can crash-loop.",
 )
 chapter_task_source = queue_source.split("private func startChapterGenerationTask", 1)[1].split("/// Parse SRT file", 1)[0]
-chapter_no_cues_block = chapter_task_source.split("guard !cues.isEmpty else {", 1)[1].split("return", 1)[0]
+chapter_cue_load_failure_block = chapter_task_source.split(
+    "cues = try await self.loadCuesForChapterGeneration(episodeHash: episodeHash)", 1
+)[1].split("// Load cached music timeline", 1)[0]
 chapter_finished_block = chapter_task_source.split('self.refreshBackgroundContinuation(reason: "chapter-task-finished")', 1)[1].split("}", 1)[0]
 require(
-    "self.processNext()" in chapter_no_cues_block
-    and chapter_no_cues_block.index("self.processNext()") < chapter_no_cues_block.index('self.releaseModelIfIdle(reason: "chapter-task-no-cues")'),
+    "self.processNext()" in chapter_cue_load_failure_block
+    and chapter_cue_load_failure_block.index("self.processNext()")
+    < chapter_cue_load_failure_block.index('self.releaseModelIfIdle(reason: "chapter-task-transcript-import-finished")'),
     "A chapter-only job with an unreadable transcript still leaves later queued chapter jobs stuck.",
 )
 require(

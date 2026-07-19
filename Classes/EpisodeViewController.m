@@ -30,6 +30,17 @@
 #import "OpenInSafariActivity.h"
 #import "InstacastAppDelegate.h"
 
+static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
+{
+    if (episodeHash.length == 0) {
+        return nil;
+    }
+
+    NSString* summary = [[ChapterGenerator shared] loadSummaryFor:episodeHash];
+    summary = [summary stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return summary.length > 0 ? summary : nil;
+}
+
 @interface EpisodeViewController () <UIGestureRecognizerDelegate, UIScrollViewDelegate, WKNavigationDelegate>
 @property (nonatomic, strong) CDFeed* feed;
 @property (nonatomic, strong) VDModalInfo* modalInfo;
@@ -130,6 +141,16 @@
         [content appendString:@"body { background-color: #000000; } #episodes .row_even, #episodes .even { background-color: #000000; }"];
     }
     [content appendString:@"</style>"];
+
+    NSString* generatedSummary = ICGeneratedSummaryForEpisodeHash(self.episode.objectHash);
+    if (generatedSummary.length > 0) {
+        NSString* heading = [@"KI-Zusammenfassung".ls stringByEncodingStandardHTMLEntities] ?: @"";
+        NSString* escapedSummary = [generatedSummary stringByEncodingStandardHTMLEntities] ?: @"";
+        escapedSummary = [escapedSummary stringByReplacingOccurrencesOfString:@"\r\n" withString:@"<br>"];
+        escapedSummary = [escapedSummary stringByReplacingOccurrencesOfString:@"\r" withString:@"<br>"];
+        escapedSummary = [escapedSummary stringByReplacingOccurrencesOfString:@"\n" withString:@"<br>"];
+        [content appendFormat:@"<section id=\"ai-summary\"><h2>%@</h2><p>%@</p></section>", heading, escapedSummary];
+    }
 
     [content appendString:@"<div id=\"description\">"];
     if (description)
@@ -253,6 +274,12 @@
 
 - (void) _loadWebContent
 {
+    [self _loadWebContentPreservingScrollOffset:NO];
+}
+
+- (void) _loadWebContentPreservingScrollOffset:(BOOL)preserveScrollOffset
+{
+    CGPoint previousContentOffset = self.sharedWebView.scrollView.contentOffset;
     NSString* content = [self showNotesAsHTMLIncludingAttributes:YES];
     content = [content stringByReplacingOccurrencesOfString:@"\r" withString:@" "];
     content = [content stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
@@ -264,6 +291,9 @@
 
             if (![res isEqualToString:@"ok"]) {
                 ErrLog(@"javascript error");
+            }
+            if (preserveScrollOffset) {
+                [self.sharedWebView.scrollView setContentOffset:previousContentOffset animated:NO];
             }
         }
         self.appearance = [ICAppearanceManager sharedManager].appearance;
@@ -294,6 +324,10 @@
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(updateAppearance)
                                                  name:ICAppearanceManagerDidUpdateAppearanceNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(transcriptionDidChangeNotification:)
+                                                 name:@"ICTranscriptionDidChangeNotification"
                                                object:nil];
 
     self.title = @"Show Notes".ls;
@@ -973,6 +1007,28 @@
     [self _updateTimeDisplay];
 }
 
+- (void) transcriptionDidChangeNotification:(NSNotification*)notification
+{
+    NSString* episodeHash = [notification.userInfo[@"episodeHash"] copy];
+    if (episodeHash.length == 0) {
+        return;
+    }
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self transcriptionDidChangeNotification:notification];
+        });
+        return;
+    }
+    if (![episodeHash isEqualToString:self.episode.objectHash]) {
+        return;
+    }
+    if (!self.isViewLoaded || self.view.window == nil || self.sharedWebView.superview != self.view) {
+        return;
+    }
+
+    [self _loadWebContentPreservingScrollOffset:YES];
+}
+
 - (void) playbackManagerDidChangeEpisodeNotification:(NSNotification*)notification
 {
     [self _updateTimeDisplay];
@@ -1428,11 +1484,11 @@
             [actions addObject:deleteTranscriptAction];
         }
         if (hasGeneratedChapters) {
-            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Chapters löschen", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
+            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Analyse löschen", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
                 STRONG_SELF
                 NSString* hash = self.episode.objectHash;
                 if (!hash) return;
-                [[ChapterGenerator shared] removeGeneratedChaptersFor:self.episode];
+                [[ChapterGenerator shared] removeGeneratedAnalysisForEpisodeHash:hash];
                 [[NSNotificationCenter defaultCenter] postNotificationName:@"ICTranscriptionDidChangeNotification" object:nil userInfo:@{@"episodeHash": hash}];
             }];
             deleteChaptersAction.attributes = UIMenuElementAttributesDestructive;

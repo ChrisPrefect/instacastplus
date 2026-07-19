@@ -34,6 +34,17 @@ static NSString* kHeaderView = @"HeaderView";
 static NSString* kFeedPropertyPreferredTranscriptLanguage = @"preferredTranscriptLanguage";
 static NSString* kFeedPropertyPreferredTranscriptURL = @"preferredTranscriptURL";
 
+@interface ICPlayerChapterDisplayItem : NSObject
+@property (nonatomic) int32_t index;
+@property (nonatomic, copy) NSString* title;
+@property (nonatomic) NSTimeInterval duration;
+@property (nonatomic) NSTimeInterval timecode;
+@property (nonatomic, strong) NSURL* linkURL;
+@end
+
+@implementation ICPlayerChapterDisplayItem
+@end
+
 static NSDictionary* ICTranscriptCueMake(NSTimeInterval start, NSTimeInterval end, NSString* text)
 {
     if (text.length == 0 || start < 0) {
@@ -561,9 +572,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             weakSelf.duration = pman.playingEpisode.duration;
         }];
         
-        [pman addTaskObserver:self forKeyPath:@"playingEpisode.chapters" task:^(id obj, NSDictionary *change) {
+        [pman addTaskObserver:self forKeyPath:@"chapters" task:^(id obj, NSDictionary *change) {
             PlaybackManager* pman = [PlaybackManager playbackManager];
-            weakSelf.chapters = [pman.playingEpisode sortedChapters];
+            weakSelf.chapters = [weakSelf _displayChaptersForEpisode:pman.playingEpisode playbackManager:pman];
             weakSelf.duration = pman.duration;
         }];
 
@@ -622,7 +633,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     else if (!observing && _observing)
     {
         [pman removeTaskObserver:self forKeyPath:@"playingEpisode.duration"];
-        [pman removeTaskObserver:self forKeyPath:@"playingEpisode.chapters"];
+        [pman removeTaskObserver:self forKeyPath:@"chapters"];
         [pman removeTaskObserver:self forKeyPath:@"artworks"];
         [pman removeTaskObserver:self forKeyPath:@"currentArtwork"];
         [pman removeTaskObserver:self forKeyPath:@"time"];
@@ -741,12 +752,11 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
     [self _updateTranscriptPickerButton];
 
-    // Refresh the chapter list as well. The notification also fires when "Generierte
-    // Chapters löschen" runs — the KVO on playingEpisode.chapters doesn't always deliver
-    // for core-data deletes when only the relationship membership changes, so we re-read
-    // sortedChapters here to guarantee the player reflects the deletion immediately.
+    // PlaybackManager owns the effective chapter source order and reloads its chapters
+    // from this notification. Keep showing that timeline until its chapters KVO delivers
+    // the newly loaded overlay.
     PlaybackManager* pman = [PlaybackManager playbackManager];
-    self.chapters = [pman.playingEpisode sortedChapters];
+    self.chapters = [self _displayChaptersForEpisode:pman.playingEpisode playbackManager:pman];
     self.duration = pman.duration;
     [self.tableView reloadData];
 }
@@ -3060,13 +3070,39 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
     self.transcriptDataEpisodeHash = episode.objectHash;
     _suppressChapterReload = YES;
-    self.chapters = (episode != nil) ? [episode sortedChapters] : @[];
+    self.chapters = [self _displayChaptersForEpisode:episode playbackManager:pman];
     _suppressChapterReload = NO;
     self.currentChapterIndex = pman.currentChapter;
     self.duration = episode.duration;
     
     [self reloadBookmarks];
     [self _refreshTranscriptState];
+}
+
+- (NSArray*)_displayChaptersForEpisode:(CDEpisode*)episode playbackManager:(PlaybackManager*)pman
+{
+    if (!episode) {
+        return @[];
+    }
+
+    BOOL sameEpisodeLoaded = (pman.playingEpisode.objectHash.length > 0 &&
+                              [pman.playingEpisode.objectHash isEqualToString:episode.objectHash]);
+    NSArray<ICMetadataChapter*>* playbackChapters = sameEpisodeLoaded ? pman.chapters : nil;
+    if (playbackChapters.count == 0) {
+        return [episode sortedChapters] ?: @[];
+    }
+
+    NSMutableArray<ICPlayerChapterDisplayItem*>* displayChapters = [NSMutableArray arrayWithCapacity:playbackChapters.count];
+    [playbackChapters enumerateObjectsUsingBlock:^(ICMetadataChapter* chapter, NSUInteger idx, BOOL* stop) {
+        ICPlayerChapterDisplayItem* item = [[ICPlayerChapterDisplayItem alloc] init];
+        item.index = (int32_t)idx;
+        item.title = chapter.title ?: chapter.label ?: @"";
+        item.timecode = CMTimeGetSeconds(chapter.start);
+        item.duration = [chapter durationWithTrackDuration:pman.duration];
+        item.linkURL = chapter.link;
+        [displayChapters addObject:item];
+    }];
+    return displayChapters;
 }
 
 - (void) reload
@@ -3330,8 +3366,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         ChaptersTableViewCell* cell = (ChaptersTableViewCell*)[tableView dequeueReusableCellWithIdentifier:kChapterCell forIndexPath:indexPath];
         cell.backgroundColor = self.tableView.backgroundColor;
 
-        CDChapter* chapter = [self.chapters objectAtIndex:indexPath.row];
-        cell.objectValue = chapter;
+        ICPlayerChapterDisplayItem* chapter = [self.chapters objectAtIndex:indexPath.row];
+        cell.objectValue = (CDChapter*)chapter;
         
         
         NSInteger currentChapter = [self _effectiveChapterIndexForPlaybackManager:pman];
@@ -3347,22 +3383,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         }
         
         // Strikethrough for auto-skipped chapters
-        BOOL shouldStrike = NO;
         CDEpisode *episode = pman.playingEpisode;
-        if (episode.feed) {
-            NSString *skipKey = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
-            NSString *chaptersName = [episode.feed stringForKey:skipKey];
-            if (chaptersName.length > 0) {
-                NSArray *skipNames = [chaptersName componentsSeparatedByString:@".  "];
-                NSString *lowerTitle = chapter.title.lowercaseString;
-                for (NSString *name in skipNames) {
-                    if (name.length > 0 && [lowerTitle containsString:name.lowercaseString]) {
-                        shouldStrike = YES;
-                        break;
-                    }
-                }
-            }
-        }
+        BOOL shouldStrike = [pman autoSkipsChapterTitle:chapter.title forFeed:episode.feed];
         NSDictionary *attrs;
         if (shouldStrike) {
             attrs = @{

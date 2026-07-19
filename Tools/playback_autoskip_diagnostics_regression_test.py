@@ -54,5 +54,5 @@ require('Kapitel-Skip-Episodenabschluss gespeichert' in finish_skip, "Chapter-sk
 
 compute_markers = method_body(PLAYBACK, "- (void)_computeAutoSkipMarkers")
 require('Auto-Skip-Marker berechnet' in compute_markers, "Auto-skip marker computation must be logged.")
-for key in ["chapterCount", "markerCount", "skipNameCount", "includeGeneratedSponsors"]:
+for key in ["chapterCount", "markerCount", "skipNameCount", "sponsorKeywordEnabled"]:
     require(f'@"{key}"' in compute_markers, f"Auto-skip marker diagnostics must include {key}.")

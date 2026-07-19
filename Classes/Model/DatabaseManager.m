@@ -1351,8 +1351,8 @@ NS_INLINE NSString* _DataStoreFile(void) {
                                                      name:NSManagedObjectContextDidSaveNotification
                                                    object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(transcriptionDidFinishNotification:)
-                                                     name:ICTranscriptionDidFinishNotification
+                                                 selector:@selector(transcriptionDidChangeNotification:)
+                                                     name:@"ICTranscriptionDidChangeNotification"
                                                    object:nil];
 	}
 	return self;
@@ -2473,17 +2473,19 @@ static NSArray<NSString*>* ICWidgetOnlyDefaultListUIDs(void)
     [self.ftsController commitStagedChangesForManagedObjectContext:context];
 }
 
-- (void) transcriptionDidFinishNotification:(NSNotification*)notification
+- (void) transcriptionDidChangeNotification:(NSNotification*)notification
 {
-    NSString* episodeHash = notification.userInfo[@"episodeHash"];
+    NSString* episodeHash = [notification.userInfo[@"episodeHash"] copy];
     if (episodeHash.length == 0) {
         return;
     }
 
-    CDEpisode* episode = [self episodeWithObjectHash:episodeHash];
-    if (episode) {
-        [self.spotlightIndexer updateEpisode:episode];
-    }
+    [self.objectContext performBlock:^{
+        CDEpisode* episode = [self episodeWithObjectHash:episodeHash];
+        if (episode) {
+            [self.spotlightIndexer updateEpisode:episode];
+        }
+    }];
 }
 
 

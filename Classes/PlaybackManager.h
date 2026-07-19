@@ -22,6 +22,7 @@
 @class PlayerView;
 @class ICAudioEndpoint;
 @class ICMetadataChapter;
+@class CDFeed;
 
 @interface PlaybackManager : NSObject {
 @protected
@@ -87,6 +88,9 @@
 
 - (void) nextChapter;
 - (void) previousChapter;
+
+// Uses the same effective chapter-keyword list as playback marker generation.
+- (BOOL)autoSkipsChapterTitle:(NSString*)title forFeed:(CDFeed*)feed;
 
 - (void) nextTrack;
 - (void) previousTrack;

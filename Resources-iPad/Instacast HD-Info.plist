@@ -154,12 +154,18 @@
 	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>5.0</string>
-<key>NSPrincipalClass</key>
+	<key>NSPrincipalClass</key>
 	<string>Application</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.iteconomy.instacastplus.transcription.continued</string>
+		<string>com.iteconomy.instacastplus.transcription.processing</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
 		<string>remote-notification</string>
+		<string>processing</string>
 	</array>
 	<key>UIInterfaceOrientation</key>
 	<string>UIInterfaceOrientationPortrait</string>

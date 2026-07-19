@@ -26,6 +26,8 @@
 #import "SubscriptionManager.h"
 #import "EpisodeLoadingManager.h"
 #import "ICFeed.h"
+#import "ICMetadata.h"
+#import "ICMetadataParser.h"
 #import "ICAppearanceManager.h"
 #import "Application.h"
 #import "UtilityFunctions.h"

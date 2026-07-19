@@ -554,6 +554,13 @@
             }
         }
     }
+
+    if (chaptersToLoad == 0 && imagesToLoad == 0) {
+        self.metadataAsset.chapters = @[];
+        self.metadataAsset.images = @[];
+        completionHandler(YES, nil);
+        return;
+    }
     
     _chapters = [[NSMutableArray alloc] init];
     _images = [[NSMutableArray alloc] init];

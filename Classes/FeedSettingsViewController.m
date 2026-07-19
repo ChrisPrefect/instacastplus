@@ -19,6 +19,7 @@
 #import "SkipTimeCell.h"
 #import "AppleWatchSyncManager.h"
 #import "VDModalInfo.h"
+#import "InstacastPlus-Swift.h"
 
 static const NSUInteger ICRestoreArchivedEpisodeBatchSize = 100;
 
@@ -230,7 +231,7 @@ enum {
                 }
                 break;
             case 1:
-                cell.textLabel.text = NSLocalizedString(@"Neue Folgen Kapitel generieren", nil);
+                cell.textLabel.text = NSLocalizedString(@"Neue Folgen analysieren", nil);
                 {
                     NSString* val = [self.feed stringForKey:kFeedPropertyAutoChapters];
                     control.on = (val == nil || [val isEqualToString:@"default"])
@@ -720,6 +721,15 @@ enum {
             [self.feed setString:value forKey:kFeedPropertyAutoTranscribe];
             break;
         case 1:
+            if (sender.on && ![ICDownloadableModelStore selectedChapterModelCanGenerate]) {
+                sender.on = NO;
+                UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Automatische Analyse einrichten", nil)
+                                                                               message:[ICDownloadableModelStore selectedChapterModelUnavailableReason]
+                                                                        preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+                [self presentViewController:alert animated:YES completion:nil];
+                return;
+            }
             [self.feed setString:value forKey:kFeedPropertyAutoChapters];
             break;
         case 2:

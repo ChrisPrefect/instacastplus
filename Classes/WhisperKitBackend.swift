@@ -17,6 +17,32 @@ import Foundation
 import AVFoundation
 import WhisperKit
 
+private enum WhisperKitComputeProfile: String, Sendable {
+    case foregroundGPU = "foreground-gpu"
+    case backgroundSafe = "background-cpu-ane"
+}
+
+/// A BackgroundTasks grant belongs to the current process and must never be
+/// reconstructed from UserDefaults after a kill.
+private final class WhisperKitBackgroundExecutionState: @unchecked Sendable {
+    static let shared = WhisperKitBackgroundExecutionState()
+    private let lock = NSLock()
+    private var executionPath: String?
+
+    func setExecutionPath(_ path: String?) {
+        lock.lock()
+        executionPath = path
+        lock.unlock()
+    }
+
+    func currentExecutionPath() -> String? {
+        lock.lock()
+        let path = executionPath
+        lock.unlock()
+        return path
+    }
+}
+
 private final class WhisperKitSegmentDelivery: @unchecked Sendable {
     private let lock = NSLock()
     private var deliveredSegmentKeys = Set<String>()
@@ -49,15 +75,26 @@ actor WhisperKitBackend {
     static let shared = WhisperKitBackend()
     private nonisolated static let maxTranscriptionSliceDuration: Double = 30 * 60
     private nonisolated static let transcriptionSliceOverlap: Double = 5
+    private nonisolated static let requiredCompiledModelNames = [
+        "MelSpectrogram",
+        "AudioEncoder",
+        "TextDecoder",
+    ]
 
     private var whisperKit: WhisperKit?
     private var modelLoadTask: Task<Void, Error>?
+    private var modelLoadComputeProfile: WhisperKitComputeProfile?
+    private var modelLoadTaskGeneration: Int?
+    private var modelReleaseTask: Task<Void, Never>?
     private var modelLoadGeneration = 0
+    private var loadedComputeProfile: WhisperKitComputeProfile?
 
     private func invalidateModelLoadTask() {
         modelLoadGeneration += 1
         modelLoadTask?.cancel()
         modelLoadTask = nil
+        modelLoadComputeProfile = nil
+        modelLoadTaskGeneration = nil
     }
 
     // MARK: - Model Name
@@ -85,10 +122,12 @@ actor WhisperKitBackend {
         let base = appSupport.appendingPathComponent("huggingface", isDirectory: true)
         try? fm.createDirectory(at: base, withIntermediateDirectories: true)
         // Exclude from iCloud / iTunes backups — ~600 MB that can be re-downloaded.
-        var mutableBase = base
-        var resourceValues = URLResourceValues()
-        resourceValues.isExcludedFromBackup = true
-        try? mutableBase.setResourceValues(resourceValues)
+        if (try? base.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup) != true {
+            var mutableBase = base
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try? mutableBase.setResourceValues(resourceValues)
+        }
         return base
     }
 
@@ -120,15 +159,34 @@ actor WhisperKitBackend {
     }
 
     private nonisolated static func hasCompiledModelFiles(in folder: URL) -> Bool {
-        guard let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil) else {
-            return false
+        let fm = FileManager.default
+        return requiredCompiledModelNames.allSatisfy { modelName in
+            let modelURL = folder.appendingPathComponent("\(modelName).mlmodelc", isDirectory: true)
+            var isDirectory = ObjCBool(false)
+            return fm.fileExists(atPath: modelURL.path, isDirectory: &isDirectory) && isDirectory.boolValue
         }
-        for case let fileURL as URL in enumerator {
-            if fileURL.pathExtension == "mlmodelc" {
-                return true
+    }
+
+    private nonisolated static func requiredModelInventory(in folder: URL) -> String {
+        let fm = FileManager.default
+        return requiredCompiledModelNames.map { modelName in
+            let modelURL = folder.appendingPathComponent("\(modelName).mlmodelc", isDirectory: true)
+            guard fm.fileExists(atPath: modelURL.path) else {
+                return "\(modelURL.lastPathComponent)=missing"
             }
-        }
-        return false
+            let modificationDate = (try? modelURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            let timestamp = modificationDate.map { String(format: "%.3f", $0.timeIntervalSince1970) } ?? "unknown"
+            return "\(modelURL.lastPathComponent)=present,mtime=\(timestamp)"
+        }.joined(separator: ";")
+    }
+
+    private nonisolated static func setFileProtectionIfNeeded(_ protection: FileProtectionType,
+                                                              at url: URL) {
+        let fm = FileManager.default
+        let attributes = try? fm.attributesOfItem(atPath: url.path)
+        let currentProtection = attributes?[.protectionKey] as? FileProtectionType
+        guard currentProtection != protection else { return }
+        try? fm.setAttributes([.protectionKey: protection], ofItemAtPath: url.path)
     }
 
     private nonisolated static func prepareModelDirectoryForCoreML(in folder: URL) {
@@ -137,49 +195,60 @@ actor WhisperKitBackend {
 
         // Swift spelling of NSFileProtectionCompleteUntilFirstUserAuthentication.
         let protection = FileProtectionType.completeUntilFirstUserAuthentication
-        try? fm.setAttributes([.protectionKey: protection], ofItemAtPath: folder.path)
+        setFileProtectionIfNeeded(protection, at: folder)
         if let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: []) {
             for case let fileURL as URL in enumerator {
-                try? fm.setAttributes([.protectionKey: protection], ofItemAtPath: fileURL.path)
+                setFileProtectionIfNeeded(protection, at: fileURL)
             }
         }
 
-        var mutableFolder = folder
-        var resourceValues = URLResourceValues()
-        resourceValues.isExcludedFromBackup = true
-        try? mutableFolder.setResourceValues(resourceValues)
+        if (try? folder.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup) != true {
+            var mutableFolder = folder
+            var resourceValues = URLResourceValues()
+            resourceValues.isExcludedFromBackup = true
+            try? mutableFolder.setResourceValues(resourceValues)
+        }
     }
 
     private nonisolated static func compiledModelValidationIssue(in folder: URL) -> String? {
         let fm = FileManager.default
-        guard let enumerator = fm.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey]) else {
-            return "Modellordner ist nicht lesbar."
+        let compiledModelFolders = requiredCompiledModelNames.map {
+            folder.appendingPathComponent("\($0).mlmodelc", isDirectory: true)
         }
-
-        var compiledModelFolders: [URL] = []
-        for case let fileURL as URL in enumerator {
-            if fileURL.pathExtension == "mlmodelc" {
-                compiledModelFolders.append(fileURL)
-                enumerator.skipDescendants()
+        let missingModelNames = zip(requiredCompiledModelNames, compiledModelFolders).compactMap { modelName, modelURL in
+            var isDirectory = ObjCBool(false)
+            guard fm.fileExists(atPath: modelURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                return modelName
             }
+            return nil
         }
-
-        guard !compiledModelFolders.isEmpty else {
-            return "Kompilierte Core-ML-Modelldateien fehlen."
+        guard missingModelNames.isEmpty else {
+            return "Kompilierte Core-ML-Pflichtmodelle fehlen: \(missingModelNames.joined(separator: ", "))."
         }
 
         for compiledFolder in compiledModelFolders {
-            let modelMIL = compiledFolder.appendingPathComponent("model.mil")
-            if fm.fileExists(atPath: modelMIL.path) && !coreMLFileCanBeMemoryMapped(modelMIL) {
-                return "Core-ML-Datei ist nicht lesbar: \(modelMIL.lastPathComponent)"
+            guard directorySize(at: compiledFolder) > 0 else {
+                return "Core-ML-Modell ist leer: \(compiledFolder.lastPathComponent)"
             }
-
+            let modelMIL = compiledFolder.appendingPathComponent("model.mil")
             let weightsFolder = compiledFolder.appendingPathComponent("weights", isDirectory: true)
             let weightBin = weightsFolder.appendingPathComponent("weight.bin")
-            if fm.fileExists(atPath: weightsFolder.path) {
-                guard coreMLFileCanBeMemoryMapped(weightBin) else {
-                    return "Core-ML-Gewichte sind nicht lesbar: \(weightBin.lastPathComponent)"
-                }
+            let compiledPayloadCandidates = [
+                compiledFolder.appendingPathComponent("coremldata.bin"),
+                modelMIL,
+                weightBin,
+                compiledFolder.appendingPathComponent("model.espresso.net"),
+                compiledFolder.appendingPathComponent("model.espresso.weights"),
+            ]
+            let compiledPayloadFiles = compiledPayloadCandidates.filter { fm.fileExists(atPath: $0.path) }
+            guard !compiledPayloadFiles.isEmpty else {
+                return "Core-ML-Modell enthält keine kompilierten Daten: \(compiledFolder.lastPathComponent)"
+            }
+            if fm.fileExists(atPath: weightsFolder.path) && !fm.fileExists(atPath: weightBin.path) {
+                return "Core-ML-Gewichte fehlen: \(compiledFolder.lastPathComponent)"
+            }
+            for payloadFile in compiledPayloadFiles where !coreMLFileCanBeMemoryMapped(payloadFile) {
+                return "Core-ML-Datei ist nicht lesbar: \(payloadFile.lastPathComponent)"
             }
         }
 
@@ -228,9 +297,9 @@ actor WhisperKitBackend {
         let sourceFiles = originalModelSourceFiles(in: folder)
         guard !sourceFiles.isEmpty else { return }
 
-        guard hasCompiledModelFiles(in: folder) else {
-            NSLog("[WhisperKitBackend] Keeping %d original model source file(s); no compiled .mlmodelc files remain",
-                  sourceFiles.count)
+        if let validationIssue = compiledModelValidationIssue(in: folder) {
+            NSLog("[WhisperKitBackend] Keeping %d original model source file(s); compiled model validation failed: %@",
+                  sourceFiles.count, validationIssue)
             return
         }
 
@@ -280,14 +349,24 @@ actor WhisperKitBackend {
                 let src = oldRoot.appendingPathComponent(name, isDirectory: true)
                 let dst = newRoot.appendingPathComponent(name, isDirectory: true)
                 if fm.fileExists(atPath: dst.path) {
-                    try? fm.removeItem(at: src)
-                    removedDuplicateCount += 1
+                    if compiledModelValidationIssue(in: dst) == nil {
+                        try fm.removeItem(at: src)
+                        removedDuplicateCount += 1
+                    } else if compiledModelValidationIssue(in: src) == nil {
+                        // Preserve the valid Documents copy until the incomplete
+                        // destination has been removed. If the subsequent move
+                        // fails, the source remains available for the next launch.
+                        try fm.removeItem(at: dst)
+                        try fm.moveItem(at: src, to: dst)
+                        movedCount += 1
+                    } else {
+                        NSLog("[WhisperKitBackend] Keeping invalid migration source and destination for %@", name)
+                    }
                 } else {
                     try fm.moveItem(at: src, to: dst)
                     movedCount += 1
                 }
             }
-            try? fm.removeItem(at: docsHub)
             NSLog("[WhisperKitBackend] Migrated %d model(s), removed %d duplicate(s) from Documents → Application Support",
                   movedCount, removedDuplicateCount)
         } catch {
@@ -321,7 +400,6 @@ actor WhisperKitBackend {
     private nonisolated func localModelFolder(modelName: String = WhisperKitBackend.resolvedModelName()) -> String? {
         WhisperKitBackend.migrateFromDocumentsIfNeeded()
         let modelDir = WhisperKitBackend.modelFolderURL(modelName: modelName)
-        WhisperKitBackend.prepareModelDirectoryForCoreML(in: modelDir)
         guard WhisperKitBackend.hasCompiledModelFiles(in: modelDir) else {
             return nil
         }
@@ -348,13 +426,84 @@ actor WhisperKitBackend {
     /// in a system directory (purgeable) and restored on subsequent loads — provided the
     /// .mlmodelc file metadata does not change. This is why we store models in
     /// Application Support (stable metadata, not iCloud-backed) rather than Documents.
-    private static func inferenceComputeOptions() -> ModelComputeOptions {
-        return ModelComputeOptions(
+    nonisolated static func setActiveBackgroundExecutionPath(_ path: String?) {
+        WhisperKitBackgroundExecutionState.shared.setExecutionPath(path)
+    }
+
+    private nonisolated static func desiredComputeProfile() -> WhisperKitComputeProfile {
+        switch WhisperKitBackgroundExecutionState.shared.currentExecutionPath() {
+        case "legacy-processing", "continued-cpu":
+            return .backgroundSafe
+        case "continued-gpu", nil, "":
+            return .foregroundGPU
+        default:
+            return .foregroundGPU
+        }
+    }
+
+    private nonisolated static func foregroundComputeOptions() -> ModelComputeOptions {
+        ModelComputeOptions(
             melCompute: .cpuAndGPU,
             audioEncoderCompute: .cpuAndGPU,
             textDecoderCompute: .cpuAndNeuralEngine,
             prefillCompute: .cpuOnly
         )
+    }
+
+    /// BackgroundTasks grants ordinary processing tasks CPU and Neural Engine access,
+    /// but not Metal command submission. Keep every WhisperKit stage off the GPU for
+    /// `BGProcessingTask` and CPU-only `BGContinuedProcessingTask` executions.
+    private nonisolated static func backgroundComputeOptions() -> ModelComputeOptions {
+        ModelComputeOptions(
+            melCompute: .cpuAndNeuralEngine,
+            audioEncoderCompute: .cpuAndNeuralEngine,
+            textDecoderCompute: .cpuAndNeuralEngine,
+            prefillCompute: .cpuOnly
+        )
+    }
+
+    private nonisolated static func computeOptions(for profile: WhisperKitComputeProfile) -> ModelComputeOptions {
+        switch profile {
+        case .foregroundGPU:
+            return foregroundComputeOptions()
+        case .backgroundSafe:
+            return backgroundComputeOptions()
+        }
+    }
+
+    private func logComputeProfileChange(from oldProfile: WhisperKitComputeProfile?,
+                                         to desiredComputeProfile: WhisperKitComputeProfile,
+                                         reason: String) {
+        ICDiagnosticLogger.shared.logEvent("model", message: "compute-profile-changed", metadata: [
+            "from": oldProfile?.rawValue ?? "not-loaded",
+            "to": desiredComputeProfile.rawValue,
+            "executionPath": WhisperKitBackgroundExecutionState.shared.currentExecutionPath() ?? "foreground",
+            "reason": reason,
+        ] as NSDictionary)
+    }
+
+    private func cancelMismatchedModelLoadIfNeeded(
+        desiredComputeProfile: WhisperKitComputeProfile
+    ) async {
+        guard let modelLoadTask,
+              modelLoadComputeProfile != desiredComputeProfile else { return }
+
+        let staleGeneration = modelLoadTaskGeneration
+        let staleProfile = modelLoadComputeProfile
+        modelLoadGeneration += 1
+        modelLoadComputeProfile = nil
+        modelLoadTask.cancel()
+        logComputeProfileChange(from: staleProfile,
+                                to: desiredComputeProfile,
+                                reason: "model-load-in-progress")
+        _ = await modelLoadTask.result
+
+        // Another caller may already have started the replacement load while this
+        // actor was suspended. Only clear the task slot that we actually cancelled.
+        if modelLoadTaskGeneration == staleGeneration {
+            self.modelLoadTask = nil
+            modelLoadTaskGeneration = nil
+        }
     }
 
     private nonisolated static func wrappedModelLoadError(_ error: Error) -> NSError {
@@ -485,10 +634,12 @@ actor WhisperKitBackend {
     func downloadModel(modelName: String,
                        statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         let base = WhisperKitBackend.whisperDownloadBase()
+        let desiredComputeProfile = WhisperKitBackend.desiredComputeProfile()
         NSLog("[WhisperKitBackend] Downloading and preparing model: %@ → %@", modelName, base.path)
         ICDiagnosticLogger.shared.logEvent("model", message: "Whisper-Modell-Download gestartet", metadata: [
             "modelName": modelName,
             "downloadBase": base.path,
+            "computeProfile": desiredComputeProfile.rawValue,
         ] as NSDictionary)
         statusUpdate(NSLocalizedString("Spracherkennungsmodell wird heruntergeladen.", comment: ""))
         let previousLogger = Logging.shared.loggingCallback
@@ -503,35 +654,70 @@ actor WhisperKitBackend {
         let wk = try await WhisperKit(
             model: modelName,
             downloadBase: base,
-            computeOptions: WhisperKitBackend.inferenceComputeOptions(),
+            computeOptions: WhisperKitBackend.computeOptions(for: desiredComputeProfile),
             verbose: true,
             logLevel: .debug,
-            prewarm: true,
+            prewarm: false,
             load: false
         )
-        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird kompiliert.", comment: ""))
-        WhisperKitBackend.prepareModelDirectoryForCoreML(in: WhisperKitBackend.modelFolderURL(modelName: modelName))
-        WhisperKitBackend.removeOriginalModelSources(in: WhisperKitBackend.modelFolderURL(modelName: modelName))
-        WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
+        let modelFolder = WhisperKitBackend.modelFolderURL(modelName: modelName)
+        WhisperKitBackend.prepareModelDirectoryForCoreML(in: modelFolder)
         nonisolated(unsafe) let whisper = wk
+        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird vorbereitet", comment: ""))
+        try await whisper.prewarmModels()
+        if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: modelFolder) {
+            throw NSError(domain: "WhisperKitBackend", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: validationIssue])
+        }
+        WhisperKitBackend.removeOriginalModelSources(in: modelFolder)
+        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: ""))
+        WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
         try await whisper.loadModels()
         whisperKit = wk // keep the ready instance
+        loadedComputeProfile = desiredComputeProfile
         // Drop the per-instance callback now that loading is done — the closure captures
         // this caller's statusUpdate, and if we leave it in place WhisperKit's internal
         // log lines between operations would keep firing notifications for an already-
         // finished download context.
         WhisperKitBackend.clearStatusLogger(on: wk)
         NSLog("[WhisperKitBackend] Model ready: %@", modelName)
+        let timings = wk.currentTimings
         ICDiagnosticLogger.shared.logEvent("model", message: "Whisper-Modell bereit", metadata: [
             "modelName": modelName,
             "downloadBase": base.path,
-            "bytesOnDisk": WhisperKitBackend.directorySize(at: WhisperKitBackend.modelFolderURL(modelName: modelName)),
+            "bytesOnDisk": WhisperKitBackend.directorySize(at: modelFolder),
+            "prewarmSeconds": timings.prewarmLoadTime,
+            "modelLoadSeconds": max(0, timings.modelLoading - timings.prewarmLoadTime),
+            "totalPreparationSeconds": timings.modelLoading,
+            "encoderLoadSeconds": timings.encoderLoadTime,
+            "decoderLoadSeconds": timings.decoderLoadTime,
+            "encoderSpecializationSeconds": timings.encoderSpecializationTime,
+            "decoderSpecializationSeconds": timings.decoderSpecializationTime,
+            "requiredModelInventory": WhisperKitBackend.requiredModelInventory(in: modelFolder),
         ] as NSDictionary)
     }
 
     // MARK: - Get Instance (fast if model already downloaded)
 
     func getOrCreateWhisperKit(statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws -> WhisperKit {
+        if let modelReleaseTask {
+            statusUpdate(NSLocalizedString("Rechenprofil wird gewechselt.", comment: ""))
+            await modelReleaseTask.value
+        }
+        try Task.checkCancellation()
+
+        let desiredComputeProfile = WhisperKitBackend.desiredComputeProfile()
+        await cancelMismatchedModelLoadIfNeeded(desiredComputeProfile: desiredComputeProfile)
+        try Task.checkCancellation()
+
+        if let loadedComputeProfile, loadedComputeProfile != desiredComputeProfile {
+            logComputeProfileChange(from: loadedComputeProfile,
+                                    to: desiredComputeProfile,
+                                    reason: "loaded-model-mismatch")
+            whisperKit = nil
+            self.loadedComputeProfile = nil
+        }
+
         if let existing = whisperKit {
             return try await ensureModelLoaded(existing, statusUpdate: statusUpdate)
         }
@@ -572,11 +758,13 @@ actor WhisperKitBackend {
             "fileCount": contents.count,
             "freeDiskBytes": freeDisk,
             "physicalMemoryBytes": memBefore,
+            "computeProfile": desiredComputeProfile.rawValue,
         ] as NSDictionary)
 
         let loadGeneration = modelLoadGeneration
         let task = Task(priority: .utility) { () throws -> Void in
             NSLog("[WhisperKitBackend] Starting WhisperKit init...")
+            statusUpdate(NSLocalizedString("Spracherkennungsmodell wird vorbereitet", comment: ""))
             let previousLogger = Logging.shared.loggingCallback
             Logging.shared.loggingCallback = { message in
                 if let status = WhisperKitBackend.userVisibleStatus(fromWhisperLog: message) {
@@ -591,13 +779,13 @@ actor WhisperKitBackend {
                 WhisperKitBackend.prepareModelDirectoryForCoreML(in: folderURL)
                 wk = try await WhisperKit(
                     modelFolder: folder,
-                    computeOptions: WhisperKitBackend.inferenceComputeOptions(),
+                    computeOptions: WhisperKitBackend.computeOptions(for: desiredComputeProfile),
                     verbose: true,
                     logLevel: .debug,
                     prewarm: true,
                     load: false
                 )
-                statusUpdate(NSLocalizedString("Spracherkennungsmodell wird kompiliert.", comment: ""))
+                statusUpdate(NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: ""))
                 if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: folderURL) {
                     throw NSError(domain: "WhisperKitBackend", code: 6,
                                   userInfo: [NSLocalizedDescriptionKey: validationIssue])
@@ -617,17 +805,32 @@ actor WhisperKitBackend {
                 throw CancellationError()
             }
             let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+            let timings = wk.currentTimings
             NSLog("[WhisperKitBackend] Model loaded in %.1fs", elapsed)
             ICDiagnosticLogger.shared.logEvent("model", message: "WhisperKit-Load beendet", metadata: [
                 "modelFolder": folder,
                 "elapsedSeconds": String(format: "%.1f", elapsed),
+                "computeProfile": desiredComputeProfile.rawValue,
+                "prewarmSeconds": timings.prewarmLoadTime,
+                "modelLoadSeconds": max(0, timings.modelLoading - timings.prewarmLoadTime),
+                "totalPreparationSeconds": timings.modelLoading,
+                "encoderLoadSeconds": timings.encoderLoadTime,
+                "decoderLoadSeconds": timings.decoderLoadTime,
+                "encoderSpecializationSeconds": timings.encoderSpecializationTime,
+                "decoderSpecializationSeconds": timings.decoderSpecializationTime,
+                "requiredModelInventory": WhisperKitBackend.requiredModelInventory(in: folderURL),
             ] as NSDictionary)
             self.whisperKit = wk
+            self.loadedComputeProfile = desiredComputeProfile
         }
         modelLoadTask = task
+        modelLoadComputeProfile = desiredComputeProfile
+        modelLoadTaskGeneration = loadGeneration
         defer {
             if modelLoadGeneration == loadGeneration {
                 modelLoadTask = nil
+                modelLoadComputeProfile = nil
+                modelLoadTaskGeneration = nil
             }
         }
         try await task.value
@@ -653,6 +856,7 @@ actor WhisperKitBackend {
         if oldModelName != modelName {
             invalidateModelLoadTask()
             whisperKit = nil
+            loadedComputeProfile = nil
             UserDefaults.standard.set(modelName, forKey: "TranscriptionWhisperModel")
         }
         defer {
@@ -660,6 +864,7 @@ actor WhisperKitBackend {
                 invalidateModelLoadTask()
                 UserDefaults.standard.set(oldModelName, forKey: "TranscriptionWhisperModel")
                 whisperKit = nil
+                loadedComputeProfile = nil
             }
         }
 
@@ -674,10 +879,26 @@ actor WhisperKitBackend {
 
     /// Release the in-memory WhisperKit instance to free ~200-600 MB.
     /// Called after transcription queue completes or on memory warning.
-    func releaseModel() {
+    func releaseModel() async {
+        if let modelReleaseTask {
+            await modelReleaseTask.value
+            return
+        }
+
+        let inFlightLoad = modelLoadTask
+        let hadLoadedModel = whisperKit != nil
         invalidateModelLoadTask()
-        if whisperKit != nil {
+        let releaseTask = Task { [inFlightLoad] in
+            if let inFlightLoad {
+                _ = await inFlightLoad.result
+            }
             whisperKit = nil
+            loadedComputeProfile = nil
+            modelReleaseTask = nil
+        }
+        modelReleaseTask = releaseTask
+        await releaseTask.value
+        if hadLoadedModel || inFlightLoad != nil {
             NSLog("[WhisperKitBackend] Model released from memory")
         }
     }
@@ -687,12 +908,14 @@ actor WhisperKitBackend {
     func deleteModel() {
         invalidateModelLoadTask()
         whisperKit = nil
+        loadedComputeProfile = nil
         deleteModel(modelName: WhisperKitBackend.resolvedModelName())
     }
 
     func deleteModel(modelName: String) {
         invalidateModelLoadTask()
         whisperKit = nil
+        loadedComputeProfile = nil
         try? FileManager.default.removeItem(at: WhisperKitBackend.modelFolderURL(modelName: modelName))
         // Also clean up any stale Documents copy (pre-migration).
         try? FileManager.default.removeItem(at: WhisperKitBackend.documentsModelFolderURL(modelName: modelName))
@@ -729,7 +952,6 @@ actor WhisperKitBackend {
         // whole remaining episode. Long single buffers plus loaded Core ML models were
         // the reproducible crash pattern in device diagnostics.
         statusUpdate(NSLocalizedString("Transkription wird vorbereitet.", comment: ""))
-        statusUpdate(NSLocalizedString("Transkription läuft.", comment: ""))
 
         // Progress is reported per segment below. WindowId-based progress would be
         // unreliable when audio was sliced, so we don't use the window callback for UI.
@@ -751,6 +973,7 @@ actor WhisperKitBackend {
             let sliceEnd = min(totalDuration, sliceStart + WhisperKitBackend.maxTranscriptionSliceDuration)
             let loadStart = max(0.0, sliceStart - WhisperKitBackend.transcriptionSliceOverlap)
             let audioArray: [Float]
+            statusUpdate(NSLocalizedString("Audioblock wird geladen.", comment: ""))
             do {
                 audioArray = try AudioProcessor.loadAudioAsFloatArray(
                     fromPath: audioURL.path,
@@ -761,6 +984,7 @@ actor WhisperKitBackend {
                 throw NSError(domain: "WhisperKitBackend", code: 2,
                               userInfo: [NSLocalizedDescriptionKey: "Audiodatei konnte nicht geladen werden: \(error.localizedDescription)"])
             }
+            statusUpdate(NSLocalizedString("Transkription läuft. Warte auf das erste Segment.", comment: ""))
 
             let loadedDuration = Double(audioArray.count) / Double(WhisperKit.sampleRate)
             NSLog("[WhisperKitBackend] Transcribing %.0fs audio slice %.0f-%.0f (loaded %.0fs of samples)",

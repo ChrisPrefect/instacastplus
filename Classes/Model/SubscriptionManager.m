@@ -2074,6 +2074,13 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 - (void)_postDidAddEpisodesNotification:(NSArray<CDEpisode*>*)newEpisodes
 {
     NSArray* episodes = newEpisodes ?: @[];
+    NSError* discoveryError = [[TranscriptionQueue shared] recordAutomaticDiscoveryForEpisodes:episodes];
+    if (discoveryError) {
+        DebugLog(@"[TranscriptionQueue] Discovery outbox write failed before handoff: %@", discoveryError);
+    }
+    else {
+        [[TranscriptionQueue shared] scheduleAutomaticProcessingForEpisodes:episodes];
+    }
     [[NSNotificationCenter defaultCenter] postNotificationName:SubscriptionManagerDidAddEpisodesNotification
                                                         object:self
                                                       userInfo:@{@"episodes" : episodes}];

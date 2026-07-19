@@ -35,8 +35,6 @@
 
 #define SEND_UPDATE [self _sendUpdateNotification];
 
-static NSString* const ICGeneratedSponsorSkipName = @"__ICGeneratedSponsor__";
-
 #if !TARGET_OS_IPHONE
 #ifdef __MAC_10_9
 #define ENABLE_10_9_AUDIO_DEVICE_BEHAVIOR 1
@@ -122,6 +120,32 @@ static void ICStreamMergeRangeIntoArray(NSMutableArray<NSValue*>* ranges, ICStre
     }
 
     [ranges insertObject:ICStreamRangeValue(newRange) atIndex:MAX(0, insertIndex)];
+}
+
+static void ICStreamSubtractRangeFromArray(NSMutableArray<NSValue*>* ranges, ICStreamByteRange removedRange)
+{
+    if (!ICStreamByteRangeIsValid(removedRange)) {
+        return;
+    }
+
+    NSMutableArray<NSValue*>* remainingRanges = [NSMutableArray arrayWithCapacity:ranges.count];
+    for (NSValue* value in ranges) {
+        ICStreamByteRange range = ICStreamRangeFromValue(value);
+        if (!ICStreamByteRangeIsValid(range) ||
+            range.end <= removedRange.start ||
+            range.start >= removedRange.end) {
+            [remainingRanges addObject:value];
+            continue;
+        }
+
+        if (range.start < removedRange.start) {
+            [remainingRanges addObject:ICStreamRangeValue(ICStreamByteRangeMake(range.start, removedRange.start))];
+        }
+        if (range.end > removedRange.end) {
+            [remainingRanges addObject:ICStreamRangeValue(ICStreamByteRangeMake(removedRange.end, range.end))];
+        }
+    }
+    [ranges setArray:remainingRanges];
 }
 
 static int64_t ICStreamContiguousEndForOffset(NSArray<NSValue*>* ranges, int64_t offset)
@@ -226,6 +250,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 @property (nonatomic, strong) NSURLSessionDataTask* activeTask;
 @property (nonatomic) ICStreamByteRange activeRange;
 @property (nonatomic) int64_t activeWriteOffset;
+@property (nonatomic) int64_t forwardDownloadOffset;
 @property (nonatomic, strong) dispatch_queue_t resourceLoaderQueue;
 @property (nonatomic, strong) NSURL* assetURL;
 @property (nonatomic) double lastNotifiedProgress;
@@ -642,7 +667,7 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     });
 }
 
-- (void)_enqueueHighPriorityRangeFrom:(int64_t)start to:(int64_t)end
+- (void)_prioritizeHighPriorityRangeFrom:(int64_t)start to:(int64_t)end
 {
     int64_t maxLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
     if (maxLength > 0) {
@@ -651,7 +676,18 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
     if (end <= start) {
         return;
     }
-    ICStreamMergeRangeIntoArray(self.highPriorityRanges, ICStreamByteRangeMake(start, end));
+    ICStreamByteRange priorityRange = ICStreamByteRangeMake(start, end);
+    ICStreamSubtractRangeFromArray(self.highPriorityRanges, priorityRange);
+    [self.highPriorityRanges insertObject:ICStreamRangeValue(priorityRange) atIndex:0];
+
+    if (self.activeTask &&
+        (self.activeRange.end <= priorityRange.start ||
+         self.activeRange.start >= priorityRange.end)) {
+        NSURLSessionDataTask* supersededTask = self.activeTask;
+        self.activeTask = nil;
+        self.activeRange = ICStreamByteRangeMake(0, 0);
+        [supersededTask cancel];
+    }
 }
 
 - (ICStreamByteRange)_dequeueHighPriorityChunk
@@ -675,12 +711,36 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
 
         int64_t chunkEnd = MIN(range.end, current + ICStreamingHighPriorityChunkSize);
         if (chunkEnd < range.end) {
-            ICStreamMergeRangeIntoArray(self.highPriorityRanges, ICStreamByteRangeMake(chunkEnd, range.end));
+            [self.highPriorityRanges insertObject:ICStreamRangeValue(ICStreamByteRangeMake(chunkEnd, range.end)) atIndex:0];
         }
 
         return ICStreamByteRangeMake(current, chunkEnd);
     }
     return ICStreamByteRangeMake(0, 0);
+}
+
+- (ICStreamByteRange)_nextMissingChunkFrom:(int64_t)start to:(int64_t)end
+{
+    if (end <= start) {
+        return ICStreamByteRangeMake(0, 0);
+    }
+
+    int64_t cursor = start;
+    for (NSValue* value in self.downloadedRanges) {
+        ICStreamByteRange range = ICStreamRangeFromValue(value);
+        if (range.end <= cursor) {
+            continue;
+        }
+        if (range.start > cursor) {
+            return ICStreamByteRangeMake(cursor, MIN(end, MIN(range.start, cursor + ICStreamingBackfillChunkSize)));
+        }
+        cursor = MAX(cursor, range.end);
+        if (cursor >= end) {
+            return ICStreamByteRangeMake(0, 0);
+        }
+    }
+
+    return ICStreamByteRangeMake(cursor, MIN(end, cursor + ICStreamingBackfillChunkSize));
 }
 
 - (ICStreamByteRange)_nextBackfillChunk
@@ -690,33 +750,29 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         return ICStreamByteRangeMake(0, 0);
     }
 
-    int64_t cursor = 0;
-    for (NSValue* value in self.downloadedRanges) {
-        ICStreamByteRange range = ICStreamRangeFromValue(value);
-        if (range.start > cursor) {
-            int64_t end = MIN(range.start, cursor + ICStreamingBackfillChunkSize);
-            return ICStreamByteRangeMake(cursor, end);
-        }
-        cursor = MAX(cursor, range.end);
-        if (targetLength > 0 && cursor >= targetLength) {
-            if (!self.contentLengthConfirmed) {
-                return ICStreamByteRangeMake(cursor, cursor + ICStreamingBackfillChunkSize);
-            }
-            return ICStreamByteRangeMake(0, 0);
-        }
-    }
-
     if (targetLength <= 0) {
+        int64_t cursor = ICStreamContiguousEndForOffset(self.downloadedRanges, 0);
         return ICStreamByteRangeMake(cursor, cursor + ICStreamingBackfillChunkSize);
     }
 
-    if (cursor < targetLength) {
-        int64_t end = MIN(targetLength, cursor + ICStreamingBackfillChunkSize);
-        return ICStreamByteRangeMake(cursor, end);
+    if (self.forwardDownloadOffset > 0 && self.forwardDownloadOffset < targetLength) {
+        ICStreamByteRange forwardRange = [self _nextMissingChunkFrom:self.forwardDownloadOffset to:targetLength];
+        if (ICStreamByteRangeIsValid(forwardRange)) {
+            return forwardRange;
+        }
+
+        ICStreamByteRange prefixRange = [self _nextMissingChunkFrom:0 to:self.forwardDownloadOffset];
+        if (ICStreamByteRangeIsValid(prefixRange)) {
+            return prefixRange;
+        }
     }
 
+    ICStreamByteRange fullRange = [self _nextMissingChunkFrom:0 to:targetLength];
+    if (ICStreamByteRangeIsValid(fullRange)) {
+        return fullRange;
+    }
     if (!self.contentLengthConfirmed) {
-        return ICStreamByteRangeMake(cursor, cursor + ICStreamingBackfillChunkSize);
+        return ICStreamByteRangeMake(targetLength, targetLength + ICStreamingBackfillChunkSize);
     }
 
     return ICStreamByteRangeMake(0, 0);
@@ -861,7 +917,11 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
             [loadingRequest finishLoading];
             [self.pendingRequests removeObject:loadingRequest];
         } else {
-            [self _enqueueHighPriorityRangeFrom:currentOffset to:requestedEnd];
+            if (requestedOffset > 0 &&
+                (streamLength <= 0 || requestedOffset < streamLength)) {
+                self.forwardDownloadOffset = requestedOffset;
+            }
+            [self _prioritizeHighPriorityRangeFrom:currentOffset to:requestedEnd];
         }
     }
 }
@@ -1048,7 +1108,7 @@ didReceiveResponse:(NSURLResponse *)response
  completionHandler:(void (^)(NSURLSessionResponseDisposition disposition))completionHandler
 {
     dispatch_async(self.resourceLoaderQueue, ^{
-        if (self.stopped) {
+        if (self.stopped || dataTask != self.activeTask) {
             completionHandler(NSURLSessionResponseCancel);
             return;
         }
@@ -1140,7 +1200,7 @@ didReceiveResponse:(NSURLResponse *)response
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
 {
     dispatch_async(self.resourceLoaderQueue, ^{
-        if (self.stopped || data.length == 0 || !self.writeHandle) {
+        if (self.stopped || dataTask != self.activeTask || data.length == 0 || !self.writeHandle) {
             return;
         }
 
@@ -1223,6 +1283,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic) BOOL changingPosition;
 
 @property (readwrite, strong) NSArray* chapters;
+@property (readwrite, strong) NSArray* embeddedChaptersForPersistence;
 @property (readwrite, strong) NSArray* artworks;
 
 @property (nonatomic, weak) NSTimer* controlTimer;
@@ -2457,10 +2518,15 @@ didReceiveResponse:(NSURLResponse *)response
 }
 
 - (NSString *)matchingSkipNameForChapter:(ICMetadataChapter *)chapterObj withNames:(NSArray *)skipNames {
-    if (!chapterObj.title || skipNames.count == 0) {
+    return [self _matchingSkipNameForChapterTitle:chapterObj.title withNames:skipNames];
+}
+
+- (NSString*)_matchingSkipNameForChapterTitle:(NSString*)title withNames:(NSArray*)skipNames
+{
+    if (title.length == 0 || skipNames.count == 0) {
         return nil;
     }
-    NSString *lowerTitle = chapterObj.title.lowercaseString;
+    NSString *lowerTitle = title.lowercaseString;
     for (NSString *skipName in skipNames) {
         if (skipName.length > 0 && [lowerTitle containsString:skipName.lowercaseString]) {
             return skipName;
@@ -2481,12 +2547,26 @@ didReceiveResponse:(NSURLResponse *)response
     return [USER_DEFAULTS boolForKey:kAutoSkipSponsors];
 }
 
-- (NSString*)_skipNameForChapter:(ICMetadataChapter*)chapter withNames:(NSArray*)skipNames includeGeneratedSponsors:(BOOL)includeGeneratedSponsors
+- (NSArray*)_effectiveAutoSkipNamesForFeed:(CDFeed*)feed
 {
-    if (includeGeneratedSponsors && chapter.generatedSponsor) {
-        return ICGeneratedSponsorSkipName;
+    NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", feed.uid];
+    NSString *chaptersName = [feed stringForKey:key];
+    NSMutableArray *skipNames = (chaptersName.length > 0)
+        ? [[chaptersName componentsSeparatedByString:@".  "] mutableCopy]
+        : [NSMutableArray array];
+    if ([self _autoSkipSponsorsEnabledForFeed:feed]) {
+        [skipNames addObject:@"Sponsor: "];
     }
-    return [self matchingSkipNameForChapter:chapter withNames:skipNames];
+    return [skipNames copy];
+}
+
+- (BOOL)autoSkipsChapterTitle:(NSString*)title forFeed:(CDFeed*)feed
+{
+    if (!feed || title.length == 0) {
+        return NO;
+    }
+    return [self _matchingSkipNameForChapterTitle:title
+                                        withNames:[self _effectiveAutoSkipNamesForFeed:feed]] != nil;
 }
 
 - (void)nextTimeAfterSkipChapter:(CDEpisode *)episode {
@@ -2815,6 +2895,7 @@ didReceiveResponse:(NSURLResponse *)response
 		//_state = IdleState;
 		self.ready = NO;
         
+        self.embeddedChaptersForPersistence = @[];
 		self.chapters = nil;
         if (_chapterTimesIdx) {
             free(_chapterTimesIdx);
@@ -3610,6 +3691,7 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void) _startLoadingChapters
 {
+    self.embeddedChaptersForPersistence = @[];
     NSString* episodeHash = self.playingEpisode.objectHash ?: @"";
     [[ICDiagnosticLogger shared] logEvent:@"chapter-load"
                                   message:@"Kapitel-Ladevorgang gestartet"
@@ -3633,7 +3715,14 @@ didReceiveResponse:(NSURLResponse *)response
 
     ICMetadataParser* parser = [[ICMetadataParser alloc] initWithAsset:self.mediaAsset];
     [parser loadAsynchronouslyWithCompletionHandler:^(BOOL success, NSError *error) {
+        if (episodeHash.length == 0 ||
+            ![self.playingEpisode.objectHash isEqualToString:episodeHash]) {
+            return;
+        }
         
+        // CDChapter persistence owns only original embedded metadata. Generated
+        // AI/sponsor chapters remain a playback overlay and never enter this array.
+        self.embeddedChaptersForPersistence = parser.metadataAsset.chapters ?: @[];
         NSArray* chapters = nil;
 
         // If the user generated chapters, make that explicit choice win. Otherwise a
@@ -3642,13 +3731,41 @@ didReceiveResponse:(NSURLResponse *)response
         if (self.playingEpisode.objectHash.length > 0) {
             NSArray<ICGeneratedChapter*>* generated = [[ChapterGenerator shared] loadChaptersFor:self.playingEpisode.objectHash];
             if (generated.count > 0) {
+                NSTimeInterval generatedTimelineEnd = generated.lastObject.end;
                 NSMutableArray* metaChapters = [NSMutableArray arrayWithCapacity:generated.count];
                 for (ICGeneratedChapter* gch in generated) {
                     ICMetadataChapter* ch = [[ICMetadataChapter alloc] init];
                     ch.title = gch.title;
                     ch.start = CMTimeMakeWithSeconds(gch.start, NSEC_PER_SEC);
                     ch.end = CMTimeMakeWithSeconds(gch.end, NSEC_PER_SEC);
-                    ch.generatedSponsor = gch.isSponsor;
+
+                    // Sponsor insertion splits publisher chapters into generated
+                    // playback fragments. Restore the original publisher link on
+                    // each remaining content fragment only while its full interval
+                    // is inside the immutable CDChapter snapshot taken above.
+                    ICMetadataChapter* publisherChapter = nil;
+                    if (!gch.isSponsor) {
+                        for (NSUInteger idx = 0; idx < feedChapterFallback.count; idx++) {
+                            ICMetadataChapter* candidate = feedChapterFallback[idx];
+                            NSTimeInterval candidateStart = CMTimeGetSeconds(candidate.start);
+                            BOOL hasExplicitEnd = CMTIME_IS_VALID(candidate.end) && candidate.end.timescale > 0;
+                            NSTimeInterval candidateEnd = generatedTimelineEnd;
+                            if (hasExplicitEnd) {
+                                candidateEnd = CMTimeGetSeconds(candidate.end);
+                            } else if (idx + 1 < feedChapterFallback.count) {
+                                ICMetadataChapter* nextCandidate = feedChapterFallback[idx + 1];
+                                candidateEnd = CMTimeGetSeconds(nextCandidate.start);
+                            }
+                            if (gch.start >= candidateStart &&
+                                gch.start < candidateEnd &&
+                                gch.end > gch.start &&
+                                gch.end <= candidateEnd) {
+                                publisherChapter = candidate;
+                                break;
+                            }
+                        }
+                    }
+                    ch.link = publisherChapter.link;
                     [metaChapters addObject:ch];
                 }
                 chapters = metaChapters;
@@ -3714,6 +3831,8 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void)_computeAutoSkipMarkers {
     CDEpisode *episode = self.playingEpisode;
+    BOOL sponsorKeywordEnabled = episode ? [self _autoSkipSponsorsEnabledForFeed:episode.feed] : NO;
+    NSArray *skipNames = episode ? [self _effectiveAutoSkipNamesForFeed:episode.feed] : @[];
     if (!episode || !self.chapters || self.chapters.count == 0) {
         self.autoSkipMarkers = nil;
         if (episode) {
@@ -3724,18 +3843,14 @@ didReceiveResponse:(NSURLResponse *)response
                                    metadata:@{
                                        @"chapterCount": @(self.chapters.count),
                                        @"markerCount": @0,
-                                       @"skipNameCount": @0,
-                                       @"includeGeneratedSponsors": @(NO),
+                                       @"skipNameCount": @(skipNames.count),
+                                       @"sponsorKeywordEnabled": @(sponsorKeywordEnabled),
                                    }];
         }
         return;
     }
 
-    NSString *key = [NSString stringWithFormat:@"%@_auto_skip_chapter_name", episode.feed.uid];
-    NSString *chaptersName = [episode.feed stringForKey:key];
-    NSArray *skipNames = (chaptersName.length > 0) ? [chaptersName componentsSeparatedByString:@".  "] : @[];
-    BOOL includeGeneratedSponsors = [self _autoSkipSponsorsEnabledForFeed:episode.feed];
-    if (skipNames.count == 0 && !includeGeneratedSponsors) {
+    if (skipNames.count == 0) {
         self.autoSkipMarkers = nil;
         [self _logPlaybackAutoSkipEvent:@"Auto-Skip-Marker berechnet"
                                 episode:episode
@@ -3745,7 +3860,7 @@ didReceiveResponse:(NSURLResponse *)response
                                    @"chapterCount": @(self.chapters.count),
                                    @"markerCount": @0,
                                    @"skipNameCount": @(skipNames.count),
-                                   @"includeGeneratedSponsors": @(includeGeneratedSponsors),
+                                   @"sponsorKeywordEnabled": @(sponsorKeywordEnabled),
                                }];
         return;
     }
@@ -3756,14 +3871,14 @@ didReceiveResponse:(NSURLResponse *)response
 
     while (i < chapterCount) {
         ICMetadataChapter *chapter = self.chapters[i];
-        NSString *skipName = [self _skipNameForChapter:chapter withNames:skipNames includeGeneratedSponsors:includeGeneratedSponsors];
+        NSString *skipName = [self matchingSkipNameForChapter:chapter withNames:skipNames];
 
         if (!skipName) {
             // Check if next chapter is a skip chapter with negative startOffset → early skip from this chapter
             if (i + 1 < chapterCount) {
                 ICMetadataChapter *nextChapter = self.chapters[i + 1];
-                NSString *nextSkipName = [self _skipNameForChapter:nextChapter withNames:skipNames includeGeneratedSponsors:includeGeneratedSponsors];
-                if (nextSkipName && ![nextSkipName isEqualToString:ICGeneratedSponsorSkipName]) {
+                NSString *nextSkipName = [self matchingSkipNameForChapter:nextChapter withNames:skipNames];
+                if (nextSkipName) {
                     NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, nextSkipName];
                     double startOffset = [episode.feed doubleForKey:startKey];
                     if (startOffset < 0) {
@@ -3787,7 +3902,7 @@ didReceiveResponse:(NSURLResponse *)response
         NSInteger j = i + 1;
         while (j < chapterCount) {
             ICMetadataChapter *nextChap = self.chapters[j];
-            NSString *nextName = [self _skipNameForChapter:nextChap withNames:skipNames includeGeneratedSponsors:includeGeneratedSponsors];
+            NSString *nextName = [self matchingSkipNameForChapter:nextChap withNames:skipNames];
             if (!nextName) break;
             lastSkipName = nextName;
             groupEnd = j;
@@ -3798,11 +3913,8 @@ didReceiveResponse:(NSURLResponse *)response
         ICMetadataChapter *firstSkipChapter = self.chapters[groupStart];
         NSTimeInterval firstSkipChapterStart = CMTimeGetSeconds(firstSkipChapter.start);
 
-        double startOffset = 0;
-        if (![firstSkipName isEqualToString:ICGeneratedSponsorSkipName]) {
-            NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, firstSkipName];
-            startOffset = [episode.feed doubleForKey:startKey];
-        }
+        NSString *startKey = [NSString stringWithFormat:@"%@_auto_skip_start_chapter_%@", episode.feed.uid, firstSkipName];
+        double startOffset = [episode.feed doubleForKey:startKey];
 
         NSTimeInterval skipStart;
         if (startOffset < 0) {
@@ -3824,11 +3936,8 @@ didReceiveResponse:(NSURLResponse *)response
             ICMetadataChapter *lastSkipChapter = self.chapters[groupEnd];
             NSTimeInterval lastSkipChapterEnd = CMTimeGetSeconds(lastSkipChapter.end);
 
-            double endOffset = 0;
-            if (![lastSkipName isEqualToString:ICGeneratedSponsorSkipName]) {
-                NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
-                endOffset = [episode.feed doubleForKey:endKey];
-            }
+            NSString *endKey = [NSString stringWithFormat:@"%@_auto_skip_end_chapter_%@", episode.feed.uid, lastSkipName];
+            double endOffset = [episode.feed doubleForKey:endKey];
 
             resumeTime = lastSkipChapterEnd + endOffset;
 
@@ -3856,7 +3965,7 @@ didReceiveResponse:(NSURLResponse *)response
                                @"chapterCount": @(chapterCount),
                                @"markerCount": @(markers.count),
                                @"skipNameCount": @(skipNames.count),
-                               @"includeGeneratedSponsors": @(includeGeneratedSponsors),
+                               @"sponsorKeywordEnabled": @(sponsorKeywordEnabled),
                            }];
 }
 

@@ -46,7 +46,7 @@ editor_save = method_body(editor, "- (void) save")
 for expected in [
     "list.name = self.name",
     "list.includedFeeds = [NSSet setWithArray:[self.selectedPodcasts array]]",
-    '[USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"]',
+    '[USER_DEFAULTS setObject:sortedMenuUIDs forKey:@"MainMenuListUIDs"]',
 ]:
     require(expected in editor_save, f"Episode list editor must still persist {expected}.")
 

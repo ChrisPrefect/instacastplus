@@ -177,6 +177,7 @@
         }
 
         if (item.end.value != 0) {
+            i++;
             continue;
         }
         

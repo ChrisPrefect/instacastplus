@@ -86,7 +86,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
         case TSSectionCloud:
             return nil;
         case TSSectionChapters:
-            return NSLocalizedString(@"Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.", nil);
+            return NSLocalizedString(@"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Zusammenfassungen benötigen ein Remote-Kapitelmodell.", nil);
         case TSSectionAuto:
             return NSLocalizedString(@"Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden.", nil);
         default: return nil;
@@ -371,7 +371,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
             toggle.on = [USER_DEFAULTS boolForKey:kTranscriptionAutoDefault];
             break;
         case 1:
-            cell.textLabel.text = NSLocalizedString(@"Neue Folgen Kapitel generieren", nil);
+            cell.textLabel.text = NSLocalizedString(@"Neue Folgen analysieren", nil);
             toggle.on = [USER_DEFAULTS boolForKey:kChapterAutoDefault];
             break;
     }
@@ -379,8 +379,31 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (void)_autoToggle:(UISwitch *)toggle {
-    if (toggle.tag == 0) [USER_DEFAULTS setBool:toggle.isOn forKey:kTranscriptionAutoDefault];
-    else [USER_DEFAULTS setBool:toggle.isOn forKey:kChapterAutoDefault];
+    if (toggle.tag == 0) {
+        [USER_DEFAULTS setBool:toggle.isOn forKey:kTranscriptionAutoDefault];
+        return;
+    }
+
+    if (toggle.isOn) {
+        if (![ICDownloadableModelStore selectedChapterModelCanGenerate]) {
+            toggle.on = NO;
+            UIAlertController* alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Automatische Analyse einrichten", nil)
+                                                                           message:[ICDownloadableModelStore selectedChapterModelUnavailableReason]
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Kapitelmodell auswählen", nil)
+                                                      style:UIAlertActionStyleDefault
+                                                    handler:^(UIAlertAction* action) {
+                UIViewController* controller = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:NO];
+                [self.navigationController pushViewController:controller animated:YES];
+            }]];
+            [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil)
+                                                      style:UIAlertActionStyleCancel
+                                                    handler:nil]];
+            [self presentViewController:alert animated:YES completion:nil];
+            return;
+        }
+    }
+    [USER_DEFAULTS setBool:toggle.isOn forKey:kChapterAutoDefault];
 }
 
 #pragma mark - Selection
@@ -733,7 +756,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)_modelMutationBlockedMessage {
     NSString *blockedReason = [[TranscriptionQueue shared] modelMutationBlockReasonForRole:self.modelRole];
     if (blockedReason.length == 0) return nil;
-    return NSLocalizedString(@"Modell kann während der Transkription nicht geändert werden.", nil);
+    return NSLocalizedString(@"Modell kann während einer laufenden Transkription oder Episodenanalyse nicht geändert werden.", nil);
 }
 
 - (void)_updateBlockedHeader {

@@ -149,7 +149,7 @@ require(
 
 require(
     ">= 0.01" in engine
-    and ">= 0.1" not in source_slice(engine, "nonisolated(unsafe) var lastCheckpointProg", "switch effectiveEngine"),
+    and ">= 0.1" not in source_slice(engine, "private var lastCheckpointProgress", "// MARK: - TranscriptionEngine"),
     "Transcription checkpoints must be saved often enough that a short background switch does not restart visible progress.",
 )
 
@@ -163,9 +163,9 @@ require(
 )
 require(
     'if ([phase isEqualToString:@"background"])' in queue_ui
-    and "Transkription pausiert (%d%%)" in queue_ui
+    and "Verarbeitung pausiert (%d%%)" in queue_ui
     and "cell.progressView.hidden = NO" in queue_ui,
-    "Queue UI must show paused transcription progress instead of a hidden interrupted row.",
+    "Queue UI must show paused processing progress instead of a hidden interrupted row.",
 )
 
 require(

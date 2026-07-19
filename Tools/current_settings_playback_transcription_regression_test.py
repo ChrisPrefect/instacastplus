@@ -126,16 +126,13 @@ require(
 
 
 require(
-    "generatedSponsor" in metadata_h
-    and "ch.generatedSponsor = gch.isSponsor" in playback_manager,
-    "Generated sponsor flags must survive conversion into playback metadata chapters.",
-)
-require(
     "_autoSkipSponsorsEnabledForFeed:" in playback_manager
-    and "_skipNameForChapter:" in playback_manager
-    and "includeGeneratedSponsors" in playback_manager
-    and "chapter.generatedSponsor" in playback_manager,
-    "Auto-skip markers must treat generated sponsor chapters as skippable when sponsor skipping is enabled.",
+    and '@"Sponsor: "' in playback_manager
+    and "matchingSkipNameForChapter:" in playback_manager
+    and "includeGeneratedSponsors" not in playback_manager
+    and "ICGeneratedSponsorSkipName" not in playback_manager
+    and "autoSkipsChapterTitle:" in playback_manager,
+    "Sponsor auto-skip must add `Sponsor: ` to the ordinary chapter keyword list without a second player classification.",
 )
 require(
     "titleByRemovingSponsorPrefix" in chapter_generator

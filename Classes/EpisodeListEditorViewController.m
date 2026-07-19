@@ -247,7 +247,18 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     } else {
         [mainMenuUIDs removeObject:list.uid];
     }
-    [USER_DEFAULTS setObject:mainMenuUIDs forKey:@"MainMenuListUIDs"];
+    NSMutableArray* sortedMenuUIDs = [NSMutableArray arrayWithCapacity:mainMenuUIDs.count];
+    for (CDList* rankedList in DMANAGER.lists) {
+        if (rankedList.uid && [mainMenuUIDs containsObject:rankedList.uid]) {
+            [sortedMenuUIDs addObject:rankedList.uid];
+        }
+    }
+    for (NSString* uid in mainMenuUIDs) {
+        if (![sortedMenuUIDs containsObject:uid]) {
+            [sortedMenuUIDs addObject:uid];
+        }
+    }
+    [USER_DEFAULTS setObject:sortedMenuUIDs forKey:@"MainMenuListUIDs"];
 
     [[NSNotificationCenter defaultCenter] postNotificationName:@"MainMenuListUIDsDidChangeNotification" object:nil];
 }

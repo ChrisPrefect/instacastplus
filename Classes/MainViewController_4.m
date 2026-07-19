@@ -338,29 +338,24 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         [USER_DEFAULTS setBool:YES forKey:@"MainMenuListUIDsMigratedDefaults"];
     }
 
-    // Sync list ranks to match MainMenuListUIDs order (sidebar is the source of truth)
+    // Keep the visible sidebar subset in the same rank order as the Lists screen.
     {
         NSArray* menuUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
         if (menuUIDs.count > 1) {
-            NSArray* lists = DMANAGER.lists;
-            NSMutableArray* reordered = [NSMutableArray array];
-            // First: lists in MainMenuListUIDs order
+            NSMutableArray* sortedMenuUIDs = [NSMutableArray arrayWithCapacity:menuUIDs.count];
+            for (CDList* list in DMANAGER.lists) {
+                if (list.uid && [menuUIDs containsObject:list.uid]) {
+                    [sortedMenuUIDs addObject:list.uid];
+                }
+            }
             for (NSString* uid in menuUIDs) {
-                for (CDList* list in lists) {
-                    if ([list.uid isEqualToString:uid]) {
-                        [reordered addObject:list];
-                        break;
-                    }
+                if (![sortedMenuUIDs containsObject:uid]) {
+                    [sortedMenuUIDs addObject:uid];
                 }
             }
-            // Then: remaining lists not in the menu, keeping their existing rank order
-            for (CDList* list in lists) {
-                if (![reordered containsObject:list]) {
-                    [reordered addObject:list];
-                }
+            if (![sortedMenuUIDs isEqualToArray:menuUIDs]) {
+                [USER_DEFAULTS setObject:sortedMenuUIDs forKey:@"MainMenuListUIDs"];
             }
-            [CDList updateRanksOfLists:reordered];
-            [DMANAGER save];
         }
     }
 
