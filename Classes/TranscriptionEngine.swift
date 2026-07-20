@@ -1179,6 +1179,10 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         let url = srtURL(for: episodeHash)
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let content = try String(contentsOf: url, encoding: .utf8)
+        return try parsePersistedSRT(content)
+    }
+
+    private func parsePersistedSRT(_ content: String) throws -> [ICTranscriptCue] {
         let lines = content.components(separatedBy: .newlines)
         var cues: [ICTranscriptCue] = []
         var lineIndex = 0
@@ -1222,6 +1226,24 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             previousEnd = end
         }
         return cues.isEmpty ? [] : cues
+    }
+
+    /// Validates a server-delivered SRT before it replaces the local transcript.
+    /// The final write goes through the normal importer so revisions and caches
+    /// stay identical to locally generated transcripts.
+    func importServerSRTData(_ data: Data, for episodeHash: String) throws -> [ICTranscriptCue] {
+        guard !episodeHash.isEmpty,
+              let content = String(data: data, encoding: .utf8) else {
+            throw NSError(domain: "TranscriptionEngine.ServerImport", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript ist ungültig.", comment: "")])
+        }
+        let cues = try parsePersistedSRT(content)
+        guard !cues.isEmpty else {
+            throw NSError(domain: "TranscriptionEngine.ServerImport", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript enthält keine Zeitmarken.", comment: "")])
+        }
+        try saveImportedTranscriptCues(cues, for: episodeHash)
+        return cues
     }
 
     private func parsePersistedSRTTime(_ value: String) -> Double {

@@ -1475,7 +1475,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (UIContextualAction*) _contextualSwipeActionForSwipeAction:(ICEpisodeSwipeAction)swipeAction atIndexPath:(NSIndexPath*)indexPath
 {
-    if (swipeAction == ICEpisodeSwipeActionTranscribe && ![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
+    if (swipeAction == ICEpisodeSwipeActionTranscribe && ![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled] && ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
         return nil;
     }
     NSArray* lEpisodes = self.episodes;
@@ -1754,7 +1754,11 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         }
         case ICEpisodeSwipeActionTranscribe:
         {
-            [self _transcribeEpisode:episode];
+            if ([[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"server"]) {
+                [self _serverTranscribeEpisode:episode];
+            } else {
+                [self _transcribeEpisode:episode];
+            }
             break;
         }
         case ICEpisodeSwipeActionSendToAppleWatch:
@@ -1806,6 +1810,20 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         [self _showTranscriptionToast];
     } else {
         // Already in queue — haptic feedback only
+        PlayHapticFeedback(ICHapticFeedbackLight);
+    }
+    [self.tableView reloadData];
+}
+
+- (void) _serverTranscribeEpisode:(CDEpisode*)episode
+{
+    if (![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
+        return;
+    }
+    if ([[ServerTranscriptionManager shared] enqueueEpisode:episode]) {
+        PlaySoundFile(@"AffirmIn", NO);
+        [self _showTranscriptionToast];
+    } else {
         PlayHapticFeedback(ICHapticFeedbackLight);
     }
     [self.tableView reloadData];
@@ -2040,14 +2058,25 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     // Transcribe (only if downloaded and not already transcribed)
     // Transcribe (episode will be auto-downloaded if needed)
     BOOL localTranscriptionEnabled = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    BOOL serverTranscriptionEnabled = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
+    BOOL hasBothTranscriptionBackends = localTranscriptionEnabled && serverTranscriptionEnabled;
     if (localTranscriptionEnabled && ![[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
-        UIAction* transcribeAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkribieren", nil)
+        UIAction* transcribeAction = [UIAction actionWithTitle:hasBothTranscriptionBackends ? NSLocalizedString(@"Lokal transkribieren", nil) : NSLocalizedString(@"Transkribieren", nil)
                                                          image:[UIImage systemImageNamed:@"captions.bubble"]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
                                                            [weakSelf _transcribeEpisode:episode];
                                                        }];
         [actions addObject:transcribeAction];
+    }
+    if (serverTranscriptionEnabled) {
+        UIAction* serverAction = [UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil)
+                                                     image:[UIImage systemImageNamed:@"server.rack"]
+                                                identifier:nil
+                                                   handler:^(UIAction *action) {
+                                                       [weakSelf _serverTranscribeEpisode:episode];
+                                                   }];
+        [actions addObject:serverAction];
     }
 
     // Kapitel generieren (if transcript available but no generated chapters anywhere —

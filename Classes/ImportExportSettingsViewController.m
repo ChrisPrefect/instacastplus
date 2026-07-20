@@ -1265,6 +1265,8 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     if ([defaults objectForKey:@"MediaFilesSortMode"]) [xml appendFormat:@"    <mediaFilesSortMode>%ld</mediaFilesSortMode>\n", (long)[defaults integerForKey:@"MediaFilesSortMode"]];
     // Transcription & Chapters
     if ([defaults objectForKey:kLocalTranscriptionEnabled]) [xml appendFormat:@"    <localTranscriptionEnabled>%@</localTranscriptionEnabled>\n", [defaults boolForKey:kLocalTranscriptionEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:kServerTranscriptionEnabled]) [xml appendFormat:@"    <serverTranscriptionEnabled>%@</serverTranscriptionEnabled>\n", [defaults boolForKey:kServerTranscriptionEnabled] ? @"true" : @"false"];
+    if ([defaults objectForKey:kAutomaticTranscriptionBackend]) [xml appendFormat:@"    <automaticTranscriptionBackend>%@</automaticTranscriptionBackend>\n", [self xmlEscape:[defaults stringForKey:kAutomaticTranscriptionBackend]]];
     if ([defaults objectForKey:kTranscriptionEngine]) [xml appendFormat:@"    <transcriptionEngine>%@</transcriptionEngine>\n", [self xmlEscape:[defaults stringForKey:kTranscriptionEngine]]];
     if ([defaults objectForKey:kTranscriptionWhisperModel]) [xml appendFormat:@"    <transcriptionWhisperModel>%@</transcriptionWhisperModel>\n", [self xmlEscape:[defaults stringForKey:kTranscriptionWhisperModel]]];
     if ([defaults objectForKey:@"ChapterGenerationModel"]) [xml appendFormat:@"    <chapterGenerationModel>%@</chapterGenerationModel>\n", [self xmlEscape:[defaults stringForKey:@"ChapterGenerationModel"]]];

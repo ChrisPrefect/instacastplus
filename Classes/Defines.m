@@ -130,6 +130,8 @@ NSString* EnabledPlaybackSpeedsKey = @"EnabledPlaybackSpeeds";
 
 // Transcription & Chapters
 NSString* kLocalTranscriptionEnabled = @"LocalTranscriptionEnabled";
+NSString* kServerTranscriptionEnabled = @"ServerTranscriptionEnabled";
+NSString* kAutomaticTranscriptionBackend = @"AutomaticTranscriptionBackend";
 NSString* kTranscriptionEngine = @"TranscriptionEngine";
 NSString* kTranscriptionWhisperModel = @"TranscriptionWhisperModel";
 NSString* kTranscriptionAutoDefault = @"TranscriptionAutoDefault";

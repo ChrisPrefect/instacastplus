@@ -85,11 +85,14 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     if (self.pageMode == ICTranscriptionSettingsPageHub) return 1;
-    if (self.pageMode == ICTranscriptionSettingsPageServer) return 0;
+    if (self.pageMode == ICTranscriptionSettingsPageServer) return 2;
     return TSSectionCount;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    if (self.pageMode == ICTranscriptionSettingsPageServer) {
+        return section == 1 ? NSLocalizedString(@"Server-Verarbeitung", nil) : nil;
+    }
     if (self.pageMode != ICTranscriptionSettingsPageLocal) return nil;
     switch (section) {
         case TSSectionEnabled: return nil;
@@ -103,6 +106,12 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (self.pageMode == ICTranscriptionSettingsPageServer) {
+        if (section == 0) {
+            return NSLocalizedString(@"Wenn deaktiviert, werden die Server-Aktionen in Episodenmenüs ausgeblendet. Bereits beim Server eingereichte Folgen laufen dort weiter.", nil);
+        }
+        return NSLocalizedString(@"Der Server transkribiert Audio, erstellt Kapitel, erkennt Sponsorsegmente und erzeugt eine Zusammenfassung. Die App lädt das geprüfte Ergebnis, sobald es fertig ist.", nil);
+    }
     if (self.pageMode != ICTranscriptionSettingsPageLocal) return nil;
     switch (section) {
         case TSSectionEnabled:
@@ -122,8 +131,8 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (self.pageMode == ICTranscriptionSettingsPageHub) return 2;
-    if (self.pageMode == ICTranscriptionSettingsPageServer) return 0;
+    if (self.pageMode == ICTranscriptionSettingsPageHub) return 3;
+    if (self.pageMode == ICTranscriptionSettingsPageServer) return 1;
     switch (section) {
         case TSSectionEnabled: return 1;
         case TSSectionIntro: return 1;
@@ -137,6 +146,7 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     if (self.pageMode == ICTranscriptionSettingsPageHub) return [self _hubCellForRow:indexPath.row];
+    if (self.pageMode == ICTranscriptionSettingsPageServer) return [self _serverCellForSection:indexPath.section];
     switch (indexPath.section) {
         case TSSectionEnabled: return [self _enabledCell];
         case TSSectionIntro: return [self _introCell];
@@ -160,9 +170,71 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
             : NSLocalizedString(@"Aus", nil);
     } else {
         cell.textLabel.text = NSLocalizedString(@"Serverbasierte Transkription", nil);
-        cell.detailTextLabel.text = NSLocalizedString(@"In Vorbereitung", nil);
+        cell.detailTextLabel.text = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]
+            ? NSLocalizedString(@"Ein", nil)
+            : NSLocalizedString(@"Aus", nil);
+    }
+    if (row == 2) {
+        cell.textLabel.text = NSLocalizedString(@"Automatische Transkription", nil);
+        BOOL server = [[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"server"];
+        cell.detailTextLabel.text = server
+            ? NSLocalizedString(@"Server", nil)
+            : NSLocalizedString(@"Lokal", nil);
     }
     return cell;
+}
+
+#pragma mark - Server Section
+
+- (UITableViewCell *)_serverCellForSection:(NSInteger)section {
+    if (section == 0) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.textLabel.text = NSLocalizedString(@"Serverbasierte Transkription aktivieren", nil);
+        UISwitch *toggle = [[UISwitch alloc] init];
+        toggle.on = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
+        [toggle addTarget:self action:@selector(_serverTranscriptionToggle:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = toggle;
+        return cell;
+    }
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.textLabel.numberOfLines = 0;
+    cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+    cell.textLabel.textColor = ICMutedTextColor;
+    cell.textLabel.text = NSLocalizedString(@"Für die Server-Verarbeitung werden keine Modelle auf dem Gerät geladen. Die Bearbeitung läuft auf transcript.instacast.ch weiter, auch wenn InstacastPlus beendet ist.", nil);
+    return cell;
+}
+
+- (void)_serverTranscriptionToggle:(UISwitch *)toggle {
+    [USER_DEFAULTS setBool:toggle.isOn forKey:kServerTranscriptionEnabled];
+    if (!toggle.isOn && [[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"server"]) {
+        [USER_DEFAULTS setObject:@"local" forKey:kAutomaticTranscriptionBackend];
+    }
+    if (toggle.isOn) {
+        [[ServerTranscriptionManager shared] resumeIfNeeded];
+    }
+    [self.tableView reloadData];
+}
+
+- (void)_showAutomaticBackendChooser {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Automatische Transkription", nil)
+                                                                   message:NSLocalizedString(@"Für neue Folgen wird immer genau eine konfigurierte Variante verwendet.", nil)
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    if ([USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Lokal", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [USER_DEFAULTS setObject:@"local" forKey:kAutomaticTranscriptionBackend];
+            [self.tableView reloadData];
+        }]];
+    }
+    if ([USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Server", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [USER_DEFAULTS setObject:@"server" forKey:kAutomaticTranscriptionBackend];
+            [self.tableView reloadData];
+        }]];
+    }
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 #pragma mark - Enabled Section
@@ -180,6 +252,10 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 
 - (void)_localTranscriptionToggle:(UISwitch *)toggle {
     [USER_DEFAULTS setBool:toggle.isOn forKey:kLocalTranscriptionEnabled];
+    if (!toggle.isOn && [[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"local"] && [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
+        [USER_DEFAULTS setObject:@"server" forKey:kAutomaticTranscriptionBackend];
+    }
+    [self.tableView reloadData];
 }
 
 #pragma mark - Intro Section
@@ -489,6 +565,10 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (self.pageMode == ICTranscriptionSettingsPageHub) {
+        if (indexPath.row == 2) {
+            [self _showAutomaticBackendChooser];
+            return;
+        }
         TranscriptionSettingsViewController *controller = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
         controller.pageMode = indexPath.row == 0 ? ICTranscriptionSettingsPageLocal : ICTranscriptionSettingsPageServer;
         [self.navigationController pushViewController:controller animated:YES];

@@ -3171,6 +3171,8 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"tapOnEpisodeAction":      TapOnEpisodeAction,
         @"mediaFilesSortMode":      @"MediaFilesSortMode",
         @"localTranscriptionEnabled": kLocalTranscriptionEnabled,
+        @"serverTranscriptionEnabled": kServerTranscriptionEnabled,
+        @"automaticTranscriptionBackend": kAutomaticTranscriptionBackend,
         @"transcriptionEngine":     kTranscriptionEngine,
         @"transcriptionWhisperModel": kTranscriptionWhisperModel,
         @"chapterGenerationModel":  @"ChapterGenerationModel",
@@ -3194,7 +3196,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"continuousPlay", @"autoDownloadWhileStreaming", @"enableCachingImagesOver3G",
         @"openLinksExternal", @"notifyNewEpisode", @"notifyRefreshFinished", @"notifyRefreshFailure", @"notifyDownloadFinished",
         @"intelligentSleepAlways", @"darkModePureBlack", @"amazonAffiliateEnabled",
-        @"appleWatchOnlyUnplayed", @"localTranscriptionEnabled", @"transcriptionAutoDefault", @"chapterAutoDefault",
+        @"appleWatchOnlyUnplayed", @"localTranscriptionEnabled", @"serverTranscriptionEnabled", @"transcriptionAutoDefault", @"chapterAutoDefault",
         @"autoSkipSponsors", @"transcriptionEverActivated", @"transcriptionFirstRunShown",
         @"transcriptVisiblePreference",
     ]];
@@ -3204,7 +3206,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
     NSSet *stringKeys = [NSSet setWithArray:@[@"themeColorHex", @"playerColorHex", @"widgetColorHex",
         @"smarthomeMQTTHost", @"smarthomeMQTTUsername", @"smarthomeMQTTPassword", @"smarthomeDeviceName",
         @"feedSortOrder", @"selectedAppLanguage", @"transcriptionEngine", @"transcriptionWhisperModel",
-        @"chapterGenerationModel"]];
+        @"chapterGenerationModel", @"automaticTranscriptionBackend"]];
 
     NSInteger count = 0;
     NSUserDefaults *defaults = USER_DEFAULTS;

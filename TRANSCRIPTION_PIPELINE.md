@@ -600,6 +600,32 @@ war; die reale Ursache war das unzulässige GPU-Ausführungsprofil.
 
 ## Regressionen und Diagnose
 
+### Serverbasierte Transkription
+
+Problem: Lokale Transkription ist an Geräterechenzeit, Modellzustand und iOS-
+Lebenszyklus gebunden. Eine abgeschlossene Serververarbeitung musste zudem in die
+gleichen SRT-, Kapitel-, Sponsor- und Summary-Artefakte übernommen werden wie eine
+lokale Analyse, ohne vorhandene Publisher-Kapitel zu überschreiben.
+
+Grund: Es gab bisher nur eine vorbereitete, leere Server-Einstellungsseite und keinen
+dauerhaften Clientvertrag für die produktive Transcript-API.
+
+Lösung: `ServerTranscriptionManager` reicht die Audio- und Feed-URL mit stabiler
+Installations-ID an `/api/v1/episodes` ein und persistiert Server-ID, URL, Status und
+Wiederholungszeitpunkt. Der Server arbeitet unabhängig von iOS weiter. Die App pollt
+den dokumentierten Status, plant für automatische Server-Jobs einen netzwerkfähigen
+`BGProcessingTask` und übernimmt ein fertiges Ergebnis erst nach SHA-256-Prüfung aller
+Pflichtartefakte. Das SRT wird vor dem Commit zeitlich validiert. Server-Sponsorblöcke
+werden auf vollständige lokale SRT-Cues erweitert und als `Sponsor: ...` in die
+vorhandenen Publisher-Kapitel eingefügt; nur ohne vorhandene Kapitel wird die
+Server-Themenstruktur verwendet. Die bestehende Player-Skip-Liste verarbeitet diese
+Sponsor-Kapitel unverändert.
+
+Für automatische Folgen gibt es global genau eine Auswahl `Lokal` oder `Server` in
+`Transkription und Kapitel`; manuelle Episodenmenüs zeigen bei aktivierten Varianten
+beide getrennten Aktionen. Der Webhook-HMAC ist kein iOS-Feature: Die App registriert
+keine Callback-URL und verwendet ihn deshalb nicht.
+
 Problem: Ein fehlgeschlagener Kapiteljob blockierte im Episoden-Kontextmenü eine neue
 manuelle Transkription. Grund: Die allgemeine Duplikatsperre sah den terminalen
 Fehlereintrag weiterhin als aktiven Job; `enqueue` lieferte `false`, deshalb erschien
@@ -622,6 +648,7 @@ python3 Tools/transcription_analysis_visibility_regression_test.py
 python3 Tools/transcription_automatic_intent_revalidation_regression_test.py
 python3 Tools/transcription_automatic_model_contract_regression_test.py
 python3 Tools/transcription_automatic_pipeline_regression_test.py
+python3 Tools/server_transcription_api_regression_test.py
 python3 Tools/transcription_background_compute_regression_test.py
 python3 Tools/transcription_background_grant_retry_regression_test.py
 python3 Tools/transcription_background_persistence_quiescence_regression_test.py

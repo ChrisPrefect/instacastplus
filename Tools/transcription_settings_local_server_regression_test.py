@@ -55,8 +55,10 @@ require(
     'NSLocalizedString(@"Lokale Transkription", nil)' in settings
     and 'NSLocalizedString(@"Serverbasierte Transkription", nil)' in settings
     and "ICTranscriptionSettingsPageServer" in settings
-    and "return 0;" in settings,
-    "The settings hub does not expose an ordered local page and an empty server page.",
+    and "_serverTranscriptionToggle:" in settings
+    and "kServerTranscriptionEnabled" in settings
+    and "_showAutomaticBackendChooser" in settings,
+    "The settings hub does not expose configured local/server pages and one automatic backend selector.",
 )
 require(
     re.search(r"TSSectionEnabled\s*=\s*0", settings)
@@ -115,7 +117,8 @@ for localized in (german, english):
         "Lokale Transkription",
         "Serverbasierte Transkription",
         "Lokale Transkription aktivieren",
-        "In Vorbereitung",
+        "Serverbasierte Transkription aktivieren",
+        "Automatische Transkription",
     ):
         require(f'"{key}" =' in localized, f"Missing DE/EN localization key: {key}")
 

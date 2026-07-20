@@ -1096,6 +1096,40 @@ private struct RemoteJSONObjectResult {
                                      transcriptRevision: transcriptRevision)
     }
 
+    /// Imports the verified server result using the same local artifact format as
+    /// on-device analysis. Sponsor boundaries are rebased to complete local SRT
+    /// cues before the existing chapter overlay is written.
+    func saveServerAnalysis(_ existingChapters: [ICGeneratedChapter],
+                            sponsorSegments: [ICSponsorSegment],
+                            summary: String,
+                            transcriptCues cues: [ICTranscriptCue],
+                            for episodeHash: String) throws {
+        let cueIDs = evidenceCueIDs(for: cues)
+        let rebasedSponsors = try sponsorSegments.map { segment -> ICSponsorSegment in
+            guard let first = cues.firstIndex(where: { $0.end > segment.start }),
+                  let last = cues.lastIndex(where: { $0.start < segment.end }),
+                  last >= first else {
+                throw Self.sponsorValidationError(
+                    code: 84,
+                    description: "Sponsor-Erkennung verworfen - der Serverblock liegt ausserhalb des Transkripts."
+                )
+            }
+            let title = segment.title.hasPrefix("Sponsor: ")
+                ? segment.title
+                : "Sponsor: \(segment.title)"
+            return ICSponsorSegment(start: cues[first].start,
+                                    end: cues[last].end,
+                                    title: title,
+                                    evidenceCueIDs: Array(cueIDs[first...last]))
+        }
+        let result = try makeAnalysisResult(existingChapters: existingChapters,
+                                            sponsorSegments: rebasedSponsors,
+                                            summary: summary,
+                                            transcriptRevision: transcriptRevision(for: cues),
+                                            transcriptCues: cues)
+        try saveAnalysisResult(result, for: episodeHash)
+    }
+
     private static func makeTranscriptRevision(for cues: [ICTranscriptCue]) -> String {
         var canonical = Data("instacast-transcript-revision-v1".utf8)
         appendUInt64(UInt64(cues.count), to: &canonical)

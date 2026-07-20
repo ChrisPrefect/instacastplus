@@ -124,6 +124,10 @@
 	<false/>
 	<key>LocalTranscriptionEnabled</key>
 	<true/>
+	<key>ServerTranscriptionEnabled</key>
+	<false/>
+	<key>AutomaticTranscriptionBackend</key>
+	<string>local</string>
 	<key>AmazonAffiliateEnabled</key>
 	<true/>
 </dict>

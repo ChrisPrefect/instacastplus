@@ -168,6 +168,8 @@ extern NSString* EnabledPlaybackSpeedsKey;
 
 // Transcription & Chapters
 extern NSString* kLocalTranscriptionEnabled;         // BOOL - local transcription/chapter actions enabled
+extern NSString* kServerTranscriptionEnabled;        // BOOL - shared server transcription actions enabled
+extern NSString* kAutomaticTranscriptionBackend;     // @"local" or @"server"
 extern NSString* kTranscriptionEngine;              // "WhisperKit" or "Apple"
 extern NSString* kTranscriptionWhisperModel;         // "large-v3-turbo" or "small"
 extern NSString* kTranscriptionAutoDefault;           // BOOL - auto-transcribe new episodes

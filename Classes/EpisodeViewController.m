@@ -1423,8 +1423,10 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
 
     // 6. Transcribe (auto-downloads if needed)
     BOOL localTranscriptionEnabled = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    BOOL serverTranscriptionEnabled = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
+    BOOL hasBothTranscriptionBackends = localTranscriptionEnabled && serverTranscriptionEnabled;
     if (localTranscriptionEnabled && ![[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash]) {
-        [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Transkribieren", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
+        [actions addObject:[UIAction actionWithTitle:hasBothTranscriptionBackends ? NSLocalizedString(@"Lokal transkribieren", nil) : NSLocalizedString(@"Transkribieren", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             if (![ICDownloadableModelStore selectedVoiceModelIsReady]) {
                 UIViewController* settingsVC = [TranscriptionSettingsViewController modelLibraryViewControllerFocusedOnVoiceToText:YES];
@@ -1438,6 +1440,16 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
                                                            audioURL:audioURL
                                                            language:self.episode.feed.language];
             PlaySoundFile(@"AffirmIn", NO);
+        }]];
+    }
+    if (serverTranscriptionEnabled) {
+        [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil) image:[UIImage systemImageNamed:@"server.rack"] identifier:nil handler:^(UIAction *action) {
+            STRONG_SELF
+            if ([[ServerTranscriptionManager shared] enqueueEpisode:self.episode]) {
+                PlaySoundFile(@"AffirmIn", NO);
+            } else {
+                PlayHapticFeedback(ICHapticFeedbackLight);
+            }
         }]];
     }
 

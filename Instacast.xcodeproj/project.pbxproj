@@ -26,6 +26,7 @@
 		0B83762B806FF0E5B948163A /* WatchComplicationWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988EDB2888DF2AA9CBFEADBB /* WatchComplicationWidget.swift */; };
 		0BC7C038B900D866CD820D92 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 9E85E0F1B1C46AF663E6C92E /* Localizable.strings */; };
 		0DB2440CD95BAD55C356BB6E /* WhisperKitBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */; };
+		A19000000000000000000002 /* ServerTranscriptionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19000000000000000000001 /* ServerTranscriptionManager.swift */; };
 		165F30F6E6A9447BBE29BD6E /* TranscriptionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B874ED55A5A0F6ED98DD872E /* TranscriptionEngine.swift */; };
 		1741894CCC3BF64933A78F04 /* ICiCloudSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */; };
 		188B3C742E175728004D14A5 /* SkipTimeCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 188B3C722E175728004D14A5 /* SkipTimeCell.m */; };
@@ -1093,6 +1094,7 @@
 		EC277288AEE288A71CA39AAA /* InstacastBackupImportViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupImportViewController.h; sourceTree = "<group>"; };
 		ED28C103136054494A8998FD /* TranscriptionQueueViewController.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = TranscriptionQueueViewController.m; sourceTree = "<group>"; };
 		EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WhisperKitBackend.swift; sourceTree = "<group>"; };
+		A19000000000000000000001 /* ServerTranscriptionManager.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServerTranscriptionManager.swift; sourceTree = "<group>"; };
 		F047AE18988303F971448133 /* InstacastBackupParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = InstacastBackupParser.h; sourceTree = "<group>"; };
 		F169BFC4C1DC5A7320C86CCA /* InstacastBackupParser.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = InstacastBackupParser.m; sourceTree = "<group>"; };
 		F22C54EB529C7CEF836E0AAC /* NowPlayingWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NowPlayingWidget.swift; sourceTree = "<group>"; };
@@ -1238,6 +1240,7 @@
 				83A4F7D077257CCC4A65EA02 /* TranscriptionSettingsViewController.m */,
 				ED28C103136054494A8998FD /* TranscriptionQueueViewController.m */,
 				EFA9B7A2D5A9EE97779FC5C0 /* WhisperKitBackend.swift */,
+				A19000000000000000000001 /* ServerTranscriptionManager.swift */,
 				6D57E2549508CDEA8422AA1C /* ICiCloudSyncManager.swift */,
 				7578F62996A0B752DEAE3C13 /* ICiCloudSyncTypes.swift */,
 				12CC697C5D7E5F0CF48EAE87 /* ICiCloudSyncManager+EngineRecords.swift */,
@@ -2819,6 +2822,7 @@
 				8AE904639392BCD06F5EAFD2 /* TranscriptionSettingsViewController.m in Sources */,
 				F7A2FA597A4284CBF92BE7A5 /* TranscriptionQueueViewController.m in Sources */,
 				0DB2440CD95BAD55C356BB6E /* WhisperKitBackend.swift in Sources */,
+				A19000000000000000000002 /* ServerTranscriptionManager.swift in Sources */,
 				82390845768A75AAF40C73FD /* AppleWatchEpisodeState.m in Sources */,
 				8645A4A22D90C9EFCF4CFACD /* AppleWatchSyncManager.m in Sources */,
 				27AB83E1F94A3303C22D3425 /* AppleWatchEpisodesViewController.m in Sources */,
