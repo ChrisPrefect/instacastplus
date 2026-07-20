@@ -242,6 +242,17 @@ typedef NS_ENUM(NSInteger, TSSection) {
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        UIButton *pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [pasteButton setTitle:NSLocalizedString(@"Einfügen", nil) forState:UIControlStateNormal];
+        pasteButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
+        [pasteButton addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
+            NSString *clipboardValue = UIPasteboard.generalPasteboard.string;
+            if (clipboardValue.length > 0) {
+                textField.text = clipboardValue;
+            }
+        }] forControlEvents:UIControlEventTouchUpInside];
+        textField.rightView = pasteButton;
+        textField.rightViewMode = UITextFieldViewModeAlways;
     }];
     [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Speichern", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *value = alert.textFields.firstObject.text ?: @"";
@@ -506,7 +517,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
     cell.textLabel.numberOfLines = 0;
     cell.detailTextLabel.numberOfLines = 0;
     cell.detailTextLabel.text = [self _detailTextForModel:model downloaded:downloaded busy:busy selected:selected];
-    cell.accessoryType = selected && (downloaded || !model.requiresDownload) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+    cell.accessoryType = selected && !busy && (downloaded || !model.requiresDownload) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
     cell.tintColor = ICTintColor;
 
     if (busy) {
@@ -517,7 +528,10 @@ typedef NS_ENUM(NSInteger, TSSection) {
         cell.accessoryView = nil;
     }
 
-    if (remoteMissingCredentials) {
+    if (busy) {
+        cell.imageView.image = [UIImage systemImageNamed:@"arrow.down.circle"];
+        cell.imageView.tintColor = ICTintColor;
+    } else if (remoteMissingCredentials) {
         cell.imageView.image = [UIImage systemImageNamed:@"exclamationmark.circle"];
         cell.imageView.tintColor = [UIColor systemOrangeColor];
     } else if (downloaded || !model.requiresDownload) {
@@ -533,7 +547,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (NSString *)_detailTextForModel:(ICDownloadableModel *)model downloaded:(BOOL)downloaded busy:(BOOL)busy selected:(BOOL)selected {
     if (busy) {
-        return [NSString stringWithFormat:@"%@: %@\n%@", NSLocalizedString(@"Wird geladen", nil), [self _downloadProgressTextForModel:model], model.detail];
+        return [NSString stringWithFormat:@"%@\n%@", [self _downloadProgressTextForModel:model], model.detail];
     }
     NSString *blockedReason = [[TranscriptionQueue shared] modelMutationBlockReasonForRole:model.role];
     if (blockedReason.length > 0) {
@@ -567,19 +581,9 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (NSString *)_downloadProgressTextForModel:(ICDownloadableModel *)model {
     ICModelDownloadProgress *progress = self.downloadProgressByModelID[model.identifier] ?: [ICDownloadableModelStore downloadProgressForModel:model];
     if (progress) {
-        return progress.byteText;
+        return progress.displayText;
     }
-
-    long long total = model.downloadSizeBytes;
-    long long completed = [ICDownloadableModelStore sizeOnDiskForModel:model];
-    NSString *completedText = [NSByteCountFormatter stringFromByteCount:completed
-                                                             countStyle:NSByteCountFormatterCountStyleFile];
-    if (total <= 0) {
-        return completedText;
-    }
-    NSString *totalText = [NSByteCountFormatter stringFromByteCount:total
-                                                         countStyle:NSByteCountFormatterCountStyleFile];
-    return [NSString stringWithFormat:@"%@ / %@", completedText, totalText];
+    return NSLocalizedString(@"Download wird vorbereitet.", nil);
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -800,7 +804,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
         case ICChapterModelProviderOpenAIAPI:
             return [ICRemoteChapterCredentialStore hasOpenAIAPIKey];
         case ICChapterModelProviderOpenAICodexOAuth:
-            return [ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials];
+            return [ICRemoteChapterCredentialStore hasOpenAIAPIKey] || [ICRemoteChapterCredentialStore hasOpenAIOAuthCredentials];
         case ICChapterModelProviderAnthropicAPI:
             return [ICRemoteChapterCredentialStore hasAnthropicAPIKey];
         case ICChapterModelProviderKimiAPI:
@@ -825,7 +829,16 @@ typedef NS_ENUM(NSInteger, TSSection) {
             }];
             break;
         case ICChapterModelProviderOpenAICodexOAuth:
-            [self _showOpenAIOAuthLogin];
+            [self _showAPIKeyEditorWithTitle:@"OpenAI API-Key"
+                                      message:NSLocalizedString(@"Der Key wird im iOS-Keychain gespeichert und für OpenAI Kapitelmodelle verwendet. Alternativ kann in den Cloud-Zugängen der Codex Login eingerichtet werden.", nil)
+                                  placeholder:@"sk-..."
+                          keyCreationURLString:@"https://platform.openai.com/api-keys"
+                                 isConfigured:[ICRemoteChapterCredentialStore hasOpenAIAPIKey]
+                                  saveHandler:^(NSString *value) {
+                [ICRemoteChapterCredentialStore setOpenAIAPIKey:value];
+            } deleteHandler:^{
+                [ICRemoteChapterCredentialStore setOpenAIAPIKey:nil];
+            }];
             break;
         case ICChapterModelProviderAnthropicAPI:
             [self _showAPIKeyEditorWithTitle:@"Anthropic API-Key"
@@ -872,6 +885,17 @@ typedef NS_ENUM(NSInteger, TSSection) {
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        UIButton *pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        [pasteButton setTitle:NSLocalizedString(@"Einfügen", nil) forState:UIControlStateNormal];
+        pasteButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
+        [pasteButton addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
+            NSString *clipboardValue = UIPasteboard.generalPasteboard.string;
+            if (clipboardValue.length > 0) {
+                textField.text = clipboardValue;
+            }
+        }] forControlEvents:UIControlEventTouchUpInside];
+        textField.rightView = pasteButton;
+        textField.rightViewMode = UITextFieldViewModeAlways;
     }];
     [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Speichern", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *value = alert.textFields.firstObject.text ?: @"";

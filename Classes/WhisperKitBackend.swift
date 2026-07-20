@@ -73,13 +73,14 @@ private final class WhisperKitSegmentDelivery: @unchecked Sendable {
 actor WhisperKitBackend {
 
     static let shared = WhisperKitBackend()
-    private nonisolated static let maxTranscriptionSliceDuration: Double = 30 * 60
+    private nonisolated static let maxTranscriptionSliceDuration: Double = 5 * 60
     private nonisolated static let transcriptionSliceOverlap: Double = 5
     private nonisolated static let requiredCompiledModelNames = [
         "MelSpectrogram",
         "AudioEncoder",
         "TextDecoder",
     ]
+    private nonisolated static let computeProfilePreparationMarkerName = ".instacast-compute-profiles-v1"
 
     private var whisperKit: WhisperKit?
     private var modelLoadTask: Task<Void, Error>?
@@ -208,6 +209,21 @@ actor WhisperKitBackend {
             resourceValues.isExcludedFromBackup = true
             try? mutableFolder.setResourceValues(resourceValues)
         }
+    }
+
+    private nonisolated static func computeProfilePreparationMarker(in folder: URL) -> URL {
+        folder.appendingPathComponent(computeProfilePreparationMarkerName)
+    }
+
+    private nonisolated static func hasPreparedAllComputeProfiles(in folder: URL) -> Bool {
+        FileManager.default.fileExists(atPath: computeProfilePreparationMarker(in: folder).path)
+    }
+
+    private nonisolated static func markAllComputeProfilesPrepared(in folder: URL) throws {
+        try Data("foreground-gpu\nbackground-cpu-ane\n".utf8).write(
+            to: computeProfilePreparationMarker(in: folder),
+            options: .atomic
+        )
     }
 
     private nonisolated static func compiledModelValidationIssue(in folder: URL) -> String? {
@@ -537,22 +553,22 @@ actor WhisperKitBackend {
     private nonisolated static func userVisibleStatus(fromWhisperLog message: String) -> String? {
         if message.localizedCaseInsensitiveContains("compil") ||
             message.localizedCaseInsensitiveContains("specializ") {
-            return NSLocalizedString("Spracherkennungsmodell wird kompiliert.", comment: "")
+            return NSLocalizedString("Core ML bereitet das Modell einmalig für dieses Rechenprofil vor.", comment: "")
         }
         if message.contains("Loading feature extractor") {
-            return NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: "")
+            return NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: "")
         }
         if message.contains("Loading text decoder prefill data") {
-            return NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: "")
+            return NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: "")
         }
         if message.contains("Loading text decoder") {
-            return NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: "")
+            return NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: "")
         }
         if message.contains("Loading audio encoder") {
-            return NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: "")
+            return NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: "")
         }
         if message.contains("Loading tokenizer") {
-            return NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: "")
+            return NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: "")
         }
         if message.contains("Starting pipeline at") {
             return NSLocalizedString("Transkription läuft.", comment: "")
@@ -588,7 +604,7 @@ actor WhisperKitBackend {
 
         NSLog("[WhisperKitBackend] Existing WhisperKit instance in state %@, loading models now",
               String(describing: wk.modelState))
-        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: ""))
+        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: ""))
         WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
         do {
             nonisolated(unsafe) let whisper = wk
@@ -632,6 +648,8 @@ actor WhisperKitBackend {
     }
 
     func downloadModel(modelName: String,
+                       transferProgress: @escaping @Sendable (Progress) -> Void = { _ in },
+                       phaseUpdate: @escaping @Sendable (ICModelDownloadPhase, String) -> Void = { _, _ in },
                        statusUpdate: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         let base = WhisperKitBackend.whisperDownloadBase()
         let desiredComputeProfile = WhisperKitBackend.desiredComputeProfile()
@@ -641,7 +659,9 @@ actor WhisperKitBackend {
             "downloadBase": base.path,
             "computeProfile": desiredComputeProfile.rawValue,
         ] as NSDictionary)
-        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird heruntergeladen.", comment: ""))
+        let discoveringStatus = NSLocalizedString("Download wird vorbereitet.", comment: "")
+        phaseUpdate(.discovering, discoveringStatus)
+        statusUpdate(discoveringStatus)
         let previousLogger = Logging.shared.loggingCallback
         Logging.shared.loggingCallback = { message in
             if let status = WhisperKitBackend.userVisibleStatus(fromWhisperLog: message) {
@@ -651,28 +671,28 @@ actor WhisperKitBackend {
         defer {
             Logging.shared.loggingCallback = previousLogger
         }
-        let wk = try await WhisperKit(
-            model: modelName,
+        let downloadingStatus = NSLocalizedString("Wird heruntergeladen", comment: "")
+        phaseUpdate(.downloading, downloadingStatus)
+        statusUpdate(downloadingStatus)
+        let modelFolder = try await WhisperKit.download(
+            variant: modelName,
             downloadBase: base,
-            computeOptions: WhisperKitBackend.computeOptions(for: desiredComputeProfile),
-            verbose: true,
-            logLevel: .debug,
-            prewarm: false,
-            load: false
+            progressCallback: transferProgress
         )
-        let modelFolder = WhisperKitBackend.modelFolderURL(modelName: modelName)
+        try Task.checkCancellation()
         WhisperKitBackend.prepareModelDirectoryForCoreML(in: modelFolder)
-        nonisolated(unsafe) let whisper = wk
-        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird vorbereitet", comment: ""))
-        try await whisper.prewarmModels()
+        let wk = try await prepareDownloadedModelForAllComputeProfiles(
+            modelFolder: modelFolder,
+            desiredComputeProfile: desiredComputeProfile,
+            phaseUpdate: phaseUpdate,
+            statusUpdate: statusUpdate
+        )
         if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: modelFolder) {
             throw NSError(domain: "WhisperKitBackend", code: 6,
                           userInfo: [NSLocalizedDescriptionKey: validationIssue])
         }
+        try WhisperKitBackend.markAllComputeProfilesPrepared(in: modelFolder)
         WhisperKitBackend.removeOriginalModelSources(in: modelFolder)
-        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: ""))
-        WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
-        try await whisper.loadModels()
         whisperKit = wk // keep the ready instance
         loadedComputeProfile = desiredComputeProfile
         // Drop the per-instance callback now that loading is done — the closure captures
@@ -695,6 +715,65 @@ actor WhisperKitBackend {
             "decoderSpecializationSeconds": timings.decoderSpecializationTime,
             "requiredModelInventory": WhisperKitBackend.requiredModelInventory(in: modelFolder),
         ] as NSDictionary)
+    }
+
+    /// Specialize both compute configurations once while the download is still
+    /// an explicit, visible operation. Ordinary model loads never prewarm again.
+    private func prepareDownloadedModelForAllComputeProfiles(
+        modelFolder: URL,
+        desiredComputeProfile: WhisperKitComputeProfile,
+        phaseUpdate: @escaping @Sendable (ICModelDownloadPhase, String) -> Void,
+        statusUpdate: @escaping @Sendable (String) -> Void
+    ) async throws -> WhisperKit {
+        let profiles: [WhisperKitComputeProfile] = [.backgroundSafe, .foregroundGPU]
+        for profile in profiles where profile != desiredComputeProfile {
+            try Task.checkCancellation()
+            let status = profile == .backgroundSafe
+                ? NSLocalizedString("Modell wird einmalig für die Hintergrundverarbeitung vorbereitet.", comment: "")
+                : NSLocalizedString("Modell wird einmalig für die Vordergrundverarbeitung vorbereitet.", comment: "")
+            phaseUpdate(.preparing, status)
+            statusUpdate(status)
+            let secondary = try await WhisperKit(
+                modelFolder: modelFolder.path,
+                computeOptions: WhisperKitBackend.computeOptions(for: profile),
+                verbose: true,
+                logLevel: .debug,
+                prewarm: false,
+                load: false,
+                download: false
+            )
+            nonisolated(unsafe) let secondaryWhisper = secondary
+            try await secondaryWhisper.prewarmModels()
+        }
+
+        try Task.checkCancellation()
+        let primaryStatus = desiredComputeProfile == .backgroundSafe
+            ? NSLocalizedString("Modell wird einmalig für die Hintergrundverarbeitung vorbereitet.", comment: "")
+            : NSLocalizedString("Modell wird einmalig für die Vordergrundverarbeitung vorbereitet.", comment: "")
+        phaseUpdate(.preparing, primaryStatus)
+        statusUpdate(primaryStatus)
+        let primary = try await WhisperKit(
+            modelFolder: modelFolder.path,
+            computeOptions: WhisperKitBackend.computeOptions(for: desiredComputeProfile),
+            verbose: true,
+            logLevel: .debug,
+            prewarm: false,
+            load: false,
+            download: false
+        )
+        nonisolated(unsafe) let primaryWhisper = primary
+        try await primaryWhisper.prewarmModels()
+
+        let loadingStatus = NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: "")
+        phaseUpdate(.loading, loadingStatus)
+        statusUpdate(loadingStatus)
+        WhisperKitBackend.installStatusLogger(on: primary, statusUpdate: statusUpdate)
+        try await primaryWhisper.loadModels()
+        WhisperKitBackend.clearStatusLogger(on: primary)
+        let readyStatus = NSLocalizedString("Geladen und vorbereitet.", comment: "")
+        phaseUpdate(.ready, readyStatus)
+        statusUpdate(readyStatus)
+        return primary
     }
 
     // MARK: - Get Instance (fast if model already downloaded)
@@ -743,7 +822,7 @@ actor WhisperKitBackend {
         NSLog("[WhisperKitBackend] Loading model from: %@ (%d files)", folder, contents.count)
         NSLog("[WhisperKitBackend] Device RAM: %llu MB, free disk: %lld MB",
               memBefore / 1024 / 1024, freeDisk / 1024 / 1024)
-        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: ""))
+        statusUpdate(NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: ""))
         // Print mtime for each .mlmodelc so we can see if it's stable between launches.
         for file in contents where file.hasSuffix(".mlmodelc") {
             let fileURL = folderURL.appendingPathComponent(file)
@@ -764,7 +843,7 @@ actor WhisperKitBackend {
         let loadGeneration = modelLoadGeneration
         let task = Task(priority: .utility) { () throws -> Void in
             NSLog("[WhisperKitBackend] Starting WhisperKit init...")
-            statusUpdate(NSLocalizedString("Spracherkennungsmodell wird vorbereitet", comment: ""))
+            statusUpdate(NSLocalizedString("Spracherkennung wird initialisiert.", comment: ""))
             let previousLogger = Logging.shared.loggingCallback
             Logging.shared.loggingCallback = { message in
                 if let status = WhisperKitBackend.userVisibleStatus(fromWhisperLog: message) {
@@ -777,23 +856,40 @@ actor WhisperKitBackend {
             let wk: WhisperKit
             do {
                 WhisperKitBackend.prepareModelDirectoryForCoreML(in: folderURL)
-                wk = try await WhisperKit(
-                    modelFolder: folder,
-                    computeOptions: WhisperKitBackend.computeOptions(for: desiredComputeProfile),
-                    verbose: true,
-                    logLevel: .debug,
-                    prewarm: true,
-                    load: false
-                )
-                statusUpdate(NSLocalizedString("Spracherkennungsmodell wird geladen.", comment: ""))
-                if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: folderURL) {
-                    throw NSError(domain: "WhisperKitBackend", code: 6,
-                                  userInfo: [NSLocalizedDescriptionKey: validationIssue])
+                if WhisperKitBackend.hasPreparedAllComputeProfiles(in: folderURL) {
+                    wk = try await WhisperKit(
+                        modelFolder: folder,
+                        computeOptions: WhisperKitBackend.computeOptions(for: desiredComputeProfile),
+                        verbose: true,
+                        logLevel: .debug,
+                        prewarm: false,
+                        load: false,
+                        download: false
+                    )
+                    statusUpdate(NSLocalizedString("Spracherkennungsmodell wird in den Arbeitsspeicher geladen.", comment: ""))
+                    if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: folderURL) {
+                        throw NSError(domain: "WhisperKitBackend", code: 6,
+                                      userInfo: [NSLocalizedDescriptionKey: validationIssue])
+                    }
+                    WhisperKitBackend.removeOriginalModelSources(in: folderURL)
+                    WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
+                    nonisolated(unsafe) let whisper = wk
+                    try await whisper.loadModels()
+                } else {
+                    statusUpdate(NSLocalizedString("Vorhandenes Modell wird einmalig für Vorder- und Hintergrund vorbereitet.", comment: ""))
+                    wk = try await self.prepareDownloadedModelForAllComputeProfiles(
+                        modelFolder: folderURL,
+                        desiredComputeProfile: desiredComputeProfile,
+                        phaseUpdate: { _, status in statusUpdate(status) },
+                        statusUpdate: statusUpdate
+                    )
+                    if let validationIssue = WhisperKitBackend.compiledModelValidationIssue(in: folderURL) {
+                        throw NSError(domain: "WhisperKitBackend", code: 6,
+                                      userInfo: [NSLocalizedDescriptionKey: validationIssue])
+                    }
+                    try WhisperKitBackend.markAllComputeProfilesPrepared(in: folderURL)
+                    WhisperKitBackend.removeOriginalModelSources(in: folderURL)
                 }
-                WhisperKitBackend.removeOriginalModelSources(in: folderURL)
-                WhisperKitBackend.installStatusLogger(on: wk, statusUpdate: statusUpdate)
-                nonisolated(unsafe) let whisper = wk
-                try await whisper.loadModels()
             } catch is CancellationError {
                 throw CancellationError()
             } catch {

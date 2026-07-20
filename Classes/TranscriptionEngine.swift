@@ -10,6 +10,7 @@
 
 import Foundation
 import AVFoundation
+import NaturalLanguage
 import UIKit
 import Darwin
 import Darwin.Mach
@@ -1589,87 +1590,94 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         return normalized
     }
 
-    /// Clean up WhisperKit segments: merge short fragments, split overly long segments at sentence boundaries.
+    /// Clean up WhisperKit segments and align persisted sections to sentence endings.
     private func postProcessCues(_ cues: [ICTranscriptCue]) -> [ICTranscriptCue] {
         guard !cues.isEmpty else { return cues }
 
         let timelineCues = normalizedTranscriptTimelineCues(cues)
         guard !timelineCues.isEmpty else { return [] }
 
+        return sentenceAlignedTranscriptCues(timelineCues)
+    }
+
+    /// Whisper segments are decoder implementation details, not semantic text
+    /// boundaries. Buffer unfinished text until NaturalLanguage reports a full
+    /// sentence. If a segment contains a full sentence plus the next speaker's
+    /// first word, only the full sentence is emitted and the suffix is carried on.
+    private func sentenceAlignedTranscriptCues(_ cues: [ICTranscriptCue]) -> [ICTranscriptCue] {
         var result: [ICTranscriptCue] = []
-
-        // Step 1: Merge very short fragments (< 2 seconds or < 10 chars) into adjacent cues
-        var merged: [ICTranscriptCue] = []
         var pendingText = ""
-        var pendingStart: Double = 0
-        var pendingEnd: Double = 0
+        var pendingStart = 0.0
+        var pendingEnd = 0.0
 
-        for cue in timelineCues {
-            let text = cue.text
+        func isCompleteSentence(_ text: Substring) -> Bool {
+            guard let last = text.trimmingCharacters(in: .whitespacesAndNewlines).last else {
+                return false
+            }
+            return ".!?…".contains(last)
+        }
 
+        func lastCompleteSentenceBoundary(in text: String) -> String.Index? {
+            let tokenizer = NLTokenizer(unit: .sentence)
+            tokenizer.string = text
+            var boundary: String.Index?
+            tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+                if isCompleteSentence(text[range]) {
+                    boundary = range.upperBound
+                }
+                return true
+            }
+            return boundary
+        }
+
+        func appendPending(end: Double) {
+            let text = pendingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, end > pendingStart else { return }
+            result.append(ICTranscriptCue(start: pendingStart, end: end, text: text))
+        }
+
+        for cue in cues {
             if pendingText.isEmpty {
-                pendingText = text
                 pendingStart = cue.start
-                pendingEnd = cue.end
             } else {
-                let duration = pendingEnd - pendingStart
-                // Merge if current pending segment is very short
-                if duration < 2.0 || pendingText.count < 10 {
-                    pendingText += " " + text
-                    pendingEnd = cue.end
-                } else {
-                    merged.append(ICTranscriptCue(start: pendingStart, end: pendingEnd, text: pendingText))
-                    pendingText = text
-                    pendingStart = cue.start
-                    pendingEnd = cue.end
+                pendingText += " "
+            }
+            pendingText += cue.text
+            pendingEnd = cue.end
+
+            guard let boundary = lastCompleteSentenceBoundary(in: pendingText) else {
+                // Keep unpunctuated speech bounded without inventing a sentence end.
+                if pendingEnd - pendingStart >= 60 {
+                    appendPending(end: pendingEnd)
+                    pendingText = ""
                 }
+                continue
+            }
+
+            let completeText = String(pendingText[..<boundary])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let suffix = String(pendingText[boundary...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !completeText.isEmpty else { continue }
+
+            if suffix.isEmpty {
+                appendPending(end: pendingEnd)
+                pendingText = ""
+            } else {
+                let totalCharacters = max(pendingText.count, 1)
+                let completedCharacters = pendingText.distance(from: pendingText.startIndex, to: boundary)
+                let fraction = Double(completedCharacters) / Double(totalCharacters)
+                let boundaryTime = pendingStart + ((pendingEnd - pendingStart) * fraction)
+                result.append(ICTranscriptCue(start: pendingStart,
+                                              end: boundaryTime,
+                                              text: completeText))
+                pendingText = suffix
+                pendingStart = boundaryTime
             }
         }
+
         if !pendingText.isEmpty {
-            merged.append(ICTranscriptCue(start: pendingStart, end: pendingEnd, text: pendingText))
-        }
-
-        // Step 2: Split overly long segments (> 60 seconds) at sentence boundaries
-        let sentenceEnders: CharacterSet = CharacterSet(charactersIn: ".!?")
-
-        for cue in merged {
-            let duration = cue.end - cue.start
-            if duration <= 60.0 || cue.text.count < 200 {
-                result.append(cue)
-                continue
-            }
-
-            // Find sentence boundaries and split
-            let text = cue.text
-            var sentences: [String] = []
-            var currentSentence = ""
-
-            for char in text {
-                currentSentence.append(char)
-                if let scalar = char.unicodeScalars.first, sentenceEnders.contains(scalar), currentSentence.count > 20 {
-                    sentences.append(currentSentence.trimmingCharacters(in: .whitespaces))
-                    currentSentence = ""
-                }
-            }
-            let remaining = currentSentence.trimmingCharacters(in: .whitespaces)
-            if !remaining.isEmpty {
-                sentences.append(remaining)
-            }
-
-            if sentences.count <= 1 {
-                result.append(cue)
-                continue
-            }
-
-            // Distribute time proportionally by character count
-            let totalChars = sentences.reduce(0) { $0 + $1.count }
-            var currentTime = cue.start
-            for sentence in sentences {
-                let fraction = Double(sentence.count) / Double(max(totalChars, 1))
-                let segDuration = duration * fraction
-                result.append(ICTranscriptCue(start: currentTime, end: currentTime + segDuration, text: sentence))
-                currentTime += segDuration
-            }
+            appendPending(end: pendingEnd)
         }
 
         return result
@@ -2023,16 +2031,45 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
 }
 
+@objc enum ICModelDownloadPhase: Int {
+    case discovering = 0
+    case downloading = 1
+    case preparing = 2
+    case loading = 3
+    case ready = 4
+}
+
 @objc class ICModelDownloadProgress: NSObject, @unchecked Sendable {
+    @objc let phase: ICModelDownloadPhase
+    @objc let statusText: String
     @objc let fraction: Float
     @objc let completedBytes: Int64
     @objc let totalBytes: Int64
 
-    @objc init(fraction: Float, completedBytes: Int64, totalBytes: Int64) {
-        self.fraction = fraction
-        self.completedBytes = completedBytes
-        self.totalBytes = totalBytes
+    @objc init(phase: ICModelDownloadPhase,
+               statusText: String,
+               fraction: Float,
+               completedBytes: Int64,
+               totalBytes: Int64) {
+        let normalizedTotal = max(0, totalBytes)
+        self.phase = phase
+        self.statusText = statusText
+        self.fraction = min(max(fraction, 0), 1)
+        self.completedBytes = normalizedTotal > 0
+            ? min(max(0, completedBytes), normalizedTotal)
+            : max(0, completedBytes)
+        self.totalBytes = normalizedTotal
         super.init()
+    }
+
+    convenience init(fraction: Float, completedBytes: Int64, totalBytes: Int64) {
+        self.init(
+            phase: .downloading,
+            statusText: NSLocalizedString("Wird heruntergeladen", comment: ""),
+            fraction: fraction,
+            completedBytes: completedBytes,
+            totalBytes: totalBytes
+        )
     }
 
     @objc var byteText: String {
@@ -2040,6 +2077,11 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         guard totalBytes > 0 else { return completed }
         let total = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
         return "\(completed) / \(total)"
+    }
+
+    @objc var displayText: String {
+        guard phase == .downloading, totalBytes > 0 else { return statusText }
+        return "\(statusText) · \(byteText)"
     }
 }
 
@@ -2850,9 +2892,9 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         ),
         ICDownloadableModel(
             identifier: "openai-codex-gpt-5.6-sol-oauth",
-            title: "OpenAI Codex GPT-5.6 Sol",
+            title: "OpenAI GPT-5.6 Sol",
             shortTitle: "GPT-5.6 Sol",
-            detail: NSLocalizedString("Sendet das vollständige Transkript über den Codex Login an OpenAI. Gerätecode-Anmeldung erforderlich.", comment: ""),
+            detail: NSLocalizedString("Sendet das vollständige Transkript an OpenAI. OpenAI API-Key oder Codex Login erforderlich.", comment: ""),
             role: .textToChapters,
             downloadSizeBytes: 0,
             requiresDownload: false,
@@ -3008,7 +3050,7 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         case .openAIAPI:
             return ICRemoteChapterCredentialStore.hasOpenAIAPIKey()
         case .openAICodexOAuth:
-            return ICRemoteChapterCredentialStore.hasOpenAIOAuthCredentials()
+            return ICRemoteChapterCredentialStore.hasOpenAIAPIKey() || ICRemoteChapterCredentialStore.hasOpenAIOAuthCredentials()
         case .anthropicAPI:
             return ICRemoteChapterCredentialStore.hasAnthropicAPIKey()
         case .kimiAPI:
@@ -3030,7 +3072,7 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         case .openAIAPI:
             return NSLocalizedString("OpenAI API-Key fehlt.", comment: "")
         case .openAICodexOAuth:
-            return NSLocalizedString("Codex Login fehlt.", comment: "")
+            return NSLocalizedString("OpenAI API-Key oder Codex Login fehlt.", comment: "")
         case .anthropicAPI:
             return NSLocalizedString("Anthropic API-Key fehlt.", comment: "")
         case .kimiAPI:
@@ -3131,7 +3173,13 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
         let cancellationBox = ICModelDownloadCancellationBox()
         let downloadTask = ICModelDownloadTask(cancellationBox: cancellationBox)
         guard model.requiresDownload else {
-            detailProgress(ICModelDownloadProgress(fraction: 1, completedBytes: 0, totalBytes: 0))
+            detailProgress(ICModelDownloadProgress(
+                phase: .ready,
+                statusText: NSLocalizedString("Bereit", comment: ""),
+                fraction: 1,
+                completedBytes: 0,
+                totalBytes: 0
+            ))
             completion(nil)
             return downloadTask
         }
@@ -3154,6 +3202,14 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
                     }
                 }
 
+                reportProgress(ICModelDownloadProgress(
+                    phase: .discovering,
+                    statusText: NSLocalizedString("Download wird vorbereitet.", comment: ""),
+                    fraction: 0,
+                    completedBytes: 0,
+                    totalBytes: selectedModel.downloadSizeBytes
+                ))
+
                 try Task.checkCancellation()
                 switch selectedModel.role {
                 case .voiceToText:
@@ -3162,14 +3218,32 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
                                       userInfo: [NSLocalizedDescriptionKey: "Whisper model name missing"])
                     }
                     do {
-                        try await WhisperKitBackend.shared.downloadModel(modelName: modelName) { _ in
-                            let completed = sizeOnDisk(model: selectedModel)
-                            let total = selectedModel.downloadSizeBytes
-                            let fraction = total > 0 ? Float(min(Double(completed) / Double(total), 1.0)) : 0
-                            reportProgress(ICModelDownloadProgress(fraction: fraction,
-                                                                   completedBytes: completed,
-                                                                   totalBytes: total))
-                        }
+                        try await WhisperKitBackend.shared.downloadModel(
+                            modelName: modelName,
+                            transferProgress: { hubProgress in
+                                let total = selectedModel.downloadSizeBytes
+                                let fraction = Float(min(max(hubProgress.fractionCompleted, 0), 1))
+                                let completed = total > 0 ? Int64((Double(total) * Double(fraction)).rounded()) : 0
+                                reportProgress(ICModelDownloadProgress(
+                                    phase: .downloading,
+                                    statusText: NSLocalizedString("Wird heruntergeladen", comment: ""),
+                                    fraction: fraction,
+                                    completedBytes: completed,
+                                    totalBytes: total
+                                ))
+                            },
+                            phaseUpdate: { phase, status in
+                                let total = selectedModel.downloadSizeBytes
+                                let completed = phase.rawValue >= ICModelDownloadPhase.preparing.rawValue ? total : 0
+                                reportProgress(ICModelDownloadProgress(
+                                    phase: phase,
+                                    statusText: status,
+                                    fraction: phase == .ready ? 1 : 0,
+                                    completedBytes: completed,
+                                    totalBytes: total
+                                ))
+                            }
+                        )
                     } catch {
                         if cancellationBox.isCancelled || Task.isCancelled {
                             await WhisperKitBackend.shared.deleteModel(modelName: modelName)
@@ -3184,10 +3258,15 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
                     break
                 }
                 try Task.checkCancellation()
+                clearActiveDownload(for: selectedModel)
                 await MainActor.run {
-                    detailProgressCallback(ICModelDownloadProgress(fraction: 1,
-                                                                   completedBytes: selectedModel.downloadSizeBytes,
-                                                                   totalBytes: selectedModel.downloadSizeBytes))
+                    detailProgressCallback(ICModelDownloadProgress(
+                        phase: .ready,
+                        statusText: NSLocalizedString("Geladen und vorbereitet.", comment: ""),
+                        fraction: 1,
+                        completedBytes: selectedModel.downloadSizeBytes,
+                        totalBytes: selectedModel.downloadSizeBytes
+                    ))
                     completionCallback(nil)
                 }
                 ICDiagnosticLogger.shared.logEvent("model", message: "Modell-Download beendet", metadata: [
@@ -3201,11 +3280,11 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
                     "role": selectedModel.roleTitle,
                     "error": nsError.localizedDescription,
                 ] as NSDictionary)
+                clearActiveDownload(for: selectedModel)
                 await MainActor.run {
                     completionCallback(nsError)
                 }
             }
-            clearActiveDownload(for: selectedModel)
         }
         cancellationBox.setTask(task)
         return downloadTask

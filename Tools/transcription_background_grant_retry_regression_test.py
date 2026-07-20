@@ -77,6 +77,7 @@ submit_processing = declaration_body(CONTROLLER, "- (void)_submitProcessingBackg
 submit_continued = declaration_body(CONTROLLER, "- (void)_submitContinuedBackgroundTask")
 handle_processing = declaration_body(APP_DELEGATE, "- (void)_handleTranscriptionProcessingTask:")
 handle_continued = declaration_body(APP_DELEGATE, "- (void)_handleTranscriptionContinuedProcessingTask:")
+clear_continued = declaration_body(APP_DELEGATE, "- (BOOL)_clearActiveContinuedRequestMatchingIdentifier:")
 active_path_start = QUEUE.find("private var activeBackgroundExecutionPath")
 active_path_end = QUEUE.find("private var hasActiveWhisperKitBackgroundExecution", active_path_start)
 active_path_section = QUEUE[active_path_start:active_path_end] if active_path_start >= 0 and active_path_end > active_path_start else ""
@@ -99,7 +100,8 @@ check(
 # Completion or rejection must clear its requested UI state.
 check(
     "setBool:NO forKey:ICTranscriptionBackgroundTaskRequested" in handle_processing
-    and "setBool:NO forKey:ICTranscriptionBackgroundTaskRequested" in handle_continued,
+    and "_clearActiveContinuedRequestMatchingIdentifier" in handle_continued
+    and "ICTranscriptionQueueDidChangeNotification" in clear_continued,
     "A completed background run leaves the one-shot start button displayed as permanently active.",
 )
 
@@ -114,7 +116,8 @@ legacy_processing_cancel = declaration_body(continued_active_branch, "if (!isCon
 check(
     bool(continued_active_branch)
     and "isContinuedRequest" in continued_active_branch
-    and "cancelTaskRequestWithIdentifier:ICTranscriptionContinuedTaskIdentifier" in continued_active_branch
+    and "ICTranscriptionActiveContinuedIdentifier" in continued_active_branch
+    and "cancelTaskRequestWithIdentifier:continuedIdentifier" in continued_active_branch
     and "cancelTaskRequestWithIdentifier:ICTranscriptionProcessingTaskIdentifier" in legacy_processing_cancel
     and "scheduleAutomaticBackgroundProcessingIfNeeded" in continued_active_branch
     and continued_active_branch.find("deactivateBackgroundExecutionPathWithReason")

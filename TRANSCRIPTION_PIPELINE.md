@@ -1,6 +1,6 @@
 # Transkriptions-, Kapitel- und Sponsor-Pipeline
 
-Stand: 19. Juli 2026
+Stand: 20. Juli 2026
 
 ## Ziel und gewählte Architektur
 
@@ -27,9 +27,10 @@ Die Verarbeitung ist bewusst zweigeteilt:
    Das ausgewählte Remote-Modell erhält das vollständige Transkript mit stabilen
    Cue-IDs und liefert Kapitelstarts, belegte Sponsorgrenzen und die Zusammenfassung
    als ein strikt strukturiertes Ergebnis. Die Audiodatei wird nicht an den
-   Modellanbieter übertragen. Nur wenn das OpenAI-API-Modell ausgewählt ist, verwendet
-   dieser Anbieterpfad die offizielle Responses API mit `background=true` und einer
-   persistierten Response-ID; die anderen Anbieter behalten ihren jeweiligen
+   Modellanbieter übertragen. Sobald für ein ausgewähltes OpenAI-Modell ein API-Key
+   konfiguriert ist, verwendet es die offizielle Responses API mit `background=true`
+   und einer persistierten Response-ID; für Sol bleibt der Codex-Login zusätzlich als
+   eigener Zugangsweg verfügbar. Die anderen Anbieter behalten ihren jeweiligen
    Request-Vertrag.
 
 Lokale GGUF- und Apple-Foundation-Modelle bleiben für die bisherige Kapitel-only-
@@ -50,6 +51,11 @@ Transkriptinhalte in diese Dokumentation übernommen.
 | Sponsorenerkennung markierte reine Musik. | Kurzer Lauf: SoundAnalysis 3,4 s, WhisperKit 95,4 s, zwei Kimi-K2.6-Modellaufrufe 27,1 s; Ergebnis `Sponsor: Musik-Outro`, obwohl die letzten Cues nur Musik waren. | Alte zweistufige Prompts hatten keine revisionsgebundenen Cue-Belege und keine harte Musik-/Outro-Ausschlussregel. |
 | Publisher-Kapitel verhinderten jede Sponsorprüfung. | Nach erfolgreicher Transkription steht im Episodenlog ausdrücklich `Folge hat bereits Kapitel.` | Die Queue setzte Kapitelerzeugung bei jedem vorhandenen `CDChapter` auf aus, statt Sponsorsegmente über die Publisher-Zeitachse zu legen. |
 | Das Entitlement war vorhanden, der GPU-Pfad dennoch nicht verfügbar. | App-Signatur und eingebettetes Provisioning enthalten `com.apple.developer.background-tasks.continued-processing.gpu=true`; `BGTaskScheduler.supportedResources` meldet auf dem Gerät trotzdem `gpuSupported=0`. | Kein Signing-Fehler. Der konkrete System-/Gerätezustand gewährt den Continued-GPU-Pfad nicht. |
+| Der Whisper-Large-Download zeigte lange `0 / 645 MB`, danach kurz einen Fertig-Haken und später `645,7 / 645 MB`, während der Spinner weiterlief. | Der fertige Modellordner enthält 645.668.913 Bytes bei einer Kataloggröße von 645.000.000 Bytes. Nach dem Transfer liefen noch 38,17 s Prewarm/Spezialisierung und 3,45 s RAM-Load. | Die Oberfläche leitete Transferfortschritt aus dem noch nicht existierenden Zielordner ab, begrenzte reale Ordnerbytes nicht auf die Kataloggröße und vermischte Transfer, Vorbereitung und RAM-Load mit „fertig“. Der globale Busy-Eintrag wurde zudem erst nach dem Completion-Callback gelöscht. |
+| Der Vordergrundlauf brach unmittelbar beim Antippen von „Im Hintergrund verarbeiten“ ab. | Um 22:26:53 folgen auf die Request-Submission sofort `compute-profile-changed foreground-gpu -> background-cpu-ane`, Pipeline-Abbruch und ein zweites `Audioanalyse gestartet`; die App wechselte erst um 22:30:45 tatsächlich in den Hintergrund. Zwei Sekunden später lief der Continued-Task mit Fortschritt 0 ab. | Die Zustellung des Systemtasks wurde fälschlich als App-Lifecycle-Wechsel interpretiert. Dadurch verbrauchte der CPU-Modellload die Continued-Laufzeit bereits im Vordergrund und verwarf den aktiven Pipeline-Lauf. |
+| Normale Modellstarts wirkten erneut wie eine Kompilierung. | Zwei spätere Foreground-Loads melden 11,6 s beziehungsweise 14,8 s, davon 7,46 s beziehungsweise 7,72 s `prewarmSeconds`/Spezialisierung. | Auch der gewöhnliche Wiederladepfad verwendete `prewarm: true`, statt die nach dem Download bereits vorbereiteten Profile nur zu laden. |
+| Die App endete während der Bit-Rauschen-Transkription. | Um 05:19:29 startet ein einzelner Whisper-Aufruf mit `loadedDuration=1800.0`; danach endet die Vordergrund-Session ohne App-Fehlerereignis. Die nächste Session klassifiziert den vorherigen Lauf als unerwartet beendet. Beim erneuten Modell-/Transkriptionslauf protokolliert iOS mehrere Speicherwarnungen; Resident/Footprint liegen dabei zwischen etwa 2,8 und 3,36 GB. | Die App lud und inferierte bis zu 30 Minuten Audio als einen Speicherblock. Der beigefügte Export enthält keinen symbolisierten Exception-/Jetsam-Bericht; das abrupte Ende und die Speicherwarnungen im gleichen 30-Minuten-Pfad sind mit einer Memory-Pressure-Prozessterminierung konsistent. |
+| Bit-Rauschen wurde trotz 741 Zeit-Cues als „ohne verlässliche Zeitmarken“ abgewiesen. | Der Parser meldet 741 Cues. Das vollständige öffentliche JSON enthält 740 gültige, nicht überlappende Cues von 0,46 bis 4302,1 s und genau einen fehlerhaften Cue `508,56–508,56` mit Text `x`. | Die Normalisierung gab beim ersten einzelnen ungültigen Cue `[]` zurück und löschte damit die 740 belegten Zeitintervalle aus dem Importergebnis. |
 
 ## Umgesetzte Ursachenbehebung
 
@@ -113,9 +119,20 @@ Transkriptinhalte in diese Dokumentation übernommen.
   Request-Timeout beträgt 30 Sekunden. Es gibt keine eigene DNS-Auflösung und kein
   DNS-, IP- oder Zertifikat-Pinning mehr.
 - Der so geladene Inhalt wird nur mit strikt monotonen expliziten Cue-Zeiten
-  importiert. Ohne Zeiten, überlappend oder fehlerhaft bedeutet nicht „Zeiten
-  erfinden“: Ist automatische Transkription konfiguriert, durchläuft die Episode
-  regulär die Audio-Transkription; Transportfehler bleiben im persistenten Retry.
+  importiert. Einzelne leere, nicht-endliche, rückwärts laufende oder überlappende
+  Cues werden mit Eingangs-, Ausgangs- und Verwerfungszahl diagnostiziert und
+  ausgelassen; sie löschen nicht mehr alle übrigen validen Cues. Bleibt danach keine
+  gültige Zeitachse übrig, werden weiterhin keine Zeiten erfunden: Ist automatische
+  Transkription konfiguriert, durchläuft die Episode regulär die Audio-Transkription;
+  Transportfehler bleiben im persistenten Retry.
+- Problem: Das lokale Bit-Rauschen-Audio war 4344,1 s lang, während das öffentliche
+  Transkript bei 4302,1 s endet und die Publisher-Seite 4309 s Episodendauer nennt.
+  Grund: Diese Differenz belegt eine abweichende ausgelieferte Audiozeitachse, aber
+  nicht, ob die zusätzlichen Sekunden ausschließlich vor der Episode oder als
+  dynamische Pre-/Mid-/Postrolls eingefügt wurden. Lösung: Der Import akzeptiert jetzt
+  die 740 realen Zeitmarken, rechnet aber bewusst keinen unbelegten globalen Offset
+  ein. Eine Zeitachsenverschiebung darf erst aus dem konkret ausgelieferten Audio
+  abgeleitet werden; `Medienlänge - letzter Cue` wäre bei Midroll-Werbung falsch.
 - Problem: Eine ältere `_analysis.json` konnte nach einem neuen SRT weiter als gültig
   erscheinen. Grund: Cache-Existenz wurde ohne Abgleich gegen die aktuelle
   Transkript-Revision akzeptiert. Lösung: Jeder SRT-Commit invalidiert Analyse-Caches;
@@ -124,11 +141,11 @@ Transkriptinhalte in diese Dokumentation übernommen.
   gelöschtes SRT lässt eine bereits fertige Analyse lesbar, ein neu geschriebenes SRT
   macht sie dagegen zwingend neu zu erzeugen.
 
-### Kanonische Whisper-Zeitachse
+### Kanonische Whisper-Zeitachse und Satzgrenzen
 
-- Problem: Lange WhisperKit-Läufe teilen Audio in 30-Minuten-Slices und laden pro
+- Problem: Lange WhisperKit-Läufe teilen Audio in fünfminütige Slices und laden pro
   Folgeslice fünf Sekunden Kontext erneut. Dadurch konnten an einer Slice-Grenze
-  beispielsweise Cues `1798,0–1800,0` und `1799,6–1802,0` entstehen. Das SRT enthielt
+  beispielsweise Cues `298,0–300,0` und `299,6–302,0` entstehen. Das SRT enthielt
   anschließend beide überlappend; der bewusst strikte Analyse-Loader verwarf deshalb
   das gesamte Transkript.
 - Grund: Die Slice-Erkennung darf einen grenzüberschreitenden Cue aus dem erneut
@@ -143,6 +160,22 @@ Transkriptinhalte in diese Dokumentation übernommen.
   angefügt. Ungültige Grenzen werden verworfen statt durch erfundene Zeiten ersetzt.
   Die Diagnose `Transcript cue timeline normalized` protokolliert die Anzahlen für
   gekappte, vereinigte und ungültige Cues. Der strikte Analyse-Loader bleibt unverändert.
+- Problem: Persistierte Abschnitte endeten mitten im Satz oder nahmen noch das erste
+  Wort des nächsten Sprechers mit. Grund: Die alte Nachbearbeitung behandelte die
+  decoderinternen Whisper-Segmente als Textabschnitte, führte nur Stücke unter zwei
+  Sekunden zusammen und suchte Satzgrenzen erst bei Segmenten über 60 Sekunden und
+  200 Zeichen. Lösung: `NLTokenizer(unit: .sentence)` bestimmt nun vor dem SRT-Commit
+  vollständige Satzgrenzen. Unvollständiger Text bleibt gepuffert; enthält ein
+  Whisper-Segment einen abgeschlossenen Satz plus ein angefangenes Folgestück, wird
+  nur der vollständige Satz ausgegeben und das Folgestück in den nächsten Abschnitt
+  übernommen. Nur Sprache ohne jegliches Satzzeichen wird nach 60 Sekunden begrenzt,
+  ohne ein Satzzeichen oder eine Sprechergrenze zu erfinden.
+- Problem: Ein 30-minütiger Inferenzblock erzeugte auf dem Gerät den oben belegten
+  Speicher-Peak. Grund: Audioarray, Whisper-Zwischenzustand und Modellspeicher blieben
+  für bis zu 1800 Sekunden Eingabe gleichzeitig resident. Lösung: Ein Inferenz- und
+  Checkpoint-Slice umfasst höchstens fünf Minuten. Die Episodendauer bleibt
+  unbegrenzt; dieselbe fünfsekündige Überlappungsnormalisierung und die vorhandene
+  Fortschritts-/Checkpoint-Persistenz setzen den Lauf Slice für Slice fort.
 - Problem: Der Live-Checkpoint konnte während eines langen Laufs ein Swift-Array lesen,
   während der nächste Whisper-Callback dasselbe Array erweiterte. Grund: Cue-Akkumulator
   und Checkpoint-Fortschritt waren als `nonisolated(unsafe)` markiert; der Callback und
@@ -170,19 +203,30 @@ Transkriptinhalte in diese Dokumentation übernommen.
   Datei-Schutz und Backup-Ausschluss werden nur geschrieben, wenn ihr Wert tatsächlich
   abweicht. Die App prüft zusätzlich, dass die kompilierten Payloads vorhanden,
   nichtleer, lesbar und per `mmap` zugreifbar sind.
+- Der Modelldownload meldet jetzt getrennte, fortlaufende Phasen: Transfer aus dem
+  WhisperKit-Hub, einmalige Vordergrundvorbereitung, einmalige
+  Hintergrundvorbereitung, RAM-Load und bereit. Die sichtbaren Bytewerte stammen aus
+  der Hub-Progress-Instanz, werden auf die Kataloggröße begrenzt und erscheinen nur
+  während des Transfers. Der Store beendet seinen globalen Busy-Zustand vor dem
+  Completion-Callback; Spinner, Symbol und Haken können dadurch nicht mehr
+  widersprüchliche Zustände anzeigen.
 - Beim ersten Download bereitet WhisperKit das Modell zunächst ohne automatisches
-  Prewarm/Load vor. Danach setzt die App die stabilen Verzeichnisattribute, führt
-  `prewarmModels()` aus, validiert alle kompilierten Bundles und entfernt erst dann
-  vorhandene `.mlpackage`-/`.mlmodel`-Quellen. Ein normaler Neustart öffnet dagegen die
-  vorhandenen `.mlmodelc`, führt den Core-ML-Prewarm beziehungsweise Cache-Check aus und
-  lädt sie; er kompiliert nicht jedes Mal erneut aus den Quelldateien.
+  Prewarm/Load vor. Danach setzt die App die stabilen Verzeichnisattribute und führt
+  `prewarmModels()` genau einmal für das Vordergrund-GPU- und das
+  Hintergrund-CPU/ANE-Profil aus. Erst nach erfolgreicher Validierung beider Profile
+  wird ein Versionsmarker atomar geschrieben und werden vorhandene
+  `.mlpackage`-/`.mlmodel`-Quellen entfernt. Bereits installierte Modelle ohne Marker
+  durchlaufen diese Migration einmalig. Ein normaler Neustart verwendet danach
+  ausdrücklich `prewarm: false` und lädt nur die vorhandenen `.mlmodelc` in den
+  Arbeitsspeicher.
 - Bei der einmaligen Migration aus dem früheren Documents-Pfad wird eine alte
   Modellkopie nur noch gelöscht, wenn das Ziel alle drei kompilierten Bundles bereits
   vollständig validiert. Ist das Ziel unvollständig, ersetzt ausschließlich eine
   zuvor validierte Quellkopie dieses Ziel; ein partieller Zielordner kann den gültigen
   Alt-Cache nicht mehr vernichten.
-- `prewarm` ist nicht gleichbedeutend mit einer Neukompilierung. Nur eine entsprechende
-  WhisperKit/Core-ML-Meldung wird als „wird kompiliert“ angezeigt. Die DebugLogs
+- `prewarm` ist nicht gleichbedeutend mit einer Neukompilierung. Die Oberfläche nennt
+  die einmalige Core-ML-Profilvorbereitung und den normalen RAM-Load deshalb getrennt.
+  Die DebugLogs
   protokollieren die unveränderten `.mlmodelc`-Änderungszeiten und getrennt
   `prewarmSeconds`, reine `modelLoadSeconds`, Gesamtvorbereitung sowie Encoder-/Decoder-
   Lade- und Spezialisierungszeiten. Da iOS den systemeigenen Core-ML-Cache purgen kann
@@ -202,6 +246,12 @@ Transkriptinhalte in diese Dokumentation übernommen.
   `BGContinuedProcessingTaskRequest`: Er beantragt `continued-gpu`, wenn das System die
   Ressource meldet, sonst `continued-cpu` ohne GPU-Anforderung. Auch dieser sichtbare
   Lauf kann vom System beendet werden.
+- Die Zustellung dieses Systemtasks ist nur die Rechenfreigabe. Solange die App noch
+  sichtbar ist, bleibt das tatsächlich angewandte WhisperKit-Profil unverändert und
+  die schnelle Vordergrundverarbeitung läuft ohne Abbruch weiter. Erst
+  `applicationDidEnterBackground` wendet den gewährten CPU/ANE- oder GPU-Pfad an;
+  `applicationWillEnterForeground` stellt das Vordergrundprofil wieder her und ruft
+  die Queue-Wiederaufnahme unmittelbar auf.
 - Sobald die App im Hintergrund ist und kein echter Systemgrant aktiv ist, startet
   beziehungsweise führt die Queue weder Transkription noch semantische Analyse fort.
   Das gilt ausdrücklich auch für Chapter-only-Jobs mit bereits vorhandenem
@@ -215,6 +265,9 @@ Transkriptinhalte in diese Dokumentation übernommen.
 - Ein bereits mit dem falschen Profil geladenes Core-ML-Modell wird kontrolliert
   freigegeben und mit dem gewünschten Profil neu geladen. Der Wechsel wird als
   `compute-profile-changed` diagnostiziert.
+- Ein notwendiger Profilwechsel persistiert vor dem Abbruch den letzten Cue-Checkpoint.
+  Die bereits persistierte SoundAnalysis-Zeitachse wird danach wiederverwendet und
+  nicht erneut als laufende Audioanalyse angezeigt oder berechnet.
 - Problem: Schon ein kurzer Wechsel in eine andere App wurde als Fehler behandelt,
   setzte sichtbaren Fortschritt zurück und plante einen 30-Sekunden-Retry. Außerdem
   konnte der periodisch persistierte Checkpoint bis zu einem Prozent hinter dem
@@ -236,6 +289,21 @@ Transkriptinhalte in diese Dokumentation übernommen.
   zur erfolgreichen Continued-Submission bestehen; erst dann wird er storniert. Die
   Handler sind gegenseitig exklusiv. Jeder frühe Continued-Abbruch räumt Pfad- und
   Request-Key und plant die weiterhin nötige automatische Arbeit neu.
+- Problem: Alle sichtbaren Continued-Läufe verwendeten dieselbe konkrete Task-ID und
+  die System-Live-Activity zeigte nur einen generischen Text. Grund: iOS 26 erwartet
+  eine registrierte Wildcard-ID und eine eindeutige konkrete ID je Submission; die
+  Episode und aktuelle Queue-Phase wurden nicht an den Systemtask übertragen. Lösung:
+  iPhone- und iPad-Plist sowie App-Delegate registrieren
+  `com.iteconomy.instacastplus.transcription.continued.*`; jede Benutzeranfrage erhält
+  eine UUID-basierte konkrete ID, die zum gezielten Abbrechen und Aufräumen persistiert
+  wird. Titel, aktuelle Phase und Prozentwert der Episode aktualisieren die
+  System-Live-Activity. Abschluss und Ablehnung räumen nur die exakt zugehörige ID auf
+  und aktualisieren den sichtbaren Button sofort.
+- Die Warteschlangenansicht zeigt den persistierten Detailstatus der aktuellen Phase.
+  Ein einfaches Antippen eines wartenden oder fehlgeschlagenen Eintrags öffnet die
+  vorhandenen Aktionen „Neustarten“ und „Aus Liste löschen“; der Retry verwendet den
+  vorhandenen Checkpoint-Vertrag und startet eine teilweise transkribierte Episode
+  nicht unnötig von vorn.
 - Problem: iOS konnte einen Systemtask als erfolgreich beendet sehen, obwohl der letzte
   atomare Queue-Snapshot noch lief oder mit Disk-/Protection-Fehler gescheitert war.
   Grund: Quiescence zählte nur aktive Rechenarbeit. Lösung: Processing und Continued
@@ -268,7 +336,14 @@ keine erfundenen Stub- oder Kompatibilitätspfade eingebaut.
   Volltranskript-Vertrag. Apple Foundation Models und das lokale GGUF-Modell bleiben
   als Kapitel-only-Pfade verfügbar; sie werden nicht stillschweigend anstelle eines
   ausgewählten Remote-Modells verwendet.
-- Ist das OpenAI-API-Modell ausgewählt, wird eine Response mit `background=true` und
+- Ein vorhandener OpenAI-API-Key schaltet sowohl GPT-5.6 Terra als auch GPT-5.6 Sol
+  frei. Sol verwendet mit vorhandenem Key denselben unterbrechungsfesten Responses-
+  API-Pfad; der bestehende Codex-Login bleibt als alternative Zugangsmethode erhalten.
+  Die API-Key-Felder besitzen einen expliziten, benutzerinitiierten
+  „Einfügen“-Button. Es wurde kein neuer Default und kein neuer Backup-Key eingeführt;
+  die Zugangsdaten bleiben im bestehenden iOS-Keychain-Speicher.
+- Wird ein OpenAI-Modell über den konfigurierten API-Key verwendet, wird eine Response
+  mit `background=true` und
   `store=true` gestartet. Die Response-ID wird zusammen mit Episode,
   Transkript-Revision, Modell und Schema lokal persistiert. Nach App-Unterbrechung
   pollt die Queue dieselbe Response weiter, sobald diese ID empfangen und atomar
@@ -332,6 +407,16 @@ keine erfundenen Stub- oder Kompatibilitätspfade eingebaut.
   ausschließlich validierte Sponsorintervalle darüber. Das Overlay darf ein
   Publisher-Intervall an Sponsorgrenzen teilen, behält aber dessen Titel für die
   verbleibenden Inhaltsstücke und verschiebt keine Publisher-Grenze.
+- Problem: Kreuzte ein erkanntes Sponsorintervall eine bereits vorhandene
+  Publisher-Kapitelgrenze, erschienen zwei direkt aufeinanderfolgende Kapitel mit
+  identischem `Sponsor: `-Titel. Grund: Das Overlay teilte korrekterweise jedes
+  Publisher-Intervall separat, führte die beiden mechanisch an der alten Grenze
+  getrennten Sponsorstücke danach aber nicht wieder zusammen. Lösung: Direkt
+  angrenzende Sponsorstücke werden nur bei identischem Titel zu einem Intervall von
+  erstem Start bis letztem Ende vereinigt. Inhaltskapitel und Sponsorstücke mit
+  unterschiedlichen Titeln bleiben getrennt. Die Diagnose
+  `Sponsor overlay boundary fragments coalesced` nennt Eingangs-, Ausgangs- und
+  Vereinigungsanzahl.
 - Problem: Eingebettete Medien-Kapitel einer noch nie abgespielten Folge waren noch
   nicht als `CDChapter` materialisiert; die automatische Queue hielt die Folge deshalb
   fälschlich für kapitellos. Grund: Nur Playback startete den gemeinsamen
@@ -470,6 +555,20 @@ war; die reale Ursache war das unzulässige GPU-Ausführungsprofil.
 
 ## Regressionen und Diagnose
 
+Problem: Ein fehlgeschlagener Kapiteljob blockierte im Episoden-Kontextmenü eine neue
+manuelle Transkription. Grund: Die allgemeine Duplikatsperre sah den terminalen
+Fehlereintrag weiterhin als aktiven Job; `enqueue` lieferte `false`, deshalb erschien
+auch das bestehende Overlay zur Transkriptionsliste nicht. Lösung: Eine explizite
+manuelle Volltranskription ersetzt ausschließlich den fehlgeschlagenen Eintrag
+derselben Episode. Laufende und wartende Jobs bleiben unverändert duplikatgeschützt.
+
+Problem: Bei Kapitel-only-Fehlern war das Episodenlog leer und der eigentliche Fehler
+in der Queue-Zeile abgeschnitten. Grund: Dieser Einstieg initialisierte kein
+Episodenlog, der Transcript-Import-Catch schrieb dort keinen Fehler, und die Zelle war
+fest auf zwei Statuszeilen bei 80 pt Höhe begrenzt. Lösung: Kapiteljobs beginnen mit
+einem `queued`-Logeintrag, der vollständige Importfehler wird als `error` persistiert,
+und fehlgeschlagene Zeilen berechnen ihre Höhe aus dem ungekürzten Fehlertext.
+
 Kritische Quellpfade sind durch folgende fokussierte Checks festgepinnt:
 
 ```bash
@@ -498,6 +597,9 @@ python3 Tools/transcription_remote_resume_regression_test.py
 python3 Tools/transcription_revision_canonicalization_regression_test.py
 python3 Tools/transcription_stale_analysis_regression_test.py
 python3 Tools/transcription_status_regression_test.py
+python3 Tools/transcription_user_reported_pipeline_regression_test.py
+RUN_LIVE_BIT_RAUSCHEN_REFERENCE_TEST=1 \
+  python3 Tools/transcription_user_reported_pipeline_regression_test.py
 python3 Tools/transcription_whisper_overlap_normalization_regression_test.py
 python3 Tools/kimi_chapter_integration_regression_test.py
 python3 Tools/model_library_settings_regression_test.py

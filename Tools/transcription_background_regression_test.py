@@ -123,10 +123,12 @@ require(
     "Cancelling an idle queue can still leave an in-flight Core ML model load running and later installing/logging as ready.",
 )
 require(
-    "prewarm: true" in backend_source
+    "prepareDownloadedModelForAllComputeProfiles" in backend_source
+    and "prewarm: false" in backend_source
+    and "computeProfilePreparationMarkerName" in backend_source
     and "removeOriginalModelSources" in backend_source
-    and "Spracherkennungsmodell wird kompiliert." in backend_source,
-    "Model download/load does not enforce post-download prewarm and raw-source cleanup.",
+    and "Core ML bereitet das Modell einmalig für dieses Rechenprofil vor." in backend_source,
+    "Model download/load does not enforce one-time per-profile preparation and raw-source cleanup.",
 )
 require(
     "backgroundControlsAvailable" in controller_source

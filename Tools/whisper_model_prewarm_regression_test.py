@@ -27,7 +27,7 @@ require(
     "Whisper model download no longer targets the stable Application Support base directory.",
 )
 require(
-    "load: false" in download_block and "try await whisper.loadModels()" in download_block,
+    "load: false" in download_block and "try await primaryWhisper.loadModels()" in download_block,
     "Whisper model download no longer loads the model eagerly after download, so specialization can slip back to first transcription.",
 )
 require(
@@ -135,22 +135,26 @@ require(
     "WhisperKit backend no longer performs explicit model loading for on-disk models.",
 )
 require(
-    "prewarm: true" in factory_block
+    "prewarm: false" in factory_block
+    and "prewarm: true" not in factory_block
+    and "hasPreparedAllComputeProfiles" in factory_block
+    and "prepareDownloadedModelForAllComputeProfiles" in factory_block
     and 'statusUpdate(NSLocalizedString("Spracherkennungsmodell wird kompiliert."' not in factory_block
     and '"prewarmSeconds"' in factory_block
     and '"modelLoadSeconds"' in factory_block
     and '"encoderSpecializationSeconds"' in factory_block
     and '"decoderSpecializationSeconds"' in factory_block
     and '"requiredModelInventory"' in factory_block,
-    "Cached-model restart loading either misreports every safe prewarm check as a recompile or does not measure the pass separately.",
+    "Cached-model restart loading still repeats prewarm or does not migrate an older unprepared model exactly once.",
 )
 require(
     "prewarm: false" in download_block
-    and "try await whisper.prewarmModels()" in download_block
+    and "try await secondaryWhisper.prewarmModels()" in download_block
+    and "try await primaryWhisper.prewarmModels()" in download_block
     and download_block.find("prepareModelDirectoryForCoreML")
-    < download_block.find("try await whisper.prewarmModels()")
+    < download_block.find("prepareDownloadedModelForAllComputeProfiles")
     < download_block.find("removeOriginalModelSources"),
-    "Downloaded model attributes are not normalized before the one required device-specialization prewarm.",
+    "Downloaded model attributes are not normalized before the one-time foreground/background specialization.",
 )
 require(
     '"modelLoadSeconds": max(0, timings.modelLoading - timings.prewarmLoadTime)' in factory_block

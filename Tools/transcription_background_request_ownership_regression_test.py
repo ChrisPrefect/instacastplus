@@ -72,10 +72,13 @@ for lifecycle_body, label in (
     )
 
 retire_ownership = body(APP_DELEGATE, "- (void)_retireDeferredTranscriptionTaskOwnership:")
+clear_continued_ownership = body(APP_DELEGATE, "- (BOOL)_clearActiveContinuedRequestMatchingIdentifier:")
 require(
     "BGContinuedProcessingTask.class" in retire_ownership
-    and "removeObjectForKey:ICTranscriptionActiveContinuedPath" in retire_ownership
-    and "setBool:NO forKey:ICTranscriptionBackgroundTaskRequested" in retire_ownership
+    and "_clearActiveContinuedRequestMatchingIdentifier" in retire_ownership
+    and "removeObjectForKey:ICTranscriptionActiveContinuedPath" in clear_continued_ownership
+    and "removeObjectForKey:ICTranscriptionActiveContinuedIdentifier" in clear_continued_ownership
+    and "setBool:NO forKey:ICTranscriptionBackgroundTaskRequested" in clear_continued_ownership
     and "_scheduleTranscriptionProcessingTask" in retire_ownership,
     "Deferred Continued ownership is not atomically cleared before automatic scheduling resumes.",
 )

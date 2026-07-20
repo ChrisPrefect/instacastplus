@@ -158,7 +158,7 @@
 	<string>Application</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.iteconomy.instacastplus.transcription.continued</string>
+		<string>com.iteconomy.instacastplus.transcription.continued.*</string>
 		<string>com.iteconomy.instacastplus.transcription.processing</string>
 	</array>
 	<key>UIBackgroundModes</key>

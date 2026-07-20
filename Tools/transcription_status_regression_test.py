@@ -182,8 +182,15 @@ require(
     "semanticArtifacts = try await self.generateSemanticArtifacts(" in queue_source,
     "Transcription queue is no longer awaiting semantic analysis directly, so cancel/remove can leave stale model work running.",
 )
+chapter_only_enqueue = queue_source.split(
+    "@objc func generateChapters(episodeHash:", 1
+)[1].split("private enum GeneratedSemanticArtifacts", 1)[0]
 require(
-    "item.chapterOnly = true\n        items.append(item)\n        persistQueue()\n        postQueueChangeNotification()\n\n        if !isProcessing && chapterTask == nil {\n            processNext()\n        }" in queue_source,
+    "item.chapterOnly = true" in chapter_only_enqueue
+    and "items.append(item)" in chapter_only_enqueue
+    and "if !isProcessing && chapterTask == nil" in chapter_only_enqueue
+    and chapter_only_enqueue.find("items.append(item)")
+    < chapter_only_enqueue.find("if !isProcessing && chapterTask == nil"),
     "Chapter-only debug/UI jobs must stay queued behind an active transcription instead of starting a second model task concurrently.",
 )
 require(
@@ -342,8 +349,8 @@ require(
 
 for new_text in [
     "Im Hintergrund verarbeiten",
-    "Verarbeitung läuft",
-    "Instacast verarbeitet Podcasts im Hintergrund.",
+    "Podcast-Verarbeitung",
+    "Transkription wird vorbereitet.",
     "Hintergrundverarbeitung",
     "Die Anfrage wurde an iOS übergeben. Sobald iOS Rechenzeit gewährt, läuft die Verarbeitung im Hintergrund. Wird sie unterbrochen, bleiben Fortschritt und Warteschlange erhalten; fortgesetzt wird beim nächsten verfügbaren Hintergrundlauf oder App-Start.",
 ]:
@@ -353,6 +360,14 @@ for new_text in [
     )
     require(f'"{new_text}" =' in de_strings, f"German localization is missing '{new_text}'.")
     require(f'"{new_text}" =' in en_strings, f"English localization is missing '{new_text}'.")
+
+require(
+    'NSLocalizedString(@"Verarbeitung läuft", nil)' not in continued_background_body
+    and 'NSLocalizedString(@"Instacast verarbeitet Podcasts im Hintergrund.", nil)' not in continued_background_body
+    and "item.episodeTitle" in continued_background_body
+    and "item.statusDetail" in continued_background_body,
+    "The continued task still uses a generic frozen Live Activity instead of episode and stage status.",
+)
 
 for paused_text in [
     "Verarbeitung pausiert",
@@ -528,8 +543,7 @@ require(
     "Tapping a failed/interrupted transcription row must ask whether to restart or delete instead of retrying immediately.",
 )
 require(
-    "item.status == ICTranscriptionStatusQueued && item.error.length > 0" in controller_source
-    and "item.status == ICTranscriptionStatusFailed" in controller_source
+    "item.status == ICTranscriptionStatusQueued || item.status == ICTranscriptionStatusFailed" in controller_source
     and "[self _presentRecoveryActionsForItem:item]" in controller_source,
     "Failed and interrupted queue rows are not routed through the same restart/delete action sheet.",
 )

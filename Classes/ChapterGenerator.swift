@@ -727,8 +727,11 @@ private struct RemoteJSONObjectResult {
         status?(String(format: NSLocalizedString("%@ analysiert Kapitel, Sponsoren und Zusammenfassung aus dem vollständigen Transkript.", comment: ""), selectedModel.title))
         progress?(0, 0, 1)
 
+        let usesOpenAIAPIKey = selectedModel.chapterProvider == .openAIAPI ||
+            (selectedModel.chapterProvider == .openAICodexOAuth &&
+             ICRemoteChapterCredentialStore.hasOpenAIAPIKey())
         let remoteAnalysisJobContext: RemoteAnalysisJobContext?
-        if selectedModel.chapterProvider == .openAIAPI {
+        if usesOpenAIAPIKey {
             guard let episodeHash = debugEpisodeHash?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !episodeHash.isEmpty else {
                 throw Self.analysisValidationError(
@@ -1655,6 +1658,25 @@ private struct RemoteJSONObjectResult {
                                                                     responseShape: responseShape)
             return RemoteJSONObjectResult(json: json, openAIBackgroundAnalysis: nil)
         case .openAICodexOAuth:
+            if let apiKey = ICRemoteChapterCredentialStore.openAIAPIKey(), !apiKey.isEmpty {
+                if let remoteAnalysisJobContext {
+                    return try await generateOpenAIAPIJSONObject(
+                        modelName: modelName,
+                        apiKey: apiKey,
+                        prompt: prompt,
+                        responseShape: responseShape,
+                        context: remoteAnalysisJobContext,
+                        status: status
+                    )
+                }
+                let json = try await generateOpenAIAPIJSONObjectOneShot(
+                    modelName: modelName,
+                    apiKey: apiKey,
+                    prompt: prompt,
+                    responseShape: responseShape
+                )
+                return RemoteJSONObjectResult(json: json, openAIBackgroundAnalysis: nil)
+            }
             let json = try await generateOpenAICodexOAuthJSONObject(modelName: modelName,
                                                                     prompt: prompt,
                                                                     responseShape: responseShape)
@@ -6610,7 +6632,46 @@ private struct RemoteJSONObjectResult {
                                                  isSponsor: chapter.isSponsor))
             }
         }
-        return result
+        return Self.coalescedSponsorOverlayChapters(result)
+    }
+
+    /// A single detected sponsor interval is split while it is overlaid across
+    /// publisher chapter boundaries. Join only those mechanically split pieces;
+    /// adjacent ads with different titles remain separate sponsor chapters.
+    private static func coalescedSponsorOverlayChapters(
+        _ chapters: [ICGeneratedChapter]
+    ) -> [ICGeneratedChapter] {
+        var coalesced: [ICGeneratedChapter] = []
+        var coalescedBoundaryCount = 0
+        for chapter in chapters {
+            if let previous = coalesced.last,
+               previous.isSponsor,
+               chapter.isSponsor,
+               previous.title == chapter.title,
+               abs(previous.end - chapter.start) <= 0.001 {
+                coalesced[coalesced.count - 1] = ICGeneratedChapter(
+                    start: previous.start,
+                    end: chapter.end,
+                    title: previous.title,
+                    isSponsor: true
+                )
+                coalescedBoundaryCount += 1
+            } else {
+                coalesced.append(chapter)
+            }
+        }
+        if coalescedBoundaryCount > 0 {
+            ICDiagnosticLogger.shared.logEvent(
+                "chapters",
+                message: "Sponsor overlay boundary fragments coalesced",
+                metadata: [
+                    "coalescedBoundaryCount": coalescedBoundaryCount,
+                    "inputChapterCount": chapters.count,
+                    "outputChapterCount": coalesced.count,
+                ] as NSDictionary
+            )
+        }
+        return coalesced
     }
 
     private static func mergedSponsorIntervals(_ sponsors: [ICGeneratedChapter],

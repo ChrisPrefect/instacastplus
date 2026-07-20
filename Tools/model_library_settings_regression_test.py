@@ -86,7 +86,8 @@ require(
     and 'remoteModelName: "gpt-5.6-terra"' in engine_source
     and "openai-codex-gpt-5.6-sol-oauth" in engine_source
     and 'remoteModelName: "gpt-5.6-sol"' in engine_source
-    and "OpenAI Codex" in engine_source
+    and 'title: "OpenAI GPT-5.6 Sol"' in engine_source
+    and "OpenAI API-Key oder Codex Login erforderlich." in engine_source
     and "anthropic-claude-sonnet-5-api-key" in model_catalog_source
     and 'remoteModelName: "claude-sonnet-5"' in model_catalog_source
     and "kimi-k3-api-key" in model_catalog_source
@@ -250,11 +251,11 @@ require(
     and "downloadProgressByModelID" in settings_source
     and "_cancelDownloadForModel:" in settings_source
     and "Abbrechen" in settings_source
-    and "byteText" in settings_source,
+    and "displayText" in settings_source,
     "The model library UI must let users cancel downloads and show x MB / total MB progress.",
 )
 require(
-    "selected && (downloaded || !model.requiresDownload)" in settings_source
+    "selected && !busy && (downloaded || !model.requiresDownload)" in settings_source
     and "Ausgewählt" in settings_source
     and "noch nicht geladen" in settings_source,
     "Undownloaded selected models must not show a checkmark and must say they still need downloading.",

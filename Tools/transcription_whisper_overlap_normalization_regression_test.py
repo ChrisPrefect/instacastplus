@@ -42,12 +42,12 @@ def normalize_fixture(cues: list[tuple[float, float, str]]) -> list[tuple[float,
     return normalized
 
 
-# The first 30-minute Whisper slice owns a cue through 1800s. The next slice
+# The first five-minute Whisper slice owns a cue through 300s. The next slice
 # reloads five seconds of context and may return a distinct cue beginning at
-# 1799.6s. Its text must survive, but the shared 0.4s cannot be persisted twice.
+# 299.6s. Its text must survive, but the shared 0.4s cannot be persisted twice.
 fixture = [
-    (1798.0, 1800.0, "Text vor der Slice-Grenze."),
-    (1799.6, 1802.0, "Text nach der Slice-Grenze."),
+    (298.0, 300.0, "Text vor der Slice-Grenze."),
+    (299.6, 302.0, "Text nach der Slice-Grenze."),
 ]
 normalized_fixture = normalize_fixture(fixture)
 require(
@@ -59,8 +59,8 @@ require(
 require(
     normalized_fixture
     == [
-        (1798.0, 1800.0, "Text vor der Slice-Grenze."),
-        (1800.0, 1802.0, "Text nach der Slice-Grenze."),
+        (298.0, 300.0, "Text vor der Slice-Grenze."),
+        (300.0, 302.0, "Text nach der Slice-Grenze."),
     ],
     "The synthetic Whisper slice fixture no longer proves deterministic overlap clipping.",
 )
@@ -89,7 +89,7 @@ normalizer = function_body(
 
 require(
     "let timelineCues = normalizedTranscriptTimelineCues(cues)" in post_process
-    and "for cue in timelineCues" in post_process,
+    and "sentenceAlignedTranscriptCues(timelineCues)" in post_process,
     "Final transcript post-processing still persists raw overlapping Whisper cues.",
 )
 require(

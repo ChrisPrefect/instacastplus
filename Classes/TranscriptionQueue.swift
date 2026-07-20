@@ -419,6 +419,10 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     /// Process-local proof that iOS has delivered a BGProcessing or
     /// BGContinuedProcessing task. A submitted request is deliberately not a grant.
     private var grantedBackgroundExecutionPath: String?
+    /// Compute path currently applied to WhisperKit. A continued-task grant can
+    /// arrive while the scene is still active; in that case this remains nil so
+    /// foreground GPU inference continues without interruption.
+    private var appliedWhisperKitExecutionPath: String?
     private var pendingDownloadHashes: Set<String> = [] // Tracks episodes being auto-downloaded
     private var pendingCacheDeletionHashes: Set<String> = []
     private var cacheClearInProgress = false
@@ -508,6 +512,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         // only for diagnostics/compute-profile visibility while this process is alive.
         UserDefaults.standard.removeObject(forKey: TranscriptionQueue.backgroundExecutionPathKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedBackgroundActiveKey)
+        appliedWhisperKitExecutionPath = nil
         WhisperKitBackend.setActiveBackgroundExecutionPath(nil)
         loadPersistedQueue()
         ChapterGenerator.shared.resumePendingOpenAIBackgroundCancellations()
@@ -581,6 +586,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
+                self?.applyGrantedWhisperKitExecutionPathForCurrentLifecycle(reason: "applicationDidEnterBackground")
                 self?.refreshBackgroundContinuation(reason: "applicationDidEnterBackground")
                 _ = self?.pausePipelineForBackgroundIfNeeded(reason: "applicationDidEnterBackground")
             }
@@ -588,6 +594,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
+                self?.applyForegroundWhisperKitExecutionPath(reason: "applicationWillEnterForeground")
                 self?.refreshBackgroundContinuation(reason: "applicationWillEnterForeground")
                 self?.resumeIfNeeded()
             }
@@ -634,8 +641,6 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                             startImmediately: Bool = true,
                             persistImmediately: Bool = true) -> Bool {
         guard !cacheClearInProgress else { return false }
-        // Don't add if already in queue
-        guard !items.contains(where: { $0.episodeHash == episodeHash }) else { return false }
 
         if chapterOnly {
             guard hasChapterGenerationTranscript(episodeHash: episodeHash, knownEpisode: knownEpisode) else { return false }
@@ -643,6 +648,25 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             // A transcription job has nothing to do when an SRT already exists.
             guard !engine.hasSRT(for: episodeHash) else { return false }
         }
+
+        let replaceFailedManualItem = !automaticallyScheduled && !chapterOnly
+        if replaceFailedManualItem,
+           items.contains(where: { item in
+               item.episodeHash == episodeHash && item.status == .failed
+           }) {
+            chapterGen.cancelOpenAIBackgroundAnalysis(for: episodeHash)
+            items.removeAll { item in
+                item.episodeHash == episodeHash && item.status == .failed
+            }
+            ICDiagnosticLogger.shared.logEvent(
+                "queue",
+                message: "Fehlgeschlagenen Job durch manuelle Transkription ersetzt",
+                metadata: ["episodeHash": episodeHash] as NSDictionary
+            )
+        }
+
+        // Don't add if already in queue. Running and queued work is never replaced.
+        guard !items.contains(where: { $0.episodeHash == episodeHash }) else { return false }
 
         let item = ICTranscriptionQueueItem(
             episodeHash: episodeHash,
@@ -1376,6 +1400,14 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         persistQueue()
         postQueueChangeNotification()
 
+        TranscriptionLogger.shared.resetLog(episodeHash: episodeHash)
+        TranscriptionLogger.shared.append(
+            episodeHash: episodeHash,
+            phase: "queued",
+            message: "Kapitelerstellung in Warteschlange aufgenommen",
+            detailText: nil
+        )
+
         if !isProcessing && chapterTask == nil {
             processNext()
         }
@@ -1927,6 +1959,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 cues = try await self.loadCuesForChapterGeneration(episodeHash: episodeHash)
             } catch {
                 let wasCancelled = error is CancellationError || Task.isCancelled
+                let detailedError = TranscriptionQueue.detailedErrorMessage(for: error)
                 await MainActor.run {
                     self.chapterTask = nil
                     self.clearCrashGuard()
@@ -1936,18 +1969,35 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                             self.items.removeAll { $0 === item }
                         }
                         self.persistQueue()
-                    } else if self.prepareAutomaticTranscriptionAfterUnusableExternalTranscript(
-                        item,
-                        error: error
-                    ) {
-                        self.persistQueue()
-                    } else if !self.scheduleRetry(for: item, error: error, stage: "transcript-import") {
-                        item.status = .failed
-                        item.statusDetail = nil
-                        item.statusStartedAt = nil
-                        item.nextRetryAt = nil
-                        item.error = TranscriptionQueue.detailedErrorMessage(for: error)
-                        self.persistQueue()
+                    } else {
+                        let continuedWithAudio = self.prepareAutomaticTranscriptionAfterUnusableExternalTranscript(
+                            item,
+                            error: error
+                        )
+                        if continuedWithAudio {
+                            TranscriptionLogger.shared.append(
+                                episodeHash: episodeHash,
+                                phase: "transcript-import",
+                                message: "Podcast-Transkript konnte nicht verwendet werden; Audio-Transkription wird gestartet",
+                                detailText: detailedError
+                            )
+                            self.persistQueue()
+                        } else {
+                            TranscriptionLogger.shared.append(
+                                episodeHash: episodeHash,
+                                phase: "error",
+                                message: "Podcast-Transkript konnte nicht verwendet werden",
+                                detailText: detailedError
+                            )
+                            if !self.scheduleRetry(for: item, error: error, stage: "transcript-import") {
+                                item.status = .failed
+                                item.statusDetail = nil
+                                item.statusStartedAt = nil
+                                item.nextRetryAt = nil
+                                item.error = detailedError
+                                self.persistQueue()
+                            }
+                        }
                     }
                     self.postQueueChangeNotification()
                     self.refreshBackgroundContinuation(reason: wasCancelled
@@ -2715,6 +2765,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         let sorted = cues.sorted { $0.start < $1.start }
         var normalized: [ICTranscriptCue] = []
         var previousEnd = -Double.infinity
+        var rejectedCueCount = 0
         for cue in sorted {
             let text = cue.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty,
@@ -2723,10 +2774,24 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                   cue.start >= 0,
                   cue.end > cue.start,
                   cue.start >= previousEnd - 0.001 else {
-                return []
+                rejectedCueCount += 1
+                continue
             }
             normalized.append(ICTranscriptCue(start: cue.start, end: cue.end, text: text))
             previousEnd = cue.end
+        }
+        if rejectedCueCount > 0 {
+            NSLog("[TranscriptionQueue] Podcast transcript cues normalized: rejected=%d input=%d output=%d",
+                  rejectedCueCount, cues.count, normalized.count)
+            ICDiagnosticLogger.shared.logEvent(
+                "transcript-import",
+                message: "Podcast transcript cues normalized",
+                metadata: [
+                    "rejectedCueCount": rejectedCueCount,
+                    "inputCueCount": cues.count,
+                    "outputCueCount": normalized.count,
+                ] as NSDictionary
+            )
         }
         return normalized
     }
@@ -3515,7 +3580,6 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
         if isProcessing,
            let item = items.first(where: {
-               $0.status == .analyzingMusic ||
                $0.status == .downloadingModel ||
                $0.status == .transcribing
            }) {
@@ -3647,17 +3711,36 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             !hasActiveWhisperKitBackgroundExecution
     }
 
+    private func applyGrantedWhisperKitExecutionPathForCurrentLifecycle(reason: String) {
+        let desiredPath = UIApplication.shared.applicationState == .background
+            ? grantedBackgroundExecutionPath
+            : nil
+        applyWhisperKitExecutionPath(desiredPath, reason: reason)
+    }
+
+    private func applyForegroundWhisperKitExecutionPath(reason: String) {
+        applyWhisperKitExecutionPath(nil, reason: reason)
+    }
+
+    private func applyWhisperKitExecutionPath(_ path: String?, reason: String) {
+        let previousPath = appliedWhisperKitExecutionPath
+        guard previousPath != path else { return }
+        appliedWhisperKitExecutionPath = path
+        WhisperKitBackend.setActiveBackgroundExecutionPath(path)
+        beginWhisperKitComputeProfileTransitionIfNeeded(
+            from: previousPath,
+            to: path,
+            reason: reason
+        )
+    }
+
     @objc(activateBackgroundExecutionPathWithPath:detail:)
     func activateBackgroundExecutionPath(path: String, detail: String) {
-        let previousPath = activeBackgroundExecutionPath
         grantedBackgroundExecutionPath = path
-        WhisperKitBackend.setActiveBackgroundExecutionPath(path)
         UserDefaults.standard.set(path, forKey: TranscriptionQueue.backgroundExecutionPathKey)
         UserDefaults.standard.set(path == "continued-cpu" || path == "continued-gpu",
                                   forKey: TranscriptionQueue.continuedBackgroundActiveKey)
-        beginWhisperKitComputeProfileTransitionIfNeeded(from: previousPath,
-                                                        to: path,
-                                                        reason: "background-path-activated")
+        applyGrantedWhisperKitExecutionPathForCurrentLifecycle(reason: "background-path-activated")
 
         let activeItems = items.filter {
             $0.status == .queued ||
@@ -3686,16 +3769,13 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         let activePath = activeBackgroundExecutionPath
         let path = activePath ?? "unknown"
         grantedBackgroundExecutionPath = nil
-        WhisperKitBackend.setActiveBackgroundExecutionPath(nil)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskRequestedKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedBackgroundActiveKey)
         UserDefaults.standard.removeObject(forKey: TranscriptionQueue.backgroundExecutionPathKey)
         if !success {
             _ = pausePipelineForBackgroundIfNeeded(reason: reason)
         }
-        beginWhisperKitComputeProfileTransitionIfNeeded(from: activePath,
-                                                        to: nil,
-                                                        reason: reason)
+        applyForegroundWhisperKitExecutionPath(reason: reason)
         ICDiagnosticLogger.shared.logEvent("background-task", message: "Hintergrundpfad beendet", metadata: [
             "path": path,
             "reason": reason,
@@ -3710,14 +3790,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         let activePath = activeBackgroundExecutionPath
         let path = activePath ?? "unknown"
         grantedBackgroundExecutionPath = nil
-        WhisperKitBackend.setActiveBackgroundExecutionPath(nil)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.backgroundTaskRequestedKey)
         UserDefaults.standard.set(false, forKey: TranscriptionQueue.continuedBackgroundActiveKey)
         UserDefaults.standard.removeObject(forKey: TranscriptionQueue.backgroundExecutionPathKey)
-        beginWhisperKitComputeProfileTransitionIfNeeded(from: activePath,
-                                                        to: nil,
-                                                        reason: reason)
         _ = pausePipelineForBackgroundIfNeeded(reason: reason)
+        applyForegroundWhisperKitExecutionPath(reason: reason)
         ICDiagnosticLogger.shared.logEvent("background-task", message: "Hintergrundpfad deaktiviert", metadata: [
             "path": path,
             "reason": reason,
@@ -4069,14 +4146,21 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             ] as NSDictionary)
             ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "pipeline-start", audioURL: audioURL)
 
-            // Step 1: Music Analysis (SoundAnalysis, < 1 min)
-            await MainActor.run {
-                self.beginStep(for: item,
-                               status: .analyzingMusic,
-                               detail: NSLocalizedString("Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen.", comment: ""))
-                self.postQueueChangeNotification()
-                TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "music",
-                                                  message: "Audioanalyse gestartet (SoundAnalysis)", detailText: nil)
+            // Step 1: Music Analysis (SoundAnalysis, < 1 min). A compute-profile
+            // transition re-enters the pipeline, but it must reuse the durable
+            // timeline instead of presenting the cache read as a fresh analysis.
+            let hasCachedAudioAnalysis = await MainActor.run {
+                self.analyzer.hasCachedTimeline(for: episodeHash)
+            }
+            if !hasCachedAudioAnalysis {
+                await MainActor.run {
+                    self.beginStep(for: item,
+                                   status: .analyzingMusic,
+                                   detail: NSLocalizedString("Erkenne Musik, Sprache und Stille für spätere Kapitelgrenzen.", comment: ""))
+                    self.postQueueChangeNotification()
+                    TranscriptionLogger.shared.append(episodeHash: episodeHash, phase: "music",
+                                                      message: "Audioanalyse gestartet (SoundAnalysis)", detailText: nil)
+                }
             }
 
             let musicStart = Date()
@@ -4109,7 +4193,14 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                 guard self.processingRunIsCurrent(runID) else { return }
                 let elapsed = -musicStart.timeIntervalSinceNow
                 let musicCount = (musicSegments ?? []).filter { $0.type == "music" }.count
-                if let audioAnalysisError {
+                if hasCachedAudioAnalysis, audioAnalysisError == nil {
+                    TranscriptionLogger.shared.append(
+                        episodeHash: episodeHash,
+                        phase: "music",
+                        message: "Audioanalyse aus gespeichertem Ergebnis übernommen",
+                        detailText: "\(musicCount) Musiksegmente"
+                    )
+                } else if let audioAnalysisError {
                     let continuation = NSLocalizedString("Verarbeitung wird ohne Audiohinweise fortgesetzt.", comment: "")
                     TranscriptionLogger.shared.append(
                         episodeHash: episodeHash,

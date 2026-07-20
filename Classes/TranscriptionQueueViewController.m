@@ -148,8 +148,9 @@
 }
 
 static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
-static NSString* const ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued";
+static NSString* const ICTranscriptionContinuedTaskIdentifierBase = @"com.iteconomy.instacastplus.transcription.continued";
 static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionActiveContinuedPath";
+static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscriptionActiveContinuedIdentifier";
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -295,9 +296,13 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
             [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
         }
         if (@available(iOS 26.0, *)) {
-            [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:ICTranscriptionContinuedTaskIdentifier];
+            NSString* continuedIdentifier = [USER_DEFAULTS stringForKey:ICTranscriptionActiveContinuedIdentifier];
+            if (continuedIdentifier.length > 0) {
+                [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:continuedIdentifier];
+            }
         }
         [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+        [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedIdentifier];
         TranscriptionQueue* queue = [TranscriptionQueue shared];
         [queue deactivateBackgroundExecutionPathWithReason:@"user-disabled"];
         [queue scheduleAutomaticBackgroundProcessingIfNeeded];
@@ -319,6 +324,7 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
 
 - (void)_submitProcessingBackgroundTask {
     [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+    [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedIdentifier];
     BGProcessingTaskRequest* request = [[BGProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionProcessingTaskIdentifier];
     request.requiresExternalPower = NO;
     request.requiresNetworkConnectivity = NO;
@@ -357,19 +363,32 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
     if (@available(iOS 26.0, *)) {
         BOOL gpuSupported = (BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0;
         NSString* path = gpuSupported ? @"continued-gpu" : @"continued-cpu";
-        BGContinuedProcessingTaskRequest* request = [[BGContinuedProcessingTaskRequest alloc] initWithIdentifier:ICTranscriptionContinuedTaskIdentifier
-                                                                                                          title:NSLocalizedString(@"Verarbeitung läuft", nil)
-                                                                                                       subtitle:NSLocalizedString(@"Instacast verarbeitet Podcasts im Hintergrund.", nil)];
+        NSString* identifier = [NSString stringWithFormat:@"%@.%@",
+                                ICTranscriptionContinuedTaskIdentifierBase,
+                                NSUUID.UUID.UUIDString];
+        TranscriptionQueue* queue = [TranscriptionQueue shared];
+        ICTranscriptionQueueItem* item = queue.currentItem ?: queue.items.firstObject;
+        NSString* title = item.episodeTitle.length > 0
+            ? item.episodeTitle
+            : NSLocalizedString(@"Podcast-Verarbeitung", nil);
+        NSString* subtitle = item.statusDetail.length > 0
+            ? item.statusDetail
+            : NSLocalizedString(@"Transkription wird vorbereitet.", nil);
+        BGContinuedProcessingTaskRequest* request = [[BGContinuedProcessingTaskRequest alloc] initWithIdentifier:identifier
+                                                                                                          title:title
+                                                                                                       subtitle:subtitle];
         request.strategy = BGContinuedProcessingTaskRequestSubmissionStrategyFail;
         request.requiredResources = gpuSupported
             ? BGContinuedProcessingTaskRequestResourcesGPU
             : BGContinuedProcessingTaskRequestResourcesDefault;
 
         [USER_DEFAULTS setObject:path forKey:ICTranscriptionActiveContinuedPath];
+        [USER_DEFAULTS setObject:identifier forKey:ICTranscriptionActiveContinuedIdentifier];
         NSError* submitError = nil;
         [[BGTaskScheduler sharedScheduler] submitTaskRequest:request error:&submitError];
         if (submitError) {
             [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedPath];
+            [USER_DEFAULTS removeObjectForKey:ICTranscriptionActiveContinuedIdentifier];
             [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                           message:@"BGContinuedProcessingTask-Request fehlgeschlagen"
                                          metadata:@{
@@ -396,7 +415,7 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGContinuedProcessingTask-Request eingereicht"
                                      metadata:@{
-                                         @"identifier": ICTranscriptionContinuedTaskIdentifier,
+                                         @"identifier": identifier,
                                          @"path": path,
                                          @"gpuSupported": @(gpuSupported),
                                          @"queueCount": @([TranscriptionQueue shared].count),
@@ -502,6 +521,24 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
     return [TranscriptionQueue shared].items.count;
 }
 
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) return 80;
+    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].items[indexPath.row];
+    if (item.status != ICTranscriptionStatusFailed) return 80;
+
+    NSString* errorText = [self _singleStatusTextWithHeadline:NSLocalizedString(@"Fehler", nil)
+                                                       detail:item.error ?: NSLocalizedString(@"Fehler ✗", nil)];
+    UIFont* statusFont = [UIFont systemFontOfSize:ICFontSize(11)];
+    UIFont* titleFont = [UIFont systemFontOfSize:ICFontSize(13)];
+    CGFloat statusWidth = MAX(1, CGRectGetWidth(tableView.bounds) - 125);
+    CGRect errorBounds = [errorText boundingRectWithSize:CGSizeMake(statusWidth, CGFLOAT_MAX)
+                                                options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+                                             attributes:@{ NSFontAttributeName: statusFont }
+                                                context:nil];
+    CGFloat statusTop = 10 + ceil(titleFont.lineHeight) + 3;
+    return MAX(80, statusTop + ceil(CGRectGetHeight(errorBounds)) + 7);
+}
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     // 1:1 like DownloadsViewController
     static NSString *CellIdentifier = @"TranscriptionCachingCell";
@@ -512,6 +549,7 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
     }
     cell.backgroundColor = tableView.backgroundColor;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.showsErrorStatus = NO;
     cell.sizeLabel.numberOfLines = 2;
     cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
     cell.timeLabel.textAlignment = NSTextAlignmentCenter;
@@ -573,6 +611,11 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
 }
 
 - (void)_updateCellStatus:(DownloadsTableViewCell*)cell withItem:(ICTranscriptionQueueItem*)item {
+    cell.showsErrorStatus = item.status == ICTranscriptionStatusFailed;
+    if (!cell.showsErrorStatus) {
+        cell.sizeLabel.numberOfLines = 2;
+        cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    }
     cell.sizeLabel.textColor = ICMutedTextColor; // reset color
     cell.timeLabel.textColor = ICMutedTextColor;
     NSString* elapsedText = [self _elapsedTextForItem:item];
@@ -736,8 +779,7 @@ static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionAct
     if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].items.count) return;
     ICTranscriptionQueueItem *item = [TranscriptionQueue shared].items[indexPath.row];
 
-    if ((item.status == ICTranscriptionStatusQueued && item.error.length > 0 && ![TranscriptionQueue shared].isProcessing) ||
-        item.status == ICTranscriptionStatusFailed) {
+    if (item.status == ICTranscriptionStatusQueued || item.status == ICTranscriptionStatusFailed) {
         [self _presentRecoveryActionsForItem:item];
         return;
     }
