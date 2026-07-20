@@ -122,6 +122,8 @@
 	<false/>
 	<key>ICiCloudSyncSettingsEnabled</key>
 	<false/>
+	<key>LocalTranscriptionEnabled</key>
+	<true/>
 	<key>AmazonAffiliateEnabled</key>
 	<true/>
 </dict>

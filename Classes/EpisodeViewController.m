@@ -1422,7 +1422,8 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     }
 
     // 6. Transcribe (auto-downloads if needed)
-    if (![[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash]) {
+    BOOL localTranscriptionEnabled = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    if (localTranscriptionEnabled && ![[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash]) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Transkribieren", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             if (![ICDownloadableModelStore selectedVoiceModelIsReady]) {
@@ -1445,7 +1446,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     // "Löschen" would be visible at the same time, which is confusing.
     BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:self.episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash] || self.episode.chapters.count > 0;
-    if (hasTranscript && !hasAnyChapters) {
+    if (localTranscriptionEnabled && hasTranscript && !hasAnyChapters) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Kapitel generieren", nil) image:[UIImage systemImageNamed:@"list.number"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             if (![ICDownloadableModelStore selectedChapterModelCanGenerate]) {

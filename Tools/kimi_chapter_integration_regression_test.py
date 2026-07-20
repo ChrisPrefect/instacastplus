@@ -56,10 +56,10 @@ require(
 )
 
 require(
-    "Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key." in engine_source
+    "Analyse mit aktivem Reasoning. Geschätzte Kosten pro 1 h Transkript" in engine_source
     and "Eigener Key wird im iOS-Keychain gespeichert und überschreibt den integrierten Kimi-Zugang." in settings_source
-    and "Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key." in german_source
-    and "Sendet das vollständige Transkript an Kimi. Integrierter Zugang oder eigener API-Key." in english_source
+    and "Analyse mit aktivem Reasoning. Geschätzte Kosten pro 1 h Transkript" in german_source
+    and "Analysis with reasoning enabled. Estimated cost per 1-hour transcript" in english_source
     and "Integrierter Zugang" in german_source
     and "Integrierter Zugang" in english_source,
     "Kimi model and credential settings no longer describe the integrated-access and user-key priority contract.",

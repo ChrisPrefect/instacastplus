@@ -641,6 +641,14 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                             startImmediately: Bool = true,
                             persistImmediately: Bool = true) -> Bool {
         guard !cacheClearInProgress else { return false }
+        guard UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled) else {
+            ICDiagnosticLogger.shared.logEvent(
+                "queue",
+                message: "Lokaler Auftrag nicht erstellt, weil lokale Transkription deaktiviert ist",
+                metadata: ["episodeHash": episodeHash, "chapterOnly": chapterOnly] as NSDictionary
+            )
+            return false
+        }
 
         if chapterOnly {
             guard hasChapterGenerationTranscript(episodeHash: episodeHash, knownEpisode: knownEpisode) else { return false }
@@ -758,6 +766,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func automaticProcessingDecision(for episode: CDEpisode) -> AutomaticProcessingDecision? {
+        guard UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled) else { return nil }
         guard let feed = episode.feed, feed.subscribed else { return nil }
         let transcription = resolvedAutomaticSetting(
             feed: feed,
@@ -1365,6 +1374,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     /// Generate chapters for an episode that already has a transcript.
     @objc func generateChapters(episodeHash: String, episodeTitle: String, feedTitle: String) -> Bool {
+        guard UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled) else { return false }
         guard ICDownloadableModelStore.selectedChapterModelIsReady() else {
             NSLog("[TranscriptionQueue] Cannot generate chapters: chapter model is not downloaded")
             return false

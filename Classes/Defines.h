@@ -167,6 +167,7 @@ typedef NS_ENUM(NSInteger, ICEpisodeSwipeAction) {
 extern NSString* EnabledPlaybackSpeedsKey;
 
 // Transcription & Chapters
+extern NSString* kLocalTranscriptionEnabled;         // BOOL - local transcription/chapter actions enabled
 extern NSString* kTranscriptionEngine;              // "WhisperKit" or "Apple"
 extern NSString* kTranscriptionWhisperModel;         // "large-v3-turbo" or "small"
 extern NSString* kTranscriptionAutoDefault;           // BOOL - auto-transcribe new episodes

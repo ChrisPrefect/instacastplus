@@ -60,11 +60,11 @@ chapter_model_indices = [model_catalog_source.find(marker) for marker in chapter
 require(
     all(index != -1 for index in chapter_model_indices)
     and chapter_model_indices == sorted(chapter_model_indices)
-    and "Lokales Modell mit sehr großem Download. Qualität schwankt je nach Folge." in engine_source,
+    and "Kostenlos und vollständig lokal. Sehr hoher Speicherbedarf, langsame Verarbeitung; Qualität schwankt je nach Folge." in engine_source,
     "Chapter model order/copy must put Codex before OpenAI API, Gemma near the end with honest copy, and Apple Intelligence last.",
 )
 require(
-    "MARKETING_VERSION = 3.5;" in project_source
+    "MARKETING_VERSION = 4.0;" in project_source
     and "MARKETING_VERSION = 3.3;" not in project_source
     and 'CGRectMake(0, 0, tableView.frame.size.width, 119)' in options_footer_source
     and 'CGRectMake(20, 5, footerView.frame.size.width-40, 119)' in options_footer_source
@@ -78,7 +78,7 @@ require(
     and "Tasia" not in options_footer_source
     and "Build " not in options_footer_source
     and "CFBundleVersion" not in options_footer_source,
-    "Version must be 3.5 and the options footer must keep original credits without the removed developer-line whitespace.",
+    "Version must be 4.0 and the options footer must keep original credits without the removed developer-line whitespace.",
 )
 require(
     "ICChapterModelProvider" in engine_source
@@ -87,7 +87,7 @@ require(
     and "openai-codex-gpt-5.6-sol-oauth" in engine_source
     and 'remoteModelName: "gpt-5.6-sol"' in engine_source
     and 'title: "OpenAI GPT-5.6 Sol"' in engine_source
-    and "OpenAI API-Key oder Codex Login erforderlich." in engine_source
+    and "OpenAI-Qualitätsmodell; höhere Latenz und Kosten." in engine_source
     and "anthropic-claude-sonnet-5-api-key" in model_catalog_source
     and 'remoteModelName: "claude-sonnet-5"' in model_catalog_source
     and "kimi-k3-api-key" in model_catalog_source

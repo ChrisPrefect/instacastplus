@@ -19,7 +19,8 @@
 @end
 
 typedef NS_ENUM(NSInteger, TSSection) {
-    TSSectionIntro = 0,
+    TSSectionEnabled = 0,
+    TSSectionIntro,
     TSSectionModels,
     TSSectionCloud,
     TSSectionChapters,
@@ -27,7 +28,14 @@ typedef NS_ENUM(NSInteger, TSSection) {
     TSSectionCount
 };
 
+typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
+    ICTranscriptionSettingsPageHub = 0,
+    ICTranscriptionSettingsPageLocal,
+    ICTranscriptionSettingsPageServer
+};
+
 @interface TranscriptionSettingsViewController ()
+@property (nonatomic, assign) ICTranscriptionSettingsPage pageMode;
 @end
 
 @implementation TranscriptionSettingsViewController
@@ -45,7 +53,18 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = NSLocalizedString(@"Transkription", nil);
+    switch (self.pageMode) {
+        case ICTranscriptionSettingsPageLocal:
+            self.title = NSLocalizedString(@"Lokale Transkription", nil);
+            break;
+        case ICTranscriptionSettingsPageServer:
+            self.title = NSLocalizedString(@"Serverbasierte Transkription", nil);
+            break;
+        case ICTranscriptionSettingsPageHub:
+        default:
+            self.title = NSLocalizedString(@"Transkription und Kapitel", nil);
+            break;
+    }
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_reload)
                                                  name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
@@ -64,10 +83,16 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 #pragma mark - Data Source
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return TSSectionCount; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    if (self.pageMode == ICTranscriptionSettingsPageHub) return 1;
+    if (self.pageMode == ICTranscriptionSettingsPageServer) return 0;
+    return TSSectionCount;
+}
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    if (self.pageMode != ICTranscriptionSettingsPageLocal) return nil;
     switch (section) {
+        case TSSectionEnabled: return nil;
         case TSSectionIntro: return nil;
         case TSSectionModels: return nil;
         case TSSectionCloud: return NSLocalizedString(@"Cloud-Zugänge", nil);
@@ -78,7 +103,10 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (self.pageMode != ICTranscriptionSettingsPageLocal) return nil;
     switch (section) {
+        case TSSectionEnabled:
+            return NSLocalizedString(@"Wenn deaktiviert, werden keine neuen lokalen Transkriptions- oder Kapitelaufträge gestartet und die Aktionen in Episodenmenüs ausgeblendet. Bereits laufende Aufträge werden nicht abgebrochen.", nil);
         case TSSectionIntro:
             return nil;
         case TSSectionModels:
@@ -94,7 +122,10 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    if (self.pageMode == ICTranscriptionSettingsPageHub) return 2;
+    if (self.pageMode == ICTranscriptionSettingsPageServer) return 0;
     switch (section) {
+        case TSSectionEnabled: return 1;
         case TSSectionIntro: return 1;
         case TSSectionModels: return 2;
         case TSSectionCloud: return 4;
@@ -105,7 +136,9 @@ typedef NS_ENUM(NSInteger, TSSection) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (self.pageMode == ICTranscriptionSettingsPageHub) return [self _hubCellForRow:indexPath.row];
     switch (indexPath.section) {
+        case TSSectionEnabled: return [self _enabledCell];
         case TSSectionIntro: return [self _introCell];
         case TSSectionModels: return [self _modelCellForRow:indexPath.row];
         case TSSectionCloud: return [self _cloudCellForRow:indexPath.row];
@@ -113,6 +146,40 @@ typedef NS_ENUM(NSInteger, TSSection) {
         case TSSectionAuto: return [self _autoCellForRow:indexPath.row];
         default: return [[UITableViewCell alloc] init];
     }
+}
+
+#pragma mark - Hub
+
+- (UITableViewCell *)_hubCellForRow:(NSInteger)row {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    if (row == 0) {
+        cell.textLabel.text = NSLocalizedString(@"Lokale Transkription", nil);
+        cell.detailTextLabel.text = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]
+            ? NSLocalizedString(@"Ein", nil)
+            : NSLocalizedString(@"Aus", nil);
+    } else {
+        cell.textLabel.text = NSLocalizedString(@"Serverbasierte Transkription", nil);
+        cell.detailTextLabel.text = NSLocalizedString(@"In Vorbereitung", nil);
+    }
+    return cell;
+}
+
+#pragma mark - Enabled Section
+
+- (UITableViewCell *)_enabledCell {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    cell.textLabel.text = NSLocalizedString(@"Lokale Transkription aktivieren", nil);
+    UISwitch *toggle = [[UISwitch alloc] init];
+    toggle.on = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    [toggle addTarget:self action:@selector(_localTranscriptionToggle:) forControlEvents:UIControlEventValueChanged];
+    cell.accessoryView = toggle;
+    return cell;
+}
+
+- (void)_localTranscriptionToggle:(UISwitch *)toggle {
+    [USER_DEFAULTS setBool:toggle.isOn forKey:kLocalTranscriptionEnabled];
 }
 
 #pragma mark - Intro Section
@@ -421,6 +488,12 @@ typedef NS_ENUM(NSInteger, TSSection) {
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (self.pageMode == ICTranscriptionSettingsPageHub) {
+        TranscriptionSettingsViewController *controller = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
+        controller.pageMode = indexPath.row == 0 ? ICTranscriptionSettingsPageLocal : ICTranscriptionSettingsPageServer;
+        [self.navigationController pushViewController:controller animated:YES];
+        return;
+    }
     if (indexPath.section == TSSectionCloud) {
         if (indexPath.row == 0) [self _showAnthropicAPIKeyEditor];
         else if (indexPath.row == 1) [self _showOpenAIAPIKeyEditor];
@@ -453,6 +526,8 @@ typedef NS_ENUM(NSInteger, TSSection) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = self.modelRole == ICDownloadableModelRoleVoiceToText ? NSLocalizedString(@"Transkribieren", nil) : NSLocalizedString(@"Kapitel generieren", nil);
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 96.f;
     self.busyModelIDs = [NSMutableSet set];
     self.downloadTasksByModelID = [NSMutableDictionary dictionary];
     self.downloadProgressByModelID = [NSMutableDictionary dictionary];
@@ -560,7 +635,7 @@ typedef NS_ENUM(NSInteger, TSSection) {
         return [NSString stringWithFormat:@"%@\n%@", credentialState, model.detail];
     }
     if (!model.requiresDownload) {
-        return [NSString stringWithFormat:@"%@\n%@", NSLocalizedString(@"Kein Download erforderlich.", nil), model.detail];
+        return model.detail;
     }
     if (downloaded) {
         NSString *size = [NSByteCountFormatter stringFromByteCount:[ICDownloadableModelStore sizeOnDiskForModel:model]

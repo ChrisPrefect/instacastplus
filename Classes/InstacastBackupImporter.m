@@ -3170,6 +3170,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"fontSizeLarger":          kDefaultFontSizeLarger,
         @"tapOnEpisodeAction":      TapOnEpisodeAction,
         @"mediaFilesSortMode":      @"MediaFilesSortMode",
+        @"localTranscriptionEnabled": kLocalTranscriptionEnabled,
         @"transcriptionEngine":     kTranscriptionEngine,
         @"transcriptionWhisperModel": kTranscriptionWhisperModel,
         @"chapterGenerationModel":  @"ChapterGenerationModel",
@@ -3193,7 +3194,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
         @"continuousPlay", @"autoDownloadWhileStreaming", @"enableCachingImagesOver3G",
         @"openLinksExternal", @"notifyNewEpisode", @"notifyRefreshFinished", @"notifyRefreshFailure", @"notifyDownloadFinished",
         @"intelligentSleepAlways", @"darkModePureBlack", @"amazonAffiliateEnabled",
-        @"appleWatchOnlyUnplayed", @"transcriptionAutoDefault", @"chapterAutoDefault",
+        @"appleWatchOnlyUnplayed", @"localTranscriptionEnabled", @"transcriptionAutoDefault", @"chapterAutoDefault",
         @"autoSkipSponsors", @"transcriptionEverActivated", @"transcriptionFirstRunShown",
         @"transcriptVisiblePreference",
     ]];

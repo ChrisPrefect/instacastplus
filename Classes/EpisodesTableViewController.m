@@ -1475,6 +1475,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (UIContextualAction*) _contextualSwipeActionForSwipeAction:(ICEpisodeSwipeAction)swipeAction atIndexPath:(NSIndexPath*)indexPath
 {
+    if (swipeAction == ICEpisodeSwipeActionTranscribe && ![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
+        return nil;
+    }
     NSArray* lEpisodes = self.episodes;
     if (indexPath.section != 0 || indexPath.row >= [lEpisodes count]) {
         return nil;
@@ -1775,6 +1778,10 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _transcribeEpisode:(CDEpisode*)episode
 {
+    if (![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
+        return;
+    }
+
     // Check if already transcribed
     if ([[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
         return;
@@ -2032,7 +2039,8 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
     // Transcribe (only if downloaded and not already transcribed)
     // Transcribe (episode will be auto-downloaded if needed)
-    if (![[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
+    BOOL localTranscriptionEnabled = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    if (localTranscriptionEnabled && ![[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
         UIAction* transcribeAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkribieren", nil)
                                                          image:[UIImage systemImageNamed:@"captions.bubble"]
                                                     identifier:nil
@@ -2046,7 +2054,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     // neither in the JSON cache nor copied into Core Data on first playback).
     BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash] || episode.chapters.count > 0;
-    if (hasTranscript && !hasAnyChapters) {
+    if (localTranscriptionEnabled && hasTranscript && !hasAnyChapters) {
         UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Kapitel generieren", nil)
                                                        image:[UIImage systemImageNamed:@"list.number"]
                                                   identifier:nil

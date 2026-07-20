@@ -129,6 +129,7 @@ NSString* EpisodeSwipeLeftAction = @"EpisodeSwipeLeftAction";
 NSString* EnabledPlaybackSpeedsKey = @"EnabledPlaybackSpeeds";
 
 // Transcription & Chapters
+NSString* kLocalTranscriptionEnabled = @"LocalTranscriptionEnabled";
 NSString* kTranscriptionEngine = @"TranscriptionEngine";
 NSString* kTranscriptionWhisperModel = @"TranscriptionWhisperModel";
 NSString* kTranscriptionAutoDefault = @"TranscriptionAutoDefault";

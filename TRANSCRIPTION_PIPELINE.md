@@ -464,6 +464,39 @@ keine erfundenen Stub- oder Kompatibilitätspfade eingebaut.
   Player-Klassifikator. Die Watch verwendet für ihre vorhandenen Kapitel denselben
   Keyword-Vertrag.
 
+## Einstellungsaufteilung in Version 4.0
+
+- Problem: Geräte-Transkription, Kapitelmodelle, Cloud-Zugänge, Sponsor-Skip und
+  automatische Verarbeitung lagen direkt auf einer einzigen Einstellungsseite. Es
+  gab keinen gemeinsamen Aktivierungsvertrag, deshalb konnten Episodenmenüs und die
+  automatische Queue die lokale Verarbeitung nicht als Ganzes ein- oder ausschalten.
+- Grund: Die ursprüngliche Seite war zugleich Navigation und Detailcontroller; die
+  Queue kannte nur einzelne Auto-Transkriptions- und Auto-Analysewerte pro Podcast.
+- Lösung: „Transkription und Kapitel“ ist jetzt eine Navigation mit „Lokale
+  Transkription“ an erster und „Serverbasierte Transkription“ an zweiter Stelle. Alle
+  bisherigen Einstellungen liegen unter „Lokale Transkription“. Die Server-Seite ist
+  bewusst leer vorbereitet; sie besitzt noch keinen Schalter, keine Queue und keine
+  Episodenaktion, bis ein echter serverbasierter Audio-Transkriptionspfad gebaut ist.
+- Der erste lokale Eintrag ist `LocalTranscriptionEnabled`, standardmäßig `true`,
+  damit bestehende Installationen ihr Verhalten behalten. `false` verhindert zentral
+  neue manuelle und automatische lokale Transkriptions-/Kapitelaufträge und blendet
+  die Erstellungsaktionen sowie einen konfigurierten Transkriptions-Swipe aus. Bereits
+  gespeicherte Transkripte und Analysen bleiben löschbar; eine laufende Rechenphase
+  wird durch den Schalter nicht aktiv abgebrochen. Export und Import sichern denselben
+  Bool-Wert.
+- Problem: Die Modellliste wiederholte bei den beiden Apple-Modellen lediglich, dass
+  kein Download nötig sei, und Remote-Modelle zeigten Aufbewahrungstexte statt einer
+  Entscheidungshilfe. Grund: Downloadzustand und Modellbeschreibung enthielten
+  dieselbe Information; relative Leistung und erwartbare Kosten fehlten. Lösung:
+  Apple-, Whisper- und lokale Kapitelmodelle nennen nun Genauigkeit, relative
+  Geschwindigkeit, Energie-/Speicherbedarf und lokale Kosten. Remote-Kapitelmodelle
+  nennen Qualitäts-/Latenzprofil und geschätzte Kosten pro einstündigem Transkript.
+  Die OpenAI-Spannen basieren auf den offiziellen Standardpreisen vom 20. Juli 2026
+  (Sol USD 5/30 und Terra USD 2,50/15 pro Million Ein-/Ausgabetokens) und einem
+  typischen, je nach Sprechdichte und Ausgabelänge schwankenden Stunden-Transkript;
+  deshalb werden bewusst Bereiche statt Scheingenauigkeit angezeigt. Modellzeilen
+  skalieren auf mehrere Textzeilen, damit die Angaben nicht abgeschnitten werden.
+
 ## Modellbewertung
 
 Alle Preise sind Listenpreise am 18. Juli 2026 pro eine Million Tokens. Anbieterpreise
