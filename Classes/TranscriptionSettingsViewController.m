@@ -96,7 +96,7 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
         case TSSectionIntro: return nil;
         case TSSectionModels: return nil;
         case TSSectionCloud: return NSLocalizedString(@"Cloud-Zugänge", nil);
-        case TSSectionChapters: return NSLocalizedString(@"Kapitel & Sponsoren", nil);
+        case TSSectionChapters: return NSLocalizedString(@"Kapitel, Sponsoren & KI-Zusammenfassung", nil);
         case TSSectionAuto: return NSLocalizedString(@"Automatisch", nil);
         default: return nil;
     }
@@ -114,7 +114,7 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
         case TSSectionCloud:
             return nil;
         case TSSectionChapters:
-            return NSLocalizedString(@"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Zusammenfassungen benötigen ein Remote-Kapitelmodell.", nil);
+            return NSLocalizedString(@"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Remote-Kapitelmodelle erstellen zusätzlich eine KI-Zusammenfassung, die oberhalb der Shownotes angezeigt wird.", nil);
         case TSSectionAuto:
             return NSLocalizedString(@"Voreinstellungen für alle Podcasts. Kann pro Podcast in den Podcast-Einstellungen angepasst werden.", nil);
         default: return nil;

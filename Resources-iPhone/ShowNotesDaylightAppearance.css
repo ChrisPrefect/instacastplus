@@ -3,6 +3,10 @@ body {
     background-color: #f2f2f7;
 }
 
+#ai-summary {
+    background-color: #e5e5ea;
+}
+
 a {
     color: #333;
 }

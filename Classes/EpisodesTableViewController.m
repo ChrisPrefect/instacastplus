@@ -2055,7 +2055,11 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     BOOL hasTranscript = [[TranscriptionQueue shared] hasChapterGenerationTranscriptWithEpisodeHash:episode.objectHash];
     BOOL hasAnyChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash] || episode.chapters.count > 0;
     if (localTranscriptionEnabled && hasTranscript && !hasAnyChapters) {
-        UIAction* chaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Kapitel generieren", nil)
+        ICDownloadableModel* chapterModel = [ICDownloadableModelStore selectedModelForRole:ICDownloadableModelRoleTextToChapters];
+        NSString* createTitle = chapterModel.usesRemoteChapterService
+            ? NSLocalizedString(@"Kapitel und Zusammenfassung erstellen", nil)
+            : NSLocalizedString(@"Kapitel erstellen", nil);
+        UIAction* chaptersAction = [UIAction actionWithTitle:createTitle
                                                        image:[UIImage systemImageNamed:@"list.number"]
                                                   identifier:nil
                                                      handler:^(UIAction *action) {
@@ -2083,6 +2087,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         // Only the generated-chapter JSON proves ownership. CDChapter can also contain
         // podcast-provided chapters copied during playback, so it must not drive this action.
         BOOL hasGeneratedChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash];
+        BOOL hasGeneratedSummary = hasGeneratedChapters && episode.objectHash.length > 0 && [[[ChapterGenerator shared] loadSummaryFor:episode.objectHash] length] > 0;
 
         if (hasSRT) {
             UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil)
@@ -2097,7 +2102,10 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
             [actions addObject:deleteTranscriptAction];
         }
         if (hasGeneratedChapters) {
-            UIAction* deleteChaptersAction = [UIAction actionWithTitle:NSLocalizedString(@"Generierte Analyse löschen", nil)
+            NSString* deleteTitle = hasGeneratedSummary
+                ? NSLocalizedString(@"Kapitel und Zusammenfassung löschen", nil)
+                : NSLocalizedString(@"Kapitel löschen", nil);
+            UIAction* deleteChaptersAction = [UIAction actionWithTitle:deleteTitle
                                                          image:[UIImage systemImageNamed:@"list.number"]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {

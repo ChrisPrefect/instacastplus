@@ -115,7 +115,8 @@ require(
 )
 require(
     "Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt." in settings_source
-    and "Zusammenfassungen benötigen ein Remote-Kapitelmodell." in settings_source
+    and "Remote-Kapitelmodelle erstellen zusätzlich eine KI-Zusammenfassung" in settings_source
+    and "oberhalb der Shownotes" in settings_source
     and "Neue Folgen analysieren" in settings_source
     and "Neue Folgen analysieren" in feed_settings_source,
     "Transcription settings still promise that existing chapters stay untouched or describe full analysis as chapter-only generation.",

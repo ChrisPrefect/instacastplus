@@ -496,6 +496,18 @@ keine erfundenen Stub- oder Kompatibilitätspfade eingebaut.
   typischen, je nach Sprechdichte und Ausgabelänge schwankenden Stunden-Transkript;
   deshalb werden bewusst Bereiche statt Scheingenauigkeit angezeigt. Modellzeilen
   skalieren auf mehrere Textzeilen, damit die Angaben nicht abgeschnitten werden.
+- Problem: Die Episodenmenüs zeigten den internen Persistenzbegriff „Generierte
+  Analyse löschen“, obwohl der Nutzer Kapitel und KI-Zusammenfassung erstellt. Die
+  Zusammenfassung stand zudem ohne Innenabstand direkt über den Shownotes. Grund:
+  Remote-Ergebnisse werden als gemeinsames Analyseartefakt gespeichert, und der
+  Zusammenfassungsabschnitt lag außerhalb des gepolsterten Shownotes-Containers.
+  Lösung: Bei Remote-Modellen heißen die Aktionen jetzt „Kapitel und Zusammenfassung
+  erstellen/löschen“; lokale Kapitelmodelle versprechen weiterhin nur Kapitel. Der
+  Löschtext richtet sich nach der tatsächlich gespeicherten Zusammenfassung, während
+  die Aktion weiterhin das atomare Analysepaket entfernt. Die Zusammenfassung hat in
+  hellen und dunklen Shownotes eine gepolsterte, dezent abgesetzte Karte. Die lokale
+  Einstellungsseite nennt die KI-Zusammenfassung und ihren Platz oberhalb der
+  Shownotes ausdrücklich.
 
 ## Modellbewertung
 

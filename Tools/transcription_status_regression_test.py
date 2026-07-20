@@ -314,7 +314,8 @@ require(
 )
 require(
     "Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt." in settings_source and
-    "Zusammenfassungen benötigen ein Remote-Kapitelmodell." in settings_source,
+    "Remote-Kapitelmodelle erstellen zusätzlich eine KI-Zusammenfassung" in settings_source and
+    "oberhalb der Shownotes" in settings_source,
     "Settings UI no longer explains publisher-chapter preservation, sponsor overlays, and the remote-summary requirement.",
 )
 require(

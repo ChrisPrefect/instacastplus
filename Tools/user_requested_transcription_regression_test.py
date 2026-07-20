@@ -105,11 +105,15 @@ require(
 )
 
 require(
-    'NSLocalizedString(@"Kapitel generieren", nil)' in episode
-    and 'NSLocalizedString(@"Kapitel generieren", nil)' in episodes
+    'NSLocalizedString(@"Kapitel und Zusammenfassung erstellen", nil)' in episode
+    and 'NSLocalizedString(@"Kapitel und Zusammenfassung erstellen", nil)' in episodes
+    and 'NSLocalizedString(@"Kapitel erstellen", nil)' in episode
+    and 'NSLocalizedString(@"Kapitel erstellen", nil)' in episodes
+    and "usesRemoteChapterService" in episode
+    and "usesRemoteChapterService" in episodes
     and 'NSLocalizedString(@"Chapters generieren", nil)' not in episode
     and 'NSLocalizedString(@"Chapters generieren", nil)' not in episodes,
-    "Episode menus must use Kapitel generieren as the action label.",
+    "Episode menus must distinguish remote chapter/summary creation from local chapter creation.",
 )
 
 options_footer = source_slice(

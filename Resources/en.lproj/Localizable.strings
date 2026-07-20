@@ -1209,7 +1209,7 @@
 "Transkription" = "Transcription";
 "Sprachmodell" = "Speech Model";
 "Automatisch" = "Automatic";
-"Kapitel & Sponsoren" = "Chapters & Sponsors";
+"Kapitel, Sponsoren & KI-Zusammenfassung" = "Chapters, Sponsors & AI Summary";
 "Sprachmodell Engine" = "Speech Model Engine";
 "Sprachmodell benötigt" = "Speech Model Required";
 "Bitte lade zuerst ein Sprachmodell in den Transkriptions-Einstellungen herunter." = "Please download a speech model in Transcription settings first.";
@@ -1232,8 +1232,11 @@
 
 "Chapters generieren" = "Generate Chapters";
 "Kapitel generieren" = "Generate Chapters";
+"Kapitel erstellen" = "Create Chapters";
+"Kapitel und Zusammenfassung erstellen" = "Create Chapters and Summary";
+"Kapitel löschen" = "Delete Chapters";
+"Kapitel und Zusammenfassung löschen" = "Delete Chapters and Summary";
 "Generierte Chapters löschen" = "Delete Generated Chapters";
-"Generierte Analyse löschen" = "Delete Generated Analysis";
 "Neue Folgen transkribieren" = "Transcribe New Episodes";
 "Neue Folgen Chapters generieren" = "Generate Chapters for New Episodes";
 "Neue Folgen Kapitel generieren" = "Generate Chapters for New Episodes";
@@ -1578,7 +1581,7 @@
 "Speichern" = "Save";
 "Sponsor- und Eigenpromo-Segmente werden semantisch geprueft." = "Sponsor and self-promo segments are being checked semantically.";
 "Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert." = "Sponsor chapters can be skipped automatically. Episodes with existing chapters remain unchanged.";
-"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Zusammenfassungen benötigen ein Remote-Kapitelmodell." = "Sponsor chapters can be skipped automatically. Existing podcast chapters are preserved and supplemented with detected sponsor segments. Summaries require a remote chapter model.";
+"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Remote-Kapitelmodelle erstellen zusätzlich eine KI-Zusammenfassung, die oberhalb der Shownotes angezeigt wird." = "Sponsor chapters can be skipped automatically. Existing podcast chapters are preserved and supplemented with detected sponsor segments. Remote chapter models also create an AI summary shown above the show notes.";
 "Transcript" = "Transcript";
 "Transkript wird mit maximalem Kontext für das Kapitelmodell vorbereitet." = "Transcript is being prepared with maximum context for the chapter model.";
 "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." = "Background transcription paused. It will resume automatically when you return.";

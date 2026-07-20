@@ -1212,7 +1212,7 @@
 "Transkription" = "Transkription";
 "Sprachmodell" = "Sprachmodell";
 "Automatisch" = "Automatisch";
-"Kapitel & Sponsoren" = "Kapitel & Sponsoren";
+"Kapitel, Sponsoren & KI-Zusammenfassung" = "Kapitel, Sponsoren & KI-Zusammenfassung";
 "Sprachmodell Engine" = "Sprachmodell Engine";
 "Sprachmodell benötigt" = "Sprachmodell benötigt";
 "Bitte lade zuerst ein Sprachmodell in den Transkriptions-Einstellungen herunter." = "Bitte lade zuerst ein Sprachmodell in den Transkriptions-Einstellungen herunter.";
@@ -1235,8 +1235,11 @@
 
 "Chapters generieren" = "Chapters generieren";
 "Kapitel generieren" = "Kapitel generieren";
+"Kapitel erstellen" = "Kapitel erstellen";
+"Kapitel und Zusammenfassung erstellen" = "Kapitel und Zusammenfassung erstellen";
+"Kapitel löschen" = "Kapitel löschen";
+"Kapitel und Zusammenfassung löschen" = "Kapitel und Zusammenfassung löschen";
 "Generierte Chapters löschen" = "Generierte Chapters löschen";
-"Generierte Analyse löschen" = "Generierte Analyse löschen";
 "Neue Folgen transkribieren" = "Neue Folgen transkribieren";
 "Neue Folgen Chapters generieren" = "Neue Folgen Chapters generieren";
 "Neue Folgen Kapitel generieren" = "Neue Folgen Kapitel generieren";
@@ -1581,7 +1584,7 @@
 "Speichern" = "Speichern";
 "Sponsor- und Eigenpromo-Segmente werden semantisch geprueft." = "Sponsor- und Eigenpromo-Segmente werden semantisch geprüft.";
 "Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert." = "Sponsoren-Kapitel können automatisch übersprungen werden. Folgen mit vorhandenen Kapiteln bleiben unverändert.";
-"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Zusammenfassungen benötigen ein Remote-Kapitelmodell." = "Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Zusammenfassungen benötigen ein Remote-Kapitelmodell.";
+"Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Remote-Kapitelmodelle erstellen zusätzlich eine KI-Zusammenfassung, die oberhalb der Shownotes angezeigt wird." = "Sponsoren-Kapitel können automatisch übersprungen werden. Vorhandene Podcast-Kapitel bleiben erhalten und werden um erkannte Sponsorsegmente ergänzt. Remote-Kapitelmodelle erstellen zusätzlich eine KI-Zusammenfassung, die oberhalb der Shownotes angezeigt wird.";
 "Transcript" = "Transkript";
 "Transkript wird mit maximalem Kontext für das Kapitelmodell vorbereitet." = "Transkript wird mit maximalem Kontext für das Kapitelmodell vorbereitet.";
 "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt." = "Transkription im Hintergrund pausiert. Wird beim Zurückkehren automatisch fortgesetzt.";
