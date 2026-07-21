@@ -398,7 +398,13 @@ require(
 require(f'"{blocked_model_text}" =' in de_strings, "German model-block localization is missing.")
 require(f'"{blocked_model_text}" =' in en_strings, "English model-block localization is missing.")
 
-completed_status_start = controller_source.find("case ICTranscriptionStatusCompleted:")
+# Server rows have their own switch with a single "Server-Transkription fertig ✓"
+# wording; the three-way local wording lives in the last completed branch.
+require(
+    'NSLocalizedString(@"Server-Transkription fertig ✓", nil)' in controller_source,
+    "Completed server rows do not state that the server produced the result.",
+)
+completed_status_start = controller_source.rfind("case ICTranscriptionStatusCompleted:")
 completed_status_end = controller_source.find("case ICTranscriptionStatusFailed:", completed_status_start)
 completed_status_body = controller_source[completed_status_start:completed_status_end]
 require(
@@ -513,7 +519,8 @@ for text in [
     require(f'"{text}" =' in de_strings, f"German localization is missing '{text}'.")
     require(f'"{text}" =' in en_strings, f"English localization is missing '{text}'.")
 require(
-    "if ([TranscriptionQueue shared].items.count == 0)" in controller_source
+    # displayItems, not items — server rows are visible too.
+    "if ([TranscriptionQueue shared].displayItems.count == 0)" in controller_source
     and "[self setToolbarItems:@[] animated:animated]" in controller_source
     and "_updateToolbarItemsAnimated" in controller_source,
     "The transcription queue toolbar must hide the cancel-all button when the queue has no visible items.",

@@ -12,6 +12,7 @@
 #import "PlaybackViewController.h"
 #import "CacheManager.h"
 #import "InstacastPlus-Swift.h"
+#import "InstacastAppDelegate.h"
 #import <BackgroundTasks/BackgroundTasks.h>
 
 // MARK: - Log Detail View
@@ -149,7 +150,6 @@
 }
 
 static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
-static NSString* const ICTranscriptionContinuedTaskIdentifierBase = @"com.iteconomy.instacastplus.transcription.continued";
 static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionActiveContinuedPath";
 static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscriptionActiveContinuedIdentifier";
 
@@ -363,11 +363,13 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
 - (void)_submitContinuedBackgroundTask {
     if (@available(iOS 26.0, *)) {
+        NSString* identifier = [[self _instacastAppDelegate] newTranscriptionContinuedTaskIdentifier];
+        if (identifier.length == 0) {
+            [self _submitProcessingBackgroundTask];
+            return;
+        }
         BOOL gpuSupported = (BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0;
         NSString* path = gpuSupported ? @"continued-gpu" : @"continued-cpu";
-        NSString* identifier = [NSString stringWithFormat:@"%@.%@",
-                                ICTranscriptionContinuedTaskIdentifierBase,
-                                NSUUID.UUID.UUIDString];
         TranscriptionQueue* queue = [TranscriptionQueue shared];
         ICTranscriptionQueueItem* item = queue.currentItem ?: queue.items.firstObject;
         NSString* title = item.episodeTitle.length > 0
@@ -442,8 +444,15 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     return engine.length == 0 || [engine isEqualToString:@"WhisperKit"];
 }
 
+- (InstacastAppDelegate*)_instacastAppDelegate {
+    return (InstacastAppDelegate*)[UIApplication sharedApplication].delegate;
+}
+
 - (BOOL)_shouldUseContinuedBackgroundPath {
     if (![self _isWhisperKitEngine]) return NO;
+    // Without an accepted launch handler the submit throws instead of returning
+    // an error, so the legacy BGProcessingTask path has to take over.
+    if (![self _instacastAppDelegate].transcriptionContinuedTasksAvailable) return NO;
     if (@available(iOS 26.0, *)) return YES;
     return NO;
 }

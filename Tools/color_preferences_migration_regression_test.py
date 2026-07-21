@@ -35,15 +35,27 @@ for selector in [
 ]:
     require(selector in HEADER, f"The canonical color preference API is missing {selector}.")
 
-migration = method_body(IMPLEMENTATION, "+ (UIColor*)ic_colorFromDefaults:")
-require("unarchivedObjectOfClass:[UIColor class]" in migration,
-        "Legacy UIColor archives must be migrated in exactly one central boundary.")
-require("@try" in migration and "@catch" in migration,
-        "Malformed legacy archives can raise Objective-C exceptions and must be contained during migration.")
+reader = method_body(IMPLEMENTATION, "+ (UIColor*)ic_colorFromDefaults:")
+require("unarchivedObjectOfClass:[UIColor class]" in reader,
+        "Legacy UIColor archives must be decoded in exactly one central boundary.")
+require("@try" in reader and "@catch" in reader,
+        "Malformed legacy archives can raise Objective-C exceptions and must be contained.")
+# ICTintColor resolves through this reader from cell layout. A NSUserDefaults write per
+# read cost ~123 µs instead of ~0.2 µs and ran on every layout pass during swipes.
+require("setObject:" not in reader and "removeObjectForKey:" not in reader,
+        "The color read path must not write to NSUserDefaults — it runs from cell layout.")
+
+require("ic_normalizeStoredColorInDefaults:" in HEADER,
+        "The one-shot color migration must be part of the public API.")
+migration = method_body(IMPLEMENTATION, "+ (void)ic_normalizeStoredColorInDefaults:")
 require("removeObjectForKey:legacyArchiveKey" in migration,
         "A legacy archive must be removed after successful or failed migration.")
 require("setObject:" in migration and "forKey:hexKey" in migration,
         "A valid legacy archive must be converted to the canonical hex preference.")
+
+startup = (ROOT / "Classes" / "InstacastAppDelegate.m").read_text()
+require(startup.count("ic_normalizeStoredColorInDefaults:") >= 3,
+        "Every stored color must be migrated at startup, otherwise the pure reader never canonicalises.")
 
 setter = method_body(IMPLEMENTATION, "+ (void)ic_setColor:")
 require("forKey:hexKey" in setter and "removeObjectForKey:legacyArchiveKey" in setter,

@@ -1182,11 +1182,32 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         return try parsePersistedSRT(content)
     }
 
+    /// Names the rule a rejected SRT violated. The parser stays strict — this only
+    /// makes the violation identifiable instead of reporting "keine Zeitmarken".
+    struct ICSRTRejection {
+        let lineNumber: Int
+        let rule: String
+        let line: String
+
+        var debugText: String {
+            "Zeile \(lineNumber): \(rule) — \(line.prefix(120))"
+        }
+    }
+
     private func parsePersistedSRT(_ content: String) throws -> [ICTranscriptCue] {
+        parsePersistedSRTDetailed(content).cues
+    }
+
+    private func parsePersistedSRTDetailed(_ content: String) -> (cues: [ICTranscriptCue], rejection: ICSRTRejection?) {
         let lines = content.components(separatedBy: .newlines)
         var cues: [ICTranscriptCue] = []
         var lineIndex = 0
         var previousEnd = -Double.infinity
+
+        func reject(_ index: Int, _ rule: String) -> (cues: [ICTranscriptCue], rejection: ICSRTRejection?) {
+            let line = index < lines.count ? lines[index] : ""
+            return ([], ICSRTRejection(lineNumber: index + 1, rule: rule, line: line))
+        }
 
         while lineIndex < lines.count {
             var line = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1196,13 +1217,18 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             }
             if !line.contains("-->") {
                 lineIndex += 1
-                guard lineIndex < lines.count else { return [] }
+                guard lineIndex < lines.count else {
+                    return reject(lineIndex - 1, "Datei endet nach einer Indexzeile ohne Zeitzeile")
+                }
                 line = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
             }
             let timeParts = line.components(separatedBy: "-->")
-            guard timeParts.count == 2 else { return [] }
+            guard timeParts.count == 2 else {
+                return reject(lineIndex, "erwartete Zeitzeile \"HH:MM:SS,mmm --> HH:MM:SS,mmm\"")
+            }
             let start = parsePersistedSRTTime(timeParts[0])
             let end = parsePersistedSRTTime(timeParts[1])
+            let timeLineIndex = lineIndex
             lineIndex += 1
 
             var textLines: [String] = []
@@ -1216,16 +1242,19 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                 lineIndex += 1
             }
             let text = textLines.joined(separator: "\n")
-            guard start.isFinite,
-                  end.isFinite,
-                  start >= 0,
-                  end > start,
-                  start >= previousEnd - 0.001,
-                  !text.isEmpty else { return [] }
+            guard start.isFinite, end.isFinite else {
+                return reject(timeLineIndex, "Zeitangabe nicht im Format HH:MM:SS,mmm")
+            }
+            guard start >= 0 else { return reject(timeLineIndex, "negative Startzeit") }
+            guard end > start else { return reject(timeLineIndex, "Endzeit ist nicht größer als die Startzeit") }
+            guard start >= previousEnd - 0.001 else {
+                return reject(timeLineIndex, String(format: "Cue überlappt den vorherigen (Start %.3f < vorheriges Ende %.3f)", start, previousEnd))
+            }
+            guard !text.isEmpty else { return reject(timeLineIndex, "Cue ohne Text") }
             cues.append(ICTranscriptCue(start: start, end: end, text: text))
             previousEnd = end
         }
-        return cues.isEmpty ? [] : cues
+        return (cues, nil)
     }
 
     /// Validates a server-delivered SRT before it replaces the local transcript.
@@ -1237,10 +1266,26 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
             throw NSError(domain: "TranscriptionEngine.ServerImport", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript ist ungültig.", comment: "")])
         }
-        let cues = try parsePersistedSRT(content)
+        let parsed = parsePersistedSRTDetailed(content)
+        let cues = parsed.cues
         guard !cues.isEmpty else {
+            // The transcript is rejected as before — but the message has to name what the
+            // server delivered, otherwise the server-side defect cannot be found.
+            var detail = parsed.rejection?.debugText ?? NSLocalizedString("Datei enthält keine Cues", comment: "")
+            if content.contains("\r\n") {
+                detail += " · " + NSLocalizedString("Datei nutzt CRLF-Zeilenenden", comment: "")
+            }
+            ICDiagnosticLogger.shared.logEvent("transcript-parse",
+                                               message: "Server-SRT abgelehnt",
+                                               metadata: [
+                                                "episodeHash": episodeHash,
+                                                "detail": detail,
+                                                "bytes": String(data.count),
+                                                "firstBytes": String(content.prefix(200)),
+                                               ])
             throw NSError(domain: "TranscriptionEngine.ServerImport", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript enthält keine Zeitmarken.", comment: "")])
+                          userInfo: [NSLocalizedDescriptionKey:
+                                        String(format: NSLocalizedString("Das Server-Transkript wurde abgelehnt (%@).", comment: ""), detail)])
         }
         try saveImportedTranscriptCues(cues, for: episodeHash)
         return cues

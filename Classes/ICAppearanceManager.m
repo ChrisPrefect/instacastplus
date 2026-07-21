@@ -13,6 +13,32 @@
 
 NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceManagerDidUpdateAppearanceNotification";
 
+// ICTintColor is read from cell layout (several times per layout pass, per cell).
+// Resolving it from NSUserDefaults on every access is main-thread work during swipes
+// and scrolling, so the theme color is resolved once and cached until the appearance
+// or the theme setting changes. Main thread only, like every other appearance access.
+static UIColor* gCachedThemeTintColor = nil;
+
+void ICInvalidateThemeTintColorCache(void)
+{
+    gCachedThemeTintColor = nil;
+}
+
+static UIColor* ICResolvedThemeTintColor(void)
+{
+    if (gCachedThemeTintColor) {
+        return gCachedThemeTintColor;
+    }
+    UIColor* color = nil;
+    if (![USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive]) {
+        color = [UIColor ic_colorFromDefaults:USER_DEFAULTS
+                                       hexKey:InterfaceThemeColorHexCode
+                             legacyArchiveKey:InterfaceThemeColorCode];
+    }
+    gCachedThemeTintColor = color ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
+    return gCachedThemeTintColor;
+}
+
 @interface ICAppearanceManager ()
 @end
 
@@ -226,6 +252,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (void) updateAppearance
 {
+    ICInvalidateThemeTintColorCache();
     UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
 
     // Determine the correct appearance based on mode
@@ -274,6 +301,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 - (void)updateThemeTintColor
 {
+    ICInvalidateThemeTintColorCache();
     UIWindow* rootWindow = [(InstacastAppDelegate*)App.delegate window];
     UIViewController* rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
     if([rootViewController isKindOfClass:[UINavigationController class]])
@@ -289,13 +317,7 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
         rootViewController = ((MainViewController_4 *)rootViewController).presentedViewController;
     }
     
-    UIColor* tintColor = nil;
-    if (![USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive]) {
-        tintColor = [UIColor ic_colorFromDefaults:USER_DEFAULTS
-                                           hexKey:InterfaceThemeColorHexCode
-                                 legacyArchiveKey:InterfaceThemeColorCode];
-    }
-    tintColor = tintColor ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
+    UIColor* tintColor = ICResolvedThemeTintColor();
     rootViewController.view.tintColor = tintColor;
     rootWindow.tintColor = tintColor;
 }
@@ -305,18 +327,8 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 @implementation ICDaylightAppearance
 
--(UIColor*) tintColor {//DEVD TO DO
-    if ([USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive])
-    {
-        return [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-    }
-    else
-    {
-        return [UIColor ic_colorFromDefaults:USER_DEFAULTS
-                                      hexKey:InterfaceThemeColorHexCode
-                            legacyArchiveKey:InterfaceThemeColorCode]
-            ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-    }
+-(UIColor*) tintColor {
+    return ICResolvedThemeTintColor();
 }
 
 -(UIColor*) textColor {
@@ -388,18 +400,8 @@ NSString* ICAppearanceManagerDidUpdateAppearanceNotification = @"ICAppearanceMan
 
 @implementation ICNightAppearance
 
--(UIColor*) tintColor {//DEVD TO DO
-    if ([USER_DEFAULTS boolForKey:InterfaceThemeDefaultActive])
-    {
-        return [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-    }
-    else
-    {
-        return [UIColor ic_colorFromDefaults:USER_DEFAULTS
-                                      hexKey:InterfaceThemeColorHexCode
-                            legacyArchiveKey:InterfaceThemeColorCode]
-            ?: [UIColor colorWithRed:1.f green:83/255.f blue:0 alpha:1.f];
-    }
+-(UIColor*) tintColor {
+    return ICResolvedThemeTintColor();
 }
 
 -(UIColor*) textColor {

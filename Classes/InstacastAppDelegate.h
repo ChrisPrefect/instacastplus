@@ -29,6 +29,10 @@ typedef NS_ENUM(NSInteger, ICDatabaseStartupState) {
 @property (nonatomic, strong, nullable) MainViewController_4* mainViewController;
 @property (nonatomic, readonly) ICDatabaseStartupState databaseStartupState;
 @property (nonatomic, strong, readonly, nullable) NSError* databasePreparationError;
+/// YES only after a BGContinuedProcessingTask launch handler was accepted by iOS.
+/// Submitting a continued request without an accepted handler throws
+/// NSInternalInconsistencyException, so every caller must check this first.
+@property (nonatomic, readonly) BOOL transcriptionContinuedTasksAvailable;
 
 
 
@@ -38,6 +42,9 @@ typedef NS_ENUM(NSInteger, ICDatabaseStartupState) {
 - (void)handleNotificationResponse:(UNNotificationResponse*)response
                  completionHandler:(nullable void (^)(void))completionHandler;
 - (void)setNotificationSceneReady:(BOOL)ready;
+/// Identifier for the next BGContinuedProcessingTaskRequest, or nil when no
+/// launch handler is registered. Matches the registration form iOS accepted.
+- (nullable NSString*)newTranscriptionContinuedTaskIdentifier;
 @end
 
 NS_ASSUME_NONNULL_END

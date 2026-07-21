@@ -30,6 +30,11 @@ typedef NS_ENUM(NSInteger, ICRefreshState) {
 {
     if ((self = [super init]))
     {
+        // UIKit sizes the refresh control to the current pull distance. Without
+        // clipping, the fixed-height circle/labels block reaches past the bottom edge
+        // and paints over the first episode rows while the user is still dragging.
+        self.clipsToBounds = YES;
+
         _progressView = [[CircleProgressView alloc] initWithFrame:CGRectZero];
         _progressView.style = CircleProgressStyleFillingOutline;
         [self addSubview:_progressView];
@@ -153,8 +158,17 @@ typedef NS_ENUM(NSInteger, ICRefreshState) {
         }
     }
     
-    self.progressView.frame = CGRectMake(floorf((76-37)/2), CGRectGetMidY(b)-floorf(37/2), 37, 37);
-    
+    // The block has a fixed height. It is centred only once the control is tall enough
+    // for it; while the control is still shorter it stays anchored to the bottom edge
+    // and slides in from underneath the navigation bar instead of overlapping content.
+    static const CGFloat kBlockHeight = 37.0f;
+    static const CGFloat kBlockBottomMargin = 6.0f;
+    CGFloat blockTop = (CGRectGetHeight(b) >= kBlockHeight + 2 * kBlockBottomMargin)
+        ? floorf((CGRectGetHeight(b) - kBlockHeight) / 2.0f)
+        : CGRectGetHeight(b) - kBlockHeight - kBlockBottomMargin;
+
+    self.progressView.frame = CGRectMake(floorf((76-37)/2), blockTop, 37, 37);
+
     self.titleLabel.text = (self.refreshState == kICRefreshStateDragging && self.pulldownText) ? self.pulldownText : self.refreshText;
     self.titleLabel.frame = CGRectMake(76, CGRectGetMinY(self.progressView.frame), CGRectGetWidth(b)-76-15, 17);
     

@@ -153,29 +153,20 @@ static NSString* ICStoredHexFromColor(UIColor* color)
                            alpha:1.0f];
 }
 
+// Pure read. This runs from ICTintColor and therefore from cell layout — it must never
+// write to NSUserDefaults. Canonicalisation and legacy cleanup happen once in
+// +ic_normalizeStoredColorInDefaults:hexKey:legacyArchiveKey:.
 + (UIColor*)ic_colorFromDefaults:(NSUserDefaults*)defaults
                            hexKey:(NSString*)hexKey
                  legacyArchiveKey:(NSString*)legacyArchiveKey
 {
-    id storedHex = [defaults objectForKey:hexKey];
-    UIColor* color = ICColorFromStoredHex(storedHex);
+    UIColor* color = ICColorFromStoredHex([defaults objectForKey:hexKey]);
     if (color) {
-        NSString* canonicalHex = ICStoredHexFromColor(color);
-        if (![canonicalHex isEqualToString:storedHex]) {
-            [defaults setObject:canonicalHex forKey:hexKey];
-        }
-        [defaults removeObjectForKey:legacyArchiveKey];
         return color;
-    }
-    if (storedHex) {
-        [defaults removeObjectForKey:hexKey];
     }
 
     id legacyObject = [defaults objectForKey:legacyArchiveKey];
     if (![legacyObject isKindOfClass:[NSData class]]) {
-        if (legacyObject) {
-            [defaults removeObjectForKey:legacyArchiveKey];
-        }
         return nil;
     }
 
@@ -192,14 +183,40 @@ static NSString* ICStoredHexFromColor(UIColor* color)
         (void)exception;
         color = nil;
     }
+    return color;
+}
 
+// One-shot migration: rewrites a non-canonical hex value and drops the legacy archive.
+// Call at startup, not from drawing or layout code.
++ (void)ic_normalizeStoredColorInDefaults:(NSUserDefaults*)defaults
+                                   hexKey:(NSString*)hexKey
+                         legacyArchiveKey:(NSString*)legacyArchiveKey
+{
+    id storedHex = [defaults objectForKey:hexKey];
+    UIColor* color = ICColorFromStoredHex(storedHex);
+    if (color) {
+        NSString* canonicalHex = ICStoredHexFromColor(color);
+        if (canonicalHex && ![canonicalHex isEqualToString:storedHex]) {
+            [defaults setObject:canonicalHex forKey:hexKey];
+        }
+        if ([defaults objectForKey:legacyArchiveKey]) {
+            [defaults removeObjectForKey:legacyArchiveKey];
+        }
+        return;
+    }
+    if (storedHex) {
+        [defaults removeObjectForKey:hexKey];
+    }
+    if (![defaults objectForKey:legacyArchiveKey]) {
+        return;
+    }
+
+    color = [self ic_colorFromDefaults:defaults hexKey:hexKey legacyArchiveKey:legacyArchiveKey];
     [defaults removeObjectForKey:legacyArchiveKey];
     NSString* canonicalHex = ICStoredHexFromColor(color);
-    if (!canonicalHex) {
-        return nil;
+    if (canonicalHex) {
+        [defaults setObject:canonicalHex forKey:hexKey];
     }
-    [defaults setObject:canonicalHex forKey:hexKey];
-    return color;
 }
 
 + (NSString*)ic_colorHexFromDefaults:(NSUserDefaults*)defaults

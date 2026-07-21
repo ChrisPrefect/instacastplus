@@ -1334,6 +1334,10 @@
 "Hintergrund aktiv ✓" = "Hintergrund aktiv ✓";
 "Die Transkription wird im Hintergrund fortgesetzt, auch wenn die App geschlossen wird. Das System entscheidet, wann und wie lange die Verarbeitung läuft." = "Die Transkription wird im Hintergrund fortgesetzt, auch wenn die App geschlossen wird. Das System entscheidet, wann und wie lange die Verarbeitung läuft.";
 "Transkription gestartet" = "Transkription gestartet";
+"Server-Transkription läuft bereits" = "Server-Transkription läuft bereits";
+"Das Server-Transkript wurde abgelehnt (%@)." = "Das Server-Transkript wurde abgelehnt (%@).";
+"Datei enthält keine Cues" = "Datei enthält keine Cues";
+"Datei nutzt CRLF-Zeilenenden" = "Datei nutzt CRLF-Zeilenenden";
 "Transkript konnte nicht geladen werden." = "Transkript konnte nicht geladen werden.";
 "Kapitelerkennung fehlgeschlagen." = "Kapitelerkennung fehlgeschlagen.";
 "Episode wird heruntergeladen..." = "Episode wird heruntergeladen...";
@@ -1943,3 +1947,10 @@
 "Audio wird transkribiert." = "Audio wird transkribiert.";
 "Kapitel und Zusammenfassung werden erstellt." = "Kapitel und Zusammenfassung werden erstellt.";
 "%@ · %.0f %%" = "%@ · %.0f %%";
+"The News Mode feed is no longer available." = "Der News-Mode-Feed ist nicht mehr verfügbar.";
+"The News Mode feed could not be persisted." = "Der News-Mode-Feed konnte nicht gespeichert werden.";
+"The podcast database is not available." = "Die Podcast-Datenbank ist nicht verfügbar.";
+"The News Mode update could not be planned." = "Die News-Mode-Aktualisierung konnte nicht geplant werden.";
+"Das Server-Transkript ist ungültig." = "Das Server-Transkript ist ungültig.";
+"Server-Verarbeitung" = "Server-Verarbeitung";
+"Lokal läuft die Transkription auf dem iPhone: Die Folge verlässt das Gerät nicht und es entstehen keine Kosten. Dafür sind Modell-Downloads nötig, es kostet Rechenzeit und Akku, und InstacastPlus muss dabei laufen.\n\nServerbasiert übernimmt transcript.instacast.ch das Transkript, die Kapitel, die Sponsorerkennung und die Zusammenfassung. Das ist deutlich schneller, belastet Gerät und Akku nicht und läuft weiter, wenn InstacastPlus beendet ist. Dafür wird die Medien-Adresse der Folge an den Server übermittelt.\n\nBeide Varianten dürfen gleichzeitig aktiv sein; im Episodenmenü wählst du dann pro Folge." = "Lokal läuft die Transkription auf dem iPhone: Die Folge verlässt das Gerät nicht und es entstehen keine Kosten. Dafür sind Modell-Downloads nötig, es kostet Rechenzeit und Akku, und InstacastPlus muss dabei laufen.\n\nServerbasiert übernimmt transcript.instacast.ch das Transkript, die Kapitel, die Sponsorerkennung und die Zusammenfassung. Das ist deutlich schneller, belastet Gerät und Akku nicht und läuft weiter, wenn InstacastPlus beendet ist. Dafür wird die Medien-Adresse der Folge an den Server übermittelt.\n\nBeide Varianten dürfen gleichzeitig aktiv sein; im Episodenmenü wählst du dann pro Folge.";

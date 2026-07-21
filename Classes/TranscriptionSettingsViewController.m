@@ -8,6 +8,7 @@
 #import "TranscriptionSettingsViewController.h"
 #import "TranscriptionQueueViewController.h"
 #import "InstacastPlus-Swift.h"
+#import "ValuesTableViewController.h"
 
 @interface ICModelLibraryViewController : UITableViewController
 @property (nonatomic, assign) BOOL focusVoiceToText;
@@ -20,7 +21,6 @@
 
 typedef NS_ENUM(NSInteger, TSSection) {
     TSSectionEnabled = 0,
-    TSSectionIntro,
     TSSectionModels,
     TSSectionCloud,
     TSSectionChapters,
@@ -83,6 +83,13 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 
 #pragma mark - Data Source
 
+// The automatic-backend row only makes sense when there is something to choose
+// between. With a single active backend every new episode uses it anyway.
+- (BOOL)_showsAutomaticBackendRow {
+    return [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]
+        && [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
+}
+
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     if (self.pageMode == ICTranscriptionSettingsPageHub) return 1;
     if (self.pageMode == ICTranscriptionSettingsPageServer) return 2;
@@ -96,7 +103,6 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
     if (self.pageMode != ICTranscriptionSettingsPageLocal) return nil;
     switch (section) {
         case TSSectionEnabled: return nil;
-        case TSSectionIntro: return nil;
         case TSSectionModels: return nil;
         case TSSectionCloud: return NSLocalizedString(@"Cloud-Zugänge", nil);
         case TSSectionChapters: return NSLocalizedString(@"Kapitel, Sponsoren & KI-Zusammenfassung", nil);
@@ -106,17 +112,20 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (self.pageMode == ICTranscriptionSettingsPageHub) {
+        return [NSString stringWithFormat:@"%@\n\n%@",
+                NSLocalizedString(@"Lokal läuft die Transkription auf dem iPhone: Die Folge verlässt das Gerät nicht und es entstehen keine Kosten. Dafür sind Modell-Downloads nötig, es kostet Rechenzeit und Akku, und InstacastPlus muss dabei laufen.\n\nServerbasiert übernimmt transcript.instacast.ch das Transkript, die Kapitel, die Sponsorerkennung und die Zusammenfassung. Das ist deutlich schneller, belastet Gerät und Akku nicht und läuft weiter, wenn InstacastPlus beendet ist. Dafür wird die Medien-Adresse der Folge an den Server übermittelt.\n\nBeide Varianten dürfen gleichzeitig aktiv sein; im Episodenmenü wählst du dann pro Folge.", nil),
+                NSLocalizedString(@"Long Press auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du direkt im Menü Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein.\nTranskribieren und Kapitel-Erstellen ist in der Beta-Phase.", nil)];
+    }
     if (self.pageMode == ICTranscriptionSettingsPageServer) {
         if (section == 0) {
-            return NSLocalizedString(@"Wenn deaktiviert, werden die Server-Aktionen in Episodenmenüs ausgeblendet. Bereits beim Server eingereichte Folgen laufen dort weiter.", nil);
+            return nil;
         }
         return NSLocalizedString(@"Der Server transkribiert Audio, erstellt Kapitel, erkennt Sponsorsegmente und erzeugt eine Zusammenfassung. Die App lädt das geprüfte Ergebnis, sobald es fertig ist.", nil);
     }
     if (self.pageMode != ICTranscriptionSettingsPageLocal) return nil;
     switch (section) {
         case TSSectionEnabled:
-            return NSLocalizedString(@"Wenn deaktiviert, werden keine neuen lokalen Transkriptions- oder Kapitelaufträge gestartet und die Aktionen in Episodenmenüs ausgeblendet. Bereits laufende Aufträge werden nicht abgebrochen.", nil);
-        case TSSectionIntro:
             return nil;
         case TSSectionModels:
             return nil;
@@ -131,11 +140,12 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (self.pageMode == ICTranscriptionSettingsPageHub) return 3;
+    if (self.pageMode == ICTranscriptionSettingsPageHub) {
+        return [self _showsAutomaticBackendRow] ? 3 : 2;
+    }
     if (self.pageMode == ICTranscriptionSettingsPageServer) return 1;
     switch (section) {
         case TSSectionEnabled: return 1;
-        case TSSectionIntro: return 1;
         case TSSectionModels: return 2;
         case TSSectionCloud: return 4;
         case TSSectionChapters: return 1;
@@ -149,7 +159,6 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
     if (self.pageMode == ICTranscriptionSettingsPageServer) return [self _serverCellForSection:indexPath.section];
     switch (indexPath.section) {
         case TSSectionEnabled: return [self _enabledCell];
-        case TSSectionIntro: return [self _introCell];
         case TSSectionModels: return [self _modelCellForRow:indexPath.row];
         case TSSectionCloud: return [self _cloudCellForRow:indexPath.row];
         case TSSectionChapters: return [self _chaptersCellForRow:indexPath.row];
@@ -163,23 +172,25 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 - (UITableViewCell *)_hubCellForRow:(NSInteger)row {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    if (row == 0) {
-        cell.textLabel.text = NSLocalizedString(@"Lokale Transkription", nil);
-        cell.detailTextLabel.text = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]
-            ? NSLocalizedString(@"Ein", nil)
-            : NSLocalizedString(@"Aus", nil);
-    } else {
-        cell.textLabel.text = NSLocalizedString(@"Serverbasierte Transkription", nil);
-        cell.detailTextLabel.text = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]
-            ? NSLocalizedString(@"Ein", nil)
-            : NSLocalizedString(@"Aus", nil);
-    }
-    if (row == 2) {
-        cell.textLabel.text = NSLocalizedString(@"Automatische Transkription", nil);
-        BOOL server = [[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"server"];
-        cell.detailTextLabel.text = server
-            ? NSLocalizedString(@"Server", nil)
-            : NSLocalizedString(@"Lokal", nil);
+    switch (row) {
+        case 0:
+            cell.textLabel.text = NSLocalizedString(@"Lokale Transkription", nil);
+            cell.detailTextLabel.text = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]
+                ? NSLocalizedString(@"Ein", nil)
+                : NSLocalizedString(@"Aus", nil);
+            break;
+        case 1:
+            cell.textLabel.text = NSLocalizedString(@"Serverbasierte Transkription", nil);
+            cell.detailTextLabel.text = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]
+                ? NSLocalizedString(@"Ein", nil)
+                : NSLocalizedString(@"Aus", nil);
+            break;
+        default:
+            cell.textLabel.text = NSLocalizedString(@"Automatische Transkription", nil);
+            cell.detailTextLabel.text = [[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"server"]
+                ? NSLocalizedString(@"Server", nil)
+                : NSLocalizedString(@"Lokal", nil);
+            break;
     }
     return cell;
 }
@@ -217,24 +228,15 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
     [self.tableView reloadData];
 }
 
-- (void)_showAutomaticBackendChooser {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:NSLocalizedString(@"Automatische Transkription", nil)
-                                                                   message:NSLocalizedString(@"Für neue Folgen wird immer genau eine konfigurierte Variante verwendet.", nil)
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-    if ([USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
-        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Lokal", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [USER_DEFAULTS setObject:@"local" forKey:kAutomaticTranscriptionBackend];
-            [self.tableView reloadData];
-        }]];
-    }
-    if ([USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
-        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Server", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-            [USER_DEFAULTS setObject:@"server" forKey:kAutomaticTranscriptionBackend];
-            [self.tableView reloadData];
-        }]];
-    }
-    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Abbrechen", nil) style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+- (void)_pushAutomaticBackendChooser {
+    ValuesTableViewController *controller = [ValuesTableViewController tableViewController];
+    controller.title = NSLocalizedString(@"Automatische Transkription", nil);
+    controller.key = kAutomaticTranscriptionBackend;
+    controller.valueType = kValueTypeString;
+    controller.titles = @[NSLocalizedString(@"Lokal", nil), NSLocalizedString(@"Server", nil)];
+    controller.values = @[@"local", @"server"];
+    controller.footerText = NSLocalizedString(@"Für neue Folgen wird immer genau eine konfigurierte Variante verwendet.", nil);
+    [self.navigationController pushViewController:controller animated:YES];
 }
 
 #pragma mark - Enabled Section
@@ -256,18 +258,6 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
         [USER_DEFAULTS setObject:@"server" forKey:kAutomaticTranscriptionBackend];
     }
     [self.tableView reloadData];
-}
-
-#pragma mark - Intro Section
-
-- (UITableViewCell *)_introCell {
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-    cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    cell.textLabel.numberOfLines = 0;
-    cell.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
-    cell.textLabel.textColor = ICMutedTextColor;
-    cell.textLabel.text = NSLocalizedString(@"Long Press auf eine Episode und wähle „Transkribieren“ oder „Kapitel generieren“ im Kontextmenü. Den Fortschritt siehst du direkt im Menü Transkribieren. Im Player blendest du Transkripte über das Sprechblasen-Symbol in der unteren Werkzeugleiste ein.\nTranskribieren und Kapitel-Erstellen ist in der Beta-Phase.", nil);
-    return cell;
 }
 
 #pragma mark - Model Section
@@ -566,7 +556,7 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     if (self.pageMode == ICTranscriptionSettingsPageHub) {
         if (indexPath.row == 2) {
-            [self _showAutomaticBackendChooser];
+            [self _pushAutomaticBackendChooser];
             return;
         }
         TranscriptionSettingsViewController *controller = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];

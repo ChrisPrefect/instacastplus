@@ -151,10 +151,34 @@ require(
     and "activateBackgroundExecutionPathWithPath" in app_delegate_source,
     "WhisperKit background does not select a supported iOS 26 continued GPU or CPU/ANE path.",
 )
+should_use_body = controller_source.split("- (BOOL)_shouldUseContinuedBackgroundPath {", 1)[1].split("\n}", 1)[0]
 require(
-    "- (BOOL)_shouldUseContinuedBackgroundPath {\n    if (![self _isWhisperKitEngine]) return NO;\n    if (@available(iOS 26.0, *)) return YES;\n    return NO;\n}" in controller_source
+    "_isWhisperKitEngine" in should_use_body
+    and "iOS 26.0" in should_use_body
+    and "supportedResources" not in should_use_body
+    and "GPU" not in should_use_body
     and "- (BOOL)backgroundControlsAvailable {\n    return YES;\n}" in controller_source,
     "WhisperKit background UI still hides the CPU/ANE continued path when GPU background support is unavailable.",
+)
+# iOS 26.5 refuses the wildcard launch-handler registration on device (registered=NO in
+# every session). submitTaskRequest: then raises NSInternalInconsistencyException
+# instead of returning an error, which crashed the app on "transcribe in background".
+require(
+    "transcriptionContinuedTasksAvailable" in should_use_body,
+    "The continued path is chosen without proof that iOS accepted a launch handler.",
+)
+submit_body = controller_source.split("- (void)_submitContinuedBackgroundTask {", 1)[1].split("\n}\n", 1)[0]
+require(
+    "newTranscriptionContinuedTaskIdentifier" in submit_body
+    and "NSUUID.UUID.UUIDString" not in submit_body
+    and "_submitProcessingBackgroundTask" in submit_body,
+    "A continued request must use the registered identifier and fall back to BGProcessingTask.",
+)
+require(
+    "registeredContinuedTaskIdentifier" in app_delegate_source
+    and "registeredPattern" in app_delegate_source
+    and "registeredFallback" in app_delegate_source,
+    "The launch-handler registration result is discarded instead of gating the submit.",
 )
 require(
     "BGContinuedProcessingTask" in app_delegate_source

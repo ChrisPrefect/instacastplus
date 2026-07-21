@@ -16,6 +16,11 @@
 + (UIColor*)ic_colorFromDefaults:(NSUserDefaults*)defaults
                            hexKey:(NSString*)hexKey
                  legacyArchiveKey:(NSString*)legacyArchiveKey;
+// Migrates a stored color value in place (canonical hex, legacy archive removed).
+// Startup-only — ic_colorFromDefaults: never writes.
++ (void)ic_normalizeStoredColorInDefaults:(NSUserDefaults*)defaults
+                                   hexKey:(NSString*)hexKey
+                         legacyArchiveKey:(NSString*)legacyArchiveKey;
 + (NSString*)ic_colorHexFromDefaults:(NSUserDefaults*)defaults
                                 hexKey:(NSString*)hexKey
                       legacyArchiveKey:(NSString*)legacyArchiveKey;

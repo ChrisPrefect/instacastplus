@@ -1442,7 +1442,8 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
             PlaySoundFile(@"AffirmIn", NO);
         }]];
     }
-    if (serverTranscriptionEnabled) {
+    // Hidden while a submitted run still owns the episode (same rule as the list menu).
+    if (serverTranscriptionEnabled && ![[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:self.episode.objectHash ?: @""]) {
         [actions addObject:[UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil) image:[UIImage systemImageNamed:@"server.rack"] identifier:nil handler:^(UIAction *action) {
             STRONG_SELF
             if ([[ServerTranscriptionManager shared] enqueueEpisode:self.episode]) {

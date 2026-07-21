@@ -47,6 +47,9 @@
 
 static NSString* const ICTranscriptionProcessingTaskIdentifier = @"com.iteconomy.instacastplus.transcription.processing";
 static NSString* const ICTranscriptionContinuedTaskIdentifierPattern = @"com.iteconomy.instacastplus.transcription.continued.*";
+// Concrete identifier covered by the wildcard entry in BGTaskSchedulerPermittedIdentifiers.
+// Used when iOS refuses the wildcard launch-handler registration.
+static NSString* const ICTranscriptionContinuedTaskIdentifierFallback = @"com.iteconomy.instacastplus.transcription.continued.session";
 static NSString* const ICTranscriptionContinuedGPUPath = @"continued-gpu";
 static NSString* const ICTranscriptionContinuedCPUPath = @"continued-cpu";
 static NSString* const ICTranscriptionActiveContinuedPath = @"ICTranscriptionActiveContinuedPath";
@@ -85,6 +88,9 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 @property (nonatomic) BOOL notificationSceneReady;
 @property (nonatomic) UIBackgroundTaskIdentifier pendingDatabaseSystemCallbacksBackgroundTask;
 @property (nonatomic) NSUInteger pendingDatabaseSystemCallbacksBackgroundTaskGeneration;
+/// The identifier form iOS accepted a continued-task launch handler for: either the
+/// wildcard pattern (submits append a UUID) or the concrete fallback. nil = unavailable.
+@property (nonatomic, copy, nullable) NSString* registeredContinuedTaskIdentifier;
 
 @end
 
@@ -140,19 +146,52 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     }];
 
     if (@available(iOS 26.0, *)) {
-        BOOL registered = [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifierPattern
-                                                                                usingQueue:dispatch_get_main_queue()
-                                                                             launchHandler:^(BGTask * _Nonnull task) {
+        void (^continuedLaunchHandler)(BGTask*) = ^(BGTask * _Nonnull task) {
             [self _handleTranscriptionContinuedProcessingTask:(BGContinuedProcessingTask*)task];
-        }];
+        };
+        // iOS 26.5 rejects the wildcard launch-handler registration on device
+        // (registered=NO in every session). A submit against an unregistered
+        // identifier throws NSInternalInconsistencyException, so the concrete
+        // identifier — also covered by the Info.plist wildcard entry — is
+        // registered as soon as the pattern is refused. Registering both forms
+        // unconditionally would risk a duplicate-identifier exception.
+        BOOL registeredPattern = [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifierPattern
+                                                                                       usingQueue:dispatch_get_main_queue()
+                                                                                    launchHandler:continuedLaunchHandler];
+        BOOL registeredFallback = NO;
+        if (registeredPattern) {
+            self.registeredContinuedTaskIdentifier = ICTranscriptionContinuedTaskIdentifierPattern;
+        } else {
+            registeredFallback = [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifierFallback
+                                                                                       usingQueue:dispatch_get_main_queue()
+                                                                                    launchHandler:continuedLaunchHandler];
+            self.registeredContinuedTaskIdentifier = registeredFallback ? ICTranscriptionContinuedTaskIdentifierFallback : nil;
+        }
         [[ICDiagnosticLogger shared] logEvent:@"background-task"
                                       message:@"BGContinuedProcessingTask registriert"
                                      metadata:@{
-                                         @"identifier": ICTranscriptionContinuedTaskIdentifierPattern,
-                                         @"registered": @(registered),
+                                         @"identifier": self.registeredContinuedTaskIdentifier ?: @"",
+                                         @"registeredPattern": @(registeredPattern),
+                                         @"registeredFallback": @(registeredFallback),
                                          @"gpuSupported": @((BGTaskScheduler.supportedResources & BGContinuedProcessingTaskRequestResourcesGPU) != 0),
                                      }];
     }
+}
+
+- (BOOL)transcriptionContinuedTasksAvailable {
+    return self.registeredContinuedTaskIdentifier.length > 0;
+}
+
+- (NSString*)newTranscriptionContinuedTaskIdentifier {
+    NSString* registered = self.registeredContinuedTaskIdentifier;
+    if (registered.length == 0) {
+        return nil;
+    }
+    if ([registered hasSuffix:@"*"]) {
+        NSString* prefix = [registered substringToIndex:registered.length - 1];
+        return [prefix stringByAppendingString:NSUUID.UUID.UUIDString];
+    }
+    return registered;
 }
 
 - (void)_scheduleTranscriptionProcessingTask {
@@ -677,6 +716,12 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                         metadata:@{
                                             @"launchOptionsCount": @(launchOptions.count),
                                         }];
+
+    // One-shot canonicalisation of the stored theme colors. The read accessors are
+    // pure, so this migration has to run explicitly.
+    [UIColor ic_normalizeStoredColorInDefaults:USER_DEFAULTS hexKey:InterfaceThemeColorHexCode legacyArchiveKey:InterfaceThemeColorCode];
+    [UIColor ic_normalizeStoredColorInDefaults:USER_DEFAULTS hexKey:PlayerThemeColorHexCode legacyArchiveKey:PlayerThemeColorCode];
+    [UIColor ic_normalizeStoredColorInDefaults:USER_DEFAULTS hexKey:WidgetThemeColorHexCode legacyArchiveKey:WidgetThemeColorCode];
 
     [self _registerTranscriptionBackgroundTasks];
 

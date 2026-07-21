@@ -48,7 +48,8 @@ en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text
 
 
 require(
-    "TSSectionIntro" in transcription_settings
+    # The usage hint moved to the hub page, where both backends are chosen.
+    "ICTranscriptionSettingsPageHub" in transcription_settings
     and "Long Press auf eine Episode" in transcription_settings
     and "Kontextmenü" in transcription_settings
     and "direkt im Menü Transkribieren" in transcription_settings

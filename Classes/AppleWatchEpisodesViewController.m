@@ -27,6 +27,10 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 
 @interface AppleWatchEpisodesViewController ()
 
+// While a swipe action is open UIKit owns the cell layout — row reloads triggered by
+// live watch status would tear the swipe down mid-gesture, so they are deferred.
+@property (nonatomic) BOOL swipeInteractionActive;
+@property (nonatomic) BOOL pendingReloadAfterSwipe;
 @property (nonatomic, strong) NSArray<AppleWatchEpisodeState*>* states;
 @property (nonatomic, copy) NSDictionary<NSString*, CDEpisode*>* episodesByHash;
 @property (nonatomic, copy) NSDictionary<NSString*, NSNumber*>* stateIndexByHash;
@@ -259,9 +263,35 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 }
 
+- (void)tableView:(UITableView*)tableView willBeginEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    self.swipeInteractionActive = YES;
+}
+
+- (void)tableView:(UITableView*)tableView didEndEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
+- (void)_endSwipeInteractionAndFlushDeferredUpdate
+{
+    if (!self.swipeInteractionActive) {
+        return;
+    }
+    self.swipeInteractionActive = NO;
+    if (self.pendingReloadAfterSwipe) {
+        self.pendingReloadAfterSwipe = NO;
+        [self _reloadDataFromManager];
+    }
+}
+
 - (void)_reloadVisibleRowsForEpisodeHashes:(NSArray<NSString*>*)episodeHashes
 {
     if (!self.viewIfLoaded.window || episodeHashes.count == 0) {
+        return;
+    }
+    if (self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
         return;
     }
     NSSet<NSString*>* changedHashes = [NSSet setWithArray:episodeHashes];
@@ -279,6 +309,10 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 
 - (void)_reloadDataFromManager
 {
+    if (self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
+        return;
+    }
     AppleWatchSyncManager* manager = [AppleWatchSyncManager sharedManager];
     NSArray<AppleWatchEpisodeState*>* newStates = nil;
     if (manager.supported && manager.paired && manager.watchAppInstalled) {
@@ -816,6 +850,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     UIContextualAction* removeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
                                                                                title:@"Entfernen".ls
                                                                              handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+                                                                                 [self _endSwipeInteractionAndFlushDeferredUpdate];
                                                                                  [[AppleWatchSyncManager sharedManager] removeEpisodeStateFromWatch:state];
                                                                                  completionHandler(YES);
                                                                              }];
@@ -842,6 +877,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     UIContextualAction* prioritizeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal
                                                                                   title:title
                                                                                 handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+                                                                                    [self _endSwipeInteractionAndFlushDeferredUpdate];
                                                                                     [[AppleWatchSyncManager sharedManager] prioritizeEpisodeOnWatch:episode];
                                                                                     completionHandler(YES);
                                                                                 }];

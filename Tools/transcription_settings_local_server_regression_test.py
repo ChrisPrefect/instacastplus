@@ -57,7 +57,7 @@ require(
     and "ICTranscriptionSettingsPageServer" in settings
     and "_serverTranscriptionToggle:" in settings
     and "kServerTranscriptionEnabled" in settings
-    and "_showAutomaticBackendChooser" in settings,
+    and "_pushAutomaticBackendChooser" in settings,
     "The settings hub does not expose configured local/server pages and one automatic backend selector.",
 )
 require(

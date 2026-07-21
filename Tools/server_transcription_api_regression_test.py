@@ -81,11 +81,18 @@ for relative in ('Resources/Defaults.plist', 'Resources-iPad/Defaults.plist'):
     require(defaults.get('ServerTranscriptionEnabled') is False, f'{relative} must default server transcription to off.')
     require(defaults.get('AutomaticTranscriptionBackend') == 'local', f'{relative} must default automatic work to local.')
 require(
-    'return 3;' in settings
-    and '_showAutomaticBackendChooser' in settings
+    # The automatic-backend row only exists while both backends are enabled; the
+    # choice itself is a pushed submenu, never an action sheet.
+    '_showsAutomaticBackendRow' in settings
+    and '_pushAutomaticBackendChooser' in settings
+    and 'UIAlertControllerStyleActionSheet' not in settings
     and 'kAutomaticTranscriptionBackend' in settings
     and 'kServerTranscriptionEnabled' in settings,
     "The transcription settings hub does not offer a single global automatic backend choice.",
+)
+require(
+    'resolvedAutomaticBackend' in queue,
+    "A stale automatic-backend preference must not disable automatic work when only one backend is enabled.",
 )
 require(
     'ServerTranscriptionManager.shared.enqueueAutomaticEpisodes([episode])' in queue

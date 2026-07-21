@@ -41,12 +41,24 @@
 NSString* kDefaultEpisodesSelectedEpisodeUID = @"DefaultEpisodesSelectedEpisodeUID";
 static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
 
+// While a swipe action is open UIKit owns the cell layout. Every reloadData and every
+// pass over the visible cells tears that down mid-gesture, so background events
+// (downloads, playback, watch sync, transcription) are collected and applied once the
+// swipe is closed. Ordered by strength — a full reload supersedes a cell update.
+typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
+    ICEpisodeListDeferredUpdateNone = 0,
+    ICEpisodeListDeferredUpdateVisibleCells,
+    ICEpisodeListDeferredUpdateFullReload,
+};
+
 @interface EpisodesTableViewController ()
 @property (nonatomic, strong) NSDateFormatter* dateFormatter;
 @property (nonatomic, strong) NSDateFormatter* weekdayDateFormatter;
 @property (nonatomic, strong, readwrite) ToolbarLabelsViewController* toolbarLabelsViewController;
 @property (nonatomic, strong, readwrite) UIBarButtonItem* labelsItems;
 @property (nonatomic, weak) UITapGestureRecognizer* cancelDeleteButtonTapRecognizer;
+@property (nonatomic) BOOL swipeInteractionActive;
+@property (nonatomic) ICEpisodeListDeferredUpdate deferredUpdateAfterSwipe;
 
 // Toolbar items - created once and reused
 @property (nonatomic, strong) UIBarButtonItem* cacheItem;
@@ -140,8 +152,56 @@ static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
     }
 }
 
+// Returns YES when the caller must not touch the table right now because a swipe is
+// open. The strongest requested update is remembered and replayed afterwards.
+- (BOOL) _deferTableUpdateDuringSwipe:(ICEpisodeListDeferredUpdate)update
+{
+    if (!self.swipeInteractionActive) {
+        return NO;
+    }
+    if (update > self.deferredUpdateAfterSwipe) {
+        self.deferredUpdateAfterSwipe = update;
+    }
+    return YES;
+}
+
+- (void) _endSwipeInteractionAndFlushDeferredUpdate
+{
+    if (!self.swipeInteractionActive) {
+        return;
+    }
+    self.swipeInteractionActive = NO;
+
+    ICEpisodeListDeferredUpdate pending = self.deferredUpdateAfterSwipe;
+    self.deferredUpdateAfterSwipe = ICEpisodeListDeferredUpdateNone;
+    switch (pending) {
+        case ICEpisodeListDeferredUpdateFullReload:
+            [self.tableView reloadData];
+            break;
+        case ICEpisodeListDeferredUpdateVisibleCells:
+            [self _updateVisiblePlaylistIndicators];
+            [self _performPlayComboButtonUpdate];
+            break;
+        case ICEpisodeListDeferredUpdateNone:
+            break;
+    }
+}
+
+- (void)tableView:(UITableView *)tableView willBeginEditingRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    self.swipeInteractionActive = YES;
+}
+
+- (void)tableView:(UITableView *)tableView didEndEditingRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
 - (void) _playbackEpisodeDidChange:(NSNotification*)notification
 {
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
+        return;
+    }
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
@@ -150,6 +210,9 @@ static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
 - (void) _appleWatchEpisodeStatesDidChange:(NSNotification*)notification
 {
     (void)notification;
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
+        return;
+    }
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
@@ -165,6 +228,10 @@ static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
     }
 
     if (!self.tableView.window) {
+        return;
+    }
+
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateVisibleCells]) {
         return;
     }
 
@@ -196,6 +263,9 @@ static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
 
 - (void) _performPlayComboButtonUpdate
 {
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateVisibleCells]) {
+        return;
+    }
     _needsPlayComboButtonUpdate = NO;
     [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
 }
@@ -360,6 +430,9 @@ static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
         self.editingToolbar.overrideUserInterfaceStyle = style;
     }
 
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
+        return;
+    }
     [self.tableView reloadData];
 }
 
@@ -665,6 +738,10 @@ static const NSUInteger kBulkEpisodeMutationBatchSize = 50;
 
 - (void) reloadDataAndPreserveSelection
 {
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
+        return;
+    }
+
     NSArray* myEpisodes = self.episodes;
 
     NSMutableArray* selectedEpisodes = [NSMutableArray array];
@@ -1494,6 +1571,10 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
             return;
         }
 
+        // Performing the action does not reliably deliver didEndEditingRowAtIndexPath:
+        // before the action's own updates run, so the gate is released here explicitly.
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
+
         NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
         if (!currentIndexPath) {
             completionHandler(NO);
@@ -1754,7 +1835,8 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         }
         case ICEpisodeSwipeActionTranscribe:
         {
-            if ([[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"server"]) {
+            // With only one enabled backend the stored preference is irrelevant.
+            if ([[TranscriptionQueue resolvedAutomaticBackend] isEqualToString:@"server"]) {
                 [self _serverTranscribeEpisode:episode];
             } else {
                 [self _transcribeEpisode:episode];
@@ -1824,7 +1906,10 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         PlaySoundFile(@"AffirmIn", NO);
         [self _showTranscriptionToast];
     } else {
+        // A rejected request must still lead into the queue — otherwise the running
+        // job (and its error state) has no reachable UI.
         PlayHapticFeedback(ICHapticFeedbackLight);
+        [self _showTranscriptionToastWithText:NSLocalizedString(@"Server-Transkription läuft bereits", nil)];
     }
     [self.tableView reloadData];
 }
@@ -1865,6 +1950,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _transcriptionQueueChanged
 {
+    if ([self _deferTableUpdateDuringSwipe:ICEpisodeListDeferredUpdateFullReload]) {
+        return;
+    }
     [self.tableView reloadData];
 }
 
@@ -2069,7 +2157,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                                        }];
         [actions addObject:transcribeAction];
     }
-    if (serverTranscriptionEnabled) {
+    // Hidden while a submitted run still owns the episode — a second tap could never
+    // restart it anyway.
+    if (serverTranscriptionEnabled && ![[ServerTranscriptionManager shared] hasActiveItemForEpisodeHash:episode.objectHash ?: @""]) {
         UIAction* serverAction = [UIAction actionWithTitle:NSLocalizedString(@"Server transkribieren", nil)
                                                      image:[UIImage systemImageNamed:@"server.rack"]
                                                 identifier:nil

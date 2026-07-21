@@ -769,13 +769,27 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         }
     }
 
-    private func automaticProcessingDecision(for episode: CDEpisode) -> AutomaticProcessingDecision? {
-        let automaticBackend = UserDefaults.standard.string(forKey: kAutomaticTranscriptionBackend) ?? "local"
-        if automaticBackend == "server" {
-            guard UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled) else { return nil }
-        } else {
-            guard UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled) else { return nil }
+    /// The stored preference only decides when both backends are available. With
+    /// exactly one enabled backend the automatic run uses that one — the chooser is
+    /// hidden in the settings then, so a stale preference must not disable automatic
+    /// processing. nil means no backend is enabled at all.
+    @objc static func resolvedAutomaticBackend() -> String? {
+        let localEnabled = UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled)
+        let serverEnabled = UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled)
+        switch (localEnabled, serverEnabled) {
+        case (false, false):
+            return nil
+        case (true, false):
+            return "local"
+        case (false, true):
+            return "server"
+        case (true, true):
+            return UserDefaults.standard.string(forKey: kAutomaticTranscriptionBackend) == "server" ? "server" : "local"
         }
+    }
+
+    private func automaticProcessingDecision(for episode: CDEpisode) -> AutomaticProcessingDecision? {
+        guard Self.resolvedAutomaticBackend() != nil else { return nil }
         guard let feed = episode.feed, feed.subscribed else { return nil }
         let transcription = resolvedAutomaticSetting(
             feed: feed,
@@ -1058,7 +1072,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         let discoveryHashesToAcknowledge = Set(episodesByHash.keys)
         guard !discoveryHashesToAcknowledge.isEmpty else { return }
         var didEnqueueAny = false
-        let automaticBackend = UserDefaults.standard.string(forKey: kAutomaticTranscriptionBackend) ?? "local"
+        let automaticBackend = Self.resolvedAutomaticBackend() ?? "local"
         for episodeHash in episodesByHash.keys.sorted() {
             guard let episode = episodesByHash[episodeHash],
                   let decision = automaticProcessingDecision(for: episode) else {
@@ -3153,7 +3167,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     @objc var count: Int { items.count }
 
     @objc var activeItemCount: Int {
-        items.filter { $0.status != .completed && $0.status != .failed }.count
+        displayItems.filter { $0.status != .completed && $0.status != .failed }.count
     }
 
     @objc(modelMutationBlockReasonForRole:)
@@ -3189,9 +3203,12 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         return modelMutationBlockReason(for: model.role)
     }
 
+    /// Drives the sidebar entry. Must cover both queues — with server-only work the
+    /// entry used to stay hidden, which made the queue (and its errors) unreachable.
     @objc var hasVisibleItems: Bool {
         pruneExpiredCompletedItems()
-        return !items.isEmpty
+        ServerTranscriptionManager.shared.pruneExpiredCompletedItems()
+        return !displayItems.isEmpty
     }
 
     /// Currently processing item

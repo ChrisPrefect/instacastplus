@@ -20,6 +20,10 @@ static NSString* kUpNextCell = @"UpNextCell";
 @interface UpNextTableViewController () <UITableViewDragDelegate, UITableViewDropDelegate>
 @property (nonatomic, strong) UILabel* emptyStateLabel;
 @property (nonatomic) BOOL observing;
+// While a swipe action is open UIKit owns the cell layout — reloads and passes over
+// the visible cells are collected and applied after the swipe closes.
+@property (nonatomic) BOOL swipeInteractionActive;
+@property (nonatomic) BOOL pendingReloadAfterSwipe;
 @end
 
 @implementation UpNextTableViewController {
@@ -109,8 +113,36 @@ static NSString* kUpNextCell = @"UpNextCell";
 
 - (void) _performPlayComboButtonUpdate
 {
+    if (self.swipeInteractionActive) {
+        return;
+    }
     _needsPlayComboButtonUpdate = NO;
     [[self.tableView visibleCells] makeObjectsPerformSelector:@selector(updatePlayComboButtonState)];
+}
+
+- (void)tableView:(UITableView *)tableView willBeginEditingRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    self.swipeInteractionActive = YES;
+}
+
+- (void)tableView:(UITableView *)tableView didEndEditingRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
+- (void) _endSwipeInteractionAndFlushDeferredUpdate
+{
+    if (!self.swipeInteractionActive) {
+        return;
+    }
+    self.swipeInteractionActive = NO;
+    if (self.pendingReloadAfterSwipe) {
+        self.pendingReloadAfterSwipe = NO;
+        [self.tableView reloadData];
+    }
+    else if (_needsPlayComboButtonUpdate) {
+        [self _performPlayComboButtonUpdate];
+    }
 }
 
 - (void) cacheManagerDidUpdateNotification:(NSNotification*)notification
@@ -137,6 +169,10 @@ static NSString* kUpNextCell = @"UpNextCell";
 - (void) playbackManagerDidChangeEpisodeNotification:(NSNotification*)notification
 {
     // Reload to update the highlighting of currently playing episode
+    if (self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
+        return;
+    }
     [self.tableView reloadData];
 }
 
@@ -312,6 +348,10 @@ static NSString* kUpNextCell = @"UpNextCell";
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.emptyStateLabel.textColor = ICMutedTextColor;
+    if (self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
+        return;
+    }
     [self.tableView reloadData];
 }
 
@@ -505,6 +545,9 @@ static NSString* kUpNextCell = @"UpNextCell";
             completionHandler(NO);
             return;
         }
+        // Performing the action does not reliably deliver didEndEditingRowAtIndexPath:
+        // before the action's own updates run, so the gate is released here explicitly.
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
 
         NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
         if (!currentIndexPath) {
@@ -534,6 +577,9 @@ static NSString* kUpNextCell = @"UpNextCell";
             completionHandler(NO);
             return;
         }
+        // Performing the action does not reliably deliver didEndEditingRowAtIndexPath:
+        // before the action's own updates run, so the gate is released here explicitly.
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
 
         NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
         if (!currentIndexPath) {

@@ -103,6 +103,8 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     private static let queueFileName = "ServerTranscriptionQueue.json"
     private static let clientIdentifierKey = "ICServerTranscriptionClientIdentifier"
     private static let retryDelay: TimeInterval = 30
+    /// Same retention rule as the local queue (TranscriptionQueue.completedItemRetentionInterval).
+    private static let completedItemRetentionInterval: TimeInterval = 30 * 60
 
     // This is a shared application token, intentionally not a per-user credential.
     // Do not log it or include it in diagnostics.
@@ -129,8 +131,13 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
               let scheme = episodeURL.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
             return false
         }
-        guard !items.contains(where: { $0.episodeHash == episodeHash && $0.usesServerTranscription }) else {
-            return false
+        if let existing = items.first(where: { $0.episodeHash == episodeHash && $0.usesServerTranscription }) {
+            // Only a run that is still going owns the episode. A finished or failed entry
+            // stays in the list until the user removes it — treating it as "already queued"
+            // made the episode permanently unsubmittable.
+            guard existing.status == .completed || existing.status == .failed else { return false }
+            items.removeAll { $0 === existing }
+            removeMetadata(for: existing)
         }
 
         let item = makeItem(episodeHash: episodeHash,
@@ -211,6 +218,25 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         items.removeAll()
         persistQueue()
         postQueueChange()
+    }
+
+    /// True while a submitted run still owns the episode. Completed and failed entries
+    /// are history, not ownership.
+    @objc func hasActiveItem(forEpisodeHash episodeHash: String) -> Bool {
+        items.contains {
+            $0.episodeHash == episodeHash && $0.usesServerTranscription
+                && $0.status != .completed && $0.status != .failed
+        }
+    }
+
+    /// Drops finished entries past the retention window, mirroring the local queue.
+    /// Read path only — deliberately no file write and no notification here.
+    @objc func pruneExpiredCompletedItems(now: Date = Date()) {
+        items.removeAll { item in
+            guard item.status == .completed else { return false }
+            guard let completedAt = item.completedAt else { return true }
+            return now.timeIntervalSince(completedAt) >= Self.completedItemRetentionInterval
+        }
     }
 
     @objc func resumeIfNeeded() {

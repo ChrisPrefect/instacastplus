@@ -31,6 +31,10 @@
 
 extern NSString* ICAppearanceManagerDidUpdateAppearanceNotification;
 
+// ICTintColor serves the theme color from a cache. Call after writing a new theme
+// color to the defaults; -updateAppearance already does it.
+extern void ICInvalidateThemeTintColorCache(void);
+
 
 @interface ICAppearanceManager : NSObject
 

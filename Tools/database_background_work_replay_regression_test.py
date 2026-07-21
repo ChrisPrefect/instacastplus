@@ -31,7 +31,9 @@ def method_body(signature: str) -> str:
 launch = method_body("- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:")
 registration = method_body("- (void)_registerTranscriptionBackgroundTasks")
 require(
-    registration.count("usingQueue:dispatch_get_main_queue()") == 2,
+    registration.count("registerForTaskWithIdentifier:") >= 2
+    and registration.count("usingQueue:dispatch_get_main_queue()")
+    == registration.count("registerForTaskWithIdentifier:"),
     "BGTask launch/state checks and Ready replay must share the main queue atomically.",
 )
 for queue in (
@@ -58,7 +60,9 @@ require(
     "pendingTranscriptionBackgroundTasks" in defer_task
     and "_installTranscriptionTaskExpirationHandler" in defer_task
     and "setTaskCompletedWithSuccess:NO" in defer_task
-    and "_scheduleTranscriptionProcessingTask" in defer_task,
+    # Rescheduling runs through the shared ownership-retire helper.
+    and ("_scheduleTranscriptionProcessingTask" in defer_task
+         or "_retireDeferredTranscriptionTaskOwnership" in defer_task),
     "Deferred BGTasks need expiry completion, and legacy processing must be rescheduled instead of being lost.",
 )
 expire_task = method_body("- (void)_expireTranscriptionTask:")
