@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pins empty unsubscribe cleanup to retain its terminal block until invocation."""
+"""Pins unsubscribe cleanup to release its recursive block only after it returns."""
 
 from pathlib import Path
 
@@ -17,14 +17,14 @@ start = CACHE_MANAGER.index("__block void (^processNextChunk)(void) = nil;")
 end = CACHE_MANAGER.index("            processNextChunk();", start)
 chunk_loop = CACHE_MANAGER[start:end]
 
-finish_call = chunk_loop.index("finishTranscriptCleanup();")
-self_release = chunk_loop.index("processNextChunk = nil;")
-
 require(
-    finish_call < self_release,
-    "Empty unsubscribe cleanup must invoke its captured terminal block before releasing "
-    "the currently executing recursive block; releasing first deallocates the capture "
-    "under ARC and crashes at the terminal block call.",
+    """finishTranscriptCleanup();
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        processNextChunk = nil;
+                    });""" in chunk_loop,
+    "Unsubscribe cleanup must release its self-referential recursive block on the next "
+    "main-queue turn. Clearing it inside its own invocation deallocates the executing "
+    "block under ARC and crashes while returning.",
 )
 
 print("CacheManager empty-unsubscribe block lifetime regression checks passed")

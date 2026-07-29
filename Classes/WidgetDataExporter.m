@@ -892,6 +892,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     __weak typeof(self) weakSelf = self;
     __block dispatch_block_t exportBlock = nil;
     exportBlock = dispatch_block_create(0, ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            exportBlock = nil;
+        });
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf || strongSelf.pendingNowPlayingExportBlock != exportBlock) {
             return;
@@ -915,6 +918,9 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     __weak typeof(self) weakSelf = self;
     __block dispatch_block_t exportBlock = nil;
     exportBlock = dispatch_block_create(0, ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+            exportBlock = nil;
+        });
         __strong typeof(weakSelf) strongSelf = weakSelf;
         if (!strongSelf || strongSelf.pendingControlActionExportBlock != exportBlock) {
             return;

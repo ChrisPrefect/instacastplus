@@ -398,6 +398,7 @@ static NSError *ICXMLImportLimitError(ICXMLImportErrorCode code)
         else if ([elementName isEqualToString:@"descending"]) _currentEpisodeList.descending = [text isEqualToString:@"true"];
         else if ([elementName isEqualToString:@"groupByPodcast"]) _currentEpisodeList.groupByPodcast = [text isEqualToString:@"true"];
         else if ([elementName isEqualToString:@"continuousPlayback"]) _currentEpisodeList.continuousPlayback = [text isEqualToString:@"true"];
+        else if ([elementName isEqualToString:@"usePodcastArtwork"]) _currentEpisodeList.usePodcastArtwork = [text isEqualToString:@"true"];
         else if ([elementName isEqualToString:@"feedUrl"] && [path isEqualToString:@"instacast/episodeLists/episodeList/includedFeeds/feedUrl"]) {
             if (text.length > 0) {
                 if (![self.budget consumeObjectWithParser:parser]) return;

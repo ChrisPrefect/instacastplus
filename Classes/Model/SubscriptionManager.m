@@ -2753,7 +2753,9 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                 if (self.unsubscribeCleanupRecoveryBlocked) {
                     [self.pendingAutoDownloadFeedObjectIDs addObjectsFromArray:feedObjectIDs];
                     self.autoDownloadFeedScanInFlight = NO;
-                    deliverNextCandidateBatch = nil;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        deliverNextCandidateBatch = nil;
+                    });
                     return;
                 }
                 NSUInteger remainingCount = candidateItems.count - candidateIndex;
@@ -2815,7 +2817,9 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
                     }
                     [self _removePendingAutoDownloadFeedUIDs:completedFeedUIDs];
                     self.autoDownloadFeedScanInFlight = NO;
-                    deliverNextCandidateBatch = nil;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        deliverNextCandidateBatch = nil;
+                    });
                     [self _startPendingAutoDownloads];
                     [self recoverPendingAutoDownloadsAfterDatabaseStartup];
                 }

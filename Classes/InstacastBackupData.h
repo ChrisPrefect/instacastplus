@@ -73,6 +73,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL descending;
 @property (nonatomic) BOOL groupByPodcast;
 @property (nonatomic) BOOL continuousPlayback;
+@property (nonatomic) BOOL usePodcastArtwork;
 @property (nonatomic, strong, nullable) NSMutableArray<NSString *> *includedFeedURLs;
 @end
 

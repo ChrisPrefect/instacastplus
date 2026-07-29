@@ -375,9 +375,10 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
-        UIButton *pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        [pasteButton setTitle:NSLocalizedString(@"Einfügen", nil) forState:UIControlStateNormal];
-        pasteButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
+        UIButtonConfiguration *pasteButtonConfiguration = [UIButtonConfiguration plainButtonConfiguration];
+        pasteButtonConfiguration.title = NSLocalizedString(@"Einfügen", nil);
+        pasteButtonConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(0, 8, 0, 8);
+        UIButton *pasteButton = [UIButton buttonWithConfiguration:pasteButtonConfiguration primaryAction:nil];
         [pasteButton addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
             NSString *clipboardValue = UIPasteboard.generalPasteboard.string;
             if (clipboardValue.length > 0) {
@@ -878,9 +879,10 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
 
 - (void)_startRefreshTimerIfNeeded {
     if (self.refreshTimer) return;
+    WEAK_SELF
     self.refreshTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *timer) {
-        [self.tableView reloadData];
-        [self _stopRefreshTimerIfIdle];
+        [weakSelf.tableView reloadData];
+        [weakSelf _stopRefreshTimerIfIdle];
     }];
 }
 
@@ -1030,9 +1032,10 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
         textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
         textField.clearButtonMode = UITextFieldViewModeWhileEditing;
-        UIButton *pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
-        [pasteButton setTitle:NSLocalizedString(@"Einfügen", nil) forState:UIControlStateNormal];
-        pasteButton.contentEdgeInsets = UIEdgeInsetsMake(0, 8, 0, 8);
+        UIButtonConfiguration *pasteButtonConfiguration = [UIButtonConfiguration plainButtonConfiguration];
+        pasteButtonConfiguration.title = NSLocalizedString(@"Einfügen", nil);
+        pasteButtonConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(0, 8, 0, 8);
+        UIButton *pasteButton = [UIButton buttonWithConfiguration:pasteButtonConfiguration primaryAction:nil];
         [pasteButton addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
             NSString *clipboardValue = UIPasteboard.generalPasteboard.string;
             if (clipboardValue.length > 0) {

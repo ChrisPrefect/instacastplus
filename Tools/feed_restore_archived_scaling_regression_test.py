@@ -29,7 +29,7 @@ def method_body(signature: str) -> str:
 rows = method_body("numberOfRowsInSection:")
 count = method_body("- (void)_reloadArchivedEpisodeCount")
 restore = method_body("-(void)restoreDeletedEpisodes")
-view_will_appear = method_body("- (void)viewWillAppear:")
+view_did_appear = method_body("- (void)viewDidAppear:")
 
 require(
     "countForFetchRequest" not in rows
@@ -57,8 +57,13 @@ require(
     and "setEpisode:" not in restore,
     "Mass restore must not materialize or mutate every archived episode on the main context.",
 )
-require("_reloadArchivedEpisodeCount" in view_will_appear,
-        "Archived-count snapshot must refresh when feed settings appear.")
+require(
+    "[self.tableView reloadData]" in view_did_appear
+    and "_reloadArchivedEpisodeCount" in view_did_appear
+    and view_did_appear.index("[self.tableView reloadData]")
+    < view_did_appear.index("_reloadArchivedEpisodeCount"),
+    "Archived-count refresh must follow the full table synchronization after feed settings appear.",
+)
 
 
 print("Feed archived-episode restore scaling regression checks passed")

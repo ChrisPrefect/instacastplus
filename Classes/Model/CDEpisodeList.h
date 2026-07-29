@@ -35,6 +35,7 @@ extern NSString* kEpisodeIconUnplayed;
 @property (nonatomic) BOOL descending;
 
 @property (nonatomic) BOOL continuousPlayback;
+@property (nonatomic) BOOL usePodcastArtwork;
 
 @property (nonatomic, strong) NSSet* includedFeeds;
 @property (nonatomic, strong) NSOrderedSet* episodes;

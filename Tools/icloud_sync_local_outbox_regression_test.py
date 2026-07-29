@@ -70,7 +70,7 @@ def method_bodies(signature: str) -> str:
 # feed is physically removed before the sync manager starts on the next launch.
 current_version = plistlib.loads((MODEL_DIR / ".xccurrentversion").read_bytes())
 model_name = current_version.get("_XCCurrentVersionName")
-require(model_name == "Model8.xcdatamodel", "The durable local outbox needs the current versioned Core Data model.")
+require(model_name == "Model9.xcdatamodel", "The durable local outbox needs the current versioned Core Data model.")
 model_path = MODEL_DIR / model_name / "contents"
 require(model_path.exists(), "The current Core Data model version is missing.")
 model = ET.parse(model_path).getroot()
@@ -89,7 +89,10 @@ def entity_xml(entity: ET.Element, excluding_attributes=None) -> bytes:
 old_entities = {entity.get("name"): entity for entity in old_model.findall("entity")}
 new_entities = {entity.get("name"): entity for entity in model.findall("entity")}
 for entity_name, old_entity in old_entities.items():
-    allowed_attributes = {"watchLastEventRevision"} if entity_name == "AppleWatchEpisodeState" else set()
+    allowed_attributes = {
+        "AppleWatchEpisodeState": {"watchLastEventRevision"},
+        "EpisodeList": {"usePodcastArtwork"},
+    }.get(entity_name, set())
     require(
         new_entities.get(entity_name) is not None
         and entity_xml(new_entities[entity_name], allowed_attributes) == entity_xml(old_entity),
@@ -108,9 +111,9 @@ require(
 )
 project = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 require(
-    "Model8.xcdatamodel" in project
-    and "currentVersion = F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */;" in project,
-    "The Xcode version group must compile Model8 as current; otherwise builds rewrite .xccurrentversion.",
+    "Model9.xcdatamodel" in project
+    and "currentVersion = F900B0A17E2D4B00A10B0001 /* Model9.xcdatamodel */;" in project,
+    "The Xcode version group must compile Model9 as current; otherwise builds rewrite .xccurrentversion.",
 )
 outbox_entities = [entity for entity in model.findall("entity") if entity.get("name") == "ICCloudSyncOutboxEntry"]
 require(len(outbox_entities) == 1, "The Core Data model must contain ICCloudSyncOutboxEntry.")

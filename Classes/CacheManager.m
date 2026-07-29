@@ -2636,8 +2636,11 @@ preserveSubscriptionCleanupDeferredStarts:(BOOL)preserveDeferredStarts
             __block void (^processNextChunk)(void) = nil;
             processNextChunk = ^{
                 if (nextURIIndex >= episodeObjectURIs.count) {
+                    // Break the self-retain cycle only after this invocation has returned.
                     finishTranscriptCleanup();
-                    processNextChunk = nil;
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        processNextChunk = nil;
+                    });
                     return;
                 }
 

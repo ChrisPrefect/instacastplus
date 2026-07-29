@@ -1153,7 +1153,8 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
             [self _startPlaybackAtTime:time];
         }
 
-        decisionHandler(WKNavigationActionPolicyAllow);
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
 	}
 	
 	// do not allow iframes

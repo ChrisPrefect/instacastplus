@@ -1016,8 +1016,9 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
             item.status != ICTranscriptionStatusCompleted &&
             item.status != ICTranscriptionStatusFailed) {
             if (!self.elapsedTimer || !self.elapsedTimer.isValid) {
+                WEAK_SELF
                 self.elapsedTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer* t) {
-                    [self _progressUpdated];
+                    [weakSelf _progressUpdated];
                 }];
             }
             return;

@@ -998,6 +998,7 @@
 		F600B0A17E2D4B00A10B0001 /* Model6.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model6.xcdatamodel; sourceTree = "<group>"; };
 		F700B0A17E2D4B00A10B0001 /* Model7.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model7.xcdatamodel; sourceTree = "<group>"; };
 		F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model8.xcdatamodel; sourceTree = "<group>"; };
+		F900B0A17E2D4B00A10B0001 /* Model9.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model9.xcdatamodel; sourceTree = "<group>"; };
 		AC519BE7A07B9059ECA1F6BA /* en */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		B0FE86222CBC7CF2304BE486 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		B3DEF4CE299177606490433D /* ICBackupImportProgressView.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; path = ICBackupImportProgressView.m; sourceTree = "<group>"; };
@@ -2949,7 +2950,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3031,7 +3032,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3115,7 +3116,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3176,7 +3177,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3206,7 +3207,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3240,7 +3241,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3317,7 +3318,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3351,7 +3352,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 25;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3511,8 +3512,9 @@
 				F600B0A17E2D4B00A10B0001 /* Model6.xcdatamodel */,
 				F700B0A17E2D4B00A10B0001 /* Model7.xcdatamodel */,
 				F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */,
+				F900B0A17E2D4B00A10B0001 /* Model9.xcdatamodel */,
 			);
-			currentVersion = F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */;
+			currentVersion = F900B0A17E2D4B00A10B0001 /* Model9.xcdatamodel */;
 			path = Model5.xcdatamodeld;
 			sourceTree = "<group>";
 			versionGroupType = wrapper.xcdatamodel;

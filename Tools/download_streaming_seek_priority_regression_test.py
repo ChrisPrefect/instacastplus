@@ -57,6 +57,25 @@ require(
     "AVFoundation byte requests must enter the playback-priority queue and remember a "
     "non-zero playback offset for seek-to-EOF downloading.",
 )
+require(
+    "isBootstrapToEndRequest" in pending
+    and "!isBootstrapToEndRequest || self.forwardDownloadOffset <= 0" in pending
+    and "[self.highPriorityRanges removeAllObjects]" in pending,
+    "After a non-zero seek, AVFoundation's older 0..EOF bootstrap request must stop "
+    "reasserting start-of-file priority on every received data block.",
+)
+
+open_episode = method_body(
+    PLAYBACK,
+    "- (void) openWithEpisode:(CDEpisode*)anEpisode at:(NSTimeInterval)time autostart:(BOOL)autostart",
+)
+require(
+    "loadValuesAsynchronouslyForKeys:" not in open_episode
+    and "[self _continueOpeningAsset:self.mediaAsset autostart:autostart];" in open_episode,
+    "Opening a streamed MP3 must create the player item immediately. Preloading either "
+    "tracks or duration issues a 0..EOF request before the saved playback position can "
+    "be sought.",
+)
 
 response = method_body(
     PLAYBACK,
@@ -107,6 +126,48 @@ queue = [seek_tail, *subtract(whole_file, seek_tail)]
 require(
     queue == [(60_000_000, 100_000_000), (0, 60_000_000)],
     "Seek scheduling must download seek..EOF before 0..seek.",
+)
+
+
+def process_pending(
+    queued: list[tuple[int, int]],
+    requests: list[tuple[int, int, int, bool]],
+    forward_offset: int,
+) -> tuple[list[tuple[int, int]], int]:
+    for requested_offset, current_offset, requested_end, bootstrap_to_end in requests:
+        if requested_offset > 0 and requested_offset != forward_offset:
+            forward_offset = requested_offset
+            queued.clear()
+        if not bootstrap_to_end or forward_offset <= 0:
+            priority = (current_offset, requested_end)
+            queued = [priority, *subtract(queued, priority)]
+    return queued, forward_offset
+
+
+# Reproduce the real second-cycle failure: after the seek request has been served,
+# AVFoundation keeps its older 0..EOF bootstrap request alive. It must not put
+# 0..seek back in front; the normal backfill scheduler then continues seek..EOF.
+queue, forward_offset = process_pending(
+    [(0, 100_000_000)],
+    [
+        (0, 4_000_000, 100_000_000, True),
+        (60_000_000, 60_000_000, 60_500_000, False),
+    ],
+    0,
+)
+require(
+    queue == [(60_000_000, 60_500_000)] and forward_offset == 60_000_000,
+    "The first seek cycle must discard stale bootstrap priority.",
+)
+queue, forward_offset = process_pending(
+    [],
+    [(0, 4_000_000, 100_000_000, True)],
+    forward_offset,
+)
+require(
+    queue == [] and forward_offset == 60_000_000,
+    "The surviving 0..EOF request must not restore start-of-file priority after the "
+    "seek request completes.",
 )
 
 print("Download streaming seek-priority regression checks passed")

@@ -86,6 +86,15 @@
     return [self.list isKindOfClass:[CDEpisodeList class]];
 }
 
+- (NSURL*) artworkURLForEpisode:(CDEpisode*)episode
+{
+    CDEpisodeList* episodeList = [self.list isKindOfClass:[CDEpisodeList class]] ? (CDEpisodeList*)self.list : nil;
+    if (episodeList.usePodcastArtwork) {
+        return episode.feed.imageURL;
+    }
+    return [super artworkURLForEpisode:episode];
+}
+
 - (BOOL)_allowsPullToRefresh
 {
     return ![self.list isKindOfClass:[CDSmartPlaylist class]];

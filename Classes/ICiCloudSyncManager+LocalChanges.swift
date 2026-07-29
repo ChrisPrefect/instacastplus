@@ -355,7 +355,7 @@ extension ICiCloudSyncManager {
         "uid", "name", "rank", "icon", "query", "audio", "video", "downloaded",
         "downloading", "notDownloaded", "unplayed", "unfinished", "played",
         "starred", "notStarred", "orderBy", "descending", "groupByPodcast",
-        "continuousPlayback", "includedFeeds",
+        "continuousPlayback", "usePodcastArtwork", "includedFeeds",
     ]
 
     // A sibling background-context save is merged into the view context as a keyless refresh,

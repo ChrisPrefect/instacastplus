@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIRECTORY = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld"
 MODEL7 = MODEL_DIRECTORY / "Model7.xcdatamodel"
 MODEL8 = MODEL_DIRECTORY / "Model8.xcdatamodel"
+MODEL9 = MODEL_DIRECTORY / "Model9.xcdatamodel"
 CURRENT_VERSION = MODEL_DIRECTORY / ".xccurrentversion"
 PROJECT = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 
@@ -25,17 +26,18 @@ def require(condition: bool, message: str) -> None:
 
 require(MODEL7.exists(), "Model7 must remain bundled as the immediate predecessor.")
 require(MODEL8.exists(), "Model8 must contain the outbox ACK receipt fields.")
+require(MODEL9.exists(), "Model9 must preserve the Model8 outbox ACK receipt fields.")
 with CURRENT_VERSION.open("rb") as current_version_file:
     current_version = plistlib.load(current_version_file)
 require(
-    current_version.get("_XCCurrentVersionName") == "Model8.xcdatamodel",
-    ".xccurrentversion must select Model8.",
+    current_version.get("_XCCurrentVersionName") == "Model9.xcdatamodel",
+    ".xccurrentversion must select Model9.",
 )
 require(
-    "Model8.xcdatamodel" in PROJECT
+    "Model9.xcdatamodel" in PROJECT
     and "currentVersion" in PROJECT
-    and "/* Model8.xcdatamodel */" in PROJECT,
-    "The Xcode model version group must include and select Model8.",
+    and "/* Model9.xcdatamodel */" in PROJECT,
+    "The Xcode model version group must include and select Model9.",
 )
 
 

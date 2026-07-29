@@ -95,7 +95,7 @@
     }
     cell.tintColor = [[ICAppearanceManager sharedManager] appearance].tintColor;
     if (self.valueType == kSettingTypeInteger) {
-        NSNumber* value = [NSNumber numberWithInteger:[[self source] integerForKey:self.key]];
+        NSNumber* value = self.selectionHandler ? self.selectedValue : [NSNumber numberWithInteger:[[self source] integerForKey:self.key]];
         
         if (([self.values indexOfObject:value] == indexPath.row)) {
             cell.accessoryType = UITableViewCellAccessoryCheckmark;
@@ -106,7 +106,7 @@
         }
     }
     else if (self.valueType == kSettingTypeString) {
-        NSString* value = [[self source] stringForKey:self.key];
+        NSString* value = self.selectionHandler ? self.selectedValue : [[self source] stringForKey:self.key];
         
         if (([self.values indexOfObject:value] == indexPath.row) || (!value && self.values[indexPath.row] == [NSNull null])) {
             cell.accessoryType = UITableViewCellAccessoryCheckmark;
@@ -201,7 +201,11 @@
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
     id value = [self.values objectAtIndex:indexPath.row];
-    if (value == [NSNull null]) {
+    if (self.selectionHandler) {
+        self.selectedValue = value;
+        self.selectionHandler(value);
+    }
+    else if (value == [NSNull null]) {
         if (self.feed) {
             [self.feed resetValueForKey:self.key];
         }

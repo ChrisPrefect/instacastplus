@@ -1148,6 +1148,7 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
             [xml appendFormat:@"      <descending>%@</descending>\n", episodeList.descending ? @"true" : @"false"];
             [xml appendFormat:@"      <groupByPodcast>%@</groupByPodcast>\n", episodeList.groupByPodcast ? @"true" : @"false"];
             [xml appendFormat:@"      <continuousPlayback>%@</continuousPlayback>\n", episodeList.continuousPlayback ? @"true" : @"false"];
+            [xml appendFormat:@"      <usePodcastArtwork>%@</usePodcastArtwork>\n", episodeList.usePodcastArtwork ? @"true" : @"false"];
             if (episodeList.includedFeeds.count > 0) {
                 [xml appendString:@"      <includedFeeds>\n"];
                 for (CDFeed* feed in episodeList.includedFeeds) {

@@ -32,5 +32,7 @@ typedef NSInteger SettingValueType;
 @property (nonatomic, strong) NSArray* values;
 @property (nonatomic, strong) NSString* footerText;
 @property (nonatomic, strong) NSArray<NSString*>* footerTexts; // per-value footer texts (overrides footerText when set)
+@property (nonatomic, strong) id selectedValue;
+@property (nonatomic, copy) void (^selectionHandler)(id value);
 
 @end

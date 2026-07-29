@@ -94,6 +94,20 @@ require(asynchronous.count("dispatch_async(dispatch_get_main_queue(), ^{") >= 2,
 require("dispatch_after" not in asynchronous and "NSTimer" not in asynchronous,
         "Pipeline yielding must not be implemented with pacing delays or timers.")
 
+delivery_loop = asynchronous[asynchronous.index("__block void (^deliverNextCandidateBatch)(void) = nil;"):]
+deferred_release_pattern = re.compile(
+    r"dispatch_async\(dispatch_get_main_queue\(\), \^\{\s*"
+    r"deliverNextCandidateBatch = nil;\s*"
+    r"\}\);"
+)
+require(
+    delivery_loop.count("deliverNextCandidateBatch = nil;") == 2
+    and len(deferred_release_pattern.findall(delivery_loop)) == 2,
+    "Both terminal paths must release the recursive delivery block on the next main-queue "
+    "turn. Clearing the __block variable inside its own invocation releases the executing "
+    "ARC block before it has returned.",
+)
+
 main_handoff = asynchronous.split("dispatch_async(dispatch_get_main_queue(), ^{", 1)[1]
 start_download = main_handoff.find("[self _autoDownloadEpisode:nil sortedEpisodes:thisSortedEpisodes]")
 revalidate_feed = main_handoff.find("existingObjectWithID:feedObjectID")

@@ -1187,6 +1187,7 @@ extension ICiCloudSyncManager {
             "descending": list.descending,
             "groupByPodcast": list.groupByPodcast,
             "continuousPlayback": list.continuousPlayback,
+            "usePodcastArtwork": list.usePodcastArtwork,
             "includedFeedURLs": includedFeedURLs,
         ]
     }
@@ -1203,7 +1204,7 @@ extension ICiCloudSyncManager {
             "uid", "name", "icon", "rank", "query", "audio", "video", "downloaded",
             "downloading", "notDownloaded", "unplayed", "unfinished", "played",
             "starred", "notStarred", "orderBy", "descending", "groupByPodcast",
-            "continuousPlayback",
+            "continuousPlayback", "usePodcastArtwork",
         ]
         var components = keys.map { key in "\(key)=\(payload[key] ?? "")" }
         let includedFeedURLs = payload["includedFeedURLs"] as? [String] ?? []
@@ -1273,6 +1274,7 @@ extension ICiCloudSyncManager {
                 "descending": true,
                 "groupByPodcast": false,
                 "continuousPlayback": true,
+                "usePodcastArtwork": false,
                 "includedFeedURLs": [],
             ],
             "default.unplayed": [
@@ -1295,6 +1297,7 @@ extension ICiCloudSyncManager {
                 "descending": true,
                 "groupByPodcast": false,
                 "continuousPlayback": true,
+                "usePodcastArtwork": false,
                 "includedFeedURLs": [],
             ],
             "default.started": [
@@ -1317,6 +1320,7 @@ extension ICiCloudSyncManager {
                 "descending": true,
                 "groupByPodcast": false,
                 "continuousPlayback": true,
+                "usePodcastArtwork": false,
                 "includedFeedURLs": [],
             ],
             "default.downloaded": [
@@ -1339,6 +1343,7 @@ extension ICiCloudSyncManager {
                 "descending": true,
                 "groupByPodcast": false,
                 "continuousPlayback": true,
+                "usePodcastArtwork": false,
                 "includedFeedURLs": [],
             ],
             "default.video": [
@@ -1361,6 +1366,7 @@ extension ICiCloudSyncManager {
                 "descending": true,
                 "groupByPodcast": false,
                 "continuousPlayback": true,
+                "usePodcastArtwork": false,
                 "includedFeedURLs": [],
             ],
         ]

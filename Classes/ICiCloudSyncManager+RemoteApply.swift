@@ -4660,6 +4660,10 @@ extension ICiCloudSyncManager {
             list.continuousPlayback = continuousPlayback
             didMutate = true
         }
+        if let usePodcastArtwork = Self.boolValue(payload["usePodcastArtwork"]), list.usePodcastArtwork != usePodcastArtwork {
+            list.usePodcastArtwork = usePodcastArtwork
+            didMutate = true
+        }
 
         if let includedFeedURLs = payload["includedFeedURLs"] as? [String] {
             let includedFeedURLSet = Set(includedFeedURLs)

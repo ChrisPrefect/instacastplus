@@ -883,6 +883,8 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         if (currentOffset <= 0) {
             currentOffset = requestedOffset;
         }
+        BOOL isBootstrapToEndRequest = (requestedOffset == 0 &&
+                                        dataRequest.requestsAllDataToEndOfResource);
 
         int64_t streamLength = (self.contentLengthConfirmed && self.contentLength > 0) ? self.contentLength : self.hintedContentLength;
 
@@ -919,9 +921,14 @@ static NSMutableSet* ICStreamingDetachedLoaderSet(void)
         } else {
             if (requestedOffset > 0 &&
                 (streamLength <= 0 || requestedOffset < streamLength)) {
-                self.forwardDownloadOffset = requestedOffset;
+                if (self.forwardDownloadOffset != requestedOffset) {
+                    self.forwardDownloadOffset = requestedOffset;
+                    [self.highPriorityRanges removeAllObjects];
+                }
             }
-            [self _prioritizeHighPriorityRangeFrom:currentOffset to:requestedEnd];
+            if (!isBootstrapToEndRequest || self.forwardDownloadOffset <= 0) {
+                [self _prioritizeHighPriorityRangeFrom:currentOffset to:requestedEnd];
+            }
         }
     }
 }
@@ -2091,39 +2098,7 @@ didReceiveResponse:(NSURLResponse *)response
     self.mediaAsset = [AVURLAsset URLAssetWithURL:url options:nil];
 #endif
 	
-	[self.mediaAsset loadValuesAsynchronouslyForKeys:@[@"tracks", @"duration"] completionHandler:^(void) {
-		NSError *error = nil;
-		AVKeyValueStatus tracksStatus = [self.mediaAsset statusOfValueForKey:@"tracks" error:&error];
-		switch (tracksStatus) {
-			case AVKeyValueStatusLoaded:
-            {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self _continueOpeningAsset:self.mediaAsset autostart:autostart];
-                });
-				break;
-            }
-			case AVKeyValueStatusFailed:
-            {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    ErrLog(@"AVAsset load failed: %@", [error description]);
-                    self.failed = YES;
-                    [self close];
-                    SEND_UPDATE
-                });
-				break;
-            }
-			case AVKeyValueStatusCancelled:
-            {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.mediaAsset = nil;
-                    [self _endNextItemHandover];
-                });
-				break;
-            }
-            default:
-                break;
-		}
-	}];
+    [self _continueOpeningAsset:self.mediaAsset autostart:autostart];
 }
 
 - (void)updateNowPlayingInfo {
@@ -3585,9 +3560,18 @@ didReceiveResponse:(NSURLResponse *)response
 	}
 	
 	AVPlayerItem* item = self.player.currentItem;
-	CMTimeRange loadRange = [[item.loadedTimeRanges lastObject] CMTimeRangeValue];
-	NSTimeInterval dur =  (NSTimeInterval)((double)loadRange.start.value / (double)loadRange.start.timescale + (double)loadRange.duration.value / (double)loadRange.duration.timescale);
-    return floorf(dur);
+    NSValue* loadedTimeRangeValue = [item.loadedTimeRanges lastObject];
+    if (!loadedTimeRangeValue) {
+        return 0.0f;
+    }
+
+	CMTimeRange loadRange = [loadedTimeRangeValue CMTimeRangeValue];
+    if (!CMTIMERANGE_IS_VALID(loadRange)) {
+        return 0.0f;
+    }
+
+    NSTimeInterval dur = CMTimeGetSeconds(CMTimeRangeGetEnd(loadRange));
+    return (isfinite(dur) && dur >= 0) ? floor(dur) : 0.0f;
 }
 
 - (void) stopAirPlayVideo

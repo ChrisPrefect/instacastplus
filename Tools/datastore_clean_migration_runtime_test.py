@@ -11,8 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL4 = ROOT / "Resources" / "Models" / "Model4.xcdatamodeld" / "Model.xcdatamodel"
-MODEL7 = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model7.xcdatamodel"
 MODEL8 = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model8.xcdatamodel"
+MODEL9 = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / "Model9.xcdatamodel"
 
 SWIFT_PROOF = r'''
 import CoreData
@@ -418,8 +418,8 @@ func runFixture(
 
 let environment = ProcessInfo.processInfo.environment
 guard let model4Path = environment["PUBLISHED_MODEL4_MOM"],
-      let model7Path = environment["PREDECESSOR_MODEL7_MOM"],
-      let model8Path = environment["CURRENT_MODEL8_MOM"],
+      let model8Path = environment["PREDECESSOR_MODEL8_MOM"],
+      let model9Path = environment["CURRENT_MODEL9_MOM"],
       let storeDirectory = environment["MIGRATION_STORE_DIRECTORY"] else {
     fatalError("Missing clean migration proof paths")
 }
@@ -427,21 +427,21 @@ let directory = URL(fileURLWithPath: storeDirectory, isDirectory: true)
 try runFixture(
     label: "published-model4",
     sourceModelPath: model4Path,
-    currentModelPath: model8Path,
+    currentModelPath: model9Path,
     directory: directory,
     includeBinaryRows: false
 )
 try runFixture(
-    label: "predecessor-model7",
-    sourceModelPath: model7Path,
-    currentModelPath: model8Path,
+    label: "predecessor-model8",
+    sourceModelPath: model8Path,
+    currentModelPath: model9Path,
     directory: directory,
     includeBinaryRows: true
 )
 try runFixture(
-    label: "current-model8",
-    sourceModelPath: model8Path,
-    currentModelPath: model8Path,
+    label: "current-model9",
+    sourceModelPath: model9Path,
+    currentModelPath: model9Path,
     directory: directory,
     includeBinaryRows: true
 )
@@ -472,9 +472,9 @@ with tempfile.TemporaryDirectory(prefix="instacast-clean-datastore-migration-") 
         ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True
     ).strip()
     model4_mom = temporary / "PublishedModel4.mom"
-    model7_mom = temporary / "PredecessorModel7.mom"
-    model8_mom = temporary / "CurrentModel8.mom"
-    for source, destination in [(MODEL4, model4_mom), (MODEL7, model7_mom), (MODEL8, model8_mom)]:
+    model8_mom = temporary / "PredecessorModel8.mom"
+    model9_mom = temporary / "CurrentModel9.mom"
+    for source, destination in [(MODEL4, model4_mom), (MODEL8, model8_mom), (MODEL9, model9_mom)]:
         run([
             "xcrun",
             "momc",
@@ -487,8 +487,8 @@ with tempfile.TemporaryDirectory(prefix="instacast-clean-datastore-migration-") 
     proof_environment = os.environ.copy()
     proof_environment.update({
         "PUBLISHED_MODEL4_MOM": str(model4_mom),
-        "PREDECESSOR_MODEL7_MOM": str(model7_mom),
-        "CURRENT_MODEL8_MOM": str(model8_mom),
+        "PREDECESSOR_MODEL8_MOM": str(model8_mom),
+        "CURRENT_MODEL9_MOM": str(model9_mom),
         "MIGRATION_STORE_DIRECTORY": str(temporary),
     })
     run(["xcrun", "swift", "-e", SWIFT_PROOF], environment=proof_environment)

@@ -54,6 +54,7 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 @dynamic groupByPodcast;
 @dynamic descending;
 @dynamic continuousPlayback;
+@dynamic usePodcastArtwork;
 
 @dynamic includedFeeds;
 @dynamic episodes;
@@ -90,8 +91,9 @@ NSString* kEpisodeIconUnplayed = @"List Unplayed";
 {
     [super awakeFromInsert];
 
-    // Match the model's defaultValueString="YES"
+    // Match the model defaults explicitly.
     self.continuousPlayback = YES;
+    self.usePodcastArtwork = NO;
 
     if (self.managedObjectContext.concurrencyType == NSMainQueueConcurrencyType) {
         [self setObserving:YES];

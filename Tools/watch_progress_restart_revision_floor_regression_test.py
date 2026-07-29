@@ -12,23 +12,18 @@ accept the delayed terminal event and move the episode back to an older attempt.
 """
 
 from pathlib import Path
+import plistlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MANAGER = (ROOT / "Classes" / "AppleWatchSyncManager.m").read_text()
 CONTROLLER = (ROOT / "Classes" / "AppleWatchEpisodesViewController.m").read_text()
 DATABASE = (ROOT / "Classes" / "Model" / "DatabaseManager.m").read_text()
-MODEL = (
-    ROOT
-    / "Resources"
-    / "Models"
-    / "Model5.xcdatamodeld"
-    / "Model8.xcdatamodel"
-    / "contents"
-).read_text()
-CURRENT_MODEL = (
-    ROOT / "Resources" / "Models" / "Model5.xcdatamodeld" / ".xccurrentversion"
-).read_text()
+MODEL_DIRECTORY = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld"
+CURRENT_MODEL = plistlib.loads(
+    (MODEL_DIRECTORY / ".xccurrentversion").read_bytes()
+).get("_XCCurrentVersionName")
+MODEL = (MODEL_DIRECTORY / CURRENT_MODEL / "contents").read_text()
 
 
 def require(condition: bool, message: str) -> None:
@@ -121,7 +116,6 @@ require(
 require(
     'name="watchLastEventRevision" optional="YES" attributeType="Integer 64" '
     'defaultValueString="0"' in MODEL
-    and "Model8.xcdatamodel" in CURRENT_MODEL
     and "shouldMigrateStoreAutomatically = YES" in DATABASE
     and "shouldInferMappingModelAutomatically = YES" in DATABASE,
     "Existing installations must lightweight-migrate the optional revision floor to zero; the "

@@ -38,6 +38,7 @@ typedef enum {
 
 - (void) reloadDataAndPreserveSelection;
 - (BOOL) showsImage;
+- (NSURL*) artworkURLForEpisode:(CDEpisode*)episode;
 - (BOOL) canArchiveEpisodes;
 - (BOOL) canPlayMultiple;
 

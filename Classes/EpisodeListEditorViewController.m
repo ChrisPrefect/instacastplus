@@ -14,6 +14,7 @@
 #import "EpisodeListPodcastSelectionTableViewController.h"
 #import "ICListEditorPodcastCell.h"
 #import "InstacastAppDelegate.h"
+#import "SettingsValuesTableViewController.h"
 
 enum {
     kSectionAppearance,
@@ -54,6 +55,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
 @property (nonatomic) BOOL descending;
 @property (nonatomic) BOOL groupByPodcast;
 @property (nonatomic) BOOL continuousPlayback;
+@property (nonatomic) BOOL usePodcastArtwork;
 @property (nonatomic) BOOL showInMainMenu;
 
 @property (nonatomic, strong) EpisodeListPodcastSelectionTableViewController* podcastSelectionController;
@@ -121,6 +123,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         self.descending = list.descending;
         self.orderBy = list.orderBy;
         self.continuousPlayback = list.continuousPlayback;
+        self.usePodcastArtwork = list.usePodcastArtwork;
 
         NSArray* mainMenuUIDs = [USER_DEFAULTS objectForKey:@"MainMenuListUIDs"];
         self.showInMainMenu = (list.uid && [mainMenuUIDs containsObject:list.uid]);
@@ -149,6 +152,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
         self.descending = YES;
         self.orderBy = @"pubDate";
         self.continuousPlayback = YES;
+        self.usePodcastArtwork = NO;
         self.showInMainMenu = NO;
 
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Add".ls
@@ -222,6 +226,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
     list.descending = self.descending;
     list.orderBy = self.orderBy;
     list.continuousPlayback = self.continuousPlayback;
+    list.usePodcastArtwork = self.usePodcastArtwork;
 
     // Only set rank for new lists — place at the end
     if (!self.episodeList) {
@@ -334,7 +339,7 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
 {
     switch (section) {
         case kSectionAppearance:
-            return 2;
+            return 3;
         case kSectionIncludeAttributes:
             return 4;
         case kSectionIncludeSearch:
@@ -406,6 +411,14 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
                     cell.buttonTappedAtIndex = ^(UIButton* sender, NSInteger index) {
                         self.selectedIcon = [[self _possibleIconNames] objectAtIndex:index];
                     };
+
+                    return cell;
+                }
+                case 2:
+                {
+                    UITableViewCell* cell = [self detailCell];
+                    cell.textLabel.text = @"Artwork".ls;
+                    cell.detailTextLabel.text = self.usePodcastArtwork ? @"Podcast Artwork".ls : @"Episode Artwork".ls;
 
                     return cell;
                 }
@@ -859,7 +872,20 @@ static NSString* kButtonCellIdentifier = @"ButtonCell";
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == kSectionOrderBy || indexPath.section == kSectionOrderOptions)
+    if (indexPath.section == kSectionAppearance && indexPath.row == 2)
+    {
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.valueType = kSettingTypeInteger;
+        controller.title = @"Artwork".ls;
+        controller.selectedValue = @(self.usePodcastArtwork);
+        controller.values = @[ @NO, @YES ];
+        controller.titles = @[ @"Episode Artwork".ls, @"Podcast Artwork".ls ];
+        controller.selectionHandler = ^(id value) {
+            self.usePodcastArtwork = [value boolValue];
+        };
+        [self.navigationController pushViewController:controller animated:YES];
+    }
+    else if (indexPath.section == kSectionOrderBy || indexPath.section == kSectionOrderOptions)
     {
         UITableViewCell* selectedCell = [tableView cellForRowAtIndexPath:indexPath];
         if (selectedCell.selectionStyle == UITableViewCellSelectionStyleNone) {

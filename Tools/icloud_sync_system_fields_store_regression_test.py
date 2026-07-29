@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "Resources" / "Models" / "Model5.xcdatamodeld"
 MODEL7_PATH = MODEL_DIR / "Model7.xcdatamodel" / "contents"
 MODEL8_PATH = MODEL_DIR / "Model8.xcdatamodel" / "contents"
+MODEL9_PATH = MODEL_DIR / "Model9.xcdatamodel" / "contents"
 PROJECT = (ROOT / "Instacast.xcodeproj" / "project.pbxproj").read_text()
 DATABASE = (ROOT / "Classes" / "Model" / "DatabaseManager.m").read_text()
 MANAGER = (ROOT / "Classes" / "ICiCloudSyncManager.swift").read_text()
@@ -40,13 +41,14 @@ def body(source: str, signature: str) -> str:
 
 require(MODEL7_PATH.exists(),
         "The indexed CKRecord system-field store needs additive Core Data Model7.")
-require(MODEL8_PATH.exists(), "The current Model8 must preserve the Model7 system-field store.")
+require(MODEL8_PATH.exists(), "Model8 must preserve the Model7 system-field store.")
+require(MODEL9_PATH.exists(), "The current Model9 must preserve the Model8 system-field store.")
 current_version = plistlib.loads((MODEL_DIR / ".xccurrentversion").read_bytes())
-require(current_version.get("_XCCurrentVersionName") == "Model8.xcdatamodel",
-        "Model8 must be the compiled current Core Data model.")
-require("Model8.xcdatamodel" in PROJECT
-        and "currentVersion = F800B0A17E2D4B00A10B0001 /* Model8.xcdatamodel */;" in PROJECT,
-        "The Xcode version group must compile Model8 as current.")
+require(current_version.get("_XCCurrentVersionName") == "Model9.xcdatamodel",
+        "Model9 must be the compiled current Core Data model.")
+require("Model9.xcdatamodel" in PROJECT
+        and "currentVersion = F900B0A17E2D4B00A10B0001 /* Model9.xcdatamodel */;" in PROJECT,
+        "The Xcode version group must compile Model9 as current.")
 
 model7 = ET.parse(MODEL7_PATH).getroot()
 system_fields = model7.find("./entity[@name='ICCloudKnownRecordSystemFields']")
@@ -70,6 +72,10 @@ model8 = ET.parse(MODEL8_PATH).getroot()
 model8_system_fields = model8.find("./entity[@name='ICCloudKnownRecordSystemFields']")
 require(ET.tostring(model8_system_fields) == ET.tostring(system_fields),
         "Model8 must not alter the shipped Model7 system-field entity.")
+model9 = ET.parse(MODEL9_PATH).getroot()
+model9_system_fields = model9.find("./entity[@name='ICCloudKnownRecordSystemFields']")
+require(ET.tostring(model9_system_fields) == ET.tostring(model8_system_fields),
+        "Model9 must not alter the shipped Model8 system-field entity.")
 
 
 def entity_xml(entity: ET.Element) -> bytes:

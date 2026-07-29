@@ -113,7 +113,6 @@ enum {
     [super viewWillAppear:animated];
     [self updateAppearance];
     [self syncAppleWatchSettingsIfNeeded];
-    [self _reloadArchivedEpisodeCount];
     [self.navigationController setToolbarHidden:YES animated:YES];
 }
 
@@ -121,6 +120,7 @@ enum {
 {
     [super viewDidAppear:animated];
     [self.tableView reloadData];
+    [self _reloadArchivedEpisodeCount];
 }
 
 - (void) updateAppearance {

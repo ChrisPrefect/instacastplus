@@ -114,12 +114,18 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     private var metadataByItem: [ObjectIdentifier: (podcastURL: URL?, duration: Double)] = [:]
     private var serverIDByItem: [ObjectIdentifier: Int] = [:]
     private var currentTask: Task<Void, Never>?
+    private var currentItem: ICTranscriptionQueueItem?
     private var retryWakeTask: Task<Void, Never>?
 
+    /// The initializer must not publish state. `shared` is a `static let`, so init runs
+    /// inside `swift_once`: `resumeIfNeeded()` → `processNext()` → `postQueueChange()`
+    /// posted a notification while `shared` was still being created, the observer read
+    /// `TranscriptionQueue.displayItems`, that re-entered `ServerTranscriptionManager.shared`
+    /// and the re-entrant once-token trapped (EXC_BREAKPOINT at launch).
+    /// Resuming is owned by the launch/foreground path (`TranscriptionQueue.resumeIfNeeded`).
     private override init() {
         super.init()
         loadPersistedQueue()
-        resumeIfNeeded()
     }
 
     @objc var isProcessing: Bool { currentTask != nil }
@@ -191,7 +197,9 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
 
     @objc func dequeueEpisodeHash(_ episodeHash: String) {
         guard let item = items.first(where: { $0.episodeHash == episodeHash && $0.usesServerTranscription }) else { return }
-        currentTask?.cancel()
+        if currentItem === item {
+            currentTask?.cancel()
+        }
         items.removeAll { $0 === item }
         removeMetadata(for: item)
         persistQueue()
@@ -275,6 +283,9 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         }
         guard let episodeURL = endpointByItem[ObjectIdentifier(item)] else {
             fail(item, message: NSLocalizedString("Die URL der Server-Transkription fehlt.", comment: ""))
+            persistQueue()
+            postQueueChange()
+            processNext()
             return
         }
 
@@ -283,8 +294,16 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         item.statusDetail = NSLocalizedString("Server verarbeitet die Episode.", comment: "")
         postQueueChange()
 
+        currentItem = item
         currentTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                self.currentItem = nil
+                self.currentTask = nil
+                self.persistQueue()
+                self.postQueueChange()
+                self.processNext()
+            }
             do {
                 let envelope: ICServerEpisodeEnvelope
                 if let serverID = self.serverIDByItem[ObjectIdentifier(item)] {
@@ -300,6 +319,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
             } catch is CancellationError {
                 // The durable queue entry remains untouched and can resume.
             } catch {
+                guard !Task.isCancelled else { return }
                 await self.handle(error: error, for: item)
             }
         }
@@ -344,10 +364,6 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         default:
             fail(item, message: NSLocalizedString("Der Server lieferte einen unbekannten Verarbeitungsstatus.", comment: ""))
         }
-        currentTask = nil
-        persistQueue()
-        postQueueChange()
-        processNext()
     }
 
     private func requeue(_ item: ICTranscriptionQueueItem, after seconds: Int?) {
@@ -371,10 +387,6 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
                                           phase: "error",
                                           message: NSLocalizedString("Server-Transkription fehlgeschlagen", comment: ""),
                                           detailText: message)
-        currentTask = nil
-        persistQueue()
-        postQueueChange()
-        processNext()
     }
 
     private func handle(error: Error, for item: ICTranscriptionQueueItem) async {
@@ -385,10 +397,6 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         }
         requeue(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay))
         item.statusDetail = NSLocalizedString("Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.", comment: "")
-        currentTask = nil
-        persistQueue()
-        postQueueChange()
-        processNext()
     }
 
     private func submitEpisode(url: URL, podcastURL: URL?, title: String, duration: Double) async throws -> ICServerEpisodeEnvelope {

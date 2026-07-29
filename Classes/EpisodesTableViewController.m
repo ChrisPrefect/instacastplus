@@ -291,6 +291,11 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
     return YES;
 }
 
+- (NSURL*) artworkURLForEpisode:(CDEpisode*)episode
+{
+    return episode.imageURL ?: episode.feed.imageURL;
+}
+
 - (BOOL) canArchiveEpisodes
 {
     return YES;
@@ -2631,7 +2636,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     {
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
         
-        NSURL* imageURL = (episode.imageURL) ? episode.imageURL : feed.imageURL;
+        NSURL* imageURL = [self artworkURLForEpisode:episode];
         if (!imageURL) {
             return;
         }
@@ -2677,7 +2682,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     
     if (self.showsImage) {
         cell.iconView.image = [UIImage imageNamed:@"Podcast Placeholder 56"];
-        NSURL* imageURL = (episode.imageURL) ? episode.imageURL : episode.feed.imageURL;
+        NSURL* imageURL = [self artworkURLForEpisode:episode];
         
         ImageCacheManager* iman = [ImageCacheManager sharedImageCacheManager];
         __weak EpisodesTableViewCell* weakCell = cell;

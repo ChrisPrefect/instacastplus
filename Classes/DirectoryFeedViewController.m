@@ -188,7 +188,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
     [content appendString:@"</table>"];
     
-    if (feed.firstPageURL != feed.lastPageURL) {
+    if ((feed.firstPageURL || feed.lastPageURL) && ![feed.firstPageURL isEqual:feed.lastPageURL]) {
         [content appendFormat:@"<div id=\"load_more\" ontouchstart=""><a href=\"delegate://load-more-episodes\">%@</a></div>", @"Load older episodes…".ls];
     }
     

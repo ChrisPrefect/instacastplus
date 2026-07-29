@@ -3037,6 +3037,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             existingList.descending = backupList.descending;
             existingList.groupByPodcast = backupList.groupByPodcast;
             existingList.continuousPlayback = backupList.continuousPlayback;
+            existingList.usePodcastArtwork = backupList.usePodcastArtwork;
 
             if (backupList.includedFeedURLs.count > 0) {
                 NSMutableSet *feeds = [NSMutableSet set];
@@ -3071,6 +3072,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             newList.descending = backupList.descending;
             newList.groupByPodcast = backupList.groupByPodcast;
             newList.continuousPlayback = backupList.continuousPlayback;
+            newList.usePodcastArtwork = backupList.usePodcastArtwork;
 
             if (backupList.includedFeedURLs.count > 0) {
                 NSMutableSet *feeds = [NSMutableSet set];
