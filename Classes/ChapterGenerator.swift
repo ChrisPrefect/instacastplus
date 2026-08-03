@@ -1096,38 +1096,62 @@ private struct RemoteJSONObjectResult {
                                      transcriptRevision: transcriptRevision)
     }
 
-    /// Imports the verified server result using the same local artifact format as
-    /// on-device analysis. Sponsor boundaries are rebased to complete local SRT
-    /// cues before the existing chapter overlay is written.
-    func saveServerAnalysis(_ existingChapters: [ICGeneratedChapter],
+    /// Creates a verified server result using the same validation and overlay
+    /// path as on-device analysis. Server sponsor bounds must already be exact
+    /// canonical SRT cue bounds; imprecise ranges are rejected.
+    func makeServerAnalysis(_ existingChapters: [ICGeneratedChapter],
                             sponsorSegments: [ICSponsorSegment],
                             summary: String,
-                            transcriptCues cues: [ICTranscriptCue],
-                            for episodeHash: String) throws {
+                            transcriptCues cues: [ICTranscriptCue]) throws -> EpisodeAnalysisResult {
         let cueIDs = evidenceCueIDs(for: cues)
-        let rebasedSponsors = try sponsorSegments.map { segment -> ICSponsorSegment in
-            guard let first = cues.firstIndex(where: { $0.end > segment.start }),
-                  let last = cues.lastIndex(where: { $0.start < segment.end }),
+        let boundedSponsors = try sponsorSegments.map { segment -> ICSponsorSegment in
+            guard let first = cues.firstIndex(where: {
+                      Self.sameCanonicalMillisecond($0.start, segment.start)
+                  }),
+                  let last = cues.lastIndex(where: {
+                      Self.sameCanonicalMillisecond($0.end, segment.end)
+                  }),
                   last >= first else {
                 throw Self.sponsorValidationError(
                     code: 84,
-                    description: "Sponsor-Erkennung verworfen - der Serverblock liegt ausserhalb des Transkripts."
+                    description: "Sponsor-Erkennung verworfen - Servergrenzen liegen nicht exakt auf Transkript-Cues."
                 )
             }
             let title = segment.title.hasPrefix("Sponsor: ")
                 ? segment.title
                 : "Sponsor: \(segment.title)"
-            return ICSponsorSegment(start: cues[first].start,
-                                    end: cues[last].end,
+            return ICSponsorSegment(start: segment.start,
+                                    end: segment.end,
                                     title: title,
                                     evidenceCueIDs: Array(cueIDs[first...last]))
         }
-        let result = try makeAnalysisResult(existingChapters: existingChapters,
-                                            sponsorSegments: rebasedSponsors,
+        return try makeAnalysisResult(existingChapters: existingChapters,
+                                      sponsorSegments: boundedSponsors,
+                                      summary: summary,
+                                      transcriptRevision: transcriptRevision(for: cues),
+                                      transcriptCues: cues)
+    }
+
+    /// Imports the verified server result using the same local artifact format as
+    /// on-device analysis.
+    func saveServerAnalysis(_ existingChapters: [ICGeneratedChapter],
+                            sponsorSegments: [ICSponsorSegment],
+                            summary: String,
+                            transcriptCues cues: [ICTranscriptCue],
+                            for episodeHash: String) throws {
+        let result = try makeServerAnalysis(existingChapters,
+                                            sponsorSegments: sponsorSegments,
                                             summary: summary,
-                                            transcriptRevision: transcriptRevision(for: cues),
                                             transcriptCues: cues)
         try saveAnalysisResult(result, for: episodeHash)
+    }
+
+    private static func sameCanonicalMillisecond(_ lhs: Double, _ rhs: Double) -> Bool {
+        let maximumTime = Double(Int64.max) / 1_000
+        guard lhs.isFinite, rhs.isFinite,
+              lhs >= 0, rhs >= 0,
+              lhs <= maximumTime, rhs <= maximumTime else { return false }
+        return Int64((lhs * 1_000).rounded()) == Int64((rhs * 1_000).rounded())
     }
 
     private static func makeTranscriptRevision(for cues: [ICTranscriptCue]) -> String {
@@ -6669,8 +6693,8 @@ private struct RemoteJSONObjectResult {
         return Self.coalescedSponsorOverlayChapters(result)
     }
 
-    /// A single detected sponsor interval is split while it is overlaid across
-    /// publisher chapter boundaries. Join only those mechanically split pieces;
+    /// A detected sponsor interval can be split at publisher boundaries. Join
+    /// those pieces and matching publisher chapters already tagged "Sponsor: ";
     /// adjacent ads with different titles remain separate sponsor chapters.
     private static func coalescedSponsorOverlayChapters(
         _ chapters: [ICGeneratedChapter]
@@ -6678,21 +6702,24 @@ private struct RemoteJSONObjectResult {
         var coalesced: [ICGeneratedChapter] = []
         var coalescedBoundaryCount = 0
         for chapter in chapters {
-            if let previous = coalesced.last,
-               previous.isSponsor,
-               chapter.isSponsor,
-               previous.title == chapter.title,
-               abs(previous.end - chapter.start) <= 0.001 {
-                coalesced[coalesced.count - 1] = ICGeneratedChapter(
-                    start: previous.start,
-                    end: chapter.end,
-                    title: previous.title,
-                    isSponsor: true
-                )
-                coalescedBoundaryCount += 1
-            } else {
-                coalesced.append(chapter)
+            let chapterIsSponsor = chapter.isSponsor || Self.isValidSponsorChapterTitle(chapter.title)
+            if let previous = coalesced.last {
+                let previousIsSponsor = previous.isSponsor || Self.isValidSponsorChapterTitle(previous.title)
+                if previousIsSponsor,
+                   chapterIsSponsor,
+                   previous.title == chapter.title,
+                   abs(previous.end - chapter.start) <= 0.001 {
+                    coalesced[coalesced.count - 1] = ICGeneratedChapter(
+                        start: previous.start,
+                        end: chapter.end,
+                        title: previous.title,
+                        isSponsor: true
+                    )
+                    coalescedBoundaryCount += 1
+                    continue
+                }
             }
+            coalesced.append(chapter)
         }
         if coalescedBoundaryCount > 0 {
             ICDiagnosticLogger.shared.logEvent(

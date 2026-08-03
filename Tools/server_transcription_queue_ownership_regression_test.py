@@ -54,8 +54,8 @@ cleanup_match = re.search(
     r"self\.currentItem = nil\s*"
     r"self\.currentTask = nil\s*"
     r"self\.persistQueue\(\)\s*"
-    r"self\.postQueueChange\(\)\s*"
     r"self\.processNext\(\)\s*"
+    r"self\.postQueueChange\(\)\s*"
     r"\}",
     process,
 )

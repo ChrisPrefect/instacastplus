@@ -1202,7 +1202,10 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         parsePersistedSRTDetailed(content).cues
     }
 
-    private func parsePersistedSRTDetailed(_ content: String) -> (cues: [ICTranscriptCue], rejection: ICSRTRejection?) {
+    private func parsePersistedSRTDetailed(
+        _ content: String,
+        requiresCanonicalTimeLines: Bool = false
+    ) -> (cues: [ICTranscriptCue], rejection: ICSRTRejection?) {
         let lines = content.components(separatedBy: .newlines)
         var cues: [ICTranscriptCue] = []
         var lineIndex = 0
@@ -1214,7 +1217,8 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         }
 
         while lineIndex < lines.count {
-            var line = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            var rawLine = lines[lineIndex]
+            var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty {
                 lineIndex += 1
                 continue
@@ -1224,7 +1228,11 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                 guard lineIndex < lines.count else {
                     return reject(lineIndex - 1, "Datei endet nach einer Indexzeile ohne Zeitzeile")
                 }
-                line = lines[lineIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+                rawLine = lines[lineIndex]
+                line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if requiresCanonicalTimeLines, !isCanonicalServerSRTTimeLine(rawLine) {
+                return reject(lineIndex, "erwartete Zeitzeile HH:MM:SS,mmm --> HH:MM:SS,mmm")
             }
             let timeParts = line.components(separatedBy: "-->")
             guard timeParts.count == 2 else {
@@ -1261,16 +1269,17 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         return (cues, nil)
     }
 
-    /// Validates a server-delivered SRT before it replaces the local transcript.
-    /// The final write goes through the normal importer so revisions and caches
-    /// stay identical to locally generated transcripts.
-    func importServerSRTData(_ data: Data, for episodeHash: String) throws -> [ICTranscriptCue] {
+    /// Validates a server-delivered SRT without changing the current transcript.
+    /// The caller can therefore validate every semantic artifact before committing
+    /// any part of a ready server result.
+    func validateServerSRTData(_ data: Data, for episodeHash: String) throws -> [ICTranscriptCue] {
         guard !episodeHash.isEmpty,
-              let content = String(data: data, encoding: .utf8) else {
+              let content = String(data: data, encoding: .utf8),
+              !content.contains("\r") else {
             throw NSError(domain: "TranscriptionEngine.ServerImport", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript ist ungültig.", comment: "")])
         }
-        let parsed = parsePersistedSRTDetailed(content)
+        let parsed = parsePersistedSRTDetailed(content, requiresCanonicalTimeLines: true)
         let cues = parsed.cues
         guard !cues.isEmpty else {
             // The transcript is rejected as before — but the message has to name what the
@@ -1291,7 +1300,58 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                           userInfo: [NSLocalizedDescriptionKey:
                                         String(format: NSLocalizedString("Das Server-Transkript wurde abgelehnt (%@).", comment: ""), detail)])
         }
-        try saveImportedTranscriptCues(cues, for: episodeHash)
+        return cues
+    }
+
+    private func isCanonicalServerSRTTimeLine(_ line: String) -> Bool {
+        line.range(
+            of: "^[0-9]{2}:[0-5][0-9]:[0-5][0-9],[0-9]{3} --> [0-9]{2}:[0-5][0-9]:[0-5][0-9],[0-9]{3}$",
+            options: .regularExpression
+        ) != nil
+    }
+
+    /// Persists the exact bytes that were validated. Reformatting parsed Double
+    /// timestamps could change a documented millisecond cue boundary and would no
+    /// longer match the server's sponsor artifacts.
+    func saveValidatedServerSRTData(_ data: Data,
+                                    cues: [ICTranscriptCue],
+                                    for episodeHash: String) throws {
+        guard !episodeHash.isEmpty, !cues.isEmpty else {
+            throw NSError(domain: "TranscriptionEngine.ServerImport", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Transkript ist ungültig.", comment: "")])
+        }
+        let url = ICTranscriptionPaths.srtURL(for: episodeHash)
+        do {
+            try data.write(to: url, options: .atomic)
+            invalidateSRTCache(for: episodeHash)
+            ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
+            ICDiagnosticLogger.shared.logFileEvent("file-write",
+                                                   message: "Validiertes Server-SRT geschrieben",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "cueCount": cues.count,
+                                                    "bytes": data.count,
+                                                   ] as NSDictionary)
+        } catch {
+            ICDiagnosticLogger.shared.logFileEvent("file-write",
+                                                   message: "Validiertes Server-SRT konnte nicht geschrieben werden",
+                                                   path: url.path,
+                                                   metadata: [
+                                                    "episodeHash": episodeHash,
+                                                    "cueCount": cues.count,
+                                                    "bytes": data.count,
+                                                    "error": error.localizedDescription,
+                                                   ] as NSDictionary)
+            throw error
+        }
+        ICDiagnosticLogger.shared.logEpisodeArtifacts(episodeHash: episodeHash, reason: "server-srt-written")
+    }
+
+    /// Compatibility entry point for callers that import only a server transcript.
+    func importServerSRTData(_ data: Data, for episodeHash: String) throws -> [ICTranscriptCue] {
+        let cues = try validateServerSRTData(data, for: episodeHash)
+        try saveValidatedServerSRTData(data, cues: cues, for: episodeHash)
         return cues
     }
 

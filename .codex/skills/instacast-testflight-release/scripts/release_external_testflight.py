@@ -3,13 +3,14 @@ import argparse
 import base64
 import datetime
 import json
-import re
-import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 
 BASE_URL = "https://api.appstoreconnect.apple.com/v1"
@@ -32,32 +33,35 @@ class ASCClient:
         if self._token and time.time() < self._token_exp - 30:
             return self._token
 
-        result = subprocess.run(
+        now = int(time.time())
+        exp = now + 20 * 60
+        header = {"alg": "ES256", "kid": self.key_id, "typ": "JWT"}
+        payload = {"iss": self.issuer_id, "iat": now, "exp": exp, "aud": "appstoreconnect-v1"}
+        signing_input = ".".join(
             [
-                "xcrun",
-                "altool",
-                "--generate-jwt",
-                "--apiKey",
-                self.key_id,
-                "--apiIssuer",
-                self.issuer_id,
-                "--p8-file-path",
-                self.key_path,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
+                self._base64url_json(header),
+                self._base64url_json(payload),
+            ]
         )
-        match = re.search(
-            r"([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)",
-            result.stdout + "\n" + result.stderr,
-        )
-        if not match:
-            raise RuntimeError("Could not read ASC JWT from altool output")
 
-        self._token = match.group(1)
+        with open(self.key_path, "rb") as key_file:
+            private_key = serialization.load_pem_private_key(key_file.read(), password=None)
+        signature_der = private_key.sign(signing_input.encode("ascii"), ec.ECDSA(hashes.SHA256()))
+        r, s = utils.decode_dss_signature(signature_der)
+        signature = r.to_bytes(32, byteorder="big") + s.to_bytes(32, byteorder="big")
+
+        self._token = signing_input + "." + self._base64url(signature)
         self._token_exp = self._jwt_expiry(self._token)
         return self._token
+
+    @staticmethod
+    def _base64url(raw):
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    @classmethod
+    def _base64url_json(cls, payload):
+        raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return cls._base64url(raw)
 
     @staticmethod
     def _jwt_expiry(token):

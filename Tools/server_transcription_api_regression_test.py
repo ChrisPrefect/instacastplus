@@ -47,25 +47,30 @@ for kind in ('"transcript_srt"', '"chapters_json"', '"ads_json"', '"summary_json
     require(kind in manager, f"Ready server results do not require {kind}.")
 require(
     'SHA256.hash(data: data)' in manager
-    and 'importServerSRTData' in manager
-    and 'saveServerAnalysis' in manager,
-    "Server artifacts are not integrity-checked and atomically imported through the local formats.",
+    and 'data.count == artifact.byteSize' in manager
+    and 'validateServerSRTData' in manager
+    and 'validateServerArtifacts' in manager
+    and 'saveValidatedServerSRTData' in manager
+    and 'saveAnalysisResult' in manager,
+    "Server artifacts are not fully integrity-checked and validated before import.",
 )
 require(
-    'publisherChapters(for: episode, fallback: chapters)' in manager
-    and 'ads.map' in manager
-    and 'saveServerAnalysis' in manager,
+    'publisherChapters(for: episode, fallback: chaptersArtifact.chapters)' in manager
+    and 'adsArtifact.segments.map' in manager
+    and 'makeServerAnalysis' in manager,
     "Server sponsors are not overlaid onto existing client chapters.",
 )
 require(
-    'Sponsor: \\(segment.title)' in chapters
+    'sameCanonicalMillisecond($0.start, segment.start)' in chapters
+    and 'sameCanonicalMillisecond($0.end, segment.end)' in chapters
     and 'Array(cueIDs[first...last])' in chapters,
-    "Server sponsor ranges are not rebased to complete local transcript cues.",
+    "Server sponsor ranges are not required to match exact canonical local transcript cues.",
 )
 require(
     'parsePersistedSRT(content)' in engine
+    and 'validateServerSRTData' in engine
     and 'importServerSRTData' in engine
-    and 'saveImportedTranscriptCues(cues' in engine,
+    and 'saveValidatedServerSRTData' in engine,
     "Server SRT data is not validated before it replaces the persisted transcript.",
 )
 require(

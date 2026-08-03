@@ -304,6 +304,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     __block BOOL executionPathCompleted = NO;
     __block BOOL persistenceWaitLogged = NO;
     __block BOOL persistenceRetryAttempted = NO;
+    __block BOOL serverPersistenceRetryAttempted = NO;
     void (^completeTask)(BOOL, NSString*) = ^(BOOL success, NSString* reason) {
         if (taskCompleted) return;
         if (!completionRequested) {
@@ -348,6 +349,22 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         if (queuePersistenceError) {
             requestedSuccess = NO;
             requestedReason = @"queue-persistence-failed";
+        }
+        NSError* serverQueuePersistenceError = [ServerTranscriptionManager shared].queuePersistenceError;
+        if (serverQueuePersistenceError && !serverPersistenceRetryAttempted) {
+            serverPersistenceRetryAttempted = YES;
+            [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                          message:@"BGProcessingTask wiederholt fehlgeschlagenen Server-Queue-Snapshot"
+                                         metadata:@{
+                                             @"path": ICTranscriptionLegacyProcessingPath,
+                                             @"error": serverQueuePersistenceError.localizedDescription ?: @"",
+                                         }];
+            [[ServerTranscriptionManager shared] retryQueuePersistenceAfterFailure];
+            return;
+        }
+        if (serverQueuePersistenceError) {
+            requestedSuccess = NO;
+            requestedReason = @"server-queue-persistence-failed";
         }
         success = requestedSuccess;
         reason = requestedReason;
@@ -398,6 +415,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
             return;
         }
         if (!queue.isProcessing && queue.currentItem == nil &&
+            ![ServerTranscriptionManager shared].isProcessing &&
             !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
             completeTask(YES, @"legacy-processing-completed");
         }
@@ -409,6 +427,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                                                            usingBlock:^(__unused NSNotification *note) {
         TranscriptionQueue* queue = [TranscriptionQueue shared];
         if (!queue.isProcessing && queue.currentItem == nil &&
+            ![ServerTranscriptionManager shared].isProcessing &&
             !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
             completeTask(YES, @"remote-cancellation-reconciled");
         }
@@ -417,6 +436,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     [[TranscriptionQueue shared] resumeIfNeeded];
     TranscriptionQueue* queue = [TranscriptionQueue shared];
     if (!queue.isProcessing && queue.currentItem == nil &&
+        ![ServerTranscriptionManager shared].isProcessing &&
         !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
         completeTask(YES, @"legacy-processing-empty");
     }
@@ -471,6 +491,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     __block BOOL executionPathCompleted = NO;
     __block BOOL persistenceWaitLogged = NO;
     __block BOOL persistenceRetryAttempted = NO;
+    __block BOOL serverPersistenceRetryAttempted = NO;
 
     continuedTask.progress.totalUnitCount = 1000;
     continuedTask.progress.completedUnitCount = 0;
@@ -519,6 +540,22 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
         if (queuePersistenceError) {
             requestedSuccess = NO;
             requestedReason = @"queue-persistence-failed";
+        }
+        NSError* serverQueuePersistenceError = [ServerTranscriptionManager shared].queuePersistenceError;
+        if (serverQueuePersistenceError && !serverPersistenceRetryAttempted) {
+            serverPersistenceRetryAttempted = YES;
+            [[ICDiagnosticLogger shared] logEvent:@"background-task"
+                                          message:@"BGContinuedProcessingTask wiederholt fehlgeschlagenen Server-Queue-Snapshot"
+                                         metadata:@{
+                                             @"path": continuedPath,
+                                             @"error": serverQueuePersistenceError.localizedDescription ?: @"",
+                                         }];
+            [[ServerTranscriptionManager shared] retryQueuePersistenceAfterFailure];
+            return;
+        }
+        if (serverQueuePersistenceError) {
+            requestedSuccess = NO;
+            requestedReason = @"server-queue-persistence-failed";
         }
         success = requestedSuccess;
         reason = requestedReason;
@@ -626,6 +663,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
             return;
         }
         if (!queue.isProcessing && queue.currentItem == nil &&
+            ![ServerTranscriptionManager shared].isProcessing &&
             !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
             continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
             completeTask(YES, @"queue-completed");
@@ -638,6 +676,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
                                                                            usingBlock:^(__unused NSNotification *note) {
         TranscriptionQueue* queue = [TranscriptionQueue shared];
         if (!queue.isProcessing && queue.currentItem == nil &&
+            ![ServerTranscriptionManager shared].isProcessing &&
             !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
             continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
             completeTask(YES, @"remote-cancellation-reconciled");
@@ -647,6 +686,7 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     [[TranscriptionQueue shared] resumeIfNeeded];
     TranscriptionQueue* queue = [TranscriptionQueue shared];
     if (!queue.isProcessing && queue.currentItem == nil &&
+        ![ServerTranscriptionManager shared].isProcessing &&
         !ChapterGenerator.shared.hasActiveOpenAIBackgroundCancellationWork) {
         continuedTask.progress.completedUnitCount = continuedTask.progress.totalUnitCount;
         completeTask(YES, @"queue-empty");

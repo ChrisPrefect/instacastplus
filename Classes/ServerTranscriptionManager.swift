@@ -9,10 +9,12 @@ import CryptoKit
 import Foundation
 
 private struct ICServerEpisodeEnvelope: Decodable {
+    let apiVersion: String
     let episode: ICServerEpisode
     let retryAfterSeconds: Int?
 
     enum CodingKeys: String, CodingKey {
+        case apiVersion = "api_version"
         case episode
         case retryAfterSeconds = "retry_after_seconds"
     }
@@ -23,15 +25,53 @@ private struct ICServerEpisode: Decodable {
     let status: String
     let phase: String
     let progress: Double?
+    let serverDurationSeconds: Double?
+    let warnings: [ICServerWarning]
     let error: ICServerError?
     let artifacts: [ICServerArtifact]
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case status
+        case phase
+        case progress
+        case serverDurationSeconds = "server_duration_seconds"
+        case warnings
+        case error
+        case artifacts
+    }
 }
 
 private struct ICServerArtifact: Decodable {
     let id: Int
     let kind: String
     let url: URL
-    let sha256: String?
+    let contentType: String
+    let byteSize: Int
+    let sha256: String
+    let etag: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case url
+        case contentType = "content_type"
+        case byteSize = "byte_size"
+        case sha256
+        case etag
+    }
+}
+
+private struct ICServerWarning: Decodable {
+    let code: String
+    let message: String
+    let timingMayBeShifted: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case message
+        case timingMayBeShifted = "timing_may_be_shifted"
+    }
 }
 
 private struct ICServerError: Decodable {
@@ -45,7 +85,19 @@ private struct ICServerAPIErrorEnvelope: Decodable {
 }
 
 private struct ICServerSummaryArtifact: Decodable {
+    let schemaVersion: Int
+    let transcriptRevision: String
+    let audioDurationSeconds: Double
     let summary: String
+    let topicTitles: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case transcriptRevision = "transcript_revision"
+        case audioDurationSeconds = "audio_duration_seconds"
+        case summary
+        case topicTitles = "topic_titles"
+    }
 }
 
 private struct ICServerChaptersArtifact: Decodable {
@@ -53,7 +105,7 @@ private struct ICServerChaptersArtifact: Decodable {
         let start: Double
         let end: Double
         let title: String
-        let isSponsor: Bool?
+        let isSponsor: Bool
 
         enum CodingKeys: String, CodingKey {
             case start
@@ -63,7 +115,17 @@ private struct ICServerChaptersArtifact: Decodable {
         }
     }
 
+    let schemaVersion: Int
+    let transcriptRevision: String
+    let audioDurationSeconds: Double
     let chapters: [Chapter]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case transcriptRevision = "transcript_revision"
+        case audioDurationSeconds = "audio_duration_seconds"
+        case chapters
+    }
 }
 
 private struct ICServerAdsArtifact: Decodable {
@@ -73,7 +135,17 @@ private struct ICServerAdsArtifact: Decodable {
         let title: String
     }
 
+    let schemaVersion: Int
+    let transcriptRevision: String
+    let audioDurationSeconds: Double
     let segments: [Segment]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case transcriptRevision = "transcript_revision"
+        case audioDurationSeconds = "audio_duration_seconds"
+        case segments
+    }
 }
 
 private struct ICPersistedServerTranscriptionQueue: Codable {
@@ -90,6 +162,9 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         let error: String?
         let nextRetryAt: Date?
         let completedAt: Date?
+        let progress: Float?
+        let statusDetail: String?
+        let statusStartedAt: Date?
     }
 
     let items: [Item]
@@ -99,6 +174,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
 @objc class ServerTranscriptionManager: NSObject {
     @objc static let shared = ServerTranscriptionManager()
     @objc private(set) var items: [ICTranscriptionQueueItem] = []
+    @objc private(set) var queuePersistenceError: NSError?
 
     private static let queueFileName = "ServerTranscriptionQueue.json"
     private static let clientIdentifierKey = "ICServerTranscriptionClientIdentifier"
@@ -128,7 +204,22 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         loadPersistedQueue()
     }
 
-    @objc var isProcessing: Bool { currentTask != nil }
+    @objc var isProcessing: Bool { currentItem != nil }
+
+    var hasPendingAutomaticItems: Bool {
+        items.contains {
+            $0.automaticallyScheduled && $0.status != .completed && $0.status != .failed
+        }
+    }
+
+    var earliestAutomaticWorkDate: Date? {
+        let pending = items.filter {
+            $0.automaticallyScheduled && $0.status != .completed && $0.status != .failed
+        }
+        guard !pending.isEmpty else { return nil }
+        if pending.contains(where: { $0.nextRetryAt == nil }) { return Date() }
+        return pending.compactMap(\.nextRetryAt).min()
+    }
 
     @objc func enqueueEpisode(_ episode: CDEpisode) -> Bool {
         guard UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled),
@@ -210,10 +301,12 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
 
     @objc func retryEpisodeHash(_ episodeHash: String) {
         guard let item = items.first(where: { $0.episodeHash == episodeHash && $0.usesServerTranscription }) else { return }
+        serverIDByItem.removeValue(forKey: ObjectIdentifier(item))
         item.status = .queued
         item.error = nil
         item.statusDetail = nil
         item.progress = 0
+        item.statusStartedAt = nil
         item.nextRetryAt = nil
         persistQueue()
         postQueueChange()
@@ -252,6 +345,15 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         processNext()
     }
 
+    @objc func retryQueuePersistenceAfterFailure() {
+        guard queuePersistenceError != nil else { return }
+        persistQueue()
+        if queuePersistenceError == nil {
+            processNext()
+        }
+        postQueueChange()
+    }
+
     private func makeItem(episodeHash: String,
                           episodeTitle: String,
                           feedTitle: String,
@@ -274,9 +376,11 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     }
 
     private func processNext() {
-        guard currentTask == nil,
+        guard queuePersistenceError == nil,
+              currentTask == nil,
               let item = items.first(where: {
-                  $0.status == .queued && ($0.nextRetryAt == nil || $0.nextRetryAt! <= Date())
+                  ($0.status == .queued || $0.status == .transcribing || $0.status == .generatingChapters) &&
+                      ($0.nextRetryAt == nil || $0.nextRetryAt! <= Date())
               }) else {
             scheduleRetryWake()
             return
@@ -289,20 +393,23 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
             return
         }
 
-        item.status = .transcribing
-        item.statusStartedAt = Date()
-        item.statusDetail = NSLocalizedString("Server verarbeitet die Episode.", comment: "")
+        item.nextRetryAt = nil
+        if item.status != .transcribing {
+            item.status = .transcribing
+            item.statusDetail = NSLocalizedString("Server verarbeitet die Episode.", comment: "")
+        }
+        if item.statusStartedAt == nil { item.statusStartedAt = Date() }
+        currentItem = item
         postQueueChange()
 
-        currentItem = item
         currentTask = Task { [weak self] in
             guard let self else { return }
             defer {
                 self.currentItem = nil
                 self.currentTask = nil
                 self.persistQueue()
-                self.postQueueChange()
                 self.processNext()
+                self.postQueueChange()
             }
             do {
                 let envelope: ICServerEpisodeEnvelope
@@ -327,16 +434,39 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
 
     private func apply(_ envelope: ICServerEpisodeEnvelope, to item: ICTranscriptionQueueItem) async {
         guard items.contains(where: { $0 === item }) else { return }
+        guard envelope.apiVersion == "v1" else {
+            fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte eine unbekannte API-Version.", comment: ""))
+            return
+        }
         let episode = envelope.episode
-        item.progress = Float(episode.progress ?? 0)
-        item.statusDetail = localizedPhase(episode.phase)
+        guard let phase = localizedPhase(episode.phase) else {
+            fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte eine unbekannte Verarbeitungsphase.", comment: ""))
+            return
+        }
+        if let progress = episode.progress {
+            guard progress.isFinite, (0...1).contains(progress), progress + 0.000_001 >= Double(item.progress) else {
+                fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte einen ungültigen oder rückläufigen Fortschritt.", comment: ""))
+                return
+            }
+            item.progress = Float(progress)
+        } else if episode.status == "queued" || episode.status == "running" {
+            fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte keinen Fortschritt für den laufenden Auftrag.", comment: ""))
+            return
+        }
+        item.statusDetail = phase
         switch episode.status {
         case "ready":
+            if let warning = episode.warnings.first(where: { $0.timingMayBeShifted == true }) {
+                fail(item, message: String(format: NSLocalizedString("Server-Zeitmarken sind nicht zuverlässig: %@", comment: ""), warning.message))
+                return
+            }
             item.status = .generatingChapters
             item.statusDetail = NSLocalizedString("Server-Ergebnis wird geprüft und übernommen.", comment: "")
             postQueueChange()
             do {
-                try await importArtifacts(episode.artifacts, for: item)
+                try await importArtifacts(episode.artifacts,
+                                          serverDuration: episode.serverDurationSeconds,
+                                          for: item)
                 item.status = .completed
                 item.progress = 1
                 item.statusDetail = nil
@@ -350,27 +480,31 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
                 NotificationCenter.default.post(name: NSNotification.Name("ICTranscriptionDidChangeNotification"),
                                                 object: nil,
                                                 userInfo: ["episodeHash": item.episodeHash])
+            } catch is CancellationError {
+                return
             } catch {
-                fail(item, message: error.localizedDescription)
+                if isTransient(error) {
+                    schedulePoll(item, after: retryAfter(from: error as NSError) ?? Int(Self.retryDelay))
+                    item.statusDetail = NSLocalizedString("Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.", comment: "")
+                } else {
+                    fail(item, message: error.localizedDescription)
+                }
             }
         case "failed", "canceled":
-            if episode.error?.retryable == true {
-                requeue(item, after: envelope.retryAfterSeconds)
-            } else {
-                fail(item, message: episode.error?.message ?? NSLocalizedString("Die Server-Verarbeitung ist fehlgeschlagen.", comment: ""))
-            }
+            fail(item, message: episode.error?.message ?? NSLocalizedString("Die Server-Verarbeitung ist fehlgeschlagen.", comment: ""))
         case "queued", "running":
-            requeue(item, after: envelope.retryAfterSeconds)
+            guard let retryAfter = envelope.retryAfterSeconds, retryAfter > 0 else {
+                fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte keinen gültigen Zeitpunkt für die nächste Statusabfrage.", comment: ""))
+                return
+            }
+            schedulePoll(item, after: retryAfter)
         default:
             fail(item, message: NSLocalizedString("Der Server lieferte einen unbekannten Verarbeitungsstatus.", comment: ""))
         }
     }
 
-    private func requeue(_ item: ICTranscriptionQueueItem, after seconds: Int?) {
-        item.status = .queued
-        item.statusStartedAt = nil
+    private func schedulePoll(_ item: ICTranscriptionQueueItem, after seconds: Int?) {
         item.nextRetryAt = Date().addingTimeInterval(TimeInterval(max(1, seconds ?? Int(Self.retryDelay))))
-        item.statusDetail = NSLocalizedString("Server-Verarbeitung läuft weiter.", comment: "")
         if item.automaticallyScheduled {
             TranscriptionQueue.shared.scheduleAutomaticBackgroundProcessingIfNeeded()
         }
@@ -391,11 +525,11 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
 
     private func handle(error: Error, for item: ICTranscriptionQueueItem) async {
         let nsError = error as NSError
-        if nsError.domain == "ICServerTranscription" && nsError.code >= 400 && nsError.code < 500 && nsError.code != 429 {
+        guard isTransient(error) else {
             fail(item, message: nsError.localizedDescription)
             return
         }
-        requeue(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay))
+        schedulePoll(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay))
         item.statusDetail = NSLocalizedString("Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.", comment: "")
     }
 
@@ -442,83 +576,263 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     }
 
     private func download(_ artifact: ICServerArtifact) async throws -> Data {
-        var request = URLRequest(url: artifact.url)
+        let expectedURL = baseURL
+            .appendingPathComponent("artifacts", isDirectory: true)
+            .appendingPathComponent(String(artifact.id), isDirectory: false)
+        guard artifact.url == expectedURL,
+              artifact.byteSize >= 0,
+              artifact.sha256.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              !artifact.contentType.isEmpty,
+              !artifact.etag.isEmpty else {
+            throw serverContractError(code: 5,
+                                      message: NSLocalizedString("Ein Server-Artefakt hat einen ungültigen Deskriptor.", comment: ""))
+        }
+        var request = URLRequest(url: expectedURL)
         request.setValue("Bearer \(Self.bearerToken)", forHTTPHeaderField: "Authorization")
         request.setValue(clientIdentifier(), forHTTPHeaderField: "X-Instacast-Client-ID")
         request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "4.0", forHTTPHeaderField: "X-Instacast-App-Version")
         request.setValue("iOS", forHTTPHeaderField: "X-Instacast-Platform")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw NSError(domain: "ICServerTranscription", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
-                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Ein Server-Artefakt konnte nicht geladen werden.", comment: "")])
+        guard let http = response as? HTTPURLResponse else {
+            throw serverContractError(code: -1,
+                                      message: NSLocalizedString("Ein Server-Artefakt lieferte keine HTTP-Antwort.", comment: ""))
         }
-        if let expected = artifact.sha256?.lowercased(), !expected.isEmpty {
-            let received = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            guard received == expected else {
-                throw NSError(domain: "ICServerTranscription", code: 2,
-                              userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Ein Server-Artefakt ist beschädigt.", comment: "")])
+        guard (200...299).contains(http.statusCode) else {
+            let apiError = try? JSONDecoder().decode(ICServerAPIErrorEnvelope.self, from: data).error
+            var userInfo: [String: Any] = [
+                NSLocalizedDescriptionKey: apiError?.message ?? NSLocalizedString("Ein Server-Artefakt konnte nicht geladen werden.", comment: "")
+            ]
+            if let retry = http.value(forHTTPHeaderField: "Retry-After"), let seconds = Int(retry) {
+                userInfo["retryAfter"] = seconds
             }
+            throw NSError(domain: "ICServerTranscription", code: http.statusCode, userInfo: userInfo)
+        }
+        guard let contentLength = http.value(forHTTPHeaderField: "Content-Length"),
+              Int(contentLength) == artifact.byteSize,
+              data.count == artifact.byteSize else {
+            throw serverContractError(code: 6,
+                                      message: NSLocalizedString("Die Größe eines Server-Artefakts stimmt nicht.", comment: ""))
+        }
+        guard let responseContentType = http.value(forHTTPHeaderField: "Content-Type"),
+              responseContentType.caseInsensitiveCompare(artifact.contentType) == .orderedSame else {
+            throw serverContractError(code: 7,
+                                      message: NSLocalizedString("Der Inhaltstyp eines Server-Artefakts stimmt nicht.", comment: ""))
+        }
+        guard http.value(forHTTPHeaderField: "ETag") == artifact.etag else {
+            throw serverContractError(code: 8,
+                                      message: NSLocalizedString("Die Versionskennung eines Server-Artefakts stimmt nicht.", comment: ""))
+        }
+        let received = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard received == artifact.sha256 else {
+            throw serverContractError(code: 9,
+                                      message: NSLocalizedString("Ein Server-Artefakt ist beschädigt.", comment: ""))
         }
         return data
     }
 
-    private func importArtifacts(_ artifacts: [ICServerArtifact], for item: ICTranscriptionQueueItem) async throws {
+    private func importArtifacts(_ artifacts: [ICServerArtifact],
+                                 serverDuration: Double?,
+                                 for item: ICTranscriptionQueueItem) async throws {
         func artifact(_ kind: String) throws -> ICServerArtifact {
-            guard let result = artifacts.first(where: { $0.kind == kind }) else {
-                throw NSError(domain: "ICServerTranscription", code: 3,
-                              userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Das Server-Ergebnis ist unvollständig.", comment: "")])
+            let matches = artifacts.filter { $0.kind == kind }
+            guard matches.count == 1, let result = matches.first else {
+                throw serverContractError(code: 10,
+                                          message: NSLocalizedString("Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.", comment: ""))
             }
             return result
         }
-        let srtData = try await download(artifact("transcript_srt"))
-        let chaptersData = try await download(artifact("chapters_json"))
-        let adsData = try await download(artifact("ads_json"))
-        let summaryData = try await download(artifact("summary_json"))
-        let cues = try TranscriptionEngine.shared.importServerSRTData(srtData, for: item.episodeHash)
-        let chapters = try JSONDecoder().decode(ICServerChaptersArtifact.self, from: chaptersData).chapters
-        let ads = try JSONDecoder().decode(ICServerAdsArtifact.self, from: adsData).segments
-        let summary = try JSONDecoder().decode(ICServerSummaryArtifact.self, from: summaryData).summary
+        let srtArtifact = try artifact("transcript_srt")
+        let chaptersDescriptor = try artifact("chapters_json")
+        let adsDescriptor = try artifact("ads_json")
+        let summaryDescriptor = try artifact("summary_json")
+        async let pendingSRTData = download(srtArtifact)
+        async let pendingChaptersData = download(chaptersDescriptor)
+        async let pendingAdsData = download(adsDescriptor)
+        async let pendingSummaryData = download(summaryDescriptor)
+        let (srtData, chaptersData, adsData, summaryData) = try await (
+            pendingSRTData,
+            pendingChaptersData,
+            pendingAdsData,
+            pendingSummaryData
+        )
+        let cues = try TranscriptionEngine.shared.validateServerSRTData(srtData, for: item.episodeHash)
+        let chaptersArtifact = try JSONDecoder().decode(ICServerChaptersArtifact.self, from: chaptersData)
+        let adsArtifact = try JSONDecoder().decode(ICServerAdsArtifact.self, from: adsData)
+        let summaryArtifact = try JSONDecoder().decode(ICServerSummaryArtifact.self, from: summaryData)
+        try validateServerArtifacts(chaptersArtifact,
+                                    ads: adsArtifact,
+                                    summary: summaryArtifact,
+                                    serverDuration: serverDuration)
         guard let episode = findEpisode(hash: item.episodeHash) else {
-            throw NSError(domain: "ICServerTranscription", code: 4,
-                          userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("Die Episode wurde während der Server-Verarbeitung entfernt.", comment: "")])
+            throw serverContractError(code: 11,
+                                      message: NSLocalizedString("Die Episode wurde während der Server-Verarbeitung entfernt.", comment: ""))
         }
-        let baseChapters = publisherChapters(for: episode, fallback: chapters)
-        let sponsors = ads.map { ICSponsorSegment(start: $0.start, end: $0.end, title: $0.title, evidenceCueIDs: []) }
-        try ChapterGenerator.shared.saveServerAnalysis(baseChapters,
-                                                       sponsorSegments: sponsors,
-                                                       summary: summary,
-                                                       transcriptCues: cues,
-                                                       for: item.episodeHash)
+        let baseChapters = publisherChapters(for: episode, fallback: chaptersArtifact.chapters)
+        let sponsors = adsArtifact.segments.map {
+            ICSponsorSegment(start: $0.start, end: $0.end, title: $0.title, evidenceCueIDs: [])
+        }
+        let analysis = try ChapterGenerator.shared.makeServerAnalysis(baseChapters,
+                                                                      sponsorSegments: sponsors,
+                                                                      summary: summaryArtifact.summary,
+                                                                      transcriptCues: cues)
+        try TranscriptionEngine.shared.saveValidatedServerSRTData(srtData,
+                                                                  cues: cues,
+                                                                  for: item.episodeHash)
+        try ChapterGenerator.shared.saveAnalysisResult(analysis, for: item.episodeHash)
+    }
+
+    private func validateServerArtifacts(_ chapters: ICServerChaptersArtifact,
+                                         ads: ICServerAdsArtifact,
+                                         summary: ICServerSummaryArtifact,
+                                         serverDuration: Double?) throws {
+        guard chapters.schemaVersion == 1,
+              ads.schemaVersion == 1,
+              summary.schemaVersion == 1 else {
+            throw serverContractError(code: 12,
+                                      message: NSLocalizedString("Das Server-Ergebnis verwendet eine unbekannte Schema-Version.", comment: ""))
+        }
+        let revisions = [chapters.transcriptRevision, ads.transcriptRevision, summary.transcriptRevision]
+        guard Set(revisions).count == 1,
+              revisions[0].range(of: "^sha256:[0-9a-f]{64}$", options: .regularExpression) != nil else {
+            throw serverContractError(code: 13,
+                                      message: NSLocalizedString("Die Server-Artefakte gehören nicht zum selben Transkript.", comment: ""))
+        }
+        let duration = chapters.audioDurationSeconds
+        guard duration.isFinite,
+              duration > 0,
+              sameMillisecond(duration, ads.audioDurationSeconds),
+              sameMillisecond(duration, summary.audioDurationSeconds),
+              serverDuration.map({ sameMillisecond(duration, $0) }) ?? true else {
+            throw serverContractError(code: 14,
+                                      message: NSLocalizedString("Die Server-Artefakte verwenden unterschiedliche Audiodauern.", comment: ""))
+        }
+        guard !chapters.chapters.isEmpty,
+              sameMillisecond(chapters.chapters[0].start, 0) else {
+            throw serverContractError(code: 15,
+                                      message: NSLocalizedString("Die Server-Kapitel bilden keine vollständige Basistimeline.", comment: ""))
+        }
+        var previousChapterEnd = 0.0
+        for chapter in chapters.chapters {
+            guard chapter.start.isFinite,
+                  chapter.end.isFinite,
+                  chapter.start >= 0,
+                  chapter.end > chapter.start,
+                  !chapter.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !chapter.isSponsor,
+                  sameMillisecond(chapter.start, previousChapterEnd) else {
+                throw serverContractError(code: 15,
+                                          message: NSLocalizedString("Die Server-Kapitel bilden keine lückenlose sponsorfreie Basistimeline.", comment: ""))
+            }
+            previousChapterEnd = chapter.end
+        }
+        guard sameMillisecond(previousChapterEnd, duration) else {
+            throw serverContractError(code: 15,
+                                      message: NSLocalizedString("Die Server-Kapitel enden nicht an der Audiodauer.", comment: ""))
+        }
+        var previousAdEnd = 0.0
+        for segment in ads.segments {
+            let sponsorName = String(segment.title.dropFirst("Sponsor: ".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard segment.start.isFinite,
+                  segment.end.isFinite,
+                  segment.start >= previousAdEnd,
+                  segment.start >= 0,
+                  segment.end > segment.start,
+                  segment.end <= duration,
+                  segment.title.hasPrefix("Sponsor: "),
+                  !sponsorName.isEmpty else {
+                throw serverContractError(code: 16,
+                                          message: NSLocalizedString("Die Server-Sponsorsegmente sind ungültig oder überlappen.", comment: ""))
+            }
+            previousAdEnd = segment.end
+        }
+        guard !summary.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw serverContractError(code: 17,
+                                      message: NSLocalizedString("Die Server-Zusammenfassung ist leer.", comment: ""))
+        }
+    }
+
+    private func sameMillisecond(_ lhs: Double, _ rhs: Double) -> Bool {
+        guard lhs.isFinite, rhs.isFinite else { return false }
+        let lhsMicroseconds = (lhs * 1_000_000).rounded()
+        let rhsMicroseconds = (rhs * 1_000_000).rounded()
+        return abs(lhsMicroseconds - rhsMicroseconds) < 1_000
     }
 
     private func publisherChapters(for episode: CDEpisode,
                                    fallback: [ICServerChaptersArtifact.Chapter]) -> [ICGeneratedChapter] {
         let stored = (episode.sortedChapters() as? [CDChapter]) ?? []
         if !stored.isEmpty {
-            let timelineEnd = max(Double(episode.duration), fallback.map(\.end).max() ?? 0)
-            return stored.enumerated().compactMap { index, chapter in
+            let timelineEnd = fallback.map(\.end).max() ?? Double(episode.duration)
+            let publisherChapters = stored.enumerated().compactMap { index, chapter -> ICGeneratedChapter? in
                 let nextStart = index + 1 < stored.count ? stored[index + 1].timecode : timelineEnd
-                let end = chapter.duration > 0 ? chapter.timecode + chapter.duration : nextStart
+                // Chapter start times define the publisher timeline. Individual
+                // duration fields are often absent or shorter than the next start;
+                // using them clipped sponsor overlays out of those uncovered gaps.
+                let end = nextStart
                 guard chapter.timecode >= 0, end > chapter.timecode else { return nil }
-                return ICGeneratedChapter(start: chapter.timecode, end: end, title: chapter.title ?? "", isSponsor: false)
+                let title = chapter.title ?? ""
+                return ICGeneratedChapter(start: chapter.timecode,
+                                          end: end,
+                                          title: title,
+                                          isSponsor: title.hasPrefix("Sponsor: "))
             }
+            let firstPublisherStart = publisherChapters.first?.start ?? timelineEnd
+            let leadingFallback = fallback.compactMap { chapter -> ICGeneratedChapter? in
+                let end = min(chapter.end, firstPublisherStart)
+                guard chapter.start < firstPublisherStart, end > chapter.start else { return nil }
+                return ICGeneratedChapter(start: chapter.start,
+                                          end: end,
+                                          title: chapter.title,
+                                          isSponsor: false)
+            }
+            return leadingFallback + publisherChapters
         }
-        return fallback.filter { !($0.isSponsor ?? false) }.compactMap {
+        return fallback.compactMap {
             guard $0.end > $0.start else { return nil }
             return ICGeneratedChapter(start: $0.start, end: $0.end, title: $0.title, isSponsor: false)
         }
     }
 
-    private func localizedPhase(_ phase: String) -> String {
+    private func localizedPhase(_ phase: String) -> String? {
         switch phase {
         case "queued": return NSLocalizedString("Server: Warteschlange", comment: "")
         case "downloading_audio": return NSLocalizedString("Server lädt Audio.", comment: "")
         case "transcribing": return NSLocalizedString("Server transkribiert.", comment: "")
         case "analyzing": return NSLocalizedString("Server erstellt Kapitel, Sponsoren und Zusammenfassung.", comment: "")
         case "finalizing": return NSLocalizedString("Server bereitet das Ergebnis vor.", comment: "")
-        default: return NSLocalizedString("Server verarbeitet die Episode.", comment: "")
+        case "ready": return NSLocalizedString("Server-Ergebnis ist bereit.", comment: "")
+        case "failed": return NSLocalizedString("Server-Verarbeitung ist fehlgeschlagen.", comment: "")
+        case "canceled": return NSLocalizedString("Server-Verarbeitung wurde abgebrochen.", comment: "")
+        default: return nil
         }
+    }
+
+    private func serverContractError(code: Int, message: String) -> NSError {
+        NSError(domain: "ICServerTranscription.Contract",
+                code: code,
+                userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    private func isTransient(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return [
+                NSURLErrorTimedOut,
+                NSURLErrorCannotFindHost,
+                NSURLErrorCannotConnectToHost,
+                NSURLErrorNetworkConnectionLost,
+                NSURLErrorDNSLookupFailed,
+                NSURLErrorNotConnectedToInternet,
+                NSURLErrorInternationalRoamingOff,
+                NSURLErrorCallIsActive,
+                NSURLErrorDataNotAllowed,
+                NSURLErrorCannotLoadFromNetwork,
+            ].contains(nsError.code)
+        }
+        return nsError.domain == "ICServerTranscription" &&
+            (nsError.code == 408 || nsError.code == 425 || nsError.code == 429 || (500...599).contains(nsError.code))
     }
 
     private func clientIdentifier() -> String {
@@ -572,12 +886,17 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
                          statusRawValue: item.status.rawValue,
                          error: item.error,
                          nextRetryAt: item.nextRetryAt,
-                         completedAt: item.completedAt)
+                         completedAt: item.completedAt,
+                         progress: item.progress,
+                         statusDetail: item.statusDetail,
+                         statusStartedAt: item.statusStartedAt)
         })
         do {
             let data = try JSONEncoder().encode(persisted)
             try data.write(to: queueFileURL, options: .atomic)
+            queuePersistenceError = nil
         } catch {
+            queuePersistenceError = error as NSError
             NSLog("[ServerTranscription] Queue persistence failed: %@", error.localizedDescription)
         }
     }
@@ -602,7 +921,9 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
             item.error = stored.error
             item.nextRetryAt = stored.nextRetryAt
             item.completedAt = stored.completedAt
-            if item.status == .transcribing || item.status == .generatingChapters { item.status = .queued }
+            item.progress = stored.progress ?? 0
+            item.statusDetail = stored.statusDetail
+            item.statusStartedAt = stored.statusStartedAt
             if let serverEpisodeID = stored.serverEpisodeID { serverIDByItem[ObjectIdentifier(item)] = serverEpisodeID }
             items.append(item)
         }

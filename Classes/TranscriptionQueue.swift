@@ -608,6 +608,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         NSLog("[TranscriptionQueue] Initialized. Queue items: %d", items.count)
 
         if items.contains(where: { $0.automaticallyScheduled && $0.status == .queued })
+            || ServerTranscriptionManager.shared.hasPendingAutomaticItems
             || chapterGen.hasPendingOpenAIBackgroundCancellationWork {
             scheduleAutomaticBackgroundProcessing(earliestBeginDate: earliestAutomaticBackgroundWorkDate())
             scheduleRetryWakeIfNeeded()
@@ -3241,11 +3242,8 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         if !automaticItems.isEmpty {
             candidates.append(earliestAutomaticRetryDate(now: now) ?? now)
         }
-        let serverAutomaticItems = ServerTranscriptionManager.shared.items.filter {
-            $0.automaticallyScheduled && $0.status == .queued
-        }
-        if !serverAutomaticItems.isEmpty {
-            candidates.append(serverAutomaticItems.compactMap(\.nextRetryAt).min() ?? now)
+        if let serverWorkDate = ServerTranscriptionManager.shared.earliestAutomaticWorkDate {
+            candidates.append(serverWorkDate)
         }
         if let cancellationRetryDate = chapterGen.earliestOpenAIBackgroundCancellationRetryDate {
             candidates.append(cancellationRetryDate)
@@ -3283,7 +3281,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         }
         let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork
         let serverAutomaticItems = ServerTranscriptionManager.shared.items.filter {
-            $0.automaticallyScheduled && $0.status == .queued
+            $0.automaticallyScheduled && $0.status != .completed && $0.status != .failed
         }
         guard !automaticItems.isEmpty || !serverAutomaticItems.isEmpty || hasCancellationWork else { return }
         if let continuedPath = UserDefaults.standard.string(forKey: "ICTranscriptionActiveContinuedPath"),
@@ -3337,9 +3335,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             $0.automaticallyScheduled && $0.status == .queued
         }
         let hasCancellationWork = chapterGen.hasPendingOpenAIBackgroundCancellationWork
-        let hasServerAutomaticItems = ServerTranscriptionManager.shared.items.contains {
-            $0.automaticallyScheduled && $0.status == .queued
-        }
+        let hasServerAutomaticItems = ServerTranscriptionManager.shared.hasPendingAutomaticItems
         guard !automaticItems.isEmpty || hasServerAutomaticItems || hasCancellationWork else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automaticProcessingTaskIdentifier)
             ICDiagnosticLogger.shared.logEvent("background-task", message: "Kein automatischer BGProcessingTask erforderlich", metadata: [
