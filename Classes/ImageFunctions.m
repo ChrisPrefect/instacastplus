@@ -7,6 +7,7 @@
 //
 
 #import "ImageFunctions.h"
+#import <CoreText/CoreText.h>
 
 
 CGImageRef CreateScaledCGImageFromCGImage(CGImageRef image, CGFloat maxSide)
@@ -316,20 +317,22 @@ UIImage* ICSkipIntervalImage(BOOL forward, NSInteger seconds, CGFloat pointSize)
         NSString* secondsText = [NSString stringWithFormat:@"%ld", (long)seconds];
         CGFloat fontSize = secondsText.length >= 3 ? sizeValue * 0.30f : sizeValue * 0.38f;
         UIFont* font = [UIFont monospacedDigitSystemFontOfSize:fontSize weight:UIFontWeightBold];
-        NSMutableParagraphStyle* paragraphStyle = [[NSMutableParagraphStyle alloc] init];
-        paragraphStyle.alignment = NSTextAlignmentCenter;
         NSDictionary* attributes = @{
             NSFontAttributeName: font,
             NSForegroundColorAttributeName: color,
-            NSParagraphStyleAttributeName: paragraphStyle,
         };
         CGSize textSize = [secondsText boundingRectWithSize:size
                                                      options:NSStringDrawingUsesLineFragmentOrigin
                                                   attributes:attributes
                                                      context:nil].size;
-        CGRect textRect = CGRectMake(0,
-                                     ceilf((sizeValue - textSize.height) * 0.5f),
-                                     sizeValue,
+        NSAttributedString* attributedText = [[NSAttributedString alloc] initWithString:secondsText attributes:attributes];
+        CTLineRef line = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)attributedText);
+        CGRect glyphBounds = CTLineGetImageBounds(line, UIGraphicsGetCurrentContext());
+        CFRelease(line);
+        CGFloat textX = roundf((sizeValue * 0.5f - CGRectGetMidX(glyphBounds)) * scale) / scale;
+        CGRect textRect = CGRectMake(textX,
+                                     ceilf((sizeValue - textSize.height) * 0.5f) + 0.5f,
+                                     ceilf(textSize.width),
                                      ceilf(textSize.height));
         [secondsText drawInRect:textRect withAttributes:attributes];
     });

@@ -12,6 +12,13 @@
 #import "MainViewController_4.h"
 //#import "DropDownMenu.h"
 
+static UIImage* ICPlayerSleepTimerImage(void)
+{
+    UIImageSymbolConfiguration* configuration = [UIImageSymbolConfiguration configurationWithPointSize:28.f
+                                                                                                  weight:UIImageSymbolWeightRegular];
+    return [[UIImage systemImageNamed:@"moon.zzz" withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
 @interface PlayerTimerButton ()
 @property (nonatomic, strong) UIImageView* clockStepsImageView;
 @property (nonatomic, assign) PlaybackStopTimeValue timerValue;
@@ -89,7 +96,7 @@
     //NSInteger sleepTimer = [USER_DEFAULTS integerForKey:DefaultIntelligentSleepTimer];
     if (session.timerValue == PlaybackStopTimeNoValue)
     {
-        [self setImage:[[UIImage imageNamed:@"timer_watch_devd"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+        [self setImage:ICPlayerSleepTimerImage()
               forState:UIControlStateNormal];
         [self setTitle:nil forState:UIControlStateNormal];
         self.accessibilityValue = nil;
@@ -161,8 +168,7 @@
 //    
 //    if (![USER_DEFAULTS boolForKey:ScreenTimerAlwaysActive])
 //    {
-    //timer_watch_devd, Player Timer Watch
-        [self setImage:[[UIImage imageNamed:@"timer_watch_devd"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+        [self setImage:ICPlayerSleepTimerImage()
               forState:UIControlStateNormal];
         [self setTitle:nil forState:UIControlStateNormal];
         
@@ -713,11 +719,10 @@
     AudioSession* session = [AudioSession sharedAudioSession];
     if (session.timerValue == PlaybackStopTimeNoValue)
     {
-        CGFloat w = 30;
-        CGFloat h = 30;
-        return CGRectMake(contentRect.origin.x + (contentRect.size.width - w) / 2,
-                          contentRect.origin.y + (contentRect.size.height - h) / 2,
-                          w, h);
+        CGFloat size = 28.f;
+        return CGRectMake(contentRect.origin.x + (contentRect.size.width - size) / 2,
+                          contentRect.origin.y + (contentRect.size.height - size) / 2,
+                          size, size);
     }
     else
     {

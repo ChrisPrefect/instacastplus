@@ -170,14 +170,17 @@ require(
 )
 
 require(
-    'Image("ComplicationIcon")' in watch_complication
+    "Image(iconName)" in watch_complication
     and "play.circle.fill" not in watch_complication
-    and any(path.endswith("ComplicationIcon.imageset/Contents.json") for path in watch_complication_assets)
-    and (ROOT / "InstacastWatchWidgets" / "Assets.xcassets" / "ComplicationIcon.imageset" / "ComplicationIcon@2x.png").read_bytes() == (ROOT / "InstacastWatch" / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon-44@2x.png").read_bytes()
-    and (ROOT / "InstacastWatchWidgets" / "Assets.xcassets" / "ComplicationIcon.imageset" / "ComplicationIcon@3x.png").read_bytes() == (ROOT / "InstacastWatch" / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon-29@3x.png").read_bytes()
+    and watch_complication.count("WatchComplicationWidget(style:") == 13
+    and len([
+        path for path in watch_complication_assets
+        if "ComplicationIcon" in path and path.endswith(".imageset/Contents.json")
+    ]) == 13
     and "path = InstacastWatchWidgets/Assets.xcassets;" in project
-    and "Assets.xcassets in Resources" in project.split("D222B9632F85B2B01C669878 /* Resources */ = {", 1)[1].split(");", 1)[0],
-    "The Watch complication must render the InstacastPlus icon asset, not a generic Play SF Symbol.",
+    and "Assets.xcassets in Resources" in project.split("D222B9632F85B2B01C669878 /* Resources */ = {", 1)[1].split(");", 1)[0]
+    and "Localizable.strings in Resources" in project.split("D222B9632F85B2B01C669878 /* Resources */ = {", 1)[1].split(");", 1)[0],
+    "The Watch complication picker must expose all localized InstacastPlus icon variants.",
 )
 
 require(

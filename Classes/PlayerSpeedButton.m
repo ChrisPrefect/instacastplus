@@ -18,22 +18,25 @@
 - (void) _updateImage
 {
     PlaybackManager* pman = [PlaybackManager playbackManager];
+    NSString* title = [PlayerSpeedButton titleForSpeedControl:pman.speedControl];
     
     if (pman.speedControl == PlaybackSpeedControlNormalSpeed) {
-        [self setImage:[[UIImage imageNamed:@"Player Speed Outline"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+        UIImageSymbolConfiguration* configuration = [UIImageSymbolConfiguration configurationWithPointSize:28.5f
+                                                                                                      weight:UIImageSymbolWeightRegular];
+        UIImage* image = [[UIImage systemImageNamed:@"gauge.with.dots.needle.50percent" withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        [self setImage:image
               forState:UIControlStateNormal];
+        [self setTitle:nil forState:UIControlStateNormal];
         [self setTitleColor:self.tintColor forState:UIControlStateNormal];
         [self setTitleColor:self.tintColor forState:UIControlStateHighlighted];
     }
     else {
         [self setImage:[[UIImage imageNamed:@"Player Speed Fill"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
               forState:UIControlStateNormal];
+        [self setTitle:title forState:UIControlStateNormal];
         [self setTitleColor:ICBackgroundColor forState:UIControlStateNormal];
         [self setTitleColor:ICBackgroundColor forState:UIControlStateHighlighted];
     }
-    
-    NSString* title = [PlayerSpeedButton titleForSpeedControl:pman.speedControl];
-    [self setTitle:title forState:UIControlStateNormal];
 
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
     self.titleLabel.font = [UIFont boldSystemFontOfSize:ICFontSize(18)];
@@ -129,6 +132,10 @@
 #pragma clang diagnostic ignored "-Wdeprecated-implementations"
 - (CGRect)titleRectForContentRect:(CGRect)contentRect
 {
+    if ([PlaybackManager playbackManager].speedControl == PlaybackSpeedControlNormalSpeed) {
+        return CGRectZero;
+    }
+
     CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
     CGFloat w = 53 * scale;
     CGFloat h = 22 * scale;
@@ -139,6 +146,13 @@
 
 - (CGRect)imageRectForContentRect:(CGRect)contentRect
 {
+    if ([PlaybackManager playbackManager].speedControl == PlaybackSpeedControlNormalSpeed) {
+        CGFloat size = 28.5f;
+        return CGRectMake(contentRect.origin.x + (contentRect.size.width - size) / 2,
+                          contentRect.origin.y + (contentRect.size.height - size) / 2,
+                          size, size);
+    }
+
     CGFloat scale = [ICAppearanceManager sharedManager].fontSizeScale;
     CGFloat w = 53 * scale;
     CGFloat h = 22 * scale;

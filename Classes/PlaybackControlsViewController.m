@@ -25,6 +25,31 @@
 #import "ImageFunctions.h"
 #import <MediaPlayer/MediaPlayer.h>
 
+static CGFloat const ICPlayerTransportImageScale = 1.2f;
+static CGFloat const ICPlayerSkipPointSize = 40.8f;
+static CGFloat const ICPlayerVolumeImageScale = 1.3f;
+
+static UIImage* ICPlayerToolSymbol(NSString* name, CGFloat pointSize)
+{
+    UIImageSymbolConfiguration* configuration = [UIImageSymbolConfiguration configurationWithPointSize:pointSize
+                                                                                                  weight:UIImageSymbolWeightRegular];
+    return [[UIImage systemImageNamed:name withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+static UIImage* ICPlayerScaledTemplateImage(NSString* name, CGFloat imageScale)
+{
+    UIImage* image = [UIImage imageNamed:name];
+    UIImage* scaledImage = [UIImage imageWithCGImage:image.CGImage
+                                               scale:image.scale / imageScale
+                                         orientation:image.imageOrientation];
+    return [scaledImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
+static UIImage* ICPlayerTransportImage(NSString* name)
+{
+    return ICPlayerScaledTemplateImage(name, ICPlayerTransportImageScale);
+}
+
 // Container that only accepts touches within 3x the thumb area
 @interface ICVolumeThumbHitView : UIView
 @property (nonatomic, strong) MPVolumeView *volumeView;
@@ -166,12 +191,7 @@
     hitView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
     hitView.backgroundColor = [UIColor clearColor];
 
-    // MPVolumeView: fills container; on iPad the track renders higher, so offset down
-    CGFloat volumeViewYOffset = 0;
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad) {
-        volumeViewYOffset = 20;
-    }
-    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(0, volumeViewYOffset, sliderWidth, sliderHeight)];
+    MPVolumeView* volumeView = [[MPVolumeView alloc] initWithFrame:CGRectMake(0, 0, sliderWidth, sliderHeight)];
     volumeView.backgroundColor = [UIColor clearColor];
     volumeView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     volumeView.userInteractionEnabled = NO; // container handles all touches
@@ -199,8 +219,9 @@
     routeButton.showsVolumeSlider = NO;
     //DevD To DO
     routeButton.showsRouteButton = YES;
-    [routeButton setRouteButtonImage:[[UIImage imageNamed:@"Player AirPlay"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
-    [routeButton setRouteButtonImage:[[UIImage imageNamed:@"Player AirPlay Active"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateSelected];
+    UIImage* routeImage = ICPlayerToolSymbol(@"airplayaudio", 26.f);
+    [routeButton setRouteButtonImage:routeImage forState:UIControlStateNormal];
+    [routeButton setRouteButtonImage:routeImage forState:UIControlStateSelected];
 #pragma clang diagnostic pop
     routeButton.tintColor = self.view.tintColor;
     
@@ -229,6 +250,71 @@
     [self.toolsView addSubview:transcriptButton];
     self.transcriptButton = transcriptButton;
     [self updateToolButtonsVisibility];
+}
+
+- (void) _alignVolumeSliderTrack
+{
+    [self.volumeView layoutIfNeeded];
+
+    UISlider* slider = nil;
+    for (UIView* subview in self.volumeView.subviews) {
+        if ([subview isKindOfClass:[UISlider class]]) {
+            slider = (UISlider*)subview;
+            break;
+        }
+    }
+    if (!slider) {
+        return;
+    }
+
+    CGRect trackRect = [slider trackRectForBounds:slider.bounds];
+    CGRect trackRectInPlayer = [self.view convertRect:trackRect fromView:slider];
+    [self.volumeMinButton layoutIfNeeded];
+    [self.volumeMaxButton layoutIfNeeded];
+    CGRect minIconRect = [self.view convertRect:self.volumeMinButton.imageView.bounds fromView:self.volumeMinButton.imageView];
+    CGRect maxIconRect = [self.view convertRect:self.volumeMaxButton.imageView.bounds fromView:self.volumeMaxButton.imageView];
+    CGFloat iconCenterY = (CGRectGetMidY(minIconRect) + CGRectGetMidY(maxIconRect)) / 2.0f;
+    CGFloat offset = iconCenterY - CGRectGetMidY(trackRectInPlayer);
+    if (ABS(offset) > 0.1f) {
+        self.volumeHitView.frame = CGRectOffset(self.volumeHitView.frame, 0, offset);
+    }
+}
+
+- (UISlider*)_volumeSlider
+{
+    for (UIView* subview in self.volumeView.subviews) {
+        if ([subview isKindOfClass:[UISlider class]]) {
+            return (UISlider*)subview;
+        }
+    }
+    return nil;
+}
+
+- (void)_adjustVolumeBy:(float)delta
+{
+    UISlider* slider = [self _volumeSlider];
+    if (!slider) {
+        return;
+    }
+
+    float volume = MIN(1.f, MAX(0.f, slider.value + delta));
+    if (volume == slider.value) {
+        return;
+    }
+
+    [slider setValue:volume animated:YES];
+    [slider sendActionsForControlEvents:UIControlEventValueChanged];
+    PlayHapticFeedback(ICHapticFeedbackLight);
+}
+
+- (void)_decreaseVolume:(id)sender
+{
+    [self _adjustVolumeBy:-(1.f / 16.f)];
+}
+
+- (void)_increaseVolume:(id)sender
+{
+    [self _adjustVolumeBy:1.f / 16.f];
 }
 
 - (void)dealloc
@@ -264,27 +350,37 @@
     
     [self _updateSkipButtonImages];
     
-    [self.bookmarkButton setImage:[[UIImage imageNamed:@"Player Bookmark"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+    [self.bookmarkButton setImage:ICPlayerToolSymbol(@"bookmark", 25.f)
                        forState:UIControlStateNormal];
     self.bookmarkButton.accessibilityLabel = @"Add Bookmark".ls;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    self.backButton.imageEdgeInsets = UIEdgeInsetsMake(0.f, 26.5f, 0.f, -26.5f);
+    self.forwardButton.imageEdgeInsets = UIEdgeInsetsMake(0.f, -26.5f, 0.f, 26.5f);
+#pragma clang diagnostic pop
 
     [self.actionButton setImage:[[UIImage imageNamed:@"Player Share"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
                      forState:UIControlStateNormal];
     self.actionButton.accessibilityLabel = @"Share".ls;
     
     
-    [self.volumeMinButton setImage:[[UIImage imageNamed:@"Player Volume Min"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+    [self.volumeMinButton setImage:ICPlayerScaledTemplateImage(@"Player Volume Min", ICPlayerVolumeImageScale)
                           forState:UIControlStateNormal];
-    [self.volumeMaxButton setImage:[[UIImage imageNamed:@"Player Volume Max"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+    [self.volumeMaxButton setImage:ICPlayerScaledTemplateImage(@"Player Volume Max", ICPlayerVolumeImageScale)
                           forState:UIControlStateNormal];
 
-    // Icons are decorative only — not touchable, hidden from VoiceOver
-    self.volumeMinButton.enabled = NO;
-    self.volumeMinButton.userInteractionEnabled = NO;
-    self.volumeMinButton.isAccessibilityElement = NO;
-    self.volumeMaxButton.enabled = NO;
-    self.volumeMaxButton.userInteractionEnabled = NO;
-    self.volumeMaxButton.isAccessibilityElement = NO;
+    // Keep the existing 44-point button frames as generous touch targets.
+    [self.volumeMinButton addTarget:self action:@selector(_decreaseVolume:) forControlEvents:UIControlEventTouchUpInside];
+    self.volumeMinButton.accessibilityLabel = @"Decrease Volume".ls;
+    self.volumeMinButton.enabled = YES;
+    self.volumeMinButton.userInteractionEnabled = YES;
+    self.volumeMinButton.isAccessibilityElement = YES;
+    [self.volumeMaxButton addTarget:self action:@selector(_increaseVolume:) forControlEvents:UIControlEventTouchUpInside];
+    self.volumeMaxButton.accessibilityLabel = @"Increase Volume".ls;
+    self.volumeMaxButton.enabled = YES;
+    self.volumeMaxButton.userInteractionEnabled = YES;
+    self.volumeMaxButton.isAccessibilityElement = YES;
 }
 
 - (void) updateAppearance
@@ -307,12 +403,10 @@
     self.volumeMaxButton.tintColor = [UIColor colorWithWhite:white alpha:0.2f];
 
     CGFloat scale = self.view.window.screen.scale ?: [UIScreen mainScreen].scale;
-    UIImage* maxImage = ICImageFromByDrawingInContextWithScale(CGSizeMake(3, 2), NO, scale, ^(void) {
-        UIBezierPath* rectanglePath = [UIBezierPath bezierPathWithRoundedRect: CGRectMake(0, 0, 3, 2) cornerRadius:1];
-
-        CGFloat white;
-        [ICTextColor getWhite:&white alpha:NULL];
-        white = (white > 0.5f) ? 1.0f : 0.0f;
+    CGFloat trackHeight = 4.f;
+    UIImage* maxImage = ICImageFromByDrawingInContextWithScale(CGSizeMake(3, trackHeight), NO, scale, ^(void) {
+        UIBezierPath* rectanglePath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 3, trackHeight)
+                                                                 cornerRadius:trackHeight * 0.5f];
         [[UIColor colorWithWhite:white alpha:0.2] setFill];
         [rectanglePath fillWithBlendMode:kCGBlendModeNormal alpha:1.0];
     });
@@ -324,17 +418,17 @@
 - (void)_updateSkipButtonImages
 {
     NSInteger backSeconds = [self _configuredSkipSecondsForKey:PlayerSkipBackPeriod];
-    [self.backButton setImage:ICSkipIntervalImage(NO, backSeconds, 34.f)
+    [self.backButton setImage:ICSkipIntervalImage(NO, backSeconds, ICPlayerSkipPointSize)
                      forState:UIControlStateNormal];
 
     if (self.forwardChapterSkipActive) {
-        [self.forwardButton setImage:ICSkipToNextChapterImage(34.f)
+        [self.forwardButton setImage:ICSkipToNextChapterImage(ICPlayerSkipPointSize)
                             forState:UIControlStateNormal];
         self.forwardButton.accessibilityLabel = @"Next Chapter".ls;
     }
     else {
         NSInteger forwardSeconds = [self _configuredSkipSecondsForKey:PlayerSkipForwardPeriod];
-        [self.forwardButton setImage:ICSkipIntervalImage(YES, forwardSeconds, 34.f)
+        [self.forwardButton setImage:ICSkipIntervalImage(YES, forwardSeconds, ICPlayerSkipPointSize)
                             forState:UIControlStateNormal];
         self.forwardButton.accessibilityLabel = [NSString stringWithFormat:@"%@ %ld %@", @"Forward".ls, (long)forwardSeconds, @"Seconds".ls];
     }
@@ -471,6 +565,12 @@
     CGFloat labelX = CGRectGetMaxX(self.elapsedTimeLabel.frame) + 4;
     CGFloat labelW = CGRectGetMinX(self.remainingTimeLabel.frame) - 4 - labelX;
     self.chapterTitleLabel.frame = CGRectMake(labelX, CGRectGetMinY(self.elapsedTimeLabel.frame), labelW, CGRectGetHeight(self.elapsedTimeLabel.frame));
+}
+
+- (void)viewDidLayoutSubviews
+{
+    [super viewDidLayoutSubviews];
+    [self _alignVolumeSliderTrack];
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator
@@ -700,13 +800,13 @@
     self.forwardChapterSkipActive = (pman.ready && [pman forwardSkipJumpsToNextChapter]);
     [self _updateSkipButtonImages];
 	if (pman.paused) {
-		[self.playButton setImage:[[UIImage imageNamed:@"Player Play"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+		[self.playButton setImage:ICPlayerTransportImage(@"Player Play")
                          forState:UIControlStateNormal];
         self.playButton.accessibilityLabel = @"Play".ls;
 	}
     else
     {
-		[self.playButton setImage:[[UIImage imageNamed:@"Player Pause"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]
+		[self.playButton setImage:ICPlayerTransportImage(@"Player Pause")
                          forState:UIControlStateNormal];
         self.playButton.accessibilityLabel = @"Pause".ls;
 	}

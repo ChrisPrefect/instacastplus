@@ -217,6 +217,8 @@
 
 "Screen Touch" = "Bildschirmberührung";
 "Volume Change" = "Lautstärkeänderung";
+"Decrease Volume" = "Lautstärke verringern";
+"Increase Volume" = "Lautstärke erhöhen";
 "Device Movement" = "Gerätebewegung";
 "Intelligent Sleep Timer" = "Intelligenter Sleep-Timer";
 "Intelligent Sleep timer (on)" = "Intelligenter Sleep-Timer (ein)";

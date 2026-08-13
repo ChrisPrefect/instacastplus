@@ -201,6 +201,8 @@
 
 "Screen Touch" = "Screen Touch";
 "Volume Change" = "Volume Change";
+"Decrease Volume" = "Decrease Volume";
+"Increase Volume" = "Increase Volume";
 "Device Movement" = "Device Movement";
 "Intelligent Sleep Timer" = "Intelligent Sleep Timer";
 "Intelligent Sleep timer (on)" = "Intelligent Sleep timer (on)";

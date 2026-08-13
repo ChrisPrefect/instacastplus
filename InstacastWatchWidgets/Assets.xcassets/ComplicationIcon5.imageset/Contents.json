@@ -1,0 +1,18 @@
+{
+  "images" : [
+    {
+      "filename" : "ComplicationIcon5@2x.png",
+      "idiom" : "universal",
+      "scale" : "2x"
+    },
+    {
+      "filename" : "ComplicationIcon5@3x.png",
+      "idiom" : "universal",
+      "scale" : "3x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
