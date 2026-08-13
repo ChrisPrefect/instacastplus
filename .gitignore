@@ -4,12 +4,14 @@
 !.env.example
 KimiBuiltin.env
 
-# Local Watch simulator build output.
-build/WatchSim/
-build/WatchSimProducts/
-build/DeviceDD/
-build/TestFlight/*.xcarchive/
-build/TestFlight/*.log
+# Local Xcode build output.
+build/*
+!build/CrashLogs/
+build/CrashLogs/*
+!build/CrashLogs/*.ips
+!build/TestFlight/
+build/TestFlight/*
+!build/TestFlight/ExportOptions*.plist
 
 # Xcode user-local state.
 xcuserdata/

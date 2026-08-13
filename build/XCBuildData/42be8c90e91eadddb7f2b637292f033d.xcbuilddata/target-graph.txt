@@ -1,4 +1,0 @@
-Target dependency graph (2 targets)
-Target 'InstacastWatch' in project 'Instacast'
-➜ Explicit dependency on target 'InstacastWatchWidgets' in project 'Instacast'
-Target 'InstacastWatchWidgets' in project 'Instacast' (no dependencies)
