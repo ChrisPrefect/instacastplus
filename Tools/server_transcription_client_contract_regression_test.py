@@ -38,16 +38,18 @@ artifact_definition = MANAGER.split("private struct ICServerArtifact", 1)[1].spl
 require(
     "let contentType: String" in artifact_definition
     and "let byteSize: Int" in artifact_definition
-    and "let sha256: String" in artifact_definition,
-    "Required artifact content type, byte size, and non-null SHA-256 are not decoded.",
+    and "let sha256: String" in artifact_definition
+    and "let transcriptRevision: String" in artifact_definition
+    and 'case transcriptRevision = "transcript_revision"' in artifact_definition,
+    "Required artifact integrity and transcript-revision fields are not decoded.",
 )
 
 download = body(MANAGER, "private func download(")
 require(
     "data.count == artifact.byteSize" in download
     and 'value(forHTTPHeaderField: "Content-Type")' in download
-    and "artifact.contentType" in download,
-    "Artifact bytes and response content type are not checked against the descriptor.",
+    and 'request.setValue(artifact.contentType, forHTTPHeaderField: "Accept")' in download,
+    "Artifact downloads do not request and verify the descriptor media type.",
 )
 
 # All payloads must be decoded and cross-validated before the transcript is persisted.
@@ -67,10 +69,18 @@ require(
     < artifact_import.index("saveValidatedServerSRTData"),
     "The SRT is persisted before the JSON artifacts and combined analysis are valid.",
 )
+require(
+    'let transcriptRevision = "sha256:\\(srtArtifact.sha256)"' in artifact_import
+    and "artifact.transcriptRevision == transcriptRevision" in artifact_import
+    and "transcriptRevision: transcriptRevision" in artifact_import,
+    "Artifact descriptors are not bound to the exact downloaded SRT revision.",
+)
 artifact_validation = body(MANAGER, "private func validateServerArtifacts(")
 require(
-    "chapter.start >= 0" in artifact_validation,
-    "Server artifact validation accepts a negative chapter start near zero.",
+    "chapter.start >= 0" in artifact_validation
+    and "revisions.allSatisfy" in artifact_validation
+    and "$0 == transcriptRevision" in artifact_validation,
+    "JSON artifacts are not validated against the exact descriptor/SRT revision.",
 )
 
 # The API promises exact canonical cue boundaries. The client must reject deviations,

@@ -49,6 +49,7 @@ private struct ICServerArtifact: Decodable {
     let contentType: String
     let byteSize: Int
     let sha256: String
+    let transcriptRevision: String
     let etag: String
 
     enum CodingKeys: String, CodingKey {
@@ -58,6 +59,7 @@ private struct ICServerArtifact: Decodable {
         case contentType = "content_type"
         case byteSize = "byte_size"
         case sha256
+        case transcriptRevision = "transcript_revision"
         case etag
     }
 }
@@ -592,7 +594,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         request.setValue(clientIdentifier(), forHTTPHeaderField: "X-Instacast-Client-ID")
         request.setValue(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "4.0", forHTTPHeaderField: "X-Instacast-App-Version")
         request.setValue("iOS", forHTTPHeaderField: "X-Instacast-Platform")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(artifact.contentType, forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw serverContractError(code: -1,
@@ -634,6 +636,10 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     private func importArtifacts(_ artifacts: [ICServerArtifact],
                                  serverDuration: Double?,
                                  for item: ICTranscriptionQueueItem) async throws {
+        guard artifacts.count == 4 else {
+            throw serverContractError(code: 10,
+                                      message: NSLocalizedString("Das Server-Ergebnis ist unvollständig oder enthält doppelte Artefakte.", comment: ""))
+        }
         func artifact(_ kind: String) throws -> ICServerArtifact {
             let matches = artifacts.filter { $0.kind == kind }
             guard matches.count == 1, let result = matches.first else {
@@ -646,6 +652,13 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         let chaptersDescriptor = try artifact("chapters_json")
         let adsDescriptor = try artifact("ads_json")
         let summaryDescriptor = try artifact("summary_json")
+        let transcriptRevision = "sha256:\(srtArtifact.sha256)"
+        guard artifacts.allSatisfy({ artifact in
+            artifact.transcriptRevision == transcriptRevision
+        }) else {
+            throw serverContractError(code: 13,
+                                      message: NSLocalizedString("Die Server-Artefakte gehören nicht zum selben Transkript.", comment: ""))
+        }
         async let pendingSRTData = download(srtArtifact)
         async let pendingChaptersData = download(chaptersDescriptor)
         async let pendingAdsData = download(adsDescriptor)
@@ -663,6 +676,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         try validateServerArtifacts(chaptersArtifact,
                                     ads: adsArtifact,
                                     summary: summaryArtifact,
+                                    transcriptRevision: transcriptRevision,
                                     serverDuration: serverDuration)
         guard let episode = findEpisode(hash: item.episodeHash) else {
             throw serverContractError(code: 11,
@@ -685,6 +699,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     private func validateServerArtifacts(_ chapters: ICServerChaptersArtifact,
                                          ads: ICServerAdsArtifact,
                                          summary: ICServerSummaryArtifact,
+                                         transcriptRevision: String,
                                          serverDuration: Double?) throws {
         guard chapters.schemaVersion == 1,
               ads.schemaVersion == 1,
@@ -693,8 +708,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
                                       message: NSLocalizedString("Das Server-Ergebnis verwendet eine unbekannte Schema-Version.", comment: ""))
         }
         let revisions = [chapters.transcriptRevision, ads.transcriptRevision, summary.transcriptRevision]
-        guard Set(revisions).count == 1,
-              revisions[0].range(of: "^sha256:[0-9a-f]{64}$", options: .regularExpression) != nil else {
+        guard revisions.allSatisfy({ $0 == transcriptRevision }) else {
             throw serverContractError(code: 13,
                                       message: NSLocalizedString("Die Server-Artefakte gehören nicht zum selben Transkript.", comment: ""))
         }
