@@ -12,6 +12,7 @@
 + (instancetype) itemWithTitle:(NSString*)title tag:(NSInteger)tag image:(UIImage*)image selectedImage:(UIImage*)selectedImage;
 + (instancetype) itemWithTitle:(NSString*)title tag:(NSInteger)tag image:(UIImage*)image selectedImage:(UIImage*)selectedImage topSpacing:(CGFloat)topSpacing;
 @property (nonatomic, strong) NSString* title;
+@property (nonatomic, copy) NSString* listUID;
 @property (nonatomic) NSInteger tag;
 @property (nonatomic) UIImage* image;
 @property (nonatomic) UIImage* selectedImage;

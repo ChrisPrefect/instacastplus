@@ -73,6 +73,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
 - (void)_importExternalOPMLData:(NSData*)data;
 - (void)_presentBackupPreviewWithData:(InstacastBackupData*)backupData;
+- (BOOL)_selectMainSidebarListWithUID:(NSString*)uid;
 
 @property (nonatomic, readonly) CDEpisodeList* unplayedPlaylist;
 @property (nonatomic, readonly) CDEpisodeList* favoritesPlaylist;
@@ -374,8 +375,11 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     
     __weak MainViewController_4* weakSelf = self;
     self.sidebarController.didSelectItem = ^(MainSidebarItem* item) {
-        
-        if ([weakSelf _selectMainSidebarItemWithTag:item.tag])
+
+        BOOL selected = item.listUID.length > 0
+            ? [weakSelf _selectMainSidebarListWithUID:item.listUID]
+            : [weakSelf _selectMainSidebarItemWithTag:item.tag];
+        if (selected)
         {
             [USER_DEFAULTS setInteger:item.tag forKey:kUIPersistenceMainSidebarItem];
             [weakSelf setSidebarShown:NO animated:YES];
@@ -725,7 +729,13 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         selectedImage = image;
     }
 
-    return [MainSidebarItem itemWithTitle:list.name tag:tag image:image selectedImage:selectedImage topSpacing:topSpacing];
+    MainSidebarItem* item = [MainSidebarItem itemWithTitle:list.name
+                                                      tag:tag
+                                                    image:image
+                                            selectedImage:selectedImage
+                                               topSpacing:topSpacing];
+    item.listUID = uid;
+    return item;
 }
 
 - (void) _rebuildSidebarItems
@@ -863,21 +873,28 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     return nil;
 }
 
+- (BOOL) _selectMainSidebarListWithUID:(NSString*)uid
+{
+    CDList* list = [self _listForUID:uid];
+    if (!list) return NO;
+
+    UIViewController* controller = [ListEpisodesTableViewController viewControllerWithList:list];
+    controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
+
+    PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
+    navController.view.tintColor = ICTintColor;
+    self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
+    navController.toolbarHidden = NO;
+    return YES;
+}
+
 - (BOOL) _selectMainSidebarItemWithTag:(NSInteger)tag
 {
     // Handle dynamic list items (tag >= 100)
     if (tag >= 100) {
         CDList* list = [self _listForDynamicTag:tag];
-        if (list) {
-            UIViewController* controller = [ListEpisodesTableViewController viewControllerWithList:list];
-            controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
-
-            PortraitNavigationController* navController = [[PortraitNavigationController alloc] initWithRootViewController:controller];
-            navController.view.tintColor = ICTintColor;
-            self.contentViewController = [self _statusBarAdjustingContainerViewControllerForViewController:navController];
-            navController.toolbarHidden = NO;
-            return YES;
-        }
+        if (!list) return NO;
+        return [self _selectMainSidebarListWithUID:list.uid];
     }
 
     switch (tag) {
