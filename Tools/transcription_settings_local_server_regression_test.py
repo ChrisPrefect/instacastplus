@@ -41,8 +41,8 @@ for relative in ("Resources/Defaults.plist", "Resources-iPad/Defaults.plist"):
     with (ROOT / relative).open("rb") as handle:
         defaults = plistlib.load(handle)
     require(
-        defaults.get("LocalTranscriptionEnabled") is True,
-        f"{relative} must preserve existing local transcription behavior by default.",
+        defaults.get("LocalTranscriptionEnabled") is False,
+        f"{relative} must default local AI transcription to off for the public release.",
     )
 
 require(

@@ -225,6 +225,7 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
     if (toggle.isOn) {
         [[ServerTranscriptionManager shared] resumeIfNeeded];
     }
+    [[NSNotificationCenter defaultCenter] postNotificationName:ICTranscriptionSettingsDidChangeNotification object:nil];
     [self.tableView reloadData];
 }
 
@@ -257,6 +258,7 @@ typedef NS_ENUM(NSInteger, ICTranscriptionSettingsPage) {
     if (!toggle.isOn && [[USER_DEFAULTS stringForKey:kAutomaticTranscriptionBackend] isEqualToString:@"local"] && [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
         [USER_DEFAULTS setObject:@"server" forKey:kAutomaticTranscriptionBackend];
     }
+    [[NSNotificationCenter defaultCenter] postNotificationName:ICTranscriptionSettingsDidChangeNotification object:nil];
     [self.tableView reloadData];
 }
 

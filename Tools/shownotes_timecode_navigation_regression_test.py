@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 from pathlib import Path
 
 
@@ -36,6 +37,10 @@ delegate_branch = navigation.split(
     'if ([[url scheme] isEqualToString:@"delegate"])',
     1,
 )[1].split("// do not allow iframes", 1)[0]
+iframe_branch = navigation.split("// do not allow iframes", 1)[1].split(
+    "_dontReleaseSharedContent = YES;",
+    1,
+)[0]
 
 require(
     'if ([command isEqualToString:@"play-chapter-timecode"])' in delegate_branch
@@ -49,6 +54,21 @@ require(
 require(
     "decisionHandler(WKNavigationActionPolicyAllow)" not in delegate_branch,
     "A handled Show Notes timecode link must not call WebKit's decision handler more than once.",
+)
+require(
+    delegate_branch.count("decisionHandler(") == 1,
+    "The custom delegate-scheme branch must contain exactly one WebKit decision.",
+)
+require(
+    re.search(
+        r"decisionHandler\(WKNavigationActionPolicyCancel\);\s*return;",
+        iframe_branch,
+    ) is not None,
+    "A blocked non-blank WKNavigationTypeOther navigation must return after cancelling so WebKit's decision handler is called exactly once.",
+)
+require(
+    iframe_branch.count("decisionHandler(") == 1,
+    "The blocked WKNavigationTypeOther branch must contain exactly one WebKit decision.",
 )
 
 print("Show Notes timecode navigation regression checks passed.")

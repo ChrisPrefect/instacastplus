@@ -224,7 +224,8 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     }
 
     @objc func enqueueEpisode(_ episode: CDEpisode) -> Bool {
-        guard UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled),
+        guard ICAITranscriptionFeaturesAvailable(),
+              UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled),
               let episodeHash = episode.objectHash, !episodeHash.isEmpty,
               let episodeURL = episode.preferedMedium()?.fileURL,
               let scheme = episodeURL.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
@@ -261,7 +262,8 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     /// Existing per-podcast automatic settings decide *whether* a feed is processed.
     /// The selected backend decides that this one server queue is used.
     @objc func enqueueAutomaticEpisodes(_ episodes: [CDEpisode]) {
-        guard UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled) else { return }
+        guard ICAITranscriptionFeaturesAvailable(),
+              UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled) else { return }
         for episode in episodes {
             guard let episodeHash = episode.objectHash, !episodeHash.isEmpty,
                   let episodeURL = episode.preferedMedium()?.fileURL,
@@ -343,7 +345,8 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     }
 
     @objc func resumeIfNeeded() {
-        guard UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled) else { return }
+        guard ICAITranscriptionFeaturesAvailable(),
+              UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled) else { return }
         processNext()
     }
 
@@ -378,7 +381,8 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
     }
 
     private func processNext() {
-        guard queuePersistenceError == nil,
+        guard ICAITranscriptionFeaturesAvailable(),
+              queuePersistenceError == nil,
               currentTask == nil,
               let item = items.first(where: {
                   ($0.status == .queued || $0.status == .transcribing || $0.status == .generatingChapters) &&

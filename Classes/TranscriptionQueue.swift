@@ -645,6 +645,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                             knownEpisode: CDEpisode? = nil,
                             startImmediately: Bool = true,
                             persistImmediately: Bool = true) -> Bool {
+        guard ICAITranscriptionFeaturesAvailable() else { return false }
         guard !cacheClearInProgress else { return false }
         guard UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled) else {
             ICDiagnosticLogger.shared.logEvent(
@@ -775,6 +776,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     /// hidden in the settings then, so a stale preference must not disable automatic
     /// processing. nil means no backend is enabled at all.
     @objc static func resolvedAutomaticBackend() -> String? {
+        guard ICAITranscriptionFeaturesAvailable() else { return nil }
         let localEnabled = UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled)
         let serverEnabled = UserDefaults.standard.bool(forKey: kServerTranscriptionEnabled)
         switch (localEnabled, serverEnabled) {
@@ -987,6 +989,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     @objc(recordAutomaticDiscoveryForEpisodes:)
     func recordAutomaticDiscovery(for episodes: [CDEpisode]) -> NSError? {
+        guard ICAITranscriptionFeaturesAvailable() else { return nil }
         let episodeHashes = Set(episodes.compactMap { episode -> String? in
             guard let episodeHash = episode.objectHash, !episodeHash.isEmpty else { return nil }
             return episodeHash
@@ -1029,6 +1032,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func reconcilePersistedAutomaticDiscoveryOutbox() {
+        guard ICAITranscriptionFeaturesAvailable() else { return }
         let persistedHashes: Set<String>
         do {
             persistedHashes = try ICLoadPersistedAutomaticDiscoveryHashes()
@@ -1193,6 +1197,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     /// episode-added event can be considered delivered.
     @objc(scheduleAutomaticProcessingForEpisodes:)
     func scheduleAutomaticProcessing(for episodes: [CDEpisode]) {
+        guard ICAITranscriptionFeaturesAvailable() else { return }
         automaticProcessingDecision(episodes: episodes)
     }
 
@@ -1416,6 +1421,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     /// Generate chapters for an episode that already has a transcript.
     @objc func generateChapters(episodeHash: String, episodeTitle: String, feedTitle: String) -> Bool {
+        guard ICAITranscriptionFeaturesAvailable() else { return false }
         guard UserDefaults.standard.bool(forKey: kLocalTranscriptionEnabled) else { return false }
         guard ICDownloadableModelStore.selectedChapterModelIsReady() else {
             NSLog("[TranscriptionQueue] Cannot generate chapters: chapter model is not downloaded")
@@ -2877,6 +2883,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     /// Resume processing (called on app launch or foreground).
     @objc func resumeIfNeeded() {
+        guard ICAITranscriptionFeaturesAvailable() else { return }
         ServerTranscriptionManager.shared.resumeIfNeeded()
         guard reconcilePendingCacheDeletionsIfReady() else { return }
         recoverOrphanedAutomaticCheckpoints()
@@ -3276,6 +3283,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func scheduleAutomaticBackgroundProcessing(earliestBeginDate: Date?) {
+        guard ICAITranscriptionFeaturesAvailable() else { return }
         let automaticItems = items.filter {
             $0.automaticallyScheduled && $0.status == .queued
         }
@@ -3331,6 +3339,10 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     @objc(scheduleAutomaticBackgroundProcessingIfNeeded)
     func scheduleAutomaticBackgroundProcessingIfNeeded() {
+        guard ICAITranscriptionFeaturesAvailable() else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.automaticProcessingTaskIdentifier)
+            return
+        }
         let automaticItems = items.filter {
             $0.automaticallyScheduled && $0.status == .queued
         }
@@ -3996,6 +4008,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     }
 
     private func processNext() {
+        guard ICAITranscriptionFeaturesAvailable() else { return }
         guard !cacheClearInProgress else { return }
         guard !isProcessing else { return }
         guard currentProcessingRunID == nil else { return }

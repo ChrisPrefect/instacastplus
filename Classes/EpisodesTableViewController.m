@@ -1557,7 +1557,8 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (UIContextualAction*) _contextualSwipeActionForSwipeAction:(ICEpisodeSwipeAction)swipeAction atIndexPath:(NSIndexPath*)indexPath
 {
-    if (swipeAction == ICEpisodeSwipeActionTranscribe && ![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled] && ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
+    if (swipeAction == ICEpisodeSwipeActionTranscribe &&
+        !ICAITranscriptionFeaturesEnabled()) {
         return nil;
     }
     NSArray* lEpisodes = self.episodes;
@@ -1840,6 +1841,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         }
         case ICEpisodeSwipeActionTranscribe:
         {
+            if (!ICAITranscriptionFeaturesEnabled()) {
+                break;
+            }
             // With only one enabled backend the stored preference is irrelevant.
             if ([[TranscriptionQueue resolvedAutomaticBackend] isEqualToString:@"server"]) {
                 [self _serverTranscribeEpisode:episode];
@@ -1869,7 +1873,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _transcribeEpisode:(CDEpisode*)episode
 {
-    if (![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
+    if (!ICAITranscriptionFeaturesAvailable() || ![USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled]) {
         return;
     }
 
@@ -1904,7 +1908,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
 - (void) _serverTranscribeEpisode:(CDEpisode*)episode
 {
-    if (![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
+    if (!ICAITranscriptionFeaturesAvailable() || ![USER_DEFAULTS boolForKey:kServerTranscriptionEnabled]) {
         return;
     }
     if ([[ServerTranscriptionManager shared] enqueueEpisode:episode]) {
@@ -2150,8 +2154,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
     // Transcribe (only if downloaded and not already transcribed)
     // Transcribe (episode will be auto-downloaded if needed)
-    BOOL localTranscriptionEnabled = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
-    BOOL serverTranscriptionEnabled = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
+    BOOL aiTranscriptionFeaturesEnabled = ICAITranscriptionFeaturesEnabled();
+    BOOL localTranscriptionEnabled = aiTranscriptionFeaturesEnabled && [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    BOOL serverTranscriptionEnabled = aiTranscriptionFeaturesEnabled && [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
     BOOL hasBothTranscriptionBackends = localTranscriptionEnabled && serverTranscriptionEnabled;
     if (localTranscriptionEnabled && ![[TranscriptionEngine shared] hasSRTFor:episode.objectHash]) {
         UIAction* transcribeAction = [UIAction actionWithTitle:hasBothTranscriptionBackends ? NSLocalizedString(@"Lokal transkribieren", nil) : NSLocalizedString(@"Transkribieren", nil)
@@ -2206,7 +2211,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     }
 
     // Delete generated transcript + chapters as separate menu items
-    {
+    if (aiTranscriptionFeaturesEnabled) {
         BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
         // Only the generated-chapter JSON proves ownership. CDChapter can also contain
         // podcast-provided chapters copied during playback, so it must not drive this action.

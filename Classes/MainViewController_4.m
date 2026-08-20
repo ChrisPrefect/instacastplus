@@ -317,6 +317,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
 
     // Rebuild sidebar when transcription queue changes
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueDidChange) name:@"ICTranscriptionQueueDidChangeNotification" object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_transcriptionQueueDidChange) name:ICTranscriptionSettingsDidChangeNotification object:nil];
 
     self.sidebarController = [[MainSidebarController alloc] initWithStyle:UITableViewStylePlain];
 
@@ -363,8 +364,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
     [self _rebuildSidebarItems];
     
     NSInteger savedMainSidebarItemTag = [USER_DEFAULTS integerForKey:kUIPersistenceMainSidebarItem];
-    if (savedMainSidebarItemTag > 0) {
-        [self _selectMainSidebarItemWithTag:savedMainSidebarItemTag];
+    if (savedMainSidebarItemTag > 0 && [self _selectMainSidebarItemWithTag:savedMainSidebarItemTag]) {
         self.sidebarController.selectedItemTag = savedMainSidebarItemTag;
     }
     else {
@@ -831,7 +831,7 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         };
         [section2Items addObject:appleWatchItem];
     }
-    if ([TranscriptionQueue shared].hasVisibleItems) {
+    if (ICAITranscriptionFeaturesEnabled() && [TranscriptionQueue shared].hasVisibleItems) {
         [section2Items addObject:transcriptionItem];
     }
     [section2Items addObject:[MainSidebarItem itemWithTitle:@"Settings".ls
@@ -989,6 +989,9 @@ NSString* MainMenuListUIDsDidChangeNotification = @"MainMenuListUIDsDidChangeNot
         }
         case kMainSidebarItemTranscription:
         {
+            if (!ICAITranscriptionFeaturesEnabled()) {
+                return NO;
+            }
             TranscriptionQueueViewController* controller = [[TranscriptionQueueViewController alloc] initWithStyle:UITableViewStylePlain];
             controller.navigationItem.leftBarButtonItem = self.sidebarMenuItem;
 

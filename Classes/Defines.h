@@ -167,6 +167,8 @@ typedef NS_ENUM(NSInteger, ICEpisodeSwipeAction) {
 extern NSString* EnabledPlaybackSpeedsKey;
 
 // Transcription & Chapters
+BOOL ICAITranscriptionFeaturesAvailable(void);
+BOOL ICAITranscriptionFeaturesEnabled(void);
 extern NSString* kLocalTranscriptionEnabled;         // BOOL - local transcription/chapter actions enabled
 extern NSString* kServerTranscriptionEnabled;        // BOOL - shared server transcription actions enabled
 extern NSString* kAutomaticTranscriptionBackend;     // @"local" or @"server"
@@ -201,6 +203,7 @@ extern NSString* ICTranscriptionDidProgressNotification;
 extern NSString* ICTranscriptionDidFinishNotification;
 extern NSString* ICTranscriptionDidFailNotification;
 extern NSString* ICTranscriptionQueueDidChangeNotification;
+extern NSString* ICTranscriptionSettingsDidChangeNotification;
 
 #if TARGET_OS_IPHONE==1
 #else

@@ -617,6 +617,10 @@
     self.transcriptIndicatorVisible = NO;
     _transcriptIndicator.hidden = YES;
 
+    if (!ICAITranscriptionFeaturesAvailable()) {
+        return;
+    }
+
     if (episode.objectHash.length > 0) {
         BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
         BOOL isQueued = NO;

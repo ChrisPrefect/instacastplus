@@ -171,7 +171,7 @@ enum {
         case kEpisodesSection:
             return 1;
         case kTranscriptionSection:
-            return 3; // auto-transcribe, auto-chapters, sponsor-skip
+            return ICAITranscriptionFeaturesEnabled() ? 3 : 0; // auto-transcribe, auto-chapters, sponsor-skip
         case kAutoSkipSection:
             return 3;
         case kNewsModeSection:
@@ -649,7 +649,9 @@ enum {
         case kEpisodesSection:
             return @"Episodes".ls;
         case kTranscriptionSection:
-            return NSLocalizedString(@"Transkription und Kapitel", nil);
+            return ICAITranscriptionFeaturesEnabled()
+                ? NSLocalizedString(@"Transkription und Kapitel", nil)
+                : nil;
         case kAutoSkipSection:
             return @"Auto Skip".ls;
         case kAutoDownloadSettingsSection:
@@ -706,6 +708,9 @@ enum {
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section
 {
     (void)tableView;
+    if (section == kTranscriptionSection && !ICAITranscriptionFeaturesEnabled()) {
+        return CGFLOAT_MIN;
+    }
     if (section == kAppleWatchSection) {
         return 44.f;
     }
@@ -714,6 +719,9 @@ enum {
 
 - (void) _transcriptionToggleChanged:(UISwitch*)sender
 {
+    if (!ICAITranscriptionFeaturesEnabled()) {
+        return;
+    }
     NSInteger row = sender.tag - 1000;
     NSString* value = sender.on ? @"yes" : @"no";
     switch (row) {
@@ -1186,6 +1194,9 @@ enum {
 
 - (CGFloat)tableView:(UITableView *)tableView heightForFooterInSection:(NSInteger)section
 {
+    if (section == kTranscriptionSection && !ICAITranscriptionFeaturesEnabled()) {
+        return CGFLOAT_MIN;
+    }
     NSString* text = [self tableView:tableView titleForFooterInSection:section];
     return [self heightForFooterText:text];
 }

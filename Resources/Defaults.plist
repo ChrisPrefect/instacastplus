@@ -123,11 +123,15 @@
 	<key>ICiCloudSyncSettingsEnabled</key>
 	<false/>
 	<key>LocalTranscriptionEnabled</key>
-	<true/>
+	<false/>
 	<key>ServerTranscriptionEnabled</key>
 	<false/>
 	<key>AutomaticTranscriptionBackend</key>
 	<string>local</string>
+	<key>TranscriptionAutoDefault</key>
+	<false/>
+	<key>ChapterAutoDefault</key>
+	<false/>
 	<key>AmazonAffiliateEnabled</key>
 	<true/>
 </dict>

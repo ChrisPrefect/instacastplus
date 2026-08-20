@@ -1160,6 +1160,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
 	// do not allow iframes
 	if (navigationAction.navigationType == WKNavigationTypeOther && ![urlString isEqualToString:@"about:blank"]) {
         decisionHandler(WKNavigationActionPolicyCancel);
+        return;
 	}
 	
     _dontReleaseSharedContent = YES;
@@ -1423,8 +1424,9 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     }
 
     // 6. Transcribe (auto-downloads if needed)
-    BOOL localTranscriptionEnabled = [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
-    BOOL serverTranscriptionEnabled = [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
+    BOOL aiTranscriptionFeaturesEnabled = ICAITranscriptionFeaturesEnabled();
+    BOOL localTranscriptionEnabled = aiTranscriptionFeaturesEnabled && [USER_DEFAULTS boolForKey:kLocalTranscriptionEnabled];
+    BOOL serverTranscriptionEnabled = aiTranscriptionFeaturesEnabled && [USER_DEFAULTS boolForKey:kServerTranscriptionEnabled];
     BOOL hasBothTranscriptionBackends = localTranscriptionEnabled && serverTranscriptionEnabled;
     if (localTranscriptionEnabled && ![[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash]) {
         [actions addObject:[UIAction actionWithTitle:hasBothTranscriptionBackends ? NSLocalizedString(@"Lokal transkribieren", nil) : NSLocalizedString(@"Transkribieren", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
@@ -1485,7 +1487,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
 
     // 8+9. Delete transcript and chapters as separate destructive actions, so each can
     // be removed individually (and re-generated individually afterwards).
-    {
+    if (aiTranscriptionFeaturesEnabled) {
         BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
         // Only the generated-chapter JSON proves ownership. CDChapter can also contain
         // podcast-provided chapters copied during playback, so it must not drive this action.

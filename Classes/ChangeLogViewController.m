@@ -27,10 +27,36 @@
     closeButton.tintColor = ICTintColor;
     self.navigationItem.rightBarButtonItem = closeButton;
 
-    // Define the sections and their items
-    self.changelogSections = @[
-        [NSString stringWithFormat:@"💡 %@", @"CL Tips Title".ls],
-        [NSString stringWithFormat:@"🎙️ %@", @"CL Transcription Title".ls],
+    // Define the sections and their items. AI transcription remains available in
+    // development builds, but is not advertised in the public release.
+    NSMutableArray* tips = [NSMutableArray array];
+    if (ICAITranscriptionFeaturesAvailable()) {
+        [tips addObject:@"CL Tip LongPress".ls];
+    }
+    [tips addObject:@"CL Tip SwipeActions".ls];
+    if (ICAITranscriptionFeaturesAvailable()) {
+        [tips addObject:@"CL Tip Transcription".ls];
+    }
+    [tips addObjectsFromArray:@[
+        @"CL Tip ChapterSkip".ls,
+        @"CL Tip SleepTimer".ls,
+        @"CL Tip Playlists".ls
+    ]];
+
+    NSMutableArray* sections = [NSMutableArray arrayWithObject:[NSString stringWithFormat:@"💡 %@", @"CL Tips Title".ls]];
+    NSMutableArray* items = [NSMutableArray arrayWithObject:tips];
+    if (ICAITranscriptionFeaturesAvailable()) {
+        [sections addObject:[NSString stringWithFormat:@"🎙️ %@", @"CL Transcription Title".ls]];
+        [items addObject:@[
+            @"CL Transcription Feature".ls,
+            @"CL Search Transcript".ls,
+            @"CL Chapter Generation".ls,
+            @"CL Sponsor Detection".ls,
+            @"CL Music Analysis".ls
+        ]];
+    }
+
+    [sections addObjectsFromArray:@[
         [NSString stringWithFormat:@"🚀 %@", @"Smarter Listening".ls],
         [NSString stringWithFormat:@"🎵 %@", @"Redesigned Player".ls],
         [NSString stringWithFormat:@"📱 %@", @"Across Devices".ls],
@@ -39,24 +65,9 @@
         [NSString stringWithFormat:@"🎨 %@", @"Personalization".ls],
         [NSString stringWithFormat:@"🏠 %@", @"Smart Home".ls],
         [NSString stringWithFormat:@"💡 %@", @"Community & Support".ls]
-    ];
+    ]];
 
-    self.changelogItems = @[
-        @[
-            @"CL Tip LongPress".ls,
-            @"CL Tip SwipeActions".ls,
-            @"CL Tip Transcription".ls,
-            @"CL Tip ChapterSkip".ls,
-            @"CL Tip SleepTimer".ls,
-            @"CL Tip Playlists".ls
-        ],
-        @[
-            @"CL Transcription Feature".ls,
-            @"CL Search Transcript".ls,
-            @"CL Chapter Generation".ls,
-            @"CL Sponsor Detection".ls,
-            @"CL Music Analysis".ls
-        ],
+    [items addObjectsFromArray:@[
         @[
             @"CL Live Transcripts".ls,
             @"CL Intelligent Sleep Timer".ls,
@@ -106,7 +117,9 @@
             @"CL Feedback".ls,
             @"CL Donations".ls
         ]
-    ];
+    ]];
+    self.changelogSections = sections;
+    self.changelogItems = items;
 
     // Initialize UITableView
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleGrouped];

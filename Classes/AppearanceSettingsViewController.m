@@ -690,37 +690,42 @@ API_AVAILABLE(ios(14.0)){
         } else {
             controller.key = (indexPath.row == 1) ? EpisodeSwipeRightAction : EpisodeSwipeLeftAction;
             controller.title = (indexPath.row == 1) ? @"Swipe Right".ls : @"Swipe Left".ls;
-            controller.values = @[
+            NSMutableArray<NSNumber*>* values = [@[
                 @(ICEpisodeSwipeActionTogglePlayed),
                 @(ICEpisodeSwipeActionToggleFavorite),
                 @(ICEpisodeSwipeActionDownload),
                 @(ICEpisodeSwipeActionAddToPlayNext),
                 @(ICEpisodeSwipeActionDelete),
-                @(ICEpisodeSwipeActionEpisodeInfo),
-                @(ICEpisodeSwipeActionTranscribe),
-                @(ICEpisodeSwipeActionSendToAppleWatch)
-            ];
-            controller.titles = @[
+                @(ICEpisodeSwipeActionEpisodeInfo)
+            ] mutableCopy];
+            NSMutableArray<NSString*>* titles = [@[
                 @"Mark as Played".ls,
                 @"Mark as Favorite".ls,
                 @"Download".ls,
                 @"Add to Play Next".ls,
                 @"Delete Episode from List".ls,
-                @"Show Show Notes".ls,
-                @"Transcribe".ls,
-                @"An Apple Watch senden".ls
-            ];
+                @"Show Show Notes".ls
+            ] mutableCopy];
             UIImageSymbolConfiguration* symbolConfig = [UIImageSymbolConfiguration configurationWithScale:UIImageSymbolScaleMedium];
-            controller.images = @[
+            NSMutableArray<UIImage*>* images = [@[
                 [UIImage systemImageNamed:@"circle" withConfiguration:symbolConfig],
                 [UIImage systemImageNamed:@"star" withConfiguration:symbolConfig],
                 [UIImage systemImageNamed:@"square.and.arrow.down" withConfiguration:symbolConfig],
                 [UIImage systemImageNamed:@"list.bullet.indent" withConfiguration:symbolConfig],
                 [UIImage systemImageNamed:@"trash" withConfiguration:symbolConfig],
-                [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig],
-                [UIImage systemImageNamed:@"captions.bubble" withConfiguration:symbolConfig],
-                [UIImage systemImageNamed:@"applewatch" withConfiguration:symbolConfig],
-            ];
+                [UIImage systemImageNamed:@"info.circle" withConfiguration:symbolConfig]
+            ] mutableCopy];
+            if (ICAITranscriptionFeaturesEnabled()) {
+                [values addObject:@(ICEpisodeSwipeActionTranscribe)];
+                [titles addObject:@"Transcribe".ls];
+                [images addObject:[UIImage systemImageNamed:@"captions.bubble" withConfiguration:symbolConfig]];
+            }
+            [values addObject:@(ICEpisodeSwipeActionSendToAppleWatch)];
+            [titles addObject:@"An Apple Watch senden".ls];
+            [images addObject:[UIImage systemImageNamed:@"applewatch" withConfiguration:symbolConfig]];
+            controller.values = values;
+            controller.titles = titles;
+            controller.images = images;
             controller.footerText = @"Swipe Action Toggle Info".ls;
         }
         [self.navigationController pushViewController:controller animated:YES];
@@ -860,7 +865,11 @@ API_AVAILABLE(ios(14.0)){
         case ICEpisodeSwipeActionAddToPlayNext: return @"Add to Play Next".ls;
         case ICEpisodeSwipeActionDelete: return @"Delete Episode from List".ls;
         case ICEpisodeSwipeActionEpisodeInfo: return @"Show Show Notes".ls;
-        case ICEpisodeSwipeActionTranscribe: return @"Transcribe".ls;
+        case ICEpisodeSwipeActionTranscribe:
+            if (!ICAITranscriptionFeaturesEnabled()) {
+                return @"Disabled".ls;
+            }
+            return @"Transcribe".ls;
         case ICEpisodeSwipeActionSendToAppleWatch: return @"An Apple Watch senden".ls;
         default: return @"Mark as Played".ls;
     }

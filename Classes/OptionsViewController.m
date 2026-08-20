@@ -86,6 +86,9 @@ enum {
     if (![OptionsViewController iCloudSyncSettingsAvailable] && row >= kRowiCloudSync) {
         row++;
     }
+    if (!ICAITranscriptionFeaturesAvailable() && row >= kRowTranscription) {
+        row++;
+    }
     if (![OptionsViewController crashLogMailAvailable] && row >= kRowCrashLogs) {
         row++;
     }
@@ -158,6 +161,9 @@ enum {
 {
     NSInteger rows = kNumberOfRows;
     if (![OptionsViewController iCloudSyncSettingsAvailable]) {
+        rows--;
+    }
+    if (!ICAITranscriptionFeaturesAvailable()) {
         rows--;
     }
     if (![OptionsViewController crashLogMailAvailable]) {
@@ -308,6 +314,9 @@ enum {
             break;
         }
         case kRowTranscription: {
+            if (!ICAITranscriptionFeaturesAvailable()) {
+                break;
+            }
             TranscriptionSettingsViewController* controller = [[TranscriptionSettingsViewController alloc] initWithStyle:UITableViewStyleGrouped];
             [self.navigationController pushViewController:controller animated:YES];
             break;

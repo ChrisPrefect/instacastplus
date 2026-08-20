@@ -129,6 +129,22 @@ NSString* EpisodeSwipeLeftAction = @"EpisodeSwipeLeftAction";
 NSString* EnabledPlaybackSpeedsKey = @"EnabledPlaybackSpeeds";
 
 // Transcription & Chapters
+BOOL ICAITranscriptionFeaturesAvailable(void)
+{
+#if defined(CONFIGURATION_Release) && !defined(IC_TRANSCRIPTION_TESTFLIGHT_BUILD)
+    return NO;
+#else
+    return YES;
+#endif
+}
+
+BOOL ICAITranscriptionFeaturesEnabled(void)
+{
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    return ICAITranscriptionFeaturesAvailable() &&
+        ([defaults boolForKey:kLocalTranscriptionEnabled] || [defaults boolForKey:kServerTranscriptionEnabled]);
+}
+
 NSString* kLocalTranscriptionEnabled = @"LocalTranscriptionEnabled";
 NSString* kServerTranscriptionEnabled = @"ServerTranscriptionEnabled";
 NSString* kAutomaticTranscriptionBackend = @"AutomaticTranscriptionBackend";
@@ -149,6 +165,7 @@ NSString* ICTranscriptionDidProgressNotification = @"ICTranscriptionDidProgressN
 NSString* ICTranscriptionDidFinishNotification = @"ICTranscriptionDidFinishNotification";
 NSString* ICTranscriptionDidFailNotification = @"ICTranscriptionDidFailNotification";
 NSString* ICTranscriptionQueueDidChangeNotification = @"ICTranscriptionQueueDidChangeNotification";
+NSString* ICTranscriptionSettingsDidChangeNotification = @"ICTranscriptionSettingsDidChangeNotification";
 NSString* kDefaultDontDeleteUpNextWhenChangingEpisode = @"DontDeleteUpNextWhenChangingEpisode";
 
 #if TARGET_OS_IPHONE==1
