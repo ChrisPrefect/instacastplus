@@ -37,6 +37,7 @@ typedef enum {
 - (void) _updateToolbarItemsAnimated:(BOOL)animated;
 
 - (void) reloadDataAndPreserveSelection;
+- (BOOL) _deferEpisodeReloadDuringInteraction;
 - (BOOL) showsImage;
 - (NSURL*) artworkURLForEpisode:(CDEpisode*)episode;
 - (BOOL) canArchiveEpisodes;

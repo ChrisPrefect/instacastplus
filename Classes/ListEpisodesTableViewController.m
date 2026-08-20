@@ -207,6 +207,9 @@
     if (self.userAction) {
         return;
     }
+    if ([self _deferEpisodeReloadDuringInteraction]) {
+        return;
+    }
     [self updateEpisodes];
     [self reloadDataAndPreserveSelection];
 

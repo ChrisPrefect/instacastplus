@@ -98,13 +98,13 @@ context_menu = method_body(
     "- (UIMenu *) _contextMenuForIndexPath:(NSIndexPath *)indexPath",
 )
 require(
-    "[DMANAGER markEpisode:ep asConsumed:flag];" in context_menu
-    and "_removeEpisodeFromDisplayedListIfNeededAfterMutation:ep atIndexPath:indexPath" in context_menu,
+    "[DMANAGER markEpisode:episode asConsumed:flag];" in context_menu
+    and "_removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:currentIndexPath" in context_menu,
     "Played/Unplayed changes from the context menu must immediately remove episodes that no longer match the active feed filter.",
 )
 require(
     "strongSelf.suppressNextListReload = YES;" in context_menu
     and context_menu.find("strongSelf.suppressNextListReload = YES;")
-    < context_menu.find("[DMANAGER markEpisode:ep asConsumed:flag];"),
+    < context_menu.find("[DMANAGER markEpisode:episode asConsumed:flag];"),
     "The context-menu mutation must arm the list-reload suppression before DatabaseManager schedules its delayed count invalidation.",
 )

@@ -49,6 +49,7 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
     ICEpisodeListDeferredUpdateNone = 0,
     ICEpisodeListDeferredUpdateVisibleCells,
     ICEpisodeListDeferredUpdateFullReload,
+    ICEpisodeListDeferredUpdateEpisodeReload,
 };
 
 @interface EpisodesTableViewController ()
@@ -58,7 +59,8 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
 @property (nonatomic, strong, readwrite) UIBarButtonItem* labelsItems;
 @property (nonatomic, weak) UITapGestureRecognizer* cancelDeleteButtonTapRecognizer;
 @property (nonatomic) BOOL swipeInteractionActive;
-@property (nonatomic) ICEpisodeListDeferredUpdate deferredUpdateAfterSwipe;
+@property (nonatomic) BOOL contextMenuInteractionActive;
+@property (nonatomic) ICEpisodeListDeferredUpdate deferredUpdateAfterInteraction;
 
 // Toolbar items - created once and reused
 @property (nonatomic, strong) UIBarButtonItem* cacheItem;
@@ -152,29 +154,44 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
     }
 }
 
-// Returns YES when the caller must not touch the table right now because a swipe is
-// open. The strongest requested update is remembered and replayed afterwards.
+// Returns YES when the caller must not touch the table while UIKit owns an open row
+// interaction. The strongest requested update is remembered and replayed afterwards.
 - (BOOL) _deferTableUpdateDuringSwipe:(ICEpisodeListDeferredUpdate)update
 {
-    if (!self.swipeInteractionActive) {
+    if (!self.swipeInteractionActive && !self.contextMenuInteractionActive) {
         return NO;
     }
-    if (update > self.deferredUpdateAfterSwipe) {
-        self.deferredUpdateAfterSwipe = update;
+    if (update > self.deferredUpdateAfterInteraction) {
+        self.deferredUpdateAfterInteraction = update;
     }
     return YES;
 }
 
-- (void) _endSwipeInteractionAndFlushDeferredUpdate
+- (BOOL) _deferEpisodeReloadDuringInteraction
 {
-    if (!self.swipeInteractionActive) {
+    if (!self.swipeInteractionActive && !self.contextMenuInteractionActive) {
+        return NO;
+    }
+    if (ICEpisodeListDeferredUpdateEpisodeReload > self.deferredUpdateAfterInteraction) {
+        self.deferredUpdateAfterInteraction = ICEpisodeListDeferredUpdateEpisodeReload;
+    }
+    return YES;
+}
+
+- (void) _flushDeferredEpisodeInteractionUpdate
+{
+    if (self.swipeInteractionActive || self.contextMenuInteractionActive) {
         return;
     }
-    self.swipeInteractionActive = NO;
 
-    ICEpisodeListDeferredUpdate pending = self.deferredUpdateAfterSwipe;
-    self.deferredUpdateAfterSwipe = ICEpisodeListDeferredUpdateNone;
+    ICEpisodeListDeferredUpdate pending = self.deferredUpdateAfterInteraction;
+    self.deferredUpdateAfterInteraction = ICEpisodeListDeferredUpdateNone;
     switch (pending) {
+        case ICEpisodeListDeferredUpdateEpisodeReload:
+            [self updateEpisodes];
+            [self _updateToolbarItemsAnimated:NO];
+            [self _updateToolbarLabels];
+            break;
         case ICEpisodeListDeferredUpdateFullReload:
             [self.tableView reloadData];
             break;
@@ -187,6 +204,15 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
     }
 }
 
+- (void) _endSwipeInteractionAndFlushDeferredUpdate
+{
+    if (!self.swipeInteractionActive) {
+        return;
+    }
+    self.swipeInteractionActive = NO;
+    [self _flushDeferredEpisodeInteractionUpdate];
+}
+
 - (void)tableView:(UITableView *)tableView willBeginEditingRowAtIndexPath:(NSIndexPath *)indexPath
 {
     self.swipeInteractionActive = YES;
@@ -195,6 +221,32 @@ typedef NS_ENUM(NSInteger, ICEpisodeListDeferredUpdate) {
 - (void)tableView:(UITableView *)tableView didEndEditingRowAtIndexPath:(NSIndexPath *)indexPath
 {
     [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
+- (void)tableView:(UITableView *)tableView
+        willDisplayContextMenuWithConfiguration:(UIContextMenuConfiguration *)configuration
+        animator:(id<UIContextMenuInteractionAnimating>)animator
+{
+    self.contextMenuInteractionActive = YES;
+}
+
+- (void)tableView:(UITableView *)tableView
+        willEndContextMenuInteractionWithConfiguration:(UIContextMenuConfiguration *)configuration
+        animator:(id<UIContextMenuInteractionAnimating>)animator
+{
+    __weak EpisodesTableViewController* weakSelf = self;
+    void (^completion)(void) = ^{
+        EpisodesTableViewController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.contextMenuInteractionActive = NO;
+        [strongSelf _flushDeferredEpisodeInteractionUpdate];
+    };
+    if (animator) {
+        [animator addCompletion:completion];
+    }
+    else {
+        completion();
+    }
 }
 
 - (void) _playbackEpisodeDidChange:(NSNotification*)notification
@@ -2017,13 +2069,14 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     if (self.tableView.editing) return nil;
     if (indexPath.row >= [self.episodes count]) return nil;
 
+    CDEpisode* episode = self.episodes[indexPath.row];
     WEAK_SELF
-    UIContextMenuConfiguration* config = [UIContextMenuConfiguration configurationWithIdentifier:nil
+    UIContextMenuConfiguration* config = [UIContextMenuConfiguration configurationWithIdentifier:episode.objectHash
         previewProvider:nil
         actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggestedActions) {
             __strong EpisodesTableViewController* strongSelf = weakSelf;
             if (!strongSelf) return [UIMenu menuWithTitle:@"" children:@[]];
-            return [strongSelf _contextMenuForIndexPath:indexPath];
+            return [strongSelf _contextMenuForEpisode:episode];
         }];
     // Force fixed element order so the cell long-press menu matches the show-notes
     // more-menu regardless of whether iOS would otherwise flip based on tap position.
@@ -2034,9 +2087,21 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     return config;
 }
 
+- (UIMenu *) _contextMenuForEpisode:(CDEpisode*)episode
+{
+    NSIndexPath* indexPath = [self _indexPathForEpisode:episode];
+    if (!indexPath) {
+        return [UIMenu menuWithTitle:@"" children:@[]];
+    }
+    return [self _contextMenuForIndexPath:indexPath];
+}
+
 - (UIMenu *) _contextMenuForIndexPath:(NSIndexPath *)indexPath
 {
-    CDEpisode* episode = (CDEpisode*)[self.episodes objectAtIndex:indexPath.row];
+    if (indexPath.section != 0 || indexPath.row >= self.episodes.count) {
+        return [UIMenu menuWithTitle:@"" children:@[]];
+    }
+    CDEpisode* episode = self.episodes[indexPath.row];
     NSMutableArray<UIMenuElement*>* actions = [NSMutableArray array];
 
     // Mark as Favorite / Unmark Favorite
@@ -2045,8 +2110,10 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                                    image:[UIImage systemImageNamed:episode.starred ? @"star.slash" : @"star"]
                                               identifier:nil
                                                  handler:^(UIAction *action) {
+                                                     NSIndexPath* currentIndexPath = [weakSelf _indexPathForEpisode:episode];
+                                                     if (!currentIndexPath) return;
                                                      PlayHapticFeedback(ICHapticFeedbackLight);
-                                                     [weakSelf toggleFavoriteAtIndexPath:indexPath];
+                                                     [weakSelf toggleFavoriteAtIndexPath:currentIndexPath];
                                                  }];
     [actions addObject:favoriteAction];
 
@@ -2057,18 +2124,19 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                                 handler:^(UIAction *action) {
                                                     __strong EpisodesTableViewController* strongSelf = weakSelf;
                                                     if (!strongSelf) return;
+                                                    NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
+                                                    if (!currentIndexPath) return;
                                                     PlayHapticFeedback(ICHapticFeedbackLight);
-                                                    CDEpisode* ep = (CDEpisode*)[strongSelf.episodes objectAtIndex:indexPath.row];
-                                                    BOOL flag = !ep.consumed;
+                                                    BOOL flag = !episode.consumed;
                                                     strongSelf.userAction = YES;
                                                     strongSelf.suppressNextListReload = YES;
-                                                    [DMANAGER markEpisode:ep asConsumed:flag];
-                                                    if (flag && [ep isEqual:[AudioSession sharedAudioSession].episode]) {
+                                                    [DMANAGER markEpisode:episode asConsumed:flag];
+                                                    if (flag && [episode isEqual:[AudioSession sharedAudioSession].episode]) {
                                                         [[AudioSession sharedAudioSession] stop];
                                                     }
-                                                    BOOL removed = [strongSelf _removeEpisodeFromDisplayedListIfNeededAfterMutation:ep atIndexPath:indexPath];
+                                                    BOOL removed = [strongSelf _removeEpisodeFromDisplayedListIfNeededAfterMutation:episode atIndexPath:currentIndexPath];
                                                     if (!removed) {
-                                                        EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[strongSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                        EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[strongSelf.tableView cellForRowAtIndexPath:currentIndexPath];
                                                         if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
                                                             [cell updatePlayedAndStarredState];
                                                         }
@@ -2131,7 +2199,8 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                                          [weakSelf _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {
                                                              if (canDownload) {
                                                                  [[CacheManager sharedCacheManager] cacheEpisode:episode overwriteCellularLock:YES];
-                                                                 EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                                 NSIndexPath* currentIndexPath = [weakSelf _indexPathForEpisode:episode];
+                                                                 EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:currentIndexPath];
                                                                  [cell updatePlayComboButtonState];
                                                              }
                                                          }];
@@ -2145,8 +2214,9 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                                          image:[[UIImage systemImageNamed:@"square.and.arrow.down"] imageWithTintColor:[UIColor colorWithWhite:0.5f alpha:1.0f] renderingMode:UIImageRenderingModeAlwaysOriginal]
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
+                                                           NSIndexPath* currentIndexPath = [weakSelf _indexPathForEpisode:episode];
                                                            [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-                                                           EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:indexPath];
+                                                           EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[weakSelf.tableView cellForRowAtIndexPath:currentIndexPath];
                                                            [cell updatePlayComboButtonState];
                                                        }];
         [actions addObject:deleteFileAction];
