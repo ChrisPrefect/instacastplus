@@ -176,8 +176,8 @@ require(
 )
 require(
     "registeredContinuedTaskIdentifier" in app_delegate_source
-    and "registeredPattern" in app_delegate_source
-    and "registeredFallback" in app_delegate_source,
+    and "registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifier" in app_delegate_source
+    and "registeredPattern" not in app_delegate_source,
     "The launch-handler registration result is discarded instead of gating the submit.",
 )
 require(

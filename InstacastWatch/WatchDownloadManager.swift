@@ -139,6 +139,23 @@ private struct WatchDownloadStartRequest: Sendable {
     let generation: UInt64
 }
 
+private struct WatchDownloadProgressDecision: Sendable {
+    let shouldPublish: Bool
+    let sampledAt: Date
+}
+
+private struct WatchDownloadProgressDiagnostics: Sendable {
+    var lastCallbackAt: Date?
+    var lastPublishedAt: Date?
+    var callbackCount = 0
+    var maxCallbackGap: TimeInterval = 0
+}
+
+private struct WatchDownloadCollectedMetrics: Sendable {
+    let taskDuration: TimeInterval
+    let metadata: [String: String]
+}
+
 private struct WatchDownloadTransportSnapshot: Sendable {
     let statusCode: Int?
     let contentRange: String?
@@ -207,7 +224,6 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     private var reattachInProgress = false
     private var pendingReattachCompletions: [@MainActor () -> Void] = []
     private var reattachResolutionTask: Task<[WatchDownloadReconcileFileResolution], Never>?
-    private var lastProgressReportByHash: [String: Date] = [:]
     private var lastStorageStatusSendDate: Date?
     private let eventDateFormatter = ISO8601DateFormatter()
     private let removalCleanupBatchSize = 25
@@ -244,6 +260,9 @@ final class WatchDownloadManager: NSObject, ObservableObject {
     nonisolated(unsafe) private var stagedLocationsByTaskIdentifier: [Int: URL] = [:]
     nonisolated(unsafe) private var stagingFailureDescriptionsByTaskIdentifier: [Int: String] = [:]
     private let stagedLocationsLock = NSLock()
+    nonisolated(unsafe) private var progressDiagnosticsByTaskIdentifier: [Int: WatchDownloadProgressDiagnostics] = [:]
+    nonisolated(unsafe) private var collectedMetricsByTaskIdentifier: [Int: WatchDownloadCollectedMetrics] = [:]
+    private let downloadDiagnosticsLock = NSLock()
     private let backgroundSessionLifecycle = WatchBackgroundSessionLifecycle()
 
     private lazy var session: URLSession = {
@@ -619,13 +638,25 @@ final class WatchDownloadManager: NSObject, ObservableObject {
 
         var urlRequest = URLRequest(url: episode.mediaURL)
         urlRequest.allowsCellularAccess = true
-        var metadata = WatchDiagnostics.metadata(for: episode)
-        metadata["freeBytes"] = "\(projectedFreeBytes)"
-        metadata["expectedBytes"] = "\(episode.expectedBytes)"
-        WatchDiagnostics.log("download-start", message: "Watch-Download startet", metadata: metadata)
         let task = session.downloadTask(with: urlRequest)
         task.taskDescription = episode.episodeHash
         task.priority = request.priority
+        beginDownloadDiagnostics(taskIdentifier: task.taskIdentifier)
+        let configuration = session.configuration
+
+        var metadata = WatchDiagnostics.metadata(for: episode)
+        metadata["freeBytes"] = "\(projectedFreeBytes)"
+        metadata["expectedBytes"] = "\(episode.expectedBytes)"
+        metadata["taskIdentifier"] = "\(task.taskIdentifier)"
+        metadata["taskPriority"] = Self.decimalString(Double(task.priority))
+        metadata["sessionIdentifier"] = configuration.identifier ?? ""
+        metadata["sessionIsDiscretionary"] = configuration.isDiscretionary ? "true" : "false"
+        metadata["sessionWaitsForConnectivity"] = configuration.waitsForConnectivity ? "true" : "false"
+        metadata["sessionAllowsCellularAccess"] = configuration.allowsCellularAccess ? "true" : "false"
+        metadata["sessionAllowsExpensiveNetworkAccess"] = configuration.allowsExpensiveNetworkAccess ? "true" : "false"
+        metadata["sessionAllowsConstrainedNetworkAccess"] = configuration.allowsConstrainedNetworkAccess ? "true" : "false"
+        metadata["sessionNetworkServiceType"] = "\(configuration.networkServiceType.rawValue)"
+        WatchDiagnostics.log("download-start", message: "Watch-Download startet", metadata: metadata)
         activeTasksByHash[episode.episodeHash] = task
 
         WatchManifestStore.shared.updateEpisode(hash: episode.episodeHash) { item in
@@ -2006,7 +2037,6 @@ final class WatchDownloadManager: NSObject, ObservableObject {
         let episode = WatchManifestStore.shared.episode(hash: hash)
         activeTasksByHash[hash]?.cancel()
         activeTasksByHash[hash] = nil
-        lastProgressReportByHash[hash] = nil
         WatchManifestStore.shared.updateEpisode(hash: hash) { item in
             item.status = .evicted
             item.localFileURL = nil
@@ -2046,6 +2076,228 @@ final class WatchDownloadManager: NSObject, ObservableObject {
             return
         }
         WatchConnectivityController.shared.reportTerminalDownloadState(forEpisodeHash: hash)
+    }
+
+    nonisolated private func beginDownloadDiagnostics(taskIdentifier: Int) {
+        downloadDiagnosticsLock.lock()
+        progressDiagnosticsByTaskIdentifier[taskIdentifier] = WatchDownloadProgressDiagnostics()
+        collectedMetricsByTaskIdentifier[taskIdentifier] = nil
+        downloadDiagnosticsLock.unlock()
+    }
+
+    nonisolated private func recordProgressCallback(
+        taskIdentifier: Int,
+        sampledAt: Date = Date()
+    ) -> WatchDownloadProgressDecision {
+        downloadDiagnosticsLock.lock()
+        var diagnostics = progressDiagnosticsByTaskIdentifier[taskIdentifier]
+            ?? WatchDownloadProgressDiagnostics()
+        diagnostics.callbackCount += 1
+        if let lastCallbackAt = diagnostics.lastCallbackAt {
+            diagnostics.maxCallbackGap = max(
+                diagnostics.maxCallbackGap,
+                sampledAt.timeIntervalSince(lastCallbackAt)
+            )
+        }
+        diagnostics.lastCallbackAt = sampledAt
+        let shouldPublish = diagnostics.lastPublishedAt.map {
+            sampledAt.timeIntervalSince($0) >= 2
+        } ?? true
+        if shouldPublish {
+            diagnostics.lastPublishedAt = sampledAt
+        }
+        progressDiagnosticsByTaskIdentifier[taskIdentifier] = diagnostics
+        downloadDiagnosticsLock.unlock()
+        return WatchDownloadProgressDecision(
+            shouldPublish: shouldPublish,
+            sampledAt: sampledAt
+        )
+    }
+
+    nonisolated private func isCurrentProgressPublication(
+        taskIdentifier: Int,
+        sampledAt: Date
+    ) -> Bool {
+        downloadDiagnosticsLock.lock()
+        let isCurrent = progressDiagnosticsByTaskIdentifier[taskIdentifier]?.lastPublishedAt == sampledAt
+        downloadDiagnosticsLock.unlock()
+        return isCurrent
+    }
+
+    nonisolated private func storeCollectedMetrics(
+        _ metrics: WatchDownloadCollectedMetrics,
+        taskIdentifier: Int
+    ) {
+        downloadDiagnosticsLock.lock()
+        collectedMetricsByTaskIdentifier[taskIdentifier] = metrics
+        downloadDiagnosticsLock.unlock()
+    }
+
+    nonisolated private func finishDownloadDiagnostics(
+        task: URLSessionTask,
+        configuration: URLSessionConfiguration
+    ) -> [String: String] {
+        downloadDiagnosticsLock.lock()
+        let collectedMetrics = collectedMetricsByTaskIdentifier.removeValue(
+            forKey: task.taskIdentifier
+        )
+        let progress = progressDiagnosticsByTaskIdentifier.removeValue(
+            forKey: task.taskIdentifier
+        ) ?? WatchDownloadProgressDiagnostics()
+        downloadDiagnosticsLock.unlock()
+
+        let taskDuration = collectedMetrics?.taskDuration ?? 0
+        let receivedBytes = max(Int64(0), task.countOfBytesReceived)
+        var metadata = collectedMetrics?.metadata ?? Self.emptyTransportMetricsMetadata()
+        metadata["transportMetricsCollected"] = collectedMetrics == nil ? "false" : "true"
+        metadata["downloadElapsedSeconds"] = Self.decimalString(taskDuration)
+        metadata["downloadAverageBitsPerSecond"] = taskDuration > 0
+            ? Self.decimalString(Double(receivedBytes) * 8 / taskDuration)
+            : "0.000"
+        metadata["transportReceivedBytes"] = "\(receivedBytes)"
+        metadata["transportExpectedBytes"] = "\(task.countOfBytesExpectedToReceive)"
+        metadata["progressCallbackCount"] = "\(progress.callbackCount)"
+        metadata["maxProgressCallbackGapSeconds"] = Self.decimalString(progress.maxCallbackGap)
+        metadata["taskIdentifier"] = "\(task.taskIdentifier)"
+        metadata["taskPriority"] = Self.decimalString(Double(task.priority))
+        metadata["transportHTTPStatus"] = (task.response as? HTTPURLResponse).map {
+            "\($0.statusCode)"
+        } ?? ""
+        metadata["transportMIMEType"] = task.response?.mimeType ?? ""
+        metadata["transportResponseHost"] = task.response?.url?.host ?? ""
+        metadata["sessionIdentifier"] = configuration.identifier ?? ""
+        metadata["sessionIsDiscretionary"] = configuration.isDiscretionary ? "true" : "false"
+        metadata["sessionWaitsForConnectivity"] = configuration.waitsForConnectivity ? "true" : "false"
+        metadata["sessionAllowsCellularAccess"] = configuration.allowsCellularAccess ? "true" : "false"
+        metadata["sessionAllowsExpensiveNetworkAccess"] = configuration.allowsExpensiveNetworkAccess ? "true" : "false"
+        metadata["sessionAllowsConstrainedNetworkAccess"] = configuration.allowsConstrainedNetworkAccess ? "true" : "false"
+        metadata["sessionNetworkServiceType"] = "\(configuration.networkServiceType.rawValue)"
+        return metadata
+    }
+
+    nonisolated private static func collectedMetrics(
+        from metrics: URLSessionTaskMetrics
+    ) -> WatchDownloadCollectedMetrics {
+        var metadata = emptyTransportMetricsMetadata()
+        metadata["transportTaskSeconds"] = decimalString(metrics.taskInterval.duration)
+        metadata["transportTransactionCount"] = "\(metrics.transactionMetrics.count)"
+        metadata["transportRedirectCount"] = "\(metrics.redirectCount)"
+        let responseBodyBytes = metrics.transactionMetrics.reduce(Int64(0)) {
+            $0 + $1.countOfResponseBodyBytesReceived
+        }
+        let responseHeaderBytes = metrics.transactionMetrics.reduce(Int64(0)) {
+            $0 + $1.countOfResponseHeaderBytesReceived
+        }
+        let requestBodyBytes = metrics.transactionMetrics.reduce(Int64(0)) {
+            $0 + $1.countOfRequestBodyBytesSent
+        }
+        metadata["transportResponseBodyBytes"] = "\(responseBodyBytes)"
+        metadata["transportResponseHeaderBytes"] = "\(responseHeaderBytes)"
+        metadata["transportRequestBodyBytes"] = "\(requestBodyBytes)"
+        metadata["downloadStartTimestamp"] = diagnosticTimestamp(metrics.taskInterval.start)
+        metadata["downloadEndTimestamp"] = diagnosticTimestamp(metrics.taskInterval.end)
+
+        if let transaction = metrics.transactionMetrics.last {
+            metadata["transportProtocol"] = transaction.networkProtocolName ?? ""
+            metadata["transportFetchType"] = fetchTypeDescription(transaction.resourceFetchType)
+            metadata["transportCellular"] = transaction.isCellular ? "true" : "false"
+            metadata["transportExpensive"] = transaction.isExpensive ? "true" : "false"
+            metadata["transportConstrained"] = transaction.isConstrained ? "true" : "false"
+            metadata["transportMultipath"] = transaction.isMultipath ? "true" : "false"
+            metadata["transportReusedConnection"] = transaction.isReusedConnection ? "true" : "false"
+            metadata["transportProxyConnection"] = transaction.isProxyConnection ? "true" : "false"
+            metadata["transportDNSSeconds"] = intervalString(
+                from: transaction.domainLookupStartDate,
+                to: transaction.domainLookupEndDate
+            )
+            metadata["transportConnectSeconds"] = intervalString(
+                from: transaction.connectStartDate,
+                to: transaction.connectEndDate
+            )
+            metadata["transportTLSSeconds"] = intervalString(
+                from: transaction.secureConnectionStartDate,
+                to: transaction.secureConnectionEndDate
+            )
+            metadata["transportRequestSeconds"] = intervalString(
+                from: transaction.requestStartDate,
+                to: transaction.requestEndDate
+            )
+            metadata["transportTTFBSeconds"] = intervalString(
+                from: transaction.requestEndDate,
+                to: transaction.responseStartDate
+            )
+            metadata["transportResponseSeconds"] = intervalString(
+                from: transaction.responseStartDate,
+                to: transaction.responseEndDate
+            )
+        }
+        return WatchDownloadCollectedMetrics(
+            taskDuration: metrics.taskInterval.duration,
+            metadata: metadata
+        )
+    }
+
+    nonisolated private static func emptyTransportMetricsMetadata() -> [String: String] {
+        [
+            "transportTaskSeconds": "",
+            "transportTransactionCount": "0",
+            "transportRedirectCount": "0",
+            "transportProtocol": "",
+            "transportFetchType": "",
+            "transportCellular": "",
+            "transportExpensive": "",
+            "transportConstrained": "",
+            "transportMultipath": "",
+            "transportReusedConnection": "",
+            "transportProxyConnection": "",
+            "transportDNSSeconds": "",
+            "transportConnectSeconds": "",
+            "transportTLSSeconds": "",
+            "transportRequestSeconds": "",
+            "transportTTFBSeconds": "",
+            "transportResponseSeconds": "",
+            "transportResponseBodyBytes": "0",
+            "transportResponseHeaderBytes": "0",
+            "transportRequestBodyBytes": "0",
+            "downloadStartTimestamp": "",
+            "downloadEndTimestamp": "",
+        ]
+    }
+
+    nonisolated private static func intervalString(from start: Date?, to end: Date?) -> String {
+        guard let start, let end else { return "" }
+        return decimalString(max(0, end.timeIntervalSince(start)))
+    }
+
+    nonisolated private static func fetchTypeDescription(
+        _ fetchType: URLSessionTaskMetrics.ResourceFetchType
+    ) -> String {
+        switch fetchType {
+        case .networkLoad:
+            return "networkLoad"
+        case .serverPush:
+            return "serverPush"
+        case .localCache:
+            return "localCache"
+        case .unknown:
+            return "unknown"
+        @unknown default:
+            return "unknown-\(fetchType.rawValue)"
+        }
+    }
+
+    nonisolated private static func decimalString(_ value: Double) -> String {
+        String(
+            format: "%.3f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            value
+        )
+    }
+
+    nonisolated private static func diagnosticTimestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: date)
     }
 
     private func timestamp(_ date: Date = Date()) -> String {
@@ -2267,6 +2519,10 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
         // delivered as soon as this callback returns, while the MainActor work below is pending.
         let backgroundFinalization = backgroundSessionLifecycle.beginFinalization()
         let hash = task.taskDescription ?? ""
+        let transportMetadata = finishDownloadDiagnostics(
+            task: task,
+            configuration: session.configuration
+        )
         stagedLocationsLock.lock()
         let stagedLocation = stagedLocationsByTaskIdentifier.removeValue(
             forKey: task.taskIdentifier
@@ -2279,6 +2535,20 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
 
         Task { @MainActor in
             defer { backgroundFinalization?.finishFinalization() }
+            var transportLogMetadata = transportMetadata
+            transportLogMetadata["episodeHash"] = hash
+            if let error {
+                let nsError = error as NSError
+                transportLogMetadata["completionErrorDomain"] = nsError.domain
+                transportLogMetadata["completionErrorCode"] = "\(nsError.code)"
+                transportLogMetadata["completionErrorDescription"] = nsError.localizedDescription
+            }
+            WatchDiagnostics.log(
+                "download-transport-metrics",
+                message: "Watch-Download Transportmetriken",
+                metadata: transportLogMetadata,
+                delivery: .reliable
+            )
             guard let downloadTask else {
                 if let stagedLocation {
                     await discardFinishedDownload(fileURL: stagedLocation, hash: hash)
@@ -2330,6 +2600,17 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
         }
     }
 
+    nonisolated func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didFinishCollecting metrics: URLSessionTaskMetrics
+    ) {
+        storeCollectedMetrics(
+            Self.collectedMetrics(from: metrics),
+            taskIdentifier: task.taskIdentifier
+        )
+    }
+
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         // This may precede handleBackgroundEvents/waiter installation, so the lifecycle latches
         // it instead of trying to resume a one-shot continuation directly.
@@ -2342,6 +2623,10 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                                 totalBytesWritten: Int64,
                                 totalBytesExpectedToWrite: Int64) {
         let hash = downloadTask.taskDescription ?? ""
+        let progressDecision = recordProgressCallback(
+            taskIdentifier: downloadTask.taskIdentifier
+        )
+        guard progressDecision.shouldPublish else { return }
         Task { @MainActor in
             // A late progress callback after the storage guard aborted (.evicted) or the task failed
             // must not resurrect the episode back to .downloading.
@@ -2359,11 +2644,7 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
                 storagePreparationGeneration &+= 1
             }
 
-            let now = Date()
-            if let last = lastProgressReportByHash[hash], now.timeIntervalSince(last) < 2 {
-                return
-            }
-            lastProgressReportByHash[hash] = now
+            let now = progressDecision.sampledAt
 
             // Behind the 2 s throttle: updateEpisode persists the whole manifest JSON to disk —
             // running it on EVERY didWriteData callback burned disk writes several times a second.
@@ -2390,7 +2671,10 @@ extension WatchDownloadManager: URLSessionDownloadDelegate {
             )
             guard activeTasksByHash[hash] === downloadTask,
                   WatchManifestStore.shared.episode(hash: hash)?.status == .downloading,
-                  lastProgressReportByHash[hash] == now else { return }
+                  isCurrentProgressPublication(
+                    taskIdentifier: downloadTask.taskIdentifier,
+                    sampledAt: now
+                  ) else { return }
             WatchStorageManager.shared.recordAvailableBytes(measuredFreeBytes)
             if measuredFreeBytes < WatchStorageManager.minimumReserveBytes {
                 abortDownloadForInsufficientStorage(

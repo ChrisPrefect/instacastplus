@@ -1,5 +1,7 @@
+import Darwin
 import Foundation
 import WatchConnectivity
+import WatchKit
 
 enum WatchConnectivityDelivery {
     case durable
@@ -647,6 +649,42 @@ final class WatchConnectivityController: NSObject, ObservableObject, WCSessionDe
 enum WatchDiagnostics {
     static func log(_ event: String, message: String, metadata: [String: String] = [:], delivery: WatchConnectivityDelivery = .reliable) {
         var payloadMetadata = metadata
+        let bundle = Bundle.main
+        let device = WKInterfaceDevice.current()
+        let processInfo = ProcessInfo.processInfo
+        payloadMetadata["watchAppVersion"] = bundle.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? ""
+        payloadMetadata["watchAppBuild"] = bundle.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? ""
+        payloadMetadata["watchSystemVersion"] = processInfo.operatingSystemVersionString
+        payloadMetadata["watchDeviceSystemVersion"] = device.systemVersion
+        payloadMetadata["watchSystemName"] = device.systemName
+        payloadMetadata["watchModel"] = device.model
+        payloadMetadata["watchLocalizedModel"] = device.localizedModel
+        payloadMetadata["watchHardwareIdentifier"] = cachedHardwareIdentifier
+        payloadMetadata["watchLowPowerModeEnabled"] = processInfo.isLowPowerModeEnabled ? "true" : "false"
+        payloadMetadata["watchThermalState"] = thermalStateDescription(processInfo.thermalState)
+        payloadMetadata["watchPhysicalMemoryBytes"] = "\(processInfo.physicalMemory)"
+        payloadMetadata["watchLocale"] = Locale.current.identifier
+        payloadMetadata["watchTimeZone"] = TimeZone.current.identifier
+        if WCSession.isSupported() {
+            let session = WCSession.default
+            payloadMetadata["watchConnectivityActivationState"] = activationStateDescription(
+                session.activationState
+            )
+            payloadMetadata["watchConnectivityReachable"] = session.isReachable ? "true" : "false"
+            payloadMetadata["watchConnectivityOutstandingUserInfoTransfers"] = "\(session.outstandingUserInfoTransfers.count)"
+            payloadMetadata["watchConnectivityOutstandingFileTransfers"] = "\(session.outstandingFileTransfers.count)"
+            payloadMetadata["watchConnectivityHasContentPending"] = session.hasContentPending ? "true" : "false"
+        } else {
+            payloadMetadata["watchConnectivityActivationState"] = "unsupported"
+            payloadMetadata["watchConnectivityReachable"] = "false"
+            payloadMetadata["watchConnectivityOutstandingUserInfoTransfers"] = "0"
+            payloadMetadata["watchConnectivityOutstandingFileTransfers"] = "0"
+            payloadMetadata["watchConnectivityHasContentPending"] = "false"
+        }
         payloadMetadata["event"] = event
         payloadMetadata["timestamp"] = timestamp()
         NSLog("[InstacastWatch][%@] %@ %@", event, message, payloadMetadata.description)
@@ -684,6 +722,48 @@ enum WatchDiagnostics {
         }
         return String(format: "%016llx", hash)
     }
+
+    private static func activationStateDescription(_ state: WCSessionActivationState) -> String {
+        switch state {
+        case .notActivated:
+            return "notActivated"
+        case .inactive:
+            return "inactive"
+        case .activated:
+            return "activated"
+        @unknown default:
+            return "unknown-\(state.rawValue)"
+        }
+    }
+
+    private static func thermalStateDescription(_ state: ProcessInfo.ThermalState) -> String {
+        switch state {
+        case .nominal:
+            return "nominal"
+        case .fair:
+            return "fair"
+        case .serious:
+            return "serious"
+        case .critical:
+            return "critical"
+        @unknown default:
+            return "unknown-\(state.rawValue)"
+        }
+    }
+
+    private static func hardwareIdentifier() -> String {
+        var systemInfo = utsname()
+        guard uname(&systemInfo) == 0 else { return "" }
+        var machine = systemInfo.machine
+        let capacity = MemoryLayout.size(ofValue: machine)
+        return withUnsafePointer(to: &machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: capacity) {
+                String(cString: $0)
+            }
+        }
+    }
+
+    private static let cachedHardwareIdentifier = hardwareIdentifier()
 
     private static func timestamp() -> String {
         let formatter = ISO8601DateFormatter()

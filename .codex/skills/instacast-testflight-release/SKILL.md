@@ -18,17 +18,23 @@ App Store Connect facts currently used by this project:
 - External tester group: `External Testers` (`aefb6bc1-71f0-4c9d-a792-9b455c0d9a23`)
 - Primary beta locale in ASC: `en-US`; still write `What to Test` in German.
 
+## Release Source Of Truth
+
+The current filesystem contents are the only source of truth for a release, including every uncommitted and untracked source, configuration, and resource file. Git commits, branches, tags, remotes, and GitHub never define what is current in this project; GitHub is backup only. Never identify or validate a release by a commit ID.
+
+Inventory the relevant local files immediately before archiving. Recheck them after the archive and before upload, excluding only generated build output and intentional build-number edits. If any relevant file changed, the archive is stale: do not upload it; archive again from the newest filesystem state.
+
 ## Scope Discipline
 
 Keep TestFlight releases narrow. Do not run regression tests, broad build suites, long diff archaeology, or simulator checks just because the worktree already contains related changes. For a release-only request, the archive, upload, and ASC state are the required verification.
 
-Use only cheap release facts before building: `git status --short`, current version/build, latest ASC builds for the same marketing version, and at most a diff stat or changed-file list to draft `What to Test`.
+Use only cheap release facts before building: an inventory of the current local files (including untracked files), current version/build, latest ASC builds for the same marketing version, and at most a diff stat or changed-file list to draft `What to Test`. Git output is only an inventory aid and never the definition of the release contents.
 
 If a release blocker appears, read the failing log and fix only the explicit root cause when it is local and necessary for upload. Then rerun the minimum command that proves that exact blocker is gone. If the blocker is external or ambiguous, stop with the real error instead of expanding into unrelated tests or speculative fixes.
 
 ## Workflow
 
-1. Check the worktree and current version/build. Do not revert unrelated local changes. Ignore user-specific Xcode state files unless they block the release.
+1. Inventory the current filesystem contents and current version/build, including uncommitted and untracked files. Do not revert unrelated local changes. Ignore user-specific Xcode state files unless they block the release. Record enough file state to detect relevant changes before upload; do not use a commit or branch as the release boundary.
 2. Confirm the current ASC build state before choosing the next build number. Do not release expired builds or reuse a build number already uploaded for the current release. Do not re-release build `3.4 (10)`, which was already released by the user on 2026-05-23.
 3. If uploading a new build, increment only the build number with `agvtool new-version -all <next-build>`. Leave `MARKETING_VERSION` unchanged unless the user explicitly requests a version bump.
 4. Archive the iOS app and log the full output:
@@ -45,6 +51,8 @@ tail -n 30 build/TestFlight/archive-<version>-<build>.log
 ```
 
 Require `CFBundleShortVersionString=<version>`, `CFBundleVersion=<build>`, bundle ID `com.iteconomy.instacastplus`, team `L95F4M2LHG`, and `** ARCHIVE SUCCEEDED **`.
+
+Recheck the relevant local source, configuration, and resource files against the pre-archive inventory. If they changed, discard the archive and rebuild it from the latest filesystem contents before any upload.
 
 If the archive contains the embedded Watch app, check only its built `Info.plist` with `plutil`; require `UIBackgroundModes` to contain `audio`. Do not run Watch regression scripts for a release-only request unless the user explicitly asks.
 

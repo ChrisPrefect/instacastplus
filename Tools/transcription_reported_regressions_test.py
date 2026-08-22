@@ -119,7 +119,7 @@ require(
 require(
     "transcription.continued.*" in iphone_plist
     and "transcription.continued.*" in ipad_plist
-    and 'ICTranscriptionContinuedTaskIdentifierPattern = @"com.iteconomy.instacastplus.transcription.continued.*"' in app_delegate
+    and 'ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued.session"' in app_delegate
     and "ICTranscriptionActiveContinuedIdentifier" in app_delegate
     and "ICTranscriptionActiveContinuedIdentifier" in controller
     and "NSUUID.UUID.UUIDString" in controller,

@@ -624,8 +624,12 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
     if ([WCSession isSupported]) {
         WCSession* session = WCSession.defaultSession;
         session.delegate = self;
-        [session activateSession];
-        [self _refreshSessionStateAndNotify:YES];
+        if (session.activationState == WCSessionActivationStateActivated) {
+            [self _refreshSessionStateAndNotify:YES];
+        }
+        else {
+            [session activateSession];
+        }
     }
 #endif
 
@@ -3440,9 +3444,16 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
     if ([WCSession isSupported]) {
         WCSession* session = WCSession.defaultSession;
         self.supported = YES;
-        self.paired = session.paired;
-        self.watchAppInstalled = session.watchAppInstalled;
-        self.reachable = session.reachable;
+        if (session.activationState == WCSessionActivationStateActivated) {
+            self.paired = session.paired;
+            self.watchAppInstalled = session.watchAppInstalled;
+            self.reachable = session.reachable;
+        }
+        else {
+            self.paired = NO;
+            self.watchAppInstalled = NO;
+            self.reachable = NO;
+        }
         if (!self.watchAppInstalled) {
             self.watchManifestProtocolVersion = 0;
             self.legacyManifestRevisionAwaitingResult = 0;

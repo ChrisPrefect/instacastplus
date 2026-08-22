@@ -30,7 +30,7 @@ struct InstacastWatchApp: App {
                         "phase": String(describing: phase),
                         "isPlaying": player.isPlaying ? "true" : "false",
                         "playingHash": player.playingEpisodeHash ?? "",
-                    ])
+                    ], delivery: .live)
                 }
         }
         .backgroundTask(.urlSession(WatchDownloadManager.backgroundSessionIdentifier)) {
