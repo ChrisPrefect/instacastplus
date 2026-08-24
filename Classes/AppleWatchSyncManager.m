@@ -233,6 +233,7 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
 @property (nonatomic) NSInteger cachedWatchTransferDownloadingCount;
 @property (nonatomic) NSInteger cachedWatchStorageEvictedCount;
 @property (nonatomic) NSInteger cachedWatchDownloadedCount;
+@property (nonatomic, copy) NSSet<NSString*>* cachedWatchDownloadedEpisodeHashes;
 @property (nonatomic, strong) NSMutableSet<NSString*>* pendingLiveStatusEpisodeHashes;
 @property (nonatomic) BOOL pendingGlobalLiveStatusChange;
 @property (nonatomic) BOOL liveStatusNotificationScheduled;
@@ -514,6 +515,7 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
     self.cachedWatchTransferDownloadingCount = 0;
     self.cachedWatchStorageEvictedCount = 0;
     self.cachedWatchDownloadedCount = 0;
+    self.cachedWatchDownloadedEpisodeHashes = nil;
 }
 
 - (void)_rebuildWatchTransferSnapshotIfNeeded
@@ -537,13 +539,33 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
     }
     NSDictionary<NSString*, CDEpisode*>* episodesByHash =
         [self _episodesByHashForEpisodeHashes:hashesMissingExpectedBytes];
+    NSMutableSet<NSString*>* downloadedEpisodeHashes = [NSMutableSet set];
     for (AppleWatchEpisodeState* state in visibleStates) {
         self.cachedWatchStorageEvictedCount += [state.watchStatus isEqualToString:ICAppleWatchStatusEvicted];
         self.cachedWatchDownloadedCount += state.downloadedOnWatch;
+        if (state.downloadedOnWatch && state.episodeHash.length > 0) {
+            [downloadedEpisodeHashes addObject:state.episodeHash];
+        }
         NSDictionary* contribution = [self _watchTransferContributionForState:state episodesByHash:episodesByHash];
         [self _setWatchTransferContribution:contribution forEpisodeHash:state.episodeHash ?: @""];
     }
+    self.cachedWatchDownloadedEpisodeHashes = downloadedEpisodeHashes;
     self.watchTransferSnapshotValid = YES;
+}
+
+- (void)_rebuildWatchDownloadedEpisodeHashesIfNeeded
+{
+    if (self.cachedWatchDownloadedEpisodeHashes != nil) {
+        return;
+    }
+
+    NSMutableSet<NSString*>* downloadedEpisodeHashes = [NSMutableSet set];
+    for (AppleWatchEpisodeState* state in [self visibleEpisodeStates]) {
+        if (state.downloadedOnWatch && state.episodeHash.length > 0) {
+            [downloadedEpisodeHashes addObject:state.episodeHash];
+        }
+    }
+    self.cachedWatchDownloadedEpisodeHashes = downloadedEpisodeHashes;
 }
 
 - (void)_updateCachedWatchTransferContributionForState:(AppleWatchEpisodeState*)state
@@ -883,7 +905,8 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
 
 - (BOOL)isEpisodeDownloadedOnWatch:(CDEpisode*)episode
 {
-    return [[self stateForEpisodeHash:episode.objectHash] downloadedOnWatch];
+    [self _rebuildWatchDownloadedEpisodeHashesIfNeeded];
+    return [self.cachedWatchDownloadedEpisodeHashes containsObject:episode.objectHash];
 }
 
 - (NSInteger)watchStorageEvictedCount
@@ -1250,21 +1273,23 @@ static BOOL ICEnumerateJSONLinesAtURL(NSURL* fileURL,
         @"entryCount": @(entries.count),
     } mutableCopy];
     BOOL wroteManifest = ICWriteJSONObjectLine(stream, header, error);
+    NSError* __strong entryError = nil;
     for (id value in entries) {
         @autoreleasepool {
             if (!wroteManifest) {
                 break;
             }
             if (![value isKindOfClass:[NSDictionary class]]) {
-                if (error) *error = ICAppleWatchManifestFileError(17);
+                entryError = ICAppleWatchManifestFileError(17);
                 wroteManifest = NO;
                 break;
             }
-            wroteManifest = ICWriteJSONObjectLine(stream, value, error);
+            wroteManifest = ICWriteJSONObjectLine(stream, value, &entryError);
         }
     }
     [stream close];
     if (!wroteManifest) {
+        if (error && entryError) *error = entryError;
         [[NSFileManager defaultManager] removeItemAtURL:temporaryURL error:nil];
         return nil;
     }

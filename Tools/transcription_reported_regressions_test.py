@@ -53,11 +53,12 @@ require(
 # One OpenAI key is valid for both GPT-5.6 API models. Sol may retain Codex
 # login as an additional route, but must prefer the configured API key and use
 # the durable Responses API path when it is present.
-sol_model = engine.split(
-    'identifier: "openai-codex-gpt-5.6-sol-oauth"', 1
-)[1].split("ICDownloadableModel(", 1)[0]
+unavailable_reason = engine.split(
+    "@objc static func selectedChapterModelUnavailableReason()", 1
+)[1].split("@objc(isDownloadedModel:)", 1)[0]
 require(
-    "OpenAI API-Key oder Codex Login" in sol_model,
+    "case .openAICodexOAuth:" in unavailable_reason
+    and "OpenAI API-Key oder Codex Login fehlt." in unavailable_reason,
     "GPT-5.6 Sol still claims that only a separate Codex login can unlock it.",
 )
 require(
@@ -78,7 +79,7 @@ require(
     "Sol does not prefer an OpenAI API key while preserving Codex login as an alternative.",
 )
 require(
-    '[pasteButton setTitle:NSLocalizedString(@"Einfügen", nil)' in settings
+    'pasteButtonConfiguration.title = NSLocalizedString(@"Einfügen", nil)' in settings
     and "UIPasteboard.generalPasteboard.string" in settings,
     "API-key dialogs still have no explicit paste button.",
 )
@@ -113,17 +114,19 @@ require(
 )
 
 
-# iOS 26 requires a wildcard registration identifier and a unique concrete ID
-# per continued-processing job. This also prevents stale jobs from being reused
-# as a second Live Activity.
+# iOS 26.5 keeps the wildcard permission in Info.plist but rejects registering
+# the wildcard itself. The app therefore registers one covered concrete ID and
+# submits that accepted ID while tracking it as the active request.
 require(
     "transcription.continued.*" in iphone_plist
     and "transcription.continued.*" in ipad_plist
     and 'ICTranscriptionContinuedTaskIdentifier = @"com.iteconomy.instacastplus.transcription.continued.session"' in app_delegate
+    and "registerForTaskWithIdentifier:ICTranscriptionContinuedTaskIdentifier" in app_delegate
+    and "return self.registeredContinuedTaskIdentifier;" in app_delegate
     and "ICTranscriptionActiveContinuedIdentifier" in app_delegate
     and "ICTranscriptionActiveContinuedIdentifier" in controller
-    and "NSUUID.UUID.UUIDString" in controller,
-    "Continued-processing tasks still reuse one non-wildcard identifier across Live Activities.",
+    and "newTranscriptionContinuedTaskIdentifier" in controller,
+    "Continued-processing requests do not use the concrete identifier accepted by iOS 26.5.",
 )
 require(
     "continuedTask.identifier" in app_delegate

@@ -886,18 +886,27 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     }
 
     NSArray<NSString*>* cachedHashes = cachedEpisodeHashes.allObjects;
+    NSError* __strong cachedEpisodeFetchError = nil;
     for (NSUInteger offset = 0; offset < cachedHashes.count; offset += ICBackupFetchBatchSize) {
+        BOOL cachedEpisodeFetchFailed = NO;
         @autoreleasepool {
             NSArray<NSString*>* hashBatch = [cachedHashes subarrayWithRange:NSMakeRange(offset, MIN(ICBackupFetchBatchSize, cachedHashes.count - offset))];
             NSFetchRequest* cachedEpisodesRequest = [[NSFetchRequest alloc] initWithEntityName:@"Episode"];
             cachedEpisodesRequest.predicate = [NSPredicate predicateWithFormat:@"feed.subscribed == YES AND objectHash IN %@", hashBatch];
             cachedEpisodesRequest.relationshipKeyPathsForPrefetching = @[@"feed", @"media"];
             cachedEpisodesRequest.fetchBatchSize = ICBackupFetchBatchSize;
-            NSArray<CDEpisode*>* cachedEpisodes = [context executeFetchRequest:cachedEpisodesRequest error:error];
-            if (!cachedEpisodes) return nil;
-            for (CDEpisode* episode in cachedEpisodes) {
-                indexEpisode(episode);
+            NSArray<CDEpisode*>* cachedEpisodes = [context executeFetchRequest:cachedEpisodesRequest error:&cachedEpisodeFetchError];
+            if (!cachedEpisodes) {
+                cachedEpisodeFetchFailed = YES;
+            } else {
+                for (CDEpisode* episode in cachedEpisodes) {
+                    indexEpisode(episode);
+                }
             }
+        }
+        if (cachedEpisodeFetchFailed) {
+            if (error) *error = cachedEpisodeFetchError;
+            return nil;
         }
     }
 

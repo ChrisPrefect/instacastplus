@@ -64,13 +64,17 @@ model_chunk_body = source_slice(
 
 for name, source in {
     "CDEpisode consumed cleanup": episode_model_source,
-    "Player transcript cleanup": player_info_source,
     "CacheManager transcript cleanup": cache_manager_source,
 }.items():
     require(
         'pathExtension] isEqualToString:@"trcache"' in source,
         f"{name} still deletes every <episodeHash>_ artifact instead of only transcript cache files.",
     )
+require(
+    'stringWithFormat:@"%@_%@.trcache"' in player_info_source
+    and "_removeTranscriptCacheForEpisodeHash:" in player_info_source,
+    "Player transcript cleanup must target one resolved .trcache file, never every episode artifact.",
+)
 
 require(
     "seekToTime:chapter.timecode tolerance:NO" in player_info_source

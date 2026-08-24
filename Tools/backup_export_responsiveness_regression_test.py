@@ -109,6 +109,17 @@ require(
     "writeToURL:url options:NSDataWritingAtomic error:" in builder,
     "Backup file writes must be checked instead of opening a share sheet for a missing file.",
 )
+require(
+    "NSError* __strong cachedEpisodeFetchError = nil" in builder
+    and "executeFetchRequest:cachedEpisodesRequest error:&cachedEpisodeFetchError" in builder
+    and "if (error) *error = cachedEpisodeFetchError" in builder,
+    "A batched fetch error must be retained across its inner autorelease pool before export returns it.",
+)
+cached_batch = builder.split("for (NSUInteger offset = 0; offset < cachedHashes.count", 1)[1].split("[xml appendString", 1)[0]
+require(
+    "executeFetchRequest:cachedEpisodesRequest error:error" not in cached_batch,
+    "The export must not write its autoreleasing caller error directly inside a batch pool.",
+)
 
 completion = method_body("- (void)presentPendingFullExportResultIfNeeded")
 view_did_appear = method_body("- (void)viewDidAppear:")

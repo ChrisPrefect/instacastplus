@@ -60,7 +60,10 @@ GATED_LISTS = {
         "_reloadDataFromManager",
         "_reloadVisibleRowsForEpisodeHashes:",
     ],
-    "TranscriptionQueueViewController.m": [],
+    "TranscriptionQueueViewController.m": [
+        "_queueChanged",
+        "_contextObjectsDidChange:",
+    ],
     "DownloadsViewController.m": [
         "_setObserving:",
         "updateAppearance",
@@ -106,6 +109,41 @@ for filename in ["EpisodesTableViewController.m",
     text = source(filename)
     require(text.count("_endSwipeInteractionAndFlushDeferredUpdate") >= 3,
             f"{filename} does not release the swipe gate from its swipe action handlers.")
+
+transcription_queue = source("TranscriptionQueueViewController.m")
+queue_changed = body(transcription_queue, "- (void)_queueChanged")
+context_changed = body(transcription_queue, "- (void)_contextObjectsDidChange:")
+swipe_ended = body(
+    transcription_queue,
+    "- (void)tableView:(UITableView *)tableView didEndEditingRowAtIndexPath:",
+)
+flush = body(transcription_queue, "- (void)_endSwipeInteractionAndFlushDeferredUpdate")
+commit_delete = body(
+    transcription_queue,
+    "- (void)tableView:(UITableView *)tableView commitEditingStyle:",
+)
+trailing_delete = body(
+    transcription_queue,
+    "trailingSwipeActionsConfigurationForRowAtIndexPath:",
+)
+require(
+    "pendingReloadAfterSwipe = YES" in queue_changed
+    and "pendingReloadAfterSwipe = YES" in context_changed,
+    "Transcription queue structure/cache changes must be remembered while a swipe owns the table.",
+)
+require(
+    "_endSwipeInteractionAndFlushDeferredUpdate" in swipe_ended
+    and "pendingReloadAfterSwipe" in flush
+    and "reloadData" in flush,
+    "The transcription queue must replay one pending structural reload when the swipe ends.",
+)
+for delete_path, name in ((commit_delete, "editing delete"), (trailing_delete, "trailing swipe")):
+    require(
+        "performBatchUpdates:" in delete_path
+        and "completion:" in delete_path
+        and "dispatch_after" not in delete_path,
+        f"Transcription queue {name} must release its gate from UIKit completion, not a fixed delay.",
+    )
 
 # ICTintColor is read from cell layout. Resolving it from NSUserDefaults per access
 # was measured at ~123 µs (vs ~0.2 µs) whenever the stored hex was not canonical.

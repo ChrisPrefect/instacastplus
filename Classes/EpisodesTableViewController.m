@@ -2573,16 +2573,39 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 - (void) downloadSelection:(id)sender
 {
     NSArray* selectedIndexPathes = [self.tableView indexPathsForSelectedRows];
+    NSMutableArray<CDEpisode*>* selectedEpisodes = [NSMutableArray arrayWithCapacity:selectedIndexPathes.count];
+    for (NSIndexPath* selectedIndexPath in selectedIndexPathes) {
+        if (selectedIndexPath.section != 0 || selectedIndexPath.row >= self.episodes.count) {
+            continue;
+        }
+        CDEpisode* episode = self.episodes[selectedIndexPath.row];
+        [selectedEpisodes addObject:episode];
+    }
+    NSSet<CDEpisode*>* selectedEpisodeSet = [NSSet setWithArray:selectedEpisodes];
     CacheManager* cman = [CacheManager sharedCacheManager];
     
     [self _askUserForCellularDownloadIfNecessary:^(BOOL canDownload) {
         if (canDownload) {
-            for(NSIndexPath* selectedIndexPath in selectedIndexPathes) {
-                CDEpisode* episode = [self.episodes objectAtIndex:selectedIndexPath.row];
+            NSMutableArray<NSIndexPath*>* currentIndexPaths = [NSMutableArray array];
+            for (CDEpisode* episode in selectedEpisodes) {
+                if (episode.isDeleted || !episode.managedObjectContext) {
+                    continue;
+                }
                 [cman cacheEpisode:episode overwriteCellularLock:YES];
             }
+            NSArray<CDEpisode*>* currentEpisodes = self.episodes;
+            for (NSIndexPath* currentIndexPath in self.tableView.indexPathsForVisibleRows) {
+                if (currentIndexPath.section == 0 && currentIndexPath.row < currentEpisodes.count) {
+                    CDEpisode* currentEpisode = currentEpisodes[currentIndexPath.row];
+                    if ([selectedEpisodeSet containsObject:currentEpisode]) {
+                        [currentIndexPaths addObject:currentIndexPath];
+                    }
+                }
+            }
             [self setEditing:NO animated:YES];
-            [self.tableView reloadRowsAtIndexPaths:selectedIndexPathes withRowAnimation:UITableViewRowAnimationFade];
+            if (currentIndexPaths.count > 0) {
+                [self.tableView reloadRowsAtIndexPaths:currentIndexPaths withRowAnimation:UITableViewRowAnimationFade];
+            }
         }
     }];
 }

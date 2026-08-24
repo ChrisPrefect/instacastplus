@@ -142,6 +142,7 @@
 @property (nonatomic) BOOL suppressReload; // prevent double-update during swipe delete
 @property (nonatomic) BOOL backgroundTaskActive;
 @property (nonatomic) BOOL swipeInteractionActive;
+@property (nonatomic) BOOL pendingReloadAfterSwipe;
 @property (nonatomic, copy) NSDictionary<NSString*, CDEpisode*>* episodeCache;
 @property (nonatomic, copy) NSSet<NSString*>* episodeCacheHashes;
 @end
@@ -226,8 +227,10 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
 - (void)_queueChanged {
     [self _rebuildEpisodeCacheForCurrentItems];
-    if (self.suppressReload) return;
-    if (self.swipeInteractionActive) return;
+    if (self.suppressReload || self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
+        return;
+    }
     [self _syncBackgroundButtonState];
     [self _restartElapsedTimerIfNeeded];
     // Debounce: coalesce rapid queue changes into a single reload
@@ -236,8 +239,11 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)_debouncedReload {
-    if (self.suppressReload) return;
-    if (self.swipeInteractionActive) return;
+    if (self.suppressReload || self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
+        return;
+    }
+    self.pendingReloadAfterSwipe = NO;
     [self.tableView reloadData];
 }
 
@@ -901,6 +907,10 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     self.episodeCacheHashes = nil;
     [self _rebuildEpisodeCacheForCurrentItems];
     if (self.viewIfLoaded.window) {
+        if (self.suppressReload || self.swipeInteractionActive) {
+            self.pendingReloadAfterSwipe = YES;
+            return;
+        }
         [self.tableView reloadData];
     }
 }
@@ -948,13 +958,28 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (void)tableView:(UITableView *)tableView didEndEditingRowAtIndexPath:(NSIndexPath *)indexPath {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        self.swipeInteractionActive = NO;
-        if (!self.suppressReload) {
-            [self _syncBackgroundButtonState];
-            [self _progressUpdated];
-        }
-    });
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
+- (void)_endSwipeInteractionAndFlushDeferredUpdate {
+    self.swipeInteractionActive = NO;
+    if (self.suppressReload) {
+        return;
+    }
+
+    [self _syncBackgroundButtonState];
+    if (self.pendingReloadAfterSwipe) {
+        self.pendingReloadAfterSwipe = NO;
+        [self.tableView reloadData];
+        [self _restartElapsedTimerIfNeeded];
+    } else {
+        [self _progressUpdated];
+    }
+}
+
+- (void)_finishSwipeDeletionUpdate {
+    self.suppressReload = NO;
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
 }
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -964,13 +989,12 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
         self.suppressReload = YES;
         if (item.usesServerTranscription) [[ServerTranscriptionManager shared] dequeueEpisodeHash:item.episodeHash];
         else [[TranscriptionQueue shared] dequeueWithEpisodeHash:item.episodeHash];
-        [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            self.suppressReload = NO;
-            self.swipeInteractionActive = NO;
-            [self _syncBackgroundButtonState];
-            [self _progressUpdated];
-        });
+        self.pendingReloadAfterSwipe = NO;
+        [tableView performBatchUpdates:^{
+            [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+        } completion:^(__unused BOOL finished) {
+            [self _finishSwipeDeletionUpdate];
+        }];
     }
 }
 
@@ -983,27 +1007,44 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 }
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (indexPath.section != 0 || indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) {
+        return nil;
+    }
     self.swipeInteractionActive = YES;
+    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    NSString* episodeHash = [item.episodeHash copy];
+    BOOL usesServerTranscription = item.usesServerTranscription;
     UIContextualAction *action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
                                                                         title:NSLocalizedString(@"Entfernen", nil)
                                                                       handler:^(UIContextualAction *a, UIView *v, void (^c)(BOOL)) {
-        if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) { c(NO); return; }
-        ICTranscriptionQueueItem *item = [TranscriptionQueue shared].displayItems[indexPath.row];
+        NSArray<ICTranscriptionQueueItem*>* currentItems = [TranscriptionQueue shared].displayItems;
+        NSUInteger currentRow = [currentItems indexOfObjectIdenticalTo:item];
+        if (currentRow == NSNotFound) {
+            c(NO);
+            [self _endSwipeInteractionAndFlushDeferredUpdate];
+            return;
+        }
+        BOOL canAnimateDeletion = !self.pendingReloadAfterSwipe &&
+                                  currentRow == (NSUInteger)indexPath.row &&
+                                  [tableView numberOfRowsInSection:0] == (NSInteger)currentItems.count;
         // Suppress queue-change notifications while we manually delete the row so the
         // debounced reload doesn't reset the tableView state half-way through the animation.
         self.suppressReload = YES;
-        if (item.usesServerTranscription) [[ServerTranscriptionManager shared] dequeueEpisodeHash:item.episodeHash];
-        else [[TranscriptionQueue shared] dequeueWithEpisodeHash:item.episodeHash];
-        // UITableView does NOT remove the row automatically when the completion handler
-        // reports YES — we must delete it explicitly now that the data source is updated.
-        [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+        if (usesServerTranscription) [[ServerTranscriptionManager shared] dequeueEpisodeHash:episodeHash];
+        else [[TranscriptionQueue shared] dequeueWithEpisodeHash:episodeHash];
+        NSInteger updatedCount = (NSInteger)[TranscriptionQueue shared].displayItems.count;
+        if (canAnimateDeletion && updatedCount + 1 == (NSInteger)currentItems.count) {
+            self.pendingReloadAfterSwipe = NO;
+            [tableView performBatchUpdates:^{
+                [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+            } completion:^(__unused BOOL finished) {
+                [self _finishSwipeDeletionUpdate];
+            }];
+        } else {
+            self.pendingReloadAfterSwipe = YES;
+            [self _finishSwipeDeletionUpdate];
+        }
         c(YES);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            self.suppressReload = NO;
-            self.swipeInteractionActive = NO;
-            [self _syncBackgroundButtonState];
-            [self _progressUpdated];
-        });
     }];
     action.image = [UIImage systemImageNamed:@"trash"];
     return [UISwipeActionsConfiguration configurationWithActions:@[action]];
@@ -1020,9 +1061,10 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     __weak TranscriptionQueueViewController* weakSelf = self;
     UIContextualAction* action = [ICEpisodeSwipeActionHandler configuredRightSwipeActionForEpisode:episode
                                                                          presentingViewController:self
-                                                                                      willPerform:^{
-        weakSelf.swipeInteractionActive = NO;
-    } didPerform:nil];
+                                                                                      willPerform:nil
+                                                                                        didPerform:^{
+        [weakSelf _endSwipeInteractionAndFlushDeferredUpdate];
+    }];
     if (!action) return nil;
     UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
     configuration.performsFirstActionWithFullSwipe = YES;

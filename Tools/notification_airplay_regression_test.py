@@ -61,9 +61,12 @@ for relative_path in [
     )
 
 require(
-    '[routeButton setRouteButtonImage:[[UIImage imageNamed:@"Player AirPlay Active"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateSelected];'
-    in playback_controls,
-    "The selected AirPlay route icon must be a template image so it keeps the player tint color.",
+    'return [[UIImage systemImageNamed:name withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];'
+    in playback_controls
+    and 'UIImage* routeImage = ICPlayerToolSymbol(@"airplayaudio", 26.f);' in playback_controls
+    and '[routeButton setRouteButtonImage:routeImage forState:UIControlStateNormal];' in playback_controls
+    and '[routeButton setRouteButtonImage:routeImage forState:UIControlStateSelected];' in playback_controls,
+    "Both AirPlay route states must use the shared template symbol so MPVolumeView can tint it.",
 )
 set_tint_body = playback_controls.split("- (void) setTintColor:(UIColor *)tintColor", 1)[1].split("\n}", 1)[0]
 require(

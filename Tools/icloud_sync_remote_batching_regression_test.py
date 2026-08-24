@@ -86,9 +86,9 @@ require("flushEpisodeLocalModifiedDates" not in reset
         and "episodeLocalModifiedDatesWriteWorkItem" not in reset,
         "Account transitions must not depend on delayed whole-dictionary clock writers after clocks moved into Core Data transactions.")
 
-require("ICScheduleTranscriptCacheRemovalForEpisodeHash" in EPISODE,
+require("scheduleTranscriptCacheRemovalForEpisodeHash" in EPISODE,
         "Consumed setters must enqueue coalesced transcript cleanup instead of scanning synchronously.")
-cleanup = method_body(EPISODE, "static void ICScheduleTranscriptCacheRemovalForEpisodeHash")
+cleanup = method_body(EPISODE, "+ (void)scheduleTranscriptCacheRemovalForEpisodeHash:")
 require("dispatch_async" in cleanup and "contentsOfDirectoryAtPath" not in cleanup,
         "The episode setter path must not enumerate the transcript directory on the main thread.")
 

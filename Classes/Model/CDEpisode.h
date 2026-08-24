@@ -49,6 +49,9 @@
 @property (nonatomic) BOOL downloaded;
 
 - (void) reconstructObjectHash;
++ (void)performTranscriptCacheIO:(dispatch_block_t)block;
++ (void)performAfterPendingTranscriptCacheIO:(dispatch_block_t)block;
++ (void)scheduleTranscriptCacheRemovalForEpisodeHash:(NSString*)episodeHash;
 @end
 
 @interface CDEpisode (CoreDataGeneratedAccessors)

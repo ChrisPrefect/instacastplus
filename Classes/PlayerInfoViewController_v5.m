@@ -485,6 +485,7 @@ enum {
 @property (nonatomic) NSInteger activeTranscriptCueIndex;
 @property (nonatomic, strong) NSURLSessionDataTask* transcriptTask;
 @property (nonatomic, strong) NSMutableDictionary<NSString*, NSURLSessionDataTask*>* transcriptPrefetchTasks;
+@property (nonatomic, strong) NSMutableDictionary<NSString*, NSObject*>* transcriptPrefetchCacheCheckTokens;
 @property (nonatomic, strong) NSTimer* transcriptFollowResumeTimer;
 @property (nonatomic, strong) NSTimer* transcriptSyncTimer;
 @property (nonatomic) BOOL transcriptAutoFollowSuspended;
@@ -511,7 +512,19 @@ enum {
 
 - (NSInteger)_transcriptUtilityRankForDescriptor:(NSDictionary*)descriptor;
 - (void)_updateTranscriptSyncTimerState;
-- (void)_removeTranscriptCacheForEpisode:(CDEpisode*)episode;
+- (void)_invalidateTranscriptStateForCacheNotification:(NSNotification*)notification;
+- (void)_invalidateTranscriptMemoryCacheForEpisodeHash:(NSString*)episodeHash;
+- (void)_readCachedTranscriptDataForEpisodeHash:(NSString*)episodeHash
+                                    resolvedURL:(NSString*)resolvedURL
+                                     completion:(void (^)(NSData* data))completion;
+- (void)_checkCachedTranscriptDataForEpisodeHash:(NSString*)episodeHash
+                                     resolvedURL:(NSString*)resolvedURL
+                                      completion:(void (^)(BOOL cachedDataExists))completion;
+- (void)_startTranscriptPrefetchDescriptor:(NSDictionary*)descriptor
+                                    episode:(CDEpisode*)episode
+                                   attempts:(NSArray<NSString*>*)attempts
+                                   urlIndex:(NSInteger)urlIndex;
+- (void)_prefetchTranscriptSourcesForEpisode:(CDEpisode*)episode startingAtIndex:(NSUInteger)startIndex;
 - (void)_appendTranscriptURLAttemptForRawValue:(NSString*)rawValue
                                        episode:(CDEpisode*)episode
                                       attempts:(NSMutableOrderedSet<NSString*>*)attempts;
@@ -556,6 +569,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [task cancel];
     }
     [self.transcriptPrefetchTasks removeAllObjects];
+    [self.transcriptPrefetchCacheCheckTokens removeAllObjects];
     [self.transcriptFollowResumeTimer invalidate];
     [self.transcriptSyncTimer invalidate];
     [self _setObserving:NO];
@@ -610,7 +624,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             PlaybackManager* pman = [PlaybackManager playbackManager];
             CDEpisode* episode = pman.playingEpisode ?: [AudioSession sharedAudioSession].episode;
             if (episode.consumed) {
-                [weakSelf _removeTranscriptCacheForEpisode:episode];
+                [weakSelf _invalidateTranscriptMemoryCacheForEpisodeHash:episode.objectHash];
             }
         }];
 
@@ -632,7 +646,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
         [nc addObserver:self selector:@selector(playbackManagerDidChangeEpisodeNotification:) name:PlaybackManagerDidChangeEpisodeNotification object:nil];
         [nc addObserver:self selector:@selector(audioSessionDidRestorePlaybackNotification:) name:AudioSessionDidRestorePlaybackNotification object:nil];
-        [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerWillDeleteCacheFilesNotification object:nil];
+        [nc addObserver:self selector:@selector(cacheManagerWillDeleteCacheFilesNotification:) name:CacheManagerWillDeleteCacheFilesNotification object:nil];
         [nc addObserver:self selector:@selector(cacheManagerDidClearCacheNotification:) name:CacheManagerDidClearCacheNotification object:nil];
         [nc addObserver:self selector:@selector(_playbackDidUpdateForTranscriptFollow:) name:PlaybackManagerDidUpdateNotification object:nil];
         [nc addObserver:self selector:@selector(_transcriptDidChange:) name:@"ICTranscriptionDidChangeNotification" object:nil];
@@ -700,7 +714,24 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     [self.tableView reloadData];
 }
 
+- (void)cacheManagerWillDeleteCacheFilesNotification:(NSNotification*)notification
+{
+    [self _invalidateTranscriptStateForCacheNotification:notification];
+    ICCacheDeletionPreparation* deletionPreparation = notification.userInfo[@"cacheDeletionPreparation"];
+    if (deletionPreparation) {
+        [deletionPreparation beginPreparation];
+        [CDEpisode performAfterPendingTranscriptCacheIO:^{
+            [deletionPreparation finishPreparationWithError:nil];
+        }];
+    }
+}
+
 - (void)cacheManagerDidClearCacheNotification:(NSNotification*)notification
+{
+    [self _invalidateTranscriptStateForCacheNotification:notification];
+}
+
+- (void)_invalidateTranscriptStateForCacheNotification:(NSNotification*)notification
 {
     NSArray<NSString*>* episodeHashes = [notification.userInfo[@"episodeHashes"] isKindOfClass:[NSArray class]] ? notification.userInfo[@"episodeHashes"] : @[];
     BOOL clearsAll = [notification.userInfo[@"all"] boolValue];
@@ -718,13 +749,15 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             [self.transcriptPrefetchTasks removeObjectForKey:taskKey];
         }
     }
+    for (NSString* taskKey in [self.transcriptPrefetchCacheCheckTokens.allKeys copy]) {
+        NSRange separator = [taskKey rangeOfString:@"|"];
+        NSString* episodeHash = separator.location == NSNotFound ? taskKey : [taskKey substringToIndex:separator.location];
+        if (clearsAll || [episodeHashes containsObject:episodeHash]) {
+            [self.transcriptPrefetchCacheCheckTokens removeObjectForKey:taskKey];
+        }
+    }
     if (clearsAll || (s_transcriptCachedEpisodeHash.length > 0 && [episodeHashes containsObject:s_transcriptCachedEpisodeHash])) {
-        s_transcriptCachedEpisodeHash = nil;
-        s_transcriptCachedCues = nil;
-        s_transcriptCachedDescriptor = nil;
-        s_transcriptCachedSources = nil;
-        s_transcriptCachedAttrString = nil;
-        s_transcriptCachedRanges = nil;
+        [self _invalidateTranscriptMemoryCacheForEpisodeHash:s_transcriptCachedEpisodeHash];
     }
 }
 
@@ -736,14 +769,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     // Invalidate the static cache unconditionally — the cache is instance-less and must
     // never outlive a deletion, otherwise the next time the player is opened it re-shows
     // a transcript that was removed while the player wasn't visible.
-    if ([hash isEqualToString:s_transcriptCachedEpisodeHash]) {
-        s_transcriptCachedEpisodeHash = nil;
-        s_transcriptCachedCues = nil;
-        s_transcriptCachedDescriptor = nil;
-        s_transcriptCachedSources = nil;
-        s_transcriptCachedAttrString = nil;
-        s_transcriptCachedRanges = nil;
-    }
+    [self _invalidateTranscriptMemoryCacheForEpisodeHash:hash];
 
     if (!self.isViewLoaded) return;
 
@@ -1041,6 +1067,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     self.transcriptCues = @[];
     self.transcriptSources = @[];
     self.transcriptPrefetchTasks = [NSMutableDictionary dictionary];
+    self.transcriptPrefetchCacheCheckTokens = [NSMutableDictionary dictionary];
     self.activeTranscriptCueIndex = NSNotFound;
     _previousTranscriptCueIndex = NSNotFound;
     self.transcriptVisible = NO;
@@ -1361,6 +1388,41 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     return data;
 }
 
+- (void)_readCachedTranscriptDataForEpisodeHash:(NSString*)episodeHash
+                                    resolvedURL:(NSString*)resolvedURL
+                                     completion:(void (^)(NSData* data))completion
+{
+    __weak typeof(self) weakSelf = self;
+    [CDEpisode performTranscriptCacheIO:^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        NSData* data = [strongSelf _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:resolvedURL];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(data);
+        });
+    }];
+}
+
+- (void)_checkCachedTranscriptDataForEpisodeHash:(NSString*)episodeHash
+                                     resolvedURL:(NSString*)resolvedURL
+                                      completion:(void (^)(BOOL cachedDataExists))completion
+{
+    __weak typeof(self) weakSelf = self;
+    [CDEpisode performTranscriptCacheIO:^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        NSURL* cacheFileURL = [strongSelf _transcriptCacheFileURLForEpisodeHash:episodeHash resolvedURL:resolvedURL createDirectory:NO];
+        NSNumber* fileSize = [[[NSFileManager defaultManager] attributesOfItemAtPath:cacheFileURL.path error:nil] objectForKey:NSFileSize];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(fileSize.unsignedLongLongValue > 0);
+        });
+    }];
+}
+
 - (void)_storeTranscriptData:(NSData*)data forEpisodeHash:(NSString*)episodeHash resolvedURL:(NSString*)resolvedURL
 {
     if (data.length == 0 || episodeHash.length == 0 || resolvedURL.length == 0) {
@@ -1402,9 +1464,8 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                      }];
 }
 
-- (void)_removeTranscriptCacheForEpisode:(CDEpisode*)episode
+- (void)_invalidateTranscriptMemoryCacheForEpisodeHash:(NSString*)episodeHash
 {
-    NSString* episodeHash = episode.objectHash;
     if (episodeHash.length == 0) {
         return;
     }
@@ -1418,41 +1479,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         s_transcriptCachedAttrString = nil;
         s_transcriptCachedRanges = nil;
     }
-
-    NSURL* directoryURL = [self _transcriptCacheDirectoryURLCreate:NO];
-    if (!directoryURL) {
-        return;
-    }
-
-    NSArray<NSURL*>* fileURLs = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:directoryURL
-                                                               includingPropertiesForKeys:nil
-                                                                                  options:0
-                                                                                    error:nil];
-    NSString* prefix = [NSString stringWithFormat:@"%@_", episodeHash];
-    NSInteger removedFileCount = 0;
-    for (NSURL* fileURL in fileURLs) {
-        NSString* fileName = fileURL.lastPathComponent;
-        if ([fileName hasPrefix:prefix] && [[fileName pathExtension] isEqualToString:@"trcache"]) {
-            if ([[NSFileManager defaultManager] removeItemAtURL:fileURL error:nil]) {
-                removedFileCount += 1;
-            }
-        }
-    }
-    if (removedFileCount > 0) {
-        [[ICDiagnosticLogger shared] logDirectoryEvent:@"file-delete"
-                                               message:@"Episode-Transcript-Artefakte entfernt"
-                                                  path:directoryURL.path
-                                              metadata:@{
-                                                  @"episodeHash": episodeHash,
-                                                  @"removedFiles": @(removedFileCount),
-                                              }];
-    }
 }
 
 - (void)_clearTranscriptCacheIfNeededForEpisode:(CDEpisode*)episode
 {
     if (episode.consumed) {
-        [self _removeTranscriptCacheForEpisode:episode];
+        [self _invalidateTranscriptMemoryCacheForEpisodeHash:episode.objectHash];
+        [CDEpisode scheduleTranscriptCacheRemovalForEpisodeHash:episode.objectHash];
     }
 }
 
@@ -1470,6 +1503,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [task cancel];
     }
     [self.transcriptPrefetchTasks removeAllObjects];
+    [self.transcriptPrefetchCacheCheckTokens removeAllObjects];
 }
 
 - (void)_prefetchTranscriptDescriptor:(NSDictionary*)descriptor
@@ -1477,7 +1511,14 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                              attempts:(NSArray<NSString*>*)attempts
                              urlIndex:(NSInteger)urlIndex
 {
-    if (!episode || episode.consumed || urlIndex >= (NSInteger)attempts.count) {
+    if (!episode || episode.consumed) {
+        return;
+    }
+    if (urlIndex >= (NSInteger)attempts.count) {
+        NSUInteger descriptorIndex = [self.transcriptSources indexOfObjectIdenticalTo:descriptor];
+        if (descriptorIndex != NSNotFound) {
+            [self _prefetchTranscriptSourcesForEpisode:episode startingAtIndex:descriptorIndex + 1];
+        }
         return;
     }
 
@@ -1488,17 +1529,57 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         return;
     }
     if ([_transcriptLoadingURL isEqualToString:urlString]) {
+        [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
         return;
     }
     NSString* selectedResolvedURL = [self.selectedTranscriptDescriptor[@"resolvedURL"] isKindOfClass:[NSString class]] ? self.selectedTranscriptDescriptor[@"resolvedURL"] : nil;
     if ([selectedResolvedURL isEqualToString:urlString]) {
+        [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
         return;
     }
 
-    if ([self _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString].length > 0) {
+    NSString* taskKey = [self _transcriptPrefetchTaskKeyForEpisodeHash:episodeHash resolvedURL:urlString];
+    if (taskKey.length == 0) {
+        return;
+    }
+    if (self.transcriptPrefetchTasks[taskKey] != nil ||
+        self.transcriptPrefetchCacheCheckTokens[taskKey] != nil) {
+        [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
         return;
     }
 
+    NSObject* cacheCheckToken = [[NSObject alloc] init];
+    self.transcriptPrefetchCacheCheckTokens[taskKey] = cacheCheckToken;
+    __weak typeof(self) weakSelf = self;
+    [self _checkCachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString completion:^(BOOL cachedDataExists) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self || self.transcriptPrefetchCacheCheckTokens[taskKey] != cacheCheckToken) {
+            return;
+        }
+        [self.transcriptPrefetchCacheCheckTokens removeObjectForKey:taskKey];
+        if (episode.consumed || ![episode.objectHash isEqualToString:episodeHash]) {
+            return;
+        }
+        if (cachedDataExists ||
+            [self->_transcriptLoadingURL isEqualToString:urlString] ||
+            [self.selectedTranscriptDescriptor[@"resolvedURL"] isEqualToString:urlString]) {
+            [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
+            return;
+        }
+        [self _startTranscriptPrefetchDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex];
+    }];
+}
+
+- (void)_startTranscriptPrefetchDescriptor:(NSDictionary*)descriptor
+                                    episode:(CDEpisode*)episode
+                                   attempts:(NSArray<NSString*>*)attempts
+                                   urlIndex:(NSInteger)urlIndex
+{
+    if (!episode || episode.consumed || urlIndex >= (NSInteger)attempts.count) {
+        return;
+    }
+    NSString* episodeHash = episode.objectHash;
+    NSString* urlString = attempts[urlIndex];
     NSString* taskKey = [self _transcriptPrefetchTaskKeyForEpisodeHash:episodeHash resolvedURL:urlString];
     if (taskKey.length == 0 || self.transcriptPrefetchTasks[taskKey] != nil) {
         return;
@@ -1546,13 +1627,22 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             [self.transcriptPrefetchTasks removeObjectForKey:taskKey];
 
             if (cues.count > 0) {
-                [self _storeTranscriptData:data forEpisodeHash:episodeHash resolvedURL:urlString];
-                [self _prefetchTranscriptSourcesForEpisode:episode];
+                if (episode.consumed) {
+                    return;
+                }
+                __weak typeof(self) storeWeakSelf = self;
+                [CDEpisode performTranscriptCacheIO:^{
+                    __strong typeof(storeWeakSelf) storeSelf = storeWeakSelf;
+                    if (!storeSelf) return;
+                    [storeSelf _storeTranscriptData:data forEpisodeHash:episodeHash resolvedURL:urlString];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [storeSelf _prefetchTranscriptSourcesForEpisode:episode];
+                    });
+                }];
                 return;
             }
 
             [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndex + 1];
-            [self _prefetchTranscriptSourcesForEpisode:episode];
         });
     }];
 
@@ -1562,50 +1652,26 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
 
 - (void)_prefetchTranscriptSourcesForEpisode:(CDEpisode*)episode
 {
+    [self _prefetchTranscriptSourcesForEpisode:episode startingAtIndex:0];
+}
+
+- (void)_prefetchTranscriptSourcesForEpisode:(CDEpisode*)episode startingAtIndex:(NSUInteger)startIndex
+{
     if (!episode || episode.consumed || self.transcriptSources.count == 0) {
         return;
     }
-    if (self.transcriptPrefetchTasks.count > 0) {
+    if (self.transcriptPrefetchTasks.count > 0 || self.transcriptPrefetchCacheCheckTokens.count > 0) {
         return;
     }
 
-    NSString* selectedResolvedURL = [self.selectedTranscriptDescriptor[@"resolvedURL"] isKindOfClass:[NSString class]] ? self.selectedTranscriptDescriptor[@"resolvedURL"] : nil;
-
-    for (NSDictionary* descriptor in self.transcriptSources) {
+    for (NSUInteger descriptorIndex = startIndex; descriptorIndex < self.transcriptSources.count; descriptorIndex++) {
+        NSDictionary* descriptor = self.transcriptSources[descriptorIndex];
         NSArray<NSString*>* attempts = [self _transcriptURLAttemptsForDescriptor:descriptor episode:episode];
         if (attempts.count == 0) {
             continue;
         }
-
-        NSInteger urlIndexToPrefetch = NSNotFound;
-        for (NSInteger idx = 0; idx < (NSInteger)attempts.count; idx++) {
-            NSString* urlString = attempts[idx];
-            if (urlString.length == 0) {
-                continue;
-            }
-            if ([_transcriptLoadingURL isEqualToString:urlString]) {
-                continue;
-            }
-            if ([selectedResolvedURL isEqualToString:urlString]) {
-                continue;
-            }
-            if ([self _cachedTranscriptDataForEpisodeHash:episode.objectHash resolvedURL:urlString].length > 0) {
-                continue;
-            }
-
-            NSString* taskKey = [self _transcriptPrefetchTaskKeyForEpisodeHash:episode.objectHash resolvedURL:urlString];
-            if (taskKey.length == 0 || self.transcriptPrefetchTasks[taskKey] != nil) {
-                continue;
-            }
-
-            urlIndexToPrefetch = idx;
-            break;
-        }
-
-        if (urlIndexToPrefetch != NSNotFound) {
-            [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:urlIndexToPrefetch];
-            return;
-        }
+        [self _prefetchTranscriptDescriptor:descriptor episode:episode attempts:attempts urlIndex:0];
+        return;
     }
 }
 
@@ -2416,7 +2482,6 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                                      @"attemptCount": @(attempts.count),
                                  }];
 
-    // Move cache file I/O and parsing entirely off the main thread
     _transcriptLoadingURL = urlString;
     NSMutableDictionary* descriptorForParsing = [descriptor mutableCopy];
     descriptorForParsing[@"resolvedURL"] = urlString;
@@ -2424,40 +2489,44 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         descriptorForParsing[@"episodeHash"] = episodeHash;
     }
     __weak typeof(self) weakSelf = self;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) return;
-        NSData* cachedData = [strongSelf _cachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString];
-        NSArray<NSDictionary*>* cachedCues = nil;
-        if (cachedData.length > 0) {
-            cachedCues = [strongSelf _parseTranscriptData:cachedData descriptor:descriptorForParsing response:nil];
-            [[ICDiagnosticLogger shared] logEvent:@"transcript-parse"
-                                          message:(cachedCues.count > 0 ? @"Transcript-Cache erfolgreich geparst" : @"Transcript-Cache konnte nicht geparst werden")
-                                         metadata:@{
-                                             @"episodeHash": episodeHash ?: @"",
-                                             @"resolvedURL": urlString ?: @"",
-                                             @"cueCount": @(cachedCues.count),
-                                             @"dataBytes": @(cachedData.length),
-                                         }];
-        }
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) return;
-            if (![self->_transcriptLoadingURL isEqualToString:urlString]) return;
-
-            if (cachedCues.count > 0) {
-                [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
-                return;
-            }
-
+    [self _readCachedTranscriptDataForEpisodeHash:episodeHash resolvedURL:urlString completion:^(NSData* cachedData) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self || ![self->_transcriptLoadingURL isEqualToString:urlString]) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            NSArray<NSDictionary*>* cachedCues = nil;
             if (cachedData.length > 0) {
-                [self _removeTranscriptCacheForEpisodeHash:episodeHash resolvedURL:urlString];
+                cachedCues = [strongSelf _parseTranscriptData:cachedData descriptor:descriptorForParsing response:nil];
+                [[ICDiagnosticLogger shared] logEvent:@"transcript-parse"
+                                              message:(cachedCues.count > 0 ? @"Transcript-Cache erfolgreich geparst" : @"Transcript-Cache konnte nicht geparst werden")
+                                             metadata:@{
+                                                 @"episodeHash": episodeHash ?: @"",
+                                                 @"resolvedURL": urlString ?: @"",
+                                                 @"cueCount": @(cachedCues.count),
+                                                 @"dataBytes": @(cachedData.length),
+                                             }];
             }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) self = weakSelf;
+                if (!self || ![self->_transcriptLoadingURL isEqualToString:urlString]) return;
 
-            // No cache or cache invalid — start network load
-            [self _loadTranscriptDescriptorFromNetwork:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex episodeHash:episodeHash];
+                if (cachedCues.count > 0) {
+                    [self _applyLoadedTranscriptCues:cachedCues descriptor:descriptor resolvedURL:urlString];
+                    return;
+                }
+
+                if (cachedData.length > 0) {
+                    __weak typeof(self) deleteWeakSelf = self;
+                    [CDEpisode performTranscriptCacheIO:^{
+                        [deleteWeakSelf _removeTranscriptCacheForEpisodeHash:episodeHash resolvedURL:urlString];
+                    }];
+                }
+
+                [self _loadTranscriptDescriptorFromNetwork:descriptor candidates:candidates candidateIndex:candidateIndex attempts:attempts urlIndex:urlIndex episodeHash:episodeHash];
+            });
         });
-    });
+    }];
 }
 
 - (void)_loadTranscriptDescriptorFromNetwork:(NSDictionary*)descriptor
@@ -2557,7 +2626,13 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
                 return;
             }
 
-            [self _storeTranscriptData:data forEpisodeHash:episodeHash resolvedURL:urlString];
+            CDEpisode* currentEpisode = [PlaybackManager playbackManager].playingEpisode ?: [AudioSession sharedAudioSession].episode;
+            if (!currentEpisode.consumed && [currentEpisode.objectHash isEqualToString:episodeHash]) {
+                __weak typeof(self) storeWeakSelf = self;
+                [CDEpisode performTranscriptCacheIO:^{
+                    [storeWeakSelf _storeTranscriptData:data forEpisodeHash:episodeHash resolvedURL:urlString];
+                }];
+            }
             [self _applyLoadedTranscriptCues:cues descriptor:descriptor resolvedURL:urlString];
         });
     }];

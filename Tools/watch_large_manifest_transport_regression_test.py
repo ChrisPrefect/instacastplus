@@ -60,6 +60,18 @@ require("ICAppleWatchMaximumManifestEntryCount" in prepare and
         "attributesOfItemAtPath" in prepare and
         "Reduce the Apple Watch selection" in prepare,
         "The phone must reject an unsupported manifest before transfer with actionable size guidance.")
+require(
+    "NSError* __strong entryError = nil" in prepare
+    and "ICWriteJSONObjectLine(stream, value, &entryError)" in prepare
+    and "if (error && entryError) *error = entryError" in prepare,
+    "Manifest entry errors must survive the inner autorelease pool before reaching the caller.",
+)
+entry_loop = prepare.split("for (id value in entries)", 1)[1].split("[stream close]", 1)[0]
+require(
+    "ICWriteJSONObjectLine(stream, value, error)" not in entry_loop
+    and "if (error) *error = ICAppleWatchManifestFileError(17)" not in entry_loop,
+    "An autoreleasing out parameter must never be written directly from the per-entry pool.",
+)
 
 send = method_body(phone, "- (BOOL)_sendManifestPayload:")
 require("watchManifestProtocolVersion >= 2" in send and

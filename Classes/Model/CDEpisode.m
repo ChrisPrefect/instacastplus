@@ -28,23 +28,34 @@ static NSMutableSet<NSString*>* ICPendingTranscriptCleanupHashes;
 static dispatch_queue_t ICTranscriptCleanupQueue;
 static BOOL ICTranscriptCleanupScheduled;
 
+static void ICEnsureTranscriptCacheIOQueue(void)
+{
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        ICTranscriptCleanupLock = [[NSObject alloc] init];
+        ICPendingTranscriptCleanupHashes = [[NSMutableSet alloc] init];
+        dispatch_queue_attr_t attributes = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL,
+                                                                                   QOS_CLASS_UTILITY,
+                                                                                   0);
+        ICTranscriptCleanupQueue = dispatch_queue_create("com.iteconomy.instacast.transcript-cache-io",
+                                                         attributes);
+    });
+}
+
 static void ICProcessPendingTranscriptCacheRemovals(void)
 {
-    while (YES) {
-        NSSet<NSString*>* episodeHashes;
-        @synchronized (ICTranscriptCleanupLock) {
-            episodeHashes = [ICPendingTranscriptCleanupHashes copy];
-            [ICPendingTranscriptCleanupHashes removeAllObjects];
-            if (episodeHashes.count == 0) {
-                ICTranscriptCleanupScheduled = NO;
-                return;
-            }
+    NSSet<NSString*>* episodeHashes;
+    @synchronized (ICTranscriptCleanupLock) {
+        episodeHashes = [ICPendingTranscriptCleanupHashes copy];
+        [ICPendingTranscriptCleanupHashes removeAllObjects];
+        if (episodeHashes.count == 0) {
+            ICTranscriptCleanupScheduled = NO;
+            return;
         }
+    }
 
-        NSString* transcriptCachePath = [[ICTranscriptionPaths transcriptCacheDirectory] path];
-        if (transcriptCachePath.length == 0) {
-            continue;
-        }
+    NSString* transcriptCachePath = [[ICTranscriptionPaths transcriptCacheDirectory] path];
+    if (transcriptCachePath.length > 0) {
         NSFileManager* fileManager = [NSFileManager defaultManager];
         NSArray<NSString*>* fileNames = [fileManager contentsOfDirectoryAtPath:transcriptCachePath error:nil];
         NSInteger removedFileCount = 0;
@@ -71,20 +82,38 @@ static void ICProcessPendingTranscriptCacheRemovals(void)
                                                   }];
         }
     }
+
+    @synchronized (ICTranscriptCleanupLock) {
+        if (ICPendingTranscriptCleanupHashes.count == 0) {
+            ICTranscriptCleanupScheduled = NO;
+        } else {
+            dispatch_async(ICTranscriptCleanupQueue, ^{
+                ICProcessPendingTranscriptCacheRemovals();
+            });
+        }
+    }
 }
 
-static void ICScheduleTranscriptCacheRemovalForEpisodeHash(NSString* episodeHash)
++ (void)performTranscriptCacheIO:(dispatch_block_t)block
+{
+    if (!block) {
+        return;
+    }
+    ICEnsureTranscriptCacheIOQueue();
+    dispatch_async(ICTranscriptCleanupQueue, block);
+}
+
++ (void)performAfterPendingTranscriptCacheIO:(dispatch_block_t)block
+{
+    [self performTranscriptCacheIO:block];
+}
+
++ (void)scheduleTranscriptCacheRemovalForEpisodeHash:(NSString*)episodeHash
 {
     if (episodeHash.length == 0) {
         return;
     }
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        ICTranscriptCleanupLock = [[NSObject alloc] init];
-        ICPendingTranscriptCleanupHashes = [[NSMutableSet alloc] init];
-        ICTranscriptCleanupQueue = dispatch_queue_create("com.iteconomy.instacast.transcript-cleanup",
-                                                         DISPATCH_QUEUE_SERIAL);
-    });
+    ICEnsureTranscriptCacheIOQueue();
     @synchronized (ICTranscriptCleanupLock) {
         [ICPendingTranscriptCleanupHashes addObject:[episodeHash copy]];
         if (ICTranscriptCleanupScheduled) {
@@ -304,7 +333,7 @@ static void ICScheduleTranscriptCacheRemovalForEpisodeHash(NSString* episodeHash
     [self didChangeValueForKey:@"consumed"];
 
     if (consumed && !wasConsumed) {
-        ICScheduleTranscriptCacheRemovalForEpisodeHash(self.objectHash);
+        [CDEpisode scheduleTranscriptCacheRemovalForEpisodeHash:self.objectHash];
     }
 }
 

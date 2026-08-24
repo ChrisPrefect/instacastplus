@@ -12,6 +12,8 @@ PLAYER_INFO = (ROOT / "Classes" / "PlayerInfoViewController_v5.m").read_text()
 AUDIO_SESSION = (ROOT / "Classes" / "AudioSession.m").read_text()
 TRANSCRIPTION_QUEUE = (ROOT / "Classes" / "TranscriptionQueue.swift").read_text()
 DATABASE = (ROOT / "Classes" / "Model" / "DatabaseManager.m").read_text()
+EPISODE_MODEL = (ROOT / "Classes" / "Model" / "CDEpisode.m").read_text()
+EPISODE_MODEL_HEADER = (ROOT / "Classes" / "Model" / "CDEpisode.h").read_text()
 
 
 def require(condition: bool, message: str) -> None:
@@ -59,9 +61,13 @@ temporary_url = body(MANAGER, "- (NSURL*) tempURLForCachedEpisode:")
 fast_cached_lookup = body(MANAGER, "- (BOOL) episodeIsCached:(CDEpisode*)episode fastLookup:")
 auto_clear = body(MANAGER, "- (void) autoClearAndMakeRoomForBytes:")
 redownload_menu = body(EPISODE_VIEW, "- (UIMenu*) _buildDownloadMenu")
-player_clear = body(PLAYER_INFO, "- (void)cacheManagerDidClearCacheNotification:")
+player_clear = body(PLAYER_INFO, "- (void)_invalidateTranscriptStateForCacheNotification:")
 audio_clear = body(AUDIO_SESSION, "- (void) _handleEpisodeCacheCleared:")
 remove_references = body(DATABASE, "- (void) _removeEpisodeReferences:(CDEpisode*)episode")
+player_memory_clear = body(PLAYER_INFO, "- (void)_invalidateTranscriptMemoryCacheForEpisodeHash:")
+player_consumed_clear = body(PLAYER_INFO, "- (void)_clearTranscriptCacheIfNeededForEpisode:")
+player_observers = body(PLAYER_INFO, "- (void) _setObserving:")
+episode_consumed = body(EPISODE_MODEL, "- (void) setConsumed:")
 
 require("completion:(void (^)(NSError* error))completion" in HEADER,
         "Replacement callers need an explicit physical-deletion completion contract.")
@@ -100,6 +106,24 @@ require('NSNotification.Name("CacheManagerWillDeleteCacheFilesNotification")' in
 require('@"episodeHashes"' in player_clear and '@"all"' in player_clear and
         "_removeTranscriptCacheForEpisode:" not in player_clear and "_clearAllTranscriptCache" not in player_clear,
         "The main-thread transcript observer may invalidate memory only; physical cleanup belongs to the utility queue.")
+require(
+    "+ (void)scheduleTranscriptCacheRemovalForEpisodeHash:(NSString*)episodeHash;" in EPISODE_MODEL_HEADER
+    and "[CDEpisode scheduleTranscriptCacheRemovalForEpisodeHash:self.objectHash]" in episode_consumed,
+    "Consumed-state cleanup and PlayerInfo healing must share one public background scheduler.",
+)
+require(
+    "_invalidateTranscriptMemoryCacheForEpisodeHash:episode.objectHash" in player_observers
+    and "_removeTranscriptCacheForEpisode:episode" not in player_observers
+    and "contentsOfDirectoryAtURL:" not in player_memory_clear
+    and "removeItemAtURL:" not in player_memory_clear,
+    "The synchronous consumed observer may invalidate memory only, never scan or delete transcript files.",
+)
+require(
+    "_invalidateTranscriptMemoryCacheForEpisodeHash:episode.objectHash" in player_consumed_clear
+    and "[CDEpisode scheduleTranscriptCacheRemovalForEpisodeHash:episode.objectHash]" in player_consumed_clear
+    and "contentsOfDirectoryAtURL:" not in player_consumed_clear,
+    "Opening an already-consumed episode must heal disk state through the same background scheduler.",
+)
 require('@"all" : @YES' in destructive_finish,
         "A destructive clear must be explicit instead of overloading missing notification metadata.")
 require("_cacheDeletionTokensByIdentifier" in cached_url and

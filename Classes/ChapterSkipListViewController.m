@@ -440,7 +440,7 @@
                                                            preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.placeholder = @"e.g. Ads, Intro, Sponsor";
+        textField.placeholder = @"e.g. Ads, Intro, Sponsor".ls;
         textField.autocapitalizationType = UITextAutocapitalizationTypeSentences;
     }];
 

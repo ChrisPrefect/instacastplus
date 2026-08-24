@@ -33,6 +33,11 @@
 #import "InstacastAppDelegate.h"
 #import "ICRefreshControl.h"
 
+typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
+    ICFeedEpisodeArchiveBehaviorArchiveOnly,
+    ICFeedEpisodeArchiveBehaviorArchiveAndConsume,
+};
+
 @interface FeedEpisodesTableViewController() <UIGestureRecognizerDelegate, NSFetchedResultsControllerDelegate, UIScrollViewDelegate>
 @property (nonatomic, strong) NSFetchedResultsController* fetchController;
 @property (nonatomic, strong) ICFeedHeaderViewController* headerViewController;
@@ -108,61 +113,71 @@
 
 - (void) addAdditionalButtonsToLongPressActionSheet:(UIAlertController*)sheet rowIndexPath:(NSIndexPath*)indexPath completionBlock:(void (^)(void))completionBlock
 {
+    CDEpisode* episode = [[self _episodesAtIndexPaths:@[indexPath]] firstObject];
+    if (!episode) {
+        return;
+    }
     WEAK_SELF
     [sheet addAction:[UIAlertAction actionWithTitle:@"Delete".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
-        NSArray *array = @[];
-        [self showDeleteConfirmPopUp:1 rowIndexPath:indexPath selectedIndexPathes:array];
+        [self showDeleteConfirmPopUpForEpisodes:@[episode] behavior:ICFeedEpisodeArchiveBehaviorArchiveAndConsume];
                                                 completionBlock();
                                             }]];
 }
 
 - (NSArray<UIMenuElement*>*) additionalContextMenuActionsForIndexPath:(NSIndexPath*)indexPath
 {
+    CDEpisode* episode = [[self _episodesAtIndexPaths:@[indexPath]] firstObject];
+    if (!episode) {
+        return @[];
+    }
     WEAK_SELF
     UIAction* deleteAction = [UIAction actionWithTitle:@"Delete".ls
                                                  image:[UIImage systemImageNamed:@"trash"]
                                             identifier:nil
                                                handler:^(UIAction *action) {
                                                    STRONG_SELF
-                                                   [self showDeleteConfirmPopUp:1 rowIndexPath:indexPath selectedIndexPathes:@[]];
+                                                   [self showDeleteConfirmPopUpForEpisodes:@[episode] behavior:ICFeedEpisodeArchiveBehaviorArchiveAndConsume];
                                                }];
     deleteAction.attributes = UIMenuElementAttributesDestructive;
     return @[deleteAction];
 }
 
--(void)showDeleteConfirmPopUp:(NSInteger)type rowIndexPath:(NSIndexPath*)indexPathDev selectedIndexPathes:(NSArray*)selectedIndexPathes
+- (NSArray<CDEpisode*>*)_episodesAtIndexPaths:(NSArray<NSIndexPath*>*)indexPaths
+{
+    NSMutableArray<CDEpisode*>* episodes = [NSMutableArray arrayWithCapacity:indexPaths.count];
+    NSArray<CDEpisode*>* currentEpisodes = self.episodes;
+    for (NSIndexPath* indexPath in indexPaths) {
+        if (indexPath.section == 0 && indexPath.row < currentEpisodes.count) {
+            [episodes addObject:currentEpisodes[indexPath.row]];
+        }
+    }
+    return episodes;
+}
+
+- (void)showDeleteConfirmPopUpForEpisodes:(NSArray<CDEpisode*>*)episodes behavior:(ICFeedEpisodeArchiveBehavior)behavior
 {
     WEAK_SELF
     UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Are you sure you want to delete?".ls message:nil preferredStyle:UIAlertControllerStyleAlert];
     
     [alert addAction:[UIAlertAction actionWithTitle:@"Yes".ls style:UIAlertActionStyleDestructive handler:^(UIAlertAction * action) {
         STRONG_SELF
-        if (type == 1)
-        {
-            [self perform:^(id sender) {
-                [self archiveEpisodesAtRowAtIndexPath:indexPathDev];
-            } afterDelay:0.3];
-        }
-        else
-        {
-            [self perform:^(id sender) {
-                NSMutableArray* myEpisodes = [self.episodes mutableCopy];
-                for(NSIndexPath* indexPath in selectedIndexPathes)
-                {
-                    if (indexPath.row < [myEpisodes count]) {
-                        CDEpisode* episode = myEpisodes[indexPath.row];
-                        episode.archived = YES;
-                        //[DMANAGER markEpisode:episode asDownloaded:NO];
-                        [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
-                    }
+        for (CDEpisode* episode in episodes) {
+            if (!episode.isDeleted && episode.managedObjectContext) {
+                [[CacheManager sharedCacheManager] removeCacheForEpisode:episode automatic:NO];
+                if (behavior == ICFeedEpisodeArchiveBehaviorArchiveAndConsume) {
+                    [DMANAGER setEpisode:episode archived:YES];
+                } else {
+                    episode.archived = YES;
                 }
-                [DMANAGER save];
-                
-                [self updateEpisodes];
-                [self _updateToolbarItemsAnimated:NO];
-            } afterDelay:0.3];
+            }
         }
+        if (behavior == ICFeedEpisodeArchiveBehaviorArchiveOnly) {
+            [DMANAGER save];
+        }
+        [self updateEpisodes];
+        [self _updateToolbarItemsAnimated:NO];
+        [self _updateToolbarLabels];
         self.alertController = nil;
     }]];
     
@@ -191,12 +206,16 @@
 
 - (void) addAdditionalButtonsToMultiSelectEditActionSheet:(UIAlertController*)sheet selectedIndexPathes:(NSArray*)selectedIndexPathes completionBlock:(void (^)(void))completionBlock
 {
+    NSArray<CDEpisode*>* selectedEpisodes = [self _episodesAtIndexPaths:selectedIndexPathes];
+    if (selectedEpisodes.count == 0) {
+        return;
+    }
     WEAK_SELF
     [sheet addAction:[UIAlertAction actionWithTitle:@"Delete".ls
                                               style:UIAlertActionStyleDestructive
                                             handler:^(UIAlertAction * action) {
                                                 STRONG_SELF
-        [self showDeleteConfirmPopUp:2 rowIndexPath:[NSIndexPath indexPathForRow:0 inSection:0] selectedIndexPathes:selectedIndexPathes];
+        [self showDeleteConfirmPopUpForEpisodes:selectedEpisodes behavior:ICFeedEpisodeArchiveBehaviorArchiveOnly];
         completionBlock();
                                             }]];
 }
