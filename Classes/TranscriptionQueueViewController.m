@@ -8,6 +8,7 @@
 #import "TranscriptionQueueViewController.h"
 #import "DownloadsTableViewCell.h"
 #import "EpisodePlayComboButton.h"
+#import "ICEpisodeSwipeActionHandler.h"
 #import "CDEpisode+ShowNotes.h"
 #import "PlaybackViewController.h"
 #import "CacheManager.h"
@@ -1006,6 +1007,26 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     }];
     action.image = [UIImage systemImageNamed:@"trash"];
     return [UISwipeActionsConfiguration configurationWithActions:@[action]];
+}
+
+- (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (indexPath.section != 0 || indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) {
+        return nil;
+    }
+    ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
+    CDEpisode* episode = [self _episodeForHash:item.episodeHash];
+    if (!episode) return nil;
+
+    __weak TranscriptionQueueViewController* weakSelf = self;
+    UIContextualAction* action = [ICEpisodeSwipeActionHandler configuredRightSwipeActionForEpisode:episode
+                                                                         presentingViewController:self
+                                                                                      willPerform:^{
+        weakSelf.swipeInteractionActive = NO;
+    } didPerform:nil];
+    if (!action) return nil;
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
 }
 
 - (void)_restartElapsedTimerIfNeeded {

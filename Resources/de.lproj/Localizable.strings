@@ -1858,7 +1858,7 @@
 "1 download failed" = "1 Download fehlgeschlagen";
 "%lu downloads failed" = "%lu Downloads fehlgeschlagen";
 "Download erneut versuchen" = "Download erneut versuchen";
-"Nach rechts wischen, um erneut zu laden." = "Nach rechts wischen, um erneut zu laden.";
+"Lange drücken, um den Download erneut zu versuchen." = "Lange drücken, um den Download erneut zu versuchen.";
 "Wiederholen" = "Wiederholen";
 "The changes could not be saved on this device. Check the available storage and try again." = "Die Änderungen konnten auf diesem Gerät nicht gespeichert werden. Prüfe den freien Speicherplatz und versuche es erneut.";
 "Unable to Load Episodes" = "Folgen konnten nicht geladen werden";

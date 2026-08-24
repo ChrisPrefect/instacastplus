@@ -1855,7 +1855,7 @@
 "1 download failed" = "1 download failed";
 "%lu downloads failed" = "%lu downloads failed";
 "Download erneut versuchen" = "Retry download";
-"Nach rechts wischen, um erneut zu laden." = "Swipe right to retry the download.";
+"Lange drücken, um den Download erneut zu versuchen." = "Long-press to retry the download.";
 "Wiederholen" = "Retry";
 "The changes could not be saved on this device. Check the available storage and try again." = "The changes could not be saved on this device. Check the available storage and try again.";
 "Unable to Load Episodes" = "Unable to Load Episodes";

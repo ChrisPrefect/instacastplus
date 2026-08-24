@@ -15,6 +15,7 @@
 #import "PlayerBookmarksTableViewCell.h"
 #import "UIViewController+ShowNotes.h"
 #import "EpisodesTableViewCell.h"
+#import "ICEpisodeSwipeActionHandler.h"
 #import "PlayerVideoViewController.h"
 #import "PlayerView.h"
 #import "PlaybackViewController.h"
@@ -504,6 +505,9 @@ enum {
 @property (nonatomic) BOOL pendingTranscriptShowAfterScrollToTop;
 @property (nonatomic, copy) NSString* transcriptDataEpisodeHash;
 @property (nonatomic, copy) NSString* transcriptLoadedEpisodeHash;
+@property (nonatomic) BOOL swipeInteractionActive;
+@property (nonatomic) BOOL configuredSwipeActionActive;
+@property (nonatomic) BOOL pendingPlaylistReloadAfterSwipe;
 
 - (NSInteger)_transcriptUtilityRankForDescriptor:(NSDictionary*)descriptor;
 - (void)_updateTranscriptSyncTimerState;
@@ -613,11 +617,16 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         [audioSession addTaskObserver:self forKeyPath:@"playlist" task:^(id obj, NSDictionary *change) {
             (void)obj;
             (void)change;
-            if (!weakSelf.isViewLoaded || weakSelf.view.window == nil) {
+            PlayerInfoViewController_v5* strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf.isViewLoaded || strongSelf.view.window == nil) {
                 return;
             }
-            [weakSelf layoutHeaderView];
-            [weakSelf.tableView reloadData];
+            if (strongSelf.swipeInteractionActive || strongSelf.configuredSwipeActionActive) {
+                strongSelf.pendingPlaylistReloadAfterSwipe = YES;
+                return;
+            }
+            [strongSelf layoutHeaderView];
+            [strongSelf.tableView reloadData];
         }];
         
         [nc addObserver:self selector:@selector(databaseManagerDidAddBookmarkNotification:) name:DatabaseManagerDidAddBookmarkNotification object:nil];
@@ -3492,6 +3501,65 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
     }
     
     return NO;
+}
+
+- (void)tableView:(UITableView*)tableView willBeginEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    self.swipeInteractionActive = YES;
+}
+
+- (void)tableView:(UITableView*)tableView didEndEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
+- (void)_endSwipeInteractionAndFlushDeferredUpdate
+{
+    self.swipeInteractionActive = NO;
+    if (self.configuredSwipeActionActive || !self.pendingPlaylistReloadAfterSwipe) return;
+    self.pendingPlaylistReloadAfterSwipe = NO;
+    [self layoutHeaderView];
+    [self.tableView reloadData];
+}
+
+- (void)_finishConfiguredSwipeForEpisode:(CDEpisode*)episode
+{
+    self.configuredSwipeActionActive = NO;
+    if (self.pendingPlaylistReloadAfterSwipe) {
+        [self _endSwipeInteractionAndFlushDeferredUpdate];
+        return;
+    }
+
+    NSUInteger row = [[AudioSession sharedAudioSession].playlist indexOfObject:episode];
+    if (row != NSNotFound && [self _hasUpNext]) {
+        NSIndexPath* currentIndexPath = [NSIndexPath indexPathForRow:row inSection:[self _upNextSection]];
+        [self.tableView reloadRowsAtIndexPaths:@[currentIndexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (![self _hasUpNext] || indexPath.section != [self _upNextSection] || indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
+        return nil;
+    }
+
+    CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
+    __weak PlayerInfoViewController_v5* weakSelf = self;
+    UIContextualAction* action = [ICEpisodeSwipeActionHandler configuredRightSwipeActionForEpisode:episode
+                                                                         presentingViewController:self
+                                                                                      willPerform:^{
+        PlayerInfoViewController_v5* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf.configuredSwipeActionActive = YES;
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
+    }
+                                                                                        didPerform:^{
+        [weakSelf _finishConfiguredSwipeForEpisode:episode];
+    }];
+    if (!action) return nil;
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
 }
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath

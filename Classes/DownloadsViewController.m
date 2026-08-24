@@ -13,6 +13,7 @@
 #import "DownloadsTableViewCell.h"
 #import "CDModel.h"
 #import "CDEpisode+ShowNotes.h"
+#import "ICEpisodeSwipeActionHandler.h"
 #import "EpisodePlayComboButton.h"
 
 static void ICConfigureDownloadRetryButton(UIButton* button)
@@ -36,6 +37,8 @@ static CGFloat ICDownloadRetryButtonWidth(void)
 @property (nonatomic, strong) UIBarButtonItem* cancelItem;
 @property (nonatomic, copy) NSArray<CDEpisode*>* displayEpisodes;
 @property (nonatomic) NSUInteger activeDownloadCount;
+@property (nonatomic) BOOL swipeInteractionActive;
+@property (nonatomic) BOOL pendingReloadAfterSwipe;
 @end
 
 @implementation DownloadsViewController {
@@ -68,6 +71,10 @@ static CGFloat ICDownloadRetryButtonWidth(void)
         
         NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
         [nc addObserver:self name:CacheManagerDidUpdateNotification object:nil handler:^(NSNotification *notification) {
+            if (weakSelf.swipeInteractionActive) {
+                weakSelf.pendingReloadAfterSwipe = YES;
+                return;
+            }
             NSArray* indexPaths = [weakSelf.tableView indexPathsForVisibleRows];
             NSArray* displayEpisodes = weakSelf.displayEpisodes;
             NSUInteger activeDownloadCount = weakSelf.activeDownloadCount;
@@ -92,15 +99,25 @@ static CGFloat ICDownloadRetryButtonWidth(void)
         
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"cachingEpisodes" task:^(id obj, NSDictionary *change) {
             DownloadsViewController* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            if (strongSelf.swipeInteractionActive || strongSelf->_userAction) {
+                strongSelf.pendingReloadAfterSwipe = YES;
+                return;
+            }
             [strongSelf _rebuildDisplayEpisodes];
-            if (strongSelf && !strongSelf->_userAction) {
+            if (strongSelf) {
                 [strongSelf.tableView reloadData];
             }
         }];
         [[CacheManager sharedCacheManager] addTaskObserver:self forKeyPath:@"failedDownloadEpisodes" task:^(id obj, NSDictionary *change) {
             DownloadsViewController* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            if (strongSelf.swipeInteractionActive || strongSelf->_userAction) {
+                strongSelf.pendingReloadAfterSwipe = YES;
+                return;
+            }
             [strongSelf _rebuildDisplayEpisodes];
-            if (strongSelf && !strongSelf->_userAction) {
+            if (strongSelf) {
                 [strongSelf.tableView reloadData];
                 [strongSelf _updateCaption];
                 [strongSelf _updateToolbar];
@@ -108,12 +125,18 @@ static CGFloat ICDownloadRetryButtonWidth(void)
         }];
         
         [nc addObserver:self name:CacheManagerDidEndCachingNotification object:nil handler:^(NSNotification *notification) {
-            [weakSelf _rebuildDisplayEpisodes];
-            [weakSelf _updateCaption];
-            if (weakSelf.displayEpisodes.count == 0) {
-                [weakSelf dismissViewControllerAnimated:YES completion:NULL];
+            DownloadsViewController* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            if (strongSelf.swipeInteractionActive || strongSelf->_userAction) {
+                strongSelf.pendingReloadAfterSwipe = YES;
+                return;
+            }
+            [strongSelf _rebuildDisplayEpisodes];
+            [strongSelf _updateCaption];
+            if (strongSelf.displayEpisodes.count == 0) {
+                [strongSelf dismissViewControllerAnimated:YES completion:NULL];
             } else {
-                [weakSelf.tableView reloadData];
+                [strongSelf.tableView reloadData];
             }
         }];
         
@@ -173,7 +196,32 @@ static CGFloat ICDownloadRetryButtonWidth(void)
     self.tableView.backgroundColor = ICBackgroundColor;
     self.tableView.separatorColor = ICTableSeparatorColor;
     self.captionLabel.textColor = ICMutedTextColor;
+    if (self.swipeInteractionActive) {
+        self.pendingReloadAfterSwipe = YES;
+        return;
+    }
     [self.tableView reloadData];
+}
+
+- (void)tableView:(UITableView*)tableView willBeginEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    self.swipeInteractionActive = YES;
+}
+
+- (void)tableView:(UITableView*)tableView didEndEditingRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    [self _endSwipeInteractionAndFlushDeferredUpdate];
+}
+
+- (void)_endSwipeInteractionAndFlushDeferredUpdate
+{
+    self.swipeInteractionActive = NO;
+    if (!self.pendingReloadAfterSwipe || _userAction) return;
+    self.pendingReloadAfterSwipe = NO;
+    [self _rebuildDisplayEpisodes];
+    [self.tableView reloadData];
+    [self _updateCaption];
+    [self _updateToolbar];
 }
 
 - (void)viewWillAppear:(BOOL)animated
@@ -581,6 +629,92 @@ static CGFloat ICDownloadRetryButtonWidth(void)
 - (BOOL)tableView:(UITableView *)tableView shouldIndentWhileEditingRowAtIndexPath:(NSIndexPath *)indexPath
 {
     return NO;
+}
+
+- (NSIndexPath*)_indexPathForEpisode:(CDEpisode*)episode
+{
+    NSString* objectHash = episode.objectHash;
+    NSUInteger row = [self.displayEpisodes indexOfObjectPassingTest:^BOOL(CDEpisode* candidate, NSUInteger index, BOOL* stop) {
+        return candidate == episode || [candidate isEqual:episode] || (objectHash && [candidate.objectHash isEqualToString:objectHash]);
+    }];
+    return row == NSNotFound ? nil : [NSIndexPath indexPathForRow:row inSection:0];
+}
+
+- (void)_finishConfiguredSwipeForEpisode:(CDEpisode*)episode
+{
+    _userAction = NO;
+    self.pendingReloadAfterSwipe = NO;
+    [self _rebuildDisplayEpisodes];
+    NSIndexPath* currentIndexPath = [self _indexPathForEpisode:episode];
+    if (currentIndexPath) {
+        [self.tableView reloadRowsAtIndexPaths:@[currentIndexPath] withRowAnimation:UITableViewRowAnimationNone];
+    } else {
+        [self.tableView reloadData];
+    }
+    [self _updateCaption];
+    [self _updateToolbar];
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (indexPath.section != 0 || indexPath.row >= self.displayEpisodes.count) return nil;
+    CDEpisode* episode = self.displayEpisodes[indexPath.row];
+    __weak DownloadsViewController* weakSelf = self;
+    UIContextualAction* action = [ICEpisodeSwipeActionHandler configuredRightSwipeActionForEpisode:episode
+                                                                         presentingViewController:self
+                                                                                      willPerform:^{
+        DownloadsViewController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        strongSelf->_userAction = YES;
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
+    } didPerform:^{
+        [weakSelf _finishConfiguredSwipeForEpisode:episode];
+    }];
+    if (!action) return nil;
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
+}
+
+- (UISwipeActionsConfiguration*)tableView:(UITableView*)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath*)indexPath
+{
+    if (indexPath.section != 0 || indexPath.row >= self.displayEpisodes.count) return nil;
+    CDEpisode* episode = self.displayEpisodes[indexPath.row];
+    CacheManager* cacheManager = [CacheManager sharedCacheManager];
+    BOOL activeDownload = [cacheManager isCachingEpisode:episode];
+    __weak DownloadsViewController* weakSelf = self;
+    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                                         title:nil
+                                                                       handler:^(__unused UIContextualAction* contextualAction,
+                                                                                 __unused UIView* sourceView,
+                                                                                 void (^completionHandler)(BOOL)) {
+        DownloadsViewController* strongSelf = weakSelf;
+        if (!strongSelf) {
+            completionHandler(NO);
+            return;
+        }
+        strongSelf->_userAction = YES;
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
+        if (activeDownload) {
+            [cacheManager cancelCachingEpisode:episode disableAutoDownload:YES];
+            [strongSelf _finishConfiguredSwipeForEpisode:episode];
+        } else {
+            [cacheManager clearDownloadErrorForEpisode:episode completion:^(NSError* error) {
+                DownloadsViewController* currentSelf = weakSelf;
+                if (!currentSelf) return;
+                [currentSelf _finishConfiguredSwipeForEpisode:episode];
+                if (error) [currentSelf presentError:error];
+            }];
+        }
+        completionHandler(YES);
+    }];
+    UIImage* image = [[UIImage systemImageNamed:@"trash"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    image.accessibilityLabel = activeDownload ? @"Cancel Download".ls : @"Remove".ls;
+    action.image = image;
+    action.backgroundColor = [UIColor systemRedColor];
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
 }
 
 #pragma mark Actions

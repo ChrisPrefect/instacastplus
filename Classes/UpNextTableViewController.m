@@ -14,6 +14,8 @@
 #import "PlaybackViewController.h"
 #import "CacheManager.h"
 #import "EpisodeViewController.h"
+#import "ICEpisodeUIConfig.h"
+#import "ICEpisodeSwipeActionHandler.h"
 
 static NSString* kUpNextCell = @"UpNextCell";
 
@@ -437,60 +439,6 @@ static NSString* kUpNextCell = @"UpNextCell";
     ICStoreScrollPositionForScrollView([self _scrollPersistenceKey], self.tableView);
 }
 
-- (UIImage*) _deleteSwipeImage
-{
-    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
-    UIImage* image = [UIImage systemImageNamed:@"trash" withConfiguration:config];
-    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-}
-
-- (UIImage*) _downloadSwipeImageForEpisode:(CDEpisode*)episode
-{
-    UIImageSymbolConfiguration* config = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
-    NSString* name = @"square.and.arrow.down";
-    UIImage* image = [UIImage systemImageNamed:name withConfiguration:config];
-    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-}
-
-- (UIColor*) _downloadSwipeTintForEpisode:(CDEpisode*)episode
-{
-    CacheManager* cman = [CacheManager sharedCacheManager];
-    if ([cman episodeIsCached:episode] || [cman isCachingEpisode:episode]) {
-        return [UIColor colorWithWhite:0.5f alpha:1.0f];
-    }
-    return ICTintColor;
-}
-
-- (void) _toggleDownloadAtIndexPath:(NSIndexPath*)indexPath
-{
-    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
-    if (indexPath.row >= playlist.count) return;
-
-    CDEpisode* episode = playlist[indexPath.row];
-    EpisodesTableViewCell* cell = (EpisodesTableViewCell*)[self.tableView cellForRowAtIndexPath:indexPath];
-    CacheManager* cman = [CacheManager sharedCacheManager];
-
-    if ([cman episodeIsCached:episode]) {
-        [cman removeCacheForEpisode:episode automatic:NO];
-        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-            [cell updatePlayComboButtonState];
-        }
-        PlaySoundFile(@"AffirmOut", NO);
-    } else if ([cman isCachingEpisode:episode]) {
-        [cman cancelCachingEpisode:episode disableAutoDownload:YES];
-        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-            [cell updatePlayComboButtonState];
-        }
-        PlaySoundFile(@"AffirmOut", NO);
-    } else {
-        [cman cacheEpisode:episode overwriteCellularLock:NO];
-        if ([cell isKindOfClass:[EpisodesTableViewCell class]]) {
-            [cell updatePlayComboButtonState];
-        }
-        PlaySoundFile(@"AffirmIn", NO);
-    }
-}
-
 - (void) _removeEpisodeAtIndexPath:(NSIndexPath*)indexPath
 {
     if (indexPath.section != 0 || indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
@@ -530,39 +478,6 @@ static NSString* kUpNextCell = @"UpNextCell";
     return nil;
 }
 
-- (UIContextualAction*) _downloadSwipeActionAtIndexPath:(NSIndexPath*)indexPath
-{
-    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
-    if (indexPath.section != 0 || indexPath.row >= playlist.count) {
-        return nil;
-    }
-
-    CDEpisode* episode = playlist[indexPath.row];
-    __weak UpNextTableViewController* weakSelf = self;
-    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal title:nil handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
-        UpNextTableViewController* strongSelf = weakSelf;
-        if (!strongSelf) {
-            completionHandler(NO);
-            return;
-        }
-        // Performing the action does not reliably deliver didEndEditingRowAtIndexPath:
-        // before the action's own updates run, so the gate is released here explicitly.
-        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
-
-        NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
-        if (!currentIndexPath) {
-            completionHandler(NO);
-            return;
-        }
-
-        [strongSelf _toggleDownloadAtIndexPath:currentIndexPath];
-        completionHandler(YES);
-    }];
-    action.image = [self _downloadSwipeImageForEpisode:episode];
-    action.backgroundColor = [self _downloadSwipeTintForEpisode:episode];
-    return action;
-}
-
 - (UIContextualAction*) _removeSwipeActionAtIndexPath:(NSIndexPath*)indexPath
 {
     if (indexPath.section != 0 || indexPath.row >= [[AudioSession sharedAudioSession].playlist count]) {
@@ -571,7 +486,7 @@ static NSString* kUpNextCell = @"UpNextCell";
 
     CDEpisode* episode = [AudioSession sharedAudioSession].playlist[indexPath.row];
     __weak UpNextTableViewController* weakSelf = self;
-    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:nil handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
+    UIContextualAction* action = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal title:nil handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
         UpNextTableViewController* strongSelf = weakSelf;
         if (!strongSelf) {
             completionHandler(NO);
@@ -590,14 +505,43 @@ static NSString* kUpNextCell = @"UpNextCell";
         [strongSelf _removeEpisodeAtIndexPath:currentIndexPath];
         completionHandler(YES);
     }];
-    action.image = [self _deleteSwipeImage];
-    action.backgroundColor = [UIColor systemRedColor];
+    UIImageSymbolConfiguration* configuration = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium];
+    UIImage* image = [[UIImage systemImageNamed:ICEpisodePlayNextMenuSymbolName() withConfiguration:configuration] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    image.accessibilityLabel = @"Remove from Play Next".ls;
+    action.image = image;
+    action.backgroundColor = [UIColor colorWithWhite:0.5f alpha:1.0f];
     return action;
 }
 
 - (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    UIContextualAction* action = [self _downloadSwipeActionAtIndexPath:indexPath];
+    NSArray* playlist = [AudioSession sharedAudioSession].playlist;
+    if (indexPath.section != 0 || indexPath.row >= playlist.count) {
+        return nil;
+    }
+
+    CDEpisode* episode = playlist[indexPath.row];
+    __weak UpNextTableViewController* weakSelf = self;
+    __block NSIndexPath* committedIndexPath;
+    UIContextualAction* action = [ICEpisodeSwipeActionHandler configuredRightSwipeActionForEpisode:episode
+                                                                         presentingViewController:self
+                                                                                      willPerform:^{
+        UpNextTableViewController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        committedIndexPath = [strongSelf _indexPathForEpisode:episode];
+        [strongSelf _endSwipeInteractionAndFlushDeferredUpdate];
+    } didPerform:^{
+        UpNextTableViewController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSIndexPath* currentIndexPath = [strongSelf _indexPathForEpisode:episode];
+        if (currentIndexPath) {
+            [strongSelf.tableView reloadRowsAtIndexPaths:@[currentIndexPath] withRowAnimation:UITableViewRowAnimationNone];
+        } else if (committedIndexPath) {
+            [strongSelf.tableView deleteRowsAtIndexPaths:@[committedIndexPath] withRowAnimation:UITableViewRowAnimationRight];
+        }
+        [strongSelf _updateEmptyState];
+        [strongSelf _updateToolbarItems];
+    }];
     if (!action) {
         return nil;
     }

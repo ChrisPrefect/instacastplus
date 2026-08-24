@@ -61,6 +61,13 @@ GATED_LISTS = {
         "_reloadVisibleRowsForEpisodeHashes:",
     ],
     "TranscriptionQueueViewController.m": [],
+    "DownloadsViewController.m": [
+        "_setObserving:",
+        "updateAppearance",
+    ],
+    "PlayerInfoViewController_v5.m": [
+        "_setObserving:",
+    ],
 }
 
 for filename, gated_methods in GATED_LISTS.items():
@@ -93,7 +100,9 @@ for filename, gated_methods in GATED_LISTS.items():
 # reliably deliver didEndEditingRowAtIndexPath: before the action's own updates.
 for filename in ["EpisodesTableViewController.m",
                  "UpNextTableViewController.m",
-                 "AppleWatchEpisodesViewController.m"]:
+                 "AppleWatchEpisodesViewController.m",
+                 "DownloadsViewController.m",
+                 "PlayerInfoViewController_v5.m"]:
     text = source(filename)
     require(text.count("_endSwipeInteractionAndFlushDeferredUpdate") >= 3,
             f"{filename} does not release the swipe gate from its swipe action handlers.")

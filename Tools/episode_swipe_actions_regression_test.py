@@ -46,13 +46,17 @@ episodes_swipe_action = method_body(
     episodes_source,
     "- (UIContextualAction*) _contextualSwipeActionForSwipeAction:(ICEpisodeSwipeAction)swipeAction atIndexPath:(NSIndexPath*)indexPath",
 )
-up_next_download_swipe_action = method_body(
-    up_next_source,
-    "- (UIContextualAction*) _downloadSwipeActionAtIndexPath:(NSIndexPath*)indexPath",
-)
 up_next_remove_swipe_action = method_body(
     up_next_source,
     "- (UIContextualAction*) _removeSwipeActionAtIndexPath:(NSIndexPath*)indexPath",
+)
+up_next_leading_swipe_actions = method_body(
+    up_next_source,
+    "- (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView leadingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath",
+)
+up_next_trailing_swipe_actions = method_body(
+    up_next_source,
+    "- (UISwipeActionsConfiguration*)tableView:(UITableView *)tableView trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath",
 )
 list_observing = method_body(
     list_episodes_source,
@@ -171,25 +175,36 @@ require(
     "Episode swipe handlers must not perform actions through the originally configured index path, which can drift to another episode while the swipe is open.",
 )
 require(
-    "_toggleDownloadAtIndexPath:" in up_next_source
+    "_downloadSwipeActionAtIndexPath:" not in up_next_source
+    and "_toggleDownloadAtIndexPath:" not in up_next_source
     and "_removeEpisodeAtIndexPath:" in up_next_source,
-    "Up Next native swipe actions must preserve the existing download and remove behavior.",
+    "Up Next must remove episodes with the configured Play Next toggle gesture instead of exposing a redundant download swipe action.",
 )
 require(
     "- (NSIndexPath*) _indexPathForEpisode:(CDEpisode*)episode" in up_next_source,
     "Up Next swipe actions must resolve the current index path from the captured episode identity before performing an action.",
 )
 require(
-    "_indexPathForEpisode:episode" in up_next_download_swipe_action
-    and "_toggleDownloadAtIndexPath:currentIndexPath" in up_next_download_swipe_action
-    and "_toggleDownloadAtIndexPath:indexPath" not in up_next_download_swipe_action,
-    "Up Next download swipe handlers must not use the originally configured index path.",
+    "configuredRightSwipeActionForEpisode:episode" in up_next_leading_swipe_actions,
+    "Up Next swipe right must route through the globally configured episode action.",
+)
+require(
+    "EpisodeSwipeLeftAction" not in up_next_trailing_swipe_actions
+    and "_removeSwipeActionAtIndexPath:indexPath" in up_next_trailing_swipe_actions,
+    "Up Next swipe left must always remove the episode from Play Next.",
 )
 require(
     "_indexPathForEpisode:episode" in up_next_remove_swipe_action
     and "_removeEpisodeAtIndexPath:currentIndexPath" in up_next_remove_swipe_action
     and "_removeEpisodeAtIndexPath:indexPath" not in up_next_remove_swipe_action,
     "Up Next remove swipe handlers must not use the originally configured index path.",
+)
+require(
+    "UIContextualActionStyleNormal" in up_next_remove_swipe_action
+    and "ICEpisodePlayNextMenuSymbolName()" in up_next_remove_swipe_action
+    and 'image.accessibilityLabel = @"Remove from Play Next".ls;' in up_next_remove_swipe_action
+    and "[UIColor colorWithWhite:0.5f alpha:1.0f]" in up_next_remove_swipe_action,
+    "Removing from Up Next must use the shared Play Next icon, gray toggle tint, and localized VoiceOver label instead of destructive-delete styling.",
 )
 require(
     "@property (nonatomic) BOOL usesNativeSwipeActions;" in cell_header
@@ -224,7 +239,6 @@ require(
     "Native-swipe rows must not hide the shared episode content container.",
 )
 assert_no_swipe_mutation_before_release(episodes_swipe_action, "Episode swipe actions")
-assert_no_swipe_mutation_before_release(up_next_download_swipe_action, "Up Next download swipe action")
 assert_no_swipe_mutation_before_release(up_next_remove_swipe_action, "Up Next remove swipe action")
 require(
     "@property (nonatomic) BOOL suppressNextListReload;" in episodes_header,

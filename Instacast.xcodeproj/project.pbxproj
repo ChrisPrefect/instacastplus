@@ -156,6 +156,7 @@
 		1B816B7D142C73B700F529FB /* UtilityFunctions.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B816B7C142C73B700F529FB /* UtilityFunctions.m */; };
 		1B816D6C1C6CE9920001CFA8 /* UIViewController+Alert.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B816D6B1C6CE9920001CFA8 /* UIViewController+Alert.m */; };
 		1B827D7F156FDE9000CBCB98 /* EpisodesTableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B827D7E156FDE9000CBCB98 /* EpisodesTableViewController.m */; };
+		CDE51A032E51000100000001 /* ICEpisodeSwipeActionHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = CDE51A022E51000100000001 /* ICEpisodeSwipeActionHandler.m */; };
 		1B827DA11577A69B00CBCB98 /* FeedOptionsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B827DA01577A69B00CBCB98 /* FeedOptionsViewController.m */; };
 		1B827DA41578A8F800CBCB98 /* NotificationSettingsViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B827DA31578A8F700CBCB98 /* NotificationSettingsViewController.m */; };
 		1B8355BF1684AC3E00CB99E3 /* CircleProgressView.m in Sources */ = {isa = PBXBuildFile; fileRef = 1B8355BE1684AC3E00CB99E3 /* CircleProgressView.m */; };
@@ -722,6 +723,8 @@
 		1B816D6B1C6CE9920001CFA8 /* UIViewController+Alert.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIViewController+Alert.m"; sourceTree = "<group>"; };
 		1B827D7D156FDE9000CBCB98 /* EpisodesTableViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = EpisodesTableViewController.h; sourceTree = "<group>"; };
 		1B827D7E156FDE9000CBCB98 /* EpisodesTableViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = EpisodesTableViewController.m; sourceTree = "<group>"; };
+		CDE51A012E51000100000001 /* ICEpisodeSwipeActionHandler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICEpisodeSwipeActionHandler.h; sourceTree = "<group>"; };
+		CDE51A022E51000100000001 /* ICEpisodeSwipeActionHandler.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICEpisodeSwipeActionHandler.m; sourceTree = "<group>"; };
 		1B827D9F1577A69B00CBCB98 /* FeedOptionsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FeedOptionsViewController.h; sourceTree = "<group>"; };
 		1B827DA01577A69B00CBCB98 /* FeedOptionsViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FeedOptionsViewController.m; sourceTree = "<group>"; };
 		1B827DA21578A8F600CBCB98 /* NotificationSettingsViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NotificationSettingsViewController.h; sourceTree = "<group>"; };
@@ -1564,6 +1567,8 @@
 			children = (
 				1B827D7D156FDE9000CBCB98 /* EpisodesTableViewController.h */,
 				1B827D7E156FDE9000CBCB98 /* EpisodesTableViewController.m */,
+				CDE51A012E51000100000001 /* ICEpisodeSwipeActionHandler.h */,
+				CDE51A022E51000100000001 /* ICEpisodeSwipeActionHandler.m */,
 				1B89FEB912CB54B2005A65DF /* FeedEpisodesTableViewController.h */,
 				1B89FEBA12CB54B2005A65DF /* FeedEpisodesTableViewController.m */,
 				1B6AE6C419A61F7F00965357 /* ListEpisodesTableViewController.h */,
@@ -2698,6 +2703,7 @@
 				1B0D451419DAE023009DFC08 /* UIViewController+UIViewController_NavbarFix.m in Sources */,
 				1B642B101779EF3300D3AE3B /* VMSlidingViewController.m in Sources */,
 				1B827D7F156FDE9000CBCB98 /* EpisodesTableViewController.m in Sources */,
+				CDE51A032E51000100000001 /* ICEpisodeSwipeActionHandler.m in Sources */,
 				1B165FB51AEBB76A006F0007 /* ICPubdateValueTransformer.m in Sources */,
 				1B827DA11577A69B00CBCB98 /* FeedOptionsViewController.m in Sources */,
 				1B827DA41578A8F800CBCB98 /* NotificationSettingsViewController.m in Sources */,

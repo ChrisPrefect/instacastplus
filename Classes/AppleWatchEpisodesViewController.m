@@ -9,6 +9,7 @@
 #import "DatabaseManager.h"
 #import "EpisodePlayComboButton.h"
 #import "EpisodesTableViewCell.h"
+#import "ICEpisodeSwipeActionHandler.h"
 #import "ImageCacheManager.h"
 #import "AudioSession.h"
 #import "PlaybackViewController.h"
@@ -547,7 +548,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     if (![state.watchStatus isEqualToString:ICAppleWatchStatusFailed]) {
         return nil;
     }
-    NSString* retryGuidance = @"Nach rechts wischen, um erneut zu laden.".ls;
+    NSString* retryGuidance = @"Lange drücken, um den Download erneut zu versuchen.".ls;
     NSString* reason = [state.watchLastError stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (reason.length > 0) {
         return [NSString stringWithFormat:@"%@ %@", reason, retryGuidance];
@@ -868,23 +869,28 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
 
     AppleWatchEpisodeState* state = self.states[indexPath.row];
     CDEpisode* episode = [self _episodeForState:state];
-    if (!episode || state.downloadedOnWatch || state.removingFromWatch) {
+    if (!episode) {
         return nil;
     }
 
-    NSString* title = [state.watchStatus isEqualToString:ICAppleWatchStatusFailed] ? @"Wiederholen".ls : @"Laden".ls;
-    NSString* symbolName = [state.watchStatus isEqualToString:ICAppleWatchStatusFailed] ? @"arrow.clockwise" : @"arrow.down.circle";
-    UIContextualAction* prioritizeAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal
-                                                                                  title:title
-                                                                                handler:^(__unused UIContextualAction* action, __unused UIView* sourceView, void (^completionHandler)(BOOL)) {
-                                                                                    [self _endSwipeInteractionAndFlushDeferredUpdate];
-                                                                                    [[AppleWatchSyncManager sharedManager] prioritizeEpisodeOnWatch:episode];
-                                                                                    completionHandler(YES);
-                                                                                }];
-    prioritizeAction.image = [UIImage systemImageNamed:symbolName];
-    prioritizeAction.backgroundColor = ICTintColor;
-
-    return [UISwipeActionsConfiguration configurationWithActions:@[prioritizeAction]];
+    __weak AppleWatchEpisodesViewController* weakSelf = self;
+    UIContextualAction* action = [ICEpisodeSwipeActionHandler configuredRightSwipeActionForEpisode:episode
+                                                                         presentingViewController:self
+                                                                                      willPerform:^{
+        [weakSelf _endSwipeInteractionAndFlushDeferredUpdate];
+    } didPerform:^{
+        AppleWatchEpisodesViewController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSNumber* row = strongSelf.stateIndexByHash[episode.objectHash];
+        if (row && row.unsignedIntegerValue < strongSelf.states.count) {
+            NSIndexPath* currentIndexPath = [NSIndexPath indexPathForRow:row.integerValue inSection:0];
+            [strongSelf.tableView reloadRowsAtIndexPaths:@[currentIndexPath] withRowAnimation:UITableViewRowAnimationNone];
+        }
+    }];
+    if (!action) return nil;
+    UISwipeActionsConfiguration* configuration = [UISwipeActionsConfiguration configurationWithActions:@[action]];
+    configuration.performsFirstActionWithFullSwipe = YES;
+    return configuration;
 }
 
 - (void)playComboButtonAction:(EpisodePlayComboButton*)button
