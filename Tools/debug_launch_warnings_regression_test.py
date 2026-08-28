@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import plistlib
 import subprocess
 from pathlib import Path
 
@@ -41,25 +40,17 @@ def require(condition: bool, message: str) -> None:
         failures.append(message)
 
 
-with (LLAMA_XCFRAMEWORK / "Info.plist").open("rb") as handle:
-    xcframework_info = plistlib.load(handle)
-
-for library in xcframework_info["AvailableLibraries"]:
-    debug_symbols_path = library.get("DebugSymbolsPath")
-    if not debug_symbols_path:
-        continue
-    symbols_directory = LLAMA_XCFRAMEWORK / library["LibraryIdentifier"] / debug_symbols_path
-    for dsym in symbols_directory.glob("*.dSYM"):
-        result = subprocess.run(
-            ["xcrun", "dwarfdump", "--debug-info", str(dsym)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        require(
-            "DW_TAG_compile_unit" in result.stdout,
-            f"{library['LibraryIdentifier']} advertises an empty llama dSYM; LLDB will warn and search for unusable symbols.",
-        )
+for dsym in LLAMA_XCFRAMEWORK.rglob("*.dSYM"):
+    result = subprocess.run(
+        ["xcrun", "dwarfdump", "--debug-info", str(dsym)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    require(
+        "DW_TAG_compile_unit" in result.stdout,
+        f"{dsym.relative_to(LLAMA_XCFRAMEWORK)} is an empty llama dSYM; LLDB will warn and search for unusable symbols.",
+    )
 
 
 app_delegate_source = APP_DELEGATE.read_text()

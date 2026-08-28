@@ -105,10 +105,14 @@ require(
 )
 
 pass1_index = chapter_source.find("let prompt = buildTopicExtractionPrompt")
-fit_index = chapter_source.find("promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens)")
-respond_index = chapter_source.find("session.respond(to: prompt, generating: GeneratedTopicMarkersList.self)")
+fit_index = chapter_source.find("foundationPromptFitsContext(prompt,")
+respond_index = chapter_source.find("let response = try await session.respond(", fit_index)
 require(
-    pass1_index != -1 and fit_index != -1 and respond_index != -1 and pass1_index < fit_index < respond_index,
+    pass1_index != -1
+    and fit_index != -1
+    and "generating: GeneratedTopicMarkersList.self" in chapter_source[fit_index:respond_index]
+    and respond_index != -1
+    and pass1_index < fit_index < respond_index,
     "Chapter pass 1 still sends prompts to Foundation Models without proving they fit the model context window.",
 )
 

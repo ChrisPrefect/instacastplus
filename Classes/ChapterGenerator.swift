@@ -242,7 +242,10 @@ private struct RemoteJSONObjectResult {
     private static let maximumAudioInterludeChapterDuration: Double = 90
     private static let transcriptPromptBlockDuration: Double = 30
     private static let targetContextWindowOverlapDuration: Double = 45 * 60
-    private static let targetInputContextRatio = 0.85
+    #if canImport(FoundationModels)
+    private static let foundationMaximumResponseTokens = 1_024
+    private static let foundationContextSafetyTokens = 128
+    #endif
     private static let localGenerationTimeoutNanoseconds: UInt64 = 600 * 1_000_000_000
     private static let openAIBackgroundJobVersion = 1
     private var activeOpenAIBackgroundEpisodeHashes: Set<String> = []
@@ -1204,9 +1207,9 @@ private struct RemoteJSONObjectResult {
         #if canImport(FoundationModels)
         let model = SystemLanguageModel.default
         let contextSize = model.contextSize
-        let maxInputTokens = max(1, Int(Double(contextSize) * Self.targetInputContextRatio))
 
-        NSLog("[ChapterGenerator] Context window: %d tokens, max input: %d tokens", contextSize, maxInputTokens)
+        NSLog("[ChapterGenerator] Context window: %d tokens, response reserve: %d tokens",
+              contextSize, Self.foundationMaximumResponseTokens)
 
         // The chapter model must see the full transcript to avoid local chunk boundaries
         // becoming artificial chapter boundaries.
@@ -1215,7 +1218,6 @@ private struct RemoteJSONObjectResult {
                                                                  musicSegments: musicSegments,
                                                                  totalDuration: totalDuration,
                                                                  model: model,
-                                                                 maxInputTokens: maxInputTokens,
                                                                  episodeTitle: episodeTitle,
                                                                  feedTitle: feedTitle)
         let totalSegments = windows.count
@@ -1253,7 +1255,9 @@ private struct RemoteJSONObjectResult {
             await MainActor.run {
                 status?(String(format: NSLocalizedString("Pass 1/2: Themenwechsel in Kontextfenster %d von %d werden extrahiert.", comment: ""), index + 1, totalSegments))
             }
-            guard await promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens) else {
+            guard try await foundationPromptFitsContext(prompt,
+                                                        generating: GeneratedTopicMarkersList.self,
+                                                        model: model) else {
                 throw NSError(domain: "ChapterGenerator", code: 16,
                               userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein Transkriptabschnitt passt nicht in das Kontextfenster."])
             }
@@ -1265,7 +1269,11 @@ private struct RemoteJSONObjectResult {
                                                   prompt: prompt,
                                                   promptCharacters: prompt.count)
             let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: GeneratedTopicMarkersList.self)
+            let response = try await session.respond(
+                to: prompt,
+                generating: GeneratedTopicMarkersList.self,
+                options: GenerationOptions(maximumResponseTokens: Self.foundationMaximumResponseTokens)
+            )
             NSLog("[ChapterGenerator] Pass 1 %d returned %d markers", index + 1, response.content.markers.count)
 
             var rawSegmentMarkers: [TopicMarker] = []
@@ -1316,7 +1324,6 @@ private struct RemoteJSONObjectResult {
                                                                existingChapters: existingChapters,
                                                                transcriptCues: cues,
                                                                model: model,
-                                                               maxInputTokens: maxInputTokens,
                                                                status: status,
                                                                progress: progress,
                                                                progressTotal: totalSegments + 1)
@@ -1333,7 +1340,11 @@ private struct RemoteJSONObjectResult {
         await MainActor.run { progress?(0.95, totalSegments, totalSegments + 1) }
 
         let session = LanguageModelSession()
-        let response = try await session.respond(to: finalPrompt, generating: GeneratedChaptersList.self)
+        let response = try await session.respond(
+            to: finalPrompt,
+            generating: GeneratedChaptersList.self,
+            options: GenerationOptions(maximumResponseTokens: Self.foundationMaximumResponseTokens)
+        )
         NSLog("[ChapterGenerator] Pass 2 returned %d chapters", response.content.chapters.count)
 
         let rawChapters: [ICGeneratedChapter] = response.content.chapters
@@ -4388,7 +4399,6 @@ private struct RemoteJSONObjectResult {
                                            existingChapters: [ICGeneratedChapter]?,
                                            transcriptCues: [ICTranscriptCue]?,
                                            model: SystemLanguageModel,
-                                           maxInputTokens: Int,
                                            status: ((String) -> Void)?,
                                            progress: ((Float, Int, Int) -> Void)?,
                                            progressTotal: Int) async throws -> [TopicMarker] {
@@ -4402,7 +4412,9 @@ private struct RemoteJSONObjectResult {
                 totalDuration: totalDuration,
                 existingChapters: existingChapters,
                 transcriptCues: transcriptCues)
-            if await promptFitsContext(finalPrompt, model: model, maxInputTokens: maxInputTokens) {
+            if try await foundationPromptFitsContext(finalPrompt,
+                                                     generating: GeneratedChaptersList.self,
+                                                     model: model) {
                 return current
             }
 
@@ -4411,7 +4423,8 @@ private struct RemoteJSONObjectResult {
                               userInfo: [NSLocalizedDescriptionKey: "Sponsor-Erkennung ist für diese lange Folge zu umfangreich."])
             }
 
-            var groups = splitMarkersIntoConsolidationChunks(current, maxPromptChars: max(maxInputTokens * 2, 500))
+            var groups = splitMarkersIntoConsolidationChunks(current,
+                                                              maxPromptChars: max(model.contextSize * 2, 500))
             NSLog("[ChapterGenerator] Reducing %d marker(s) in round %d using %d group(s)",
                   current.count, round, groups.count)
 
@@ -4421,7 +4434,9 @@ private struct RemoteJSONObjectResult {
                 guard !Task.isCancelled else { throw CancellationError() }
                 let group = groups[groupIndex]
                 let prompt = buildMarkerConsolidationPrompt(markers: group, totalDuration: totalDuration, round: round)
-                if !(await promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens)) {
+                if !(try await foundationPromptFitsContext(prompt,
+                                                           generating: GeneratedTopicMarkersList.self,
+                                                           model: model)) {
                     guard group.count > 1 else {
                         throw NSError(domain: "ChapterGenerator", code: 15,
                                       userInfo: [NSLocalizedDescriptionKey: "Kapitelerkennung fehlgeschlagen — ein Themenmarker passt nicht in das Kontextfenster."])
@@ -4440,7 +4455,11 @@ private struct RemoteJSONObjectResult {
                 }
 
                 let session = LanguageModelSession()
-                let response = try await session.respond(to: prompt, generating: GeneratedTopicMarkersList.self)
+                let response = try await session.respond(
+                    to: prompt,
+                    generating: GeneratedTopicMarkersList.self,
+                    options: GenerationOptions(maximumResponseTokens: Self.foundationMaximumResponseTokens)
+                )
                 let groupStart = group.first?.time ?? 0
                 let groupEnd = group.last?.time ?? totalDuration
                 let groupMarkers = response.content.markers.compactMap { marker -> TopicMarker? in
@@ -4468,15 +4487,24 @@ private struct RemoteJSONObjectResult {
     }
 
     @available(iOS 26, *)
-    private func promptFitsContext(_ prompt: String,
-                                   model: SystemLanguageModel,
-                                   maxInputTokens: Int) async -> Bool {
-        var promptTokens = max(prompt.count / 2, 1)
+    private func foundationPromptFitsContext<Content: Generable>(_ prompt: String,
+                                                                generating _: Content.Type,
+                                                                model: SystemLanguageModel) async throws -> Bool {
+        let schema = Content.generationSchema
+        let promptTokens: Int
+        let schemaTokens: Int
         if #available(iOS 26.4, *) {
-            promptTokens = (try? await model.tokenCount(for: prompt)) ?? promptTokens
+            promptTokens = try await model.tokenCount(for: prompt)
+            schemaTokens = try await model.tokenCount(for: schema)
+        } else {
+            promptTokens = max(prompt.count / 2, 1)
+            schemaTokens = max(schema.debugDescription.count / 2, 1)
         }
-        NSLog("[ChapterGenerator] Context check: %d token(s), limit %d", promptTokens, maxInputTokens)
-        return promptTokens <= maxInputTokens
+        let requiredTokens = promptTokens + schemaTokens + Self.foundationMaximumResponseTokens + Self.foundationContextSafetyTokens
+        NSLog("[ChapterGenerator] Context check: prompt %d + schema %d + response %d + safety %d = %d token(s), window %d",
+              promptTokens, schemaTokens, Self.foundationMaximumResponseTokens,
+              Self.foundationContextSafetyTokens, requiredTokens, model.contextSize)
+        return requiredTokens <= model.contextSize
     }
     #endif
 
@@ -4486,7 +4514,6 @@ private struct RemoteJSONObjectResult {
                                                   musicSegments: [ICAudioSegment]?,
                                                   totalDuration: Double,
                                                   model: SystemLanguageModel,
-                                                  maxInputTokens: Int,
                                                   episodeTitle: String?,
                                                   feedTitle: String?) async throws -> [TranscriptContextWindow] {
         guard !cues.isEmpty else { return [] }
@@ -4499,10 +4526,12 @@ private struct RemoteJSONObjectResult {
                                               musicSegments: musicSegments,
                                               segStart: segStart,
                                               segEnd: segEnd,
-                                              totalDuration: totalDuration,
-                                              episodeTitle: episodeTitle,
-                                              feedTitle: feedTitle)
-        if await promptFitsContext(prompt, model: model, maxInputTokens: maxInputTokens) {
+                                                totalDuration: totalDuration,
+                                                episodeTitle: episodeTitle,
+                                                feedTitle: feedTitle)
+        if try await foundationPromptFitsContext(prompt,
+                                                 generating: GeneratedTopicMarkersList.self,
+                                                 model: model) {
             NSLog("[ChapterGenerator] Full-context transcript: %d cues -> 1 context window", cues.count)
             return [TranscriptContextWindow(cues: cues)]
         }
@@ -4526,7 +4555,9 @@ private struct RemoteJSONObjectResult {
                                                                   totalDuration: totalDuration,
                                                                   episodeTitle: episodeTitle,
                                                                   feedTitle: feedTitle)
-                if await promptFitsContext(candidatePrompt, model: model, maxInputTokens: maxInputTokens) {
+                if try await foundationPromptFitsContext(candidatePrompt,
+                                                         generating: GeneratedTopicMarkersList.self,
+                                                         model: model) {
                     bestEndIndex = mid
                     low = mid + 1
                 } else {

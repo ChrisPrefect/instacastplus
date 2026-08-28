@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import plistlib
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,20 @@ queue = read("Classes/TranscriptionQueue.swift")
 server_queue = read("Classes/ServerTranscriptionManager.swift")
 changelog = read("Classes/ChangeLogViewController.m")
 player = read("Classes/PlayerInfoViewController_v5.m")
+scheme = ET.parse(ROOT / "Instacast.xcodeproj/xcshareddata/xcschemes/Instacast.xcscheme").getroot()
+
+launch_action = scheme.find("LaunchAction")
+archive_action = scheme.find("ArchiveAction")
+require(
+    launch_action is not None
+    and launch_action.get("buildConfiguration") == "Debug",
+    "The shared Xcode Run action must use Debug so device development builds expose transcription.",
+)
+require(
+    archive_action is not None
+    and archive_action.get("buildConfiguration") == "Release",
+    "The shared Xcode Archive action must remain Release so App Store builds hide transcription by default.",
+)
 
 for relative in ("Resources/Defaults.plist", "Resources-iPad/Defaults.plist"):
     with (ROOT / relative).open("rb") as handle:
