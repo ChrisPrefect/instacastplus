@@ -9,4 +9,3 @@
 #import <Foundation/Foundation.h>
 
 void AddSkipBackupAttributeToFile(NSString* path);
-FOUNDATION_EXPORT NSString* ICRedactedURLStringForLogging(NSString* URLString);

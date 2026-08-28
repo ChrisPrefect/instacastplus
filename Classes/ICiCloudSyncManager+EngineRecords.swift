@@ -581,16 +581,16 @@ extension ICiCloudSyncManager {
             && !recordID.recordName.hasPrefix(RecordPrefix.subscriptionTombstone) {
             if recordID.recordName == RecordPrefix.subscriptionListSettings,
                let entry = localOutboxEntriesByRecordName[recordID.recordName] {
-                guard let singletonIntent = snapshot.pendingSingletonUploadIntents[recordID.recordName],
-                      singletonIntent.revision == entry.revision,
-                      singletonIntent.modifiedAt == entry.changedAt else {
-                    deferred.append(recordID)
-                    continue
-                }
                 guard entry.category == localOutboxSubscriptionListSettingsCategory,
                       entry.operation == localOutboxSaveOperation,
                       !entry.acknowledged else {
                     stale.append(.saveRecord(recordID))
+                    continue
+                }
+                guard let singletonIntent = snapshot.pendingSingletonUploadIntents[recordID.recordName],
+                      singletonIntent.revision == entry.revision,
+                      singletonIntent.modifiedAt == entry.changedAt else {
+                    deferred.append(recordID)
                     continue
                 }
                 guard var payload = entry.payloadDictionary() else {

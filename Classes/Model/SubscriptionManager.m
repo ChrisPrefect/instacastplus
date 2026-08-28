@@ -3167,7 +3167,7 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 
                     BOOL shouldSkip = error || !data || statusCode < 200 || statusCode >= 300;
                     if (shouldSkip) {
-                        ErrLog(@"Skipping %@ due to error: %@", ICRedactedURLStringForLogging(url.absoluteString), error.localizedDescription);
+                        ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
                         dispatch_async(dispatch_get_main_queue(), ^{
                             completedCount++;
                             if (progress) progress((float)completedCount / (float)totalCount);
@@ -3318,7 +3318,7 @@ static const NSInteger kHydrationInitialEpisodeLimit = 50;
 
         [self subscribeFeedWithOpmlURLNew:url options:kSubscribeOptionNone completion:^(CDFeed *feed, NSError *error) {
             if (error) {
-                ErrLog(@"Skipping %@ due to error: %@", ICRedactedURLStringForLogging(url.absoluteString), error.localizedDescription);
+                ErrLog(@"Skipping %@ due to error: %@", url.absoluteString, error.localizedDescription);
                 @synchronized(importErrors) {
                     [importErrors addObject:error];
                 }

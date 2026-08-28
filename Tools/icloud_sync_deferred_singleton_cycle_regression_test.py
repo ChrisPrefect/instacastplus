@@ -36,6 +36,36 @@ require(
     "The CKSyncEngine callback must propagate deferred singleton state instead of silently dropping it.",
 )
 
+materialize = method_body(ENGINE, "nonisolated static func materializeRecordsForSyncEngineCallback")
+list_singleton = materialize.split(
+    "if recordID.recordName == RecordPrefix.subscriptionListSettings,",
+    1,
+)[1].split(
+    "if let record = recordToSaveForSyncEngineCallback(",
+    1,
+)[0]
+stale_outbox_check = list_singleton.find("guard entry.category == localOutboxSubscriptionListSettingsCategory")
+deferred_intent_check = list_singleton.find("guard let singletonIntent")
+require(
+    0 <= stale_outbox_check < deferred_intent_check,
+    "An acknowledged or superseded list-settings outbox row must be removed as stale before a missing intent can defer it and hot-loop.",
+)
+
+
+def list_singleton_disposition(acknowledged: bool, intent_matches: bool) -> str:
+    if acknowledged:
+        return "stale"
+    if not intent_matches:
+        return "deferred"
+    return "send"
+
+
+require(
+    list_singleton_disposition(True, False) == "stale"
+    and list_singleton_disposition(False, False) == "deferred",
+    "Only a live list-settings mutation may wait for intent reconciliation; an acknowledged row must never defer.",
+)
+
 record_outcome = method_body(MANAGER, "func recordInitialUploadOutcome")
 take_outcome = method_body(MANAGER, "func takeInitialUploadOutcome")
 require(

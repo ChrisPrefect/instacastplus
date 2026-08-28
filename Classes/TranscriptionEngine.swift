@@ -579,15 +579,8 @@ private struct ICDiagnosticLogLine: Encodable {
         for (rawKey, rawValue) in metadata {
             let key = String(describing: rawKey)
             let value = rawValue
-            // The key heuristic only decides *whether* a value may be a URL. Numbers and
-            // booleans never are — `urlContextCount` was logged as
-            // "invalid-url/<redacted>#<sha of 0>" instead of the count it carries.
-            if key.range(of: "url", options: .caseInsensitive) != nil,
-               !(value is NSNumber) {
-                let URLString = (value as? URL)?.absoluteString ?? String(describing: value)
-                converted[key] = ICRedactedURLStringForLogging(URLString)
-            } else if let url = value as? URL {
-                converted[key] = url.path
+            if let url = value as? URL {
+                converted[key] = url.absoluteString
             } else if let date = value as? Date {
                 converted[key] = Self.timestampString(from: date)
             } else {

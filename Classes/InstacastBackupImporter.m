@@ -2012,7 +2012,7 @@ static NSMutableDictionary<NSString *, NSString *> *_feedURLMapping = nil;
             NSError *saveError = nil;
             if (![context save:&saveError]) {
                 [ICiCloudSyncManager cancelBackgroundLocalOutboxCommit:commitPlan];
-                ErrLog(@"could not import episode status for %@: %@", ICRedactedURLStringForLogging(resolvedFeedURL), saveError);
+                ErrLog(@"could not import episode status for %@: %@", resolvedFeedURL, saveError);
                 [context rollback];
                 count = 0;
                 phaseError = ICBackupImportPersistenceError(saveError);

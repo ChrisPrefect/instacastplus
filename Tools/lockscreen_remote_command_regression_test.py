@@ -16,6 +16,12 @@ setup = source.split("- (void) _setupRemotePlaybackCenterWithEpisode:(CDEpisode*
 setup = setup.split("#if TARGET_OS_IPHONE", 1)[1]
 setup = setup.split("#endif", 1)[0]
 
+now_playing = source.split("- (void) _setNowPlayingInfoOfEpisode:(CDEpisode*)anEpisode", 1)[1]
+now_playing = now_playing.split("- (void) _setupRemotePlaybackCenterWithEpisode:", 1)[0]
+
+rate_observer = source.split('[self.player addTaskObserver:self forKeyPath:@"rate"', 1)[1]
+rate_observer = rate_observer.split("self.playbackObserver =", 1)[0]
+
 play_pause_handler = source.split("- (MPRemoteCommandHandlerStatus) _playPauseEvent:(MPRemoteCommandEvent*)event", 1)[1]
 play_pause_handler = play_pause_handler.split("- (MPRemoteCommandHandlerStatus)_changePlaybackPositionEvent:", 1)[0]
 
@@ -49,4 +55,19 @@ require(
     "- (MPRemoteCommandHandlerStatus) _pauseEvent:(MPRemoteCommandEvent*)event" in source
     and "[self pause];" in source.split("- (MPRemoteCommandHandlerStatus) _pauseEvent:(MPRemoteCommandEvent*)event", 1)[1].split("- (MPRemoteCommandHandlerStatus)_changePlaybackPositionEvent:", 1)[0],
     "The pause handler must pause playback without toggling.",
+)
+
+require(
+    "BOOL nowPlayingPlaybackIsActive = !self.paused;" in now_playing
+    and "nowPlayingPlaybackRate" in now_playing,
+    "Now Playing must preserve the manager's playback intent while AVPlayer temporarily reports rate zero.",
+)
+require(
+    "playbackState = nowPlayingPlaybackIsActive ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;" in now_playing,
+    "The lock-screen icon must be driven by the manager's playback intent, not a transient AVPlayer rate.",
+)
+require(
+    "playbackState = weakSelf.paused ? MPNowPlayingPlaybackStatePaused : MPNowPlayingPlaybackStatePlaying;" in rate_observer
+    and "playbackState = (rate > 0.0f)" not in rate_observer,
+    "The rate observer must not overwrite the logical Now Playing state with a transient zero rate.",
 )

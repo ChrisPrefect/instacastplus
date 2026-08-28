@@ -193,7 +193,7 @@ static NSArray<NSDictionary*>* ICGroupedFeedCountRows(NSManagedObjectContext* co
                                                                  error:&error];
 
         if (error) {
-            ErrLog(@"error getting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
+            ErrLog(@"error getting password from keychain for feed: %@ (error: %@)", self.sourceURL.absoluteString, [error description]);
         }
 
         return password;
@@ -210,14 +210,14 @@ static NSArray<NSDictionary*>* ICGroupedFeedCountRows(NSManagedObjectContext* co
                                    forServiceName:[self.sourceURL absoluteString]
                                    updateExisting:YES
                                             error:&error]) {
-                ErrLog(@"error storing password in keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
+                ErrLog(@"error storing password in keychain for feed: %@ (error: %@)", self.sourceURL.absoluteString, [error description]);
             }
         }
         else if (self.username) {
             if (![SFHFKeychainUtils deleteItemForUsername:self.username
                                            andServiceName:[self.sourceURL absoluteString]
                                                     error:&error]) {
-                ErrLog(@"error deleting password from keychain for feed: %@ (error: %@)", ICRedactedURLStringForLogging(self.sourceURL.absoluteString), [error description]);
+                ErrLog(@"error deleting password from keychain for feed: %@ (error: %@)", self.sourceURL.absoluteString, [error description]);
             }
         }
     }

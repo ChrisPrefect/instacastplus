@@ -1167,7 +1167,7 @@ static const NSInteger kInitialAdaptiveBatchSize = 50;
         __block NSError* feedError = nil;
         NSManagedObjectContext* context = [DMANAGER newBackgroundContext];
         if (!context) {
-            ErrLog(@"keeping episode-loading job because the local database is unavailable: %@", ICRedactedURLStringForLogging(feedURL));
+            ErrLog(@"keeping episode-loading job because the local database is unavailable: %@", feedURL);
             continue;
         }
         [context performBlockAndWait:^{

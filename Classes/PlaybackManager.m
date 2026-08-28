@@ -1704,8 +1704,10 @@ didReceiveResponse:(NSURLResponse *)response
     }
     
     [self.nowPlayingInfo setObject:[NSNumber numberWithFloat:self.duration] forKey:MPMediaItemPropertyPlaybackDuration];
-    
-    [self.nowPlayingInfo setObject:[NSNumber numberWithDouble:self.player.rate] forKey:MPNowPlayingInfoPropertyPlaybackRate];
+
+    BOOL nowPlayingPlaybackIsActive = !self.paused;
+    double nowPlayingPlaybackRate = nowPlayingPlaybackIsActive ? MAX((double)self.player.rate, (double)_playbackRate) : 0.0;
+    [self.nowPlayingInfo setObject:[NSNumber numberWithDouble:nowPlayingPlaybackRate] forKey:MPNowPlayingInfoPropertyPlaybackRate];
     [self.nowPlayingInfo setObject:[NSNumber numberWithDouble:(double)self.time] forKey:MPNowPlayingInfoPropertyElapsedPlaybackTime];
     
     if (self.chapters && self.currentChapter >= 0) {
@@ -1717,7 +1719,7 @@ didReceiveResponse:(NSURLResponse *)response
     }
     
     [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = self.nowPlayingInfo;
-    MPNowPlayingInfoCenter.defaultCenter.playbackState = (self.player.rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
+    MPNowPlayingInfoCenter.defaultCenter.playbackState = nowPlayingPlaybackIsActive ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
     
 #endif
 }
@@ -2303,7 +2305,7 @@ didReceiveResponse:(NSURLResponse *)response
             [weakSelf _setupRemotePlaybackCenterWithEpisode:weakSelf.playingEpisode];
         } afterDelay:0.1];
 
-        MPNowPlayingInfoCenter.defaultCenter.playbackState = (rate > 0.0f) ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;
+        MPNowPlayingInfoCenter.defaultCenter.playbackState = weakSelf.paused ? MPNowPlayingPlaybackStatePaused : MPNowPlayingPlaybackStatePlaying;
 
         // Propagate the effective player state (rate-based paused/running) immediately.
         [weakSelf _sendUpdateNotification];

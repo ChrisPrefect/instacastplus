@@ -22,6 +22,7 @@
 @interface ListEpisodesTableViewController ()
 @property (nonatomic) NSInteger episodesLoadGeneration;
 @property (nonatomic, strong) NSMutableArray<CDEpisode*>* loadedEpisodes;
+@property (nonatomic, strong) NSMutableSet<NSManagedObjectID*>* pendingSelectedEpisodeObjectIDs;
 @property (nonatomic) NSUInteger nextPageOffset;
 @property (nonatomic) BOOL loadingPage;
 @property (nonatomic) BOOL reachedListEnd;
@@ -340,6 +341,52 @@
     [self _loadNextPage];
 }
 
+- (void) _captureSelectedEpisodeObjectIDsForReload
+{
+    if (!self.isEditing) {
+        self.pendingSelectedEpisodeObjectIDs = nil;
+        return;
+    }
+
+    NSMutableSet<NSManagedObjectID*>* selectedEpisodeObjectIDs = [self.pendingSelectedEpisodeObjectIDs mutableCopy];
+    if (!selectedEpisodeObjectIDs) {
+        selectedEpisodeObjectIDs = [[NSMutableSet alloc] init];
+    }
+
+    NSArray<CDEpisode*>* episodes = self.episodes;
+    for (NSIndexPath* indexPath in self.tableView.indexPathsForSelectedRows) {
+        if (indexPath.section == 0 && indexPath.row < episodes.count) {
+            CDEpisode* episode = episodes[indexPath.row];
+            [selectedEpisodeObjectIDs addObject:episode.objectID];
+        }
+        [self.tableView deselectRowAtIndexPath:indexPath animated:NO];
+    }
+    self.pendingSelectedEpisodeObjectIDs = selectedEpisodeObjectIDs.count > 0 ? selectedEpisodeObjectIDs : nil;
+}
+
+- (void) _restorePendingEpisodeSelectionFromPage:(NSArray<CDEpisode*>*)pageEpisodes
+                                    startingAtRow:(NSUInteger)oldCount
+{
+    if (!self.isEditing) {
+        self.pendingSelectedEpisodeObjectIDs = nil;
+        return;
+    }
+    if (self.pendingSelectedEpisodeObjectIDs.count == 0) {
+        return;
+    }
+
+    NSMutableSet<NSManagedObjectID*>* remainingObjectIDs = [self.pendingSelectedEpisodeObjectIDs mutableCopy];
+    [pageEpisodes enumerateObjectsUsingBlock:^(CDEpisode* episode, NSUInteger index, BOOL *stop) {
+        if ([remainingObjectIDs containsObject:episode.objectID]) {
+            NSIndexPath* indexPath = [NSIndexPath indexPathForRow:oldCount + index inSection:0];
+            [self.tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
+            [remainingObjectIDs removeObject:episode.objectID];
+        }
+    }];
+
+    self.pendingSelectedEpisodeObjectIDs = (remainingObjectIDs.count > 0 && !self.reachedListEnd) ? remainingObjectIDs : nil;
+}
+
 - (void) _loadNextPage
 {
     if (self.loadingPage || self.reachedListEnd || self.pageError) {
@@ -411,6 +458,7 @@
                 }
                 [self.tableView insertRowsAtIndexPaths:indexPaths withRowAnimation:UITableViewRowAnimationNone];
             }
+            [self _restorePendingEpisodeSelectionFromPage:pageEpisodes startingAtRow:oldCount];
 
             [self _updatePageFooter];
             [self _updateToolbarItemsAnimated:NO];
@@ -459,6 +507,7 @@
 
 - (void) updateEpisodes
 {
+    [self _captureSelectedEpisodeObjectIDsForReload];
     self.episodesLoadGeneration++;
     self.loadedEpisodes = [[NSMutableArray alloc] init];
     self.episodes = self.loadedEpisodes;
