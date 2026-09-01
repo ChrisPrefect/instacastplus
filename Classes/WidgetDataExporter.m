@@ -604,7 +604,7 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
             NSString *episodeHash = self.lastPlayedEpisodeDict[@"id"];
             CDEpisode *episode = [DMANAGER episodeWithObjectHash:episodeHash];
             if (episode) {
-                [as playEpisode:episode];
+                [as playEpisode:episode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:[as.episode isEqual:episode]];
             }
         }
         exportImmediately = YES;
@@ -623,13 +623,13 @@ static const NSTimeInterval kControlActionExportDelay = 0.35;
     } else if ([action isEqualToString:@"nextepisode"]) {
         CDEpisode *nextEpisode = [as nextPlayableEpisode];
         if (nextEpisode) {
-            [as playEpisode:nextEpisode];
+            [as playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
         }
         scheduleDelayedExport = YES;
     } else if ([action isEqualToString:@"previousepisode"]) {
         CDEpisode *previousEpisode = [self _previousEpisodeForPlaybackManager:pm audioSession:as];
         if (previousEpisode) {
-            [as playEpisode:previousEpisode];
+            [as playEpisode:previousEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
         }
         scheduleDelayedExport = YES;
     } else if ([action isEqualToString:@"cyclespeed"]) {

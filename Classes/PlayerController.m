@@ -367,10 +367,6 @@ enum {
     
     PlaybackManager* pman = [PlaybackManager playbackManager];
     
-    if ([pman hasMovingVideo]) {
-        [pman stopAirPlayVideo];
-    }
-    
     if (!pman.ready || !self.backgroundPlayback) {
         [pman close];
     }

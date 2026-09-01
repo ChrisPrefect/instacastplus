@@ -213,17 +213,9 @@ static UIImage* ICPlayerTransportImage(NSString* name)
     ICVolumeView* routeButton = [[ICVolumeView alloc] initWithFrame:CGRectMake(8, -17, 84, 84)];
     routeButton.autoresizingMask = UIViewAutoresizingFlexibleRightMargin;
     routeButton.backgroundColor = [UIColor clearColor];
-    // showsRouteButton/showsVolumeSlider/setRouteButtonImage are deprecated in iOS 13+ but still functional
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    routeButton.showsVolumeSlider = NO;
-    //DevD To DO
-    routeButton.showsRouteButton = YES;
-    UIImage* routeImage = ICPlayerToolSymbol(@"airplayaudio", 26.f);
-    [routeButton setRouteButtonImage:routeImage forState:UIControlStateNormal];
-    [routeButton setRouteButtonImage:routeImage forState:UIControlStateSelected];
-#pragma clang diagnostic pop
+    routeButton.prioritizesVideoDevices = [PlaybackManager playbackManager].movingVideo;
     routeButton.tintColor = self.view.tintColor;
+    routeButton.activeTintColor = self.view.tintColor;
     
     [self.toolsView addSubview:routeButton];
     self.routeButton = routeButton;
@@ -623,6 +615,7 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 {
     self.view.tintColor = tintColor;
     self.routeButton.tintColor = tintColor;
+    self.routeButton.activeTintColor = tintColor;
 }
 
 - (void) setShown:(BOOL)shown
@@ -797,6 +790,7 @@ static UIImage* ICPlayerTransportImage(NSString* name)
 - (void) updateControlsUI
 {
 	PlaybackManager* pman = [PlaybackManager playbackManager];
+    self.routeButton.prioritizesVideoDevices = pman.movingVideo;
     self.forwardChapterSkipActive = (pman.ready && [pman forwardSkipJumpsToNextChapter]);
     [self _updateSkipButtonImages];
 	if (pman.paused) {

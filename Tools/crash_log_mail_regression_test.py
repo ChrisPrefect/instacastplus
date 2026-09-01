@@ -28,10 +28,7 @@ require("@objc class ICDiagnosticMailAttachment" in LOGGER, "Diagnostic mail att
 for property_name in ["fileName", "mimeType", "data"]:
     require(f"@objc let {property_name}" in LOGGER, f"Diagnostic mail attachment must expose {property_name}.")
 
-require("@objc static var isTestFlightBuild: Bool" in LOGGER, "TestFlight detection must be exposed from the diagnostic logger.")
-testflight_detection = LOGGER.split("@objc static var isTestFlightBuild: Bool", 1)[1].split("\n    }", 1)[0]
-require("#if DEBUG" in testflight_detection and "return false" in testflight_detection, "Debug builds must not show the TestFlight-only crash-log row.")
-require("appStoreReceiptURL" in testflight_detection and "sandboxReceipt" in testflight_detection, "TestFlight builds must be detected through the sandbox receipt.")
+require("@objc static var isTestFlightBuild: Bool" in LOGGER, "TestFlight detection must remain available to the diagnostic logger.")
 
 require('category: "crash"' in LOGGER and "Vorherige Session unerwartet beendet" in LOGGER, "Unexpected previous sessions must be logged as local crash diagnostics.")
 require("previousSessionEndedUnexpectedly" in LOGGER, "Crash log exports must include previous-session crash state.")
@@ -47,13 +44,13 @@ for key in ["previousSessionEndedUnexpectedly", "previousSessionState", "appVers
     require(key in body, f"Crash log mail body must include {key}.")
 
 require("kRowCrashLogs" in OPTIONS, "Settings must define a crash-log mail row.")
-require("+ (BOOL)crashLogMailAvailable" in OPTIONS, "Settings must centralize crash-log row availability.")
-require("[ICDiagnosticLogger isTestFlightBuild]" in OPTIONS, "Crash-log row must only be available in TestFlight mode.")
+require("crashLogMailAvailable" not in OPTIONS, "Settings must not gate the crash-log row by build type.")
+require("[ICDiagnosticLogger isTestFlightBuild]" not in OPTIONS, "Settings must not consult TestFlight state for crash-log row visibility.")
 
 row_mapping = method_body(OPTIONS, "- (NSInteger)settingsRowForIndexPath:")
-require("![OptionsViewController crashLogMailAvailable]" in row_mapping and "kRowCrashLogs" in row_mapping, "Settings row mapping must skip the crash-log row outside TestFlight.")
+require("kRowCrashLogs" not in row_mapping, "Settings row mapping must never skip the crash-log row.")
 row_count = method_body(OPTIONS, "- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:")
-require("![OptionsViewController crashLogMailAvailable]" in row_count and "rows--" in row_count, "Settings row count must hide the crash-log row outside TestFlight.")
+require("kRowCrashLogs" not in row_count and row_count.count("rows--") == 2, "Settings row count must include the crash-log row in every build.")
 
 cell_body = method_body(OPTIONS, "- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:")
 require('"Crash Logs per Mail schicken".ls' in cell_body, "Settings must show the requested crash-log mail button text.")

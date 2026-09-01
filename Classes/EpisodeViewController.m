@@ -1114,7 +1114,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
             [navController popViewControllerAnimated:YES];
         }
         else {
-            PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:self.episode];
+            PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:self.episode];
             [playbackController presentFromParentViewController:self];
         }
     }
@@ -1203,7 +1203,7 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     
     if ([self.episode preferedMedium])
     {
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:self.episode forceReload:YES];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:self.episode forceReload:YES];
         [playbackController presentFromParentViewController:self];
     }
 }
@@ -1488,14 +1488,15 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     // 8+9. Delete transcript and chapters as separate destructive actions, so each can
     // be removed individually (and re-generated individually afterwards).
     if (aiTranscriptionFeaturesEnabled) {
-        BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:self.episode.objectHash];
+        BOOL hasDeletableSRT = [[TranscriptionEngine shared] hasDeletableSRTFor:self.episode.objectHash];
         // Only the generated-chapter JSON proves ownership. CDChapter can also contain
         // podcast-provided chapters copied during playback, so it must not drive this action.
         BOOL hasGeneratedChapters = [[ChapterGenerator shared] hasChaptersFor:self.episode.objectHash];
         BOOL hasGeneratedSummary = hasGeneratedChapters && self.episode.objectHash.length > 0 && [[[ChapterGenerator shared] loadSummaryFor:self.episode.objectHash] length] > 0;
 
-        if (hasSRT) {
-            UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil) image:[UIImage systemImageNamed:@"captions.bubble"] identifier:nil handler:^(UIAction *action) {
+        if (hasDeletableSRT) {
+            UIImage* deleteTranscriptImage = [[UIImage systemImageNamed:@"trash"] imageWithTintColor:[UIColor systemRedColor] renderingMode:UIImageRenderingModeAlwaysOriginal];
+            UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil) image:deleteTranscriptImage identifier:nil handler:^(UIAction *action) {
                 STRONG_SELF
                 NSString* hash = self.episode.objectHash;
                 if (!hash) return;
@@ -1552,11 +1553,19 @@ static NSString* ICGeneratedSummaryForEpisodeHash(NSString* episodeHash)
     NSURLComponents* shareComponents = [NSURLComponents componentsWithString:@"https://instacast.ch/share/episode"];
     shareComponents.queryItems = queryItems;
     NSURL* link = shareComponents.URL;
-    if (!link) {
+    if (!link || self.episode.objectHash.length == 0) {
         return;
     }
 
-    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[link] applicationActivities:nil];
+    NSItemProvider* activityItemProvider = [[ICSharePlayCoordinator sharedCoordinator]
+        activityItemProviderForEpisodeIdentifier:self.episode.objectHash
+                                         feedURL:feedSourceURL
+                                     episodeGUID:self.episode.guid
+                                    episodeTitle:self.episode.title ?: @""
+                                    podcastTitle:self.episode.feed.displayTitle ?: self.episode.feed.title ?: @""
+                                      fallbackURL:link];
+    UIActivityViewController* shareController = [[UIActivityViewController alloc] initWithActivityItems:@[activityItemProvider] applicationActivities:nil];
+    shareController.allowsProminentActivity = YES;
     if ([shareController respondsToSelector:@selector(popoverPresentationController)]) {
         if (barButton) {
             shareController.popoverPresentationController.barButtonItem = barButton;

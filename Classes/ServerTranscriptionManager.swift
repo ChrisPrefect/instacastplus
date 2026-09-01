@@ -380,6 +380,14 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         return item
     }
 
+    private func updateStatusDetail(_ detail: String, for item: ICTranscriptionQueueItem) {
+        guard item.statusDetail != detail else { return }
+        item.statusDetail = detail
+        TranscriptionLogger.shared.append(episodeHash: item.episodeHash,
+                                          phase: "status",
+                                          message: detail)
+    }
+
     private func processNext() {
         guard ICAITranscriptionFeaturesAvailable(),
               queuePersistenceError == nil,
@@ -402,7 +410,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
         item.nextRetryAt = nil
         if item.status != .transcribing {
             item.status = .transcribing
-            item.statusDetail = NSLocalizedString("Server verarbeitet die Episode.", comment: "")
+            updateStatusDetail(NSLocalizedString("Server verarbeitet die Episode.", comment: ""), for: item)
         }
         if item.statusStartedAt == nil { item.statusStartedAt = Date() }
         currentItem = item
@@ -459,7 +467,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
             fail(item, message: NSLocalizedString("Der Transkriptionsserver lieferte keinen Fortschritt für den laufenden Auftrag.", comment: ""))
             return
         }
-        item.statusDetail = phase
+        updateStatusDetail(phase, for: item)
         switch episode.status {
         case "ready":
             if let warning = episode.warnings.first(where: { $0.timingMayBeShifted == true }) {
@@ -467,7 +475,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
                 return
             }
             item.status = .generatingChapters
-            item.statusDetail = NSLocalizedString("Server-Ergebnis wird geprüft und übernommen.", comment: "")
+            updateStatusDetail(NSLocalizedString("Server-Ergebnis wird geprüft und übernommen.", comment: ""), for: item)
             postQueueChange()
             do {
                 try await importArtifacts(episode.artifacts,
@@ -491,7 +499,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
             } catch {
                 if isTransient(error) {
                     schedulePoll(item, after: retryAfter(from: error as NSError) ?? Int(Self.retryDelay))
-                    item.statusDetail = NSLocalizedString("Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.", comment: "")
+                    updateStatusDetail(NSLocalizedString("Server-Ergebnis konnte vorübergehend nicht geladen werden. Neuer Versuch ist geplant.", comment: ""), for: item)
                 } else {
                     fail(item, message: error.localizedDescription)
                 }
@@ -536,7 +544,7 @@ private struct ICPersistedServerTranscriptionQueue: Codable {
             return
         }
         schedulePoll(item, after: retryAfter(from: nsError) ?? Int(Self.retryDelay))
-        item.statusDetail = NSLocalizedString("Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.", comment: "")
+        updateStatusDetail(NSLocalizedString("Server vorübergehend nicht erreichbar. Neuer Versuch ist geplant.", comment: ""), for: item)
     }
 
     private func submitEpisode(url: URL, podcastURL: URL?, title: String, duration: Double) async throws -> ICServerEpisodeEnvelope {

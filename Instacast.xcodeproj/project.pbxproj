@@ -329,6 +329,8 @@
 		A1B2C3D4E5F6A7B800000023 /* AppIntents/ICContentIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000013 /* AppIntents/ICContentIntents.swift */; };
 		A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */; };
 		A1B2C3D4E5F6A7B800000041 /* CoreSpotlight.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */; };
+		A1B2C3D4E5F6A7B800000051 /* ICSharePlayCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */; };
+		A1B2C3D4E5F6A7B800000053 /* MediaSuggestions.intentdefinition in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B800000052 /* MediaSuggestions.intentdefinition */; };
 		A4D635E23144E9DFE29547D9 /* WatchDownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA77CE3DBE6C0B97B4D3DD1 /* WatchDownloadManager.swift */; };
 		A7DC141C75141EE73DD23778 /* StatsProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35307105E5905E5F84562C64 /* StatsProvider.swift */; };
 		A89DF17ACA734175ABBDB278 /* SharedContainerReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80CE58E26A1BA7BA9BE30A0E /* SharedContainerReader.swift */; };
@@ -999,6 +1001,8 @@
 		A1B2C3D4E5F6A7B800000030 /* ICSpotlightIndexer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ICSpotlightIndexer.h; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000031 /* ICSpotlightIndexer.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ICSpotlightIndexer.m; sourceTree = "<group>"; };
 		A1B2C3D4E5F6A7B800000040 /* CoreSpotlight.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreSpotlight.framework; path = System/Library/Frameworks/CoreSpotlight.framework; sourceTree = SDKROOT; };
+		A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = iOSIntegration/ICSharePlayCoordinator.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6A7B800000052 /* MediaSuggestions.intentdefinition */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file.intentdefinition; path = MediaSuggestions.intentdefinition; sourceTree = "<group>"; };
 		A6E83AC4CCB117C5AD8DB8E5 /* DonationViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DonationViewController.m; sourceTree = "<group>"; };
 		AB544047FF0C40A785F5223F /* Model.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model.xcdatamodel; sourceTree = "<group>"; };
 		F600B0A17E2D4B00A10B0001 /* Model6.xcdatamodel */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcdatamodel; path = Model6.xcdatamodel; sourceTree = "<group>"; };
@@ -1258,6 +1262,7 @@
 				A1B2C3D4E5F6A7B800000011 /* AppIntents/ICPlaybackIntents.swift */,
 				A1B2C3D4E5F6A7B800000012 /* AppIntents/ICAppShortcuts.swift */,
 				A1B2C3D4E5F6A7B800000013 /* AppIntents/ICContentIntents.swift */,
+				A1B2C3D4E5F6A7B800000050 /* iOSIntegration/ICSharePlayCoordinator.swift */,
 				E4B30EAA035EBC06274E7211 /* ICiCloudSyncSettingsViewController.h */,
 				D5EEF2A8812A8B647C7D9AF6 /* ICiCloudSyncSettingsViewController.m */,
 			);
@@ -2029,6 +2034,7 @@
 			isa = PBXGroup;
 			children = (
 				92A647082CE5A201002268B7 /* Instacast-Info.plist */,
+				A1B2C3D4E5F6A7B800000052 /* MediaSuggestions.intentdefinition */,
 				1B4E6BB9153D59600014DD63 /* DocIcon.png */,
 				1B4E6BBA153D59600014DD63 /* DocIcon@2x.png */,
 				1B2081C015A6CEE800822D66 /* InfoDescriptionTemplateIPhone.html */,
@@ -2457,6 +2463,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F6A7B800000053 /* MediaSuggestions.intentdefinition in Resources */,
 				1B1725751459877900B4959D /* AffirmIn.caf in Resources */,
 				1B1725761459877900B4959D /* AffirmOut.caf in Resources */,
 				1B1725781459877900B4959D /* DownloadFinished.caf in Resources */,
@@ -2822,6 +2829,7 @@
 				A1B2C3D4E5F6A7B800000021 /* AppIntents/ICPlaybackIntents.swift in Sources */,
 				A1B2C3D4E5F6A7B800000022 /* AppIntents/ICAppShortcuts.swift in Sources */,
 				A1B2C3D4E5F6A7B800000023 /* AppIntents/ICContentIntents.swift in Sources */,
+				A1B2C3D4E5F6A7B800000051 /* ICSharePlayCoordinator.swift in Sources */,
 				A1B2C3D4E5F6A7B800000033 /* ICSpotlightIndexer.m in Sources */,
 				9535C53CC4BD2DFAA4A46985 /* SharedConstants.swift in Sources */,
 				DF013769E8097C30D565554B /* WidgetModels.swift in Sources */,
@@ -2970,7 +2978,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3052,7 +3060,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3136,7 +3144,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				ENABLE_APP_SANDBOX = YES;
@@ -3197,7 +3205,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatch/Info.plist;
@@ -3227,7 +3235,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3261,7 +3269,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;
@@ -3338,7 +3346,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWatchWidgets/Info.plist;
@@ -3372,7 +3380,7 @@
 				CODE_SIGN_ENTITLEMENTS = InstacastWidgets/InstacastWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 33;
+				CURRENT_PROJECT_VERSION = 35;
 				DEVELOPMENT_TEAM = L95F4M2LHG;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = InstacastWidgets/Info.plist;

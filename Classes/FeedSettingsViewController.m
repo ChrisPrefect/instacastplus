@@ -27,13 +27,14 @@ enum {
     kEpisodesSection,
     kTranscriptionSection,
     kAutoSkipSection,
-    kAggregateUnavailableEpisodesSection,
+    kChapterEndSponsorSkipSection,
     kAutoDownloadSettingsSection,
     kAppleWatchSection,
     kAutoDeleteSettingsSection,
     kNewsModeSection,
     kPlaybackSection,
     kRestoreDeletedSection,
+    kAggregateUnavailableEpisodesSection,
     kSyncPauseSection,
     kResetSection,
     kNumberOfSections
@@ -174,6 +175,8 @@ enum {
             return ICAITranscriptionFeaturesEnabled() ? 3 : 0; // auto-transcribe, auto-chapters, sponsor-skip
         case kAutoSkipSection:
             return 3;
+        case kChapterEndSponsorSkipSection:
+            return [self _nearChapterEndForwardSkipEnabled] ? 2 : 1;
         case kNewsModeSection:
             return 1;
         case kAggregateUnavailableEpisodesSection:
@@ -185,7 +188,7 @@ enum {
         case kAutoDeleteSettingsSection:
             return 4;
         case kPlaybackSection:
-            return [self _nearChapterEndForwardSkipEnabled] ? 6 : 5;
+            return 4;
         case kRestoreDeletedSection:
             return (self.archivedEpisodeCount.unsignedIntegerValue > 0 || self.archivedEpisodeCountError) ? 1 : 0;
         case kSyncPauseSection:
@@ -422,8 +425,6 @@ enum {
     else if (indexPath.section == kPlaybackSection)
     {
         NSDictionary* v = @{ @5 : @"5 Seconds", @10 : @"10 Seconds", @20 : @"20 Seconds", @30 : @"30 Seconds", @60 : @"1 Minute", @120 : @"2 Minutes", @300 : @"5 Minutes", @600 : @"10 Minutes" };
-        NSDictionary* chapterEndSkipModes = @{ @0 : @"Aus", @1 : @"Ein", @5 : @"Ein + 5 Sekunden", @10 : @"Ein + 10 Sekunden", @15 : @"Ein + 15 Sekunden", @20 : @"Ein + 20 Sekunden" };
-        NSDictionary* chapterEndSkipWindows = @{ @60 : @"1 Minute", @120 : @"2 Minutes", @180 : @"3 Minutes", @240 : @"4 Minutes", @300 : @"5 Minutes" };
         NSInteger playbackRow = indexPath.row;
 
         switch (playbackRow) {
@@ -508,7 +509,17 @@ enum {
 
                 break;
             }
-            case 4:
+            default:
+                break;
+        }
+    }
+    else if (indexPath.section == kChapterEndSponsorSkipSection)
+    {
+        NSDictionary* chapterEndSkipModes = @{ @0 : @"Aus", @1 : @"Ein", @5 : @"Ein + 5 Sekunden", @10 : @"Ein + 10 Sekunden", @15 : @"Ein + 15 Sekunden", @20 : @"Ein + 20 Sekunden" };
+        NSDictionary* chapterEndSkipWindows = @{ @60 : @"1 Minute", @120 : @"2 Minutes", @180 : @"3 Minutes", @240 : @"4 Minutes", @300 : @"5 Minutes" };
+
+        switch (indexPath.row) {
+            case 0:
             {
                 static NSString *ChapterEndSponsorSkipCellIdentifier = @"ChapterEndSponsorSkipCell";
                 cell = [tableView dequeueReusableCellWithIdentifier:ChapterEndSponsorSkipCellIdentifier];
@@ -538,10 +549,9 @@ enum {
                 NSInteger mode = [self.feed integerForKey:PlayerNearChapterEndForwardSkipMode];
                 NSString* localizedKey = chapterEndSkipModes[@(mode)];
                 cell.detailTextLabel.text = localizedKey.ls;
-
                 break;
             }
-            case 5:
+            case 1:
             {
                 cell.accessoryView = nil;
                 cell = [self detailCell];
@@ -928,30 +938,26 @@ enum {
             controller.titles = @[@"5 Seconds".ls, @"10 Seconds".ls, @"20 Seconds".ls, @"30 Seconds".ls, @"1 Minute".ls, @"2 Minutes".ls, @"5 Minutes".ls, @"10 Minutes".ls];
             [self.navigationController pushViewController:controller animated:YES];
         }
-        else if (playbackRow == 4)
-        {
-            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-            controller.feed = self.feed;
-            controller.valueType = kSettingTypeInteger;
+    }
+    else if (indexPath.section == kChapterEndSponsorSkipSection)
+    {
+        SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
+        controller.feed = self.feed;
+        controller.valueType = kSettingTypeInteger;
+        if (indexPath.row == 0) {
             controller.key = PlayerNearChapterEndForwardSkipMode;
             controller.title = @"Sponsoren am Kapitelende überspringen".ls;
             controller.values = @[ @(0), @(1), @(5), @(10), @(15), @(20) ];
             controller.titles = @[ @"Aus".ls, @"Ein".ls, @"Ein + 5 Sekunden".ls, @"Ein + 10 Sekunden".ls, @"Ein + 15 Sekunden".ls, @"Ein + 20 Sekunden".ls ];
-            [self.navigationController pushViewController:controller animated:YES];
         }
-        else if (playbackRow == 5)
-        {
-            SettingsValuesTableViewController* controller = [SettingsValuesTableViewController tableViewController];
-            controller.feed = self.feed;
-            controller.valueType = kSettingTypeInteger;
+        else {
             controller.key = PlayerNearChapterEndForwardSkipWindow;
             controller.title = @"Ende des Kapitels ab".ls;
             controller.values = @[ @(60), @(120), @(180), @(240), @(300) ];
             controller.titles = @[ @"1 Minute".ls, @"2 Minutes".ls, @"3 Minutes".ls, @"4 Minutes".ls, @"5 Minutes".ls ];
-            [self.navigationController pushViewController:controller animated:YES];
         }
+        [self.navigationController pushViewController:controller animated:YES];
     }
-    
     else if (indexPath.section == kAutoSkipSection) {
         if (indexPath.row == 0) {
             ChapterSkipListViewController *controller = [ChapterSkipListViewController controllerWithFeed:self.feed];
@@ -1170,7 +1176,7 @@ enum {
     else if (section == kAggregateUnavailableEpisodesSection) {
         return @"Enable to show all episodes regardless of whether or not they are still available on the publisher's server.".ls;
     }
-    else if (section == kPlaybackSection) {
+    else if (section == kChapterEndSponsorSkipSection) {
         return @"Sponsor-Segmente, die am Ende eines Kapitels eingefügt sind, können mit einem Druck auf Vorwärts-Spulen übersprungen werden. Es wird direkt zum nächsten Kapitel gesprungen und je nach Einstellung zusätzlich einige Sekunden weiter.".ls;
     }
     

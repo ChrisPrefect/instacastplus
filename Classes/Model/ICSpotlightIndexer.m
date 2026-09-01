@@ -250,6 +250,7 @@ static NSDictionary* ICSpotlightEpisodeSnapshot(CDEpisode* episode)
         @"uniqueIdentifier": [ICSpotlightIndexer episodeUniqueIdentifierForObjectHash:objectHash],
         @"domainIdentifier": ICSpotlightDomainIdentifierForSourceURLString(sourceURLString),
         @"objectHash": objectHash,
+        @"guid": ICSpotlightString(episode.guid),
         @"title": ICSpotlightString(episode.title),
         @"episodeSubtitle": ICSpotlightString(episode.subtitle),
         @"subtitle": podcastTitle,
@@ -295,9 +296,17 @@ static CSSearchableItem* ICSpotlightSearchableItemForFeedSnapshot(NSDictionary* 
     attributeSet.keywords = keywords;
     attributeSet.textContent = [@[ snapshot[@"title"], snapshot[@"subtitle"], summary ] componentsJoinedByString:@"\n"];
 
-    return [[CSSearchableItem alloc] initWithUniqueIdentifier:snapshot[@"uniqueIdentifier"]
-                                             domainIdentifier:snapshot[@"domainIdentifier"]
-                                                 attributeSet:attributeSet];
+    CSSearchableItem* item = [[CSSearchableItem alloc] initWithUniqueIdentifier:snapshot[@"uniqueIdentifier"]
+                                                            domainIdentifier:snapshot[@"domainIdentifier"]
+                                                                attributeSet:attributeSet];
+    if (@available(iOS 18.0, *)) {
+        [ICSpotlightAppEntityBridge associatePodcastWithSearchableItem:item
+                                                             identifier:snapshot[@"sourceURL"]
+                                                                  title:snapshot[@"title"]
+                                                               subtitle:snapshot[@"subtitle"]
+                                                               imageURL:snapshot[@"imageURL"]];
+    }
+    return item;
 }
 
 static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionary* snapshot)
@@ -367,9 +376,20 @@ static CSSearchableItem* ICSpotlightSearchableItemForEpisodeSnapshot(NSDictionar
         attributeSet.downloadedDate = snapshot[@"downloadedDate"];
     }
 
-    return [[CSSearchableItem alloc] initWithUniqueIdentifier:snapshot[@"uniqueIdentifier"]
-                                             domainIdentifier:snapshot[@"domainIdentifier"]
-                                                 attributeSet:attributeSet];
+    CSSearchableItem* item = [[CSSearchableItem alloc] initWithUniqueIdentifier:snapshot[@"uniqueIdentifier"]
+                                                            domainIdentifier:snapshot[@"domainIdentifier"]
+                                                                attributeSet:attributeSet];
+    if (@available(iOS 18.0, *)) {
+        [ICSpotlightAppEntityBridge associateEpisodeWithSearchableItem:item
+                                                             identifier:snapshot[@"objectHash"]
+                                                                feedURL:snapshot[@"sourceURL"]
+                                                                   guid:snapshot[@"guid"]
+                                                                  title:snapshot[@"title"]
+                                                                podcast:snapshot[@"subtitle"]
+                                                               imageURL:snapshot[@"imageURL"]
+                                                               duration:[snapshot[@"duration"] integerValue]];
+    }
+    return item;
 }
 
 - (void)_indexSearchableItems:(NSArray<CSSearchableItem*>*)items

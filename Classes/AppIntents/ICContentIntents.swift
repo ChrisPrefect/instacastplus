@@ -8,6 +8,7 @@
 //
 
 import AppIntents
+import CoreSpotlight
 import Foundation
 
 // MARK: - Podcast Entity
@@ -61,6 +62,8 @@ struct ICEpisodeEntity: AppEntity, Sendable {
     static let defaultQuery = ICEpisodeEntityQuery()
 
     let id: String
+    @Property(title: "Feed URL") var feedURL: String
+    @Property(title: "Episode GUID") var guid: String
     let title: String
     let podcast: String?
     let imageURL: String?
@@ -73,16 +76,24 @@ struct ICEpisodeEntity: AppEntity, Sendable {
         )
     }
 
-    init(id: String, title: String, podcast: String?, imageURL: String?, duration: Int) {
+    init(id: String, feedURL: String, guid: String, title: String, podcast: String?, imageURL: String?, duration: Int) {
         self.id = id
         self.title = title
         self.podcast = podcast
         self.imageURL = imageURL
         self.duration = duration
+        self.feedURL = feedURL
+        self.guid = guid
     }
 
     init(_ info: ICEpisodeInfo) {
-        self.init(id: info.id, title: info.title, podcast: info.podcast, imageURL: info.imageURL, duration: info.duration)
+        self.init(id: info.id,
+                  feedURL: info.feedURL,
+                  guid: info.guid,
+                  title: info.title,
+                  podcast: info.podcast,
+                  imageURL: info.imageURL,
+                  duration: info.duration)
     }
 }
 
@@ -97,6 +108,72 @@ struct ICEpisodeEntityQuery: EntityStringQuery {
 
     func suggestedEntities() async throws -> [ICEpisodeEntity] {
         await ICIntentBridge.recentEpisodes().map(ICEpisodeEntity.init)
+    }
+}
+
+// MARK: - Spotlight and Open
+
+@available(iOS 18.0, *)
+extension ICPodcastEntity: IndexedEntity, URLRepresentableEntity {
+    static var urlRepresentation: URLRepresentation {
+        "https://instacast.ch/share/podcast?url=\(.id)"
+    }
+}
+
+@available(iOS 18.0, *)
+extension ICEpisodeEntity: IndexedEntity, URLRepresentableEntity {
+    static var urlRepresentation: URLRepresentation {
+        "https://instacast.ch/share/episode?url=\(\.$feedURL)&guid=\(\.$guid)"
+    }
+}
+
+@available(iOS 18.0, *)
+struct ICOpenPodcastIntent: OpenIntent {
+    static let title: LocalizedStringResource = "Open Podcast"
+
+    @Parameter(title: "Podcast") var target: ICPodcastEntity
+}
+
+@available(iOS 18.0, *)
+struct ICOpenEpisodeIntent: OpenIntent {
+    static let title: LocalizedStringResource = "Open Episode"
+
+    @Parameter(title: "Episode") var target: ICEpisodeEntity
+}
+
+@available(iOS 18.0, *)
+@objc(ICSpotlightAppEntityBridge)
+final class ICSpotlightAppEntityBridge: NSObject {
+    @objc(associatePodcastWithSearchableItem:identifier:title:subtitle:imageURL:)
+    static func associatePodcast(with searchableItem: CSSearchableItem,
+                                 identifier: String,
+                                 title: String,
+                                 subtitle: String?,
+                                 imageURL: String?) {
+        let entity = ICPodcastEntity(id: identifier,
+                                     title: title,
+                                     subtitle: subtitle,
+                                     imageURL: imageURL)
+        searchableItem.associateAppEntity(entity)
+    }
+
+    @objc(associateEpisodeWithSearchableItem:identifier:feedURL:guid:title:podcast:imageURL:duration:)
+    static func associateEpisode(with searchableItem: CSSearchableItem,
+                                 identifier: String,
+                                 feedURL: String,
+                                 guid: String,
+                                 title: String,
+                                 podcast: String?,
+                                 imageURL: String?,
+                                 duration: Int) {
+        let entity = ICEpisodeEntity(id: identifier,
+                                     feedURL: feedURL,
+                                     guid: guid,
+                                     title: title,
+                                     podcast: podcast,
+                                     imageURL: imageURL,
+                                     duration: duration)
+        searchableItem.associateAppEntity(entity)
     }
 }
 

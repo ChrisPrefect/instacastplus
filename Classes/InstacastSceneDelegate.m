@@ -62,6 +62,7 @@
 
 extern NSString* MainMenuListUIDsDidChangeNotification;
 static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @"InstacastMainViewControllerDidBecomeReadyNotification";
+static NSString* const ICPlaybackHandoffActivityType = @"com.iteconomy.instacastplus.playback";
 
 #define kDonate1ProductID @"donate_to_developer_1"
 #define kDonate5ProductID @"donate_to_developer_5"
@@ -79,8 +80,17 @@ static NSString* const InstacastMainViewControllerDidBecomeReadyNotification = @
 @property (nonatomic) BOOL carPlayLastKnownIsPlaying;
 @property (nonatomic, copy) NSSet<UIOpenURLContext*>* pendingOpenURLContexts;
 @property (nonatomic, strong) NSMutableArray<NSUserActivity*>* pendingUserActivities;
+@property (nonatomic, copy) NSDictionary* pendingSharePlayActivity;
+@property (nonatomic, copy) NSString* latestSharePlayOwnerToken;
 
 - (void)_handleSpotlightUserActivity:(NSUserActivity*)userActivity;
+- (void)_sharePlayActivityDidChange:(NSNotification*)notification;
+- (void)_applySharePlayActivity:(NSDictionary*)activity;
+- (void)_continuePlaybackUserActivity:(NSUserActivity*)userActivity;
+- (void)_resolveEpisodeWithObjectHash:(NSString*)objectHash
+                              feedURL:(NSURL*)feedURL
+                          episodeGUID:(NSString*)episodeGUID
+                           completion:(void (^)(CDEpisode* episode))completion;
 - (void)_mainViewControllerDidBecomeReady:(NSNotification*)notification;
 - (void)_databaseDidBecomeReadyForCarPlay:(NSNotification*)notification;
 - (void)_databaseDidFailForCarPlay:(NSNotification*)notification;
@@ -136,6 +146,17 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         }
         self.window = [[ICWindow alloc] initWithWindowScene:windowScene];
         self.window.backgroundColor = ICBackgroundColor;
+
+        ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:[ICSharePlayCoordinator activityDidChangeNotification]
+                                                      object:sharePlayCoordinator];
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(_sharePlayActivityDidChange:)
+                                                     name:[ICSharePlayCoordinator activityDidChangeNotification]
+                                                   object:sharePlayCoordinator];
+        [sharePlayCoordinator startObservingSessions];
+        [sharePlayCoordinator redeliverPendingAppliedActivity];
 
         // Window size restrictions for macOS and iPadOS Stage Manager.
         // iPhone 17 Pro: 402×874pt. Minimum height: -30% + 30px = 662pt.
@@ -302,6 +323,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         [self scene:self.window.windowScene continueUserActivity:userActivity];
     }
     self.pendingUserActivities = nil;
+    NSDictionary* pendingSharePlayActivity = self.pendingSharePlayActivity;
+    self.pendingSharePlayActivity = nil;
+    if (pendingSharePlayActivity) {
+        [self _applySharePlayActivity:pendingSharePlayActivity];
+    }
     InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
     [appDelegate setNotificationSceneReady:YES];
     [[NSNotificationCenter defaultCenter] removeObserver:self
@@ -517,6 +543,11 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
         return;
     }
 
+    if ([userActivity.activityType isEqualToString:ICPlaybackHandoffActivityType]) {
+        [self _continuePlaybackUserActivity:userActivity];
+        return;
+    }
+
     if (![userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
         return;
     }
@@ -545,6 +576,180 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     if (feedURL) {
         [self _handlePcastURL:feedURL episodeGUID:episodeGUID];
     }
+}
+
+- (void)_sharePlayActivityDidChange:(NSNotification*)notification
+{
+    NSDictionary* activity = [notification.userInfo isKindOfClass:[NSDictionary class]] ? notification.userInfo : nil;
+    NSString* ownerToken = [activity[[ICSharePlayCoordinator ownerTokenUserInfoKey]] isKindOfClass:[NSString class]]
+        ? activity[[ICSharePlayCoordinator ownerTokenUserInfoKey]]
+        : nil;
+    if (ownerToken.length == 0) {
+        return;
+    }
+
+    self.latestSharePlayOwnerToken = ownerToken;
+    if ([activity[[ICSharePlayCoordinator locallyOriginatedUserInfoKey]] boolValue]) {
+        [[ICSharePlayCoordinator sharedCoordinator] acknowledgeAppliedActivityOwnerToken:ownerToken];
+        return;
+    }
+
+    InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
+    if (appDelegate.databaseStartupState == ICDatabaseStartupStateFailed) {
+        [[ICSharePlayCoordinator sharedCoordinator] acknowledgeAppliedActivityOwnerToken:ownerToken];
+        return;
+    }
+    if (appDelegate.databaseStartupState != ICDatabaseStartupStateReady ||
+        !self.mainViewController ||
+        !self.mainViewController.contentViewController) {
+        self.pendingSharePlayActivity = activity;
+        return;
+    }
+
+    [self _applySharePlayActivity:activity];
+}
+
+- (void)_applySharePlayActivity:(NSDictionary*)activity
+{
+    NSString* ownerToken = [activity[[ICSharePlayCoordinator ownerTokenUserInfoKey]] isKindOfClass:[NSString class]]
+        ? activity[[ICSharePlayCoordinator ownerTokenUserInfoKey]]
+        : nil;
+    NSString* episodeIdentifier = [activity[[ICSharePlayCoordinator episodeIdentifierUserInfoKey]] isKindOfClass:[NSString class]]
+        ? activity[[ICSharePlayCoordinator episodeIdentifierUserInfoKey]]
+        : nil;
+    NSURL* feedURL = [activity[[ICSharePlayCoordinator feedURLUserInfoKey]] isKindOfClass:[NSURL class]]
+        ? activity[[ICSharePlayCoordinator feedURLUserInfoKey]]
+        : nil;
+    NSString* episodeGUID = [activity[[ICSharePlayCoordinator episodeGUIDUserInfoKey]] isKindOfClass:[NSString class]]
+        ? activity[[ICSharePlayCoordinator episodeGUIDUserInfoKey]]
+        : nil;
+    BOOL playbackFinished = [activity[[ICSharePlayCoordinator playbackFinishedUserInfoKey]] boolValue];
+    if (ownerToken.length == 0 || episodeIdentifier.length == 0) {
+        return;
+    }
+
+    self.latestSharePlayOwnerToken = ownerToken;
+    ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
+    if (playbackFinished) {
+        PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+        if ([sharePlayCoordinator isCurrentActivityOwnerToken:ownerToken] &&
+            [playbackManager.playingEpisode.objectHash isEqualToString:episodeIdentifier]) {
+            [playbackManager closeAfterFinishedPlayback];
+        }
+        [sharePlayCoordinator acknowledgeAppliedActivityOwnerToken:ownerToken];
+        return;
+    }
+
+    __weak InstacastSceneDelegate* weakSelf = self;
+    [self _resolveEpisodeWithObjectHash:episodeIdentifier
+                               feedURL:feedURL
+                           episodeGUID:episodeGUID
+                            completion:^(CDEpisode* episode) {
+        InstacastSceneDelegate* strongSelf = weakSelf;
+        if (!strongSelf ||
+            ![strongSelf.latestSharePlayOwnerToken isEqualToString:ownerToken] ||
+            ![sharePlayCoordinator isCurrentActivityOwnerToken:ownerToken]) {
+            return;
+        }
+        if (episode) {
+            PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+            if ([playbackManager.playingEpisode.objectHash isEqualToString:episode.objectHash]) {
+                [sharePlayCoordinator acknowledgeAppliedActivityOwnerToken:ownerToken];
+                return;
+            }
+            AudioSession* audioSession = [AudioSession sharedAudioSession];
+            [audioSession playEpisode:episode
+                       queueUpCurrent:NO
+                                   at:0
+                            autostart:NO
+            preservingPlaybackSource:NO];
+            [audioSession disableContinuousPlaybackForCurrentEpisode];
+        }
+        [sharePlayCoordinator acknowledgeAppliedActivityOwnerToken:ownerToken];
+    }];
+}
+
+- (void)_continuePlaybackUserActivity:(NSUserActivity*)userActivity
+{
+    NSDictionary* userInfo = userActivity.userInfo;
+    if (![userInfo[@"version"] isEqual:@1]) {
+        return;
+    }
+
+    NSString* objectHash = [userInfo[@"objectHash"] isKindOfClass:[NSString class]] ? userInfo[@"objectHash"] : nil;
+    NSString* feedURLString = [userInfo[@"feedURL"] isKindOfClass:[NSString class]] ? userInfo[@"feedURL"] : nil;
+    NSString* episodeGUID = [userInfo[@"guid"] isKindOfClass:[NSString class]] ? userInfo[@"guid"] : nil;
+    NSNumber* position = [userInfo[@"position"] isKindOfClass:[NSNumber class]] ? userInfo[@"position"] : nil;
+    NSNumber* wasPlaying = [userInfo[@"wasPlaying"] isKindOfClass:[NSNumber class]] ? userInfo[@"wasPlaying"] : nil;
+    if (objectHash.length == 0 || !position || !wasPlaying) {
+        return;
+    }
+
+    NSURL* feedURL = feedURLString.length > 0 ? [NSURL URLWithString:feedURLString] : nil;
+    [self _resolveEpisodeWithObjectHash:objectHash
+                               feedURL:feedURL
+                           episodeGUID:episodeGUID
+                            completion:^(CDEpisode* episode) {
+        if (!episode) {
+            return;
+        }
+        NSTimeInterval targetPosition = MAX(0, position.doubleValue);
+        PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+        if (playbackManager.ready &&
+            [playbackManager.playingEpisode.objectHash isEqualToString:episode.objectHash]) {
+            [playbackManager seekToTime:targetPosition tolerance:NO];
+            if (wasPlaying.boolValue && playbackManager.paused) {
+                [playbackManager play];
+            } else if (!wasPlaying.boolValue && !playbackManager.paused) {
+                [playbackManager pause];
+            }
+            return;
+        }
+        AudioSession* audioSession = [AudioSession sharedAudioSession];
+        [audioSession playEpisode:episode
+                   queueUpCurrent:NO
+                               at:targetPosition
+                        autostart:wasPlaying.boolValue
+        preservingPlaybackSource:NO];
+    }];
+}
+
+- (void)_resolveEpisodeWithObjectHash:(NSString*)objectHash
+                              feedURL:(NSURL*)feedURL
+                          episodeGUID:(NSString*)episodeGUID
+                           completion:(void (^)(CDEpisode* episode))completion
+{
+    CDEpisode* episode = objectHash.length > 0 ? [DMANAGER episodeWithObjectHash:objectHash] : nil;
+    if (episode) {
+        completion(episode);
+        return;
+    }
+    if (!feedURL || episodeGUID.length == 0) {
+        completion(nil);
+        return;
+    }
+
+    ICFeedParser* parser = [[ICFeedParser alloc] init];
+    parser.url = feedURL;
+    parser.timeout = 15;
+    parser.didParseFeedBlock = ^(ICFeed* feed) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            ICEpisode* targetEpisode = nil;
+            for (ICEpisode* candidate in feed.episodes) {
+                if ([candidate.guid isEqualToString:episodeGUID]) {
+                    targetEpisode = candidate;
+                    break;
+                }
+            }
+            completion(targetEpisode ? [DMANAGER addUnsubscribedFeed:feed andEpisode:targetEpisode] : nil);
+        });
+    };
+    parser.didEndWithError = ^(NSError* error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(nil);
+        });
+    };
+    [[App mainQueue] addOperation:parser];
 }
 
 - (void)_handleSpotlightUserActivity:(NSUserActivity*)userActivity
@@ -611,6 +816,9 @@ static NSString* ICApplicationStateDiagnosticString(UIApplicationState state)
     [[NSNotificationCenter defaultCenter] removeObserver:self
                                                     name:InstacastMainViewControllerDidBecomeReadyNotification
                                                   object:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:[ICSharePlayCoordinator activityDidChangeNotification]
+                                                  object:[ICSharePlayCoordinator sharedCoordinator]];
     InstacastAppDelegate* appDelegate = (InstacastAppDelegate*)App.delegate;
     if (appDelegate.window == self.window && self.window.windowScene == scene) {
         [appDelegate setNotificationSceneReady:NO];
@@ -2192,7 +2400,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                     [playbackManager play];
                 } else if (episodeToPlay) {
                     NSTimeInterval chapterTime = CMTimeGetSeconds(chapter.start);
-                    [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapterTime) autostart:YES];
+                    [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapterTime) autostart:YES preservingPlaybackSource:YES];
                 }
                 [self carPlayPopTemplateAnimated:YES];
             }];
@@ -2216,7 +2424,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                     [playbackManager seekToTime:chapterTime tolerance:NO];
                     [playbackManager play];
                 } else if (episodeToPlay) {
-                    [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:chapterTime autostart:YES];
+                    [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:chapterTime autostart:YES preservingPlaybackSource:YES];
                 }
                 [self carPlayPopTemplateAnimated:YES];
             }];
@@ -2634,7 +2842,8 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
                 if (episodeHash) {
                     CDEpisode *episode = [DMANAGER episodeWithObjectHash:episodeHash];
                     if (episode) {
-                        [[AudioSession sharedAudioSession] playEpisode:episode];
+                        AudioSession *audioSession = [AudioSession sharedAudioSession];
+                        [audioSession playEpisode:episode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:[audioSession.episode isEqual:episode]];
                     }
                 }
             }
@@ -2655,7 +2864,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             AudioSession *audioSession = [AudioSession sharedAudioSession];
             CDEpisode *nextEpisode = [audioSession nextPlayableEpisode];
             if (nextEpisode) {
-                [audioSession playEpisode:nextEpisode];
+                [audioSession playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
             }
             handledPlayerAction = YES;
         } else if ([action isEqualToString:@"previousepisode"]) {
@@ -2664,7 +2873,7 @@ static NSUInteger const kCarPlayEpisodeLimit = 100;
             CDEpisode *currentEpisode = [PlaybackManager playbackManager].playingEpisode;
             NSUInteger index = [playlist indexOfObject:currentEpisode];
             if (index != NSNotFound && index > 0 && index < playlist.count) {
-                [audioSession playEpisode:playlist[index - 1]];
+                [audioSession playEpisode:playlist[index - 1] queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
             }
             handledPlayerAction = YES;
         } else if ([action isEqualToString:@"cyclespeed"]) {

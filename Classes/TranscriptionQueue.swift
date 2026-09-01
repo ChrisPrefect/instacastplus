@@ -48,8 +48,12 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     @objc static var shared: TranscriptionLogger { _shared }
 
     private var cache: [String: [ICTranscriptionLogEntry]] = [:]
+    private let persistenceQueue = DispatchQueue(
+        label: "com.iteconomy.instacastplus.transcription-log-persistence",
+        qos: .utility
+    )
 
-    private struct StoredEntry: Codable {
+    private struct StoredEntry: Codable, Sendable {
         let timestamp: Date
         let phase: String
         let message: String
@@ -83,8 +87,8 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     }
 
     @objc func clearLog(episodeHash: String) {
-        cache.removeValue(forKey: episodeHash)
-        try? FileManager.default.removeItem(at: fileURL(for: episodeHash))
+        cache[episodeHash] = []
+        removePersistedLog(episodeHash: episodeHash)
         ICDiagnosticLogger.shared.logEvent("transcription-log", message: "Per-Episode-Log entfernt", metadata: [
             "episodeHash": episodeHash,
             "logPath": fileURL(for: episodeHash).path,
@@ -94,7 +98,7 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
     /// Ensure the log for a newly queued episode starts from scratch.
     @objc func resetLog(episodeHash: String) {
         cache[episodeHash] = []
-        try? FileManager.default.removeItem(at: fileURL(for: episodeHash))
+        removePersistedLog(episodeHash: episodeHash)
         ICDiagnosticLogger.shared.logEvent("transcription-log", message: "Per-Episode-Log zurückgesetzt", metadata: [
             "episodeHash": episodeHash,
             "logPath": fileURL(for: episodeHash).path,
@@ -114,9 +118,19 @@ private final class ICMetadataParserSendableBox: @unchecked Sendable {
 
     private func persist(episodeHash: String) {
         guard let entries = cache[episodeHash] else { return }
-        let stored = entries.map { StoredEntry(timestamp: $0.timestamp, phase: $0.phase, message: $0.message, detailText: $0.detailText) }
-        if let data = try? JSONEncoder().encode(stored) {
-            try? data.write(to: fileURL(for: episodeHash), options: .atomic)
+        let storedSnapshot = entries.map { StoredEntry(timestamp: $0.timestamp, phase: $0.phase, message: $0.message, detailText: $0.detailText) }
+        let destinationURL = fileURL(for: episodeHash)
+        persistenceQueue.async {
+            if let data = try? JSONEncoder().encode(storedSnapshot) {
+                try? data.write(to: destinationURL, options: .atomic)
+            }
+        }
+    }
+
+    private func removePersistedLog(episodeHash: String) {
+        let destinationURL = fileURL(for: episodeHash)
+        persistenceQueue.async {
+            try? FileManager.default.removeItem(at: destinationURL)
         }
     }
 }
@@ -488,10 +502,12 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
     ]
 
     private func canAutoResumeRemoteChapterJobAfterUnexpectedTermination(_ item: ICTranscriptionQueueItem) -> Bool {
-        if item.chapterOnly,
-           hasChapterGenerationTranscript(episodeHash: item.episodeHash),
-           ICDownloadableModelStore.selectedModel(for: .textToChapters).usesRemoteChapterService {
-            return true
+        if item.chapterOnly || item.status == .generatingChapters {
+            let selectedModel = ICDownloadableModelStore.selectedModel(for: .textToChapters)
+            if selectedModel.usesRemoteChapterService {
+                return hasChapterGenerationTranscript(episodeHash: item.episodeHash)
+                    && chapterGen.hasPersistedDurableRemoteAnalysisIdentity(for: item.episodeHash)
+            }
         }
         guard item.automaticallyScheduled else { return false }
         if item.chapterOnly {
@@ -592,7 +608,6 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
             Task { @MainActor in
                 self?.applyGrantedWhisperKitExecutionPathForCurrentLifecycle(reason: "applicationDidEnterBackground")
                 self?.refreshBackgroundContinuation(reason: "applicationDidEnterBackground")
-                _ = self?.pausePipelineForBackgroundIfNeeded(reason: "applicationDidEnterBackground")
             }
         }
 
@@ -3520,6 +3535,17 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         }
     }
 
+    private var hasActiveUIApplicationBackgroundTime: Bool {
+        backgroundContinuationTask != .invalid
+    }
+
+    private var hasInProcessNonDurableRemoteChapterRequest: Bool {
+        guard let item = items.first(where: { $0.status == .generatingChapters }) else {
+            return false
+        }
+        return chapterGen.hasActiveNonDurableRemoteAnalysis(for: item.episodeHash)
+    }
+
     @objc var hasActiveBackgroundExecutionGrant: Bool {
         hasActiveSystemBackgroundGrant
     }
@@ -3554,6 +3580,7 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
                     "queueCount": self.items.count,
                 ] as NSDictionary)
                 self.endBackgroundContinuationIfNeeded(reason: "background-task-expired")
+                guard !self.hasInProcessNonDurableRemoteChapterRequest else { return }
                 _ = self.pausePipelineForBackgroundIfNeeded(reason: "background-task-expired")
             }
         }
@@ -3773,12 +3800,14 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
 
     private var shouldPauseChapterOnlyForBackground: Bool {
         UIApplication.shared.applicationState == .background &&
-            !hasActiveSystemBackgroundGrant
+            !hasActiveSystemBackgroundGrant &&
+            !hasActiveUIApplicationBackgroundTime
     }
 
     private var shouldPauseTranscriptionForBackground: Bool {
         UIApplication.shared.applicationState == .background &&
-            !hasActiveSystemBackgroundGrant
+            !hasActiveSystemBackgroundGrant &&
+            !hasActiveUIApplicationBackgroundTime
     }
 
     private var shouldPauseWhisperKitForBackground: Bool {
@@ -5427,6 +5456,13 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         if didChangeStatus || item.statusStartedAt == nil {
             item.statusStartedAt = Date()
         }
+        if let detail, !detail.isEmpty {
+            TranscriptionLogger.shared.append(
+                episodeHash: item.episodeHash,
+                phase: "status",
+                message: detail
+            )
+        }
         ICDiagnosticLogger.shared.logEvent("queue-step", message: "Queue-Schritt gewechselt", metadata: [
             "episodeHash": item.episodeHash,
             "status": "\(status.rawValue)",
@@ -5450,6 +5486,11 @@ final class ICCacheDeletionPreparation: NSObject, @unchecked Sendable {
         guard let item = items.first(where: { $0.episodeHash == episodeHash }) else { return }
         guard item.statusDetail != detail else { return }
         item.statusDetail = detail
+        TranscriptionLogger.shared.append(
+            episodeHash: episodeHash,
+            phase: "status",
+            message: detail
+        )
         ICDiagnosticLogger.shared.logEvent("queue-detail", message: detail, metadata: [
             "episodeHash": episodeHash,
             "status": "\(item.status.rawValue)",

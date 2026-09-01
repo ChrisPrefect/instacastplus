@@ -18,6 +18,7 @@
 
 #import "ICMetadata.h"
 #import "CDFeed+Helper.h"
+#import "InstacastPlus-Swift.h"
 #import <MediaPlayer/MediaPlayer.h>
 
 @interface PlaybackManager (ICChapterPersistence)
@@ -42,7 +43,8 @@ NSString* AudioSessionDidRestorePlaybackNotification = @"AudioSessionDidRestoreP
        queueUpCurrent:(BOOL)queueUpCurrent
                    at:(NSTimeInterval)time
             autostart:(BOOL)autostart
-recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
+recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
+preservingPlaybackSource:(BOOL)preservingPlaybackSource;
 
 @property (nonatomic, strong) NSTimer* playbackTimer;
 @property (nonatomic, strong) NSDate* stopDate;
@@ -93,7 +95,11 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
         AVAudioSession* session = [AVAudioSession sharedInstance];
 
         NSError* categoryError = nil;
-        if (![session setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:&categoryError]) {
+        if (![session setCategory:AVAudioSessionCategoryPlayback
+                             mode:AVAudioSessionModeDefault
+               routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
+                          options:0
+                            error:&categoryError]) {
             ErrLog(@"error setting audio category: %@", categoryError);
         }
 
@@ -122,9 +128,16 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
 - (void) resetSession
 {
     AVAudioSession* session = [AVAudioSession sharedInstance];
+    if (session.routeSharingPolicy == AVAudioSessionRouteSharingPolicyIndependent) {
+        return;
+    }
     
     NSError* categoryError = nil;
-    if (![session setCategory:AVAudioSessionCategoryPlayback withOptions:0 error:&categoryError]) {
+    if (![session setCategory:AVAudioSessionCategoryPlayback
+                         mode:AVAudioSessionModeDefault
+           routeSharingPolicy:AVAudioSessionRouteSharingPolicyLongFormAudio
+                      options:0
+                        error:&categoryError]) {
         ErrLog(@"error setting audio category: %@", categoryError);
     }
 }
@@ -473,12 +486,11 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
 }
 
 // Resolve the playback source list for the episode that is about to start. An explicit
-// arm from a list screen wins. Otherwise the current source survives only while the new
-// episode still belongs to that list — the list's own continuation and manual playback
-// of other list members keep it, playing something outside the list ends it. (Without
-// this, one play from e.g. "Unplayed" — continuousPlayback on by default — would make
-// EVERY later single-episode playback continue with that list forever.)
+// arm from a list screen wins. Only an explicitly identified continuation or resume may
+// otherwise inherit the current source; a manual start clears it even if the episode
+// also matches that list.
 - (void) _resolvePlaybackSourceListForEpisode:(CDEpisode*)anEpisode
+                    preservingPlaybackSource:(BOOL)preservingPlaybackSource
 {
     if (self.pendingSourceEpisodeListUID != nil) {
         NSString* pendingUID = self.pendingSourceEpisodeListUID;
@@ -488,6 +500,10 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
         // explicit "no source" arm ends the previous continuation instead.
         CDEpisodeList* pendingList = [self _episodeListWithUID:pendingUID];
         self.sourceEpisodeListUID = [pendingList evaluatesEpisodeNow:anEpisode] ? pendingUID : nil;
+        return;
+    }
+    if (!preservingPlaybackSource) {
+        self.sourceEpisodeListUID = nil;
         return;
     }
     if (self.sourceEpisodeListUID.length > 0) {
@@ -500,11 +516,25 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
 
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart
 {
+    [self playEpisode:anEpisode
+       queueUpCurrent:queueUpCurrent
+                   at:time
+            autostart:autostart
+preservingPlaybackSource:NO];
+}
+
+- (void) playEpisode:(CDEpisode*)anEpisode
+       queueUpCurrent:(BOOL)queueUpCurrent
+                   at:(NSTimeInterval)time
+            autostart:(BOOL)autostart
+preservingPlaybackSource:(BOOL)preservingPlaybackSource
+{
     [self _playEpisode:anEpisode
         queueUpCurrent:queueUpCurrent
                     at:time
              autostart:autostart
- recordsPlaybackIntent:YES];
+ recordsPlaybackIntent:YES
+preservingPlaybackSource:preservingPlaybackSource];
 }
 
 - (void) restorePlaybackEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart
@@ -513,7 +543,8 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
         queueUpCurrent:queueUpCurrent
                     at:time
              autostart:autostart
- recordsPlaybackIntent:NO];
+ recordsPlaybackIntent:NO
+preservingPlaybackSource:YES];
 }
 
 - (void) _playEpisode:(CDEpisode*)anEpisode
@@ -521,6 +552,7 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent;
                    at:(NSTimeInterval)time
             autostart:(BOOL)autostart
 recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
+preservingPlaybackSource:(BOOL)preservingPlaybackSource
 {
     if (!anEpisode) {
         return;
@@ -544,7 +576,8 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
 
     CDEpisode* currentEpisode = self.episode;
 
-    [self _resolvePlaybackSourceListForEpisode:anEpisode];
+    [self _resolvePlaybackSourceListForEpisode:anEpisode
+                     preservingPlaybackSource:preservingPlaybackSource];
     self.episode = anEpisode;
     // Don't automatically remove from Up Next - user wants manual control
     // [self eraseEpisodesFromUpNext:@[anEpisode]];
@@ -588,7 +621,7 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
     if (pman.paused)
     {
         if (!pman.ready && self.episode) {
-            [self playEpisode:self.episode];
+            [self playEpisode:self.episode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
         }
         
         else {
@@ -835,6 +868,13 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
 
 - (void) setTimerValue:(PlaybackStopTimeValue)timerValue
 {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.timerValue = timerValue;
+        });
+        return;
+    }
+
     if ([self _shouldDisableSleepTimerForCarPlay]) {
         timerValue = PlaybackStopTimeNoValue;
     }
@@ -881,6 +921,13 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
 
 - (void)setTimerWithDuration:(NSTimeInterval)seconds
 {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setTimerWithDuration:seconds];
+        });
+        return;
+    }
+
     [self.playbackTimer invalidate];
     self.playbackTimer = nil;
 
@@ -931,6 +978,7 @@ recordsPlaybackIntent:(BOOL)recordsPlaybackIntent
                     }
                 }
             }
+            [[ICSharePlayCoordinator sharedCoordinator] leaveSessionForLocalPlayback];
             [[PlaybackManager playbackManager] pause];
             // Track fell asleep count
             NSInteger fellAsleepCount = [USER_DEFAULTS integerForKey:@"SleepTimerFellAsleepCount"];

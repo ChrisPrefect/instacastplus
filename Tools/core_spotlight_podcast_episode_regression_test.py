@@ -16,6 +16,7 @@ def require(condition: bool, message: str) -> None:
 
 doc = read("CLAUDE.md")
 indexer = read("Classes/Model/ICSpotlightIndexer.m")
+content_intents = read("Classes/AppIntents/ICContentIntents.swift")
 indexer_header = read("Classes/Model/ICSpotlightIndexer.h")
 database_h = read("Classes/Model/DatabaseManager.h")
 database_m = read("Classes/Model/DatabaseManager.m")
@@ -41,6 +42,53 @@ for token in [
     "textContent",
 ]:
     require(token in indexer, f"Spotlight indexer missing required Core Spotlight behavior: {token}")
+
+for token in [
+    "extension ICPodcastEntity: IndexedEntity, URLRepresentableEntity",
+    "extension ICEpisodeEntity: IndexedEntity, URLRepresentableEntity",
+    '"https://instacast.ch/share/podcast?url=\\(.id)"',
+    '"https://instacast.ch/share/episode?url=\\(\\.$feedURL)&guid=\\(\\.$guid)"',
+    '@Property(title: "Feed URL") var feedURL: String',
+    '@Property(title: "Episode GUID") var guid: String',
+    "struct ICOpenPodcastIntent: OpenIntent",
+    "struct ICOpenEpisodeIntent: OpenIntent",
+    "@Parameter(title: \"Podcast\") var target: ICPodcastEntity",
+    "@Parameter(title: \"Episode\") var target: ICEpisodeEntity",
+    "final class ICSpotlightAppEntityBridge: NSObject",
+    "searchableItem.associateAppEntity",
+]:
+    require(token in content_intents, f"Spotlight App Entity bridge missing iOS 18 contract: {token}")
+
+require(
+    "instacastplus://" not in content_intents,
+    "URLRepresentableEntity must use the production universal-link routes, never a custom URL scheme.",
+)
+
+require(
+    content_intents.count("@available(iOS 18.0, *)") >= 5
+    and "if (@available(iOS 18.0, *))" in indexer,
+    "Indexed entities, open intents, and Objective-C association calls must remain gated from iOS 17.",
+)
+require(
+    'identifier:snapshot[@"sourceURL"]' in indexer
+    and 'identifier:snapshot[@"objectHash"]' in indexer
+    and 'feedURL:snapshot[@"sourceURL"]' in indexer
+    and 'guid:snapshot[@"guid"]' in indexer,
+    "Spotlight association must preserve AppEntity IDs (podcast source URL and episode object hash).",
+)
+require(
+    "feedUID" not in content_intents and "feedUID" not in indexer,
+    "Podcast association must use its existing source-URL ID without adding another identifier property.",
+)
+require(
+    "associatePodcastWithSearchableItem:" in indexer
+    and "associateEpisodeWithSearchableItem:" in indexer,
+    "Existing CSSearchableItems are not associated with their matching App Entities.",
+)
+require(
+    "indexAppEntities" not in content_intents and "indexAppEntities" not in indexer,
+    "App Entities must be associated with existing searchable items, not indexed in a duplicate pipeline.",
+)
 
 for token in [
     "ICSpotlightTranscriptTextForEpisodeHash",

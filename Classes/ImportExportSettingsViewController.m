@@ -114,8 +114,8 @@ typedef NS_ENUM(NSInteger, ImportExportSections) {
 
 static const void* ICImportExportSceneStateAssociationKey = &ICImportExportSceneStateAssociationKey;
 
-@interface ImportExportSettingsViewController () <UIDocumentInteractionControllerDelegate, UIDocumentPickerDelegate>
-@property (nonatomic, strong) UIDocumentInteractionController* interactionController;
+@interface ImportExportSettingsViewController () <UIDocumentPickerDelegate>
+@property (nonatomic, strong) UIActivityViewController* activityViewController;
 @property (nonatomic, strong) VDModalInfo* mInfo;
 @property (nonatomic) NSInteger selectedImportRow;
 @property (nonatomic) BOOL importInProgress;
@@ -479,6 +479,27 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
     }
 }
 
+- (void)_presentExportURL:(NSURL*)url
+{
+    UIActivityViewController* activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[url]
+                                                                                         applicationActivities:nil];
+    __weak ImportExportSettingsViewController* weakSelf = self;
+    activityViewController.completionWithItemsHandler = ^(__unused UIActivityType activityType,
+                                                           __unused BOOL completed,
+                                                           __unused NSArray* returnedItems,
+                                                           __unused NSError* activityError) {
+        ImportExportSettingsViewController* strongSelf = weakSelf;
+        strongSelf.activityViewController = nil;
+        [strongSelf presentPendingFullExportResultIfNeeded];
+        [strongSelf presentPendingSubscriptionsExportResultIfNeeded];
+        [strongSelf presentPendingBookmarksExportResultIfNeeded];
+    };
+    activityViewController.popoverPresentationController.sourceView = self.navigationController.view;
+    activityViewController.popoverPresentationController.sourceRect = CGRectZero;
+    self.activityViewController = activityViewController;
+    [self presentViewController:activityViewController animated:YES completion:nil];
+}
+
 - (void)presentPendingSubscriptionsExportResultIfNeeded
 {
     if (!self.pendingSubscriptionsExportURL && !self.pendingSubscriptionsExportError) return;
@@ -502,14 +523,7 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
         return;
     }
 
-    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-    self.interactionController.delegate = self;
-    self.interactionController.name = url.lastPathComponent;
-    self.interactionController.UTI = @"instacast.opml";
-    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-        self.interactionController = nil;
-        [self _presentShareUnavailableError];
-    }
+    [self _presentExportURL:url];
 }
 
 - (void)finishSubscriptionsExportWithURL:(NSURL*)url error:(NSError*)error
@@ -624,14 +638,7 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
         return;
     }
 
-    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-    self.interactionController.delegate = self;
-    self.interactionController.name = url.lastPathComponent;
-    self.interactionController.UTI = @"com.vemedio.xpff";
-    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-        self.interactionController = nil;
-        [self _presentShareUnavailableError];
-    }
+    [self _presentExportURL:url];
 }
 
 - (void)finishBookmarksExportWithURL:(NSURL*)url error:(NSError*)error
@@ -699,23 +706,7 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
         return;
     }
 
-    self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:url];
-    self.interactionController.delegate = self;
-    self.interactionController.name = url.lastPathComponent;
-    self.interactionController.UTI = @"public.xml";
-    if (![self.interactionController presentOpenInMenuFromRect:CGRectZero inView:self.navigationController.view animated:YES]) {
-        self.interactionController = nil;
-        [self _presentShareUnavailableError];
-    }
-}
-
-- (void)_presentShareUnavailableError
-{
-    UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"Share Unavailable".ls
-                                                                   message:@"The exported file was created, but the share menu could not be opened. Try again from the export settings.".ls
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK".ls style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self _presentExportURL:url];
 }
 
 - (void)finishFullExportWithURL:(NSURL *)url error:(NSError *)error
@@ -1452,17 +1443,6 @@ static const void* ICImportExportSceneStateAssociationKey = &ICImportExportScene
         }];
     });
 }
-
-#pragma mark - UIDocumentInteractionControllerDelegate
-
-- (void) documentInteractionControllerDidDismissOpenInMenu:(UIDocumentInteractionController *)controller
-{
-    self.interactionController = nil;
-    [self presentPendingFullExportResultIfNeeded];
-    [self presentPendingSubscriptionsExportResultIfNeeded];
-    [self presentPendingBookmarksExportResultIfNeeded];
-}
-
 
 #pragma mark - Reset App
 

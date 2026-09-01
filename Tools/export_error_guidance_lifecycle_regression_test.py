@@ -43,12 +43,12 @@ for method in [
     method_body = body(method)
     require("error.localizedDescription" in method_body,
             "Export errors must show their concrete cause instead of always claiming storage is full.")
-    require("_presentShareUnavailableError" in method_body,
-            "A failed share-menu presentation must produce visible guidance.")
+    require("[self _presentExportURL:url]" in method_body,
+            "A successful export must be handed to the system share sheet.")
 
-share_error = body("- (void)_presentShareUnavailableError")
-require('"Share Unavailable".ls' in share_error and '"The exported file was created' in share_error,
-        "Share-menu failure guidance must distinguish creation success from presentation failure.")
+share = body("- (void)_presentExportURL:")
+require("UIActivityViewController" in share and "completionWithItemsHandler" in share,
+        "Export sharing must use the retained system activity controller and finish its lifecycle on dismissal.")
 
 
 print("Export error-guidance lifecycle regression checks passed")

@@ -901,7 +901,7 @@ static CGFloat const ICAppleWatchHeaderProgressHeight = 4.f;
     }
 
     BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
     [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 

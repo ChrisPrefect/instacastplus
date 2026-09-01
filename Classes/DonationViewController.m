@@ -546,7 +546,7 @@ enum {
     episode.position = 240;
     [DMANAGER save];
 
-    PlaybackViewController *playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+    PlaybackViewController *playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:YES];
     [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 

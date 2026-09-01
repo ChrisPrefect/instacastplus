@@ -10,7 +10,9 @@
     #import "PlayerController.h"
     #import "StatusBarFixingViewController.h"
 #import "InstacastAppDelegate.h"
+#import "InstacastPlus-Swift.h"
 #import <MediaPlayer/MediaPlayer.h>
+#import <Intents/Intents.h>
 
 
     @interface PlaybackViewController () <UIViewControllerTransitioningDelegate>
@@ -19,6 +21,7 @@
     @property (nonatomic, strong, readwrite) ICPlaybackViewControllerDismissedAnimator* dismissalAnimator;
     @property (nonatomic, readwrite) BOOL interactive;
     @property (nonatomic, readwrite) BOOL pausedForDismiss;
+    @property (nonatomic) BOOL donatesUserInitiatedPlayback;
     @end
 
     @implementation PlaybackViewController {
@@ -43,6 +46,60 @@
     + (PlaybackViewController*) playbackViewControllerWithEpisode:(CDEpisode*)anEpisode
     {
         return [self playbackViewControllerWithEpisode:anEpisode forceReload:NO];
+    }
+
+    + (PlaybackViewController*) playbackViewControllerWithUserInitiatedEpisode:(CDEpisode*)anEpisode forceReload:(BOOL)force
+    {
+        PlaybackViewController* controller = [self playbackViewControllerWithEpisode:anEpisode forceReload:force];
+        controller.donatesUserInitiatedPlayback = YES;
+        return controller;
+    }
+
+    + (PlaybackViewController*) playbackViewControllerWithUserInitiatedEpisode:(CDEpisode*)anEpisode
+    {
+        return [self playbackViewControllerWithUserInitiatedEpisode:anEpisode forceReload:NO];
+    }
+
+    + (void) donateUserInitiatedPlaybackOfEpisode:(CDEpisode*)episode
+    {
+        if (episode.objectHash.length == 0 || episode.feed.sourceURL.absoluteString.length == 0) {
+            return;
+        }
+
+        NSString* episodeHash = [episode.objectHash copy];
+        NSString* podcastTitle = episode.feed.displayTitle ?: episode.feed.title;
+        NSURL* artworkURL = episode.imageURL ?: episode.feed.imageURL;
+        INImage* artwork = artworkURL ? [INImage imageWithURL:artworkURL] : nil;
+        INMediaItem* episodeItem = [[INMediaItem alloc] initWithIdentifier:episodeHash
+                                                                    title:episode.title
+                                                                     type:INMediaItemTypePodcastEpisode
+                                                                  artwork:artwork
+                                                                   artist:podcastTitle];
+        INMediaItem* podcastItem = [[INMediaItem alloc] initWithIdentifier:episode.feed.sourceURL.absoluteString
+                                                                    title:podcastTitle
+                                                                     type:INMediaItemTypePodcastShow
+                                                                  artwork:artwork
+                                                                   artist:nil];
+        INPlayMediaIntent* intent = [[INPlayMediaIntent alloc] initWithMediaItems:@[episodeItem]
+                                                                  mediaContainer:podcastItem
+                                                                    playShuffled:nil
+                                                              playbackRepeatMode:INPlaybackRepeatModeNone
+                                                                  resumePlayback:@NO
+                                                           playbackQueueLocation:INPlaybackQueueLocationNow
+                                                                   playbackSpeed:nil
+                                                                     mediaSearch:nil];
+        INInteraction* interaction = [[INInteraction alloc] initWithIntent:intent response:nil];
+        interaction.identifier = [NSString stringWithFormat:@"play-episode:%@", episodeHash];
+        [interaction donateInteractionWithCompletion:^(NSError* error) {
+            if (error) {
+                [[ICDiagnosticLogger shared] logEvent:@"siri-media"
+                                              message:@"Play-Media-Interaktion konnte nicht gespendet werden"
+                                             metadata:@{
+                                                 @"episodeHash": episodeHash ?: @"",
+                                                 @"error": error.localizedDescription ?: @"",
+                                             }];
+            }
+        }];
     }
 
     + (PlaybackViewController*) playbackViewController
@@ -167,19 +224,25 @@
     {
         AudioSession* audioSession = [AudioSession sharedAudioSession];
         if (self.episode && (self.force || ![audioSession.episode isEqual:self.episode])) {
-            [audioSession playEpisode:self.episode queueUpCurrent:NO at:0 autostart:autostart];
+            [audioSession playEpisode:self.episode queueUpCurrent:NO at:0 autostart:autostart preservingPlaybackSource:[audioSession.episode isEqual:self.episode]];
             [self setTimerUpdateOnPlay];
         }
         
         // if audio session knows what to play, but it's not already playing load it
         else if (audioSession.episode && ![PlaybackManager playbackManager].ready) {
-            [audioSession playEpisode:audioSession.episode queueUpCurrent:NO at:0 autostart:autostart];
+            [audioSession playEpisode:audioSession.episode queueUpCurrent:NO at:0 autostart:autostart preservingPlaybackSource:YES];
             [self setTimerUpdateOnPlay];
         }
         else if (autostart) {
             //DevD to do : timer things
             [[PlaybackManager playbackManager] play];
             [self setTimerUpdateOnPlay];
+        }
+        if (self.donatesUserInitiatedPlayback &&
+            autostart &&
+            self.episode &&
+            [audioSession.episode isEqual:self.episode]) {
+            [PlaybackViewController donateUserInitiatedPlaybackOfEpisode:self.episode];
         }
     //    [parentViewController.navigationController setNavigationBarHidden:YES animated:YES];
     //    [parentViewController.view addSubview:self.view];

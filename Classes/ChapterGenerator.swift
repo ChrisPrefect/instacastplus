@@ -248,6 +248,7 @@ private struct RemoteJSONObjectResult {
     #endif
     private static let localGenerationTimeoutNanoseconds: UInt64 = 600 * 1_000_000_000
     private static let openAIBackgroundJobVersion = 1
+    private var activeNonDurableRemoteAnalysisEpisodeHashes: Set<String> = []
     private var activeOpenAIBackgroundEpisodeHashes: Set<String> = []
     private var activeOpenAICancellationEpisodeHashes: Set<String> = []
     private var openAICancellationRetryTasks: [String: Task<Void, Never>] = [:]
@@ -670,6 +671,10 @@ private struct RemoteJSONObjectResult {
         Self.makeTranscriptRevision(for: cues)
     }
 
+    func hasActiveNonDurableRemoteAnalysis(for episodeHash: String) -> Bool {
+        activeNonDurableRemoteAnalysisEpisodeHashes.contains(episodeHash)
+    }
+
     /// Runs the complete semantic analysis for a remote chapter model in one
     /// structured-output request. Local and Foundation models keep using the
     /// chapter-only API because they cannot produce this revision-bound result.
@@ -751,6 +756,21 @@ private struct RemoteJSONObjectResult {
             )
         } else {
             remoteAnalysisJobContext = nil
+        }
+
+        let nonDurableEpisodeHash: String?
+        if remoteAnalysisJobContext == nil,
+           let episodeHash = debugEpisodeHash?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !episodeHash.isEmpty {
+            nonDurableEpisodeHash = episodeHash
+            activeNonDurableRemoteAnalysisEpisodeHashes.insert(episodeHash)
+        } else {
+            nonDurableEpisodeHash = nil
+        }
+        defer {
+            if let nonDurableEpisodeHash {
+                activeNonDurableRemoteAnalysisEpisodeHashes.remove(nonDurableEpisodeHash)
+            }
         }
 
         var completedOpenAIReference: OpenAIBackgroundAnalysisReference?
@@ -6276,6 +6296,21 @@ private struct RemoteJSONObjectResult {
     @objc func invalidateAnalysisCache(for episodeHash: String) {
         _summaryCache.removeValue(forKey: episodeHash)
         invalidateChaptersCache(for: episodeHash)
+    }
+
+    func hasPersistedDurableRemoteAnalysisIdentity(for episodeHash: String) -> Bool {
+        let selectedModel = ICDownloadableModelStore.selectedModel(for: .textToChapters)
+        guard ICRemoteChapterCredentialStore.hasOpenAIAPIKey(),
+              selectedModel.chapterProvider == .openAIAPI
+                || selectedModel.chapterProvider == .openAICodexOAuth,
+              let job = try? loadOpenAIBackgroundAnalysisJob(for: episodeHash),
+              job.modelName == (selectedModel.remoteModelName ?? selectedModel.identifier),
+              job.schemaName == Self.remoteSchemaName(for: .episodeAnalysis),
+              let responseID = job.responseID,
+              Self.isValidOpenAIResponseID(responseID) else {
+            return false
+        }
+        return job.state != .submitting
     }
 
     /// Called only after the queue's retry state has been durably written. A

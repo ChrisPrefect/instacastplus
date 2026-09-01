@@ -9,6 +9,8 @@
 #import <UIKit/UIKit.h>
 
 @class ICProgressSlider;
+@class ICVolumeView;
+@class MPVolumeView;
 
 @interface PlaybackControlsViewController : UIViewController
 
@@ -42,7 +44,7 @@
 @property (nonatomic, strong) UIColor* tintColor;
 
 @property (nonatomic, strong) MPVolumeView* volumeView;
-@property (nonatomic, strong) MPVolumeView* routeButton;
+@property (nonatomic, strong) ICVolumeView* routeButton;
 @property (nonatomic, strong) UIButton* transcriptButton;
 
 

@@ -75,11 +75,6 @@ enum {
     return NO;
 }
 
-+ (BOOL)crashLogMailAvailable
-{
-    return [ICDiagnosticLogger isTestFlightBuild];
-}
-
 - (NSInteger)settingsRowForIndexPath:(NSIndexPath*)indexPath
 {
     NSInteger row = indexPath.row;
@@ -87,9 +82,6 @@ enum {
         row++;
     }
     if (!ICAITranscriptionFeaturesAvailable() && row >= kRowTranscription) {
-        row++;
-    }
-    if (![OptionsViewController crashLogMailAvailable] && row >= kRowCrashLogs) {
         row++;
     }
     return row;
@@ -164,9 +156,6 @@ enum {
         rows--;
     }
     if (!ICAITranscriptionFeaturesAvailable()) {
-        rows--;
-    }
-    if (![OptionsViewController crashLogMailAvailable]) {
         rows--;
     }
     return rows;

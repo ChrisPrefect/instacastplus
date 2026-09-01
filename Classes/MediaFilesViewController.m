@@ -25,9 +25,9 @@ static NSString *PodcastHeaderCellIdentifier = @"PodcastHeaderCell";
 static NSString *PlaceholderCellIdentifier = @"PlaceholderCell";
 static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
 
-@interface MediaFilesViewController () <UIDocumentInteractionControllerDelegate>
+@interface MediaFilesViewController ()
 @property (nonatomic, strong) NSArray* cachedEpisodes;
-@property (nonatomic, strong) UIDocumentInteractionController* interactionController;
+@property (nonatomic, strong) UIActivityViewController* activityViewController;
 @property (nonatomic) MediaFilesSortMode sortMode;
 @property (nonatomic, strong) UISegmentedControl *sortControl;
 @property (nonatomic, strong) NSArray<NSDictionary*> *podcastSections;
@@ -688,24 +688,24 @@ static NSString *MediaFilesSortModeKey = @"MediaFilesSortMode";
         if (!episode) return;
 
         NSURL* cacheURL = [[CacheManager sharedCacheManager] URLForCachedEpisode:episode];
-        self.interactionController = [UIDocumentInteractionController interactionControllerWithURL:cacheURL];
-        self.interactionController.delegate = self;
-        self.interactionController.name = episode.title;
-        self.interactionController.UTI = @"public.data";
-
         CGRect cellRect = [self.tableView rectForRowAtIndexPath:indexPath];
 
-        if (![self.interactionController presentOpenInMenuFromRect:cellRect inView:self.tableView animated:YES]) {
-            self.interactionController = nil;
-            [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
-        }
+        UIActivityViewController* activityViewController = [[UIActivityViewController alloc] initWithActivityItems:@[cacheURL]
+                                                                                             applicationActivities:nil];
+        __weak MediaFilesViewController* weakSelf = self;
+        activityViewController.completionWithItemsHandler = ^(__unused UIActivityType activityType,
+                                                               __unused BOOL completed,
+                                                               __unused NSArray* returnedItems,
+                                                               __unused NSError* activityError) {
+            MediaFilesViewController* strongSelf = weakSelf;
+            strongSelf.activityViewController = nil;
+            [strongSelf.tableView deselectRowAtIndexPath:strongSelf.tableView.indexPathForSelectedRow animated:YES];
+        };
+        activityViewController.popoverPresentationController.sourceView = self.tableView;
+        activityViewController.popoverPresentationController.sourceRect = cellRect;
+        self.activityViewController = activityViewController;
+        [self presentViewController:activityViewController animated:YES completion:nil];
     }
-}
-
-- (void) documentInteractionControllerDidDismissOpenInMenu: (UIDocumentInteractionController *) controller
-{
-    self.interactionController = nil;
-    [self.tableView deselectRowAtIndexPath:[self.tableView indexPathForSelectedRow] animated:YES];
 }
 
 

@@ -27,10 +27,11 @@ project_notes = read("CLAUDE.md")
 de_strings = read("Resources/de.lproj/Localizable.strings")
 en_strings = read("Resources/en.lproj/Localizable.strings")
 
-playback_cell_block = feed_settings.split("else if (indexPath.section == kPlaybackSection)", 1)[1].split("else if (indexPath.section == kAutoSkipSection)", 1)[0]
+chapter_end_cell_block = feed_settings.split("else if (indexPath.section == kChapterEndSponsorSkipSection)", 1)[1].split("else if (indexPath.section == kResetSection)", 1)[0]
+playback_cell_block = feed_settings.split("else if (indexPath.section == kPlaybackSection)", 1)[1].split("else if (indexPath.section == kChapterEndSponsorSkipSection)", 1)[0]
 playback_case0 = playback_cell_block.split("case 0:", 1)[1].split("case 1:", 1)[0]
 playback_case1 = playback_cell_block.split("case 1:", 1)[1].split("case 2:", 1)[0]
-playback_case4 = playback_cell_block.split("case 4:", 1)[1].split("case 5:", 1)[0]
+chapter_end_case0 = chapter_end_cell_block.split("case 0:", 1)[1].split("case 1:", 1)[0]
 
 for key in ["PlayerNearChapterEndForwardSkipMode", "PlayerNearChapterEndForwardSkipWindow"]:
     require(f"extern NSString* {key};" in defines_h, f"{key} must be declared.")
@@ -49,8 +50,21 @@ require(
 require(
     "- (BOOL)_nearChapterEndForwardSkipEnabled" in feed_settings
     and "[self.feed integerForKey:PlayerNearChapterEndForwardSkipMode] > 0" in feed_settings
-    and "return [self _nearChapterEndForwardSkipEnabled] ? 6 : 5;" in feed_settings,
+    and "case kChapterEndSponsorSkipSection:" in feed_settings
+    and "return [self _nearChapterEndForwardSkipEnabled] ? 2 : 1;" in feed_settings
+    and "case kPlaybackSection:" in feed_settings
+    and "return 4;" in feed_settings,
     "Podcast settings must hide the chapter-end window row while the near-chapter-end skip is Off.",
+)
+enum_body = feed_settings.split("enum {", 1)[1].split("};", 1)[0]
+sections = [line.strip().rstrip(",") for line in enum_body.splitlines() if line.strip().startswith("k")]
+require(
+    sections.index("kChapterEndSponsorSkipSection") == sections.index("kAutoSkipSection") + 1,
+    "The chapter-end sponsor controls must appear directly below Auto Skip.",
+)
+require(
+    sections.index("kSyncPauseSection") == sections.index("kAggregateUnavailableEpisodesSection") + 1,
+    "Show Unavailable Episodes must appear immediately before Pause Synchronization.",
 )
 require(
     "switch (playbackRow)" in playback_cell_block
@@ -73,10 +87,16 @@ require(
     "Podcast settings must label and briefly explain the new behavior.",
 )
 require(
-    "UITableViewCellStyleSubtitle" in playback_case4
-    and "ChapterEndSponsorSkipCell" in playback_case4
-    and "cell.detailTextLabel.text = localizedKey.ls;" in playback_case4,
+    "UITableViewCellStyleSubtitle" in chapter_end_case0
+    and "ChapterEndSponsorSkipCell" in chapter_end_case0
+    and "cell.detailTextLabel.text = localizedKey.ls;" in chapter_end_case0,
     "The long sponsor-skip setting must show the selected value below the title instead of squeezing it into a trailing detail label.",
+)
+
+require(
+    '"Neue Folgen analysieren" = "Kapitel für neue Folgen erstellen";' in de_strings
+    and '"Neue Folgen analysieren" = "Create Chapters for New Episodes";' in en_strings,
+    "Podcast transcription settings must describe automatic chapter creation clearly in German and English.",
 )
 
 for strings, language in [(de_strings, "German"), (en_strings, "English")]:

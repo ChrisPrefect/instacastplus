@@ -50,10 +50,10 @@ require(
 )
 
 require(
-    "cell.sizeLabel.numberOfLines = 2" in controller_source
+    "cell.sizeLabel.numberOfLines = 0" in controller_source
     and "cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping" in controller_source
     and "self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - rightContentAccessoryWidth" in cell_source,
-    "Transcription rows must use one wrapping status label and place elapsed time centered under the right-side info button.",
+    "Transcription rows must show the complete wrapping status and place elapsed time centered under the right-side info button.",
 )
 require(
     "_singleStatusTextWithHeadline" in controller_source

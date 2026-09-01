@@ -36,10 +36,11 @@ require(
 )
 require(
     "refreshBackgroundContinuation(reason: \"applicationDidEnterBackground\")" in queue_source
-    and "pausePipelineForBackgroundIfNeeded(reason: \"applicationDidEnterBackground\")" in queue_source
+    and "pausePipelineForBackgroundIfNeeded(reason: \"applicationDidEnterBackground\")" not in queue_source
+    and "hasActiveUIApplicationBackgroundTime" in queue_source
     and "!hasActiveWhisperKitBackgroundExecution" in queue_source.split("private var shouldPauseWhisperKitForBackground", 1)[1].split("@objc(activateBackgroundExecutionPathWithPath:detail:)", 1)[0]
-    and "backgroundContinuationTask == .invalid" not in queue_source.split("private var shouldPauseWhisperKitForBackground", 1)[1].split("@objc(activateBackgroundExecutionPathWithPath:detail:)", 1)[0],
-    "WhisperKit still treats an ordinary UIApplication background window as permission to submit GPU work.",
+    and "!hasActiveUIApplicationBackgroundTime" in queue_source.split("private var shouldPauseTranscriptionForBackground", 1)[1].split("private var shouldPauseWhisperKitForBackground", 1)[0],
+    "Transcription still pauses before UIKit's real background-time expiration.",
 )
 require(
     "TranscriptionEngine.isBackgroundGPUExecutionError(error)" in queue_source

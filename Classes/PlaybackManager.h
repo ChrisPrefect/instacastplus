@@ -49,6 +49,7 @@
 
 - (void) openWithEpisode:(CDEpisode*)episode at:(NSTimeInterval)time autostart:(BOOL)autostart;
 - (void) close;
+- (void) closeAfterFinishedPlayback;
 - (void) play;
 - (void) pause;
 - (void) playPause;
@@ -103,7 +104,6 @@
 @property (assign) NSInteger currentArtwork; /* observable */
 
 - (void) updateNowPlayingInfo;
-- (void) stopAirPlayVideo;
 
 @property (nonatomic, strong) ICAudioEndpoint* audioEndpoint;
 

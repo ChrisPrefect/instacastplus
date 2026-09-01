@@ -29,6 +29,8 @@ struct ICPodcastInfo: Sendable, Equatable, Identifiable {
 
 struct ICEpisodeInfo: Sendable, Equatable, Identifiable {
     let id: String          // episode.objectHash
+    let feedURL: String
+    let guid: String
     let title: String
     let podcast: String?
     let imageURL: String?
@@ -55,7 +57,9 @@ enum ICIntentBridge {
         if pm.playingEpisode != nil {
             if pm.isPaused { pm.play() }
         } else if let episode = mostRecentlyPlayedEpisode() {
-            AudioSession.shared()?.playEpisode(episode)
+            if let session = AudioSession.shared() {
+                session.playEpisode(episode, queueUpCurrent: false, at: 0, autostart: true, preservingPlaybackSource: session.episode?.isEqual(episode) == true)
+            }
         }
     }
 
@@ -68,7 +72,9 @@ enum ICIntentBridge {
         if pm.playingEpisode != nil {
             pm.playPause()
         } else if let episode = mostRecentlyPlayedEpisode() {
-            AudioSession.shared()?.playEpisode(episode)
+            if let session = AudioSession.shared() {
+                session.playEpisode(episode, queueUpCurrent: false, at: 0, autostart: true, preservingPlaybackSource: session.episode?.isEqual(episode) == true)
+            }
         }
     }
 
@@ -78,7 +84,7 @@ enum ICIntentBridge {
     /// Next episode — mirrors the widget behaviour (`nextPlayableEpisode`).
     static func nextEpisode() {
         if let session = AudioSession.shared(), let next = session.nextPlayableEpisode() {
-            session.playEpisode(next)
+            session.playEpisode(next, queueUpCurrent: false, at: 0, autostart: true, preservingPlaybackSource: true)
         }
     }
 
@@ -312,9 +318,13 @@ enum ICIntentBridge {
     }
 
     private static func episodeInfo(from episode: CDEpisode) -> ICEpisodeInfo? {
-        guard let hash = episode.objectHash else { return nil }
+        guard let hash = episode.objectHash,
+              let feedURL = episode.feed?.sourceURL?.absoluteString,
+              let guid = episode.guid else { return nil }
         let image = episode.imageURL ?? episode.feed?.imageURL
         return ICEpisodeInfo(id: hash,
+                             feedURL: feedURL,
+                             guid: guid,
                              title: episode.title ?? "",
                              podcast: episode.feed?.displayTitle ?? episode.feed?.title,
                              imageURL: image?.absoluteString,

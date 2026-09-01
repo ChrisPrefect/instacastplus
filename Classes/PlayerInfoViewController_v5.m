@@ -3809,7 +3809,7 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
             [pman play];
         }
         else if (episodeToPlay) {
-            [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapter.timecode) autostart:YES];
+            [[AudioSession sharedAudioSession] playEpisode:episodeToPlay queueUpCurrent:NO at:MAX(0.0, chapter.timecode) autostart:YES preservingPlaybackSource:YES];
         }
         
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
@@ -3887,6 +3887,9 @@ static NSArray<NSValue*>* s_transcriptCachedRanges;
         
         AudioSession* audioSession = [AudioSession sharedAudioSession];
         [audioSession playEpisode:episode];
+        if ([audioSession.episode isEqual:episode]) {
+            [PlaybackViewController donateUserInitiatedPlaybackOfEpisode:episode];
+        }
     }
 }
 

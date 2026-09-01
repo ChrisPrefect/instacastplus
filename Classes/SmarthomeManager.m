@@ -637,7 +637,7 @@ NSString* SmarthomeManagerDidChangeConnectionStateNotification = @"SmarthomeMana
     else if ([topic isEqualToString:[self topic:@"next-episode"]]) {
         CDEpisode *nextEpisode = [as nextPlayableEpisode];
         if (nextEpisode) {
-            [as playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
+            [as playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
         }
     }
 }

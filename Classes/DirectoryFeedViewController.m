@@ -799,7 +799,7 @@ static NSString* kDefaultImportedEpisodesHintShown = @"DefaultImportedEpisodesHi
 
             CDEpisode* persistentEpisode = [DMANAGER addUnsubscribedFeed:self.feed andEpisode:episode];
             
-            PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:persistentEpisode];
+            PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:persistentEpisode];
             PlayerController* playerController = [playbackController.viewControllers objectAtIndex:0];
             playerController.backgroundPlayback = NO;
             playbackController.fromSearch = YES;

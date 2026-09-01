@@ -685,6 +685,7 @@
 
 /* FeedEpisodesTableViewController.m */
 "No Episodes" = "Keine Folgen";
+"Keine Folgen mit diesem Filter" = "Keine Folgen mit diesem Filter";
 "Reload" = "Neuladen";
 "Reloading" = "Neuladen";
 "Settings" = "Einstellungen";
@@ -1248,7 +1249,7 @@
 "Neue Folgen transkribieren" = "Neue Folgen transkribieren";
 "Neue Folgen Chapters generieren" = "Neue Folgen Chapters generieren";
 "Neue Folgen Kapitel generieren" = "Neue Folgen Kapitel generieren";
-"Neue Folgen analysieren" = "Neue Folgen analysieren";
+"Neue Folgen analysieren" = "Kapitel für neue Folgen erstellen";
 "Voreinstellung für alle Podcasts" = "Voreinstellung für alle Podcasts";
 "Erfordert Apple Intelligence" = "Erfordert Apple Intelligence";
 "Sponsoren überspringen" = "Sponsoren überspringen";

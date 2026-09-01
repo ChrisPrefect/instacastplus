@@ -25,6 +25,8 @@ def method_body_any(source: str, signatures: list[str]) -> str:
 
 source = (ROOT / "Classes" / "FeedEpisodesTableViewController.m").read_text()
 episodes_source = (ROOT / "Classes" / "EpisodesTableViewController.m").read_text()
+de_strings = (ROOT / "Resources" / "de.lproj" / "Localizable.strings").read_text()
+en_strings = (ROOT / "Resources" / "en.lproj" / "Localizable.strings").read_text()
 model_source = (
     ROOT
     / "Resources"
@@ -41,6 +43,12 @@ downloaded_update = method_body_any(
 )
 view_did_load = method_body(source, "- (void)viewDidLoad")
 dealloc = method_body(source, "- (void) dealloc")
+empty_state = method_body(source, "- (void)_updateFilterEmptyState")
+reload_with_filter = method_body(source, "- (void) reloadDataWithFilter:")
+controller_did_change = method_body(
+    source,
+    "- (void)controllerDidChangeContent:(NSFetchedResultsController *)controller",
+)
 
 require(
     'attribute name="downloaded" optional="YES" transient="YES"' in model_source,
@@ -76,6 +84,33 @@ require(
     'removeTaskObserver:self forKeyPath:@"cachedEpisodes"' in dealloc,
     "The feed controller must remove its cache-index observer during deallocation.",
 )
+require(
+    'isEqualToString:@"All"' in empty_state
+    and "self.searchTerm.length == 0" in empty_state
+    and "self.episodes.count == 0" in empty_state
+    and '"Keine Folgen mit diesem Filter".ls' in empty_state,
+    "An empty active podcast filter must show the requested message while All and search results remain unchanged.",
+)
+require(
+    "NSTextAlignmentCenter" in empty_state
+    and "ICMutedTextColor" in empty_state
+    and "self.tableView.backgroundView" in empty_state,
+    "The filtered-empty message must be a centered table background view using the app appearance.",
+)
+require(
+    "[self _updateFilterEmptyState]" in reload_with_filter
+    and "[self _updateFilterEmptyState]" in controller_did_change
+    and "[self _updateFilterEmptyState]" in downloaded_update,
+    "The filtered-empty message must follow filter selection, fetched-result changes, and download-cache changes.",
+)
+for strings, language, value in (
+    (de_strings, "German", "Keine Folgen mit diesem Filter"),
+    (en_strings, "English", "No Episodes with This Filter"),
+):
+    require(
+        f'"Keine Folgen mit diesem Filter" = "{value}";' in strings,
+        f"{language} localization is missing the filtered-empty message.",
+    )
 
 remove_after_mutation = method_body(
     source,

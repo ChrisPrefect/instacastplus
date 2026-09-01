@@ -229,6 +229,25 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     self.episodes = [self.fetchController fetchedObjects] ?: @[];
 }
 
+- (void)_updateFilterEmptyState
+{
+    NSString* currentFilter = [[NSUserDefaults standardUserDefaults] stringForKey:self.feed.uid] ?: @"All";
+    BOOL showsFilteredEmptyState = self.searchTerm.length == 0 && ![currentFilter isEqualToString:@"All"] && self.episodes.count == 0;
+    if (!showsFilteredEmptyState) {
+        self.tableView.backgroundView = nil;
+        return;
+    }
+
+    UILabel* emptyLabel = [[UILabel alloc] initWithFrame:self.tableView.bounds];
+    emptyLabel.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    emptyLabel.backgroundColor = [UIColor clearColor];
+    emptyLabel.font = [UIFont systemFontOfSize:ICFontSize(15.0f)];
+    emptyLabel.textColor = ICMutedTextColor;
+    emptyLabel.textAlignment = NSTextAlignmentCenter;
+    emptyLabel.text = @"Keine Folgen mit diesem Filter".ls;
+    self.tableView.backgroundView = emptyLabel;
+}
+
 - (BOOL) _removeEpisodeFromDisplayedListIfNeededAfterMutation:(CDEpisode*)episode atIndexPath:(NSIndexPath*)indexPath
 {
     NSPredicate* predicate = self.fetchController.fetchRequest.predicate;
@@ -253,6 +272,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     [episodes removeObjectAtIndex:indexPath.row];
     self.episodes = [episodes copy];
     [self.tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+    [self _updateFilterEmptyState];
     return YES;
 }
 
@@ -364,6 +384,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     [self updateEpisodes];
     [self.tableView endUpdates];
     [self _updateToolbarLabels];
+    [self _updateFilterEmptyState];
     
     for (NSIndexPath* indexPath in _selectionPreservingIndexPathes) {
         [self.tableView selectRowAtIndexPath:indexPath animated:NO scrollPosition:UITableViewScrollPositionNone];
@@ -701,6 +722,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
 - (void) reloadDataWithFilter:(BOOL)isScrolled
 {
     [self _updateToolbarLabels];
+    [self _updateFilterEmptyState];
 
     // Nur updaten wenn View im Window ist
     if (self.view.window) {
@@ -722,6 +744,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     [self _updateFetchController];
     [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];
+    [self _updateFilterEmptyState];
     
     [self reloadDataAndPreserveSelection];
     self.tableView.tableHeaderView = ([self.searchTerm length] == 0) ? self.tableHeaderView : nil;
@@ -770,6 +793,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
     self.headerToolbarSeparatorView.backgroundColor = ICTableSeparatorColor;
     self.headerButtonStack.tintColor = ICTintColor;
     self.navTitleLabel.textColor = ICTextColor;
+    [self _updateFilterEmptyState];
     if (self.tableView.window) {
         [self.tableView reloadData];
     }
@@ -1192,6 +1216,7 @@ typedef NS_ENUM(NSUInteger, ICFeedEpisodeArchiveBehavior) {
         ErrLog(@"Could not fetch downloaded feed episodes: %@", fetchError);
     }
     [self updateEpisodes];
+    [self _updateFilterEmptyState];
     [self.tableView reloadData];
     [self _updateToolbarItemsAnimated:NO];
     [self _updateToolbarLabels];

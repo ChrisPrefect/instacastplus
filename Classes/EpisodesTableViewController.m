@@ -2282,15 +2282,16 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
 
     // Delete generated transcript + chapters as separate menu items
     if (aiTranscriptionFeaturesEnabled) {
-        BOOL hasSRT = [[TranscriptionEngine shared] hasSRTFor:episode.objectHash];
+        BOOL hasDeletableSRT = [[TranscriptionEngine shared] hasDeletableSRTFor:episode.objectHash];
         // Only the generated-chapter JSON proves ownership. CDChapter can also contain
         // podcast-provided chapters copied during playback, so it must not drive this action.
         BOOL hasGeneratedChapters = [[ChapterGenerator shared] hasChaptersFor:episode.objectHash];
         BOOL hasGeneratedSummary = hasGeneratedChapters && episode.objectHash.length > 0 && [[[ChapterGenerator shared] loadSummaryFor:episode.objectHash] length] > 0;
 
-        if (hasSRT) {
+        if (hasDeletableSRT) {
+            UIImage* deleteTranscriptImage = [[UIImage systemImageNamed:@"trash"] imageWithTintColor:[UIColor systemRedColor] renderingMode:UIImageRenderingModeAlwaysOriginal];
             UIAction* deleteTranscriptAction = [UIAction actionWithTitle:NSLocalizedString(@"Transkript löschen", nil)
-                                                         image:[UIImage systemImageNamed:@"captions.bubble"]
+                                                         image:deleteTranscriptImage
                                                     identifier:nil
                                                        handler:^(UIAction *action) {
                                                            [[TranscriptionEngine shared] removeSRTFor:episode.objectHash];
@@ -2325,7 +2326,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                               identifier:nil
                                                  handler:^(UIAction *action) {
                                                      BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-                                                     PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+                                                     PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
                                                      [playbackController presentFromParentViewController:weakSelf.navigationController autostart:YES completion:NULL];
                                                  }];
         [actions addObject:playAction];
@@ -2344,7 +2345,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
                                               identifier:nil
                                                  handler:^(UIAction *action) {
                                                      BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-                                                     PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+                                                     PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
                                                      [playbackController presentFromParentViewController:weakSelf.navigationController autostart:YES completion:NULL];
                                                  }];
         [actions addObject:playAction];
@@ -2405,7 +2406,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     [session prependToUpNext:selectedEpisodes];
 
     // Start playback of the first episode
-    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:firstEpisode forceReload:YES];
+    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:firstEpisode forceReload:YES];
     [playbackController presentFromParentViewController:self.navigationController];
     [self setEditing:NO animated:YES];
 }
@@ -2863,7 +2864,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
         [self.tableView deselectRowAtIndexPath:indexPath animated:YES];
     } else {
         BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
         [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
     }
 }
@@ -2899,7 +2900,7 @@ feedObjectIDsNeedingAutoDownload:feedObjectIDsNeedingAutoDownload
     else
     {
         BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
         [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
     }
 }

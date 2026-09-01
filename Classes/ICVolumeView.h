@@ -6,8 +6,8 @@
 //
 //
 
-#import <MediaPlayer/MediaPlayer.h>
+#import <AVKit/AVKit.h>
 
-@interface ICVolumeView : MPVolumeView
+@interface ICVolumeView : AVRoutePickerView
 
 @end

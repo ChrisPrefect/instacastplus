@@ -16,6 +16,37 @@
 #import "InstacastAppDelegate.h"
 #import <BackgroundTasks/BackgroundTasks.h>
 
+@interface ICTranscriptionQueueCell : DownloadsTableViewCell
+@end
+
+@implementation ICTranscriptionQueueCell
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if (self.sizeLabel.numberOfLines != 0) return;
+
+    CGRect bounds = self.contentView.bounds;
+    if (self.showsErrorStatus) {
+        CGRect statusFrame = self.sizeLabel.frame;
+        statusFrame.size.height = MAX(0, CGRectGetHeight(bounds) - CGRectGetMinY(statusFrame) - 7);
+        self.sizeLabel.frame = statusFrame;
+        return;
+    }
+
+    CGFloat textLeft = CGRectGetMinX(self.textLabel.frame);
+    CGFloat textWidth = CGRectGetWidth(self.textLabel.frame);
+    self.progressView.frame = CGRectMake(textLeft, 34, textWidth, 10);
+    self.sizeLabel.frame = CGRectMake(textLeft, 47, textWidth, MAX(0, CGRectGetHeight(bounds) - 54));
+
+    if (self.timeLabel.text.length > 0 && self.rightContentAccessoryView.superview == self.contentView) {
+        CGFloat accessoryWidth = MAX(44, ceilf(self.rightContentAccessoryView.intrinsicContentSize.width));
+        self.timeLabel.frame = CGRectMake(CGRectGetMaxX(bounds) - accessoryWidth - 5, 47, accessoryWidth, 16);
+        self.timeLabel.hidden = NO;
+    }
+}
+
+@end
+
 // MARK: - Log Detail View
 
 // Presented when the user taps the (i) accessory on a queued/finished transcription.
@@ -89,6 +120,7 @@
     if ([phase isEqualToString:@"recovery"])  return NSLocalizedString(@"Wiederherstellung", nil);
     if ([phase isEqualToString:@"retry"])     return NSLocalizedString(@"Neuer Versuch", nil);
     if ([phase isEqualToString:@"server"])    return NSLocalizedString(@"Server", nil);
+    if ([phase isEqualToString:@"status"])    return NSLocalizedString(@"Status", nil);
     if ([phase isEqualToString:@"done"])      return NSLocalizedString(@"Fertig", nil);
     if ([phase isEqualToString:@"error"])     return NSLocalizedString(@"Fehler", nil);
     return phase;
@@ -145,6 +177,7 @@
 @property (nonatomic) BOOL pendingReloadAfterSwipe;
 @property (nonatomic, copy) NSDictionary<NSString*, CDEpisode*>* episodeCache;
 @property (nonatomic, copy) NSSet<NSString*>* episodeCacheHashes;
+- (NSString*)_updateCellStatus:(DownloadsTableViewCell*)cell withItem:(ICTranscriptionQueueItem*)item;
 @end
 
 @implementation TranscriptionQueueViewController {
@@ -251,12 +284,21 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     if (self.suppressReload) return;
     if (self.swipeInteractionActive) return;
     // Update visible cells without full reloadData for smooth progress bar animation
+    BOOL needsHeightUpdate = NO;
     for (UITableViewCell* cell in self.tableView.visibleCells) {
         NSIndexPath* indexPath = [self.tableView indexPathForCell:cell];
         if (!indexPath || indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) continue;
         DownloadsTableViewCell* dlCell = (DownloadsTableViewCell*)cell;
         ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
         [self _updateCellStatus:dlCell withItem:item];
+        CGFloat requiredHeight = [self tableView:self.tableView heightForRowAtIndexPath:indexPath];
+        if (fabs(requiredHeight - CGRectGetHeight(cell.bounds)) > 0.5) {
+            needsHeightUpdate = YES;
+        }
+    }
+    if (needsHeightUpdate) {
+        [self.tableView beginUpdates];
+        [self.tableView endUpdates];
     }
     [self _restartElapsedTimerIfNeeded];
 }
@@ -542,19 +584,18 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.row >= (NSInteger)[TranscriptionQueue shared].displayItems.count) return 80;
     ICTranscriptionQueueItem* item = [TranscriptionQueue shared].displayItems[indexPath.row];
-    if (item.status != ICTranscriptionStatusFailed) return 80;
-
-    NSString* errorText = [self _singleStatusTextWithHeadline:NSLocalizedString(@"Fehler", nil)
-                                                       detail:item.error ?: NSLocalizedString(@"Fehler ✗", nil)];
+    NSString* statusText = [self _updateCellStatus:nil withItem:item];
     UIFont* statusFont = [UIFont systemFontOfSize:ICFontSize(11)];
     UIFont* titleFont = [UIFont systemFontOfSize:ICFontSize(13)];
     CGFloat statusWidth = MAX(1, CGRectGetWidth(tableView.bounds) - 125);
-    CGRect errorBounds = [errorText boundingRectWithSize:CGSizeMake(statusWidth, CGFLOAT_MAX)
+    CGRect statusBounds = [statusText boundingRectWithSize:CGSizeMake(statusWidth, CGFLOAT_MAX)
                                                 options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
                                              attributes:@{ NSFontAttributeName: statusFont }
                                                 context:nil];
-    CGFloat statusTop = 10 + ceil(titleFont.lineHeight) + 3;
-    return MAX(80, statusTop + ceil(CGRectGetHeight(errorBounds)) + 7);
+    CGFloat statusTop = item.status == ICTranscriptionStatusFailed
+        ? 10 + ceil(titleFont.lineHeight) + 3
+        : 47;
+    return MAX(80, statusTop + ceil(CGRectGetHeight(statusBounds)) + 7);
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -563,12 +604,12 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
 
     DownloadsTableViewCell *cell = (DownloadsTableViewCell*)[tableView dequeueReusableCellWithIdentifier:CellIdentifier];
     if (cell == nil) {
-        cell = [[DownloadsTableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
+        cell = [[ICTranscriptionQueueCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:CellIdentifier];
     }
     cell.backgroundColor = tableView.backgroundColor;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     cell.showsErrorStatus = NO;
-    cell.sizeLabel.numberOfLines = 2;
+    cell.sizeLabel.numberOfLines = 0;
     cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
     cell.timeLabel.textAlignment = NSTextAlignmentCenter;
     cell.accessoryType = UITableViewCellAccessoryNone;
@@ -628,10 +669,11 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     return cell;
 }
 
-- (void)_updateCellStatus:(DownloadsTableViewCell*)cell withItem:(ICTranscriptionQueueItem*)item {
-    cell.showsErrorStatus = item.status == ICTranscriptionStatusFailed;
-    if (!cell.showsErrorStatus) {
-        cell.sizeLabel.numberOfLines = 2;
+- (NSString*)_updateCellStatus:(DownloadsTableViewCell*)cell withItem:(ICTranscriptionQueueItem*)item {
+    BOOL showsErrorStatus = item.status == ICTranscriptionStatusFailed;
+    cell.showsErrorStatus = showsErrorStatus;
+    if (!showsErrorStatus) {
+        cell.sizeLabel.numberOfLines = 0;
         cell.sizeLabel.lineBreakMode = NSLineBreakByWordWrapping;
     }
     cell.sizeLabel.textColor = ICMutedTextColor; // reset color
@@ -679,8 +721,9 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
                 cell.timeLabel.text = elapsedText ?: @"";
                 break;
         }
-        cell.sizeLabel.text = [self _singleStatusTextWithHeadline:headline detail:detail];
-        return;
+        NSString* statusText = [self _singleStatusTextWithHeadline:headline detail:detail];
+        cell.sizeLabel.text = statusText;
+        return statusText;
     }
 
     switch (item.status) {
@@ -831,7 +874,9 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
             break;
     }
 
-    cell.sizeLabel.text = [self _singleStatusTextWithHeadline:headline detail:detail];
+    NSString* statusText = [self _singleStatusTextWithHeadline:headline detail:detail];
+    cell.sizeLabel.text = statusText;
+    return statusText;
 }
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -847,7 +892,7 @@ static NSString* const ICTranscriptionActiveContinuedIdentifier = @"ICTranscript
     CDEpisode* episode = [self _episodeForHash:item.episodeHash];
     if (!episode) return;
     BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+    PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
     [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
 }
 

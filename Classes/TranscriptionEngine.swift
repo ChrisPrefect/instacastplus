@@ -781,6 +781,14 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
     private static let _shared = TranscriptionEngine()
     @objc static var shared: TranscriptionEngine { _shared }
 
+    private enum TranscriptOrigin: String {
+        case appGenerated = "app-generated"
+        case publisher
+        case server
+    }
+
+    private static let transcriptOriginAttributeName = "com.iteconomy.instacastplus.transcript-origin"
+
     @objc var engineType: ICTranscriptionEngineType {
         get {
             // ObjC settings store engine as string ("WhisperKit" / "Apple")
@@ -1000,7 +1008,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
                 // Save SRT file
                 let srtURL = self.srtURL(for: episodeHash)
-                try self.writeSRT(cues: allCues, to: srtURL)
+                try self.writeSRT(cues: allCues, to: srtURL, origin: .appGenerated)
                 self.invalidateSRTCache(for: episodeHash)
 
                 // Remove checkpoint
@@ -1169,6 +1177,11 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         return exists
     }
 
+    @objc func hasDeletableSRT(for episodeHash: String) -> Bool {
+        guard hasSRT(for: episodeHash) else { return false }
+        return transcriptOrigin(at: srtURL(for: episodeHash)) != .publisher
+    }
+
     /// Reads the exact canonical SRT written by this engine. `nil` means no
     /// transcript exists; an empty array means the persisted timeline is
     /// malformed and must not validate revision-bound semantic artifacts.
@@ -1315,7 +1328,9 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         }
         let url = ICTranscriptionPaths.srtURL(for: episodeHash)
         do {
-            try data.write(to: url, options: .atomic)
+            try replaceSRT(at: url, origin: .server) { temporaryURL in
+                try data.write(to: temporaryURL, options: .atomic)
+            }
             invalidateSRTCache(for: episodeHash)
             ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
@@ -1820,7 +1835,7 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
 
     // MARK: - SRT Writing
 
-    private func writeSRT(cues: [ICTranscriptCue], to url: URL) throws {
+    private func writeSRT(cues: [ICTranscriptCue], to url: URL, origin: TranscriptOrigin) throws {
         var srt = ""
         for (index, cue) in cues.enumerated() {
             srt += "\(index + 1)\n"
@@ -1829,7 +1844,9 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
         }
         let episodeHash = url.deletingPathExtension().lastPathComponent
         do {
-            try srt.write(to: url, atomically: true, encoding: .utf8)
+            try replaceSRT(at: url, origin: origin) { temporaryURL in
+                try srt.write(to: temporaryURL, atomically: true, encoding: .utf8)
+            }
             ChapterGenerator.shared.invalidateAnalysisCache(for: episodeHash)
             ICDiagnosticLogger.shared.logFileEvent("file-write",
                                                    message: "SRT geschrieben",
@@ -1865,8 +1882,77 @@ private final class ICTranscriptCheckpointAccumulator: @unchecked Sendable {
                 userInfo: [NSLocalizedDescriptionKey: "Ein zeitcodiertes Podcast-Transkript fehlt."]
             )
         }
-        try writeSRT(cues: cues, to: ICTranscriptionPaths.srtURL(for: episodeHash))
+        try writeSRT(cues: cues,
+                     to: ICTranscriptionPaths.srtURL(for: episodeHash),
+                     origin: .publisher)
         invalidateSRTCache(for: episodeHash)
+    }
+
+    private func replaceSRT(at url: URL,
+                            origin: TranscriptOrigin,
+                            writer: (URL) throws -> Void) throws {
+        let temporaryURL = url.deletingLastPathComponent().appendingPathComponent(
+            ".\(url.lastPathComponent).\(UUID().uuidString).tmp"
+        )
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+
+        try writer(temporaryURL)
+        try setTranscriptOrigin(origin, at: temporaryURL)
+
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: url.path) {
+            _ = try fileManager.replaceItemAt(url, withItemAt: temporaryURL)
+        } else {
+            try fileManager.moveItem(at: temporaryURL, to: url)
+        }
+    }
+
+    private func setTranscriptOrigin(_ origin: TranscriptOrigin, at url: URL) throws {
+        let bytes = Array(origin.rawValue.utf8)
+        let result = bytes.withUnsafeBytes { buffer in
+            setxattr(
+                url.path,
+                Self.transcriptOriginAttributeName,
+                buffer.baseAddress,
+                buffer.count,
+                0,
+                0
+            )
+        }
+        guard result == 0 else {
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(errno),
+                userInfo: [NSFilePathErrorKey: url.path]
+            )
+        }
+    }
+
+    private func transcriptOrigin(at url: URL) -> TranscriptOrigin? {
+        let byteCount = getxattr(
+            url.path,
+            Self.transcriptOriginAttributeName,
+            nil,
+            0,
+            0,
+            0
+        )
+        guard byteCount > 0 else { return nil }
+
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        let readCount = bytes.withUnsafeMutableBytes { buffer in
+            getxattr(
+                url.path,
+                Self.transcriptOriginAttributeName,
+                buffer.baseAddress,
+                buffer.count,
+                0,
+                0
+            )
+        }
+        guard readCount == byteCount,
+              let rawValue = String(bytes: bytes, encoding: .utf8) else { return nil }
+        return TranscriptOrigin(rawValue: rawValue)
     }
 
     private func formatSRTTime(_ seconds: Double) -> String {
@@ -3035,7 +3121,7 @@ private final class ICTextModelDownloadOperation: NSObject, URLSessionDownloadDe
             downloadSizeBytes: 0,
             requiresDownload: false,
             supportsCompilation: false,
-            chapterProvider: .openAIAPI,
+            chapterProvider: .openAICodexOAuth,
             remoteModelName: "gpt-5.6-terra"
         ),
         ICDownloadableModel(

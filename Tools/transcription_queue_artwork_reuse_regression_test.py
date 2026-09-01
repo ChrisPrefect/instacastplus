@@ -10,8 +10,9 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-start = SOURCE.find("- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:")
-end = SOURCE.find("\n- (void)_updateCellStatus", start)
+controller_start = SOURCE.find("@implementation TranscriptionQueueViewController")
+start = SOURCE.find("- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:", controller_start)
+end = SOURCE.find("\n- (NSString*)_updateCellStatus", start)
 require(start != -1 and end != -1, "Missing transcription queue cell configuration.")
 cell = SOURCE[start:end]
 

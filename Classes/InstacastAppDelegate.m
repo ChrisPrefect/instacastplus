@@ -10,10 +10,12 @@
 #import <UserNotifications/UserNotifications.h>
 #import <CarPlay/CarPlay.h>
 #import <BackgroundTasks/BackgroundTasks.h>
+#import <Intents/Intents.h>
 
 #import "InstacastAppDelegate.h"
 #import "UIManager.h"
 #import "CDEpisode+ShowNotes.h"
+#import "CDFeed+Helper.h"
 
 #import "DirectoryFeedViewController.h"
 
@@ -65,7 +67,7 @@ static NSString* const ICPendingNotificationInteractionActionKey = @"action";
 static NSString* const ICBackgroundFeedRefreshAttemptsKey = @"ICBackgroundFeedRefreshAttempts";
 static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
-@interface InstacastAppDelegate () <UNUserNotificationCenterDelegate>
+@interface InstacastAppDelegate () <UNUserNotificationCenterDelegate, INPlayMediaIntentHandling>
 @property BOOL resettingContext;
 @property (strong) VDModalInfo* mInfo;
 @property (strong) VDModalInfo* loadingInfo;
@@ -99,6 +101,123 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
     } _flags;
 }
 @synthesize window = _window;
+
+- (id)application:(UIApplication *)application handlerForIntent:(INIntent *)intent
+{
+    (void)application;
+    if ([intent isKindOfClass:INPlayMediaIntent.class]) {
+        return self;
+    }
+    return nil;
+}
+
+- (void)handlePlayMedia:(INPlayMediaIntent *)intent
+             completion:(void (^)(INPlayMediaIntentResponse *response))completion
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        void (^completeWithCode)(INPlayMediaIntentResponseCode) = ^(INPlayMediaIntentResponseCode code) {
+            completion([[INPlayMediaIntentResponse alloc] initWithCode:code userActivity:nil]);
+        };
+
+        if (self.databaseStartupState != ICDatabaseStartupStateReady) {
+            completeWithCode(INPlayMediaIntentResponseCodeFailureRequiringAppLaunch);
+            return;
+        }
+
+        AudioSession* audioSession = [AudioSession sharedAudioSession];
+        PlaybackManager* playbackManager = [PlaybackManager playbackManager];
+        [playbackManager removeTaskObserver:self forKeyPath:@"speedControl"];
+        NSString* episodeIdentifier = intent.mediaItems.firstObject.identifier;
+        NSString* containerIdentifier = intent.mediaContainer.identifier;
+        CDEpisode* episode = nil;
+        BOOL resumesExistingPlayback = NO;
+
+        if (episodeIdentifier.length > 0) {
+            episode = [DMANAGER episodeWithObjectHash:episodeIdentifier];
+            if (!episode) {
+                completeWithCode(INPlayMediaIntentResponseCodeFailureUnknownMediaType);
+                return;
+            }
+        }
+        else if (containerIdentifier.length > 0) {
+            NSURL* feedURL = [NSURL URLWithString:containerIdentifier];
+            CDFeed* feed = feedURL ? [DMANAGER feedWithSourceURL:feedURL] : nil;
+            if (!feed) {
+                completeWithCode(INPlayMediaIntentResponseCodeFailureUnknownMediaType);
+                return;
+            }
+
+            for (CDEpisode* candidate in feed.sortedEpisodes) {
+                if (!candidate.consumed && !candidate.archived && [candidate preferedMedium]) {
+                    episode = candidate;
+                    break;
+                }
+            }
+            if (!episode) {
+                completeWithCode(INPlayMediaIntentResponseCodeFailureNoUnplayedContent);
+                return;
+            }
+        }
+        else if (intent.resumePlayback.boolValue) {
+            episode = playbackManager.playingEpisode ?: audioSession.episode;
+            resumesExistingPlayback = YES;
+            if (!episode) {
+                completeWithCode(INPlayMediaIntentResponseCodeFailureNoUnplayedContent);
+                return;
+            }
+        }
+        else {
+            completeWithCode(INPlayMediaIntentResponseCodeFailureUnknownMediaType);
+            return;
+        }
+
+        if (resumesExistingPlayback || [audioSession.episode isEqual:episode]) {
+            if (playbackManager.ready) {
+                if (playbackManager.paused) {
+                    [playbackManager play];
+                }
+            }
+            else {
+                [audioSession playEpisode:episode
+                           queueUpCurrent:NO
+                                       at:MAX(0, episode.position)
+                                autostart:YES
+                 preservingPlaybackSource:YES];
+            }
+        }
+        else {
+            [audioSession playEpisode:episode];
+        }
+
+        if (![audioSession.episode isEqual:episode]) {
+            completeWithCode(INPlayMediaIntentResponseCodeFailure);
+            return;
+        }
+        NSNumber* requestedPlaybackSpeed = intent.playbackSpeed;
+        if (requestedPlaybackSpeed != nil) {
+            if (playbackManager.ready) {
+                playbackManager.playbackRate = requestedPlaybackSpeed.floatValue;
+            }
+            else {
+                NSString* requestedEpisodeHash = [episode.objectHash copy];
+                uint64_t playbackIntentRevision = [AudioSession playbackIntentRevision];
+                __weak PlaybackManager* weakPlaybackManager = playbackManager;
+                [playbackManager addTaskObserver:self forKeyPath:@"speedControl" task:^(__unused id obj, __unused NSDictionary* change) {
+                    PlaybackManager* observedPlaybackManager = weakPlaybackManager;
+                    if (!observedPlaybackManager.ready) {
+                        return;
+                    }
+                    [observedPlaybackManager removeTaskObserver:self forKeyPath:@"speedControl"];
+                    if ([AudioSession playbackIntentRevision] == playbackIntentRevision &&
+                        [observedPlaybackManager.playingEpisode.objectHash isEqualToString:requestedEpisodeHash]) {
+                        observedPlaybackManager.playbackRate = requestedPlaybackSpeed.floatValue;
+                    }
+                }];
+            }
+        }
+        completeWithCode(INPlayMediaIntentResponseCodeSuccess);
+    });
+}
 
 + (void) initialize
 {
@@ -1131,6 +1250,15 @@ static const NSUInteger ICBackgroundFeedRefreshBatchSize = 10;
 
     self.databasePreparationError = nil;
     self.databaseStartupState = ICDatabaseStartupStateReady;
+    NSUInteger subscribedPodcastCount = 0;
+    for (CDFeed* feed in DMANAGER.feeds) {
+        if (feed.subscribed) {
+            subscribedPodcastCount++;
+        }
+    }
+    INMediaUserContext* mediaUserContext = [[INMediaUserContext alloc] init];
+    mediaUserContext.numberOfLibraryItems = @(subscribedPodcastCount);
+    [mediaUserContext becomeCurrent];
     [self _recoverPendingAutoDownloadsIfReady];
     [self _replayPendingDatabaseStartupWork];
 

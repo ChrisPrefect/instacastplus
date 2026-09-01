@@ -279,7 +279,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     if ([session.playlist count] > 0) {
         CDEpisode* firstEpisode = session.playlist.firstObject;
         // Open the player directly with the first episode
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:firstEpisode forceReload:YES];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:firstEpisode forceReload:YES];
         [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
     }
 }
@@ -297,7 +297,7 @@ static NSString* kUpNextCell = @"UpNextCell";
     else
     {
         // Play the episode - use its saved position
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:YES];
         [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
     }
 }
@@ -723,7 +723,7 @@ static NSString* kUpNextCell = @"UpNextCell";
         [tableView deselectRowAtIndexPath:indexPath animated:YES];
     } else {
         BOOL alreadyPlaying = [[AudioSession sharedAudioSession].episode isEqual:episode];
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:!alreadyPlaying];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:!alreadyPlaying];
         [playbackController presentFromParentViewController:self.navigationController autostart:YES completion:NULL];
     }
 }

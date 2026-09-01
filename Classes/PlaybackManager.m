@@ -51,6 +51,21 @@ NSString* PlaybackManagerEpisodeDidFinishNotification = @"MPPlaybackManagerEpiso
 #if TARGET_OS_IPHONE
 static NSString* kMediaItemInstacastCurrentArtwork =  @"Instacast_currentArtwork";
 static NSString* kMediaItemInstacastEpisodeHash =  @"Instacast_episodeHash";
+
+static NSURL* ICPublicShareURLForEpisode(CDEpisode* episode)
+{
+    if (episode.feed.sourceURL.absoluteString.length == 0) {
+        return nil;
+    }
+    NSMutableArray<NSURLQueryItem*>* queryItems = [NSMutableArray arrayWithObject:[NSURLQueryItem queryItemWithName:@"url"
+                                                                                                               value:episode.feed.sourceURL.absoluteString]];
+    if (episode.guid.length > 0) {
+        [queryItems addObject:[NSURLQueryItem queryItemWithName:@"guid" value:episode.guid]];
+    }
+    NSURLComponents* components = [NSURLComponents componentsWithString:@"https://instacast.ch/share/episode"];
+    components.queryItems = queryItems;
+    return components.URL;
+}
 #endif
 
 static NSString* kDefaultTemporaryPlaybackPositions = @"TemporaryPlaybackPositions";
@@ -1273,7 +1288,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property BOOL autoStopDisabled;
 @end
 
-@interface PlaybackManager ()
+@interface PlaybackManager () <NSUserActivityDelegate>
 @property (nonatomic, readwrite, strong) CDEpisode* playingEpisode;
 @property (nonatomic, readwrite, getter=isReady) BOOL ready;
 @property (nonatomic, readwrite) BOOL failed;
@@ -1321,6 +1336,7 @@ didReceiveResponse:(NSURLResponse *)response
 @property (nonatomic, strong) NSDate *lastBackgroundPlaybackDiagnosticDate;
 #if TARGET_OS_IPHONE
 @property (nonatomic, strong) ICStreamingCacheLoader* streamCacheLoader;
+@property (nonatomic, strong) NSUserActivity* playbackUserActivity;
 #endif
 @property (nonatomic, readwrite) BOOL streamingCacheActive;
 @property (nonatomic, readwrite) double streamingCacheProgress;
@@ -1580,6 +1596,12 @@ didReceiveResponse:(NSURLResponse *)response
         CDFeed* feed = anEpisode.feed;
         podcastTitle = feed.title;
 
+        if (anEpisode.objectHash.length > 0) {
+            [self.nowPlayingInfo setObject:anEpisode.objectHash forKey:MPNowPlayingInfoPropertyExternalContentIdentifier];
+        } else {
+            [self.nowPlayingInfo removeObjectForKey:MPNowPlayingInfoPropertyExternalContentIdentifier];
+        }
+
         if (anEpisode.title && feed.title) {
             episodeTitle = [anEpisode cleanTitleUsingFeedTitle:feed.title];
         } else {
@@ -1593,6 +1615,7 @@ didReceiveResponse:(NSURLResponse *)response
         }
     } else {
         [self.nowPlayingInfo removeObjectForKey:MPNowPlayingInfoCollectionIdentifier];
+        [self.nowPlayingInfo removeObjectForKey:MPNowPlayingInfoPropertyExternalContentIdentifier];
     }
     
     // Put the current chapter into the subtitle line where supported.
@@ -1951,6 +1974,80 @@ didReceiveResponse:(NSURLResponse *)response
 
 #pragma mark -
 
+#if TARGET_OS_IPHONE
+- (void)_updatePlaybackUserActivity:(NSUserActivity*)userActivity
+{
+    if (userActivity != self.playbackUserActivity || !self.playingEpisode) {
+        return;
+    }
+    NSMutableDictionary* userInfo = [userActivity.userInfo mutableCopy] ?: [NSMutableDictionary dictionary];
+    userInfo[@"position"] = @(MAX(0, self.time));
+    userInfo[@"wasPlaying"] = @(!self.paused);
+    userActivity.userInfo = userInfo;
+}
+
+- (void)_beginPlaybackUserActivityForEpisode:(CDEpisode*)episode autostart:(BOOL)autostart
+{
+    [self.playbackUserActivity invalidate];
+    self.playbackUserActivity = nil;
+
+    if (episode.objectHash.length == 0) {
+        return;
+    }
+
+    NSUserActivity* activity = [[NSUserActivity alloc] initWithActivityType:@"com.iteconomy.instacastplus.playback"];
+    activity.title = episode.title;
+    activity.eligibleForHandoff = YES;
+    activity.eligibleForSearch = NO;
+    activity.eligibleForPublicIndexing = NO;
+    activity.eligibleForPrediction = NO;
+    activity.externalMediaContentIdentifier = episode.objectHash;
+    activity.targetContentIdentifier = episode.objectHash;
+    activity.persistentIdentifier = [NSString stringWithFormat:@"playback:%@", episode.objectHash];
+    activity.webpageURL = ICPublicShareURLForEpisode(episode);
+    activity.delegate = self;
+
+    NSMutableDictionary* userInfo = [@{
+        @"version": @1,
+        @"objectHash": episode.objectHash,
+        @"position": @(MAX(0, self.initialPlaybackTime)),
+        @"wasPlaying": @(autostart),
+    } mutableCopy];
+    if (episode.feed.sourceURL.absoluteString.length > 0) {
+        userInfo[@"feedURL"] = episode.feed.sourceURL.absoluteString;
+    }
+    if (episode.guid.length > 0) {
+        userInfo[@"guid"] = episode.guid;
+    }
+    activity.userInfo = userInfo;
+    activity.requiredUserInfoKeys = [NSSet setWithArray:userInfo.allKeys];
+    activity.needsSave = YES;
+    self.playbackUserActivity = activity;
+    [activity becomeCurrent];
+}
+
+- (void)userActivityWillSave:(NSUserActivity*)userActivity
+{
+    [self _updatePlaybackUserActivity:userActivity];
+}
+
+- (void)_publishSharePlayActivityForEpisode:(CDEpisode*)episode
+{
+    NSURL* fallbackURL = ICPublicShareURLForEpisode(episode);
+    if (episode.objectHash.length == 0 ||
+        episode.feed.sourceURL == nil ||
+        fallbackURL == nil) {
+        return;
+    }
+    [[ICSharePlayCoordinator sharedCoordinator] publishLocalEpisodeIdentifier:episode.objectHash
+                                                                       feedURL:episode.feed.sourceURL
+                                                                   episodeGUID:episode.guid
+                                                                  episodeTitle:episode.title ?: @""
+                                                                  podcastTitle:episode.feed.displayTitle ?: episode.feed.title ?: @""
+                                                                    fallbackURL:fallbackURL];
+}
+#endif
+
 - (void) openWithEpisode:(CDEpisode*)anEpisode at:(NSTimeInterval)time autostart:(BOOL)autostart
 {
 	CacheManager* eman = [CacheManager sharedCacheManager];
@@ -2012,6 +2109,10 @@ didReceiveResponse:(NSURLResponse *)response
     BOOL shouldCacheViaStream = canCacheViaStream;
 
     self.playingEpisode = anEpisode;
+#if TARGET_OS_IPHONE
+    [self _beginPlaybackUserActivityForEpisode:anEpisode autostart:autostart];
+    [self _publishSharePlayActivityForEpisode:anEpisode];
+#endif
     // Post start/change notification now that playingEpisode is set, so observers
     // (e.g. WidgetDataExporter) read the correct current episode.
     [[NSNotificationCenter defaultCenter] postNotificationName:pendingNotificationName object:self];
@@ -2270,6 +2371,9 @@ didReceiveResponse:(NSURLResponse *)response
     
     self.player = [[AVPlayer alloc] initWithPlayerItem:playerItem];
     self.player.volume = [USER_DEFAULTS floatForKey:kDefaultPlaybackVolume];
+#if TARGET_OS_IPHONE
+    [[ICSharePlayCoordinator sharedCoordinator] attachPlayer:self.player episodeIdentifier:self.playingEpisode.objectHash];
+#endif
 
 #if ENABLE_10_9_AUDIO_DEVICE_BEHAVIOR==1
     if ([NSBundle systemVersion] >= VM_SYSTEM_VERSION_OS_X_10_9 && [AVPlayer implementsSelector:@selector(audioOutputDeviceUniqueID)]) {
@@ -2355,8 +2459,10 @@ didReceiveResponse:(NSURLResponse *)response
         double periodFeedEnd = [episode.feed doubleForKey:[NSString stringWithFormat:@"%@_auto_skip_end_period", episode.feed.uid]];
         double periodGeneralEnd = [USER_DEFAULTS doubleForKey:PlayerAutoSkipEndPeriod];
         double skipEndPeriod = (periodFeedEnd != 0.0) ? periodFeedEnd : periodGeneralEnd;
+        ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
+        BOOL canPerformAutomaticSkip = ![sharePlayCoordinator hasActiveSession] || [sharePlayCoordinator canAdvanceAutomatically];
 
-        if (skipEndPeriod > 0.0 && !episode.consumed) {
+        if (canPerformAutomaticSkip && skipEndPeriod > 0.0 && !episode.consumed) {
             AVPlayerItem *item = weakSelf.player.currentItem;
             CMTime duration = item.asset.duration;
 
@@ -2394,7 +2500,8 @@ didReceiveResponse:(NSURLResponse *)response
                         [DMANAGER save];
                         // Remove consumed episode from Up Next playlist
                         [session eraseEpisodesFromUpNext:@[episode]];
-                        CDEpisode *nextEpisode = [session nextPlayableEpisode];
+                        BOOL waitingForSharedTransition = [sharePlayCoordinator hasActiveSession] && ![sharePlayCoordinator canAdvanceAutomatically];
+                        CDEpisode *nextEpisode = waitingForSharedTransition ? nil : [session nextPlayableEpisode];
                         [weakSelf _logPlaybackAutoSkipEvent:@"Auto-Skip-Ende abgeschlossen"
                                                     episode:episode
                                                 currentTime:currentTime
@@ -2405,11 +2512,15 @@ didReceiveResponse:(NSURLResponse *)response
                                                        @"feedSkipEndPeriod": @(periodFeedEnd),
                                                        @"globalSkipEndPeriod": @(periodGeneralEnd),
                                                        @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
+                                                       @"waitingForSharePlayOwner": @(waitingForSharedTransition),
                                                    }];
-                        if (nextEpisode) {
+                        if (waitingForSharedTransition) {
+                            return;
+                        } else if (nextEpisode) {
                             weakSelf.inTransitionToNextTrack = YES;
-                            [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
+                            [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
                         } else {
+                            [sharePlayCoordinator publishPlaybackFinishedForEpisodeIdentifier:episode.objectHash];
                             [weakSelf closeAndSaveCurrentPosition:NO];
                         }
                     }
@@ -2421,10 +2532,20 @@ didReceiveResponse:(NSURLResponse *)response
         if (weakSelf.player.rate > 0)
         {
             __strong PlaybackManager* strongSelf = weakSelf;
-            float targetRate = strongSelf->_playbackRate;
-            if (targetRate <= 0) targetRate = [weakSelf rateFromSpeedControl:weakSelf.speedControl];
-            if (fabs(weakSelf.player.rate - targetRate) > 0.02) {
-                weakSelf.player.rate = targetRate;
+            BOOL requestedCoordinatedRate = [[ICSharePlayCoordinator sharedCoordinator] hasActiveSession];
+            if (requestedCoordinatedRate) {
+                float coordinatedRate = weakSelf.player.rate;
+                if (fabs(strongSelf->_playbackRate - coordinatedRate) > 0.02) {
+                    [strongSelf willChangeValueForKey:@"playbackRate"];
+                    strongSelf->_playbackRate = coordinatedRate;
+                    [strongSelf didChangeValueForKey:@"playbackRate"];
+                }
+            } else {
+                float targetRate = strongSelf->_playbackRate;
+                if (targetRate <= 0) targetRate = [weakSelf rateFromSpeedControl:weakSelf.speedControl];
+                if (fabs(weakSelf.player.rate - targetRate) > 0.02) {
+                    weakSelf.player.rate = targetRate;
+                }
             }
 
             NSInteger chapter = weakSelf.currentChapter;
@@ -2550,6 +2671,8 @@ didReceiveResponse:(NSURLResponse *)response
     if (self.isAutoSkipping) return;
     if (!self.autoSkipMarkers || self.autoSkipMarkers.count == 0) return;
     if (self.lastAutoSkipDate && [[NSDate date] timeIntervalSinceDate:self.lastAutoSkipDate] < 1.0) return;
+    ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
+    if ([sharePlayCoordinator hasActiveSession] && ![sharePlayCoordinator canAdvanceAutomatically]) return;
 
     NSTimeInterval currentTime = [self time];
 
@@ -2629,7 +2752,9 @@ didReceiveResponse:(NSURLResponse *)response
     [DMANAGER save];
     // Remove consumed episode from Up Next playlist
     [session eraseEpisodesFromUpNext:@[episode]];
-    CDEpisode *nextEpisode = [session nextPlayableEpisode];
+    ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
+    BOOL waitingForSharedTransition = [sharePlayCoordinator hasActiveSession] && ![sharePlayCoordinator canAdvanceAutomatically];
+    CDEpisode *nextEpisode = waitingForSharedTransition ? nil : [session nextPlayableEpisode];
     [self _logPlaybackAutoSkipEvent:@"Kapitel-Skip-Episodenabschluss gespeichert"
                             episode:episode
                         currentTime:currentTime
@@ -2637,12 +2762,16 @@ didReceiveResponse:(NSURLResponse *)response
                            metadata:@{
                                @"savedPosition": @(dur),
                                @"nextEpisodeHash": nextEpisode.objectHash ?: @"",
+                               @"waitingForSharePlayOwner": @(waitingForSharedTransition),
                            }];
     self.isAutoSkipping = NO;
-    if (nextEpisode) {
+    if (waitingForSharedTransition) {
+        return;
+    } else if (nextEpisode) {
         self.inTransitionToNextTrack = YES;
-        [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
+        [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
     } else {
+        [sharePlayCoordinator publishPlaybackFinishedForEpisodeIdentifier:episode.objectHash];
         [self closeAndSaveCurrentPosition:NO];
     }
 }
@@ -2677,12 +2806,17 @@ didReceiveResponse:(NSURLResponse *)response
             session.autoStopDisabled = NO;
         }
 
-        CDEpisode* nextEpisode = [session nextPlayableEpisode];
-        if (nextEpisode) {
+        ICSharePlayCoordinator* sharePlayCoordinator = [ICSharePlayCoordinator sharedCoordinator];
+        BOOL waitingForSharedTransition = [sharePlayCoordinator hasActiveSession] && ![sharePlayCoordinator canAdvanceAutomatically];
+        CDEpisode* nextEpisode = waitingForSharedTransition ? nil : [session nextPlayableEpisode];
+        if (waitingForSharedTransition) {
+            return;
+        } else if (nextEpisode) {
             self.inTransitionToNextTrack = YES;
-            [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES];
+            [session playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
         }
         else {
+            [sharePlayCoordinator publishPlaybackFinishedForEpisodeIdentifier:episode.objectHash];
             [self closeAndSaveCurrentPosition:NO];
         }
 
@@ -2745,6 +2879,10 @@ didReceiveResponse:(NSURLResponse *)response
         [DMANAGER setEpisode:episode position:(double)cur];
         _changingPosition = NO;
         [DMANAGER save];//DevD to do
+
+#if TARGET_OS_IPHONE
+        self.playbackUserActivity.needsSave = YES;
+#endif
         
         [self _removeTemporarySavePosition];
     }
@@ -2789,6 +2927,11 @@ didReceiveResponse:(NSURLResponse *)response
     [self closeAndSaveCurrentPosition:YES];
 }
 
+- (void) closeAfterFinishedPlayback
+{
+    [self closeAndSaveCurrentPosition:NO];
+}
+
 - (void) closeAndSaveCurrentPosition:(BOOL)saveCurrentPosition
 {
 	// stop the skipping thing in case the user holds down the buttons until the end
@@ -2828,6 +2971,10 @@ didReceiveResponse:(NSURLResponse *)response
 	
     if (!self.changingEpisode) {
         [self _endNextItemHandover];
+#if TARGET_OS_IPHONE
+        [self.playbackUserActivity invalidate];
+        self.playbackUserActivity = nil;
+#endif
     }
 	
 	if (self.player)
@@ -3393,7 +3540,7 @@ didReceiveResponse:(NSURLResponse *)response
     }
 
     if (nextEpisode) {
-        [[AudioSession sharedAudioSession] playEpisode:nextEpisode];
+        [[AudioSession sharedAudioSession] playEpisode:nextEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
     }
 }
 
@@ -3419,7 +3566,7 @@ didReceiveResponse:(NSURLResponse *)response
     }
 
     if (previousEpisode) {
-        [[AudioSession sharedAudioSession] playEpisode:previousEpisode];
+        [[AudioSession sharedAudioSession] playEpisode:previousEpisode queueUpCurrent:NO at:0 autostart:YES preservingPlaybackSource:YES];
     }
 }
 
@@ -3574,15 +3721,6 @@ didReceiveResponse:(NSURLResponse *)response
 
     NSTimeInterval dur = CMTimeGetSeconds(CMTimeRangeGetEnd(loadRange));
     return (isfinite(dur) && dur >= 0) ? floor(dur) : 0.0f;
-}
-
-- (void) stopAirPlayVideo
-{
-#if TARGET_OS_IPHONE
-	if ([self.player respondsToSelector:@selector(allowsAirPlayVideo)]) {
-		self.player.allowsExternalPlayback = NO;
-	}
-#endif
 }
 
 - (BOOL) isAirPlayVideoActive

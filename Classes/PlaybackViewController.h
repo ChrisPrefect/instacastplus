@@ -17,6 +17,9 @@
 + (PlaybackViewController*) playbackViewController;
 + (PlaybackViewController*) playbackViewControllerWithEpisode:(CDEpisode*)episode;
 + (PlaybackViewController*) playbackViewControllerWithEpisode:(CDEpisode*)episode forceReload:(BOOL)force;
++ (PlaybackViewController*) playbackViewControllerWithUserInitiatedEpisode:(CDEpisode*)episode;
++ (PlaybackViewController*) playbackViewControllerWithUserInitiatedEpisode:(CDEpisode*)episode forceReload:(BOOL)force;
++ (void) donateUserInitiatedPlaybackOfEpisode:(CDEpisode*)episode;
 
 - (void) presentFromParentViewController:(UIViewController*)parentViewController;
 - (void) presentFromParentViewController:(UIViewController*)parentViewController autostart:(BOOL)autostart completion:(void (^)(void))completion;

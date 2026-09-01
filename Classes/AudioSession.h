@@ -28,6 +28,7 @@ extern NSString* AudioSessionDidRestorePlaybackNotification;
 - (void) playEpisode:(CDEpisode*)anEpisode;
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent;
 - (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart;
+- (void) playEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart preservingPlaybackSource:(BOOL)preservingPlaybackSource;
 - (void) restorePlaybackEpisode:(CDEpisode*)anEpisode queueUpCurrent:(BOOL)queueUpCurrent at:(NSTimeInterval)time autostart:(BOOL)autostart;
 - (void) clear;
 - (void) stop;

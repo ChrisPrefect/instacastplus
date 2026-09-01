@@ -444,7 +444,7 @@ static NSString* kBookmarkIndexImageURL = @"imageURL";
     else
     {
         [DMANAGER setEpisode:episode position:bookmark.position];
-        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithEpisode:episode forceReload:YES];
+        PlaybackViewController* playbackController = [PlaybackViewController playbackViewControllerWithUserInitiatedEpisode:episode forceReload:YES];
         [playbackController presentFromParentViewController:self];
     }
 }

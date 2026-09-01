@@ -170,7 +170,15 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>33</string>
+	<string>35</string>
+	<key>INIntentsSupported</key>
+	<array>
+		<string>INPlayMediaIntent</string>
+	</array>
+	<key>INSupportedMediaCategories</key>
+	<array>
+		<string>INMediaCategoryPodcasts</string>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
@@ -318,5 +326,9 @@
 	</array>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Instacast verwendet Spracherkennung um Podcasts zu transkribieren.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.iteconomy.instacastplus.playback</string>
+	</array>
 </dict>
 </plist>

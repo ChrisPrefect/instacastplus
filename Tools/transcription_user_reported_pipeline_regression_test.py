@@ -163,7 +163,8 @@ require(
     "External transcript validation failures are still absent from the episode log.",
 )
 require(
-    "cell.showsErrorStatus = item.status == ICTranscriptionStatusFailed" in QUEUE_UI
+    "BOOL showsErrorStatus = item.status == ICTranscriptionStatusFailed" in QUEUE_UI
+    and "cell.showsErrorStatus = showsErrorStatus" in QUEUE_UI
     and "heightForRowAtIndexPath" in QUEUE_UI
     and "boundingRectWithSize" in QUEUE_UI,
     "Failed transcription rows still truncate the actual error text.",

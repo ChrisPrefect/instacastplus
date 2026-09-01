@@ -214,7 +214,7 @@ require(
 )
 require(
     "markersFittingFinalPrompt(markers:" in chapter_source and
-    "promptFitsContext(_ prompt: String" in chapter_source and
+    "foundationPromptFitsContext<Content: Generable>(_ prompt: String" in chapter_source and
     "buildMarkerConsolidationPrompt(markers:" in chapter_source and
     "groups.replaceSubrange(groupIndex...groupIndex" in chapter_source,
     "Chapter generator no longer hierarchically reduces topic markers before the final prompt, so 2h+ podcasts can exceed the Apple model context window.",
@@ -325,8 +325,9 @@ require(
 )
 
 require(
-    "cell.sizeLabel.numberOfLines = 2;" in controller_source,
-    "Queue UI no longer allows two-line status text for detailed updates.",
+    "cell.sizeLabel.numberOfLines = 0;" in controller_source
+    and "cell.sizeLabel.numberOfLines = 2;" not in controller_source,
+    "Queue UI no longer shows complete multiline status updates.",
 )
 for old_text in [
     "Im Hintergrund transkribieren",

@@ -13,6 +13,8 @@ Podcast-App iOS/macOS, Objective-C. v3.2. Aktuelles iOS-Deployment-Target: 17.0.
 
 ## Build — nicht immer automatisch builden! nur bei grösseren änderungen selbst test-builden.
 
+Nutzerfreigabe: Builds sowie das Booten und Benutzen vorhandener Simulatoren sind jederzeit und ohne erneute Rückfrage erlaubt. Diese Freigabe hebt nicht die Vorgabe auf, bei kleinen Änderungen fokussierte Tests statt unnötiger Vollbuilds zu bevorzugen.
+
 ```bash
 xcodebuild -project Instacast.xcodeproj -scheme Instacast build          # iPhone
 xcodebuild -project Instacast.xcodeproj -scheme "Instacast HD" build     # iPad
